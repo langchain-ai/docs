@@ -1,0 +1,194 @@
+---
+title: Tools
+description: Load MCP tools into LangChain agents, control their execution, and handle server results and requests.
+---
+
+import McpUseInAgentPy from '/snippets/javascript/code-samples/mcp-use-in-agent-py.mdx';
+import McpUseInAgentJs from '/snippets/javascript/code-samples/mcp-use-in-agent-js.mdx';
+import McpToolErrorsPy from '/snippets/javascript/code-samples/mcp-tool-errors-py.mdx';
+import McpToolErrorsJs from '/snippets/javascript/code-samples/mcp-tool-errors-js.mdx';
+import McpToolMetadataPy from '/snippets/javascript/code-samples/mcp-tool-metadata-py.mdx';
+import McpToolMetadataJs from '/snippets/javascript/code-samples/mcp-tool-metadata-js.mdx';
+import McpMultimodalToolContentPy from '/snippets/javascript/code-samples/mcp-multimodal-tool-content-py.mdx';
+import McpMultimodalToolContentJs from '/snippets/javascript/code-samples/mcp-multimodal-tool-content-js.mdx';
+import McpStructuredContentPy from '/snippets/javascript/code-samples/mcp-structured-content-py.mdx';
+import McpStructuredContentJs from '/snippets/javascript/code-samples/mcp-structured-content-js.mdx';
+import McpElicitationPy from '/snippets/javascript/code-samples/mcp-elicitation-py.mdx';
+import McpElicitationJs from '/snippets/javascript/code-samples/mcp-elicitation-js.mdx';
+import McpDestructiveGatePy from '/snippets/javascript/code-samples/mcp-destructive-gate-py.mdx';
+import McpDestructiveGateJs from '/snippets/javascript/code-samples/mcp-destructive-gate-js.mdx';
+
+
+
+@[`MCPAdapter`] bridges MCP servers and LangChain agents: it discovers the tools a server advertises and adapts them into standard LangChain tools. Pass the tools from `listTools()` to [`createAgent`](https://reference.langchain.com/javascript/langchain/index/createAgent) as you would any other LangChain tool.
+
+
+This page covers what is specific to that bridge: identifying MCP tools, controlling their execution, handling their outputs, and responding when a server needs input during a call. For the runnable discovery-and-agent example, see the [MCP quickstart](/oss/javascript/langchain/mcp).
+
+## Use MCP tools in an agent
+
+
+
+Discover the server's catalog with @[`MCPAdapter.listTools`], then give the returned tools to [`createAgent`](https://reference.langchain.com/javascript/langchain/index/createAgent). From the agent's perspective, they behave like LangChain tools: the model chooses a tool, LangChain invokes it, and the resulting [`ToolMessage`](https://reference.langchain.com/javascript/langchain-core/messages/ToolMessage) returns to the model.
+
+<McpUseInAgentJs />
+
+
+For general guidance on defining, binding, and using LangChain tools, see [Tools](/oss/javascript/langchain/tools). For several MCP servers and their namespaced tool catalogs, see [Connections](/oss/javascript/langchain/mcp/connections#multiple-servers).
+
+## Handle tool outputs
+
+MCP tool results become LangChain-native values: content the model can read, an artifact for structured output, and a [`ToolMessage`](https://reference.langchain.com/javascript/langchain-core/messages/ToolMessage) status that distinguishes a server-reported error from a transport failure.
+
+### Multimodal content
+
+An MCP tool result arrives as LangChain [content blocks](/oss/javascript/langchain/messages#standard-content-blocks). Image and file content convert into standardized `image` and `file` blocks alongside `text`, so a tool that returns a screenshot reaches the model as an image block:
+
+
+
+<McpMultimodalToolContentJs />
+
+
+### Structured content
+
+When a tool returns structured content, the adapter attaches it to the [`ToolMessage`](https://reference.langchain.com/javascript/langchain-core/messages/ToolMessage) as an artifact rather than folding it into the model-visible text. Run the agent, then read the `artifact` from the [`ToolMessage`](https://reference.langchain.com/javascript/langchain-core/messages/ToolMessage) instances in the result:
+
+
+
+<McpStructuredContentJs />
+
+The `artifact` is an array of MCP result entries. Structured content appears in the entry with `type: "mcp_structured_content"`, and its `data` field holds the tool result's `structuredContent`.
+
+
+### Errors
+
+
+
+An MCP tool result carries an `isError` flag. When a server reports `isError: true`, the adapter converts it into a failed [`ToolMessage`](https://reference.langchain.com/javascript/langchain-core/messages/ToolMessage) carrying the server's own message, so the agent can read it and correct itself:
+
+<McpToolErrorsJs />
+
+
+A server-reported error reaches the model as a failed tool message, but a transport or session failure raises instead, because a model cannot act on a dropped connection.
+
+## Tool metadata
+
+Each adapted tool may carry its MCP provenance under an `mcp` namespace on the LangChain tool's metadata:
+
+
+
+```typescript
+tool.metadata;
+// {
+//   mcp: {
+//     tool: {
+//       annotations: {
+//         destructiveHint: true,
+//         readOnlyHint: false,
+//       },
+//       _meta: { origin: "crm" },
+//     },
+//     server: {
+//       name: "crm",
+//       version: "2.1.0",
+//     },
+//   },
+// }
+```
+
+
+Every nested field is optional: a server may provide tool annotations, `_meta`, server identity, any combination of those, or none. `annotations` contains MCP hints such as `read_only_hint` and `destructive_hint`; `_meta` is opaque metadata supplied by the server; and `server` identifies the MCP implementation that advertised the tool.
+
+Read optional metadata defensively, so a missing field returns a default rather than raising:
+
+
+<McpToolMetadataJs />
+
+
+## Human-in-the-loop
+
+Reading annotations lets you gate a tool based on what the server declares about it, rather than hardcoding tool names. The MCP annotation classifies the tool and LangChain's human-in-the-loop middleware enforces the approval policy.
+
+Read the destructive hint from metadata once during tool discovery. Then give the human-in-the-loop configuration a `when` predicate that receives each pending tool call and returns whether the call needs approval:
+
+
+
+<McpDestructiveGateJs />
+
+
+When the agent calls a tool that the predicate gates, the run pauses. Approve the call to run it, or reject it to skip the tool and tell the model:
+
+
+
+```typescript
+import { Command } from "@langchain/langgraph";
+
+// Approve the pending destructive call and resume.
+const resumed = await agent.invoke(
+  new Command({ resume: { decisions: [{ type: "approve" }] } }),
+  config
+);
+```
+
+
+The predicate can also inspect the call's arguments. This lets a tool run freely for safe inputs and pause only for risky ones, such as a `delete_file` call targeting a protected path.
+
+
+
+Access the arguments through `request.toolCall.args`.
+
+
+Combine the metadata classification and argument check to gate a tool only when its type and inputs warrant approval. For the full approval workflow, see [Human-in-the-loop](/oss/javascript/langchain/human-in-the-loop).
+
+## Server requests during tool execution
+
+Most tools finish without asking the client for anything mid-call. When a server needs input, @[`MCPAdapter`] surfaces [elicitation](https://modelcontextprotocol.io/specification/draft/client/elicitation) as a LangGraph [`interrupt`](https://reference.langchain.com/javascript/langchain-langgraph/index/interrupt).
+
+### Elicitation
+
+[Elicitation](https://modelcontextprotocol.io/specification/draft/client/elicitation) is the MCP mechanism for a server to request input in the middle of a tool call. When a server needs input, the request surfaces as a LangGraph interrupt so the person already reviewing the agent's work answers it and the run resumes:
+
+
+
+<McpElicitationJs />
+
+
+A few things to note:
+
+- **Elicitation is on by default.** The adapter advertises the capability and drives the interrupt loop. A prebuilt client that already carries its own elicitation handler is honored instead of overridden.
+- **Resuming needs persistence.** Attach a [checkpointer](/oss/javascript/langchain/short-term-memory) so the interrupted run has somewhere to wait.
+- **Answers are keyed by the server's request key.** Each answer's `action` is `accept` (with `content` matching the request's schema), `decline` (answer refused, call continues), or `cancel` (the whole call is abandoned).
+
+
+
+Address the responses to the pending interrupt ID with `MCPElicitationResume`, then resume with `new Command<MCPElicitationResume>({ resume })`. The adapter exports the interrupt and answer types. Set `elicitation: false` on an individual modern server to opt out.
+
+
+Only elicitation is answered this way. A server that instead asks for [sampling](https://modelcontextprotocol.io/specification/2025-06-18/client/sampling) or [roots](https://modelcontextprotocol.io/specification/2025-06-18/client/roots) raises an error, because the modern, sessionless protocol has no live back-channel for those requests. See [Sampling and roots](/oss/javascript/migrate/langchain-mcp-adapters#sampling-and-roots).
+
+<Note>
+Interrupt-driven elicitation answers a server that returns its request as an `InputRequiredResult`. A server that only pushes elicitation over a legacy handshake session cannot be answered this way.
+</Note>
+ 
+## See also
+
+- [Content blocks](/oss/javascript/langchain/messages#standard-content-blocks)
+- [Tools](/oss/javascript/langchain/tools)
+- [Human-in-the-loop](/oss/javascript/langchain/human-in-the-loop)
+- [FastMCP calling tools](https://gofastmcp.com/clients/tools)
+- [FastMCP client elicitation](https://gofastmcp.com/clients/elicitation)
+- [FastMCP server elicitation](https://gofastmcp.com/servers/elicitation)
+- [MCP elicitation specification](https://modelcontextprotocol.io/specification/draft/client/elicitation)
+- [MCP tool annotations](https://modelcontextprotocol.io/specification/draft/server/tools)
+:::
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/langchain/mcp/tools.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

@@ -1,0 +1,49 @@
+```typescript
+import { Command, MemorySaver, type Interrupt } from "@langchain/langgraph";
+import {
+  MCPAdapter,
+  type MCPElicitationInterrupt,
+  type MCPElicitationResume,
+} from "@langchain/mcp-adapters";
+import { createAgent } from "langchain";
+
+async function bookWithElicitation(serverUrl: string) {
+  const adapter = new MCPAdapter({
+    servers: { booking: { url: serverUrl } },
+  });
+
+  try {
+    const agent = createAgent({
+      model: "claude-sonnet-5",
+      tools: await adapter.listTools(),
+      checkpointer: new MemorySaver(),
+    });
+    const config = { configurable: { thread_id: "booking-1" } };
+
+    const paused = await agent.invoke(
+      { messages: [{ role: "user", content: "Book a table for 4." }] },
+      config
+    );
+    const [pending] = paused.__interrupt__;
+    const [requestKey] = Object.keys(pending.value!.requests);
+
+    const resume: MCPElicitationResume = {
+      [pending.id]: {
+        responses: {
+          [requestKey]: {
+            action: "accept",
+            content: { date: "2026-09-14" },
+          },
+        },
+      },
+    };
+
+    return await agent.invoke(
+      new Command<MCPElicitationResume>({ resume }),
+      config
+    );
+  } finally {
+    await adapter.close();
+  }
+}
+```
