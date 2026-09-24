@@ -30,6 +30,22 @@ Fix verification also requires:
 Validation sends the inputs from an issue's traces to the baseline deployment, and to the preview deployment when it verifies a fix. Each replay creates a thread and a run on that deployment, and your agent can call its tools while it responds.
 </Warning>
 
+### Authenticate with your deployment
+
+By default, Engine calls your deployment with a LangSmith credential, and the deployment sees the caller as a Studio user. Deployments that accept LangSmith platform authentication need no further setup.
+
+If your deployment authenticates callers itself, give Engine the headers it expects:
+
+1. In the **Preview deployments** section, under **Deployment authentication**, click **Add custom headers**.
+2. Enter every header your deployment requires, then click **Save**.
+3. In your deployment's authentication handler, map those headers to an identity with the least access validation needs.
+
+Header values are encrypted and write-only: LangSmith shows only their names, so replacing them means entering every value again. Headers that LangSmith manages itself cannot be overridden. To go back to the default, click **Use platform authentication**.
+
+<Note>
+Custom headers only decide whether your deployment accepts the request. They do not tell your agent that a run is a validation replay, which is a separate signal described in [Make replayed runs side-effect free](#make-replayed-runs-side-effect-free).
+</Note>
+
 ## Prepare a deployment to test against
 
 Engine confirms an issue by running your agent, so the deployment you select needs to be one you can exercise repeatedly without consequences.
@@ -84,6 +100,35 @@ When **Verify fixes with preview deployments** is selected, Engine verifies each
 3. When the preview revision is live, Engine replays the traces from the issue's validation against the preview deployment.
 4. If the issue still occurs on the preview, Engine revises the fix on the same pull request and verifies it again, for up to three attempts in total.
 
+## Read a validation result
+
+Each issue reports a baseline result and, once a fix exists, a verification result.
+
+The baseline result answers whether the issue still happens on your deployment:
+
+| Status | Meaning |
+| --- | --- |
+| **Awaiting test** | Engine has not recorded a baseline result yet. |
+| **Reproduced** | At least one replay showed the reported behavior again. |
+| **Not reproduced** | Every replay finished without the reported behavior, so Engine closes an open issue. |
+| **Inconclusive** | Engine could not judge the replays confidently. |
+| **Error** | Validation could not complete. |
+
+The verification result answers whether Engine's fix resolved it:
+
+| Status | Meaning |
+| --- | --- |
+| **Not run** | The issue did not reproduce, so there is nothing to verify. |
+| **Generating fix** or **Awaiting fix** | Engine is still producing a fix to verify. |
+| **Awaiting preview** or **Running** | A preview deployment is building, or replays are in progress. |
+| **Verified** | The issue no longer occurred on the fix's preview deployment. |
+| **Not fixed** | The issue still occurred, so Engine revises the fix and tries again. |
+| **Inconclusive**, **Timed out**, or **Error** | Engine could not establish a verdict for this attempt. |
+
+<Warning>
+**Inconclusive** means Engine could not gather trustworthy evidence, not that the issue is absent or fixed. Treat it as a signal to re-test rather than as a passing result.
+</Warning>
+
 ## Review validation experiments
 
 Engine stores each issue's validation evidence in your workspace:
@@ -103,6 +148,18 @@ When Engine verifies a fix against a preview deployment, the issue's **Evidence*
 Each column header counts how many traces reproduced on the baseline or were resolved by the fix. Click **View Experiment** to open the baseline and fix experiments side by side in the dataset's comparison view. For more information, see [Compare experiment results](/langsmith/compare-experiment-results).
 
 Until fix verification runs, the issue shows a validation summary instead: the baseline result, the fix's verification status, and links to each replayed example.
+
+## Troubleshooting
+
+If an issue stays on **Awaiting test**, or a result comes back inconclusive, check the following before testing it again:
+
+- **The baseline deployment**: Confirm it is still ready, is not a preview, and is in the same workspace as the tracing project.
+- **Authentication**: If your deployment authenticates callers itself, confirm the saved headers are current. Replacing a credential requires re-entering every header value.
+- **The replays themselves**: Open the replayed runs from the issue's **Evidence** section or validation summary and read what your agent returned.
+- **Deployment limits**: Look for rate limiting, quota exhaustion, or timeouts caused by the concurrent replays, and for very large responses, which Engine may not be able to judge.
+- **Restricted tools**: If your agent blocks tools during a replay, confirm the stubbed tools still return a usable result rather than an error that ends the run.
+
+After correcting the deployment or its settings, open the issue and click **Test issue** to run validation again.
 
 ## See also
 
