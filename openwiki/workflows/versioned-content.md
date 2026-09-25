@@ -20,16 +20,24 @@ sources:
     resource: repo://scripts/check_version_claims.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
+  - id: openwiki-source-2e7c64de1cdacb92c90cbe8e
+    resource: repo://src/langsmith/managed-deep-agents-agent-owned-interrupts.mdx
+  - id: openwiki-source-67281216bb080f31d3dc93a1
+    resource: repo://src/langsmith/managed-deep-agents-memory.mdx
   - id: openwiki-source-97e34e6957c53e95a26c2e05
     resource: repo://src/oss/deepagents/quickstart.mdx
+  - id: openwiki-source-b8acaac2450ba13d47eb6b1b
+    resource: repo://src/oss/langchain/middleware/built-in.mdx
+  - id: openwiki-source-be4e8f2ddc40c968092ed137
+    resource: repo://src/oss/langgraph/add-memory.mdx
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
   - id: openwiki-source-607673c5c40214b511f9e0a7
     resource: repo://tests/unit_tests/test_check_version_claims.py
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-24T08:22:38.580Z
-generated: { by: "openwiki/0.4.3", at: "2026-09-24T08:22:38.580Z" }
+    at: 2026-09-25T08:22:07.006Z
+generated: { by: "openwiki/0.4.3", at: "2026-09-25T08:22:07.006Z" }
 ---
 
 # Changing versioned content
@@ -130,6 +138,12 @@ This is displayed literally.
 ````
 
 Use matching indentation for readable source, but do not depend on indentation as a structural guard: the regex can retry from the opening marker and accept a differently indented close. The first eligible closing marker ends a match, so use ordinary prose or a separate escaped example rather than trying to express nesting.
+
+### Follow the shape of the difference
+
+Use a branch for a whole language-specific unit, not only for code fences. The current prebuilt-middleware guide branches its capability table because the available middleware differs by SDK. The LangGraph memory guide branches implementation and package-manager examples, while keeping the explanation of short- and long-term memory shared. Managed Deep Agents pages likewise keep the deployment behavior shared and branch API spelling and project filenames such as `memory.py` / `memory.ts` or `runtime.channel.raw_event` / `runtime.channel.rawEvent`.
+
+This keeps each emitted page internally coherent: do not place Python prose beside a JavaScript-only example, and do not duplicate neutral product behavior merely because an adjacent API call differs. In the shared Deep Agents quickstart, language-specific generated components are imported separately and each invocation appears in the matching conditional branch.
 
 ## 3. Author links and reusable snippets for the active variant
 
