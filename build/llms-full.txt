@@ -28123,6 +28123,91 @@ And the transformations look as follows:
 </div>
 
 
+# How to define a decision model evaluator
+Source: https://docs.langchain.com/langsmith/decision-model-evaluator
+
+A decision model evaluator uses a [decision model](/langsmith/online-evaluations-decision-models#decision-models), such as SemIf or Jev, as the judge. Each question you define returns a typed answer that LangSmith records under its own feedback key.
+
+This guide shows you how to define a decision model evaluator in the [LangSmith UI](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=langsmith-decision-model-evaluator). You can use it on a dataset to [automatically run evaluations on experiments](/langsmith/bind-evaluator-to-dataset), or on a tracing project as an [online evaluator](/langsmith/online-evaluations-decision-models). To use an LLM as the judge instead, see [How to define an LLM-as-a-judge evaluator](/langsmith/llm-as-judge).
+
+<Note>
+You can create decision model evaluators only in the LangSmith UI. The LangSmith SDKs do not support creating them yet.
+</Note>
+
+<Note>
+SemIf is enabled for US organizations on Free, Developer, and Plus plans.
+</Note>
+
+## Step 1. Create the evaluator
+
+1. (Jev only) Add a TypeSafe API key. Generate an API key from your TypeSafe account. In LangSmith, go to **Settings > Integrations > Provider secrets** and click **+ Secret**. Select **TypeSafe** as the provider and paste your key. LangSmith stores it as the workspace secret `TYPESAFE_API_KEY`. To store it under a different name, select **Custom** and enter your own secret name. For more information, see [Add provider secrets](/langsmith/llm-gateway-admin-setup#1-add-provider-secrets).
+1. In the LangSmith UI, open the **Evaluators** tab of a dataset or tracing project and click **+ Evaluator**.
+1. In the **Configure Evaluator** panel, select **LLM-as-a-Judge Evaluator** under **Create from scratch**.
+1. Name your evaluator.
+
+## Step 2. Configure the evaluator
+
+Decision model evaluators support TypeSafe models, such as Jev, with bring-your-own-key (BYOK), and SemIf through the [LLM Gateway](/langsmith/llm-gateway). You define the state and questions in the evaluator itself. Decision model evaluators cannot load a prompt from the [Prompt Hub](/langsmith/prompt-context-hub#prompts) or use a custom output schema.
+
+### Model
+
+Under **Prompt & Model**, open **Model Configuration** and select a provider and model:
+
+- For SemIf, select **LangSmith Gateway** as the provider, then select a SemIf model. Click **Apply**.
+- For Jev, select **TypeSafe** as the provider, then select a Jev model. If you stored your key under a name other than `TYPESAFE_API_KEY`, enter that name in **API Key Name**. Click **Apply**.
+- For a TypeSafe-compatible endpoint, select its saved configuration. See [Use a TypeSafe-compatible endpoint](#use-a-typesafe-compatible-endpoint).
+
+For a comparison of the supported models, see [Supported models](/langsmith/online-evaluations-decision-models#supported-models).
+
+#### Use a TypeSafe-compatible endpoint
+
+A TypeSafe-compatible endpoint points the evaluator at any server that implements the [TypeSafe System One API](https://docs.typesafe.ai). Examples include OpenRouter or a decision model you host yourself. An evaluator can use one only after you save it as a model configuration. For the settings, setup steps, and example base URLs, see [Connect to a TypeSafe-compatible model provider](/langsmith/typesafe-compatible-model).
+
+### State
+
+The **State** is the context the decision model evaluates. Map variables from your run or example into it:
+
+- On a dataset, map the input, output, or reference output.
+- On a tracing project, map run or thread variables, such as the run's inputs and outputs.
+
+Unlike a prompt for an LLM judge, the state should not include grading instructions. Put grading criteria in the questions instead.
+
+### Questions
+
+Questions are the scoring criteria your decision model evaluator uses. Each question's name becomes a feedback key on the evaluated run or thread. To define questions:
+
+1. Under **Feedback Configuration**, add one question for each criterion you want to evaluate.
+1. For each question, enter a **Name**, select a **Type**, and write the **Instructions**.
+1. Define the true and false meanings, options, or levels for the question type.
+
+To edit the questions as JSON, click **Advanced**.
+
+For what each question type returns and how answers map to feedback, see [Question types](/langsmith/online-evaluations-decision-models#question-types) and [Map answers to feedback keys](/langsmith/online-evaluations-decision-models#map-answers-to-feedback-keys).
+
+## Step 3. Save the evaluator
+
+To save the evaluator, click **Create** or **Save**.
+
+On a dataset, the evaluator runs on each new experiment. On a tracing project, it evaluates incoming runs or threads that match its filter. For filters, sampling rates, and backfills, see [Set up decision model online evaluators](/langsmith/online-evaluations-decision-models).
+
+## See also
+
+- [Decision models](/langsmith/online-evaluations-decision-models#decision-models): Supported models, question types, and feedback keys.
+- [Connect to a TypeSafe-compatible model provider](/langsmith/typesafe-compatible-model): Base URL format and example endpoints.
+- [Decision models in the LLM Gateway](/langsmith/llm-gateway-decision-models): Call SemIf and Jev directly from code.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/decision-model-evaluator.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
+
+
 # How to define a target function to evaluate
 Source: https://docs.langchain.com/langsmith/define-target-function
 
@@ -64874,6 +64959,8 @@ Create a custom prompt inline for your evaluator.
 
 Select the desired model from the provided options.
 
+To use a decision model, such as SemIf or Jev, as the judge, see [How to define a decision model evaluator](/langsmith/decision-model-evaluator).
+
 ### Mapping variables
 
 Use variable mapping to indicate the variables that are passed into your evaluator prompt from your run or example. To aid with variable mapping, an example (or run) is provided for reference. Click on the variables in your prompt and use the dropdown to map them to the relevant parts of the input, output, or reference output.
@@ -80057,6 +80144,101 @@ Composite scores are attached to a run as **feedback**, similarly to feedback fr
 </div>
 
 
+# Set up decision model online evaluators
+Source: https://docs.langchain.com/langsmith/online-evaluations-decision-models
+
+[Online evaluations](/langsmith/evaluation-concepts#online-evaluations) provide real-time feedback on your production traces. An online evaluator can use a decision model, such as SemIf or Jev, as the judge in place of an LLM. To use an LLM as the judge, see [Set up LLM-as-a-judge online evaluators](/langsmith/online-evaluations-llm-as-judge).
+
+<Note>
+When an online evaluator runs on any run within a trace, LangSmith upgrades the trace to [extended data retention](/langsmith/usage-and-billing#data-retention-auto-upgrades). This upgrade affects trace pricing.
+</Note>
+
+## Decision models
+
+Decision models answer structured questions about text and return typed answers, such as a probability, a selected option, or a score, rather than free-form text. For how they work, see [Decision models in the LLM Gateway](/langsmith/llm-gateway-decision-models). When you use a decision model as the judge, LangSmith records the answer to each question you define under its own feedback key. You do not need to write an output schema or parse free-text reasoning.
+
+### Supported models
+
+LangSmith supports two decision models for evaluators, on both tracing projects and datasets. Both are configured and behave the same way. They differ only in provider and setup. To call a decision model through another provider or on your own server, use a [TypeSafe-compatible endpoint](/langsmith/typesafe-compatible-model).
+
+| Model | Provider | Setup |
+|-------|----------|-------|
+| [SemIf](/langsmith/llm-gateway-decision-models#semif) | **LangSmith Gateway** | No provider key required. SemIf runs through the [LLM Gateway](/langsmith/llm-gateway). |
+| [Jev](/langsmith/llm-gateway-decision-models#typesafe-jev) | **TypeSafe** | Requires a TypeSafe API key stored as a workspace secret. Defaults to `TYPESAFE_API_KEY`. |
+
+<Note>
+SemIf is enabled for US organizations on Free, Developer, and Plus plans.
+</Note>
+
+<Warning>
+TypeSafe does not offer zero data retention. The provider may retain prompts and outputs sent to Jev for evaluation.
+</Warning>
+
+<Note>
+You can create decision model evaluators only in the LangSmith UI. The LangSmith SDKs do not support creating them yet. To call a decision model directly from code, see [Decision models in the LLM Gateway](/langsmith/llm-gateway-decision-models).
+</Note>
+
+### Question types
+
+Each question you add to a decision model evaluator has one of three types. For full definitions, see the [TypeSafe primitives documentation](https://docs.typesafe.ai/primitives).
+
+- **Noul**: A continuous boolean. Returns the probability, from 0 to 1, that a statement is true. Values near 1 mean yes, values near 0 mean no, and values near 0.5 mean the model is uncertain. Use it for yes or no checks, such as whether the output contains personally identifiable information. Phrase the instructions as a yes or no question, and optionally describe what true and false mean.
+- **Choice**: Picks one option from a fixed, unordered list, such as classifying whether the user is asking a `question`, making a `request`, or neither (`other`). Give each option a name and, unless the name is self-explanatory, a description.
+- **Score**: Rates the state along ordered levels, such as how frustrated the user is, from calm to very angry. Define the levels in order, starting at level 0. The score can fall between two levels.
+
+Each model enforces its own limits on questions. A SemIf evaluator accepts up to 32 questions.
+
+| Limit | Jev | SemIf |
+|-------|-----|-------|
+| Options per choice question | 2 to 255 | 2 to 16 |
+| Levels per score question | 2 to 10 | 2 to 10 |
+
+### Map answers to feedback keys
+
+Each question's name becomes a feedback key on the evaluated run or thread. LangSmith converts each typed answer to feedback as follows:
+
+| Question type | Feedback field | Value |
+|---------------|----------------|-------|
+| Noul | `score` | A number from 0 to 1 |
+| Choice | `value` | The name of the selected option |
+| Score | `score` | A number from 0 to the index of the highest level. For example, a question with four levels returns a score from 0 to 3. |
+
+LangSmith also stores the model's full answer on each feedback entry, under `typesafe` in the feedback source metadata. For choice and score questions, the answer includes `probabilities` and `confidence`. Because each answer is standard feedback, you can filter, chart, and alert on it, and trigger [automations](/langsmith/rules) from it, as you would with any other evaluator's feedback.
+
+Question names follow the same limits as other feedback keys, and each name must be unique within the evaluator.
+
+## Add a decision model online evaluator
+
+To add a decision model online evaluator:
+
+1. In the [LangSmith UI](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=langsmith-online-evaluations-decision-models), navigate to the **Tracing** page and select a tracing project.
+1. Click the **Evaluators** tab.
+1. Click **+ Evaluator** to open the **Configure Evaluator** panel.
+1. Under **Create from scratch**, select **LLM-as-a-Judge Evaluator**, then name your evaluator.
+1. Select a decision model, map run or thread variables into the **State**, and add questions. For each setting, see [How to define a decision model evaluator](/langsmith/decision-model-evaluator).
+1. (Optional) Apply a [filter](/langsmith/online-evaluations-llm-as-judge#apply-a-filter-to-runs-that-trigger-the-evaluator), set a [sampling rate](/langsmith/online-evaluations-llm-as-judge#configure-a-sampling-rate), or [apply the rule to past runs or threads](/langsmith/online-evaluations-llm-as-judge#apply-a-rule-to-past-runs-or-threads). These settings work the same way as for LLM-as-a-judge online evaluators.
+1. To save the evaluator, click **Create** or **Save**.
+
+The evaluator checks each new run or thread that matches its filter. Each question's answer appears under its own feedback key.
+
+## See also
+
+- [How to define a decision model evaluator](/langsmith/decision-model-evaluator): Configure the model, state, and questions.
+- [Connect to a TypeSafe-compatible model provider](/langsmith/typesafe-compatible-model): Base URL format and example endpoints.
+- [Decision models in the LLM Gateway](/langsmith/llm-gateway-decision-models): Call SemIf and Jev directly from code.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/online-evaluations-decision-models.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
+
+
 # Set up LLM-as-a-judge online evaluators
 Source: https://docs.langchain.com/langsmith/online-evaluations-llm-as-judge
 
@@ -80134,6 +80316,10 @@ For details, refer to [Track and limit evaluator spend](/langsmith/evaluator-spe
 ## Configure the LLM-as-a-judge evaluator
 
 View [LLM-as-a-judge evaluators](/langsmith/llm-as-judge#evaluator-templates) for more information.
+
+## Use a decision model as the judge
+
+You can use a decision model, such as SemIf or Jev, as the judge in place of an LLM. Each question you define returns a typed answer, such as a probability, a selected option, or a score, and LangSmith records each one under its own feedback key. See [Set up decision model online evaluators](/langsmith/online-evaluations-decision-models).
 
 ## Map multimodal content to evaluator
 
@@ -143387,6 +143573,66 @@ Organization settings can take a few seconds to propagate. If LangSmith reports 
 </Callout>
 <Callout icon="edit">
     [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/tuned-evaluators.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
+
+
+# Connect to a TypeSafe-compatible model provider
+Source: https://docs.langchain.com/langsmith/typesafe-compatible-model
+
+A TypeSafe-compatible endpoint is a saved [model configuration](/langsmith/model-configurations). It sends a decision model evaluator's requests to any server that implements the [TypeSafe System One API](https://docs.typesafe.ai). With a TypeSafe-compatible endpoint, you can call TypeSafe models through another provider, such as OpenRouter, or call a decision model you host yourself. For models that implement the OpenAI API, see [Connect to an OpenAI compliant model provider/proxy](/langsmith/custom-openai-compliant-model).
+
+TypeSafe-compatible endpoints are available in [decision model evaluators](/langsmith/decision-model-evaluator). To use Jev directly from TypeSafe or SemIf through the LLM Gateway, you do not need a compatible endpoint.
+
+## Configuration
+
+A TypeSafe-compatible endpoint has three settings:
+
+- **Model**: The model ID the server expects. Defaults to `jev-latest`.
+- **API Key Name**: The name of the workspace secret that stores the server's API key. Defaults to `TYPESAFE_API_KEY`.
+- **Base URL**: The root of the server's System One API. See [Base URL format](#base-url-format).
+
+## Use the endpoint in an evaluator
+
+An evaluator can use a TypeSafe-compatible endpoint only after you save the endpoint as a model configuration.
+
+To use a TypeSafe-compatible endpoint in an evaluator:
+
+1. Add the server's API key as a workspace secret. Go to **Settings > Integrations > Provider secrets**, click **+ Secret**, and select **Custom** to enter your own secret name. To use the default name, select **TypeSafe** instead.
+1. In the evaluator, under **Prompt & Model**, open **Model Configuration**.
+1. For **Provider**, select **TypeSafe Compatible Endpoint**. It appears under **Other**.
+1. Enter the **Model**, **API Key Name**, and **Base URL**.
+1. Click **Save as preset** and name the configuration.
+1. Select the saved configuration as the evaluator's model.
+
+When the evaluator runs, it calls the endpoint with the API key stored in the secret you entered in **API Key Name**. Next, add questions and save the evaluator, as described in [How to define a decision model evaluator](/langsmith/decision-model-evaluator).
+
+## Base URL format
+
+The **Base URL** should point to the root of the server's System One API. LangSmith appends `/v1/systemone` automatically. Do not include it in the Base URL.
+
+### Example base URLs
+
+| Provider | Model | Example Base URL |
+|----------|-------|------------------|
+| [TypeSafe](https://docs.typesafe.ai) | `jev-latest` | `https://api.typesafe.ai` |
+| [OpenRouter](https://openrouter.ai) | `~typesafe/jev-latest` | `https://openrouter.ai/api` |
+| Self-hosted (remote) | Your model ID | `https://my-model-server.example.com` |
+
+## See also
+
+- [How to define a decision model evaluator](/langsmith/decision-model-evaluator): Set up an evaluator that uses a decision model.
+- [Decision models in the LLM Gateway](/langsmith/llm-gateway-decision-models): Call SemIf and Jev directly through the LLM Gateway.
+- [Model configurations](/langsmith/model-configurations): Manage saved model configurations for your workspace.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/typesafe-compatible-model.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
 </Callout>
 </div>
 
