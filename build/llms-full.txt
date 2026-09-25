@@ -59050,7 +59050,10 @@ LANGSMITH_API_KEY=<LANGSMITH_API_KEY>
 OPENAI_API_KEY=<OPENAI_API_KEY>
 GITHUB_MCP_TOKEN=<GITHUB_MCP_TOKEN>
 DATABASE_URL=<DATABASE_URL>
+MDA_INGRESS_SECRET=<MDA_INGRESS_SECRET>
 ```
+
+`MDA_INGRESS_SECRET` is required only when the project declares [backend identity](/langsmith/javascript/managed-deep-agents-identity#configure-identity-with-your-own-backend). Deploy fails preflight when that declaration is present and the value is missing.
 
 `LANGSMITH_API_KEY`, `LANGGRAPH_HOST_API_KEY`, `LANGCHAIN_API_KEY`, and other platform variables are reserved. They can authenticate the deploy, but they are not uploaded as user-managed deployment secrets.
 
@@ -59323,9 +59326,16 @@ By default, `mda init` requires callers to present a LangSmith API key. Anyone w
 | Goal | Use |
 | --- | --- |
 | Lock down the deployment for SDK clients, scripts, and services | [LangSmith API key (default)](#configure-identity-with-a-langsmith-api-key) |
-| Signed-in end users with private chats | [Supabase](#configure-identity-with-supabase) |
+| Signed-in end users with private chats, verified by Managed Deep Agents | [Supabase](#configure-identity-with-supabase) |
+| Signed-in end users with private chats, already authenticated by your own API | [Your own backend](#configure-identity-with-your-own-backend) |
+
+Supabase and backend identity both give each end user private threads. The difference is who verifies the user. With Supabase, the browser sends its access token and Managed Deep Agents verifies it. With backend identity, your API verifies the user and asserts the resulting user ID.
 
 For more information, see [Project structure](/langsmith/javascript/managed-deep-agents-project-structure).
+
+<Note>
+On hosted deployments, LangSmith Studio reaches the deployment through a separate workspace-authenticated path. A caller with API access to the LangSmith workspace can read and search every thread in the deployment, whichever identity provider you choose. That caller cannot modify threads owned by your end users. Per-user privacy therefore holds against your end users, not against members of your LangSmith workspace.
+</Note>
 
 ## Configure identity with a LangSmith API key
 
@@ -59345,7 +59355,7 @@ export const identity = defineIdentity({
 Clients send the key as `x-api-key`. You do not need to add verification endpoint or tenant settings to your project `.env`. LangSmith Cloud supplies those.
 
 <Warning>
-Anyone with the key can reach the deployment, so treat the key as a secret. This default does not give each end user private threads. If Alice must not see Bob's threads, use [Supabase](#configure-identity-with-supabase).
+Anyone with the key can reach the deployment, so treat the key as a secret. This default does not give each end user private threads. If Alice must not see Bob's threads, use [Supabase](#configure-identity-with-supabase) or [your own backend](#configure-identity-with-your-own-backend).
 </Warning>
 
 ## Configure identity with Supabase
@@ -59410,11 +59420,75 @@ Adding Supabase identity to an existing deployment does not add owner metadata t
   </Step>
 </Steps>
 
+## Configure identity with your own backend
+
+Use backend identity when your own API already authenticates users and calls the deployment on their behalf. Your backend proves itself with a shared secret and names the caller. Managed Deep Agents trusts that name only after the secret matches, then gives each named user private threads.
+
+The browser never reaches the deployment in this mode. Requests go from the browser to your API, and from your API to the deployment.
+
+<Steps>
+  <Step title="Declare identity" id="declare-backend-identity">
+
+
+
+```ts identity.ts
+import { defineIdentity } from "managed-deepagents";
+
+export const identity = defineIdentity({
+  auth: "backend",
+});
+```
+
+
+  </Step>
+  <Step title="Generate the ingress secret" id="generate-the-ingress-secret">
+
+Generate a random value and add it to the project `.env` as `MDA_INGRESS_SECRET`:
+
+```bash
+openssl rand -hex 32
+```
+
+```text .env
+MDA_INGRESS_SECRET=<MDA_INGRESS_SECRET>
+```
+
+`mda deploy` forwards the value as a hosted deployment secret. A project that declares backend identity without this value fails deploy preflight before any build work, because the deployment would reject every request with 401. For how `.env` values reach a deployment, see [Deploy](/langsmith/javascript/managed-deep-agents-deploy#secrets-and-environment-files).
+
+  </Step>
+  <Step title="Send both headers from your backend" id="send-both-headers">
+
+Authenticate the user in your own API, then send the secret and the resolved user ID on every deployment request:
+
+
+
+```ts
+await fetch(`${deploymentUrl}/threads/${threadId}/runs`, {
+  method: "POST",
+  headers: {
+    "x-mda-ingress-secret": mdaIngressSecret,
+    "x-mda-user-id": userId,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify(runBody),
+});
+```
+
+
+Use the same identifier for `x-mda-user-id` that your own system uses for that user, and keep it stable across sessions. Threads and stored credentials are keyed on this value, so a user who arrives under a new identifier reaches a different set of threads.
+
+  </Step>
+</Steps>
+
+<Warning>
+`MDA_INGRESS_SECRET` is a server-side secret. Managed Deep Agents accepts whatever `x-mda-user-id` accompanies a valid secret, so any holder of the secret can act as any user. Keep it on your backend, never in browser code, a mobile app, or a client bundle.
+</Warning>
+
 ## Test and deploy
 
 Test the project locally with [`mda dev`](/langsmith/javascript/managed-deep-agents-cli#develop-locally), then deploy it with [`mda deploy`](/langsmith/javascript/managed-deep-agents-deploy). Open deployment traces in LangSmith to inspect model calls, tool calls, errors, and latency.
 
-Authentication failures return 401. For the LangSmith API-key default, confirm that clients send `x-api-key`. For Supabase, confirm that clients send `Authorization: Bearer <access_token>`, that `project_ref` / `projectRef` matches your Supabase project, and that callers cannot access another user's threads (403).
+Authentication failures return 401. For the LangSmith API-key default, confirm that clients send `x-api-key`. For Supabase, confirm that clients send `Authorization: Bearer <access_token>`, that `project_ref` / `projectRef` matches your Supabase project, and that callers cannot access another user's threads (403). For backend identity, confirm that your API sends both `x-mda-ingress-secret` and `x-mda-user-id`, that the secret matches `MDA_INGRESS_SECRET` on the deployment, and that one user's identifier cannot reach another user's threads (403).
 
 ---
 
@@ -87668,7 +87742,10 @@ LANGSMITH_API_KEY=<LANGSMITH_API_KEY>
 OPENAI_API_KEY=<OPENAI_API_KEY>
 GITHUB_MCP_TOKEN=<GITHUB_MCP_TOKEN>
 DATABASE_URL=<DATABASE_URL>
+MDA_INGRESS_SECRET=<MDA_INGRESS_SECRET>
 ```
+
+`MDA_INGRESS_SECRET` is required only when the project declares [backend identity](/langsmith/python/managed-deep-agents-identity#configure-identity-with-your-own-backend). Deploy fails preflight when that declaration is present and the value is missing.
 
 `LANGSMITH_API_KEY`, `LANGGRAPH_HOST_API_KEY`, `LANGCHAIN_API_KEY`, and other platform variables are reserved. They can authenticate the deploy, but they are not uploaded as user-managed deployment secrets.
 
@@ -87931,9 +88008,16 @@ By default, `mda init` requires callers to present a LangSmith API key. Anyone w
 | Goal | Use |
 | --- | --- |
 | Lock down the deployment for SDK clients, scripts, and services | [LangSmith API key (default)](#configure-identity-with-a-langsmith-api-key) |
-| Signed-in end users with private chats | [Supabase](#configure-identity-with-supabase) |
+| Signed-in end users with private chats, verified by Managed Deep Agents | [Supabase](#configure-identity-with-supabase) |
+| Signed-in end users with private chats, already authenticated by your own API | [Your own backend](#configure-identity-with-your-own-backend) |
+
+Supabase and backend identity both give each end user private threads. The difference is who verifies the user. With Supabase, the browser sends its access token and Managed Deep Agents verifies it. With backend identity, your API verifies the user and asserts the resulting user ID.
 
 For more information, see [Project structure](/langsmith/python/managed-deep-agents-project-structure).
+
+<Note>
+On hosted deployments, LangSmith Studio reaches the deployment through a separate workspace-authenticated path. A caller with API access to the LangSmith workspace can read and search every thread in the deployment, whichever identity provider you choose. That caller cannot modify threads owned by your end users. Per-user privacy therefore holds against your end users, not against members of your LangSmith workspace.
+</Note>
 
 ## Configure identity with a LangSmith API key
 
@@ -87951,7 +88035,7 @@ identity = define_identity(auth=auth.langsmith_api_key())
 Clients send the key as `x-api-key`. You do not need to add verification endpoint or tenant settings to your project `.env`. LangSmith Cloud supplies those.
 
 <Warning>
-Anyone with the key can reach the deployment, so treat the key as a secret. This default does not give each end user private threads. If Alice must not see Bob's threads, use [Supabase](#configure-identity-with-supabase).
+Anyone with the key can reach the deployment, so treat the key as a secret. This default does not give each end user private threads. If Alice must not see Bob's threads, use [Supabase](#configure-identity-with-supabase) or [your own backend](#configure-identity-with-your-own-backend).
 </Warning>
 
 ## Configure identity with Supabase
@@ -88018,11 +88102,75 @@ Adding Supabase identity to an existing deployment does not add owner metadata t
   </Step>
 </Steps>
 
+## Configure identity with your own backend
+
+Use backend identity when your own API already authenticates users and calls the deployment on their behalf. Your backend proves itself with a shared secret and names the caller. Managed Deep Agents trusts that name only after the secret matches, then gives each named user private threads.
+
+The browser never reaches the deployment in this mode. Requests go from the browser to your API, and from your API to the deployment.
+
+<Steps>
+  <Step title="Declare identity" id="declare-backend-identity">
+
+```python identity.py
+from managed_deepagents import define_identity
+
+identity = define_identity(auth="backend")
+```
+
+
+
+
+  </Step>
+  <Step title="Generate the ingress secret" id="generate-the-ingress-secret">
+
+Generate a random value and add it to the project `.env` as `MDA_INGRESS_SECRET`:
+
+```bash
+openssl rand -hex 32
+```
+
+```text .env
+MDA_INGRESS_SECRET=<MDA_INGRESS_SECRET>
+```
+
+`mda deploy` forwards the value as a hosted deployment secret. A project that declares backend identity without this value fails deploy preflight before any build work, because the deployment would reject every request with 401. For how `.env` values reach a deployment, see [Deploy](/langsmith/python/managed-deep-agents-deploy#secrets-and-environment-files).
+
+  </Step>
+  <Step title="Send both headers from your backend" id="send-both-headers">
+
+Authenticate the user in your own API, then send the secret and the resolved user ID on every deployment request:
+
+```python
+import httpx
+
+response = httpx.post(
+    f"{deployment_url}/threads/{thread_id}/runs",
+    headers={
+        "x-mda-ingress-secret": mda_ingress_secret,
+        "x-mda-user-id": user_id,
+        "Content-Type": "application/json",
+    },
+    json=run_body,
+)
+```
+
+
+
+
+Use the same identifier for `x-mda-user-id` that your own system uses for that user, and keep it stable across sessions. Threads and stored credentials are keyed on this value, so a user who arrives under a new identifier reaches a different set of threads.
+
+  </Step>
+</Steps>
+
+<Warning>
+`MDA_INGRESS_SECRET` is a server-side secret. Managed Deep Agents accepts whatever `x-mda-user-id` accompanies a valid secret, so any holder of the secret can act as any user. Keep it on your backend, never in browser code, a mobile app, or a client bundle.
+</Warning>
+
 ## Test and deploy
 
 Test the project locally with [`mda dev`](/langsmith/python/managed-deep-agents-cli#develop-locally), then deploy it with [`mda deploy`](/langsmith/python/managed-deep-agents-deploy). Open deployment traces in LangSmith to inspect model calls, tool calls, errors, and latency.
 
-Authentication failures return 401. For the LangSmith API-key default, confirm that clients send `x-api-key`. For Supabase, confirm that clients send `Authorization: Bearer <access_token>`, that `project_ref` / `projectRef` matches your Supabase project, and that callers cannot access another user's threads (403).
+Authentication failures return 401. For the LangSmith API-key default, confirm that clients send `x-api-key`. For Supabase, confirm that clients send `Authorization: Bearer <access_token>`, that `project_ref` / `projectRef` matches your Supabase project, and that callers cannot access another user's threads (403). For backend identity, confirm that your API sends both `x-mda-ingress-secret` and `x-mda-user-id`, that the secret matches `MDA_INGRESS_SECRET` on the deployment, and that one user's identifier cannot reach another user's threads (403).
 
 ---
 
