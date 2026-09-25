@@ -1095,6 +1095,38 @@ const graph = new StateGraph(State);
 | Zod v4 + registry | ✅ Via registry | ✅ Full | v4 only | Legacy |
 :::
 
+### Bypass reducers with Overwrite
+
+Some updates need to replace a merging field's value entirely rather
+than be combined into it — for example, clearing an error buffer
+between retry attempts (see [Resetting a reducer
+field](/oss/langgraph/graph-api#resetting-a-reducer-field)).
+Wrap the value in `Overwrite` to bypass the reducer for that update
+and write the value directly:
+
+```typescript theme={"theme":{"light":"catppuccin-latte","dark":"catppuccin-mocha"}}
+import { GraphNode, Overwrite, ReducedValue, StateSchema } from "@langchain/langgraph";
+import { z } from "zod/v4";
+
+const State = new StateSchema({
+  errors: new ReducedValue(
+    z.array(z.string()).default(() => []),
+    { reducer: (state: string[], update: string[]) => state.concat(update) },
+  ),
+});
+
+const clearErrors: GraphNode<typeof State> = (state) => {
+  return { errors: new Overwrite([]) };
+};
+
+// node A returns { errors: ["bad sql"] }
+// node B returns { errors: new Overwrite([]) }
+// state.errors is now []; Overwrite bypassed the merging reducer
+```
+
+If multiple nodes overwrite the same field in the same super-step, an
+`InvalidUpdateError` is raised.
+
 ## Add runtime configuration
 
 Sometimes you want to be able to configure your graph when calling it. For example, you might want to be able to specify what LLM or system prompt to use at runtime, _without polluting the graph state with these parameters_.
