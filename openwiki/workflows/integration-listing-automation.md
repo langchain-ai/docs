@@ -1,11 +1,11 @@
 ---
 type: maintainer-gated automation workflow
 title: Integration Listing Automation
-description: Maintainer-approved issue intake and scheduled refresh for hosted and third-party integration listings. Covers metadata ownership, generated discovery outputs, URL safety, and CI and maintainer handoffs.
+description: Maintainer-approved intake and scheduled refresh for hosted and third-party integration discovery listings. Explains metadata ownership, generated tables and provider indexes, URL safety, and CI boundaries.
 tags: [integrations, github-actions, automation, documentation, security]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-24T08:22:38.580Z
+    at: 2026-09-25T08:22:07.006Z
 sources:
   - id: openwiki-source-9361c44d74c0e18006d0d76f
     resource: repo://.agents/skills/README.md
@@ -35,11 +35,13 @@ sources:
     resource: repo://scripts/refresh_integration_downloads.py
   - id: openwiki-source-1f06ff54a6b42441ba3f34c3
     resource: repo://src/oss/contributing/publish-langchain.mdx
+  - id: openwiki-source-7bfe816fdba0201671040464
+    resource: repo://src/oss/python/integrations/providers/all_providers.mdx
   - id: openwiki-source-1d433bbfc6ab68d7ffc5522c
     resource: repo://tests/unit_tests/test_parse_integration_submission_issue.py
   - id: openwiki-source-7be0fdefc402d868b9f2fdca
     resource: repo://tests/unit_tests/test_refresh_integration_downloads.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-24T08:22:38.580Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-25T08:22:07.006Z" }
 ---
 
 ## Purpose and ownership
@@ -95,6 +97,12 @@ Hosted guides require either at least 50,000 monthly downloads on PyPI or npm, o
 The agent treats a registry package that cannot be found, or a language/package/component combination that cannot be mapped, as a hard blocker. It should leave ordinary uncertainty for PR review. A new external listing normally also needs applicable authored provider-card and package records; generated component snippets and the provider overview remain generator-owned outputs.
 
 `packages.yml` is the source of truth for LangChain package and repository records used by the package index and partner-package table. Its maintainer-only `highlight` override bypasses the normal table download filter and places highlighted records before other records. `scripts/packages_yml_get_downloads.py` rejects duplicate names, avoids refetching records updated in the preceding 24 hours, records an absent Pepy badge as zero downloads, and writes a new timestamp for fetched package records.
+
+### Provider index boundary
+
+`src/oss/python/integrations/providers/all_providers.mdx` is an authored card index, not an output of the package-table generator. It is nevertheless an input to `partner_pkg_table.py`: for a package with no explicit or existing hosted provider page, the generator can match a card title or slug and reuse its href, including an external partner link. Only if that lookup fails does it fall back to the package repository and then PyPI. This makes a provider-card URL a shared discovery decision: keep the card title and href accurate when adding a matching `packages.yml` record.
+
+The generator excludes its fixed non-provider package set, includes records at 100,000 downloads or records marked `highlight`, orders highlighted records before the rest by downloads, and truncates the overview table to 50 rows. It also rejects the unsupported combination `has_reference_docs: true` with `integration: false`. The resulting `overview.mdx` carries a generated-file marker; change package metadata, provider-card linkage, or generator logic, then regenerate it rather than editing the overview.
 
 ## External rows, rendering, and URL invariant
 
