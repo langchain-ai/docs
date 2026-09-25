@@ -1,0 +1,124 @@
+---
+title: Log traces to an agent
+sidebarTitle: Log traces to an agent
+description: How agent addressing sends traces to an agent and an environment, which variables carry it, and why it cannot be combined with project addressing.
+tag: "Beta"
+---
+
+_Agent addressing_ names the [agent](/langsmith/agents) and the [environment](/langsmith/agent-environments) a trace belongs to. Your application sends both with every run, and LangSmith records them when the trace arrives. A trace uses either agent addressing or [project addressing](/langsmith/log-traces-to-project), never both.
+
+<Note>
+Agent addressing applies to agent-based workspaces, which are in private [beta](/langsmith/release-stages). The Python SDK supports it from `langsmith>=0.14.0`, as an experimental feature, so [`agent_id` and `agent_environment`](#addressing-arguments) can change or be removed in a future release. There is no TypeScript equivalent. For tracing setup that does not depend on the beta, see [Log traces to a specific project](/langsmith/log-traces-to-project).
+</Note>
+
+## Addressing variables
+
+Two environment variables carry agent addressing:
+
+- **`LANGSMITH_AGENT_ID`**: The agent to address. The value is the agent's identifier, which the browser address bar carries and the **ID** field on the agent's Overview copies. It is sent with every run.
+- **`LANGSMITH_AGENT_ENVIRONMENT`**: The environment the run belongs to. Required alongside the agent, and one of `local`, `development`, `staging`, or `production`. Use the lowercase form, which maps to the Local, Development, Staging, and Production labels in the UI. There is no default, because neither the agent nor the environment names a destination alone. If you send an agent without an environment, LangSmith rejects the run instead of picking an environment for you.
+
+`LANGSMITH_AGENT_ID` takes the identifier, not the display name. A [display name is a separate, editable value](/langsmith/agents#identifiers-and-display-names) that does not have to match the identifier, so read the identifier from the agent rather than deriving it from what the agent is called.
+
+## Addressing arguments
+
+Supply the agent and the environment as arguments or as [environment variables](#addressing-variables). @[`@traceable`] and @[`tracing_context`][tracing_context] each accept `agent_id` and `agent_environment`. The agent and the environment resolve independently: an argument takes precedence, and the matching variable fills in only when the argument is omitted. Either one can therefore come from code while the other comes from its variable.
+
+## Examples
+
+Address one function with the decorator:
+
+```python
+from langsmith import traceable
+
+@traceable(agent_id="checkout", agent_environment="production")
+def handle_order(order_id: str) -> dict:
+    return {"order_id": order_id, "status": "charged"}
+```
+
+Address everything traced inside a block with the context manager:
+
+```python
+from langsmith import traceable, tracing_context
+
+@traceable
+def handle_order(order_id: str) -> dict:
+    return {"order_id": order_id, "status": "charged"}
+
+with tracing_context(agent_id="checkout", agent_environment="production"):
+    handle_order("A-1")
+```
+
+## Send your first agent-addressed trace
+
+<Steps>
+  <Step title="Confirm your workspace is enabled">
+    If your workspace is agent-based, agent addressing is enabled. LangChain enables it per workspace, and there is no setting in the product.
+
+    To tell which kind of workspace you have, look at the control at the top left. In an agent-based workspace it names your workspace. In a project-based workspace it reads **LangSmith**, and agent addressing is off. To ask about access, [contact our sales team](https://www.langchain.com/contact-sales).
+
+    If your workspace is not enabled, agent-addressed runs are rejected and nothing is recorded.
+  </Step>
+  <Step title="Install the SDK">
+    Agent addressing needs `langsmith>=0.14.0`:
+
+    <CodeGroup>
+
+    ```bash uv
+    uv add "langsmith>=0.14.0"
+    ```
+
+    ```bash pip
+    pip install -U "langsmith>=0.14.0"
+    ```
+
+    </CodeGroup>
+  </Step>
+  <Step title="Choose an identifier">
+    Copy the identifier from the **ID** field on an existing agent's Overview, or pick a new one. If no agent in the workspace uses the identifier you pick, LangSmith creates that agent the first time you send a trace to it. You do not have to create the agent in advance. See [Addressing an agent that does not exist](#addressing-an-agent-that-does-not-exist) for the rules an identifier must follow.
+  </Step>
+  <Step title="Configure the addressing">
+    Set both addressing [variables](#addressing-variables), pass both [arguments](#addressing-arguments), or mix the two. Both values are required, and a run that carries only one is rejected.
+
+    ```bash
+    export LANGSMITH_TRACING=true
+    export LANGSMITH_API_KEY=<your-api-key>
+    export LANGSMITH_AGENT_ID=checkout
+    export LANGSMITH_AGENT_ENVIRONMENT=production
+    ```
+
+    The first two are the usual tracing prerequisites rather than part of agent addressing. Use an [API key](/langsmith/create-account-api-key) from the workspace you confirmed in step 1.
+  </Step>
+  <Step title="Run your application">
+    Run your application so it sends at least one trace. Producing traces needs `@traceable` or `tracing_context` in your code, as in [Examples](#examples).
+  </Step>
+  <Step title="Find the trace">
+    In LangSmith, select the agent in the top bar, go to **Tracing**, and set the environment control to the one you addressed. The run appears there.
+  </Step>
+</Steps>
+
+## Addressing modes are mutually exclusive
+
+Combining agent addressing and project addressing in one place is an error rather than a fallback rule:
+
+- **An agent and a project together** are rejected. Setting `LANGSMITH_AGENT_ID` alongside `LANGSMITH_PROJECT`, `LANGCHAIN_PROJECT`, or `LANGCHAIN_SESSION` names two destinations for the same trace, and LangSmith rejects the run instead of preferring one. Giving `@traceable` or `tracing_context()` an `agent_id` and a `project_name` in one call raises `LangSmithUserError` before the run is sent.
+- **A project named in code** overrides the agent variables. Passing `project_name` to `@traceable` or `tracing_context()` traces the run to that project and discards `LANGSMITH_AGENT_ID`, without an error. This is what lets an [evaluation](/langsmith/evaluation) set its own project while the agent variables stay set for the rest of the process.
+
+## Addressing an agent that does not exist
+
+If an identifier does not match an agent in the workspace, LangSmith creates that agent.
+
+For the rules the value must follow, see [Identifier rules](/langsmith/create-an-agent#identifier-rules).
+
+An agent created this way shows no Deployments section on its [Overview](/langsmith/navigate-agents#read-the-agent-overview).
+
+## When runs stop being accepted
+
+A workspace that accepted agent-addressed runs can stop accepting them. First check that your API key still belongs to the agent-based workspace, because agent-addressed runs sent with a key from a project-based workspace are rejected. If the key is not the problem, contact support via [support.langchain.com](https://support.langchain.com).
+
+## See also
+
+- [Agents](/langsmith/agents)
+- [Agent environments](/langsmith/agent-environments)
+- [Log traces to a specific project](/langsmith/log-traces-to-project)
+- [Observability concepts](/langsmith/observability-concepts)
