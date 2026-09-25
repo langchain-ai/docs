@@ -4,7 +4,7 @@ okf_version: "0.2"
 
 # Files
 
-- [Quickstart](quickstart.md) - Set up a local documentation preview, choose the authored owner for a change, respect generated-content boundaries, and run the smallest relevant validation.
+- [Quickstart](quickstart.md) - Set up a local documentation preview, route a change to its authored owner or generator input, and run the smallest relevant validation for current routes and discovery surfaces.
 
 # Directories
 
