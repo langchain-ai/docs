@@ -5,7 +5,7 @@ description: Mintlify renders and deploys the generated documentation tree using
 tags: [mintlify, documentation, navigation, redirects, deployment]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-25T08:22:07.006Z
+    at: 2026-09-26T08:20:04.541Z
 sources:
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml

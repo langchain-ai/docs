@@ -3,9 +3,6 @@ type: documentation route model
 title: Versioned Documentation and Routes
 description: Explains how the documentation builder emits Python, JavaScript, and language-agnostic routes, with special coverage for the Managed Deep Agents route family, navigation, bare-link rewriting, and legacy redirects.
 tags: [documentation-pipeline, routes, language-versioning, redirects]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-25T08:22:07.006Z
 sources:
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
@@ -23,12 +20,15 @@ sources:
     resource: repo://src/language-toggle.js
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-25T08:22:07.006Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-26T08:20:04.541Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-26T08:20:04.541Z
 ---
 
 # Versioned Documentation and Routes
 
-`DocumentationBuilder` derives public documentation routes from source paths under `src/`. It emits language variants where a page is shared by Python and JavaScript readers, and retains a single route where a product is intentionally language-agnostic. `src/docs.json` is a separate navigation and redirect contract: its page entries must name generated routes, but a navigation label does not determine a source file's ownership.
+`DocumentationBuilder` derives public documentation routes from source paths under `src/`. It emits language variants where a page is shared by Python and JavaScript readers, and retains a single route where a product is intentionally language-agnostic. `src/docs.json` is a separate navigation and redirect contract: its extensionless page entries name generated routes, but a navigation label does not determine a source file's ownership.
 
 ## Choose the source family
 
@@ -101,7 +101,7 @@ OpenWiki appears in both the Python and TypeScript Build dropdowns using the sam
 
 Managed Deep Agents is the LangSmith exception. A direct file immediately under `src/langsmith/` whose basename starts with `managed-deep-agents` and whose extension is `.md` or `.mdx` is classified as language-variant content. It does not produce an unversioned page; its Python and JavaScript artifacts each receive their own conditional content, language-scoped snippet imports, OSS links, and Managed Deep Agents links.
 
-The source pages deliberately use bare internal Managed Deep Agents URLs such as `/langsmith/managed-deep-agents-channels-slack` in Markdown links and quoted `href` attributes. For **every language-targeted Markdown artifact**, the final rewrite changes a bare `/langsmith/managed-deep-agents...` URL to `/langsmith/python/managed-deep-agents...` or `/langsmith/javascript/managed-deep-agents...`. Already-prefixed URLs do not match this rewrite. This makes a single source page's cross-links and cards stay within its emitted language family; it also means an ordinary LangSmith page, built with the Python target, resolves a bare Managed Deep Agents link to Python.
+The source pages deliberately use bare internal Managed Deep Agents URLs such as `/langsmith/managed-deep-agents-identity` in Markdown links and quoted `href` attributes. For **every language-targeted Markdown artifact**, the final rewrite changes a bare `/langsmith/managed-deep-agents...` URL to `/langsmith/python/managed-deep-agents...` or `/langsmith/javascript/managed-deep-agents...`. Already-prefixed URLs do not match this rewrite. This makes a single source page's cross-links and cards stay within its emitted language family; it also means an ordinary LangSmith page, built with the Python target, resolves a bare Managed Deep Agents link to Python.
 
 The full-build discovery pass selects only `managed-deep-agents*.mdx`. Although an individual `.md` file matches the classifier and can be built directly, it is absent from the bulk pass. Use `.mdx` for Managed Deep Agents pages.
 
@@ -109,7 +109,7 @@ The full-build discovery pass selects only `managed-deep-agents*.mdx`. Although 
 
 `docs.json` exposes separate **Managed Deep Agents** tabs in the Python and TypeScript Build dropdowns. Both list the expanded family under matching language prefixes: Get started; Agent capabilities, including the nested Channels pages; and Build and deploy. Add a new page to both tabs with the same suffix as its emitted artifact, or navigation will diverge from the route family.
 
-No generated page occupies an unversioned `/langsmith/managed-deep-agents...` route. `docs.json` redirects unversioned current paths—including overview, quickstart, channels, deploy, and many other capability and build pages—to the Python variant, and also redirects historical names such as `managed-deep-agents-invoke`, `-sdk`, and older connector paths to their current Python destination. These redirects preserve existing inbound URLs while choosing Python as the legacy default; they are not replacements for the JavaScript navigation or emitted JavaScript routes.
+No generated page occupies an unversioned `/langsmith/managed-deep-agents...` route. `docs.json` redirects unversioned current paths—including overview, quickstart, channels, deploy, identity, and other capability and build pages—to the Python variant, and also redirects historical names such as `managed-deep-agents-invoke`, `-sdk`, and older connector paths to their current Python destination. These redirects preserve existing inbound URLs while choosing Python as the legacy default; they are not replacements for the JavaScript navigation or emitted JavaScript routes.
 
 When adding or moving a Managed Deep Agents page:
 

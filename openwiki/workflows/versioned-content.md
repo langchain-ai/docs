@@ -36,8 +36,8 @@ sources:
     resource: repo://tests/unit_tests/test_check_version_claims.py
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-25T08:22:07.006Z
-generated: { by: "openwiki/0.4.3", at: "2026-09-25T08:22:07.006Z" }
+    at: 2026-09-26T08:20:04.541Z
+generated: { by: "openwiki/0.4.3", at: "2026-09-26T08:20:04.541Z" }
 ---
 
 # Changing versioned content
@@ -224,10 +224,10 @@ Run a clean build after changing shared content, route rules, snippets, links, `
 
 ```bash
 make build
-make broken-links
+make broken-links-with-anchors
 ```
 
-The full build clears `build/`, renders OSS Python and JavaScript variants, renders the unversioned OSS products and LangSmith content, produces Managed Deep Agents variants, copies shared inputs and npm snippet components, then generates LLM index artifacts. Generated output is verification material, not an editing surface. `make broken-links` builds first, asks Mint to validate redirects, and filters known deploy-time OpenAPI and standalone-snippet reports.
+The full build clears `build/`, renders OSS Python and JavaScript variants, renders the unversioned OSS products and LangSmith content, produces Managed Deep Agents variants, copies shared inputs and npm snippet components, then generates LLM index artifacts. Generated output is verification material, not an editing surface. `make broken-links-with-anchors` rebuilds first, asks Mint to validate links, anchors, and redirect destinations, then filters known deployment-time OpenAPI and standalone-snippet reports. Use `make broken-links` only when anchor validation is not relevant.
 
 Inspect the relevant output contract:
 
@@ -251,7 +251,7 @@ When changing builder behavior, add a focused regression in `tests/unit_tests/te
 - [ ] Test and regenerate runnable samples from `src/code-samples/`; do not hand-edit generated snippet MDX.
 - [ ] Confirm every package floor semantically, then run `check_version_claims.py` for changed MDX specifiers.
 - [ ] Update `src/docs.json` navigation and redirects separately from authored source placement.
-- [ ] Run `make build` and `make broken-links`, then inspect all relevant generated routes without editing `build/`.
+- [ ] Run `make build` and `make broken-links-with-anchors`, then inspect all relevant generated routes without editing `build/`.
 
 ## See also
 
