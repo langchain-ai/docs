@@ -120,6 +120,45 @@ def test_typescript_samples_use_camel_case_google_search() -> None:
     )
 
 
+def test_typescript_samples_use_the_typescript_google_provider_key() -> None:
+    """TypeScript samples must not carry Python's `google_genai` provider key.
+
+    `initChatModel` resolves provider keys per language. `google_genai` is
+    registered by Python's `init_chat_model` only, so in TypeScript it fails
+    with "Unable to infer model provider" before any request is sent. The
+    TypeScript key is `google`, which routes to @langchain/google.
+    """
+    offenders = [
+        path.relative_to(CODE_SAMPLES).as_posix()
+        for path in sorted(CODE_SAMPLES.rglob("*.ts"))
+        if "node_modules" not in path.parts and "google_genai:" in path.read_text()
+    ]
+    assert offenders == [], (
+        "TypeScript samples must use the 'google:' provider key; "
+        "'google_genai:' is Python-only and raises 'Unable to infer model "
+        f"provider' before any request is sent. Offending files: {offenders}"
+    )
+
+
+def test_python_samples_keep_the_python_google_provider_key() -> None:
+    """The inverse guard: Python must not be migrated to the TypeScript key.
+
+    `init_chat_model` registers `google_genai` and has no `google` key, so
+    `init_chat_model("google:...")` raises in Python. This keeps the two
+    languages from being "fixed" in the same direction.
+    """
+    offenders = [
+        path.relative_to(CODE_SAMPLES).as_posix()
+        for path in sorted(CODE_SAMPLES.rglob("*.py"))
+        if "node_modules" not in path.parts
+        and re.search(r"(?<![_a-z])google:", path.read_text())
+    ]
+    assert offenders == [], (
+        "Python samples must keep 'google_genai:'; 'google:' is TypeScript-only "
+        f"and raises in init_chat_model. Offending files: {offenders}"
+    )
+
+
 def test_typescript_samples_pin_a_google_version_that_sends_tool_config() -> None:
     """Built-in tools mixed with function tools need @langchain/google 0.2.6+.
 

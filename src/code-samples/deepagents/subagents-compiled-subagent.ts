@@ -14,7 +14,7 @@ const internetSearch = tool(
 );
 
 const researchInstructions = "You are a research coordinator.";
-const yourModel = "google_genai:gemini-3.6-flash";
+const yourModel = "google:gemini-3.6-flash";
 const specializedTools: never[] = [];
 
 // Create a custom agent graph
@@ -34,7 +34,7 @@ const customSubagent: CompiledSubAgent = {
 const subagents = [customSubagent];
 
 const agent = createDeepAgent({
-  model: "google_genai:gemini-3.6-flash",
+  model: "google:gemini-3.6-flash",
   tools: [internetSearch],
   systemPrompt: researchInstructions,
   subagents: subagents,
