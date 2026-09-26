@@ -42,6 +42,13 @@ def test_embeddings_model_is_not_expanded_typescript() -> None:
     embeddings_call = 'new OpenAIEmbeddings({ model: "text-embedding-3-small" })'
     assert expanded.count(embeddings_call) == TAB_COUNT
     assert 'createAgent({ model: "openai:gpt-5.5"' in expanded
+    # The Google tab routes to @langchain/google, whose provider key is "google".
+    # Python has no equivalent key and stays on "google_genai" (see the
+    # python test above), so the two tables intentionally differ.
+    assert 'createAgent({ model: "google:gemini-3.6-flash"' in expanded
+    # @langchain/google-genai is long-term support only. Its key must not leak
+    # back into TypeScript output.
+    assert "google-genai:" not in expanded
 
 
 def test_provider_specific_chat_class_is_not_expanded() -> None:
