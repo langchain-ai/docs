@@ -489,6 +489,54 @@ All endpoints require the following headers:
 
 For the full API specification, see the [Agent Server API reference](/langsmith/server-api-ref).
 
+### Forward caller headers to MCP servers
+
+<Note>
+  Available on **self-hosted** LangSmith only, and disabled by default. An administrator must first enable it—see [Forward caller headers to MCP servers](/langsmith/deploy-self-hosted-full-platform#optional-forward-caller-headers-to-mcp-servers).
+</Note>
+
+The endpoints above call your agent's **deployment API** directly. If you need to pass caller identity or context through to your agent's **custom MCP servers** on every tool call (for example, the invoking user's ID, the agent ID, or a downstream token), route the run through the **Fleet API** instead. Header forwarding is only applied on the Fleet API surface. The LangGraph SDK examples above target the deployment API, so call the Fleet API directly (for example, with cURL) to forward headers.
+
+<Note>
+  The Fleet API is a **different base URL** from the deployment API used above. It is served by your LangSmith host under `/api/v1/fleet`, not by the agent's `*.us.langgraph.app` deployment URL. Calling the deployment URL directly bypasses header forwarding entirely.
+</Note>
+
+Send the run to the Fleet API with any headers you want forwarded, each prefixed with `X-Fleet-Forward-`:
+
+```bash theme={"theme":{"light":"catppuccin-latte","dark":"catppuccin-mocha"}}
+curl --request POST \
+    --url "https://<your-langsmith-host>/api/v1/fleet/threads/runs" \
+    --header 'Content-Type: application/json' \
+    --header 'X-Api-Key: your-personal-access-token' \
+    --header 'X-Auth-Scheme: langsmith-api-key' \
+    --header 'X-Fleet-Forward-User-Id: user@example.com' \
+    --header 'X-Fleet-Forward-Agent-Id: your-agent-id' \
+    --header 'X-Fleet-Forward-Authorization: Bearer <downstream-token>' \
+    --data '{
+        "agent_id": "your-agent-id",
+        "input": {
+            "messages": [
+                { "role": "user", "content": "What can you help me with?" }
+            ]
+        }
+    }'
+```
+
+Your custom MCP server receives the headers **with the prefix preserved**—read `X-Fleet-Forward-User-Id`, not `X-User-Id`.
+
+The table below summarizes the Fleet run endpoints. Replace `<FLEET_API_URL>` with `https://<your-langsmith-host>/api/v1/fleet`.
+
+| Operation | Method | Endpoint |
+|---|---|---|
+| Create a thread and run it | `POST` | `<FLEET_API_URL>/threads/runs` |
+| Run on an existing thread | `POST` | `<FLEET_API_URL>/threads/<THREAD_ID>/runs` |
+| Run on thread (wait for result) | `POST` | `<FLEET_API_URL>/threads/<THREAD_ID>/runs/wait` |
+| Run on thread (streaming) | `POST` | `<FLEET_API_URL>/threads/<THREAD_ID>/runs/stream` |
+| Get a run | `GET` | `<FLEET_API_URL>/threads/<THREAD_ID>/runs/<RUN_ID>` |
+| Cancel a run | `POST` | `<FLEET_API_URL>/threads/<THREAD_ID>/runs/<RUN_ID>/cancel` |
+
+**Constraints.** Forwarding applies to **custom MCP servers only** (never the built-in tool server). Requests that violate these limits return `400`: at most 10 forwarded headers; the name suffix after `X-Fleet-Forward-` must be 1–40 characters matching `[A-Za-z0-9-]`; the value must be single-valued, printable ASCII, and ≤1024 bytes.
+
 
 ## Export to code
 
