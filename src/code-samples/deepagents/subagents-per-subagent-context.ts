@@ -46,7 +46,7 @@ if (!verifyResult.includes("strict verified")) {
 }
 
 const perSubagentAgent = createDeepAgent({
-  model: "google_genai:gemini-3.6-flash",
+  model: "google:gemini-3.6-flash",
   subagents: [
     {
       name: "fact-checker",
