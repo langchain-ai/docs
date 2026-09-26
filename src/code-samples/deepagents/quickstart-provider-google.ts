@@ -12,7 +12,7 @@ if (!process.env.GOOGLE_API_KEY) {
 import { createDeepAgent } from "deepagents";
 
 // Google's built-in search — no extra install or API key needed
-const internetSearch = { google_search: {} };
+const internetSearch = { googleSearch: {} };
 // :snippet-end:
 
 // :remove-start:
