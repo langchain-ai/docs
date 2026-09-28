@@ -347,6 +347,6 @@ To support additional languages, add config entries in that script.
 - Run `make lint` once the code sample is written; fix any issues (or run `make format` to auto-fix).
 - Do not add code samples to linting ignore rules when making lint-related changes—fix the code instead.
 - `src/code-samples-generated/` is gitignored; regenerate with `make code-snippets`, narrowing to specific files with `CODE_SNIPPET_SOURCES` while iterating.
-- Reference `CLAUDE.md` and `AGENTS.md` for docs style and rules.
+- Reference `AGENTS.md` for docs style and rules.
 - Use `:::python` and `:::js` fences for language-specific content; the build produces separate Python and JavaScript doc versions.
 - For python tests, try to correct the type rather than adding `# type: ignore[arg-type]`

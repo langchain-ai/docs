@@ -1,6 +1,6 @@
 ---
 name: docs-edit
-description: Edit a docs page that already has an open pull request, or revise a page in place. Covers checking out the PR's own branch instead of cutting a new one, forked cross-repository PRs, reading the real diff, and the verification to run before handing off. Use when asked to edit, revise, fix, or review changes on a named PR, branch, or existing page.
+description: Edit a docs page that already has an open pull request, or revise a page in place. Covers checking out the PR's own branch instead of cutting a new one, forked cross-repository PRs, reading the real diff, checking the edit against related pages, and the verification to run before handing off. Use when asked to edit, revise, fix, or review changes on a named PR, branch, or existing page.
 ---
 
 # Edit an existing docs page or PR
@@ -92,6 +92,41 @@ State plainly what you could not verify. "I could not confirm the Baseten row;
 no gateway references in either candidate repository" is a useful review note.
 Silently keeping an unverified claim is not.
 
+### Read the pages around the one you are editing
+
+A page is one of several that cover the same feature. Others reach it from
+another angle: a CLI reference, a permissions table, a list of Chat surfaces, a
+setup guide, the pages that link to it. An edit made to one page in isolation
+leaves the set contradicting itself.
+
+Before editing, find the related pages:
+
+```bash
+grep -rliE "<feature name>|<page-slug>" src --include='*.mdx'
+grep -n "<page-slug>" src/docs.json
+```
+
+Read each one, then check for:
+
+- **Contradictions.** The edited page and a related one give different setup
+  steps, defaults, or requirements. For example, a feature page that sets
+  `LANGSMITH_API_KEY` while the CLI page recommends `langsmith auth login`.
+  Settle it against source, then fix whichever page is wrong.
+- **Duplication.** A procedure the edited page restates from the page that owns
+  it. Link to the owner instead. When choosing the owner is the real question,
+  use `docs-restructure`.
+- **Missing entry points.** A page that lists every surface, command group, or
+  permission area of a product should mention the feature and link to it.
+- **Navigation placement.** A page filed in a group that does not match its
+  subject. Report it; do not move the page unless asked.
+
+A related page tells you what to check, not what is true. When two pages
+disagree, the source decides, as described in the section above.
+
+Keep edits to related pages small: a cross-link, a corrected fact, or a short
+entry that points at the owner page. Anything larger is a restructure, so ask
+first.
+
 ### Never hand-edit generated files
 
 These are written by a generator. Editing them looks like it works, then a
@@ -134,6 +169,7 @@ skill.
 
 ## Step 5. Report
 
-Say which branch the edits are on and whether it is the PR's own branch. If
+Say which branch the edits are on and whether it is the PR's own branch. Name
+the related pages you changed, and the ones you read and left alone. If
 anything could not be verified, list it. Do not push or force-push unless the
 user asks.

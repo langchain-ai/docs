@@ -161,6 +161,14 @@ These are the rules that need reading:
   hides who treats it. Skip when the actor is genuinely irrelevant or unknown.
 - **Filler and hedging**: "Note that", "Specifically", "simply", "easily",
   "just", "very", "basically", "obviously". Cut the word, keep the sentence.
+- **A pronoun, "this", or "the above" whose antecedent the diff removed.**
+  Compression is the usual cause: the noun the sentence refers back to sat in a
+  clause the edit cut. Name the thing again.
+- **A condition, default, or requirement the diff shortened away.** Compare the
+  hunk against its base rather than reading the new text alone. A sentence that
+  got shorter by dropping when the behavior applies, or what value it applies
+  to, is a regression, and it lints clean. Quote "Be concise: cut filler words
+  and wordy phrases" and name the fact the cut removed.
 - **Product versus common noun capitalization.** A capitalized feature name that
   appears nowhere else in the file, or that disagrees with the UI label used
   elsewhere on the same page, is the tell. Grep the file for the term's other
