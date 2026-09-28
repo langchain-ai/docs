@@ -5,17 +5,16 @@ INTERESTING_NODES = {"model", "tools"}
 last_source = ""
 mid_line = False  # True when we've written tokens without a trailing newline
 
-for chunk in agent.stream(
+for namespace, mode, data in agent.stream(
     {"messages": [{"role": "user", "content": "Analyze the impact of remote work on team productivity"}]},
     stream_mode=["updates", "messages", "custom"],
     subgraphs=True,
-    version="v2",
 ):
-    is_subagent = any(s.startswith("tools:") for s in chunk["ns"])
+    is_subagent = any(s.startswith("tools:") for s in namespace)
     source = "subagent" if is_subagent else "main"
 
-    if chunk["type"] == "updates":
-        for node_name in chunk["data"]:
+    if mode == "updates":
+        for node_name in data:
             if node_name not in INTERESTING_NODES:
                 continue
             if mid_line:
@@ -23,8 +22,8 @@ for chunk in agent.stream(
                 mid_line = False
             print(f"[{source}] step: {node_name}")
 
-    elif chunk["type"] == "messages":
-        token, metadata = chunk["data"]
+    elif mode == "messages":
+        token, metadata = data
         if token.content:
             # Print a header when the source changes
             if source != last_source:
@@ -36,11 +35,11 @@ for chunk in agent.stream(
             print(token.content, end="", flush=True)
             mid_line = True
 
-    elif chunk["type"] == "custom":
+    elif mode == "custom":
         if mid_line:
             print()
             mid_line = False
-        print(f"[{source}] custom event:", chunk["data"])
+        print(f"[{source}] custom event:", data)
 
 print()
 ```

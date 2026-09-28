@@ -139,10 +139,70 @@ Monitor when subagents start, run, and complete:
 <StreamingLifecycleJs />
 
 
+### Handle human-in-the-loop interrupts
+
+When [`interrupt_on`](/oss/javascript/deepagents/human-in-the-loop) is configured, the `updates` stream may contain `__interrupt__` entries that pause execution for human approval. Detect them by checking for the `__interrupt__` key in update chunks. Resume with the same flat `{"decisions": [...]}` payload you use with `.invoke()`:
+
+
+
+```typescript
+import { v7 as uuid7 } from "uuid";
+
+const config = { configurable: { thread_id: uuid7() } };
+
+for await (const [mode, data] of await agent.stream(
+  { messages: [{ role: "user", content: "Delete temp.txt" }] },
+  { streamMode: ["messages", "updates"], ...config }
+)) {
+  if (mode === "updates" && data?.__interrupt__) {  // [!code highlight]
+    for (const interruptObj of data.__interrupt__) {
+      console.log("Approval needed:", interruptObj.value);
+    }
+  }
+}
+```
+
+
+See [Human-in-the-loop: Handle interrupts with streaming](/oss/javascript/deepagents/human-in-the-loop#handle-interrupts-with-streaming) for the complete stream-resume loop pattern.
+
+## Stream chunk shapes
+
+With `subgraphs=True`, chunk shape depends on whether you pass one stream mode or several:
+
+| `stream_mode` | Chunk shape |
+| ------------- | ----------- |
+| Single mode (for example `"updates"`) | `(namespace, data)` |
+| Multiple modes (for example `["messages", "updates"]`) | `(namespace, mode, data)` |
+
+Without `subgraphs`, a single mode yields `data` directly, and multiple modes yield `(mode, data)`.
+
+```python
+# Single mode + subgraphs
+for namespace, data in agent.stream(
+    {"messages": [{"role": "user", "content": "Research quantum computing"}]},
+    stream_mode="updates",
+    subgraphs=True,
+):
+    print(namespace)  # () for main agent, ("tools:<id>",) for subagent
+    print(data)
+
+# Multiple modes + subgraphs
+for namespace, mode, data in agent.stream(
+    {"messages": [{"role": "user", "content": "Research quantum computing"}]},
+    stream_mode=["updates", "messages", "custom"],
+    subgraphs=True,
+):
+    print(mode)       # "updates", "messages", or "custom"
+    print(namespace)  # () for main agent, ("tools:<id>",) for subagent
+    print(data)
+```
+
+
 
 
 ## Related
 
+- [Human-in-the-loop](/oss/javascript/deepagents/human-in-the-loop)—Configure approval workflows for sensitive tool operations
 - [Subagents](/oss/javascript/deepagents/subagents)—Configure and use subagents with Deep Agents
 - [Frontend streaming](/oss/javascript/deepagents/frontend/overview)—Build React UIs with [`useStream`](https://reference.langchain.com/javascript/langchain-react/index/useStream) for Deep Agents
 - [LangChain Event Streaming](/oss/javascript/langchain/event-streaming)—General streaming concepts with LangChain agents

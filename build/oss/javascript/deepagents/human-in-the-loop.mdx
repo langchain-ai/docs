@@ -148,6 +148,80 @@ console.log(result.messages[result.messages.length - 1].content);
 ```
 
 
+## Handle interrupts with streaming
+
+For real-time UIs, use `.stream()` instead of `.invoke()` to display tokens and tool call progress while handling HITL interrupts. Interrupts appear as `__interrupt__` entries in the `updates` stream. After the stream completes, collect human decisions and resume by streaming again with `Command(resume=...)`.
+
+<Note>
+For a typical `interrupt_on` HITL pause, resume with a flat `{"decisions": [...]}` payload, the same shape as with `.invoke()`. When multiple interrupts are pending at once (for example, parallel branches), map each interrupt ID to its resume value instead. See [Handling multiple interrupts](/oss/javascript/langgraph/interrupts#handling-multiple-interrupts).
+</Note>
+
+
+
+```typescript
+import { v7 as uuid7 } from "uuid";
+import { Command } from "@langchain/langgraph";
+
+const config = { configurable: { thread_id: uuid7() } };
+let streamInput: Record<string, any> | Command = {
+  messages: [{ role: "user", content: "Delete the file temp.txt" }],
+};
+
+while (true) {
+  let pendingInterrupt: { value: any } | undefined;
+
+  for await (const chunk of await agent.stream(  // [!code highlight]
+    streamInput,
+    {
+      streamMode: ["messages", "updates"],  // [!code highlight]
+      ...config,
+    }
+  )) {
+    const [mode, data] = chunk;
+
+    if (mode === "messages") {
+      const [token] = data;
+      // Display tokens in real time
+      if (token.text) {
+        process.stdout.write(token.text);
+      }
+    }
+
+    if (mode === "updates" && data?.__interrupt__) {  // [!code highlight]
+      pendingInterrupt = data.__interrupt__[0];  // [!code highlight]
+    }
+  }
+
+  // If no interrupt occurred, the agent finished
+  if (!pendingInterrupt) break;
+
+  const interruptValue = pendingInterrupt.value;
+  const actionRequests = interruptValue.actionRequests;
+  const reviewConfigs = interruptValue.reviewConfigs;
+  const configMap = Object.fromEntries(
+    reviewConfigs.map((cfg: any) => [cfg.actionName, cfg])
+  );
+
+  for (const action of actionRequests) {
+    const review = configMap[action.name];
+    console.log(`\nTool: ${action.name}`);
+    console.log(`Arguments: ${JSON.stringify(action.args)}`);
+    console.log(`Allowed: ${review.allowedDecisions}`);
+  }
+
+  // Collect one decision per actionRequest, in order
+  const decisions = actionRequests.map(() => ({ type: "approve" }));
+  streamInput = new Command({ resume: { decisions } });  // [!code highlight]
+}
+
+process.stdout.write("\n");
+```
+
+
+<Tip>
+Combine `"messages"` and `"updates"` stream modes to show real-time LLM tokens to the user while still catching HITL interrupts. The `"messages"` mode streams tokens; the `"updates"` mode delivers interrupt payloads.
+</Tip>
+
 ## Multiple tool calls
 
 When the agent calls multiple tools that require approval, all interrupts are batched together in a single interrupt. You must provide decisions for each one in order.
@@ -270,7 +344,9 @@ const agent = createDeepAgent({
 ```
 
 
-When a subagent triggers an interrupt, the handling is the same—check for `interrupts` on the result and resume with `Command`.
+When a subagent triggers an interrupt, the handling is the same—check for `__interrupt__` on the result and resume with `Command`.
+
+When streaming, subagent interrupts also surface as `__interrupt__` entries in the parent `updates` stream. You do not need `subgraphs=True` for interrupt delivery. Enable `subgraphs=True` if you also want to stream subagent tokens and progress events. See [Handle interrupts with streaming](#handle-interrupts-with-streaming) for the full pattern.
 
 ### Interrupts within tool calls
 
