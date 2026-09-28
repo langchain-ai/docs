@@ -3,9 +3,17 @@ title: CopilotKit
 description: Use CopilotKit with LangGraph, Deep Agents, and React with custom endpoints, the Python AG-UI bridge, structured generative UI, and messaging-platform channels
 ---
 
-[CopilotKit](https://www.copilotkit.ai/) provides a full React chat runtime and pairs especially well with LangGraph when you want the agent to return **structured UI payloads** instead of only plain text. In this pattern, your LangGraph deployment serves both the graph API and a custom CopilotKit endpoint, while the frontend parses assistant messages into dynamic React components.
+[CopilotKit](https://www.copilotkit.ai/) provides a full React chat runtime and pairs especially well with LangGraph when you want the agent to return **structured UI payloads** instead of only plain text. The frontend talks to a CopilotKit runtime URL and parses assistant messages into dynamic React components.
 
-On the server, the [copilotkit](https://pypi.org/project/copilotkit/) package provides [`CopilotKitMiddleware`](https://docs.copilotkit.ai) so a LangGraph graph, a LangChain agent, or a [Deep Agent](/oss/deepagents/overview) can speak the [Agent UI (AG-UI)](https://docs.ag-ui.com/) wire protocol, stream tool and message events to a chat UI, and read or write the shared **CopilotKit** slice of state, with helpers to mount a CopilotKit-compatible HTTP endpoint in front of your graph.
+:::js
+In this pattern, your LangGraph deployment serves both the graph API and a custom CopilotKit endpoint on the same process.
+:::
+
+:::python
+In this pattern, your LangGraph deployment serves the graph API and an AG-UI FastAPI bridge. A small Node CopilotKit runtime sits in front of that bridge and is what the React client calls.
+:::
+
+On the server, the [copilotkit](https://pypi.org/project/copilotkit/) package provides [`CopilotKitMiddleware`](https://docs.copilotkit.ai) so a LangGraph graph, a LangChain agent, or a [Deep Agent](/oss/deepagents/overview) can speak the [Agent UI (AG-UI)](https://docs.ag-ui.com/) wire protocol, stream tool and message events to a chat UI, and read or write the shared **CopilotKit** slice of state. TypeScript setups usually mount the CopilotKit runtime next to the graph API. Python setups mount an AG-UI FastAPI bridge on the deployment and run the CopilotKit runtime in Node in front of it.
 
 This approach is useful when you want:
 
@@ -30,12 +38,25 @@ import ChannelsChannel from "/snippets/code-samples/copilotkit-channels-channel-
 
 ## How it works
 
-At a high level, CopilotKit sits between your React app and the LangGraph deployment. The frontend sends conversation state to a custom `/api/copilotkit` route mounted alongside the graph API, that route forwards the request to LangGraph, and the response comes back with both assistant messages and any structured UI payloads your component registry can render.
+At a high level, CopilotKit sits between your React app and the LangGraph deployment.
+
+:::js
+The frontend sends conversation state to a custom `/api/copilotkit` route mounted alongside the graph API. That route forwards the request to LangGraph, and the response comes back with both assistant messages and any structured UI payloads your component registry can render.
 
 1. **Deploy the graph as usual** using LangSmith or using a LangGraph development server.
 2. **Extend the deployment with an HTTP app** that mounts a CopilotKit route next to the graph API.
 3. **Wrap the frontend in `CopilotKit`** and point it at that custom runtime URL.
 4. **Register dynamic UI components** and parse assistant responses into those components at render time.
+:::
+
+:::python
+The frontend sends conversation state to a Node CopilotKit runtime. That runtime calls the AG-UI FastAPI bridge on your LangGraph deployment, and the response comes back with both assistant messages and any structured UI payloads your component registry can render.
+
+1. **Deploy the graph as usual** using LangSmith or using a LangGraph development server.
+2. **Extend the deployment with an HTTP app** that mounts the AG-UI FastAPI bridge next to the graph API.
+3. **Run a Node CopilotKit runtime** that points an `HttpAgent` at that bridge, then wrap the frontend in `CopilotKit` against the runtime URL.
+4. **Register dynamic UI components** and parse assistant responses into those components at render time.
+:::
 
 ```mermaid
 %%{
@@ -54,12 +75,16 @@ graph LR
   RENDER["Hashbrown UI kit"]
 
   USER --> UI
-  UI --> ENDPOINT
-  ENDPOINT --> GRAPH
-  GRAPH --> ENDPOINT
-  ENDPOINT --> UI
+  UI --> RUNTIME
+  RUNTIME --> GRAPH
+  GRAPH --> RUNTIME
+  RUNTIME --> UI
   UI --> RENDER
 ```
+
+:::python
+On Python, the CopilotKit runtime is a separate Node process. The LangGraph deployment hosts the graph API and the AG-UI FastAPI bridge only. See [Add the CopilotKit runtime](#add-the-copilotkit-runtime).
+:::
 
 :::python
 ## What you get on the Python server
@@ -71,11 +96,11 @@ The [copilotkit](https://pypi.org/project/copilotkit/) and related packages brid
 | `CopilotKitMiddleware` | Merges CopilotKit and AG-UI state and requests into your agent, including frontend [tool calls](/oss/langchain/agents#tools) and context. Add it to the `middleware` list for @[create_agent] or @[create_deep_agent]. |
 | `CopilotKitState` (subclass) | [Custom state](/oss/langchain/short-term-memory): extend `CopilotKitState` so the CopilotKit key is part of graph state. |
 | `LangGraphAGUIAgent` | Bundles a compiled graph with a name and description for the runtime. |
-| `add_langgraph_fastapi_endpoint` (from [ag-ui-langgraph](https://pypi.org/project/ag-ui-langgraph/)) | Wires a **FastAPI** app so CopilotKit can run your graph on the same [LangGraph](/oss/langgraph/overview) process. Use it when you add a [custom `http` app in `langgraph.json`](#extend-the-langgraph-deployment-with-a-custom-endpoint) instead of a separate HTTP server. |
+| `add_langgraph_fastapi_endpoint` (from [ag-ui-langgraph](https://pypi.org/project/ag-ui-langgraph/)) | Wires a **FastAPI** AG-UI bridge on the same [LangGraph](/oss/langgraph/overview) process as your graph. Mount it with a [custom `http` app in `langgraph.json`](#extend-the-langgraph-deployment-with-a-custom-endpoint). The React client still needs a separate Node [CopilotKit runtime](#add-the-copilotkit-runtime) that calls this bridge over AG-UI. |
 
 `CopilotKitMiddleware` is the same middleware for @[create_deep_agent] and for a graph from @[create_agent] when you add it to the `middleware` list. For a `create_agent` graph with `CopilotKitState` and a FastAPI bridge, follow the [Python `main.py` example](#extend-the-langgraph-deployment-with-a-custom-endpoint) below. Structured generative UI (for example `useAgentContext` and an `output_schema` from the client) needs extra middleware that maps Copilot state to a [structured output](/oss/langchain/agents#structured-output) strategy, as in the expandable `src/middleware.py` example in the same section.
 
-Mounting `app` on the `http` key in `langgraph.json` follows the usual [LangGraph or LangSmith deployment](/oss/langgraph/deploy) so one process serves the graph and the same FastAPI app to the CopilotKit client.
+Mounting `app` on the `http` key in `langgraph.json` follows the usual [LangGraph or LangSmith deployment](/oss/langgraph/deploy): one process serves the graph API and the AG-UI FastAPI bridge. The CopilotKit React client talks to the Node runtime, which calls that bridge.
 :::
 
 ## Installation
@@ -105,7 +130,7 @@ uv add deepagents copilotkit langchain-openai
 ```
 </CodeGroup>
 
-The CopilotKit runtime that the frontend calls is a Node package, so the Python setup also needs a small Node server. Install `@ag-ui/client` at the version your `@copilotkit/runtime` release depends on, so the `HttpAgent` type matches the runtime's agent type:
+The CopilotKit runtime that the frontend calls is a Node package, so the Python setup also needs a small Node server. The pins below are a known-good pair. If you upgrade `@copilotkit/runtime`, install the `@ag-ui/client` version that release lists as a dependency so the `HttpAgent` type matches:
 
 ```bash
 bun add @copilotkit/runtime@1.73.3 @ag-ui/client@0.0.59
@@ -123,12 +148,11 @@ bun add @copilotkit/react-core @copilotkit/react-ui @hashbrownai/core @hashbrown
 
 Add `CopilotKitMiddleware` to the `middleware` list you pass to @[create_deep_agent]. The middleware lets CopilotKit route frontend tool calls and align chat state with your graph. Keep any other [middleware you configure](/oss/deepagents/customization#middleware) in the same list.
 
-The compiled graph is then ready to plug into a CopilotKit- or AG-UI–aware process (for example, the [FastAPI pattern below](#extend-the-langgraph-deployment-with-a-custom-endpoint)) or a guide such as [Deep Agents and CopilotKit](https://docs.copilotkit.ai/langgraph/deep-agents) in the CopilotKit documentation.
+The compiled graph is then ready to plug into a CopilotKit- or AG-UI–aware process (for example, the [FastAPI pattern below](#extend-the-langgraph-deployment-with-a-custom-endpoint)) or a guide such as [Deep Agents and CopilotKit](https://docs.copilotkit.ai/langgraph/deep-agents) in the CopilotKit documentation. Do not pass a checkpointer on the exported agent if you list it under `graphs` in `langgraph.json`. The [FastAPI example below](#extend-the-langgraph-deployment-with-a-custom-endpoint) attaches a checkpointer only on the AG-UI route copy.
 
 ```python
 from deepagents import create_deep_agent
 from copilotkit import CopilotKitMiddleware
-from langgraph.checkpoint.memory import MemorySaver
 
 
 def get_weather(location: str) -> str:
@@ -141,7 +165,6 @@ agent = create_deep_agent(
     tools=[get_weather],
     middleware=[CopilotKitMiddleware()],  # AG-UI, frontend tools, and context
     system_prompt="You are a helpful research assistant.",
-    checkpointer=MemorySaver(),
 )
 ```
 :::
@@ -244,10 +267,16 @@ add_langgraph_fastapi_endpoint(
 )
 ```
 
-The AG-UI bridge reads the graph's state on every run, so the graph behind the FastAPI route needs a checkpointer. Keep the checkpointer off `agent` itself: `agent` is also listed under `graphs`, and `langgraph dev` refuses to load a listed graph that brings its own checkpointer, because the platform supplies persistence for the graph API. The copy with `MemorySaver` serves only the FastAPI route. Its threads live in process memory, so they do not survive a restart, are not shared across replicas, and do not appear in the deployment's threads API. For production traffic on this route, pass a durable [checkpointer](/oss/langgraph/persistence) instead.
+The AG-UI bridge reads the graph's state on every run, so the graph behind the FastAPI route needs a checkpointer. Keep the checkpointer off `agent` itself: `agent` is also listed under `graphs`, and `langgraph dev` refuses to load a listed graph that brings its own checkpointer, because LangGraph API handles persistence for listed graphs. The copy with `MemorySaver` serves only the FastAPI route. Its threads live in process memory, so they do not survive a restart, are not shared across replicas, and do not appear in the deployment's threads API. For production traffic on this route, pass a durable [checkpointer](/oss/langgraph/persistence) instead.
 :::
 
+:::js
 This custom app is the important extension point: it mounts a CopilotKit-aware runtime without replacing the underlying LangGraph deployment.
+:::
+
+:::python
+This custom app is the important extension point: it mounts the AG-UI FastAPI bridge without replacing the underlying LangGraph deployment. The Node CopilotKit runtime stays separate; see [Add the CopilotKit runtime](#add-the-copilotkit-runtime).
+:::
 
 :::js
 Inside that route, create a `CopilotRuntime` and point it back at the deployed graph using `LangGraphAgent`:
