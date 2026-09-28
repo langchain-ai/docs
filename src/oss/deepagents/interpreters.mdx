@@ -252,9 +252,11 @@ Every tool you expose through PTC is an outside capability that interpreter code
 <Note>
     **How code execution works**
 
-    Interpreter code runs in an embedded QuickJS context, not a separate VM or process. In Python, this runtime is provided by [`quickjs-rs`](https://github.com/langchain-ai/quickjs-rs), which documents the same-process execution boundary in its [Security guide](https://github.com/langchain-ai/quickjs-rs#security).
+    The Python interpreter bundles a [WebAssembly](https://webassembly.org/docs/security/) binary that calls into QuickJS. On each thread, a fresh WASM object is initialized, so interpreter state does not share memory with the host process and corrupted state on one thread cannot affect other threads.
 
-    Treat interpreters as a capability-scoped execution layer, not a host-memory isolation boundary. For untrusted or semi-trusted code, run agents in isolated worker processes or containers and keep the PTC allowlist narrow.
+    The `JS_ReadObject` serialization path is still present; it is not eliminated. Any bad instructions that reach QuickJS are compartmentalized to the initiating thread. Side effects from a compromised interpreter environment are limited to the capabilities explicitly bridged into it, primarily the PTC allowlist, which is why keeping that allowlist narrow matters.
+
+    Treat interpreters as a capability-scoped execution layer with per-thread memory isolation. For workloads where thread-level isolation is not sufficient, run agents in isolated worker processes or containers.
 </Note>
 :::
 
