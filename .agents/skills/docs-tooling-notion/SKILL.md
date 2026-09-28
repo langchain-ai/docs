@@ -47,8 +47,7 @@ variables, and recovery paths.
 Do not write a Notion page for something the repo already documents where people
 find it. Deliberately excluded: `IDE_SETUP.md`, `.github/brand-guidelines.md`,
 `.github/pull_request_template.md`, `.github/CONTRIBUTING.md`, the issue
-templates, and the navigation map, which lives only in `AGENTS.md` and
-`CLAUDE.md` because the Notion copy went stale once already.
+templates, and the navigation map, which lives only in `AGENTS.md` because the Notion copy went stale once already.
 
 Skills are the same: a skill is its own authoritative reference. Name it on the
 Notion page, say what it covers and the one or two facts a reader needs in order

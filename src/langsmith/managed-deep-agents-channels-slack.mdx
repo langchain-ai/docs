@@ -252,8 +252,37 @@ If Slack is already authorized, deployment completes without an authorization pr
 
 After you change the agent's name, description, icon, or background color in the Slack channel declaration, redeploy the agent to apply the changes in Slack.
 
+## Exchange files with Slack
+
+A Slack channel moves files in both directions. Uploads land in the agent's sandbox under `/workspace/attachments/`, and the agent sends a file back by calling `attach_file` with a path under `/workspace`. Declaring a Slack channel and a [sandbox](/langsmith/managed-deep-agents-sandboxes) is the whole setup.
+
+<Note>
+Slack file transfer requires `managed-deepagents>=0.8.0` and a sandbox. Without a sandbox, incoming files are not saved and `attach_file` is not offered to the model.
+</Note>
+
+Managed Deep Agents stages the files on the incoming message before the run, along with files shared earlier in the same Slack thread. The agent reads an attachment status message for the paths, then opens the files with its sandbox tools. That status and the file contents are labeled as data, not instructions.
+
+Attachment is never automatic, so state in the agent's [instructions](/langsmith/managed-deep-agents-instructions) when a file belongs in the reply:
+
+```markdown instructions.md
+When someone asks for a report, write the report to a file under `/workspace`,
+then call `attach_file` with that path so the file arrives in Slack.
+```
+
+Files stay scoped to the Slack thread they arrived in, because every thread gets its own sandbox. A direct message and a channel thread never share attachments. Within one thread, anyone reaches the files anyone else uploaded, since transfers use the bot's Slack access rather than the caller's.
+
+### Review transfer limits
+
+- **File size**: 200 MiB in each direction.
+- **Paths**: `attach_file` accepts paths under `/workspace` only.
+- **Thread history**: the scan covers recent messages in the thread. When it falls short, the attachment status reports that earlier files may be missing.
+- **Skipped files**: files stored outside Slack, and files deleted from Slack.
+- **Slack scopes**: a transfer blocked by a missing `files:read`, `files:write`, or history scope reports that you need to reconnect Slack.
+
 ## See also
 
 - [Channels overview](/langsmith/managed-deep-agents-channels): understand how channels connect messaging services to an agent.
+- [Agent-owned interrupts](/langsmith/managed-deep-agents-agent-owned-interrupts): post a Slack form from a tool and resume the run on submit.
+- [Sandboxes](/langsmith/managed-deep-agents-sandboxes): give the agent the filesystem that file transfers read and write.
 - [Deploy an agent](/langsmith/managed-deep-agents-deploy): configure and deploy a managed deep agent.
 - [CLI reference](/langsmith/managed-deep-agents-cli): review Managed Deep Agents commands and flags.
