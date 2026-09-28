@@ -32,6 +32,13 @@ Search the codebase for `MultiServerMCPClient`, `mcpServers`, `getTools`, `initi
 
 `@langchain/mcp-adapters` 2.0 rebuilds the adapter on the MCP TypeScript SDK 2 client. It negotiates the MCP protocol era for each server and answers modern MCP elicitation with LangGraph interrupts. This guide covers the changes that affect 1.x code. For the feature documentation, see [Model Context Protocol (MCP)](/oss/langchain/mcp).
 
+## Breaking changes
+
+- **`getTools()` is removed.** Call `listTools()` with the same arguments. The other renames keep deprecated aliases. See [Renamed APIs](#renamed-apis).
+- **Elicitation pauses runs by default.** When a modern server asks for input during a tool call, the adapter raises a LangGraph @[`interrupt`] and the run stops until you resume it with `createMCPElicitationResume`. A checkpointer is needed only when a tool elicits. Set `elicitation: false` on a server to keep the 1.x behavior. See [Elicitation](#elicitation).
+- **Tool content is always standard content blocks.** 1.x defaulted `useStandardContentBlocks` to `false`. 2.0 removes the option, rejects it, and always returns standard blocks, so images and audio carry `data` and `mimeType` instead of `image_url` data URLs. See [Tool results](#tool-results).
+- **Configuration is strict.** Unknown keys and removed options throw when the adapter is constructed. See [Removed options](#removed-options).
+
 ## Install
 
 Upgrade the adapter and its peer dependencies:
@@ -57,7 +64,7 @@ bun add @langchain/mcp-adapters@^2.0.0 @langchain/core @langchain/langgraph
 - **Zod 4**: The adapter validates configuration with an internal Zod 4 dependency, so configuration errors are Zod 4 errors.
 - **Debug logging**: The `debug` dependency is gone, so `DEBUG=@langchain/mcp-adapters:*` prints nothing. Use `onConnectionError` and the per-server notification callbacks instead.
 
-## Renamed and changed APIs
+## Renamed APIs
 
 Before:
 
@@ -87,15 +94,18 @@ const tools = await adapter.listTools();
 
 | 1.x | 2.0 |
 | --- | --- |
-| `MultiServerMCPClient` | `MCPAdapter`. The old name remains a deprecated alias. |
-| `mcpServers: { ... }`, or a flat server map | `servers: { ... }`. Both old forms are deprecated. Passing both `servers` and `mcpServers` throws. |
-| `getTools(...)` | `listTools(...)`, with the same arguments: `listTools("a", "b")` or `listTools(["a"], options)`. `getTools` is removed, with no alias. |
-| `initializeConnections()` | `listToolsets()`, which returns tools grouped by server name. The old name remains a deprecated alias. |
-| `adapter.config.mcpServers` | `adapter.config.servers`. The snapshot is typed `ResolvedMCPAdapterConfig`. |
-| `ClientConfig` type | `MCPAdapterConfig`. `ClientConfig` is deprecated. |
-| `SSEConnection` type for an HTTP server | `StreamableHTTPConnection`, or `Connection` for any transport. `SSEConnection` now accepts only legacy SSE. |
-| `error.name === "ToolException"` or `"MCPClientError"` | `isToolException(error)` or `MCPClientError.isInstance(error)`. Both checks are brand-based. |
-| `setLoggingLevel()` | Legacy servers only. Set a per-server `logLevel` on a modern server instead. |
+| `MultiServerMCPClient` | `MCPAdapter` (deprecated alias kept) |
+| `mcpServers` or a flat server map | `servers` (deprecated alias kept; passing both throws) |
+| `getTools(...)` | `listTools(...)`, same arguments (removed, no alias) |
+| `initializeConnections()` | `listToolsets()`, tools grouped by server (deprecated alias kept) |
+| `ClientConfig` type | `MCPAdapterConfig` (deprecated alias kept) |
+
+Other API changes:
+
+- `adapter.config.servers` replaces `adapter.config.mcpServers`, typed `ResolvedMCPAdapterConfig`.
+- `SSEConnection` accepts only legacy SSE. Use `StreamableHTTPConnection` for HTTP, or `Connection` for any transport.
+- Check errors with `isToolException(error)` or `MCPClientError.isInstance(error)` instead of comparing `error.name`.
+- `setLoggingLevel()` works on legacy servers only. Set a per-server `logLevel` on a modern server.
 
 `getClient()`, `listResources()`, `listResourceTemplates()`, `readResource()`, and `close()` keep their names. `getClient()` returns the SDK `Client` from `@modelcontextprotocol/client`, which you can use for prompts. `loadMcpTools(serverName, client)` still converts tools from a client you build yourself.
 
