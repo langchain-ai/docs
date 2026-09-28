@@ -41,34 +41,40 @@ System fields cannot be encrypted: `langgraph_version`, `langgraph_api_version`,
 ## Rotate AES keys
 
 <Note>
-AES key rotation requires Agent Server version 0.14.0 or later.
+AES key rotation requires Agent Server version 0.14.0 or later, the PostgreSQL checkpointer with `PREFER_GRPC_CHECKPOINTER=true`, and the Go store with `LANGGRAPH_STORE_BACKEND=grpc`. Python, custom, SQLite, and MongoDB checkpointers do not support rotation.
 </Note>
 
-Agent Server encrypts new data with `LANGGRAPH_AES_KEY`. When it reads data encrypted with a configured old key, it returns the plaintext and lazily re-encrypts the stored value with the current key.
+Agent Server encrypts new data with `LANGGRAPH_AES_KEY`. Key envelopes identify which configured key decrypts each value. When Agent Server reads data encrypted with an old key, it returns the plaintext and lazily re-encrypts the stored value with the current key.
 
 To rotate a key:
 
-1. Move the current `LANGGRAPH_AES_KEY` value to `LANGGRAPH_AES_LEGACY_KEY`.
-2. Set `LANGGRAPH_AES_KEY` to the new 16, 24, or 32-byte key.
-3. Keep both keys configured until all required data has been read and re-encrypted.
+1. Configure the current primary key and future key on every replica:
 
-```bash
-export LANGGRAPH_AES_KEY="your-new-16-24-or-32-byte-key"
-export LANGGRAPH_AES_LEGACY_KEY="your-old-16-24-or-32-byte-key"
-```
+   ```bash
+   export LANGGRAPH_AES_KEY="your-current-16-24-or-32-byte-key"
+   export LANGGRAPH_AES_FALLBACK_KEYS="your-future-16-24-or-32-byte-key"
+   ```
 
-`LANGGRAPH_AES_LEGACY_KEY` decrypts ciphertext created before Agent Server 0.14.0, which does not contain a key identifier. For ciphertext created by Agent Server 0.14.0 or later, set `LANGGRAPH_AES_FALLBACK_KEYS` to a comma-separated list of old keys:
+2. Roll out this configuration to every replica.
+3. After every replica can decrypt both keys, switch `LANGGRAPH_AES_KEY` to the future key.
+4. Retain the old key in both compatibility settings:
 
-```bash
-export LANGGRAPH_AES_KEY="your-current-16-24-or-32-byte-key"
-export LANGGRAPH_AES_FALLBACK_KEYS="first-old-key,second-old-key"
-```
+   ```bash
+   export LANGGRAPH_AES_KEY="your-future-16-24-or-32-byte-key"
+   export LANGGRAPH_AES_LEGACY_KEY="your-old-16-24-or-32-byte-key"
+   export LANGGRAPH_AES_FALLBACK_KEYS="your-old-16-24-or-32-byte-key"
+   ```
+
+   `LANGGRAPH_AES_LEGACY_KEY` decrypts untagged historical ciphertext. `LANGGRAPH_AES_FALLBACK_KEYS` decrypts tagged ciphertext created with an old key.
+
+5. Keep old keys configured until telemetry confirms they are no longer needed.
 
 <Warning>
-Lazy re-encryption only updates data as it is read. Keep old keys configured while unread data may still require them.
+- Never change the primary key before every replica can decrypt both keys.
+- Lazy rotation updates only accessed rows. Cold rows and compare-and-swap misses may retain old ciphertext.
+- Removing keys early can make retained data unreadable.
+- Once key-envelope ciphertext exists, Agent Server versions without envelope support cannot read it.
 </Warning>
-
-AES key rotation requires the PostgreSQL checkpointer, `PREFER_GRPC_CHECKPOINTER=true`, and `LANGGRAPH_STORE_BACKEND=grpc`.
 
 ## Related
 
