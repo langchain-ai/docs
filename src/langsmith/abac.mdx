@@ -102,7 +102,7 @@ Each condition group specifies:
 
 | Resource type | Supported permissions |
 |---------------|----------------------|
-| `project` | `projects:read`, `projects:update`, `projects:delete`, `runs:read`, `runs:share`, `runs:delete`, `projects:increase-trace-tier`, `projects:decrease-trace-tier` |
+| `project` | `projects:read`, `projects:update`, `projects:delete`, `runs:read`, `runs:read-inputs`, `runs:read-outputs`, `runs:share`, `runs:delete`, `projects:increase-trace-tier`, `projects:decrease-trace-tier` |
 | `prompt` | `prompts:read`, `prompts:update`, `prompts:delete`, `prompts:share`, `prompts:tag` |
 | `dataset` | `datasets:read`, `datasets:update`, `datasets:delete`, `datasets:share`, `datasets:download`, `datasets:clone` |
 | `deployment` | `deployments:read`, `deployments:update`, `deployments:delete` |
@@ -111,7 +111,7 @@ Each condition group specifies:
 | `fleet_integration` | `mcp-servers:read`, `mcp-servers:invoke`. See [Fleet tool access control](/langsmith/fleet/access-and-oversight#tool-access-control). |
 
 <Note>
-Runs don't have their own tags. Run permissions (`runs:read`, `runs:create`, `runs:share`, `runs:delete`) are evaluated against the parent project's tags.
+Runs don't have their own tags. Run permissions (`runs:read`, `runs:read-inputs`, `runs:read-outputs`, `runs:create`, `runs:share`, `runs:delete`) are evaluated against the parent project's tags. For how the input and output permissions affect responses, refer to [Control access to run inputs and outputs](#control-access-to-run-inputs-and-outputs).
 </Note>
 
 <Note>
@@ -193,6 +193,10 @@ Access policies are managed via the LangSmith API by [Organization Admins](/lang
 | ✗ | ✓ | ✗ | **Allowed** (ABAC grants access) |
 | ✗ | ✗ | ✗ | **Denied** |
 | ✗ | ✓ | ✓ | **Denied** (deny wins) |
+
+## Control access to run inputs and outputs
+
+`runs:read` controls whether a user can see a run. `runs:read-inputs` and `runs:read-outputs` control whether they can see its inputs and outputs. Access policies for these permissions use `resource_type: "project"` and are evaluated against each run's parent project, so you can hide inputs, outputs, or both in some projects while leaving other projects in the workspace unchanged. RBAC and ABAC combine for these permissions the same way they do for any other permission. For more details, refer to [How ABAC works with RBAC](#how-abac-works-with-rbac).
 
 ## Example scenarios
 
@@ -309,6 +313,39 @@ Consultants don't have RBAC `datasets:read` permission, but this policy grants t
 }
 ```
 
+### 6. Hide run inputs and outputs in sensitive projects
+
+Let users keep browsing runs in projects that contain PII, but hide the runs' inputs and outputs. Each permission gets its own condition group, and the groups are evaluated with OR logic. Users still need `runs:read` to see the runs:
+
+```json
+{
+  "name": "Hide PII Run Payloads",
+  "effect": "deny",
+  "condition_groups": [
+    {
+      "permission": "runs:read-inputs",
+      "resource_type": "project",
+      "conditions": [{
+        "attribute_name": "resource_tag_key",
+        "attribute_key": "Contains-PII",
+        "operator": "equals",
+        "attribute_value": "true"
+      }]
+    },
+    {
+      "permission": "runs:read-outputs",
+      "resource_type": "project",
+      "conditions": [{
+        "attribute_name": "resource_tag_key",
+        "attribute_key": "Contains-PII",
+        "operator": "equals",
+        "attribute_value": "true"
+      }]
+    }
+  ]
+}
+```
+
 ## Tag resources at creation time
 
 When ABAC policies are active, resources are access-controlled based on their tags. To make sure a resource is protected as soon as it is created, you can supply tags directly in the creation request using the `tag_value_ids` parameter.
@@ -335,6 +372,11 @@ If you rely on the LangSmith SDK to auto-create tracing projects during trace in
 - Review RBAC permissions (users may have access via their role)
 - Check if an allow policy is too broad (e.g., using wildcards)
 - `_if_exists` operators match resources missing that tag key
+
+**Run inputs or outputs missing?**
+- Check that the user's role grants `runs:read-inputs` and `runs:read-outputs`, or that an allow policy grants them for the run's project
+- Check for a deny policy on `runs:read-inputs` or `runs:read-outputs` that matches the project's tags
+- Message and trajectory views return `403 Forbidden` unless both permissions are granted
 
 **Policy not taking effect?**
 - Confirm the policy is attached to the correct role
