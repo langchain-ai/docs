@@ -6,6 +6,9 @@ their side would silently turn hundreds of index entries into 404s without
 anything in this repo failing. Page URLs come from real files and are far
 safer, but they can still rot when a page is renamed mid-build.
 
+It also compares each served section index against the build, because
+Mintlify can keep serving a stale copy of a nested llms.txt after a deploy.
+
 Run against a build tree (``make build`` first):
 
     uv run python scripts/check_llms_urls.py
@@ -81,6 +84,41 @@ def status_of(url: str) -> int:
     return 0
 
 
+def fetch_text(url: str) -> tuple[str, str]:
+    """Return (body, Last-Modified header) for *url*, or ("", "") if unreachable."""
+    for attempt in range(RETRY_ATTEMPTS):
+        try:
+            with urllib.request.urlopen(url, timeout=REQUEST_TIMEOUT) as response:  # noqa: S310
+                body = response.read().decode("utf-8")
+                return body, response.headers.get("Last-Modified", "")
+        except (urllib.error.URLError, TimeoutError, ConnectionError):
+            time.sleep(RETRY_BACKOFF * (attempt + 1))
+    return "", ""
+
+
+def stale_sections(
+    section_urls: list[str], build_dir: Path, base_url: str
+) -> list[tuple[str, int, int, str]]:
+    """Return (url, missing, built, last_modified) for each outdated section.
+
+    Mintlify serves the root llms.txt from its own route, which refreshes on
+    every deploy, but serves nested llms.txt files as static files that it
+    stopped refreshing: in September 2026 /langsmith/llms.txt still served an
+    August copy with 271 of 465 pages. Every build-side check passes while
+    that happens, so compare the served entries against the build.
+    """
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        served = list(pool.map(fetch_text, section_urls))
+    stale = []
+    for url, (body, last_modified) in zip(section_urls, served, strict=True):
+        local = build_dir / url.removeprefix(f"{base_url}/")
+        built = set(MD_LINK.findall(local.read_text(encoding="utf-8")))
+        missing = built - set(MD_LINK.findall(body))
+        if missing:
+            stale.append((url, len(missing), len(built), last_modified))
+    return stale
+
+
 def main() -> int:
     """Sample index URLs and report any that do not resolve."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -110,7 +148,9 @@ def main() -> int:
     # a routing change makes whole sections invisible to coverage walkers
     # while every local check still passes.
     root = (args.build_dir / "llms.txt").read_text(encoding="utf-8")
-    section_urls = sorted(set(TXT_LINK.findall(root)))
+    section_urls = sorted(
+        u for u in set(TXT_LINK.findall(root)) if u.startswith(f"{args.base_url}/")
+    )
     print(f"checking {len(section_urls)} section indexes are served\n")
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         section_results = list(pool.map(status_of, section_urls))
@@ -131,6 +171,27 @@ def main() -> int:
         )
         return 1
     print(f"✅ all {len(section_urls)} section indexes are served\n")
+
+    stale = stale_sections(section_urls, args.build_dir, args.base_url)
+    if stale:
+        total = sum(missing for _, missing, _, _ in stale)
+        print(
+            f"❌ {len(stale)} served section indexes are missing {total:,} "
+            "entries that the build lists:\n"
+        )
+        for url, missing, built, last_modified in stale:
+            print(
+                f"  {missing:>4} of {built:<4} missing  {url}"
+                f"  (last-modified: {last_modified or 'unknown'})"
+            )
+        print(
+            "\nMintlify is serving an old copy of these files. If the merge "
+            "that added the pages deployed minutes ago, rerun the job. "
+            "Otherwise report it to Mintlify with the last-modified dates "
+            "above: the build output on the prod branch is correct."
+        )
+        return 1
+    print(f"✅ all {len(section_urls)} served section indexes match the build\n")
 
     # Sampling picks which URLs to spot-check; nothing here is security-relevant.
     rng = random.Random(args.seed)  # noqa: S311
