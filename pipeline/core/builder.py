@@ -272,7 +272,8 @@ class DocumentationBuilder:
                 "\n\n---\n\n"
                 '<div className="source-links">\n'
                 '<Callout icon="terminal-2">\n'
-                "    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.\n"
+                "    [Connect these docs](/use-these-docs) to your agent of choice "
+                "via MCP for real-time answers.\n"
                 "</Callout>\n"
                 '<Callout icon="edit">\n'
                 f"    [Edit this page on GitHub]({edit_url}) "
