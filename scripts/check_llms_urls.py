@@ -64,7 +64,9 @@ def crawl_index(base_url: str) -> tuple[set[str], int]:
             if "/_llms/" in link:
                 pending.append(link)
             else:
-                pages.add(link.removesuffix(".md"))
+                # The index lists a directory's landing page as <dir>/index.md,
+                # while the sitemap lists it as <dir>.
+                pages.add(link.removesuffix(".md").removesuffix("/index"))
     return pages, len(seen)
 
 
