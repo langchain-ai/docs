@@ -9,9 +9,6 @@ import McpSharedPoolPy from '/snippets/code-samples/mcp-shared-pool-py.mdx';
 import McpMultiServerPy from '/snippets/code-samples/mcp-multi-server-py.mdx';
 import McpClientGroupPy from '/snippets/code-samples/mcp-client-group-py.mdx';
 import McpProtocolErasPy from '/snippets/code-samples/mcp-protocol-eras-py.mdx';
-import McpLifecycleShortJs from '/snippets/code-samples/mcp-lifecycle-short-js.mdx';
-import McpMultiServerJs from '/snippets/code-samples/mcp-multi-server-js.mdx';
-import McpProtocolErasJs from '/snippets/code-samples/mcp-protocol-eras-js.mdx';
 
 :::python
 <Note>
@@ -93,7 +90,27 @@ If you want a session held open across several calls, keep the adapter's context
 
 To discover tools, build an agent, and release the connections (the default pattern):
 
-<McpLifecycleShortJs />
+```typescript
+import { MCPAdapter } from "@langchain/mcp-adapters";
+import { createAgent } from "langchain";
+
+const adapter = new MCPAdapter({
+  servers: { weather: { url: "https://example.com/mcp" } },
+});
+
+try {
+  const agent = createAgent({
+    model: "claude-sonnet-5",
+    tools: await adapter.listTools(),
+  });
+  const result = await agent.invoke({
+    messages: [{ role: "user", content: "What is the weather?" }],
+  });
+  console.log(result.messages.at(-1)?.text);
+} finally {
+  await adapter.close();
+}
+```
 
 You need to keep the adapter open for the life of the agent invocation. `close()` aborts in-flight adapter work, closes its clients and transports, and clears the converted-tool cache. The server configuration remains available, so a later `listTools()` call can open fresh connections and discover fresh tools.
 :::
@@ -121,7 +138,30 @@ To keep each server on its own connection, pass a [`ClientGroup`](https://gofast
 :::js
 To give one agent tools from several servers, add each server as a named entry in `servers`:
 
-<McpMultiServerJs />
+```typescript
+import { MCPAdapter } from "@langchain/mcp-adapters";
+
+const adapter = new MCPAdapter({
+  prefixToolNameWithServerName: true,
+  servers: {
+    calendar: { url: "https://calendar.example.com/mcp" },
+    files: {
+      command: "node",
+      args: ["./files-server.js"],
+    },
+  },
+});
+
+try {
+  const toolsets = await adapter.listToolsets();
+  console.log(toolsets.calendar);
+
+  const fileTools = await adapter.listTools("files");
+  console.log(fileTools);
+} finally {
+  await adapter.close();
+}
+```
 
 Each backend is addressed independently, so one adapter can mix transports: one server over stdio, another over HTTP. Each server also keeps its own authentication and [protocol mode](#protocol-eras).
 
@@ -205,7 +245,30 @@ MCP changed how a client and server agree on what each supports. The **legacy** 
 
 To hold tools from modern and legacy servers in one agent, configure both servers under the same adapter:
 
-<McpProtocolErasJs />
+```typescript
+import { MCPAdapter } from "@langchain/mcp-adapters";
+
+const adapter = new MCPAdapter({
+  servers: {
+    current: {
+      url: "https://example.com/mcp",
+      mode: "modern",
+    },
+    legacy: {
+      command: "node",
+      args: ["./legacy-server.js"],
+      mode: "legacy",
+    },
+  },
+});
+
+try {
+  const tools = await adapter.listTools();
+  console.log(tools);
+} finally {
+  await adapter.close();
+}
+```
 
 Each server's `mode` controls its negotiation independently:
 

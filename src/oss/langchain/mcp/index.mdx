@@ -5,11 +5,8 @@ description: Connect LangChain agents to MCP servers with the MCPAdapter, built 
 ---
 
 import McpQuickstartPy from '/snippets/code-samples/mcp-quickstart-py.mdx';
-import McpQuickstartJs from '/snippets/code-samples/mcp-quickstart-js.mdx';
 import McpDocsServerPy from '/snippets/code-samples/mcp-docs-server-py.mdx';
-import McpDocsServerJs from '/snippets/code-samples/mcp-docs-server-js.mdx';
 import McpTransportsPy from '/snippets/code-samples/mcp-transports-py.mdx';
-import McpTransportsJs from '/snippets/code-samples/mcp-transports-js.mdx';
 
 :::python
 [Model Context Protocol (MCP)](https://modelcontextprotocol.io) is an open protocol that standardizes how applications provide tools and context to language models. LangChain agents call tools defined on MCP servers through @[`MCPAdapter`], which discovers a server's tools and adapts them into LangChain tools you can pass straight to @[`create_agent`].
@@ -27,7 +24,7 @@ If you used MCP before v1.4.0, see [Migrate from `langchain-mcp-adapters`](/oss/
 [Model Context Protocol (MCP)](https://modelcontextprotocol.io) is an open protocol that standardizes how applications provide tools and context to language models. LangChain agents call tools defined on MCP servers through @[`MCPAdapter`], which discovers a server's tools and adapts them into LangChain tools you can pass straight to @[`create_agent`].
 
 <Note>
-This guide assumes you're using `@langchain/mcp-adapters>=2`. If you're using an older version of `@langchain/mcp-adapters`, you can either read the pre-v1 docs or read the [migration guide](/oss/migrate/langchain-mcp-adapters).
+This guide assumes you're using `@langchain/mcp-adapters>=2`. If you're using an older version of `@langchain/mcp-adapters`, you can either read the [1.x docs](/oss/javascript/langchain/mcp) or read the [migration guide](/oss/migrate/langchain-mcp-adapters).
 </Note>
 :::
 
@@ -80,7 +77,18 @@ Open an @[`MCPAdapter`], discover the server's tools with `list_tools()`, and bu
 :::js
 Open an @[`MCPAdapter`], discover the server's tools with `listTools()`, and build the agent with the tools attached.
 
-<McpQuickstartJs />
+```typescript
+import { createAgent } from "langchain";
+import { MCPAdapter } from "@langchain/mcp-adapters";
+
+const adapter = new MCPAdapter("https://example.com/mcp");
+const tools = await adapter.tools();
+const agent = createAgent({ model: "claude-sonnet-5", tools: [tools] })
+
+await agent.invoke({
+  messages: [{ role: "user", content: "..." }]
+})
+```
 :::
 
 <Accordion title="Example: Query LangChain docs">
@@ -92,7 +100,21 @@ The [LangChain docs MCP server](/use-these-docs) is a public HTTP endpoint at `h
 :::
 
 :::js
-<McpDocsServerJs />
+```typescript
+import { createAgent } from "langchain";
+import { MCPAdapter } from "@langchain/mcp-adapters";
+
+const adapter = new MCPAdapter("https://docs.langchain.com/mcp");  // # [!code highlight]
+const tools = await adapter.listTools();
+const agent = createAgent({ model: "claude-sonnet-5", tools: [tools] })
+
+await agent.invoke({
+  messages: [{
+    role: "user",
+    content: "How do I add short-term memory to a LangChain agent?"
+  }]
+})
+```
 :::
 
 <Note>
@@ -136,7 +158,38 @@ A `str` target must be an `http` or `https` URL. FastMCP resolves a string by te
 
 @[`MCPAdapter`] accepts a map of named server definitions. It selects the transport from each definition, so one adapter can connect to local stdio servers and remote HTTP servers at the same time:
 
-<McpTransportsJs />
+```typescript
+import { MCPAdapter } from "@langchain/mcp-adapters";
+
+const adapter = new MCPAdapter({
+  servers: {
+    // A local server launched as a subprocess over stdio.
+    local: {
+      command: "node",
+      args: ["./weather-server.js"],
+    },
+
+    // A remote server reached over Streamable HTTP.
+    remote: {
+      url: "https://example.com/mcp",
+    },
+
+    // A legacy server with an explicit SSE endpoint.
+    legacy: {
+      url: "https://legacy.example.com/sse",
+      transport: "sse",
+      mode: "legacy",
+    },
+  },
+});
+
+try {
+  const tools = await adapter.listTools();
+  // Pass tools to createAgent({ tools, ... }).
+} finally {
+  await adapter.close();
+}
+```
 
 Each server definition can use one of these transports:
 
