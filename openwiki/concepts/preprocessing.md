@@ -26,10 +26,10 @@ sources:
     resource: repo://tests/unit_tests/test_handle_auto_links.py
   - id: openwiki-source-5255204fc494ae04cd6ba685
     resource: repo://tests/unit_tests/test_utm_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-24T08:22:38.580Z" }
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-24T08:22:38.580Z
+    at: 2026-09-29T08:22:38.059Z
+generated: { by: "openwiki/0.4.3", at: "2026-09-29T08:22:38.059Z" }
 ---
 
 ## Overview
@@ -85,7 +85,7 @@ For the wider route model, see [Language Versioning Strategy](/openwiki/concepts
 
 Authors can write `@[link_name]`, `@[title][link_name]`, and `@[`link_name`]`. `replace_autolinks()` looks up the key in `SCOPE_LINK_MAPS` and produces a Markdown link; a custom title is retained, and the simple backticked form retains backticks in its generated link text. Prefix a reference with `\` to show it literally: it is not resolved, and the final pass removes the escape.
 
-Resolution starts in `default_scope`. A `:::python` or `:::js` line changes the active scope; a bare closing `:::` resets it to the default scope. These fences remain in place until conditional rendering. Regular backtick and tilde code fences prevent both reference replacement and scope changes within their content. An unclosed regular fence protects the remaining input from reference replacement.
+Resolution starts in `default_scope`. A `:::python` or `:::js` line changes the active scope; a bare closing `:::` resets it to the default scope. Regular backtick and tilde code fences prevent both reference replacement and scope changes within their content. An unclosed regular fence protects the remaining input from reference replacement.
 
 `SCOPE_LINK_MAPS` is derived from host-and-scope `LINK_MAPS` entries: relative targets are joined to a map host, while absolute targets remain absolute. Its Python and JS mappings cover the core LangChain and LangGraph APIs, Deep Agents, MCP, deployment, and provider integrations, with selected cross-scope aliases. The special runtime `global` scope logs an error and falls back to Python.
 
