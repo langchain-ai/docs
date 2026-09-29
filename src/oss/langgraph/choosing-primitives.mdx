@@ -1,0 +1,477 @@
+---
+title: Choose between nodes, tasks, and subgraphs
+sidebarTitle: Choosing primitives
+description: Decide whether a deterministic step in an agent workflow belongs in a plain function, a task, a subgraph, or its own graph node.
+---
+
+Most agent workflows contain more deterministic work than model calls: parsing, validation, retrieval, database lookups, and outbound requests. For each of those steps, ask one question. Does this step decide what happens next, or does it execute something that is already decided? A step that produces a routing fork belongs in its own node, because a node is where the graph takes a different path. A step that always leads to the same next step is a computation, so put it wherever the checkpoint, replay, and retry granularity you need is easiest to get.
+
+Determinism by itself is not a reason to promote a step to a node, or to demote it to a plain function. Choose the primitive that gives you the recovery behavior you want when the step fails halfway through.
+
+## Compare the options
+
+The [Graph API](/oss/langgraph/graph-api) writes a new checkpoint after every superstep. The [Functional API](/oss/langgraph/functional-api) does not. When a task completes, its result is saved into the checkpoint associated with the running entrypoint, and on replay the entrypoint restarts from the beginning while LangGraph restores completed task and subgraph results from the checkpointer instead of recomputing them.
+
+:::python
+
+| Primitive | Own checkpoint | Replay behavior | Retry unit | Choose it when |
+| --- | --- | --- | --- | --- |
+| Plain function in a node | No. It runs inside the enclosing node's superstep. | Runs again from scratch whenever its node runs. | The whole node. | The step cannot change what runs next, and repeating it along with the rest of the node is acceptable. |
+| @[`@task`] | No new checkpoint. The result is stored in the entrypoint's checkpoint. | The entrypoint replays from the beginning, and completed tasks return their stored result instead of running again. | The task, through its own `retry_policy`. | The step has a side effect or is expensive, and you do not want it repeated when the run resumes. |
+| [Subgraph](/oss/langgraph/use-subgraphs) | Yes. Its nodes checkpoint under a namespace of the parent thread. | Resumes inside the subgraph, at the node that was interrupted or that failed. | A single node inside the subgraph. | The unit has its own routing or its own state schema, or more than one parent graph uses it. |
+| Graph node | Yes. A checkpoint follows the superstep it runs in. | Resumes at that node. Earlier nodes do not run again. | The node. | A routing fork is possible after this step, or you want an interrupt, resume, or [time travel](/oss/langgraph/use-time-travel) boundary here. |
+
+:::
+
+:::js
+
+| Primitive | Own checkpoint | Replay behavior | Retry unit | Choose it when |
+| --- | --- | --- | --- | --- |
+| Plain function in a node | No. It runs inside the enclosing node's superstep. | Runs again from scratch whenever its node runs. | The whole node. | The step cannot change what runs next, and repeating it along with the rest of the node is acceptable. |
+| @[`task`] | No new checkpoint. The result is stored in the entrypoint's checkpoint. | The entrypoint replays from the beginning, and completed tasks return their stored result instead of running again. | The task, through its own `retryPolicy`. | The step has a side effect or is expensive, and you do not want it repeated when the run resumes. |
+| [Subgraph](/oss/langgraph/use-subgraphs) | Yes. Its nodes checkpoint under a namespace of the parent thread. | Resumes inside the subgraph, at the node that was interrupted or that failed. | A single node inside the subgraph. | The unit has its own routing or its own state schema, or more than one parent graph uses it. |
+| Graph node | Yes. A checkpoint follows the superstep it runs in. | Resumes at that node. Earlier nodes do not run again. | The node. | A routing fork is possible after this step, or you want an interrupt, resume, or [time travel](/oss/langgraph/use-time-travel) boundary here. |
+
+:::
+
+Read the table backwards, starting from the failure. If the answer to "what should happen when this crashes on the first attempt" is "redo the surrounding work as well", a plain function is enough. If the answer is "keep whatever already succeeded", use a task, a subgraph, or a node.
+
+## Keep deterministic enrichment inside a node
+
+A retrieval pipeline is the case where a step most often becomes a node for no reason. Embedding a question, querying a store, and reranking the results produce a value that the next step consumes, and nothing branches on them. Splitting retrieval into its own node that feeds a second node adds a checkpoint boundary where the graph has no choice to make, and it splits one retry unit into two.
+
+:::python
+
+```python
+import asyncio
+from typing import TypedDict
+
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import END, START, StateGraph
+from langgraph.types import RetryPolicy
+
+
+class State(TypedDict):
+    question: str
+    answer: str
+
+
+async def embed(text: str) -> list[float]:
+    """Stand-in for an embedding request."""
+    return [float(len(word)) for word in text.split()]
+
+
+async def search(vector: list[float], k: int = 3) -> list[str]:
+    """Stand-in for a vector store query."""
+    return [f"passage-{i} (score {sum(vector) - i:.1f})" for i in range(k)]
+
+
+def rerank(passages: list[str]) -> list[str]:
+    return sorted(passages)[:2]
+
+
+async def retrieve_context(question: str) -> list[str]:
+    # A plain async function. Nothing downstream branches on how retrieval went,
+    # so this is a step inside the reason node, not a node of its own.
+    return rerank(await search(await embed(question)))
+
+
+async def reason(state: State) -> dict:
+    passages = await retrieve_context(state["question"])
+    # Stand-in for the model call that consumes the retrieved context.
+    answer = f"Answered {state['question']} from {len(passages)} passages"
+    return {"answer": answer}
+
+
+builder = StateGraph(State)
+builder.add_node(reason, retry_policy=RetryPolicy(max_attempts=3))
+builder.add_edge(START, "reason")
+builder.add_edge("reason", END)
+graph = builder.compile(checkpointer=InMemorySaver())
+
+config = {"configurable": {"thread_id": "reason-1"}}
+print(asyncio.run(graph.ainvoke({"question": "What changed last week?"}, config)))
+```
+
+:::
+
+:::js
+
+```typescript
+import { END, MemorySaver, START, StateGraph, StateSchema } from "@langchain/langgraph";
+import { z } from "zod/v4";
+
+const State = new StateSchema({
+  question: z.string(),
+  answer: z.string().default(""),
+});
+
+async function embed(text: string): Promise<number[]> {
+  // Stand-in for an embedding request.
+  return text.split(" ").map((word) => word.length);
+}
+
+async function search(vector: number[], k = 3): Promise<string[]> {
+  // Stand-in for a vector store query.
+  const total = vector.reduce((a, b) => a + b, 0);
+  return Array.from({ length: k }, (_, i) => `passage-${i} (score ${(total - i).toFixed(1)})`);
+}
+
+function rerank(passages: string[]): string[] {
+  return [...passages].sort().slice(0, 2);
+}
+
+async function retrieveContext(question: string): Promise<string[]> {
+  // A plain function. Nothing downstream branches on how retrieval went,
+  // so this is a step inside the reason node, not a node of its own.
+  return rerank(await search(await embed(question)));
+}
+
+const graph = new StateGraph(State)
+  .addNode(
+    "reason",
+    async (state) => {
+      const passages = await retrieveContext(state.question);
+      // Stand-in for the model call that consumes the retrieved context.
+      return { answer: `Answered ${state.question} from ${passages.length} passages` };
+    },
+    { retryPolicy: { maxAttempts: 3 } }
+  )
+  .addEdge(START, "reason")
+  .addEdge("reason", END)
+  .compile({ checkpointer: new MemorySaver() });
+
+const config = { configurable: { thread_id: "reason-1" } };
+console.log(await graph.invoke({ question: "What changed last week?" }, config));
+```
+
+:::
+
+The retry policy now covers the whole reason step, which is usually the behavior you want. A retry rebuilds the context from the same question before calling the model again, so the model never runs against context that was retrieved for a state the graph has since left behind.
+
+## Use tasks for a fixed chain of side effects
+
+When the chain is fixed but the steps are not free to repeat, such as a database read or an outbound request, the Functional API gives you per-step granularity without inventing routing that does not exist. Each task result is stored in the entrypoint's checkpoint, so a run that pauses partway through does not run the finished steps again.
+
+:::python
+
+```python
+import asyncio
+
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.func import entrypoint, task
+from langgraph.types import Command, interrupt
+
+calls: list[str] = []
+
+
+@task
+async def parse_input(raw: str) -> dict:
+    calls.append("parse_input")
+    key, _, value = raw.partition("=")
+    return {key: value}
+
+
+@task
+async def validate_schema(record: dict) -> dict:
+    calls.append("validate_schema")
+    if "order_id" not in record:
+        raise ValueError("missing order_id")
+    return record
+
+
+@task
+async def enrich_from_db(record: dict) -> dict:
+    calls.append("enrich_from_db")
+    return {**record, "region": "eu-west"}
+
+
+@task
+async def call_external_api(record: dict) -> dict:
+    calls.append("call_external_api")
+    return {**record, "accepted": True}
+
+
+@entrypoint(checkpointer=InMemorySaver())
+async def submit_order(raw: str) -> dict:
+    record = await parse_input(raw)
+    record = await validate_schema(record)
+    record = await enrich_from_db(record)
+    interrupt(f"Submit {record} downstream?")
+    return await call_external_api(record)
+
+
+async def main() -> None:
+    config = {"configurable": {"thread_id": "order-1"}}
+    await submit_order.ainvoke("order_id=42", config)
+    print(calls)  # ['parse_input', 'validate_schema', 'enrich_from_db']
+
+    # The entrypoint body replays from the top here, but the three completed
+    # tasks are restored from the checkpointer instead of running again.
+    print(await submit_order.ainvoke(Command(resume="yes"), config))
+    print(calls)  # the first three are unchanged, and call_external_api is added
+
+
+asyncio.run(main())
+```
+
+:::
+
+:::js
+
+```typescript
+import { Command, MemorySaver, entrypoint, interrupt, task } from "@langchain/langgraph";
+
+type OrderRecord = Record<string, unknown>;
+
+const calls: string[] = [];
+
+const parseInput = task("parseInput", async (raw: string): Promise<OrderRecord> => {
+  calls.push("parseInput");
+  const [key, value] = raw.split("=");
+  return { [key]: value };
+});
+
+const validateSchema = task("validateSchema", async (record: OrderRecord): Promise<OrderRecord> => {
+  calls.push("validateSchema");
+  if (!("order_id" in record)) throw new Error("missing order_id");
+  return record;
+});
+
+const enrichFromDb = task("enrichFromDb", async (record: OrderRecord): Promise<OrderRecord> => {
+  calls.push("enrichFromDb");
+  return { ...record, region: "eu-west" };
+});
+
+const callExternalApi = task("callExternalApi", async (record: OrderRecord): Promise<OrderRecord> => {
+  calls.push("callExternalApi");
+  return { ...record, accepted: true };
+});
+
+const submitOrder = entrypoint(
+  { checkpointer: new MemorySaver(), name: "submitOrder" },
+  async (raw: string) => {
+    let record = await parseInput(raw);
+    record = await validateSchema(record);
+    record = await enrichFromDb(record);
+    interrupt(`Submit ${JSON.stringify(record)} downstream?`);
+    return await callExternalApi(record);
+  }
+);
+
+const config = { configurable: { thread_id: "order-1" } };
+await submitOrder.invoke("order_id=42", config);
+console.log(calls); // [ 'parseInput', 'validateSchema', 'enrichFromDb' ]
+
+// The entrypoint body replays from the top here, but the three completed
+// tasks are restored from the checkpointer instead of running again.
+console.log(await submitOrder.invoke(new Command({ resume: "yes" }), config));
+console.log(calls); // the first three are unchanged, and callExternalApi is added
+```
+
+:::
+
+The list of calls is the point of the example. After the resume, each of the three deterministic tasks appears exactly once. The same holds when a task throws and the run is retried: whatever the checkpoint already records does not run a second time.
+
+:::python
+
+<Warning>
+`@task` carries three practical constraints. Async tasks require Python 3.11 or higher. A task can only be called from within an @[`@entrypoint`] or from within a @[`StateGraph`], so calling one from ordinary application code does not work. When a checkpointer is enabled, task inputs and outputs must be serializable, because that is how the result is stored and restored.
+
+In practice, the serializability requirement is what decides between a task and a plain function call. If a step passes around a database connection, an open file handle, or a client object, keep it a plain function inside a node and let the node be the retry unit.
+</Warning>
+
+:::
+
+:::js
+
+<Warning>
+`task` carries two practical constraints. A task can only be called from within an @[`entrypoint`] or from within a @[`StateGraph`], so calling one from ordinary application code does not work. When a checkpointer is enabled, task inputs and outputs must be serializable, because that is how the result is stored and restored.
+
+In practice, the serializability requirement is what decides between a task and a plain function call. If a step passes around a database connection, an open file handle, or a client object, keep it a plain function inside a node and let the node be the retry unit.
+</Warning>
+
+:::
+
+## Run parallel fetches inside a single node
+
+Concurrency is not a reason to add nodes either. A fan-out to a subgraph and a fan-in back to the parent gives you a checkpoint per branch, plus a state schema and reducers to merge the results. When the branches are independent fetches that always all run, awaiting them together inside one node keeps the node as the atomic unit: either all three results reach the state, or the node is retried whole.
+
+:::python
+
+```python
+import asyncio
+from typing import Any, TypedDict
+
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import END, START, StateGraph
+
+
+class State(TypedDict):
+    account_id: str
+    profile: dict[str, Any]
+    entitlements: list[str]
+    usage: dict[str, int]
+
+
+async def fetch_profile(account_id: str) -> dict[str, Any]:
+    await asyncio.sleep(0.05)
+    return {"id": account_id, "tier": "pro"}
+
+
+async def fetch_entitlements(account_id: str) -> list[str]:
+    await asyncio.sleep(0.05)
+    return ["search", "export"]
+
+
+async def fetch_usage(account_id: str) -> dict[str, int]:
+    await asyncio.sleep(0.05)
+    return {"requests": 1204}
+
+
+async def load_account(state: State) -> dict:
+    profile, entitlements, usage = await asyncio.gather(
+        fetch_profile(state["account_id"]),
+        fetch_entitlements(state["account_id"]),
+        fetch_usage(state["account_id"]),
+    )
+    return {"profile": profile, "entitlements": entitlements, "usage": usage}
+
+
+builder = StateGraph(State)
+builder.add_node(load_account)
+builder.add_edge(START, "load_account")
+builder.add_edge("load_account", END)
+graph = builder.compile(checkpointer=InMemorySaver())
+
+config = {"configurable": {"thread_id": "account-1"}}
+print(asyncio.run(graph.ainvoke({"account_id": "acct-42"}, config)))
+```
+
+:::
+
+:::js
+
+```typescript
+import { END, MemorySaver, START, StateGraph, StateSchema } from "@langchain/langgraph";
+import { z } from "zod/v4";
+
+const State = new StateSchema({
+  accountId: z.string(),
+  profile: z.record(z.string(), z.unknown()).default(() => ({})),
+  entitlements: z.array(z.string()).default(() => []),
+  usage: z.record(z.string(), z.number()).default(() => ({})),
+});
+
+async function fetchProfile(accountId: string) {
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  return { id: accountId, tier: "pro" };
+}
+
+async function fetchEntitlements(accountId: string) {
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  return ["search", "export"];
+}
+
+async function fetchUsage(accountId: string) {
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  return { requests: 1204 };
+}
+
+const graph = new StateGraph(State)
+  .addNode("loadAccount", async (state) => {
+    const [profile, entitlements, usage] = await Promise.all([
+      fetchProfile(state.accountId),
+      fetchEntitlements(state.accountId),
+      fetchUsage(state.accountId),
+    ]);
+    return { profile, entitlements, usage };
+  })
+  .addEdge(START, "loadAccount")
+  .addEdge("loadAccount", END)
+  .compile({ checkpointer: new MemorySaver() });
+
+const config = { configurable: { thread_id: "account-1" } };
+console.log(await graph.invoke({ accountId: "acct-42" }, config));
+```
+
+:::
+
+Reach for a [subgraph](/oss/langgraph/use-subgraphs) when the branches stop being uniform: when one of them interrupts for human input, when they route differently based on what they find, or when another graph reuses the same fan-out. Those are the cases where a checkpoint per branch earns its cost.
+
+## Deterministic execution is not durable state
+
+A fixed execution path tells you which steps run. It does not tell you that the conditions that justified entering the path still hold. Between the node that decides to issue a refund and the node that issues it, the order can be amended, the upstream record can be refreshed, and the operator's permission can be revoked. A chain of deterministic steps proceeds anyway, because nothing in it looks.
+
+Capture the facts you branched on as a typed snapshot when the workflow enters the path, read them again before any mutating step, and hand a structured result back to the graph instead of proceeding.
+
+:::python
+
+```python
+from dataclasses import dataclass
+from datetime import datetime
+
+
+@dataclass(frozen=True)
+class EntrySnapshot:
+    entity_version: int
+    source_updated_at: datetime
+    permission_version: int
+
+
+async def read_snapshot(order_id: str) -> EntrySnapshot:
+    # Reads the same three fields that were captured on entry.
+    return EntrySnapshot(4, datetime(2026, 1, 1), 7)
+
+
+async def submit_refund(state: dict) -> dict:
+    entry: EntrySnapshot = state["entry_snapshot"]
+    current = await read_snapshot(state["order_id"])
+    if current != entry:
+        return {"outcome": {"status": "stale", "expected": entry, "actual": current}}
+    return {"outcome": {"status": "submitted"}}
+```
+
+:::
+
+:::js
+
+```typescript
+interface EntrySnapshot {
+  entityVersion: number;
+  sourceUpdatedAt: string;
+  permissionVersion: number;
+}
+
+async function readSnapshot(orderId: string): Promise<EntrySnapshot> {
+  // Reads the same three fields that were captured on entry.
+  return { entityVersion: 4, sourceUpdatedAt: "2026-01-01", permissionVersion: 7 };
+}
+
+function sameSnapshot(a: EntrySnapshot, b: EntrySnapshot): boolean {
+  return (
+    a.entityVersion === b.entityVersion &&
+    a.sourceUpdatedAt === b.sourceUpdatedAt &&
+    a.permissionVersion === b.permissionVersion
+  );
+}
+
+async function submitRefund(state: { orderId: string; entrySnapshot: EntrySnapshot }) {
+  const current = await readSnapshot(state.orderId);
+  if (!sameSnapshot(current, state.entrySnapshot)) {
+    return { outcome: { status: "stale", expected: state.entrySnapshot, actual: current } };
+  }
+  return { outcome: { status: "submitted" } };
+}
+```
+
+:::
+
+Returning a stale outcome rather than throwing keeps the decision where it belongs. A conditional edge on the outcome status can replan, escalate, or stop. This matters most for the steps you were most tempted to collapse into a plain function, because those run without a checkpoint between the check and the write. The longer a workflow can stay paused, whether at an [interrupt](/oss/langgraph/interrupts) that awaits human review or at a resume hours after a failure, the wider that window grows.
+
+## See also
+
+- [Choosing between Graph and Functional APIs](/oss/langgraph/choosing-apis)
+- [Fault tolerance](/oss/langgraph/fault-tolerance)
+- [Persistence](/oss/langgraph/persistence)
+- [Subgraphs](/oss/langgraph/use-subgraphs)
