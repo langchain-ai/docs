@@ -1,8 +1,11 @@
 ---
 type: CI and privileged automation topology
 title: GitHub Actions and CI/CD
-description: Repository automation separates untrusted pull-request validation from metadata-only pull-request-target automation and trusted secret-backed or repository-writing maintenance. This page maps the CI gates, generated documentation refreshes, integration intake, and review-PR lifecycle.
+description: Repository automation separates untrusted pull-request validation from metadata-only pull-request-target automation and trusted secret-backed or repository-writing maintenance. This page maps CI gates, generated documentation refreshes, code-sample validation, deployed-site coverage checks, integration intake, and review-PR lifecycle.
 tags: [github-actions, ci-cd, automation, security, testing, versioning]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-29T08:22:38.059Z
 sources:
   - id: openwiki-source-dea5cd08ee99ad0f836ba18b
     resource: repo://.github/labeler.yml
@@ -14,6 +17,8 @@ sources:
     resource: repo://.github/workflows/_lint.yml
   - id: openwiki-source-4d9cccca7700db7220ec055e
     resource: repo://.github/workflows/_test.yml
+  - id: openwiki-source-477c95c54c9043bc75d26802
+    resource: repo://.github/workflows/check-llms-urls.yml
   - id: openwiki-source-21617d8a6b2b570989a7c900
     resource: repo://.github/workflows/check-version-claims.yml
   - id: openwiki-source-164e2da859b5277df81c7d94
@@ -46,6 +51,8 @@ sources:
     resource: repo://.github/workflows/update-package-downloads.yml
   - id: openwiki-source-6b3ad04031a04803eb901844
     resource: repo://scripts/check_external_versions.py
+  - id: openwiki-source-7c3064080adf2cb0048e51fc
+    resource: repo://scripts/check_llms_urls.py
   - id: openwiki-source-99b53585619b83f258314f8b
     resource: repo://scripts/check_version_claims.py
   - id: openwiki-source-2654e40275744504b4ca7e2b
@@ -58,10 +65,7 @@ sources:
     resource: repo://scripts/test_code_samples.py
   - id: openwiki-source-a10b62517b8302a8d4cf3b31
     resource: repo://tests/unit_tests/test_check_external_versions.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-24T08:22:38.580Z" }
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-24T08:22:38.580Z
+generated: { by: "openwiki/0.4.3", at: "2026-09-29T08:22:38.059Z" }
 ---
 
 ## Topology and trust boundary
@@ -205,6 +209,30 @@ make export-htmltest
 
 This external-URL check of the Mint export is distinct from CI's build/link check. `htmltest-linear.yml` creates a Linear issue only when a scheduled **Htmltest Mint Export** run fails or is cancelled, attaching the failed run URL with the Linear secret and team-key variable. `test-code-samples-linear.yml` has the same scheduled-only `workflow_run` safeguard for failed or cancelled **Test Code Samples** runs. These producer-event guards must remain: they are escalation paths, not general issue creators.
 
+### Deployed `llms.txt` coverage
+
+`check-llms-urls.yml` is a separate, read-only deployed-site check. It runs manually or every Monday at 07:13 UTC, checks out only to run `python3 scripts/check_llms_urls.py`, and has a 10-minute job limit. It does not build documentation: Mintlify generates `llms.txt` and, when it is large, nested `/_llms/` indexes outside this repository. The check therefore observes the served `https://docs.langchain.com` site rather than source or `build/` output.
+
+```mermaid
+flowchart TD
+  Root["Served llms.txt"] --> Crawl["Follow same-site nested llms indexes"]
+  Crawl --> Pages["Normalize listed page URLs"]
+  Sitemap["Served sitemap.xml"] --> Compare{"Every sitemap URL listed"}
+  Pages --> Compare
+  Compare -->|"yes"| Pass["Coverage passes"]
+  Compare -->|"no"| Fail["Print up to 40 missing URLs and fail"]
+```
+
+This check compares the deployed sitemap with pages reachable through the deployed LLM index hierarchy.
+
+The crawler follows only `https` Markdown links under the configured base URL; links containing `/_llms/` are more indexes, while page links have `.md` and landing-page `/index` suffixes normalized before comparison. Network connection failures are retried three times with increasing delays, but HTTP errors fail immediately. On a coverage gap it prints up to 40 missing URLs and exits nonzero. Because Mintlify owns index generation, first confirm that no custom `llms.txt` was added to the build, then report a genuine gap to Mintlify; this workflow does not create a Linear escalation or a repository fix PR.
+
+For an explicit deployment target, run:
+
+```bash
+python3 scripts/check_llms_urls.py --base-url https://www.mintlify.com/docs
+```
+
 ### Standing refresh PRs and signature snippets
 
 `refresh-external-versions.yml` runs Monday at 08:00 UTC or manually with write permissions. `check_external_versions.py --write` can rewrite only validated, exactly-once captured version digits from allowed sources. If `src/` has no diff, it exits; otherwise it appends to an open `chore/refresh-external-versions` PR or creates it. In write mode unreadable upstream entries are reported without blocking other resolvable updates, so reviewers still need to assess the surrounding requirement.
@@ -233,6 +261,7 @@ The pull-request action maintains the `openwiki/update` branch and is restricted
 - [Mintlify](/openwiki/integrations/mintlify.md)
 - [Reference Documentation](/openwiki/integrations/reference-docs.md)
 - [Testing Overview](/openwiki/testing/test-overview.md)
+- [CLI Tools and Make Targets](/openwiki/operations/cli-tools.md)
 - [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md)
 - [Integration Listing Automation](/openwiki/workflows/integration-listing-automation.md)
 - [Agent Skills](/openwiki/operations/agent-skills.md)
