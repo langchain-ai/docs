@@ -39,6 +39,7 @@ Search the codebase for `MultiServerMCPClient`, `mcpServers`, `getTools`, `initi
 - **Elicitation pauses runs by default.** When a modern server asks for input during a tool call, the adapter raises a LangGraph @[`interrupt`] and the run stops until you resume it with `createMCPElicitationResume`. A checkpointer is needed only when a tool elicits. Set `elicitation: false` on a server to keep the 1.x behavior. See [Elicitation](#elicitation).
 - **Tool content is always standard content blocks.** 1.x defaulted `useStandardContentBlocks` to `false`. 2.0 removes the option, rejects it, and always returns standard blocks, so images and audio carry `data` and `mimeType` instead of `image_url` data URLs. See [Tool results](#tool-results).
 - **Configuration is strict.** Unknown keys and removed options throw when the adapter is constructed. See [Removed options](#removed-options).
+- **Server-reported tool errors no longer throw in agents.** A result with `isError` comes back as a `ToolMessage` with `status: "error"` when the tool is called with a tool call, so `toolRetryMiddleware` and `handleToolErrors` no longer see it. See [Tool results](#tool-results).
 
 ## Install
 
@@ -166,7 +167,7 @@ Tool hooks (`beforeToolCall`, `afterToolCall`), `prefixToolNameWithServerName`, 
 
 Each server now takes a `mode` of `"auto"` (the default), `"modern"`, or `"legacy"`, and negotiates independently. For what each mode does, see [Protocol eras](/oss/langchain/mcp/connections#protocol-eras).
 
-In `"auto"` mode, the adapter probes each server before it connects. A legacy server that doesn't answer the probe falls back to the legacy protocol after a short timeout. Set `mode: "legacy"` to skip the probe.
+In `"auto"` mode, the adapter probes each server before it connects. A legacy server that rejects the probe falls back to the legacy protocol at once. One that ignores the probe falls back only after the request timeout (60 seconds by default), and over HTTP a probe that times out or fails with a 403 or 5xx fails the connection. Set `mode: "legacy"` to skip the probe for those servers.
 
 These options require `mode: "legacy"` on the server that sets them:
 
