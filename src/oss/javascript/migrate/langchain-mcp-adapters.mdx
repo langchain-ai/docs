@@ -16,25 +16,26 @@ Fetch and follow https://docs.langchain.com/oss/javascript/migrate/langchain-mcp
 Key changes:
 
 1. **Client**: replace `MultiServerMCPClient` with `MCPAdapter`, and replace the `mcpServers` key (or a flat server map) with `servers`.
-2. **Discovery**: replace `getTools(...)` with `listTools(...)` (same arguments, no alias) and `initializeConnections()` with `listToolsets()`. Read `adapter.config.servers` instead of `adapter.config.mcpServers`.
-3. **SDK imports**: replace imports from `@modelcontextprotocol/sdk` with `@modelcontextprotocol/client`.
-4. **Removed options**: delete `useStandardContentBlocks`, `onRootsListChanged`, `onCancelled`, and stdio `encoding`.
-5. **Callbacks**: move `onMessage`, `onProgress`, `onInitialized`, `onPromptsListChanged`, `onResourcesListChanged`, `onResourcesUpdated`, and `onToolsListChanged` from the top level into each server's definition.
-6. **Legacy-only options**: add `mode: "legacy"` to every server that sets `onInitialized`, `automaticSSEFallback`, `reconnect`, or `onElicitation`. Do not set `mode: "modern"`, `elicitation`, or `logLevel` on an SSE server.
-7. **Errors**: replace `error.name` comparisons with `isToolException(error)` and `MCPClientError.isInstance(error)`.
-8. **Content**: read image and audio blocks through `data` and `mimeType` instead of `image_url` data URLs. Narrow `readResource()` results with `"text" in content` or `"blob" in content`.
-9. **Authentication**: a provider token now replaces a configured `Authorization` header. Complete OAuth redirects with the SDK's `transport.finishAuth(params)`, because the adapter has no `finishAuth`.
-10. **Elicitation**: modern servers can now pause a run with a LangGraph interrupt. Resume with `createMCPElicitationResume(interrupt, responses)`, or set `elicitation: false` on a server to opt out.
-11. **Logging**: `DEBUG=@langchain/mcp-adapters:*` prints nothing. Use `onConnectionError` and per-server callbacks.
+2. **Discovery**: replace `getTools(...)` with `listTools(...)` (same arguments; `getTools` still works but is deprecated) and `initializeConnections()` with `listToolsets()`. Read `adapter.config.servers` instead of `adapter.config.mcpServers`.
+3. **Tool names**: `listTools()` now throws an `MCPClientError` when two tools share a name. Set `prefixToolNameWithServerName: true` when servers expose the same tool name.
+4. **SDK imports**: replace imports from `@modelcontextprotocol/sdk` with `@modelcontextprotocol/client`.
+5. **Removed options**: delete `useStandardContentBlocks`, `onRootsListChanged`, `onCancelled`, and stdio `encoding`.
+6. **Callbacks**: move `onMessage`, `onProgress`, `onInitialized`, `onPromptsListChanged`, `onResourcesListChanged`, `onResourcesUpdated`, and `onToolsListChanged` from the top level into each server's definition.
+7. **Legacy-only options**: add `mode: "legacy"` to every server that sets `onInitialized`, `automaticSSEFallback`, `reconnect`, or `onElicitation`, or that needs a dropped HTTP stream resumed. Do not set `mode: "modern"`, `elicitation`, or `logLevel` on an SSE server.
+8. **Errors**: replace `error.name` comparisons with `isToolException(error)` and `MCPClientError.isInstance(error)`. A server-reported error (`isError`) in a tool call now returns an error `ToolMessage` instead of throwing, so retry middleware and `handleToolErrors` no longer see it.
+9. **Content**: read image and audio blocks through `data` and `mimeType` instead of `image_url` data URLs, and read `mimeType` instead of `mime_type` on `resource_link` file blocks. Narrow `readResource()` results with `"text" in content` or `"blob" in content`.
+10. **Authentication**: a provider token now replaces a configured `Authorization` header. Complete OAuth redirects with the SDK's `transport.finishAuth(params)`, because the adapter has no `finishAuth`.
+11. **Elicitation**: modern servers can now pause a run with a LangGraph interrupt. Resume with `createMCPElicitationResume(interrupt, responses)`, or set `elicitation: false` on a server to opt out. With `toolRetryMiddleware`, upgrade `langchain` to 1.5.15 or later.
+12. **Logging**: `DEBUG=@langchain/mcp-adapters:*` prints nothing. Use `onConnectionError` and per-server callbacks.
 
-Search the codebase for `MultiServerMCPClient`, `mcpServers`, `getTools`, `initializeConnections`, `@modelcontextprotocol/sdk`, `useStandardContentBlocks`, `onRootsListChanged`, `onCancelled`, `encoding`, `image_url`, `error.name`, `setLoggingLevel`, and top-level callback options, and apply the necessary changes. Flag anything that cannot be migrated automatically.
+Search the codebase for `MultiServerMCPClient`, `mcpServers`, `getTools`, `initializeConnections`, `@modelcontextprotocol/sdk`, `useStandardContentBlocks`, `onRootsListChanged`, `onCancelled`, `encoding`, `image_url`, `mime_type`, `error.name`, `setLoggingLevel`, and top-level callback options, and apply the necessary changes. Flag anything that cannot be migrated automatically.
 </Prompt>
 
 `@langchain/mcp-adapters` 2.0 rebuilds the adapter on the MCP TypeScript SDK 2 client. It negotiates the MCP protocol era for each server and answers modern MCP elicitation with LangGraph interrupts. This guide covers the changes that affect 1.x code. For the feature documentation, see [Model Context Protocol (MCP)](/oss/langchain/mcp).
 
 ## Breaking changes
 
-- **`getTools()` is removed.** Call `listTools()` with the same arguments. The other renames keep deprecated aliases. See [Renamed APIs](#renamed-apis).
+- **Duplicate tool names throw.** `listTools()` throws an `MCPClientError` when a name appears more than once in the flattened list; 1.x returned every copy. Prefixing is still off by default, so when two servers expose the same name, set `prefixToolNameWithServerName: true`. When one server lists a tool twice, fix the server or pick tools from `listToolsets()`.
 - **Elicitation pauses runs by default.** When a modern server asks for input during a tool call, the adapter raises a LangGraph @[`interrupt`] and the run stops until you resume it with `createMCPElicitationResume`. A checkpointer is needed only when a tool elicits. Set `elicitation: false` on a server to keep the 1.x behavior. See [Elicitation](#elicitation).
 - **Tool content is always standard content blocks.** 1.x defaulted `useStandardContentBlocks` to `false`. 2.0 removes the option, rejects it, and always returns standard blocks, so images and audio carry `data` and `mimeType` instead of `image_url` data URLs. See [Tool results](#tool-results).
 - **Configuration is strict.** Unknown keys and removed options throw when the adapter is constructed. See [Removed options](#removed-options).
@@ -96,7 +97,7 @@ const tools = await adapter.listTools();
 | --- | --- |
 | `MultiServerMCPClient` | `MCPAdapter` (deprecated alias kept) |
 | `mcpServers` or a flat server map | `servers` (deprecated alias kept; passing both throws) |
-| `getTools(...)` | `listTools(...)`, same arguments (removed, no alias) |
+| `getTools(...)` | `listTools(...)`, same arguments (deprecated alias kept) |
 | `initializeConnections()` | `listToolsets()`, tools grouped by server (deprecated alias kept) |
 | `ClientConfig` type | `MCPAdapterConfig` (deprecated alias kept) |
 
@@ -165,6 +166,8 @@ Tool hooks (`beforeToolCall`, `afterToolCall`), `prefixToolNameWithServerName`, 
 
 Each server now takes a `mode` of `"auto"` (the default), `"modern"`, or `"legacy"`, and negotiates independently. For what each mode does, see [Protocol eras](/oss/langchain/mcp/connections#protocol-eras).
 
+In `"auto"` mode, the adapter probes each server before it connects. A legacy server that doesn't answer the probe falls back to the legacy protocol after a short timeout. Set `mode: "legacy"` to skip the probe.
+
 These options require `mode: "legacy"` on the server that sets them:
 
 - `onInitialized`
@@ -187,6 +190,8 @@ const adapter = new MCPAdapter({
 });
 ```
 
+Streamable HTTP streams resume only in legacy mode. In `"auto"` and `"modern"` mode, `maxRetries` is 0, so a dropped stream is not resumed; 1.x resumed it by default. Add `mode: "legacy"` to keep resumption, and `reconnect` to tune it.
+
 SSE always speaks the legacy protocol, so an SSE server rejects `mode: "modern"`, `elicitation`, and `logLevel`. In `"auto"` mode, an HTTP 404 or 405 can still fall back to SSE. Authentication and network failures stay errors.
 
 ### Expect stricter validation
@@ -202,7 +207,7 @@ SSE always speaks the legacy protocol, so an SSE server rejects `mode: "modern"`
 - **Header precedence**: Once a provider has a token, it replaces a configured `Authorization` header. 1.x sent the configured header instead. The two values are no longer joined into one header.
 - **OAuth callback**: Complete a redirect with the SDK's `transport.finishAuth(params)`, using a provider with the same storage. The adapter has no `finishAuth`.
 - **Provider methods**: Implement `invalidateCredentials()`, plus `saveDiscoveryState()` and `discoveryState()` persisted alongside the code verifier.
-- **Errors**: An authentication failure throws an `MCPClientError` whose `cause` is `UnauthorizedError` (a login is needed) or an HTTP 401 `SdkHttpError` (the credentials are still rejected).
+- **Errors**: A discovery that fails on authentication throws an `MCPClientError` whose `cause` is `UnauthorizedError` (a login is needed) or an HTTP 401 `SdkHttpError` (the credentials are still rejected).
 - **Retries**: A server that failed on authentication is retried on the next discovery, even with `onConnectionError: "ignore"`. In 1.x, a skipped server was never retried.
 - **Overrides**: Connections and catalogs are keyed by headers and provider object. An `authProvider` or `headers` in a method's options applies to every HTTP and SSE server.
 
@@ -212,8 +217,10 @@ For the full guide, see [Authentication](/oss/langchain/mcp/auth).
 
 Elicitation is new in 2.0: 1.x had no elicitation support. When a server negotiates the modern protocol, the adapter raises each elicitation request as a LangGraph @[`interrupt`] by default. A tool that requests input now pauses the run.
 
-- **Checkpointer**: A checkpointer is needed only when a tool actually elicits. Without one, the tool throws a `ToolException` that explains how to answer.
-- **Resume**: Build the resume value with `createMCPElicitationResume(interrupt, responses)`, which addresses the answers to the interrupt's ID.
+- **Checkpointer**: A checkpointer is needed only when a tool actually elicits. Without one, the tool call fails with a `ToolException` that explains how to answer.
+- **Interrupt payload**: Each interrupt's `value` is an `MCPElicitationInterrupt` with `type: "mcp_elicitation"`, the configured `server` name, the MCP `tool` name without any prefix, the effective `arguments`, and `requests`. `requests` is a record keyed by the server's request key. Each entry is a form request (`message` and `requestedSchema`) or a URL request (`mode: "url"`, `message`, and `url`). The Python adapter's payload has `tool_name` and a list of requests instead, and its resume carries no interrupt ID, so a UI that serves both needs to handle each shape.
+- **Resume**: Answer every key in `requests` with `{ action, content? }`, where `action` is `"accept"`, `"decline"`, or `"cancel"`. `createMCPElicitationResume(interrupt, responses)` returns `{ [interrupt.id]: { responses } }`, so each pending interrupt is answered by its ID. A missing key, or content that doesn't match `requestedSchema`, fails the tool call.
+- **Retry middleware**: Under `toolRetryMiddleware`, elicitation needs `langchain` 1.5.15 or later. Earlier versions treat the interrupt as a tool failure.
 - **Opt out**: Set `elicitation: false` on an individual modern server. A top-level `elicitation` option is rejected.
 - **Replays**: A resume replays the tool call from its first round, so N questions cost O(N²) requests. `beforeToolCall` runs on every replay, and the adapter promises no exactly-once effects. Keep servers and hooks replay-safe.
 - **Legacy servers**: Set an `onElicitation` handler on a server with `mode: "legacy"`. This handler is also new in 2.0.
@@ -230,8 +237,9 @@ const paused = await agent.invoke(
   config
 );
 const [pending] = paused.__interrupt__ ?? [];
-const { requests } = pending.value as MCPElicitationInterrupt;
+const { server, tool, requests } = pending.value as MCPElicitationInterrupt;
 const [requestKey] = Object.keys(requests);
+console.log(`${server}/${tool}: ${requests[requestKey].message}`);
 
 const resume = createMCPElicitationResume(pending, {
   [requestKey]: { action: "accept", content: { date: "2026-09-14" } },
@@ -250,10 +258,13 @@ Only elicitation is answered through interrupts. When a modern server asks for [
 - **Standard content blocks**: Tool content is always standard LangChain content blocks. Images and audio expose `data` and `mimeType`. By default, 1.x produced `image_url` blocks with data URLs.
 - **Artifacts**: Blocks routed to the artifact keep their MCP format, including in `afterToolCall`. The artifact array also carries `mcp_structured_content`, `mcp_meta`, and `mcp_content` provenance entries.
 - **Embedded resources**: Converting a result no longer fetches embedded resource URIs, which 1.x fetched eagerly. Call `readResource()` when you need a resource's contents.
-- **Tool errors**: A result with `isError` still throws a `ToolException`. The exception now carries the MCP result in `result`.
+- **Resource links**: A `resource_link` block becomes `{ type: "file", url, mimeType, metadata }`, with the link's `uri`, `name`, and `title` in `metadata`, and the artifact keeps the original block as an `mcp_content` entry. 1.x produced `{ type: "file", source_type: "url", url, mime_type }`, so read `mimeType` instead of `mime_type`.
+- **Tool errors**: Called with a tool call, as `createAgent` and `ToolNode` do, a result with `isError` returns a `ToolMessage` with `status: "error"`, the call's name and ID, and the server's content, instead of throwing. The server's text always reaches the model, even when `outputHandling` routes text to the artifact, and an error without text gets a one-line placeholder. Called directly with plain arguments, the tool still throws a `ToolException`, which now carries the MCP result in `result`.
+- **Error middleware**: Because a server-reported error no longer throws, `toolRetryMiddleware` no longer retries it and a `handleToolErrors` handler no longer sees it.
+- **Other failures**: Transport, validation, and elicitation failures still throw a `ToolException`. Under `createAgent`, the model sees each one as an error message and the run continues. The exception fails the run only when a `wrapToolCall` middleware lets it through.
 - **Resource reads**: `readResource()` preserves SDK content metadata. Narrow each item with `"text" in content` or `"blob" in content`.
 - **Output schemas**: Each call forwards the discovered tool descriptor. The final result of an eliciting tool is validated against its `outputSchema`.
-- **Unchanged**: A result with a single text block still becomes a string `content`. Tool annotations remain at `tool.metadata.annotations`.
+- **Unchanged**: A result with a single text block still becomes a string `content`. Tool metadata is still `{ annotations }`, so read hints such as `destructiveHint` from `tool.metadata.annotations`. 2.0 adds no `metadata.mcp` namespace.
 
 ## Lifecycle
 
