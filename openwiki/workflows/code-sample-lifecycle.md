@@ -1,11 +1,11 @@
 ---
 type: documentation workflow
 title: Code Sample Lifecycle
-description: How runnable documentation samples are tested, extracted into generated MDX, and selectively refreshed with public LangSmith trace links. Covers marker and module-scope constraints, shared Python and TypeScript dependencies, regeneration, and trusted CI publication.
+description: How runnable documentation samples are executed, extracted into generated MDX, and selectively refreshed with public LangSmith trace links. Covers language dependency owners, marker and TypeScript module-scope constraints, Deep Agents model variants, and trusted CI publication.
 tags: [code-samples, documentation, mdx, testing, tracing, github-actions]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-23T08:21:36.095Z
+    at: 2026-09-29T08:22:38.059Z
 sources:
   - id: openwiki-source-ddbddbe474c8dc57119458d7
     resource: repo://.agents/skills/docs-code-samples/SKILL.md
@@ -27,6 +27,12 @@ sources:
     resource: repo://scripts/generate_code_snippet_mdx.py
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
+  - id: openwiki-source-5ea7e255984051069fc79d5e
+    resource: repo://src/code-samples/deepagents/context-engineering-memory.ts
+  - id: openwiki-source-680bf1a2be10f8b3baa6ebd8
+    resource: repo://src/code-samples/deepagents/models-runtime-configurable.ts
+  - id: openwiki-source-29ba864200ad862698de1153
+    resource: repo://src/code-samples/deepagents/quickstart-provider-google.ts
   - id: openwiki-source-9d72c8bc710ff66237962f82
     resource: repo://src/code-samples/deepagents/skills-reload.ts
   - id: openwiki-source-b0deb1022f38d6591d1ee3af
@@ -41,7 +47,7 @@ sources:
     resource: repo://src/code-samples/package.json
   - id: openwiki-source-b68d7bad2afd9a38e8c331d5
     resource: repo://tests/unit_tests/test_generate_code_snippet_mdx.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-23T08:21:36.095Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-29T08:22:38.059Z" }
 ---
 
 ## Ownership and lifecycle
@@ -56,47 +62,53 @@ flowchart TD
   Extract --> Intermediate["Gitignored intermediate files"]
   Intermediate --> Generate["Generate snippet MDX"]
   Generate --> Review["Review committed derivative"]
-  Passed -->|"trusted tracing run"| Eligible{"One snippet marker"}
+  Passed -->|"tracing enabled"| Eligible{"One snippet marker"}
   Eligible -->|"yes"| Share["Share selected public trace"]
   Share --> Manifest["trace-links manifest"]
   Manifest --> Generate
   Eligible -->|"no"| Skip["Record multi-snippet exclusion"]
 ```
 
-This flow distinguishes normal executable-documentation generation from the credentialed publication branch that shares a public trace.
+This diagram shows the normal executable-documentation path and its credentialed, public-trace publication branch.
 
 ## Author an executable sample
 
 Supported sample extensions are `.py`, `.ts`, `.java`, `.kt`, `.go`, and `.sh`. Put matched `:snippet-start: <id>` and `:snippet-end:` lines around the code readers should see: Python and shell markers use `#`; TypeScript, Java, Kotlin, and Go use `//`. The extractor is line based, accepts indented marker lines, strips matched `:remove-start:` / `:remove-end:` regions from the displayed body, dedents output, and rejects unclosed snippet or remove regions.
 
-A snippet ID must have the suffix for its source language: `-py`, `-js`, `-java`, `-kt`, `-go`, or `-sh`. Generation uses this suffix to choose a fence language and skips an extracted file whose ID does not have the expected suffix. The ID also determines the MDX filename, so make it unique and descriptive.
+A snippet ID must have the suffix for its source language: `-py`, `-js`, `-java`, `-kt`, `-go`, or `-sh`. Generation uses this suffix to choose a fence language and skips an extracted file whose ID does not have the expected suffix. The ID becomes the MDX filename, so it must be unique and descriptive.
 
-A remove block is for non-display harness logic, such as an assertion or a blocking execution tail. The program must execute the visible imports, construction, and invocation before it exits; an early `SystemExit`, `process.exit`, or `exit 0` only establishes parsing, not that the documented path works.
+A remove block hides harness logic from documentation; it does **not** prevent that logic from executing when the full source file runs. Put assertions and a blocking tail after the documented construction or invocation where possible. An early `SystemExit`, `process.exit`, or `exit 0` only establishes parsing, not that the visible path works.
 
-### Scope, dependencies, and the skills-reload samples
+### Scope and language dependency owners
 
-A file can hold related snippets and shared setup. This works especially well in Python, where the skills source contains setup, other skills examples, and the three new reload snippets: invocation with `skills_metadata` reset, explicit state update, and middleware that requests a later reload. Because it has many markers, `skills.py` cannot receive a single-snippet public trace.
+A file can hold related snippets and shared setup. Prefer this for a coherent page or tutorial flow, but remember that a trace can be attached only to a single-snippet source file. The multi-snippet `skills.py` source, for example, contains reload invocation, explicit state reset, and reload middleware snippets, so it cannot receive a single-snippet public trace.
 
-TypeScript is executed as one module, so every visible region and remove block shares top-level imports and bindings. Split independently runnable TypeScript snippets into separate files when imports or `const`, `let`, class, or function names would collide. Keep an import that readers need inside the visible snippet; do not duplicate it in a remove block.
+TypeScript is executed as one module, so every visible region and remove block shares top-level imports and bindings. Split independently runnable TypeScript snippets into separate files when imports or `const`, `let`, class, or function names would collide. Keep an import readers need inside the visible snippet; do not duplicate it in a remove block.
 
-`skills-reload.ts` currently takes the opposite colocation tradeoff: shared agent setup and `agentEditedSkills` are in an initial remove block, followed by three marked JavaScript snippets (`skills-reload-invoke-js`, `skills-reload-update-state-js`, and `skills-reload-middleware-js`). Its `process.exit(0)` occurs before those regions, so the sample runner does **not** execute those visible reload statements. Treat that as a validation gap when changing this example: move the harness after the documented code or otherwise exercise the visible paths before claiming runtime validation. Its multiple markers also make it ineligible for a public trace until split.
+`skills-reload.ts` demonstrates an unsafe validation layout: its shared agent setup and `process.exit(0)` are in an initial remove block before its three visible reload snippets. The runner therefore exits without executing those visible statements, and the multiple markers also exclude the file from a public trace. When changing it, move the harness after the documented code or otherwise execute the displayed paths.
 
-Python dependencies are supplied by the repository `pyproject.toml` and locked environment; it includes `deepagents[quickjs]`, LangGraph, LangSmith, provider integrations, and `deepagents-acp`. TypeScript samples instead resolve from the shared `src/code-samples/package.json`, whose lockfile records the install graph; `make test-code-samples` installs that package before running samples. Add runtime dependencies at these shared owners rather than per-sample setup.
+Python samples run in the repository's uv environment. TypeScript samples are an ESM package and resolve dependencies from the shared `src/code-samples/package.json` and `package-lock.json`; `make test-code-samples` installs that package before execution. Add TypeScript runtime dependencies and refresh the lockfile at this shared owner, rather than adding per-sample setup. Go examples similarly share `src/code-samples/go.mod` and `go.sum`; the runner runs them from `src/code-samples/`, and CI derives its Go version from that module file.
 
-All Go examples similarly share `src/code-samples/go.mod` and `go.sum`. The runner invokes `go run` from `src/code-samples/`, and CI selects Go from that module file. Update the shared module and checksums rather than creating a module per example.
+### TypeScript Google-provider invariants
+
+The TypeScript Deep Agents examples use the JavaScript provider key `google:`, not Python's `google_genai:`. The latter is not a TypeScript `initChatModel` provider and fails before a request can be made. Conversely, Python samples must retain `google_genai:` rather than adopting `google:`. The generator encodes the same distinction in its Google CodeGroup tab: TypeScript emits `google:gemini-3.6-flash`, while Python emits `google_genai:gemini-3.6-flash`.
+
+Provider-specific samples must also use the API shape of their installed integration. `quickstart-provider-google.ts` gates its live validation on `GOOGLE_API_KEY`, uses `{ googleSearch: {} }` for the built-in Google search tool, and keeps its real agent construction and invocation in a remove block. The generated snippet intentionally contains only the Google-tab setup. Repository tests reject the legacy `google_search` spelling anywhere in TypeScript samples and ensure the shared `@langchain/google` declaration and resolved lockfile version are at least `0.2.6`, the minimum that configures mixed built-in and function-tool requests correctly.
+
+`context-engineering-memory.ts` is a single visible Deep Agents construction example and can therefore produce a trace if it completes with tracing enabled. `models-runtime-configurable.ts` deliberately places `// KEEP MODEL` immediately before both its default model and the runtime context model: the generated documentation preserves these values rather than presenting provider variants, because the example teaches runtime-selected models.
 
 ### Presentation directives and model variants
 
-The first extracted line may be `:codegroup-tab:` to name a Mintlify tab; `:codegroup-fence-mods:` may be the next line or the first line itself to supply fence modifiers. Generation removes these directives from the emitted code.
+The first extracted line may be `:codegroup-tab:` to name a Mintlify tab; `:codegroup-fence-mods:` may be the next line or the first line itself to supply fence modifiers. Generation removes these directives from emitted code.
 
-For eligible Python and TypeScript model strings, the generator creates a seven-provider Deep Agents `<CodeGroup>`. `# KEEP MODEL` or `// KEEP MODEL` immediately before an occurrence pins it and removes the directive. It deliberately does not vary embeddings-model arguments, model IDs containing `embedding`, or provider-specific constructor models such as `ChatOpenAI`, because inserting a routable `provider:model` value would make those examples invalid. The focused generator tests verify that RAG examples retain their embeddings model while varying the agent model, and that kept or provider-specific models remain single-fence output.
+For Python and TypeScript, the generator recognizes `model="…"` / `model = "…"` and `model: "…"` / `model = "…"`, respectively. It selects the first eligible model ID and replaces occurrences of that same ID with a seven-provider Deep Agents `<CodeGroup>` (Google, OpenAI, Anthropic, OpenRouter, Fireworks, Baseten, and Ollama). A preceding `# KEEP MODEL` or `// KEEP MODEL` removes the directive but pins the next occurrence. The generator leaves embeddings IDs and models passed to embeddings or provider-specific chat constructors such as `ChatOpenAI` alone: replacing either with a routable `provider:model` value would make the sample invalid. Focused tests cover these exclusions and the intentionally different Python and TypeScript Google keys.
 
 ## Run and regenerate
 
-Start with the changed program, then broaden when shared dependencies or execution behavior changed:
+Start with the changed program, then broaden when shared dependencies or execution behavior changes:
 
 ```bash
-make test-code-samples FILES="src/code-samples/deepagents/skills-reload.ts"
+make test-code-samples FILES="src/code-samples/deepagents/context-engineering-memory.ts"
 make test-code-samples
 make test TEST_FILE=tests/unit_tests/test_generate_code_snippet_mdx.py
 make code-snippets
@@ -111,7 +123,7 @@ Ordinary nonzero exits, timeouts, missing executables, and trace-collection fail
 For local iteration, limit extraction only:
 
 ```bash
-CODE_SNIPPET_SOURCES="src/code-samples/deepagents/skills-reload.ts" make code-snippets
+CODE_SNIPPET_SOURCES="src/code-samples/deepagents/context-engineering-memory.ts" make code-snippets
 ```
 
 `CODE_SNIPPET_SOURCES` accepts existing supported files below `src/code-samples/`. A full extraction clears supported intermediates and rebuilds them; a partial extraction replaces only selected source stems. MDX generation still scans all remaining intermediates, so use a full run before relying on repository-wide generated output.
@@ -133,16 +145,15 @@ Only manual and scheduled full runs enable tracing and public sharing. After a s
 1. Change the runnable source, not `src/snippets/code-samples/` directly.
 2. Use matched language-correct markers and a unique ID with its required suffix.
 3. Make the runner execute the visible path before any terminating or blocking harness behavior.
-4. Respect TypeScript module scope; use the shared Python environment, TypeScript package and lockfile, or Go module for new dependencies.
-5. Run the focused sample, run the generator unit test when model CodeGroup behavior changes, then run `make code-snippets` and review generated MDX.
-6. Use partial extraction only for iteration; run a full extraction for complete generated state.
-7. Treat local trace refresh and trusted CI refresh as deliberate, credentialed, public-publication actions.
+4. Respect TypeScript module scope. Add dependencies to the shared Python environment, TypeScript package and lockfile, or Go module.
+5. For TypeScript Google samples, retain `google:` and `{ googleSearch: {} }`; retain `google_genai:` in Python.
+6. Run the focused sample, then run `make test TEST_FILE=tests/unit_tests/test_generate_code_snippet_mdx.py` when model-variant or TypeScript provider behavior changes.
+7. Run `make code-snippets`, review generated MDX, and use a full extraction before relying on complete generated state.
+8. Treat local trace refresh and trusted CI refresh as deliberate, credentialed, public-publication actions.
 
 ## Related pages
 
 - [Build System Architecture](/openwiki/architecture/build-system.md)
 - [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md)
-- [Adding and Maintaining Documentation Pages](/openwiki/operations/adding-pages.md)
-- [Agent Authoring Skills](/openwiki/operations/agent-skills.md)
 - [Testing Overview](/openwiki/testing/test-overview.md)
 - [Versioned Content](/openwiki/workflows/versioned-content.md)

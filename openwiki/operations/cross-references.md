@@ -1,16 +1,15 @@
 ---
 type: operations guide
 title: Cross-References
-description: Author, resolve, and validate semantic @[ref] API-reference links. Covers language scopes, link-map ownership, failure behavior, and the distinction from Mintlify rendered-link checking.
+description: Author, resolve, and validate semantic @[ref] API-reference links. Covers language scopes, link-map ownership, route and snippet rewriting, failure behavior, and the distinction from Mintlify rendered-link checking.
 tags: [documentation, cross-references, api-reference, markdown, validation]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-21T08:24:04.334Z
 sources:
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
+  - id: openwiki-source-d0cdf44431684bdedf34705a
+    resource: repo://pipeline/core/builder.py
   - id: openwiki-source-17f3856bce97f37118963062
     resource: repo://pipeline/preprocessors/handle_auto_links.py
   - id: openwiki-source-dca59d03b9433eea9242c2e4
@@ -19,9 +18,14 @@ sources:
     resource: repo://pipeline/preprocessors/markdown_preprocessor.py
   - id: openwiki-source-0a0a6c8d7a88288e6b6b9b5b
     resource: repo://scripts/check_cross_refs.py
+  - id: openwiki-source-24e5f74f0f40e9bfd381871f
+    resource: repo://tests/unit_tests/test_builder.py
   - id: openwiki-source-2ecfcd33b729fccd843ab705
     resource: repo://tests/unit_tests/test_handle_auto_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-21T08:24:04.334Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-29T08:22:38.059Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-29T08:22:38.059Z
 ---
 
 # Cross-References
@@ -111,6 +115,12 @@ To add or correct a destination:
 
 Lookup is an exact dictionary lookup, so spelling and case must match the map key. Different scope maps may intentionally associate one name with different URLs. Repair a moved API destination in the map rather than replacing semantic references across consumer pages.
 
+## Build-time route rewriting and snippets
+
+Cross-reference resolution produces an API-reference URL; it is separate from the builder's rewriting of authored site routes. After markdown preprocessing, a language-targeted build rewrites Markdown and HTML links to ordinary absolute `/oss/...` routes as `/oss/python/...` or `/oss/javascript/...`. It does not add a second language segment to an already-prefixed route, and it keeps `/oss/deepagents/code/...` and `/oss/openwiki/...` language-agnostic. Thus, use `@[Name]` for a mapped API destination and ordinary Markdown links for documentation routes; do not expect the link map to version an `/oss/` URL.
+
+Shared MDX snippets are a special integration boundary. The builder preprocesses each snippet once per target language, rewrites its `/oss/` links to absolute language-prefixed routes, and writes copies under `build/snippets/python/` and `build/snippets/javascript/`. When a versioned page imports a `.md` or `.mdx` snippet from `/snippets/`, the builder redirects that import to the matching language copy, unless it is already language-prefixed. It also writes the original snippet path using Python-targeted content for unversioned importers. This avoids relative-link failures when a shared snippet is consumed at different nesting depths.
+
 ## Missing references and the authoring gate
 
 An unresolved reference does not stop preprocessing. `_transform_link()` writes an info-level log containing the file path, line, name, and active scope, then leaves the original marker unchanged. This makes the build inspectable but is not a successful documentation change.
@@ -140,14 +150,14 @@ The checker reuses the resolver's reference and code-fence patterns. It ignores 
 
 ## Focused checks and troubleshooting
 
-When changing the resolver, map, fence behavior, or validator, run:
+When changing the resolver, map, fence behavior, route rewriting, snippets, or validator, run:
 
 ```bash
-uv run pytest tests/unit_tests/test_handle_auto_links.py tests/unit_tests/test_check_cross_refs.py -vv
+uv run pytest tests/unit_tests/test_handle_auto_links.py tests/unit_tests/test_check_cross_refs.py tests/unit_tests/test_builder.py -vv
 make check-cross-refs
 ```
 
-The resolver tests exercise replacement outside fences, preservation inside backtick and tilde fences, conditional-looking text in code, escapes, and the unclosed-fence behavior. The checker tests cover path and fenced scope selection, shared-OSS all-scope checking, titled and backticked syntax, multiple references on one line, and exclusions.
+The resolver tests exercise replacement outside fences, preservation inside backtick and tilde fences, conditional-looking text in code, escapes, and the unclosed-fence behavior. The checker tests cover path and fenced scope selection, shared-OSS all-scope checking, titled and backticked syntax, multiple references on one line, and exclusions. Builder tests cover language route insertion, preserved language-agnostic and already-prefixed routes, and language-specific snippet copies and imports.
 
 | Symptom | Action |
 | --- | --- |
@@ -156,6 +166,7 @@ The resolver tests exercise replacement outside fences, preservation inside back
 | Example marker linked or failed validation | Escape it as `\@[Name]` or place it in a recognized code fence. |
 | Later markers were not resolved | Look for an unclosed regular code fence earlier in the file. |
 | A name resolves to the wrong destination | Correct the scoped `LINK_MAPS` entry; do not hard-code URLs in consuming pages. |
+| A shared snippet routes to the wrong language | Import it through an unprefixed `/snippets/...` `.md` or `.mdx` path and let the versioned build select its copy. |
 | Mintlify passes but a symbolic name fails | Run `make check-cross-refs`; rendered-link checking and map validation are separate gates. |
 
-For pipeline ordering and conditional-content semantics, see [Documentation Preprocessing](/openwiki/concepts/preprocessing.md). For authoring workflow, see [Adding and Modifying Documentation Pages](/openwiki/operations/adding-pages.md). For the complete test strategy, see [Test Overview](/openwiki/testing/test-overview.md).
+For pipeline ordering and conditional-content semantics, see [Documentation Preprocessing](/openwiki/concepts/preprocessing.md). For versioned route behavior, see [Versioning](/openwiki/concepts/versioning.md). For authoring workflow, see [Adding and Modifying Documentation Pages](/openwiki/operations/adding-pages.md). For the complete test strategy, see [Test Overview](/openwiki/testing/test-overview.md).

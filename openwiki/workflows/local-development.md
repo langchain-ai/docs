@@ -1,9 +1,11 @@
 ---
 type: workflow guide
-title: Local Development Workflow
+title: Local Development
 description: Set up and operate the local documentation build and Mintlify preview loop. Covers full and incremental builds, skill linking, recovery from generated-output drift, and focused validation.
 tags: [local-development, documentation, mintlify, build-system, workflow]
 sources:
+  - id: openwiki-source-9c06bd9d7d25770709e07c7c
+    resource: repo://.mise.toml
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
   - id: openwiki-source-6e6efa1569f158fcdb678ef0
@@ -22,19 +24,19 @@ sources:
     resource: repo://README.md
   - id: openwiki-source-16b92823fdcb07d686f2e27f
     resource: repo://tests/unit_tests/test_watcher.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-21T08:24:04.334Z" }
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-21T08:24:04.334Z
+    at: 2026-09-29T08:22:38.059Z
+generated: { by: "openwiki/0.4.3", at: "2026-09-29T08:22:38.059Z" }
 ---
 
-# Local Development Workflow
+# Local Development
 
 The local loop has a strict input/output boundary: author documentation, navigation, and assets in `src/`; the Python pipeline generates the Mintlify-facing `build/` tree. `build/` is disposable output. Never edit it directly: a full build removes and recreates it.
 
 ## First-time setup
 
-The checkout requires Python 3.13 or later, Node.js, and `uv`. Install Python dependency groups, project npm dependencies, the global Mintlify CLI, and the local Claude Code skill links:
+The checkout requires Python 3.13 or later, Node.js, and `uv`. The repository's `.mise.toml` provides a reproducible local tool selection—Node.js 22, Python 3.13, and `uv` 0.9.26—when using mise. Install Python dependency groups, project npm dependencies, the global Mintlify CLI, and the local Claude Code skill links:
 
 ```bash
 git clone https://github.com/langchain-ai/docs.git
@@ -103,9 +105,9 @@ The watcher handles a deletion differently: it removes only the source-relative 
 
 ## Know when to reset with a full build
 
-`make build` runs the full `DocumentationBuilder.build_all()` lifecycle without watching. The builder clears `build/`, emits Python and JavaScript OSS variants, builds unversioned Deep Agents Code, OpenWiki, and LangSmith content, builds managed Deep Agents variants, copies shared files and npm snippet components, and generates `llms.txt` and `llms-full.txt`.
+`make build` runs the full `DocumentationBuilder.build_all()` lifecycle without watching. The builder clears `build/`, emits Python and JavaScript OSS variants, builds unversioned Deep Agents Code, OpenWiki, and LangSmith content plus managed Deep Agents variants, then copies shared files and npm snippet components.
 
-Incremental watcher builds call the per-file path. They do not rerun whole-tree shared-file collection, npm snippet overlays, or LLM artifact generation; source deletions can also leave routed variants behind. Run `make build` after navigation, routing, shared-asset, snippet-component, broad preprocessing, deletion, or other cross-file changes, and whenever the preview looks stale. Fix the authored input or generator and rebuild—never patch `build/`.
+Incremental watcher builds call the per-file path. They do not rerun whole-tree shared-file collection or npm snippet overlays; source deletions can also leave routed variants behind. Run `make build` after navigation, routing, shared-asset, snippet-component, broad preprocessing, deletion, or other cross-file changes, and whenever the preview looks stale. Fix the authored input or generator and rebuild—never patch `build/`.
 
 For builder routing and preprocessing detail, see [Build System Architecture](/openwiki/architecture/build-system.md). For the renderer-facing contract, see [Mintlify Integration](/openwiki/integrations/mintlify.md).
 
