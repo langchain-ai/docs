@@ -222,7 +222,7 @@ Elicitation is new in 2.0: 1.x had no elicitation support. When a server negotia
 
 - **Checkpointer**: A checkpointer is needed only when a tool actually elicits. Without one, the tool call fails with a `ToolException` that explains how to answer.
 - **Interrupt payload**: Each interrupt's `value` is an `MCPElicitationInterrupt` with `type: "mcp_elicitation"`, the configured `server` name, the MCP `tool` name without any prefix, the effective `arguments`, and `requests`. `requests` is a record keyed by the server's request key. Each entry is a form request (`message` and `requestedSchema`) or a URL request (`mode: "url"`, `message`, and `url`). The Python adapter's payload has `tool_name` and a list of requests instead, and its resume carries no interrupt ID, so a UI that serves both needs to handle each shape.
-- **Resume**: Answer every key in `requests` with `{ action, content? }`, where `action` is `"accept"`, `"decline"`, or `"cancel"`. `createMCPElicitationResume(interrupt, responses)` returns `{ [interrupt.id]: { responses } }`, so each pending interrupt is answered by its ID. A missing or extra key, or content that doesn't match `requestedSchema`, fails the tool call.
+- **Resume**: Answer every key in `requests` with `{ action, content? }`, where `action` is `"accept"`, `"decline"`, or `"cancel"`. `createMCPElicitationResume(interrupt, responses)` returns `{ [interrupt.id]: { responses } }`, so each pending interrupt is answered by its ID. When several calls pause at once, merge their resumes into one `Command`; a resume without interrupt IDs reaches every pending call. A missing or extra key, or content that doesn't match `requestedSchema`, fails the tool call.
 - **Retry middleware**: Under `toolRetryMiddleware`, elicitation needs `langchain` 1.5.15 or later. Earlier versions treat the interrupt as a tool failure.
 - **Opt out**: Set `elicitation: false` on an individual modern server. A top-level `elicitation` option is rejected.
 - **Replays**: A resume replays the tool call from its first round, so N questions cost O(N²) requests. `beforeToolCall` runs on every replay, and the adapter promises no exactly-once effects. Keep servers and hooks replay-safe.
@@ -277,7 +277,7 @@ Only elicitation is answered through interrupts. When a modern server asks for [
 - **Reusable close**: `close()` aborts in-flight work, closes clients, and clears caches and failed servers. The adapter stays usable: a later discovery builds fresh clients.
 - **Discovery cache**: `listTools([], { cacheMode: "refresh" })` or `"bypass"` controls the SDK discovery cache. A failed refresh keeps the previous catalog.
 - **Resource listing**: `listResources()` and `listResourceTemplates()` now throw a server's error, where 1.x logged every error and returned `[]`. A server without resource templates still lists them as `[]`.
-- **Reconnect failures**: A background reconnection that exhausts its attempts now reports to an `onConnectionError` function instead of failing silently.
+- **Reconnect failures**: A stdio `restart` that exhausts its attempts now reports to an `onConnectionError` function instead of failing silently.
 
 ## See also
 
