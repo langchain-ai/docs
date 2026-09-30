@@ -1,0 +1,82 @@
+---
+title: Connect self-hosted LangSmith to Slack
+sidebarTitle: Slack
+description: Configure the managed Slack app connection for Engine and alert notifications on self-hosted LangSmith.
+---
+
+The managed LangSmith Slack app sends [Engine notifications](/langsmith/engine-notifications) and [alert notifications](/langsmith/alerts) to your Slack channels. After your administrator configures the connection, users install the LangSmith app in their workspace through Slack's authorization page. You do not need to create a Slack app or send a Slack Client Secret to LangChain.
+
+<Note>
+This connection requires a LangSmith release that supports managed Slack authorization on self-hosted deployments and a configured hosted OAuth service. Contact your account representative to confirm availability and obtain the setup values before configuring your deployment.
+</Note>
+
+{/* Publication prerequisite: confirm the minimum LangSmith and Helm chart versions, and hosted OAuth service availability. */}
+
+This flow requires internet access and does not support air-gapped installations or bring-your-own-cloud data-plane workspaces. Connecting or disconnecting a Slack workspace requires the `organization:manage` permission in LangSmith and permission to install apps in Slack.
+
+## Configure your deployment
+
+The hosted OAuth service handles authorization with the shared Slack app. Your deployment stores its own encrypted bot token and sends notifications directly to Slack. The shared app's Client Secret stays with the hosted service.
+
+To enable the connection:
+
+1. Obtain the hosted OAuth service origin from your account representative.
+2. Register your deployment's exact HTTPS callback URL with the hosted service operator. For the standard self-hosted ingress, use `https://<your-langsmith-host>/api/v1/platform/slack/callback`. If your ingress uses a different API prefix, register the URL that reaches that callback on your deployment.
+3. Configure the following environment variables on the LangSmith backend using your deployment's [environment variable configuration](/langsmith/self-host-environment-variables):
+
+   | Variable | Value |
+   | --- | --- |
+   | `LANGSMITH_SLACK_OAUTH_BROKER_URL` | The HTTPS origin of the hosted OAuth service. |
+   | `LANGSMITH_SLACK_SELF_HOSTED_CALLBACK_URI` | The exact HTTPS callback URL registered in step 2. |
+   | `LANGSMITH_URL` | The browser-facing origin of your self-hosted LangSmith instance. Notification links use this origin. |
+
+4. Keep the existing `API_KEY_SALT` encryption secret consistent between the API and notification workers so they can decrypt stored bot tokens. See [Use an existing secret](/langsmith/self-host-using-an-existing-secret).
+5. Restart the affected services and reload LangSmith. The Slack connection controls appear when your backend has a valid OAuth configuration.
+
+## Allow network access
+
+Slack authorization uses the browser and your deployment's backend. Allow these connections so installation and delivery can complete:
+
+- **Backend:** Outbound HTTPS to the configured hosted OAuth service and the Slack Web API at `slack.com`.
+- **Browser:** Access to Slack, the hosted OAuth service, and your deployment's callback URL.
+- **Hosted OAuth service:** Access to Slack. The service redirects the browser to your callback and does not require inbound network access to your deployment.
+
+## Connect a Slack workspace
+
+A Slack workspace connection belongs to your LangSmith organization, so you can reuse it across projects. To connect a workspace:
+
+1. Open your self-hosted LangSmith instance and go to **Settings** > your organization's **General** settings.
+2. Under **Slack**, click **Connect Slack**. You can also connect from the channel selector when configuring an Engine or alert notification.
+3. Choose the Slack workspace, review the requested permissions, and click **Allow**. If Slack requires administrator approval, complete that approval process.
+4. After the browser returns to LangSmith, choose the connected workspace and channel in your notification settings. For a private channel, invite the LangSmith app to the channel in Slack first, then refresh the channel picker. LangSmith automatically joins the public channel you select.
+5. Save the destination with the event types and priority you need. See [Configure Engine notifications](/langsmith/engine-notifications#notify-a-slack-channel) or [Configure alert notifications](/langsmith/alerts#step-4-configure-notification-channel).
+
+## Verify delivery
+
+An Engine destination sends notifications for new events that match its event types and minimum priority. Existing issues do not emit a new notification when you save the destination.
+
+To verify an Engine destination:
+
+1. Save a Slack destination for `issue.created` on a test project.
+2. Generate a fresh issue that meets the destination's minimum priority.
+3. Check that a message arrives in the selected Slack channel and that **View issue** opens your self-hosted LangSmith instance.
+
+For an alert destination, use **Send Test Notification** as described in [Test the alert integration](/langsmith/alerts#2-test-the-integration).
+
+Slack notifications send content outside your deployment to the selected workspace. Engine messages can include issue titles, descriptions, severity, project information, links, and recurrence charts. Alert messages include alert and workspace names, metric values, thresholds, and links. Choose channels with access appropriate for that content. See [Engine notification format](/langsmith/engine-notifications#notify-a-slack-channel) and [Alert notification format](/langsmith/alerts#notification-format).
+
+## Troubleshoot the connection
+
+- **Slack is absent:** Confirm that your release supports the connection, both OAuth environment variables have valid HTTPS URLs, and you have reloaded the UI after restarting the backend.
+- **Authorization cannot start:** Confirm that the backend can reach the hosted OAuth service and that the service operator registered the exact callback URL, including its scheme, host, port, and path.
+- **Authorization expires or fails after returning:** Start **Connect Slack** again. Authorization expires after 10 minutes and callbacks cannot be reused. Check browser access to the callback and backend access to the hosted OAuth service.
+- **A private channel is absent:** Invite the LangSmith app to the channel, then refresh the channel picker.
+- **Messages do not arrive:** Confirm Slack Web API egress, matching encryption secrets on the API and workers, and the destination's event and priority filters. If someone removed the app from Slack, reconnect the workspace.
+- **Links open the wrong host:** Set `LANGSMITH_URL` to your self-hosted UI origin.
+
+## See also
+
+- [Engine on self-hosted LangSmith](/langsmith/engine-self-hosted)
+- [Engine notifications](/langsmith/engine-notifications)
+- [Alerts](/langsmith/alerts)
+- [Configure egress](/langsmith/self-host-egress)
