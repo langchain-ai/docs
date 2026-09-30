@@ -269,6 +269,134 @@ const graph = new StateGraph(State)
 `executionInfo` is available even without a retry policy—`nodeAttempt` defaults to `1`.
 :::
 
+## Retry boundaries and idempotency
+
+Retries give LangGraph **at-least-once** semantics for node execution: when an attempt fails, the node function can be invoked again from its start. The retry mechanism guarantees *retries happen*, not that the side effects of a node happen exactly once.
+
+The most common source of production bugs with retries is a node that mixes graph state updates with side effects against systems outside the graph:
+
+```text
+attempt 1:  node starts -> call payment API -> payment succeeds -> process crashes
+attempt 2:  node starts -> call payment API -> payment succeeds AGAIN  (double charge!)
+```
+
+LangGraph checkpoints graph state at each superstep, so a resumed or retried node sees the same checkpointed state it started with. But the checkpointer has no visibility into—or transactional control over—external systems such as payment providers, email APIs, or message queues. **Application code is responsible for making external side effects idempotent.**
+
+### What a retry can repeat
+
+A retry re-runs the entire node function. Everything inside the function runs again:
+
+- External API calls (payments, emails, notifications, webhooks)
+- File or database writes outside the graph's checkpointer
+- Calls to other services that are not rolled back on failure
+
+Graph state written through the checkpointer is safe: it is saved atomically per superstep and rolled forward on resume. Side effects performed *during* the node are not part of that transaction.
+
+### Protect side effects with an idempotency key
+
+The standard pattern is to send a stable idempotency key with the side effect, so a retried call with the same key is a no-op on the service side.
+
+The key has to be stable **before** the side effect runs, which rules out generating it inside the node and saving it in the return value:
+
+```text
+attempt 1:  node starts -> generate key K1 -> charge succeeds -> process dies before returning
+attempt 2:  node starts -> state has no key -> generate key K2 -> charge runs again  (double charge)
+```
+
+The node never returned, so `K1` was never checkpointed. A retry starts from the last committed state and generates a different key. **Derive the key from state that is already durable**, or persist it in a separate step that completes before the side effect:
+
+:::python
+```python
+def charge_customer(state: State) -> State:
+    # Derived from durable state: the same order always produces the same key,
+    # across retries and across a resume in a fresh process.
+    idempotency_key = f"charge:{state['order_id']}"
+
+    provider.charge(
+        customer_id=state["customer_id"],
+        amount=state["amount"],
+        idempotency_key=idempotency_key,
+    )
+
+    # Recorded after the fact for observability only. A retry does not depend on it.
+    return {"last_payment_key": idempotency_key, "charged": True}
+```
+:::
+
+:::js
+```typescript
+async function chargeCustomer(state: typeof State.State) {
+  // Derived from durable state: the same order always produces the same key,
+  // across retries and across a resume in a fresh process.
+  const idempotencyKey = `charge:${state.orderId}`;
+
+  await provider.charge({
+    customerId: state.customerId,
+    amount: state.amount,
+    idempotencyKey,
+  });
+
+  // Recorded after the fact for observability only. A retry does not depend on it.
+  return { lastPaymentKey: idempotencyKey, charged: true };
+}
+```
+:::
+
+When no durable business identity exists to derive from, persist a generated key in its own checkpointed step before the side effect runs:
+
+:::python
+```python
+def reserve_key(state: State) -> State:
+    # A node of its own, so the key is committed before anything external happens.
+    return {"payment_key": state.get("payment_key") or str(uuid.uuid4())}
+
+def charge_customer(state: State) -> State:
+    provider.charge(..., idempotency_key=state["payment_key"])
+    return {"charged": True}
+```
+:::
+
+Two properties make this safe:
+
+1. **The key is reproducible from durable state.** A retry, or a resume in a fresh process, reconstructs the same key rather than minting a new one.
+2. **The external service honors the key.** Idempotency keys only help when the provider deduplicates by key. Check the service's documentation before relying on it.
+
+### An acknowledgement is not a receipt
+
+A provider that deduplicates by key still leaves one gap: if the request commits on the provider's side but the acknowledgement is lost—a crash, a timeout, a dropped connection—the graph has no record of the charge, and the provider did. The next attempt sends the same key, the provider deduplicates, and no second charge occurs. **The retry is safe, but the outcome is unknown**, because a deduplicated response can mean "already charged by your earlier attempt" just as easily as "not charged yet".
+
+Treat the absence of local state as *unknown*, never as proof the side effect did not happen. After a crash mid-node, query the provider for the operation's authoritative status before deciding whether to compensate, retry, or continue:
+
+:::python
+```python
+def charge_customer(state: State) -> State:
+    idempotency_key = f"charge:{state['order_id']}"
+
+    result = provider.charge(..., idempotency_key=idempotency_key, wait_for_result=True)
+
+    # The provider is the source of truth for whether the charge exists.
+    # A key that deduplicates tells you the request was seen, not that this
+    # attempt performed it.
+    if result.status == "already_exists":
+        return {"charged": True, "reconciled": True}
+
+    return {"charged": True}
+```
+:::
+
+This is why idempotency alone is not a complete story for external mutations. Idempotency prevents *blind duplication* on retry; reconciliation resolves *what actually happened* when an acknowledgement goes missing. Systems that can express both—a key plus a way to read the operation's status—let a recovered node converge on the truth instead of guessing.
+
+### Checkpoint state vs external state
+
+| State | Managed by LangGraph | Survives retries | Transactional with the run |
+| ----- | ------------------- | ---------------- | -------------------------- |
+| Graph state (checkpointer) | Yes | Yes | Yes |
+| External systems (payments, email, queues) | No | No | No |
+
+A retry that updates graph state only is automatically safe: the checkpointer ensures each superstep is applied exactly once on resume. A retry that touches an external system needs an application-owned idempotency boundary, because the external system has no knowledge of the graph's checkpoint.
+
+For side effects that cannot be made idempotent at the API level, move them out of retryable nodes—for example, into an error handler that runs after retries are exhausted, or into a separate worker that deduplicates by task ID.
+
 ## Timeouts
 
 :::python
