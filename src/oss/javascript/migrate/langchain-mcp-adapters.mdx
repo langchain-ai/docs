@@ -202,8 +202,9 @@ For the full guide, see [Authentication](/oss/langchain/mcp/auth).
 Elicitation is new in 2.0: 1.x had no elicitation support. When a server negotiates the modern protocol, the adapter by default raises each round of requested input as one LangGraph @[`interrupt`], whose `requests` holds every question. A tool that requests input now pauses the run.
 
 - **Checkpointer**: A tool needs a checkpointer only when it asks for input. Otherwise, direct invocation still works.
-- **Interrupt payload**: Each interrupt's `value` is an `MCPElicitationInterrupt`, with `type: "mcp_elicitation"`, `server`, `tool`, `arguments` (the effective tool arguments), `requests` (the form or URL requests keyed by the server's request key), and an optional `toolCallId` (the tool call that asked). Check `type` before handling it when other interrupts can occur.
-- **Resume**: Answer every key in `requests` with `{ action, content? }`, where `action` is `"accept"`, `"decline"`, or `"cancel"`. Accepted form content must match `requestedSchema`. Pass `createMCPElicitationResume(interrupt, responses)` as the `resume` value in a LangGraph `Command`. It copies the interrupt's `toolCallId` into the answer, so parallel calls each receive their own answer; prefer it over a bare `{ responses }` value. To answer several interrupts at once, merge the objects it returns.
+- **Interrupt payload**: Each interrupt's `value` is an `MCPElicitationInterrupt`, with `type: "mcp_elicitation"`, `server`, `tool`, `arguments` (the effective tool arguments), and `requests` (the form or URL requests keyed by the server's request key). Check `type` before handling it when other interrupts can occur.
+- **Resume**: Answer every key in `requests` with `{ action, content? }`, where `action` is `"accept"`, `"decline"`, or `"cancel"`. Accepted form content must match `requestedSchema`. Pass `createMCPElicitationResume(interrupt, responses)` as the `resume` value in a LangGraph `Command`. It keys the answer by the interrupt's `id`, so merge the objects it returns to answer several interrupts at once.
+- **Parallel calls**: Each eliciting tool call needs its own graph task. `createAgent` does this by default: parallel calls each raise their own interrupt, with distinct ids, in one pause. In a hand-built `ToolNode` step, or under `createAgent({ version: "v1" })`, parallel calls share one task, so LangGraph matches their answers by position and an answer can reach the wrong call. Dispatch those calls with @[`Send`] instead.
 - **Opt out**: Set `elicitation: false` on an individual modern server.
 - **Replays**: Resuming runs the tool again from the beginning, including `beforeToolCall`. Make sure repeating that work does not duplicate side effects.
 - **Legacy servers**: Set an `onElicitation` handler on a server with `mode: "legacy"`. This handler is also new in 2.0.
@@ -229,6 +230,8 @@ const resume = createMCPElicitationResume(pending, {
 });
 await agent.invoke(new Command({ resume }), config);
 ```
+
+This example answers one interrupt. When several calls pause at once, answer every interrupt, for example with `Object.assign({}, ...paused.__interrupt__!.map((q) => createMCPElicitationResume(q, answers)))`, or resume until `__interrupt__` is empty. A resume that answers only the first leaves the others paused.
 
 For the full example, see [Elicitation](/oss/langchain/mcp/tools#elicitation).
 

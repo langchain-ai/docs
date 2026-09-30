@@ -240,11 +240,13 @@ Interrupt-driven elicitation requires a modern MCP server and is enabled by defa
 
 <McpElicitationJs />
 
-`createMCPElicitationResume` addresses the answer to the interrupt that requested it and to the tool call that asked. The response uses the server's request key. Build every resume value with `createMCPElicitationResume` rather than a bare `{ responses }` object, which does not say which call it answers.
+`createMCPElicitationResume` addresses the answer to the interrupt that requested it. The response uses the server's request key. Build every resume value with `createMCPElicitationResume` rather than a bare `{ responses }` object, which does not say which interrupt it answers.
 
-Each interrupt's `value` is an `MCPElicitationInterrupt`: `type: "mcp_elicitation"`, `server`, `tool`, `arguments` (the effective tool arguments), `requests`, and an optional `toolCallId` (the tool call that asked). Check `type` when the same agent can also raise human-in-the-loop interrupts.
+Each interrupt's `value` is an `MCPElicitationInterrupt`: `type: "mcp_elicitation"`, `server`, `tool`, `arguments` (the effective tool arguments), and `requests`. Check `type` when the same agent can also raise human-in-the-loop interrupts.
 
-When the model makes parallel calls that ask for input, `createAgent` pauses once with one interrupt per call, each with its own `id`. Resume them one at a time, or merge the objects that `createMCPElicitationResume` returns into one `Command({ resume })`. A hand-built `ToolNode`, or `createAgent({ version: "v1" })`, runs parallel calls in one task, so their questions arrive one per pause; answer each as it arrives, and `toolCallId` routes the answer to the call that asked.
+When several calls pause at once, answer every interrupt. Merge the objects that `createMCPElicitationResume` returns into one `Command({ resume })`, for example `Object.assign({}, ...paused.__interrupt__!.map((q) => createMCPElicitationResume(q, answers)))`, or resume until `__interrupt__` is empty. A resume that answers only the first interrupt leaves the others paused.
+
+Each eliciting tool call needs its own graph task. `createAgent` does this by default: parallel calls each raise their own interrupt, with distinct ids, in one pause. In a hand-built `ToolNode` step, or under `createAgent({ version: "v1" })`, parallel calls share one task, so LangGraph matches their answers by position and an answer can reach the wrong call. Dispatch those calls with @[`Send`] instead.
 
 On Cloudflare Workers, enable `nodejs_compat` and call `AsyncLocalStorageProviderSingleton.initializeGlobalInstance(new AsyncLocalStorage())` before running the agent, with the singleton from `@langchain/core/singletons` and `AsyncLocalStorage` from `node:async_hooks`. Without it, a tool that asks for input fails with the missing-checkpointer error even when the agent has one.
 :::
