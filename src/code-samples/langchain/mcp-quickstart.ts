@@ -34,12 +34,13 @@ async function main() {
     await adapter.close();
   }
 }
+
+await main();
 // :snippet-end:
 
 // :remove-start:
 import assert from "node:assert/strict";
 
-await main();
 console.log(
   "✓ mcp-quickstart: tool discovery, agent construction, and cleanup",
 );
