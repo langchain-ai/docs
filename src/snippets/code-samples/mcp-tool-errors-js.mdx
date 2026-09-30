@@ -1,0 +1,30 @@
+```ts
+import { MCPAdapter } from "@langchain/mcp-adapters";
+import { createAgent, ToolMessage } from "langchain";
+
+async function divideByZero(serverUrl: string) {
+  const adapter = new MCPAdapter({
+    servers: { calculator: { url: serverUrl } },
+  });
+
+  try {
+    const tools = await adapter.listTools();
+
+    const agent = createAgent({ model: "claude-sonnet-5-5", tools });
+    const result = await agent.invoke({
+      messages: [{ role: "user", content: "What is 10 divided by 0?" }],
+    });
+
+    // A server error (isError: true) reaches the model as a failed ToolMessage,
+    // so the agent can read the server's own message and recover. By default,
+    // createAgent also converts transport failures into error tool messages.
+    for (const message of result.messages) {
+      if (ToolMessage.isInstance(message) && message.status === "error") {
+        console.log(`Tool error: ${message.text}`); // [!code highlight]
+      }
+    }
+  } finally {
+    await adapter.close();
+  }
+}
+```

@@ -82,7 +82,7 @@ For a fixed API key, send a static `Authorization` header. For a token your app 
 The example uses an application-provided `tokenStore`. Implement `current()` to read the token and `refresh()` to save a newer token and report whether it succeeded.
 
 ```typescript
-import { MCPAdapter } from "@langchain/mcp-adapters";
+import { MCPAdapter, UnauthorizedError } from "@langchain/mcp-adapters";
 
 const adapter = new MCPAdapter({
   servers: {
@@ -100,7 +100,7 @@ const adapter = new MCPAdapter({
           // Throw when no newer token exists: over SSE, the SDK calls this
           // again every time a reconnect is rejected.
           if (!(await tokenStore.refresh())) {
-            throw new Error("No newer token for the CRM server");
+            throw new UnauthorizedError("No newer token for the CRM server");
           }
         },
       },
@@ -110,7 +110,7 @@ const adapter = new MCPAdapter({
 ```
 
 - **`token()`**: Runs before every request and returns the current token.
-- **`onUnauthorized()`**: Optional. Runs on a 401, before the request is retried once. Over SSE, the SDK calls it again every time a reconnect is rejected, with no cap. Throw from it when you have no newer token.
+- **`onUnauthorized()`**: Optional. Runs on a 401, before the request is retried once. Over SSE, the SDK calls it again every time a reconnect is rejected, with no cap. Throw `UnauthorizedError` when you have no newer token.
 
 Without `onUnauthorized`, a 401 fails the connection with the SDK's `UnauthorizedError`. See [Handle authentication errors](#handle-authentication-errors).
 
@@ -118,88 +118,132 @@ The adapter re-exports the `AuthProvider` and `OAuthClientProvider` types, so yo
 
 ## OAuth authentication
 
-For a server that uses OAuth 2.1, pass an `OAuthClientProvider` as `authProvider`. The SDK runs discovery, [dynamic client registration](https://modelcontextprotocol.io/specification/draft/basic/authorization), the code exchange, and token refresh. For a walkthrough of each provider method and the redirect, see the MCP TypeScript SDK's [OAuth client guide](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/clients/oauth.md).
+OAuth lets users authorize your application to access an MCP server. Pass an `OAuthClientProvider` as `authProvider`. The SDK handles discovery, client registration, the code exchange, and token refresh. Your application supplies the provider's storage, browser redirect, and callback handler.
 
-An `OAuthClientProvider` is not the OAuth server. It is storage your app owns, plus a redirect hook. The SDK reads and writes client information, tokens, the PKCE code verifier, and discovery state through its methods. Tokens live wherever your provider stores them, so whether a login survives a restart is your choice. The adapter keeps no token store, has no in-memory default, and has no browser login helper. Your app owns the redirect and the callback.
+Add `@modelcontextprotocol/client` 2.1.0 or later as a direct dependency for the callback transport. Implement your provider using the SDK's [OAuth client guide](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/clients/oauth.md). Configure its `redirectUrl` for your callback route, and store client information, tokens, the PKCE verifier, and discovery state. Include `invalidateCredentials()` so rejected refresh credentials can trigger a new login.
 
-Implement `oauthStore(userId)` and its methods using your application's storage. The example uses this helper to keep each user's OAuth state separate.
+Keep each provider and its storage separate for each user and MCP server. The example below also binds each pending login to an authenticated application session. Read the user and session IDs from your application's session middleware, never from callback query parameters.
+
+The `createMcpSession()` helper below connects these steps:
+
+1. Call `listTools()` to discover tools. If login is required, redirect the user's browser to the returned `authorizationUrl`.
+2. In your callback route, call `completeLogin()` on the same session. It checks the caller and consumes the pending `state` before exchanging the code.
+3. Use the returned tools. After the exchange, the helper retries discovery with the saved tokens.
+
+<Accordion title="Session helper">
+This example keeps pending login state in one Node.js process. For multiple processes or restarts, use shared storage with an expiry. Check the state, user, session, and server, and consume the record in one atomic operation. The SDK does not validate `state`.
 
 ```typescript
-import { MCPAdapter, type OAuthClientProvider } from "@langchain/mcp-adapters";
+import { randomUUID } from "node:crypto";
+import {
+  MCPAdapter,
+  MCPClientError,
+  UnauthorizedError,
+  type OAuthClientProvider,
+} from "@langchain/mcp-adapters";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
-const callbackUrl = "https://app.example.com/oauth/callback";
+function createMcpSession(
+  serverUrl: string,
+  userId: string,
+  sessionId: string,
+  authProvider: OAuthClientProvider,
+) {
+  let pendingState: string | undefined;
+  let authorizationUrl: URL | undefined;
 
-// Every method reads or writes your storage for one user. Use durable
-// storage to keep the login across restarts.
-function oauthProviderFor(userId: string): OAuthClientProvider {
-  const store = oauthStore(userId);
-  return {
-    redirectUrl: callbackUrl,
-    clientMetadata: { client_name: "My agent", redirect_uris: [callbackUrl] },
-    state: () => store.createPendingState(),
-    clientInformation: () => store.load("client"),
-    saveClientInformation: (info) => store.save("client", info),
-    tokens: () => store.load("tokens"),
-    saveTokens: (tokens) => store.save("tokens", tokens),
-    codeVerifier: () => store.load("verifier"),
-    saveCodeVerifier: (verifier) => store.save("verifier", verifier),
-    discoveryState: () => store.load("discovery"),
-    saveDiscoveryState: (state) => store.save("discovery", state),
-    invalidateCredentials: (scope) => store.invalidate(scope),
-    // Send the user to the login page, for example by returning the URL
-    // to your frontend.
-    redirectToAuthorization: (url) => store.saveLoginUrl(url),
+  authProvider.state = () => (pendingState = randomUUID());
+  authProvider.redirectToAuthorization = (url) => {
+    authorizationUrl = url;
   };
-}
 
-const adapter = new MCPAdapter({
-  servers: {
-    crm: {
-      url: "https://crm.example.com/mcp",
-      authProvider: oauthProviderFor(userId),
-    },
-  },
-});
+  const adapter = new MCPAdapter({
+    servers: { crm: { url: serverUrl, authProvider } },
+  });
+
+  async function listTools() {
+    // Reuse the pending login instead of starting another redirect.
+    if (authorizationUrl) return { authorizationUrl };
+    try {
+      return { tools: await adapter.listTools() };
+    } catch (error) {
+      if (
+        MCPClientError.isInstance(error) &&
+        UnauthorizedError.isInstance(error.cause) &&
+        authorizationUrl
+      ) {
+        return { authorizationUrl };
+      }
+      throw error;
+    }
+  }
+
+  async function completeLogin(
+    callbackUrl: URL,
+    callbackUserId: string,
+    callbackSessionId: string,
+  ) {
+    const params = callbackUrl.searchParams;
+    if (
+      callbackUserId !== userId ||
+      callbackSessionId !== sessionId ||
+      !pendingState ||
+      params.get("state") !== pendingState
+    ) {
+      throw new Error("Invalid OAuth callback");
+    }
+    // No await between checking and consuming state: only one callback wins.
+    pendingState = undefined;
+
+    const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+      authProvider,
+    });
+    try {
+      await transport.finishAuth(params);
+    } catch {
+      // SDK errors can contain text supplied by the authorization server.
+      throw new Error("OAuth login failed");
+    } finally {
+      authorizationUrl = undefined;
+      await transport.close();
+    }
+    return listTools();
+  }
+
+  return { listTools, completeLogin, close: () => adapter.close() };
+}
+```
+</Accordion>
+
+To start discovery, pass your provider and the authenticated caller's identity:
+
+```typescript
+const crm = createMcpSession(
+  "https://crm.example.com/mcp",
+  userId,
+  sessionId,
+  authProvider,
+);
+const result = await crm.listTools();
+// If result.authorizationUrl is present, redirect the browser there.
+// Otherwise, pass result.tools to your agent.
 ```
 
-Beyond the methods the SDK requires, implement these:
-
-- **`state()`**: Returns the OAuth `state` value. Record it as pending so the callback can [consume it once](#complete-the-redirect). The SDK sends `state` only when the provider supplies one, and it does not check it on the way back.
-- **`saveClientInformation()`**: Stores the client that dynamic client registration creates. Omit it only for a pre-registered client.
-- **`saveDiscoveryState()` and `discoveryState()`**: Persist this state alongside the code verifier. It is required when the authorization server is only discoverable from the 401 challenge. It also lets the SDK check that the callback comes from the authorization server the login started with.
-- **`invalidateCredentials()`**: Lets a refresh that the server rejects restart the login instead of failing.
-
-For machine-to-machine access with no user, pass the SDK's `ClientCredentialsProvider`, which implements `OAuthClientProvider` and needs no redirect.
+Keep `crm` available to that application's session until the callback completes. Do not share its provider with another session.
 
 ### Complete the redirect
 
-When a connection needs a login, the SDK calls `redirectToAuthorization()`, and the connection attempt fails with an `UnauthorizedError` cause. After the user signs in, the authorization server redirects to your callback URL. Complete the login with the SDK's `transport.finishAuth(params)`. Use a provider that reads and writes the same storage as the provider in the adapter's server config. The adapter has no `finishAuth` of its own.
-
-Implement `deletePendingState()` in your application to check and consume the state saved by `store.createPendingState()`. It must return `false` for missing, unknown, or previously consumed values.
+After the user signs in, the authorization server redirects to your provider's `redirectUrl`. In that route, retrieve the same `crm` instance and the caller's verified user and session IDs, then complete login:
 
 ```typescript
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-
-// In your OAuth callback route, with the same provider (same storage) the adapter uses:
-const params = new URL(req.url).searchParams;
-// The SDK doesn't check state. Consume it once: look it up and delete it.
-if (!(await deletePendingState(params.get("state"))))
-  throw new Error("unknown state");
-const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
-  authProvider,
-});
-await transport.finishAuth(params); // validates iss (RFC 9207), exchanges the code, saves tokens via the provider
-await transport.close();
-// The next adapter discovery or tool call connects with the saved tokens.
+const result = await crm.completeLogin(new URL(req.url), userId, sessionId);
+// The helper exchanges the code and retries discovery using saved tokens.
+// Pass result.tools to your agent, or redirect if another login is required.
 ```
 
-Use `SSEClientTransport` instead for a server configured with `transport: "sse"`. The callback route does not need an `MCPAdapter`. Your app needs its own direct dependency on `@modelcontextprotocol/client`, version 2.2 or later, to import it, even though the adapter depends on it.
+The helper passes the full query to `finishAuth()` so the SDK can validate the authorization server's `iss` parameter. It rejects missing, mismatched, or already consumed state before the exchange. Keep the adapter open while using its tools, then call `await crm.close()` when the application session ends.
 
-Follow these rules in the callback:
-
-- **Consume `state` once**: Look up and delete the pending `state` before calling `finishAuth()`, and do not call it for a `state` that is already gone. Otherwise a refresh, a double-invoked handler, or a back-button replay redeems the same code twice. The SDK responds by discarding the tokens the first call saved, which logs the user out.
-- **Wait for a pending login**: Do not start another discovery while a login is pending. A new discovery begins a new redirect and invalidates the first callback.
-- **Hide SDK error text**: Catch a callback failure and show your own generic message. `IssuerMismatchError` carries the callback's `iss`, which an attacker controls in a mix-up attack. `OAuthError` can carry the authorization server's `error_description`. Both come from `@modelcontextprotocol/client`.
+For a server configured with `transport: "sse"`, use `SSEClientTransport` in the callback helper. For machine-to-machine access without a user, use the SDK's `ClientCredentialsProvider` instead of a browser login.
 
 ## Handle authentication errors
 
@@ -226,7 +270,7 @@ The adapter re-exports `UnauthorizedError`. Import `SdkHttpError` from `@modelco
 
 When a server rejects the credentials during a tool call, the tool fails with a `ToolException` instead. Under `createAgent`, the model sees it as an error message and the run continues.
 
-A server that failed on authentication is retried on the next discovery, even when `onConnectionError` skips failed servers. A later login recovers without recreating the adapter.
+Discovery retries failures caused by `UnauthorizedError` or HTTP 401 on the next call, even when `onConnectionError` skips failed servers. A later login can recover without recreating the adapter. Other errors from `token()` or `onUnauthorized()`, such as a failed token-store request, do not count as authentication failures. When skipped, those connections remain blocked until `close()` clears them.
 
 ## Header precedence
 
