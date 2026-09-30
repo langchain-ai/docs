@@ -77,7 +77,9 @@ This page requires `@langchain/mcp-adapters` 2.0 or later. If you are upgrading 
 
 ## Bearer token
 
-For a fixed API key, send a static `Authorization` header. For a token your app issues or rotates, pass an `AuthProvider` (`{ token, onUnauthorized? }`) as `authProvider`:
+For a fixed API key, send a static `Authorization` header. For a token your app issues or rotates, pass an `AuthProvider` (`{ token, onUnauthorized? }`) as `authProvider`.
+
+The example uses an application-provided `tokenStore`. Implement `current()` to read the token and `refresh()` to save a newer token and report whether it succeeded.
 
 ```typescript
 import { MCPAdapter } from "@langchain/mcp-adapters";
@@ -119,6 +121,8 @@ The adapter re-exports the `AuthProvider` and `OAuthClientProvider` types, so yo
 For a server that uses OAuth 2.1, pass an `OAuthClientProvider` as `authProvider`. The SDK runs discovery, [dynamic client registration](https://modelcontextprotocol.io/specification/draft/basic/authorization), the code exchange, and token refresh. For a walkthrough of each provider method and the redirect, see the MCP TypeScript SDK's [OAuth client guide](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/clients/oauth.md).
 
 An `OAuthClientProvider` is not the OAuth server. It is storage your app owns, plus a redirect hook. The SDK reads and writes client information, tokens, the PKCE code verifier, and discovery state through its methods. Tokens live wherever your provider stores them, so whether a login survives a restart is your choice. The adapter keeps no token store, has no in-memory default, and has no browser login helper. Your app owns the redirect and the callback.
+
+Implement `oauthStore(userId)` and its methods using your application's storage. The example uses this helper to keep each user's OAuth state separate.
 
 ```typescript
 import { MCPAdapter, type OAuthClientProvider } from "@langchain/mcp-adapters";
@@ -171,6 +175,8 @@ For machine-to-machine access with no user, pass the SDK's `ClientCredentialsPro
 
 When a connection needs a login, the SDK calls `redirectToAuthorization()`, and the connection attempt fails with an `UnauthorizedError` cause. After the user signs in, the authorization server redirects to your callback URL. Complete the login with the SDK's `transport.finishAuth(params)`. Use a provider that reads and writes the same storage as the provider in the adapter's server config. The adapter has no `finishAuth` of its own.
 
+Implement `deletePendingState()` in your application to check and consume the state saved by `store.createPendingState()`. It must return `false` for missing, unknown, or previously consumed values.
+
 ```typescript
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
@@ -197,10 +203,10 @@ Follow these rules in the callback:
 
 ## Handle authentication errors
 
-A connection rejected for credentials throws an `MCPClientError`. Its `cause` tells you what to do next:
+A connection rejected for credentials throws an `MCPClientError`. This example handles HTTP authentication failures with either of these immediate causes:
 
 - **`UnauthorizedError`**: The SDK cannot recover on its own. An OAuth login is needed, or a token provider has no `onUnauthorized`.
-- **An HTTP 401 `SdkHttpError`** (`status: 401`): The server still rejects the credentials after `onUnauthorized` or a token refresh.
+- **An HTTP 401 `SdkHttpError`** (`status: 401`): The server rejects the credentials, or none were provided.
 
 ```typescript
 import { MCPClientError, UnauthorizedError } from "@langchain/mcp-adapters";
@@ -208,9 +214,8 @@ import { SdkHttpError } from "@modelcontextprotocol/client";
 
 function authFailure(error: unknown): "login" | "rejected" | undefined {
   if (!MCPClientError.isInstance(error)) return undefined;
-  // An OAuth login is needed, or a token provider has no onUnauthorized.
+
   if (UnauthorizedError.isInstance(error.cause)) return "login";
-  // Still rejected after onUnauthorized or a token refresh.
   if (SdkHttpError.isInstance(error.cause) && error.cause.status === 401)
     return "rejected";
   return undefined;
@@ -262,9 +267,12 @@ const tools = await crm.listTools(["crm"], {
 });
 ```
 
-The returned tools call the server through that user's connection. Three rules apply to these overrides:
+In this example, implement `tokenFor(userId)` to retrieve a token for the authenticated user.
+
+The returned tools call the server through that user's connection. These rules apply to method-level authentication:
 
 - **Adapter-wide override**: An `authProvider` or `headers` in a method's options applies to every HTTP and SSE server the adapter holds, not only the one you name. Use a single-server adapter when different users need different credentials.
+- **Header precedence**: Server-configured headers take precedence over same-named method-level headers, regardless of capitalization. When passing a per-user `Authorization` header, omit that header from the server configuration. A provider token still takes precedence over either header.
 - **One connection per provider object**: Each distinct provider object gets its own connection, kept until `close()`. Reuse one provider object per user rather than creating one per call.
 - **Isolated catalogs**: Catalogs are keyed by provider object and headers, so one user never receives another user's cached tool list. Recreate the adapter when the account behind the same provider object changes.
 
