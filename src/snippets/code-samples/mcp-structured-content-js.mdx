@@ -1,0 +1,33 @@
+```ts
+import { MCPAdapter } from "@langchain/mcp-adapters";
+import { createAgent, ToolMessage } from "langchain";
+
+async function readStructuredContent(serverUrl: string) {
+  const adapter = new MCPAdapter({
+    servers: { crm: { url: serverUrl } },
+  });
+
+  try {
+    const tools = await adapter.listTools();
+    const agent = createAgent({ model: "claude-sonnet-5-5", tools });
+    const result = await agent.invoke({
+      messages: [{ role: "user", content: "Look up user 42." }],
+    });
+
+    // The adapter stores MCP result entries in an `artifact` array.
+    // Find the `mcp_structured_content` entry, then read its `data` field.
+    for (const message of result.messages) {
+      if (ToolMessage.isInstance(message) && Array.isArray(message.artifact)) {
+        const structured = message.artifact.find(
+          (entry) => entry.type === "mcp_structured_content",
+        );
+        if (structured) {
+          console.log(`Structured content: ${JSON.stringify(structured.data)}`); // [!code highlight]
+        }
+      }
+    }
+  } finally {
+    await adapter.close();
+  }
+}
+```

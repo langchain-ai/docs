@@ -4,12 +4,19 @@ description: Load MCP tools into LangChain agents, control their execution, and 
 ---
 
 import McpUseInAgentPy from '/snippets/code-samples/mcp-use-in-agent-py.mdx';
+import McpUseInAgentJs from '/snippets/code-samples/mcp-use-in-agent-js.mdx';
 import McpToolErrorsPy from '/snippets/code-samples/mcp-tool-errors-py.mdx';
+import McpToolErrorsJs from '/snippets/code-samples/mcp-tool-errors-js.mdx';
 import McpToolMetadataPy from '/snippets/code-samples/mcp-tool-metadata-py.mdx';
+import McpToolMetadataJs from '/snippets/code-samples/mcp-tool-metadata-js.mdx';
 import McpMultimodalToolContentPy from '/snippets/code-samples/mcp-multimodal-tool-content-py.mdx';
+import McpMultimodalToolContentJs from '/snippets/code-samples/mcp-multimodal-tool-content-v2-js.mdx';
 import McpStructuredContentPy from '/snippets/code-samples/mcp-structured-content-py.mdx';
+import McpStructuredContentJs from '/snippets/code-samples/mcp-structured-content-js.mdx';
 import McpElicitationPy from '/snippets/code-samples/mcp-elicitation-py.mdx';
+import McpElicitationJs from '/snippets/code-samples/mcp-elicitation-js.mdx';
 import McpDestructiveGatePy from '/snippets/code-samples/mcp-destructive-gate-py.mdx';
+import McpDestructiveGateJs from '/snippets/code-samples/mcp-destructive-gate-js.mdx';
 
 :::python
 <Note>
@@ -36,80 +43,27 @@ Discover the server's catalog with @[`MCPAdapter.list_tools`], then give the ret
 :::js
 Discover the server's catalog with @[`MCPAdapter.listTools`], then give the returned tools to @[`createAgent`]. From the agent's perspective, they behave like LangChain tools: the model chooses a tool, LangChain invokes it, and the resulting @[`ToolMessage`] returns to the model.
 
-```typescript
-import { createAgent } from "langchain";
-import { MCPAdapter } from "@langchain/mcp-adapters";
+<McpUseInAgentJs />
 
-async function runAgent() {
-  const adapter = new MCPAdapter({
-    servers: { weather: { url: "https://example.com/mcp" } },
-  });
-  const tools = await adapter.listTools();
-  const agent = createAgent({ model: "claude-sonnet-5", tools });
-  
-  await agent.invoke({
-    messages: [{
-      role: "user",
-      content: "What is the forecast for Oslo?"
-    }]
-  });
-}
-```
+Keep the adapter open while the agent can call its tools, including when resuming an interrupted run. Call `await adapter.close()` when you finish using the agent.
 :::
 
 For general guidance on defining, binding, and using LangChain tools, see [Tools](/oss/langchain/tools). For several MCP servers and their namespaced tool catalogs, see [Connections](/oss/langchain/mcp/connections#multiple-servers).
 
 ## Handle tool outputs
 
-MCP tool results become LangChain-native values: content the model can read, an artifact for structured output, and a @[`ToolMessage`] status that distinguishes a server-reported error from a transport failure.
+MCP tool results become @[`ToolMessage`] objects with content the model can read, an artifact for application data, and a status indicating success or failure.
 
 ### Multimodal content
 
-An MCP tool result arrives as LangChain [content blocks](/oss/langchain/messages#standard-content-blocks). Image and file content convert into standardized `image` and `file` blocks alongside `text`, so a tool that returns a screenshot reaches the model as an image block:
+The adapter converts model-visible MCP content into LangChain [content blocks](/oss/langchain/messages#standard-content-blocks). For example, a tool that returns an MCP image block with a screenshot reaches the model as an `image` block.
 
 :::python
 <McpMultimodalToolContentPy />
 :::
 
 :::js
-```typescript
-import { createAgent } from "langchain";
-import { MCPAdapter } from "@langchain/mcp-adapters";
-
-const adapter = new MCPAdapter({
-  servers: { browser: { url: "https://example.com/mcp" } },
-});
-const tools = await adapter.listTools();
-
-const agent = createAgent({ model: "claude-sonnet-5", tools });
-
-const result = await agent.invoke({
-  messages: [
-    { role: "user", content: "Take a screenshot of the current page" },
-  ],
-});
-
-// Access multimodal content from tool messages
-for (const message of result.messages) {
-  if (message.type === "tool") {
-    // Raw content in provider-native format
-    console.log(`Raw content: ${message.content}`);
-
-    // Standardized content blocks  // [!code highlight]
-    for (const block of message.contentBlocks) {
-    // [!code highlight]
-      if (block.type === "text") {
-        // [!code highlight]
-        console.log(`Text: ${block.text}`); // [!code highlight]
-      } else if (block.type === "image") {
-        // [!code highlight]
-        console.log(`Image URL: ${block.url}`); // [!code highlight]
-        console.log(`Image data: ${block.mimeType}, ${String(block.data).slice(0, 50)}...`); // [!code highlight]
-      }
-    }
-  }
-}
-```
+<McpMultimodalToolContentJs />
 :::
 
 ### Structured content
@@ -123,30 +77,7 @@ The artifact is an `MCPToolArtifact`, whose `structured_content` field holds the
 :::
 
 :::js
-```typescript
-import { MCPAdapter } from "@langchain/mcp-adapters";
-import { createAgent, ToolMessage } from "langchain";
-
-const adapter = new MCPAdapter({
-  servers: { crm: { url: "https://example.com/mcp" } },
-});
-const tools = await adapter.listTools();
-const agent = createAgent({ model: "claude-sonnet-5", tools });
-const result = await agent.invoke({
-  messages: [{ role: "user", content: "Look up user 42." }],
-});
-
-for (const message of result.messages) {
-  if (ToolMessage.isInstance(message) && Array.isArray(message.artifact)) {
-    const structured = message.artifact.find(
-      (entry) => entry.type === "mcp_structured_content"
-    );
-    if (structured) {
-      console.log(`Structured content: ${JSON.stringify(structured.data)}`); // [!code highlight]
-    }
-  }
-}
-```
+<McpStructuredContentJs />
 
 The `artifact` is an array of MCP result entries. Structured content appears in the entry with `type: "mcp_structured_content"`, and its `data` field holds the tool result's `structuredContent`.
 :::
@@ -157,43 +88,25 @@ The `artifact` is an array of MCP result entries. Structured content appears in 
 An MCP tool result carries an `isError` flag. When a server reports `isError=True`, the adapter converts it into a @[`ToolMessage`] with `status="error"` carrying the server's own message, so the agent can read it and correct itself:
 
 <McpToolErrorsPy />
+
+A server-reported error reaches the model as a failed tool message, but a transport or session failure raises instead.
 :::
 
 :::js
-An MCP tool result carries an `isError` flag. When a server reports `isError: true`, the adapter converts it into a failed @[`ToolMessage`] carrying the server's own message, so the agent can read it and correct itself:
+When a server returns `isError: true` during an agent tool call, the adapter returns a @[`ToolMessage`] with `status: "error"` and the server's message. The model can read the error and try again.
 
-```typescript
-import { MCPAdapter } from "@langchain/mcp-adapters";
-import { createAgent, ToolMessage } from "langchain";
+The adapter throws transport failures. When a tool runs inside `createAgent`, the agent's default error handling turns those failures into error tool messages too. The message's `status` alone does not distinguish the cause:
 
-const adapter = new MCPAdapter({
-  servers: { calculator: { url: "https://example.com/mcp" } },
-});
-const tools = await adapter.listTools();
-const agent = createAgent({ model: "claude-sonnet-5", tools });
-const result = await agent.invoke({
-  messages: [{ role: "user", content: "What is 10 divided by 0?" }],
-});
+<McpToolErrorsJs />
 
-// A server error (`isError: true`) reaches the model as a failed
-// ToolMessage, so the agent can read the server's message and recover.
-// createAgent's default tool error handling also turns a thrown
-// transport failure into a failed ToolMessage.
-for (const message of result.messages) {
-  if (ToolMessage.isInstance(message) && message.status === "error") {
-    console.log(`Tool reported: ${message.text}`); // [!code highlight] 
-  }
-}
-```
+If you invoke an adapted tool directly with plain arguments, a server result with `isError: true` throws a `ToolException` instead.
 :::
-
-A server-reported error reaches the model as a failed tool message, but a transport or session failure raises instead, because a model cannot act on a dropped connection.
 
 ## Tool metadata
 
+:::python
 Each adapted tool may carry its MCP provenance under an `mcp` namespace on the LangChain tool's metadata:
 
-:::python
 ```python
 tool.metadata
 # {
@@ -215,6 +128,8 @@ tool.metadata
 :::
 
 :::js
+The adapter stores MCP tool annotations in `tool.metadata.annotations`:
+
 ```typescript
 tool.metadata;
 // {
@@ -240,17 +155,7 @@ Read optional metadata defensively, so a missing field returns a default rather 
 <McpToolMetadataPy />
 :::
 :::js
-```typescript
-import type { DynamicStructuredTool } from "@langchain/core/tools";
-import type { ToolAnnotations } from "@modelcontextprotocol/client";
-
-function isDestructive(tool: DynamicStructuredTool): boolean {
-  const annotations = tool.metadata?.annotations as
-    | ToolAnnotations
-    | undefined;
-  return annotations?.destructiveHint ?? false;
-}
-```
+<McpToolMetadataJs />
 :::
 
 ## Human-in-the-loop
@@ -264,53 +169,7 @@ Read the destructive hint from metadata once during tool discovery. Then give th
 :::
 
 :::js
-```typescript
-import { MemorySaver } from "@langchain/langgraph";
-import { MCPAdapter } from "@langchain/mcp-adapters";
-import type { ToolAnnotations } from "@modelcontextprotocol/client";
-import {
-  createAgent,
-  humanInTheLoopMiddleware,
-  type InterruptOnConfig,
-  type WhenPredicate,
-} from "langchain";
-
-async function createGuardedAgent() {
-  const adapter = new MCPAdapter({
-    servers: { crm: { url: "https://example.com/mcp" } },
-  });
-  const tools = await adapter.listTools();
-
-  // Read the hint once, then apply the same predicate to every tool call.
-  const destructive = new Set(
-    tools
-      .filter(
-        (tool) =>
-          (tool.metadata?.annotations as ToolAnnotations | undefined)
-            ?.destructiveHint ?? false
-      )
-      .map((tool) => tool.name)
-  );
-
-  const needsApproval: WhenPredicate = (request) =>
-    destructive.has(request.toolCall.name);
-
-  const gate: InterruptOnConfig = {
-    allowedDecisions: ["approve", "reject"],
-    when: needsApproval,
-  };
-  const interruptOn = Object.fromEntries(
-    tools.map((tool) => [tool.name, gate])
-  );
-
-  return createAgent({
-    model: "claude-sonnet-5",
-    tools,
-    middleware: [humanInTheLoopMiddleware({ interruptOn })],
-    checkpointer: new MemorySaver(),
-  });
-}
-```
+<McpDestructiveGateJs />
 :::
 
 When the agent calls a tool that the predicate gates, the run pauses. Approve the call to run it, or reject it to skip the tool and tell the model:
@@ -356,85 +215,57 @@ Most tools finish without asking the client for anything mid-call. When a server
 
 ### Elicitation
 
-[Elicitation](https://modelcontextprotocol.io/specification/draft/client/elicitation) is the MCP mechanism for a server to request input in the middle of a tool call. When a server needs input, the request surfaces as a LangGraph interrupt so the person already reviewing the agent's work answers it and the run resumes:
+[Elicitation](https://modelcontextprotocol.io/specification/draft/client/elicitation) lets an MCP server request input during a tool call. The adapter pauses the run with a LangGraph interrupt. Your application presents the request to the user and resumes the run with their answer.
+
+Attach a [checkpointer](/oss/langchain/short-term-memory) to the agent and use the same `thread_id` when invoking and resuming it.
+
+This example assumes the booking tool asks for one date and pauses once. Replace the sample date with the user's answer.
 
 :::python
 <McpElicitationPy />
-:::
 
-:::js
-```typescript
-import { Command, MemorySaver } from "@langchain/langgraph";
-import {
-  MCPAdapter,
-  createMCPElicitationResume,
-  type MCPElicitationInterrupt,
-} from "@langchain/mcp-adapters";
-import { createAgent } from "langchain";
+Elicitation is on by default. The adapter advertises the capability and drives the interrupt loop. A prebuilt client that already carries its own elicitation handler is honored instead of overridden.
 
-async function bookWithElicitation(serverUrl: string) {
-  const adapter = new MCPAdapter({
-    servers: { booking: { url: serverUrl } },
-  });
-
-  try {
-    const agent = createAgent({
-      model: "claude-sonnet-5",
-      tools: await adapter.listTools(),
-      checkpointer: new MemorySaver(),
-    });
-    const config = { configurable: { thread_id: "booking-1" } };
-
-    const paused = await agent.invoke(
-      { messages: [{ role: "user", content: "Book a table for 4." }] },
-      config
-    );
-    const [pending] = paused.__interrupt__ ?? [];
-    const { requests } = pending.value as MCPElicitationInterrupt;
-    const [requestKey] = Object.keys(requests);
-
-    const resume = createMCPElicitationResume(pending, {
-      [requestKey]: { action: "accept", content: { date: "2026-09-14" } },
-    });
-
-    return await agent.invoke(new Command({ resume }), config);
-  } finally {
-    await adapter.close();
-  }
-}
-```
-:::
-
-A few things to note:
-
-- **Elicitation is on by default.** The adapter advertises the capability and drives the interrupt loop. A prebuilt client that already carries its own elicitation handler is honored instead of overridden.
-- **Resuming needs persistence.** Attach a [checkpointer](/oss/langchain/short-term-memory) so the interrupted run has somewhere to wait.
-- **Answers are keyed by the server's request key.** Each answer's `action` is `accept` (with `content` matching the request's schema), `decline` (answer refused, call continues), or `cancel` (the whole call is abandoned).
-
-:::python
 Resume with `Command(resume={"responses": {key: answer}})`. The interrupt payload and answer types live in `langchain.mcp.elicitation`.
 :::
 
 :::js
-Build the resume with `createMCPElicitationResume(interrupt, responses)`, which addresses the answers to that interrupt's ID, then resume with `new Command({ resume })`. The adapter exports the interrupt and answer types. Set `elicitation: false` on an individual modern server to opt out.
+Interrupt-driven elicitation requires a modern MCP server and is enabled by default. Set `elicitation: false` on the server to opt out. For a legacy server, configure an `onElicitation` handler with `mode: "legacy"` instead.
 
-When several tool calls pause at once, each has its own interrupt. Answer them in one resume by merging the answers, for example `new Command({ resume: { ...createMCPElicitationResume(first, a), ...createMCPElicitationResume(second, b) } })`. A resume that isn't keyed by interrupt ID reaches every pending call. `invoke()` returns every pending interrupt, but a stream carries one per event, so collect them across events or read them with `getState()`. After you answer only some of them, `getState()` keeps listing the answered ones until the step finishes; answering one again is ignored.
+<McpElicitationJs />
+
+`createMCPElicitationResume` addresses the answer to the interrupt that requested it. The response uses the server's request key.
 :::
+
+<Note>
+Resuming reruns the tool from the beginning. Any work performed before the server asks for input can repeat. Make that work safe to repeat without duplicating side effects.
+</Note>
+
+Each answer uses one of these actions:
+
+- **`accept`**: Provide form `content` matching the request's schema, or confirm completion of a URL interaction without `content`.
+- **`decline`**: Refuse to provide the requested information.
+- **`cancel`**: Indicate that the user canceled the interaction.
+
+The adapter forwards the answer to the server, which decides how the tool call finishes.
 
 Only elicitation is answered this way. A server that instead asks for [sampling](https://modelcontextprotocol.io/specification/2025-06-18/client/sampling) or [roots](https://modelcontextprotocol.io/specification/2025-06-18/client/roots) raises an error, because the modern, sessionless protocol has no live back-channel for those requests. See [Sampling and roots](/oss/migrate/langchain-mcp-adapters#sampling-and-roots).
 
 <Note>
 Interrupt-driven elicitation answers a server that returns its request as an `InputRequiredResult`. A server that only pushes elicitation over a legacy handshake session cannot be answered this way.
 </Note>
- 
+
 ## See also
 
 - [Content blocks](/oss/langchain/messages#standard-content-blocks)
 - [Tools](/oss/langchain/tools)
 - [Human-in-the-loop](/oss/langchain/human-in-the-loop)
+
+:::python
 - [FastMCP calling tools](https://gofastmcp.com/clients/tools)
 - [FastMCP client elicitation](https://gofastmcp.com/clients/elicitation)
 - [FastMCP server elicitation](https://gofastmcp.com/servers/elicitation)
+:::
+
 - [MCP elicitation specification](https://modelcontextprotocol.io/specification/draft/client/elicitation)
 - [MCP tool annotations](https://modelcontextprotocol.io/specification/draft/server/tools)
-:::

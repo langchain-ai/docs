@@ -1,0 +1,48 @@
+```ts
+import type { DynamicStructuredTool } from "@langchain/core/tools";
+import { MemorySaver } from "@langchain/langgraph";
+import { MCPAdapter } from "@langchain/mcp-adapters";
+import type { ToolAnnotations } from "@modelcontextprotocol/client";
+import {
+  createAgent,
+  humanInTheLoopMiddleware,
+  type InterruptOnConfig,
+  type WhenPredicate,
+} from "langchain";
+
+function isDestructive(tool: DynamicStructuredTool): boolean {
+  const annotations = tool.metadata?.annotations as ToolAnnotations | undefined;
+  return annotations?.destructiveHint ?? false;
+}
+
+async function gateDestructiveTools(serverUrl: string) {
+  const adapter = new MCPAdapter({
+    servers: { crm: { url: serverUrl } },
+  });
+  const tools = await adapter.listTools();
+
+  // Read the hint once, then apply the same predicate to every tool call.
+  const destructive = new Set(
+    tools.filter(isDestructive).map((tool) => tool.name),
+  );
+
+  const needsApproval: WhenPredicate = (request) =>
+    destructive.has(request.toolCall.name);
+
+  const gate: InterruptOnConfig = {
+    allowedDecisions: ["approve", "reject"],
+    when: needsApproval,
+  };
+  const interruptOn = Object.fromEntries(
+    tools.map((tool) => [tool.name, gate]),
+  );
+
+  const agent = createAgent({
+    model: "claude-sonnet-5-5",
+    tools,
+    middleware: [humanInTheLoopMiddleware({ interruptOn })],
+    checkpointer: new MemorySaver(),
+  });
+  return { agent, adapter };
+}
+```

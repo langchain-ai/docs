@@ -1,0 +1,39 @@
+```ts
+import { MCPAdapter } from "@langchain/mcp-adapters";
+import { createAgent } from "langchain";
+
+async function accessMultimodalToolContent(serverUrl: string) {
+  const adapter = new MCPAdapter({
+    servers: { browser: { url: serverUrl } },
+  });
+
+  try {
+    const tools = await adapter.listTools();
+
+    const agent = createAgent({ model: "claude-sonnet-5-5", tools });
+
+    const result = await agent.invoke({
+      messages: [
+        { role: "user", content: "Take a screenshot of the current page" },
+      ],
+    });
+
+    // An MCP result arrives as LangChain content blocks. Image content
+    // converts into standardized `image` blocks alongside `text`.
+    for (const message of result.messages) {
+      if (message.type === "tool") {
+        for (const block of message.contentBlocks) { // [!code highlight]
+          if (block.type === "text") { // [!code highlight]
+            console.log(`Text: ${block.text}`); // [!code highlight]
+          } else if (block.type === "image") { // [!code highlight]
+            console.log(`Image MIME type: ${block.mimeType}`); // [!code highlight]
+            console.log(`Image data: ${String(block.data).slice(0, 50)}...`); // [!code highlight]
+          }
+        }
+      }
+    }
+  } finally {
+    await adapter.close();
+  }
+}
+```
