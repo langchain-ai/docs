@@ -263,6 +263,8 @@ uv add langchain-typesafe
 ```
 
 ```python
+from functools import lru_cache
+
 from langchain_typesafe import Choice, TypeSafeClassifier
 from managed_deepagents import channels
 
@@ -278,11 +280,15 @@ VOCABULARY = {
     "eyes": "Anything that does not clearly fit another option.",
 }
 
-classifier = TypeSafeClassifier(model="typesafe/jev-latest")
+# Built on first use, not at import: deployment imports this module to read
+# the channel declaration, and the classifier needs a key to construct.
+@lru_cache(maxsize=1)
+def classifier() -> TypeSafeClassifier:
+    return TypeSafeClassifier(model="typesafe/jev-latest")
 
 
 async def choose_emoji(context: dict) -> str:
-    answer = await classifier.ainvoke(
+    answer = await classifier().ainvoke(
         {
             "state": context["text"][:2000],
             "questions": {
