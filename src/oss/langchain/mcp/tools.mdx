@@ -41,9 +41,11 @@ import { createAgent } from "langchain";
 import { MCPAdapter } from "@langchain/mcp-adapters";
 
 async function runAgent() {
-  const adapter = new MCPAdapter(server);
+  const adapter = new MCPAdapter({
+    servers: { weather: { url: "https://example.com/mcp" } },
+  });
   const tools = await adapter.listTools();
-  const agent = createAgent({ model: "claude-sonnet-5", tools: [tools] });
+  const agent = createAgent({ model: "claude-sonnet-5", tools });
   
   await agent.invoke({
     messages: [{
@@ -74,8 +76,10 @@ An MCP tool result arrives as LangChain [content blocks](/oss/langchain/messages
 import { createAgent } from "langchain";
 import { MCPAdapter } from "@langchain/mcp-adapters";
 
-const client = new MCPAdapter(...);
-const tools = await client.listTools();
+const adapter = new MCPAdapter({
+  servers: { browser: { url: "https://example.com/mcp" } },
+});
+const tools = await adapter.listTools();
 
 const agent = createAgent({ model: "claude-sonnet-5", tools });
 
@@ -100,7 +104,7 @@ for (const message of result.messages) {
       } else if (block.type === "image") {
         // [!code highlight]
         console.log(`Image URL: ${block.url}`); // [!code highlight]
-        console.log(`Image base64: ${block.base64?.slice(0, 50)}...`); // [!code highlight]
+        console.log(`Image data: ${block.mimeType}, ${String(block.data).slice(0, 50)}...`); // [!code highlight]
       }
     }
   }
@@ -123,7 +127,9 @@ The artifact is an `MCPToolArtifact`, whose `structured_content` field holds the
 import { MCPAdapter } from "@langchain/mcp-adapters";
 import { createAgent, ToolMessage } from "langchain";
 
-const adapter = new MCPAdapter(...);
+const adapter = new MCPAdapter({
+  servers: { crm: { url: "https://example.com/mcp" } },
+});
 const tools = await adapter.listTools();
 const agent = createAgent({ model: "claude-sonnet-5", tools });
 const result = await agent.invoke({
@@ -160,7 +166,9 @@ An MCP tool result carries an `isError` flag. When a server reports `isError: tr
 import { MCPAdapter } from "@langchain/mcp-adapters";
 import { createAgent, ToolMessage } from "langchain";
 
-const adapter = new MCPAdapter(...);
+const adapter = new MCPAdapter({
+  servers: { calculator: { url: "https://example.com/mcp" } },
+});
 const tools = await adapter.listTools();
 const agent = createAgent({ model: "claude-sonnet-5", tools });
 const result = await agent.invoke({
@@ -169,7 +177,8 @@ const result = await agent.invoke({
 
 // A server error (`isError: true`) reaches the model as a failed
 // ToolMessage, so the agent can read the server's message and recover.
-// Transport failures still throw because a model cannot act on them.
+// createAgent's default tool error handling also turns a thrown
+// transport failure into a failed ToolMessage.
 for (const message of result.messages) {
   if (ToolMessage.isInstance(message) && message.status === "error") {
     console.log(`Tool reported: ${message.text}`); // [!code highlight] 
@@ -209,24 +218,21 @@ tool.metadata
 ```typescript
 tool.metadata;
 // {
-//   mcp: {
-//     tool: {
-//       annotations: {
-//         destructiveHint: true,
-//         readOnlyHint: false,
-//       },
-//       _meta: { origin: "crm" },
-//     },
-//     server: {
-//       name: "crm",
-//       version: "2.1.0",
-//     },
+//   annotations: {
+//     destructiveHint: true,
+//     readOnlyHint: false,
 //   },
 // }
 ```
 :::
 
+:::python
 Every nested field is optional: a server may provide tool annotations, `_meta`, server identity, any combination of those, or none. `annotations` contains MCP hints such as `read_only_hint` and `destructive_hint`; `_meta` is opaque metadata supplied by the server; and `server` identifies the MCP implementation that advertised the tool.
+:::
+
+:::js
+`annotations` holds the server's MCP tool annotations, such as `readOnlyHint` and `destructiveHint`. A server may omit them, so the field can be `undefined`.
+:::
 
 Read optional metadata defensively, so a missing field returns a default rather than raising:
 
@@ -236,9 +242,13 @@ Read optional metadata defensively, so a missing field returns a default rather 
 :::js
 ```typescript
 import type { DynamicStructuredTool } from "@langchain/core/tools";
+import type { ToolAnnotations } from "@modelcontextprotocol/client";
 
 function isDestructive(tool: DynamicStructuredTool): boolean {
-  return tool.metadata?.mcp?.tool?.annotations?.destructiveHint ?? false;
+  const annotations = tool.metadata?.annotations as
+    | ToolAnnotations
+    | undefined;
+  return annotations?.destructiveHint ?? false;
 }
 ```
 :::
@@ -257,6 +267,7 @@ Read the destructive hint from metadata once during tool discovery. Then give th
 ```typescript
 import { MemorySaver } from "@langchain/langgraph";
 import { MCPAdapter } from "@langchain/mcp-adapters";
+import type { ToolAnnotations } from "@modelcontextprotocol/client";
 import {
   createAgent,
   humanInTheLoopMiddleware,
@@ -265,7 +276,9 @@ import {
 } from "langchain";
 
 async function createGuardedAgent() {
-  const adapter = new MCPAdapter(...);
+  const adapter = new MCPAdapter({
+    servers: { crm: { url: "https://example.com/mcp" } },
+  });
   const tools = await adapter.listTools();
 
   // Read the hint once, then apply the same predicate to every tool call.
@@ -273,7 +286,8 @@ async function createGuardedAgent() {
     tools
       .filter(
         (tool) =>
-          tool.metadata?.mcp?.tool?.annotations?.destructiveHint ?? false
+          (tool.metadata?.annotations as ToolAnnotations | undefined)
+            ?.destructiveHint ?? false
       )
       .map((tool) => tool.name)
   );
@@ -350,11 +364,11 @@ Most tools finish without asking the client for anything mid-call. When a server
 
 :::js
 ```typescript
-import { Command, MemorySaver, type Interrupt } from "@langchain/langgraph";
+import { Command, MemorySaver } from "@langchain/langgraph";
 import {
   MCPAdapter,
+  createMCPElicitationResume,
   type MCPElicitationInterrupt,
-  type MCPElicitationResume,
 } from "@langchain/mcp-adapters";
 import { createAgent } from "langchain";
 
@@ -375,24 +389,15 @@ async function bookWithElicitation(serverUrl: string) {
       { messages: [{ role: "user", content: "Book a table for 4." }] },
       config
     );
-    const [pending] = paused.__interrupt__;
-    const [requestKey] = Object.keys(pending.value!.requests);
+    const [pending] = paused.__interrupt__ ?? [];
+    const { requests } = pending.value as MCPElicitationInterrupt;
+    const [requestKey] = Object.keys(requests);
 
-    const resume: MCPElicitationResume = {
-      [pending.id]: {
-        responses: {
-          [requestKey]: {
-            action: "accept",
-            content: { date: "2026-09-14" },
-          },
-        },
-      },
-    };
+    const resume = createMCPElicitationResume(pending, {
+      [requestKey]: { action: "accept", content: { date: "2026-09-14" } },
+    });
 
-    return await agent.invoke(
-      new Command<MCPElicitationResume>({ resume }),
-      config
-    );
+    return await agent.invoke(new Command({ resume }), config);
   } finally {
     await adapter.close();
   }
@@ -411,7 +416,9 @@ Resume with `Command(resume={"responses": {key: answer}})`. The interrupt payloa
 :::
 
 :::js
-Address the responses to the pending interrupt ID with `MCPElicitationResume`, then resume with `new Command<MCPElicitationResume>({ resume })`. The adapter exports the interrupt and answer types. Set `elicitation: false` on an individual modern server to opt out.
+Build the resume with `createMCPElicitationResume(interrupt, responses)`, which addresses the answers to that interrupt's ID, then resume with `new Command({ resume })`. The adapter exports the interrupt and answer types. Set `elicitation: false` on an individual modern server to opt out.
+
+When several tool calls pause at once, each has its own interrupt. Answer them in one resume by merging the answers, for example `new Command({ resume: { ...createMCPElicitationResume(first, a), ...createMCPElicitationResume(second, b) } })`. A resume that isn't keyed by interrupt ID reaches every pending call. `invoke()` returns every pending interrupt, but a stream carries one per event, so collect them across events or read them with `getState()`. After you answer only some of them, `getState()` keeps listing the answered ones until the step finishes; answering one again is ignored.
 :::
 
 Only elicitation is answered this way. A server that instead asks for [sampling](https://modelcontextprotocol.io/specification/2025-06-18/client/sampling) or [roots](https://modelcontextprotocol.io/specification/2025-06-18/client/roots) raises an error, because the modern, sessionless protocol has no live back-channel for those requests. See [Sampling and roots](/oss/migrate/langchain-mcp-adapters#sampling-and-roots).
