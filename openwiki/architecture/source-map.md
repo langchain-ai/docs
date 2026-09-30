@@ -1,39 +1,29 @@
 ---
 type: architecture reference
 title: Source Directory Map
-description: Maps durable documentation and configuration owners to emitted routes, Mintlify navigation, redirects, and deployment-generated API surfaces. Explains language-specific OSS output, unversioned products, snippets, and Managed Deep Agents variants.
+description: Maps authored documentation and configuration owners to emitted routes, Mintlify navigation, redirects, and deployment-generated API surfaces. Explains separate Python and TypeScript integration menus, unversioned products, and LangSmith landing-page placement.
 tags: [documentation, routing, navigation, mintlify]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-29T08:22:38.059Z
+    at: 2026-09-30T08:22:34.653Z
 sources:
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
-  - id: openwiki-source-012f2c78e3b1446dfc35803f
-    resource: repo://Makefile
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
-  - id: openwiki-source-171a529de8fb1df84c71f554
-    resource: repo://src/langsmith/engine-overview.mdx
-  - id: openwiki-source-6ee73af37434175c0178fc98
-    resource: repo://src/langsmith/engine.mdx
-  - id: openwiki-source-569fb47090d7bb01ef2ae200
-    resource: repo://src/langsmith/evaluation-concepts.mdx
-  - id: openwiki-source-222b22691fa5b319ecd2ae6f
-    resource: repo://src/oss/deepagents/code/configuration.mdx
-  - id: openwiki-source-32a16343d07f89c026a960b4
-    resource: repo://src/oss/javascript/integrations/chat/openrouter.mdx
-  - id: openwiki-source-e1f26a142b8ca9ee7ab7d740
-    resource: repo://src/oss/python/integrations/checkpointers/index.mdx
-  - id: openwiki-source-2b62c17436f64cedb4ab8213
-    resource: repo://src/oss/python/integrations/long-term-memory/index.mdx
-  - id: openwiki-source-0a52531e85ccbd54553ed622
-    resource: repo://src/oss/python/integrations/providers/aws.mdx
+  - id: openwiki-source-3225362f66429aee81d6a0d9
+    resource: repo://src/langsmith/application-structure.mdx
+  - id: openwiki-source-fa546764ecaebb51fc64437e
+    resource: repo://src/langsmith/sandboxes.mdx
+  - id: openwiki-source-4d9644891221cf29cff85bfb
+    resource: repo://src/oss/python/integrations/chat/index.mdx
+  - id: openwiki-source-40800c01aa5ea143782c9738
+    resource: repo://src/oss/python/integrations/document_loaders/index.mdx
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-29T08:22:38.059Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-30T08:22:34.653Z" }
 ---
 
 `src/` is an authored-content tree, not the public site map. `DocumentationBuilder` transforms supported source inputs into `build/`; independently, `src/docs.json` projects those routes into Mintlify menus and supplies redirects and OpenAPI configuration. Consequently, an emitted route need not be navigated, and a navigation label need not match its source directory: `src/langsmith/fleet/` is presented as **No-code agents**.
@@ -49,7 +39,7 @@ flowchart TD
     Api --> Site
 ```
 
-This flow separates route emission from Mintlify presentation and deployment-owned API reference.
+This diagram shows that route emission, navigation projection, and generated API reference have separate owners.
 
 ## Ownership boundaries
 
@@ -89,12 +79,15 @@ Notable projections:
 - **OpenWiki** places the same unversioned `/oss/openwiki/...` routes in both Build dropdowns. This duplicates presentation, not route trees.
 - **Deep Agents Code** is an unversioned Products and setup surface. Its expanded **Configuration** group is rooted at `oss/deepagents/code/configuration` and contains credentials, config file, hooks, and MCP tools. The landing page defines distinct resolution rules for general options, provider keys, dotenv files, and provider endpoints.
 - **Engine** is a flat, six-route Products and setup surface: overview, issue workflow, GitHub integration, notifications, security, and self-hosted documentation. Its issue workflow detects recurring trace issues, diagnoses a root cause, proposes a pull request, tracks matching traces and dataset examples, and reopens an issue if it resurfaces.
+- The ordinary LangSmith page `langsmith/application-structure` is under Deploy → Agent Server → Develop your application, while `langsmith/sandboxes` is the landing page of a separate Deploy → Sandboxes tab. Both remain ordinary unversioned LangSmith output; the distinction is entirely in `docs.json`.
 
 ### Evaluation and integrations
 
 Evaluator documents are ordinary unversioned LangSmith pages, but navigation is organized by reader workflow: evaluation concepts appear in Test; evaluator management and implementation guidance are in Test → **Evaluators**; production evaluator configuration is in Monitor → Observe → **Online evaluators**. This aligns with the content model: offline evaluation runs against dataset examples and can use reference outputs, whereas online evaluation runs against production runs or threads without them. Workspace-level evaluators can attach to multiple projects and datasets.
 
 The two Build **Integrations** tabs intentionally differ. Python uses **Popular Providers** and **Integrations by component**; the latter contains the checkpointer and long-term-memory landing pages. Checkpointers persist and resume LangGraph state, while stores persist and retrieve long-term memory across threads. TypeScript instead uses **Popular Providers**, **General integrations**, and **RAG integrations**. Thus the separate Python and JavaScript `all_providers.mdx` sources are emitted only in their respective families, and a JavaScript page such as `integrations/chat/openrouter.mdx` cannot be a Python route.
+
+The current Python tab puts provider overview and `all_providers` before its groups, places the AWS provider page in **Popular Providers**, and lists chat, middleware, and document-loader *landing pages* in **Integrations by component**. `src/oss/python/integrations/middleware/aws.mdx` is still an authored Python route, but it is not itself a listed component landing page; adding or moving it requires an explicit `docs.json` entry.
 
 ## Managed Deep Agents
 
@@ -126,5 +119,6 @@ Mintlify generates endpoint pages during deployment, rather than from authored M
 - [Build system](/openwiki/architecture/build-system.md)
 - [Versioning](/openwiki/concepts/versioning.md)
 - [Mintlify integration](/openwiki/integrations/mintlify.md)
-- [Adding pages](/openwiki/operations/adding-pages.md)
+- [Integration listing automation](/openwiki/workflows/integration-listing-automation.md)
+- [Versioned content](/openwiki/workflows/versioned-content.md)
 - [Quickstart](/openwiki/quickstart.md)
