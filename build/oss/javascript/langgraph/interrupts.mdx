@@ -91,7 +91,7 @@ await graph.invoke(new Command({ resume: true }), config);
 - You must use the **same thread ID** when resuming that was used when the interrupt occurred
 - The value passed to `new Command({ resume: ... })` becomes the return value of the [`interrupt`](https://reference.langchain.com/javascript/langchain-langgraph/index/interrupt) call
 - The node restarts from the beginning of the node where the [`interrupt`](https://reference.langchain.com/javascript/langchain-langgraph/index/interrupt) was called when resumed, so any code before the [`interrupt`](https://reference.langchain.com/javascript/langchain-langgraph/index/interrupt) runs again
-- You can pass any JSON-serializable value as the resume value
+- You can pass any JSON-serializable value as the resume value, subject to validation when you specify a Zod `responseSchema`
 
 <Warning>
 
@@ -100,6 +100,68 @@ await graph.invoke(new Command({ resume: true }), config);
 </Warning>
 
 
+
+## Define an interrupt response schema
+
+
+
+The `responseSchema` option to [`interrupt`](https://reference.langchain.com/javascript/langchain-langgraph/index/interrupt) describes the input expected when you resume the graph. Clients can use the schema to render typed input forms.
+
+<Note>
+Interrupt response schemas require `@langchain/langgraph` version 1.4.16 or later.
+</Note>
+
+Pass a Zod schema to validate resume values. LangGraph converts it to JSON Schema and includes it in `Interrupt.response_schema`, separately from the interrupt's `value` payload. The schema is available on interrupts returned to the caller and in checkpoint task interrupts.
+
+This example uses the approval schema from LangGraph's interrupt tests:
+
+```typescript
+import {
+  Annotation,
+  Command,
+  MemorySaver,
+  START,
+  StateGraph,
+  interrupt,
+} from "@langchain/langgraph";
+import { z } from "zod/v4";
+
+const Decision = z.object({
+  approved: z.boolean(),
+  note: z.string().default(""),
+});
+
+const State = Annotation.Root({
+  answer: Annotation<unknown>(),
+});
+
+const graph = new StateGraph(State)
+  .addNode("node", () => ({
+    answer: interrupt({ question: "approve?" }, { responseSchema: Decision }),
+  }))
+  .addEdge(START, "node")
+  .compile({ checkpointer: new MemorySaver() });
+
+const config = { configurable: { thread_id: "1" } };
+
+const result = await graph.invoke({ answer: null }, config);
+console.log(result.__interrupt__?.[0].response_schema);
+
+const resumed = await graph.invoke(
+  new Command({ resume: { approved: true } }),
+  config
+);
+console.log(resumed.answer);
+```
+
+With a Zod schema, `interrupt()` returns the parsed value. In this example, the result is `{ approved: true, note: "" }`, including the default `note`. Invalid input raises `ZodError`; you can retry with a corrected `new Command({ resume: ... })` using the same thread ID.
+
+You can also pass a JSON Schema object as `responseSchema`. LangGraph exposes that object unchanged but does **not** validate resume values against it. When you omit `responseSchema`, interrupts have no `response_schema` field, and resume values pass through without schema validation.
+
+
+Studio renders interrupt response schemas as typed input fields instead of a JSON editor. This preview of the Studio component uses example data with approval, note, and numeric amount fields.
+
+![Studio interrupt form with an approval toggle, a note field, and a numeric amount set to 125.50](/images/langgraph-interrupt-response-schema.png)
 
 ## Common patterns
 
