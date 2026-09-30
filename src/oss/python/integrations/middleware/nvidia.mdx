@@ -4,25 +4,26 @@ description: Integrate with the NVIDIA middleware using LangChain Python.
 integration:
   name: NVIDIA middleware
   featured: true
-  available: Model routing and Nemotron 3.5 Super VL harness optimization
+  available: Model routing, Nemotron 3 Ultra harness profile, and Nemotron 3.5 Super VL
   source: "[`langchain-ai/langchain-nvidia`](https://github.com/langchain-ai/langchain-nvidia), [`langchain-ai/deepagents`](https://github.com/langchain-ai/deepagents)"
 ---
 
-Middleware integrations and model-specific harness profiles for NVIDIA services and models. Use them to route calls across LangChain chat models or optimize Deep Agents behavior for NVIDIA Nemotron 3.5 Super VL. Learn more about [middleware](/oss/langchain/middleware/overview).
+Middleware integrations and model-specific harness profiles for NVIDIA services and models. Use Nemotron 3.5 Super VL with Deep Agents for text and image tasks, apply the existing Nemotron 3 Ultra harness profile, or route calls across LangChain chat models. Learn more about [middleware](/oss/langchain/middleware/overview).
 
 ## Overview
 
 | Integration | Description |
 |-------------|-------------|
-| [Deep Agents profile for Nemotron 3.5 Super VL](#optimize-deep-agents-for-nemotron-3-5-super-vl) | Apply model-specific prompts and middleware for agentic workflows |
+| [Nemotron 3.5 Super VL with Deep Agents](#use-nemotron-3-5-super-vl-with-deep-agents) | Run a text or image task with the vision-language model |
+| [Deep Agents profile for Nemotron 3 Ultra](#optimize-deep-agents-for-nemotron-3-ultra) | Apply model-specific prompts and middleware for more reliable agentic behavior |
 | [Model routing with NeMo Switchyard](#model-routing-with-nemo-switchyard) | Route each model call to the target selected by a configured Switchyard algorithm |
 
-## Optimize Deep Agents for Nemotron 3.5 Super VL
+## Optimize Deep Agents for Nemotron 3 Ultra
 
-Deep Agents includes a harness profile for NVIDIA Nemotron 3.5 Super VL. It adapts the [Nemotron 3 Ultra profile](https://github.com/langchain-ai/deepagents/blob/main/libs/deepagents/deepagents/profiles/harness/_nvidia_nemotron_3_ultra.py), with prompt guidance, tool descriptions, and middleware for tool calling, filesystem operations, retries, context management, and final answers. Find the model on [NVIDIA Build](https://build.nvidia.com/) when its public API identifier is available.
+Deep Agents includes a built-in harness profile for [NVIDIA Nemotron 3 Ultra](https://build.nvidia.com/nvidia/nemotron-3-ultra-550b-a55b). The profile adds model-specific prompt guidance, tool descriptions, and middleware for tool calling, filesystem operations, retries, context management, and final answers. It was developed through [evaluation-driven harness tuning](https://developer.nvidia.com/blog/create-a-langchain-deep-agents-harness-profile-for-nvidia-nemotron-3-ultra-to-improve-performance/).
 
 <Note>
-  The public Nemotron 3.5 Super VL API identifier and minimum Deep Agents release are pending. Update this page before publication.
+  The built-in Nemotron 3 Ultra harness profile requires `deepagents>=0.7.0`.
 </Note>
 
 ### What the profile changes
@@ -31,7 +32,7 @@ Deep Agents includes a harness profile for NVIDIA Nemotron 3.5 Super VL. It adap
 - Adds continuation guidance when `read_file` returns a full page of results.
 - Retries selected filesystem failures and model rate limits.
 - Normalizes ChatNVIDIA messages, reasoning tags, and text-formatted tool calls.
-- Adds progress, entity-resolution, and final-answer safeguards.
+- Adds progress, follow-up, entity-resolution, and final-answer safeguards.
 
 ### Setup
 
@@ -45,18 +46,13 @@ Configure `NVIDIA_API_KEY` as described in the [ChatNVIDIA setup guide](/oss/int
 
 ### Use the built-in profile
 
-Set `NVIDIA_MODEL_ID` to the public Nemotron 3.5 Super VL identifier from NVIDIA Build. Deep Agents recognizes the registered model identifier and applies the profile automatically. Set an 8,192-token completion budget so longer reasoning and tool workflows have room for a final answer:
+Create a deep agent with the Nemotron 3 Ultra model. Deep Agents recognizes the model and applies the profile automatically, so you do not need to instantiate or pass its middleware:
 
 ```python Create a profiled deep agent icon="robot"
-import os
-
 from deepagents import create_deep_agent
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 
-model = ChatNVIDIA(
-    model=os.environ["NVIDIA_MODEL_ID"],
-    max_completion_tokens=8192,
-)
+model = ChatNVIDIA(model="nvidia/nemotron-3-ultra-550b-a55b")
 agent = create_deep_agent(model=model)
 
 result = agent.invoke({
@@ -70,32 +66,59 @@ result = agent.invoke({
 print(result["messages"][-1].content_blocks)
 ```
 
-The profile is registered for the Nemotron 3.5 Super VL identifier through NVIDIA. Registration is model-specific. The Nemotron 3 Ultra profile remains available for its existing model identifiers.
+The profile is registered for Nemotron 3 Ultra model identifiers served through NVIDIA, Baseten, Fireworks, OpenRouter, Nebius, and Together. Registration is model-specific, so other models from these providers remain unchanged.
 
-### Send an image
+### API reference
 
-Nemotron 3.5 Super VL accepts text and image content in the same `HumanMessage`. Encode a local PNG as a data URL before sending it through `ChatNVIDIA`:
+- [Nemotron 3 Ultra harness profile source](https://github.com/langchain-ai/deepagents/blob/main/libs/deepagents/deepagents/profiles/harness/_nvidia_nemotron_3_ultra.py)
+- [`HarnessProfile`](https://reference.langchain.com/python/deepagents/profiles/harness/harness_profiles#deepagents.profiles.harness.harness_profiles.HarnessProfile)
 
-```python Send an image icon="photo"
+## Use Nemotron 3.5 Super VL with Deep Agents
+
+Nemotron 3.5 Super VL supports text and image input through `ChatNVIDIA` and
+`create_deep_agent`. Set `NVIDIA_MODEL_ID` to its public model identifier from
+[NVIDIA Build](https://build.nvidia.com/) when the catalog entry is available.
+For longer agent workflows, set an 8,192-token completion budget so the model
+has room to return a final answer after reasoning and tool calls.
+
+```python Create a deep agent icon="robot"
+import os
+
+from deepagents import create_deep_agent
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
+
+model = ChatNVIDIA(
+    model=os.environ["NVIDIA_MODEL_ID"],
+    max_completion_tokens=8192,
+)
+agent = create_deep_agent(model=model)
+
+result = agent.invoke({"messages": [{"role": "user", "content": "Summarize this project."}]})
+print(result["messages"][-1].content_blocks)
+```
+
+To ask about an image, encode a local PNG as a data URL and include it in a
+`HumanMessage`:
+
+```python Ask about an image icon="photo"
 import base64
 from pathlib import Path
 
 from langchain.messages import HumanMessage
 
 image = base64.b64encode(Path("photo.png").read_bytes()).decode("ascii")
-answer = agent.invoke({
+result = agent.invoke({
     "messages": [HumanMessage(content=[
         {"type": "text", "text": "Describe this image."},
         {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image}"}},
     ])]
 })
-print(answer["messages"][-1].content_blocks)
+print(result["messages"][-1].content_blocks)
 ```
 
-### API reference
-
-- [Nemotron 3.5 Super VL harness profile source](https://github.com/langchain-ai/deepagents/blob/main/libs/deepagents/deepagents/profiles/harness/_nvidia_nemotron_3_5_super.py)
-- [`HarnessProfile`](https://reference.langchain.com/python/deepagents/profiles/harness/harness_profiles#deepagents.profiles.harness.harness_profiles.HarnessProfile)
+The Super 3.5 harness profile is under evaluation. The example above uses
+Deep Agents without a Super-specific profile. The existing Nemotron 3 Ultra
+profile remains available for Ultra model identifiers.
 
 ## Model routing with NeMo Switchyard
 
