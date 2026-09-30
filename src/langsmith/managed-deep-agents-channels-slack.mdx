@@ -205,61 +205,60 @@ export const channel = channels.slack({
 ## React to the message that starts a run
 
 When a run picks up an inbound message, the agent reacts to it with an emoji, so
-the sender knows it was seen before the agent has anything to say. A
-[decision model](/langsmith/llm-gateway-decision-models) scores a fixed
-vocabulary and answers with one of its emoji. Any failure falls back to `eyes`
-and never delays the reply.
+the sender knows it was seen before the agent has anything to say. The reaction
+never blocks or delays the reply.
 
-<Warning>
-  The decision model is bring-your-own-key, so the workspace needs
-  `TYPESAFE_API_KEY` as a
-  [provider secret](/langsmith/llm-gateway-admin-setup#1-add-provider-secrets).
-  Without it every message receives `eyes`, which looks the same as a working
-  reaction. Deployment warns when the secret is missing.
-</Warning>
+Every message gets the same emoji by default. Pass a function to choose one per
+message:
 
 :::python
-<ParamField path="reactions" type="bool | dict" default="True">
-  Pass `False` to turn reactions off, or a mapping with `model` or `emoji` to
-  override the decision model or the vocabulary.
+<ParamField path="reactions" type="bool | str | Callable" default='"eyes"'>
+  Pass `False` to turn reactions off, a Slack emoji short name to use that emoji
+  instead, or a callable taking `{"text": ...}` and returning a short name. The
+  callable may be sync or async.
 </ParamField>
 
 ```python
-channel = channels.slack(
-    name="Support Bot",
-    reactions={"emoji": {
-        "bug": "A defect or incorrect behaviour.",
-        "wave": "A greeting or hello.",
-        "eyes": "Anything that does not clearly fit another option.",
-    }},
-)
+from managed_deepagents import channels
+
+async def choose_emoji(context: dict) -> str:
+    return "bug" if "broken" in context["text"].lower() else "eyes"
+
+channel = channels.slack(name="Support Bot", reactions=choose_emoji)
 ```
 :::
 
 :::js
-<ParamField path="reactions" type="boolean | object" default="true">
-  Pass `false` to turn reactions off, or an object with `model` or `emoji` to
-  override the decision model or the vocabulary.
+<ParamField path="reactions" type="false | string | function" default='"eyes"'>
+  Pass `false` to turn reactions off, a Slack emoji short name to use that emoji
+  instead, or a function taking `{ text }` and returning a short name. The
+  function may return a promise.
 </ParamField>
 
 ```typescript
+import { channels } from "managed-deepagents";
+
 export const channel = channels.slack({
   name: "Support Bot",
-  reactions: {
-    emoji: {
-      bug: "A defect or incorrect behaviour.",
-      wave: "A greeting or hello.",
-      eyes: "Anything that does not clearly fit another option.",
-    },
-  },
+  reactions: ({ text }) => (text.includes("broken") ? "bug" : "eyes"),
 });
 ```
 :::
 
-Keys are Slack short names without colons; an unrecognized name is chosen but
-never appears. The model matches on the descriptions, so describe the situation
-rather than the picture. A vocabulary larger than the model scores at once, 255
-by default, is rejected when the channel is declared.
+Return a Slack short name without the surrounding colons. A name Slack does not
+recognize is chosen but never appears, so the reaction is simply missing. A
+chooser that throws, that takes longer than five seconds, or that returns
+anything else falls back to the default emoji, and the run continues either way.
+
+<Tip>
+  For a reaction that reflects what the message says, a
+  [decision model](/langsmith/llm-gateway-decision-models) scores a fixed set of
+  options and answers with one of them, so there is no reply to parse.
+  `examples/python/channels/reaction_emoji.py` is a working chooser that does
+  this, with the vocabulary and prompt wording it needs. It reads
+  `LANGSMITH_API_KEY` and needs `TYPESAFE_API_KEY` in your workspace
+  [provider secrets](/langsmith/llm-gateway-admin-setup#1-add-provider-secrets).
+</Tip>
 
 ## Deploy the agent
 
