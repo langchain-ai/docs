@@ -69,7 +69,7 @@ In production, `token_for` stands in for whatever the deployment already has: an
 :::
 
 :::js
-Most remote MCP servers require authentication. Each HTTP or SSE server under `servers` takes its own `authProvider` and `headers`, and `MCPAdapter` passes both to the MCP SDK transport unchanged. Stdio servers take neither. Use a [header or token provider](#bearer-token) for credentials your app manages, or an [OAuth client provider](#oauth-authentication) for OAuth 2.1. When each run should reach the server as its caller, use [per-user authentication](#per-user-authentication).
+Most remote MCP servers require authentication. Each HTTP or SSE server under `servers` takes its own `authProvider` and `headers`, and `MCPAdapter` hands the provider object to the MCP SDK transport as-is and sends the headers with each request. Stdio servers take neither. Use a [header or token provider](#bearer-token) for credentials your app manages, or an [OAuth client provider](#oauth-authentication) for OAuth 2.1. When each run should reach the server as its caller, use [per-user authentication](#per-user-authentication).
 
 <Note>
 This page requires `@langchain/mcp-adapters` 2.0 or later. If you are upgrading from 1.x, see the [migration guide](/oss/migrate/langchain-mcp-adapters#authentication).
@@ -120,7 +120,7 @@ The adapter re-exports the `AuthProvider` and `OAuthClientProvider` types, so yo
 
 OAuth lets users authorize your application to access an MCP server. Pass an `OAuthClientProvider` as `authProvider`. The SDK handles discovery, client registration, the code exchange, and token refresh. Your application supplies the provider's storage, browser redirect, and callback handler.
 
-Add `@modelcontextprotocol/client` 2.1.0 or later as a direct dependency for the callback transport. Implement your provider using the SDK's [OAuth client guide](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/clients/oauth.md). Configure its `redirectUrl` for your callback route, and store client information, tokens, the PKCE verifier, and discovery state. Include `invalidateCredentials()` so rejected refresh credentials can trigger a new login.
+Add `@modelcontextprotocol/client` 2.2.0 or later (the adapter's own range) as a direct dependency, so your app and the adapter share one SDK copy. The callback transport and `SdkHttpError` come from it. Implement your provider using the SDK's [OAuth client guide](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/clients/oauth.md). Configure its `redirectUrl` for your callback route, and store client information, tokens, the PKCE verifier, and discovery state. Include `invalidateCredentials()` so rejected refresh credentials can trigger a new login.
 
 Keep each provider and its storage separate for each user and MCP server. The example below also binds each pending login to an authenticated application session. Read the user and session IDs from your application's session middleware, never from callback query parameters.
 
@@ -236,7 +236,7 @@ Keep `crm` available to that application's session until the callback completes.
 After the user signs in, the authorization server redirects to your provider's `redirectUrl`. In that route, retrieve the same `crm` instance and the caller's verified user and session IDs, then complete login:
 
 ```typescript
-const result = await crm.completeLogin(new URL(req.url), userId, sessionId);
+const result = await crm.completeLogin(new URL(req.url, "http://localhost"), userId, sessionId);
 // The helper exchanges the code and retries discovery using saved tokens.
 // Pass result.tools to your agent, or redirect if another login is required.
 ```
