@@ -1,0 +1,269 @@
+---
+title: "TypeSafe integrations"
+description: "Integrate with TypeSafe using LangChain"
+---
+
+[Jev](https://docs.typesafe.ai/models) is a [System One model](https://docs.typesafe.ai/concepts/system-one) that reads natural language but returns typed answers and calibrated probabilities instead of generated text.
+
+`TypeSafeClassifier` exposes these decisions as a LangChain `Runnable`, so you can invoke, batch, or compose them with other runnables. It accepts strings, structured JSON, and [LangChain message objects](/oss/python/langchain/messages), and records traces and token usage in LangSmith. Use it for focused decisions such as routing a request, choosing a model, or checking whether a tool call is safe to run.
+
+Use TypeSafe decisions in LangChain middleware to control `create_agent` behavior at specific lifecycle points, including with custom middleware that classifies agent state. See [Agent middleware](#agent-middleware) for examples.
+
+## Setup
+
+<CodeGroup>
+```bash uv
+uv add langchain-typesafe
+```
+
+```bash pip
+pip install langchain-typesafe
+```
+</CodeGroup>
+
+Create an API key in the [TypeSafe console](https://console.typesafe.ai/settings/keys) and export it:
+
+```bash
+export TYPESAFE_API_KEY=...
+```
+
+<Note>
+Optional: Set `TYPESAFE_BASE_URL` to use a compatible gateway, test server, or private deployment. The default is `https://api.typesafe.ai`.
+
+```bash
+export TYPESAFE_BASE_URL=https://gateway.example.com
+```
+</Note>
+
+## Quickstart
+
+Create a `TypeSafeClassifier`, then pass the state and named questions together in each invocation. Questions that share state are evaluated independently and in parallel in one request:
+
+<Note>
+Earlier versions configured `questions` on `TypeSafeClassifier` and passed only the state to `invoke`. Pass both `state` and `questions` to `invoke` now.
+</Note>
+
+```python
+from langchain_typesafe import Choice, Noul, Score, TypeSafeClassifier
+
+classifier = TypeSafeClassifier()
+
+response = classifier.invoke(
+    {
+        "state": (
+            "The deploy failed twice and customers are seeing 500s. "
+            "Can someone look now?"
+        ),
+        "questions": {
+            "urgent": Noul(instructions="Does this need attention right now?"),
+            "team": Choice(
+                instructions="Which team should pick this up?",
+                criteria={
+                    "infra": "Deploys, availability, and on-call incidents.",
+                    "billing": "Payments, invoices, and subscriptions.",
+                },
+            ),
+            "severity": Score(
+                instructions="How severe is the impact?",
+                criteria=["Cosmetic.", "Degraded for some users.", "Full outage."],
+            ),
+        },
+    }
+)
+
+print(response.nouls["urgent"].noul)
+print(response.choices["team"].choice, response.choices["team"].confidence)
+print(response.scores["severity"].score)
+```
+
+Answers are keyed by the question IDs you supplied, and grouped by type on `nouls`, `choices`, and `scores`. The response also carries the `model` that answered, token `usage`, and the TypeSafe `request_id`.
+
+The request `state` can be a string, a JSON object or array, or LangChain messages. A `BaseMessage` or a sequence of messages is converted to role/content JSON, including when nested inside a larger object.
+
+## Decision types
+
+Each question is one of three [primitives](https://docs.typesafe.ai/primitives):
+
+| Primitive | Asks | Returns | Reach for it when |
+|---|---|---|---|
+| [`Noul`](https://docs.typesafe.ai/primitives/noul) | Is this true? | `noul`, the probability of yes | Your code branches on an `if` |
+| [`Choice`](https://docs.typesafe.ai/primitives/choice) | Which of these options? | `choice`, plus `probabilities` and `confidence` | Options map to distinct code paths |
+| [`Score`](https://docs.typesafe.ai/primitives/score) | Which level? | `score`, plus `legend`, `probabilities`, and `confidence` | The answer is a spectrum you compare to a threshold |
+
+`Noul` is the only one without a `confidence`, since the probability is the answer. Use `Score` rather than a `Noul` for a spectrum: a `Noul` of `0.5` means an even split between yes and no, not "medium".
+
+## Agent middleware
+
+The package includes two experimental [middleware](/oss/python/langchain/middleware/overview) that put the classifier on an agent's decision points. Import them from `langchain_typesafe.experimental.middleware`.
+
+<Note>
+The middleware are experimental and require `langchain-typesafe[experimental]`. Their APIs may change without notice.
+</Note>
+
+The examples below use OpenAI models. Install the experimental extra and the OpenAI integration before using them:
+
+<CodeGroup>
+```bash uv
+uv add "langchain-typesafe[experimental]" langchain-openai
+```
+
+```bash pip
+pip install "langchain-typesafe[experimental]" langchain-openai
+```
+</CodeGroup>
+
+| Middleware | Hook | Decision |
+|---|---|---|
+| [`ModelRouterMiddleware`](#model-routing) | `before_agent`, `wrap_model_call` | Which model handles the run |
+| [`AutoModeMiddleware`](#tool-risk-gating) | `wrap_tool_call` | Whether a tool call is too risky to run |
+
+### Model routing
+
+Classifies the latest human message across your named models and uses the selected one for every model call in the run. Each `ModelChoice` pairs a model with the criterion for picking it:
+
+```python
+from langchain.agents import create_agent
+from langchain_typesafe.experimental.middleware import (
+    ModelChoice,
+    ModelRouterMiddleware,
+)
+
+router = ModelRouterMiddleware(
+    choices={
+        "fast": ModelChoice(
+            model="openai:gpt-5.6-terra",
+            criteria="Direct lookups, extraction, and localized changes with explicit targets.",
+        ),
+        "powerful": ModelChoice(
+            model="openai:gpt-6-astra",
+            criteria="Architecture, novel root-cause reasoning, and high-stakes decisions.",
+        ),
+    },
+    instructions="Choose the least costly model that can complete the task safely.",
+)
+
+agent = create_agent("openai:gpt-5.6-terra", middleware=[router])
+
+result = agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Prove that there are infinitely many prime numbers.",
+            }
+        ]
+    }
+)
+print(result["model_route"].choice)
+```
+
+### Tool-risk gating
+
+Asks for the probability that a tool call is risky or insufficiently authorized. Calls that are determined risky return an error `ToolMessage` instead of running the tool. Only the tools you list are classified. Pass their names or tool objects:
+
+```python
+from langchain.agents import create_agent
+from langchain.messages import ToolMessage
+from langchain.tools import tool
+from langchain_typesafe import NoulCriteria
+from langchain_typesafe.experimental.middleware import AutoModeMiddleware
+
+
+@tool
+def delete_all_backups() -> str:
+    """Delete every backup. This action cannot be undone."""
+    return "Backups deleted."
+
+
+agent = create_agent(
+    "openai:gpt-6-astra",
+    tools=[delete_all_backups],
+    middleware=[AutoModeMiddleware(tools=[delete_all_backups])],
+)
+
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Delete all backups."}]}
+)
+print(result["messages"][-1].content)
+```
+
+Override `instructions`, or pass `criteria=NoulCriteria(true=..., false=...)`, to describe risk for your own tools.
+
+<Warning>
+Do not put secrets in tool arguments or conversation state unless sending them to TypeSafe is acceptable. This middleware refuses risky calls. It does not request approval. Pair it with [human-in-the-loop middleware](/oss/python/langchain/middleware/built-in) when you want a person to approve them.
+</Warning>
+
+### Custom middleware
+
+`TypeSafeClassifier` accepts LangChain message objects directly, so a custom middleware hook can classify an agent's conversation state without converting it first. This example classifies the conversation once at the start of each run and stores the complete `ChoiceAnswer` in agent state:
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import AgentMiddleware, AgentState, Runtime
+from langchain_typesafe import Choice, ChoiceAnswer, TypeSafeClassifier
+from typing_extensions import NotRequired
+
+
+class TriageState(AgentState):
+    triage: NotRequired[ChoiceAnswer]
+
+
+class TriageMiddleware(AgentMiddleware[TriageState]):
+    state_schema = TriageState
+
+    def __init__(self) -> None:
+        self.classifier = TypeSafeClassifier()
+
+    def before_agent(
+        self, state: TriageState, runtime: Runtime
+    ) -> dict[str, ChoiceAnswer]:
+        response = self.classifier.invoke(
+            {
+                "state": state["messages"],
+                "questions": {
+                    "triage": Choice(
+                        instructions="Which team should handle this conversation?",
+                        criteria={
+                            "billing": "Payments, invoices, and subscriptions.",
+                            "infra": "Deploys, availability, and incidents.",
+                            "other": "Requests that belong to another team.",
+                        },
+                    )
+                },
+            }
+        )
+        return {"triage": response.choices["triage"]}
+
+
+agent = create_agent(
+    "openai:gpt-5.6-terra",
+    middleware=[TriageMiddleware()],
+)
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Customers are seeing 500 errors."}]}
+)
+print(result["triage"].choice, result["triage"].confidence)
+```
+
+Use any lifecycle hook that matches your decision point. For example, use `before_model` to reclassify after each tool result, or `wrap_tool_call` to classify a proposed action. See [Custom middleware](/oss/python/langchain/middleware/custom) for all hooks and state patterns.
+
+## Tracing
+
+TypeSafe classifications are traced in [LangSmith](/langsmith/home), so you can inspect decisions, token usage, and spend alongside the rest of your agent.
+
+## See also
+
+- [TypeSafe documentation](https://docs.typesafe.ai/)
+- [TypeSafe confidence guidance](https://docs.typesafe.ai/confidence)
+- [LangChain TypeSafe API reference](https://reference.langchain.com/python/langchain-typesafe)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/providers/typesafe.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
