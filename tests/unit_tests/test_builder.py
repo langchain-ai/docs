@@ -5,6 +5,7 @@ covering all methods and edge cases including file extension handling,
 directory structure preservation, and error conditions.
 """
 
+import json
 from pathlib import Path
 
 import pytest
@@ -668,3 +669,103 @@ def test_build_all_creates_managed_deep_agents_language_routes() -> None:
         assert "/langsmith/javascript/managed-deep-agents-tools" in js_snippet
         assert "TypeScript only." in js_snippet
         assert "Python only." not in js_snippet
+
+
+def _nav_docs_json(python_pages: list[str], js_pages: list[str]) -> File:
+    """Return a docs.json whose navigation lists the given oss/ pages."""
+    navigation = {
+        "dropdowns": [
+            {"dropdown": "Python", "groups": [{"group": "G", "pages": python_pages}]},
+            {"dropdown": "TypeScript", "groups": [{"group": "G", "pages": js_pages}]},
+        ]
+    }
+    return File(path="docs.json", content=json.dumps({"navigation": navigation}))
+
+
+_PAGE = "---\ntitle: Page\n---\n\n:::python\nPython only.\n:::\n"
+
+
+def test_shared_oss_page_in_one_nav_builds_one_language() -> None:
+    """A shared page listed in only one language's nav builds only for it."""
+    files = [
+        _nav_docs_json(
+            ["oss/python/langchain/py-only", "oss/python/langchain/both"],
+            ["oss/javascript/langchain/js-only", "oss/javascript/langchain/both"],
+        ),
+        File(path="oss/langchain/py-only.mdx", content=_PAGE),
+        File(path="oss/langchain/js-only.mdx", content=_PAGE),
+        File(path="oss/langchain/both.mdx", content=_PAGE),
+        File(path="oss/langchain/unlisted.mdx", content=_PAGE),
+    ]
+
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        builder.build_all()
+
+        assert fs.build_file_exists("oss/python/langchain/py-only.mdx")
+        assert not fs.build_file_exists("oss/javascript/langchain/py-only.mdx")
+        assert fs.build_file_exists("oss/javascript/langchain/js-only.mdx")
+        assert not fs.build_file_exists("oss/python/langchain/js-only.mdx")
+        # Listed in both navs, or in neither: both languages build.
+        for page in ("both", "unlisted"):
+            assert fs.build_file_exists(f"oss/python/langchain/{page}.mdx")
+            assert fs.build_file_exists(f"oss/javascript/langchain/{page}.mdx")
+
+
+def test_build_file_respects_single_language_nav() -> None:
+    """Single-file rebuilds (docs dev) apply the same nav rule as build_all."""
+    files = [
+        _nav_docs_json(["oss/python/langchain/py-only"], []),
+        File(path="oss/langchain/py-only.mdx", content=_PAGE),
+    ]
+
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        builder.build_file(fs.src_dir / "oss" / "langchain" / "py-only.mdx")
+
+        assert fs.build_file_exists("oss/python/langchain/py-only.mdx")
+        assert not fs.build_file_exists("oss/javascript/langchain/py-only.mdx")
+
+
+def test_directory_nav_entry_owned_by_language_file() -> None:
+    """A `<dir>` nav entry skips `<dir>/index` when a language file owns the route.
+
+    oss/javascript/langchain/mcp is the TypeScript-only mcp.mdx, so the shared
+    Python-only langchain/mcp/index must not get a TypeScript copy.
+    """
+    files = [
+        _nav_docs_json(
+            ["oss/python/langchain/mcp/index", "oss/python/langchain/rag/index"],
+            ["oss/javascript/langchain/mcp", "oss/javascript/langchain/rag"],
+        ),
+        File(path="oss/langchain/mcp/index.mdx", content=_PAGE),
+        File(path="oss/javascript/langchain/mcp.mdx", content=_PAGE),
+        File(path="oss/langchain/rag/index.mdx", content=_PAGE),
+    ]
+
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+
+        assert builder.shared_oss_page_languages(Path("langchain/mcp/index.mdx")) == (
+            "python",
+        )
+        # No language file owns oss/javascript/langchain/rag, so it counts.
+        assert builder.shared_oss_page_languages(Path("langchain/rag/index.mdx")) == (
+            "python",
+            "js",
+        )
+
+
+def test_shared_oss_pages_build_both_without_docs_json() -> None:
+    """Without a readable docs.json, shared pages keep building for both languages."""
+    files = [
+        File(path="docs.json", content="{not json"),
+        File(path="oss/langchain/page.mdx", content=_PAGE),
+    ]
+
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        builder.build_all()
+
+        assert fs.build_file_exists("oss/python/langchain/page.mdx")
+        assert fs.build_file_exists("oss/javascript/langchain/page.mdx")

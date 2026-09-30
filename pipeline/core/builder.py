@@ -74,6 +74,9 @@ class DocumentationBuilder:
             "js": "javascript",
         }
 
+        # (docs.json mtime, oss/ nav routes per language), see _oss_nav_routes
+        self._nav_cache: tuple[int, dict[str, set[str]]] | None = None
+
     def build_all(self) -> None:
         """Build all documentation files from source to build directory.
 
@@ -449,8 +452,96 @@ class DocumentationBuilder:
             and parts[1] == "openwiki"
         )
 
+    def _oss_nav_routes(self) -> dict[str, set[str]]:
+        """Return the oss/ routes listed in docs.json navigation, per language.
+
+        Keys are language codes ("python", "js"). Values are routes relative to
+        ``oss/<language>/`` exactly as docs.json writes them, for example
+        ``langchain/mcp/index``. The result is cached until docs.json changes,
+        so ``docs dev`` picks up navigation edits.
+        """
+        empty: dict[str, set[str]] = {"python": set(), "js": set()}
+        docs_json = self.src_dir / "docs.json"
+        try:
+            mtime = docs_json.stat().st_mtime_ns
+        except FileNotFoundError:
+            return empty
+        if self._nav_cache is not None and self._nav_cache[0] == mtime:
+            return self._nav_cache[1]
+
+        try:
+            navigation = json.loads(docs_json.read_text(encoding="utf-8")).get(
+                "navigation", {}
+            )
+        except json.JSONDecodeError:
+            logger.warning(
+                "Could not parse %s; building OSS pages for both languages", docs_json
+            )
+            return empty
+
+        routes: dict[str, set[str]] = {"python": set(), "js": set()}
+        languages = {name: code for code, name in self.language_url_names.items()}
+        pattern = re.compile(r"^/?oss/(python|javascript)/(.+)$")
+
+        def collect(node: object) -> None:
+            if isinstance(node, str):
+                match = pattern.match(node)
+                if match:
+                    routes[languages[match.group(1)]].add(match.group(2).strip("/"))
+            elif isinstance(node, dict):
+                for value in node.values():
+                    collect(value)
+            elif isinstance(node, list):
+                for item in node:
+                    collect(item)
+
+        collect(navigation)
+        self._nav_cache = (mtime, routes)
+        return routes
+
+    def _is_in_language_nav(self, route: str, language: str) -> bool:
+        """Return whether a shared oss/ page route appears in a language's nav.
+
+        docs.json may list a directory landing page as ``<dir>`` rather than
+        ``<dir>/index``. That form only counts when no language-specific
+        ``src/oss/<language>/<dir>.mdx`` exists, because that file owns the
+        route instead (``oss/javascript/langchain/mcp`` is the TypeScript page,
+        not the shared ``langchain/mcp/index``).
+        """
+        nav = self._oss_nav_routes()[language]
+        if route in nav:
+            return True
+        parent, _, leaf = route.rpartition("/")
+        if leaf != "index" or parent not in nav:
+            return False
+        language_dir = self.src_dir / "oss" / self.language_url_names[language]
+        return not any(
+            (language_dir / f"{parent}{suffix}").exists() for suffix in (".mdx", ".md")
+        )
+
+    def shared_oss_page_languages(self, oss_relative: Path) -> tuple[str, ...]:
+        """Return the languages to build a shared ``src/oss/`` page for.
+
+        A page listed in only one language's navigation builds only for that
+        language. Otherwise the other language gets an unlisted copy holding
+        whatever sits outside the page's language fences, which for a
+        Python-only page is an empty page or Python code under a TypeScript
+        URL. Pages listed in both navs, or in neither (the error pages that
+        library messages link to), build for both languages.
+
+        Args:
+            oss_relative: Path relative to ``src/oss/``, for example
+                ``langchain/mcp/index.mdx``.
+        """
+        both = ("python", "js")
+        if oss_relative.suffix not in {".mdx", ".md"}:
+            return both
+        route = oss_relative.with_suffix("").as_posix()
+        listed = tuple(lang for lang in both if self._is_in_language_nav(route, lang))
+        return listed if len(listed) == 1 else both
+
     def _build_oss_file(self, file_path: Path, relative_path: Path) -> None:
-        """Build an OSS file for both Python and JavaScript versions.
+        """Build an OSS file for its Python and JavaScript versions.
 
         Args:
             file_path: Path to the source file.
@@ -470,17 +561,21 @@ class DocumentationBuilder:
                 logger.debug("Built unversioned OSS file: %s", relative_path)
             return
 
-        # Build for both Python and JavaScript versions
         oss_relative = relative_path.relative_to(Path("oss"))  # Remove 'oss/' prefix
+        languages = self.shared_oss_page_languages(oss_relative)
 
         # Build Python version
         python_output = self.build_dir / "oss" / "python" / oss_relative
-        if self._build_single_file_to_path(file_path, python_output, "python"):
+        if "python" in languages and self._build_single_file_to_path(
+            file_path, python_output, "python"
+        ):
             logger.debug("Built Python version: oss/python/%s", oss_relative)
 
         # Build JavaScript version
         js_output = self.build_dir / "oss" / "javascript" / oss_relative
-        if self._build_single_file_to_path(file_path, js_output, "js"):
+        if "js" in languages and self._build_single_file_to_path(
+            file_path, js_output, "js"
+        ):
             logger.debug("Built JavaScript version: oss/javascript/%s", oss_relative)
 
     def is_managed_deep_agents_file(self, file_path: Path) -> bool:
@@ -752,6 +847,12 @@ class DocumentationBuilder:
                         # Remove the language-specific directory from the path
                         # e.g., "python/concepts/low_level.md" > "concepts/low_level.md"
                         relative_path = Path(*relative_path.parts[1:])
+                    elif target_language not in self.shared_oss_page_languages(
+                        relative_path
+                    ):
+                        # Shared page listed only in the other language's nav
+                        pbar.update(1)
+                        continue
 
                 # Language-agnostic OSS products are built once under their
                 # own paths (not duplicated into python/javascript trees).
