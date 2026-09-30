@@ -274,7 +274,9 @@ description: SEO summary, no markdown allowed (no links, backticks, formatting)
 
 ### Language-specific content
 
-Use `:::python` or `:::js` fences for language-specific content. Pages with these fences generate separate Python and JavaScript versions.
+Use `:::python` or `:::js` fences for language-specific content. Every shared page under `src/oss/` builds a Python and a JavaScript version, and the fences decide what each version keeps.
+
+A shared page listed in only one language's navigation in `src/docs.json` builds only that language. To make a page Python-only, list it only in the Python nav, and add a `docs.json` redirect for the JavaScript URL if that URL was ever published. Pages listed in both navs, or in neither, build both versions.
 
 ```txt
 :::python
