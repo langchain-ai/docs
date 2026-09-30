@@ -62,6 +62,19 @@ Compaction has two entries because the failure modes are separate: jobs can fail
 | `compaction_worker_capacity_used` | Gauge | In-flight capacity cost by `job_kind`, against `compaction_worker_capacity_limit`. Sustained use near the limit explains skipped jobs and a growing queue. |
 | `compaction_worker_running_tasks` | Gauge | Tasks running by `job_kind`. Zero while the queue is non-empty means workers are stalled, not busy. |
 
+## Migration
+
+Migration Job pods emit these metrics while a [historical migration](/langsmith/self-host-smithdb-migrate) runs. The gauges report totals across the whole migration from TaskDB, refreshed every two minutes. Every migration pod reports the same values, so aggregate the gauges across pods with `max`, not `sum`. The counters track work done by each pod, so sum their rates across pods.
+
+| Metric | Type | Description |
+| --- | --- | --- |
+| `migration_tasks` | Gauge | Migration tasks, labeled `kind` (`run` or `feedback`) and `status` (`pending`, `running`, `completed`, or `failed`). Progress is the `completed` count against the total across statuses. |
+| `migration_jobs` | Gauge | Migration jobs, labeled `kind` and `status`. Run jobs finish as `promoted` and feedback jobs as `validated`. `failed` and `validation_failed` are failures, and every other status means the job is still in progress. |
+| `migration_run_tasks_completed_total` | Counter | Run tasks completed by the pod. The rate is migration throughput in tasks. |
+| `migration_run_task_planned_rows_migrated_total` | Counter | Rows in the run tasks the pod completed, as counted in ClickHouse when the tasks were planned. The rate is migration throughput in rows. |
+
+Migration does not retry failed tasks or jobs on its own. A non-zero `failed` task count, or a `failed` or `validation_failed` job count, keeps the Job from reaching `Complete`. The Job keeps running until the failure is resolved. See [Migration Job failures](/langsmith/self-host-smithdb-troubleshooting#migration-job-failures).
+
 ## All components
 
 | Metric | Type | Description |
