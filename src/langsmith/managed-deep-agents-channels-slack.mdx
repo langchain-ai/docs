@@ -204,100 +204,50 @@ export const channel = channels.slack({
 
 ## React to the message that starts a run
 
-When a run picks up an inbound message, the agent adds an emoji reaction to
-that message, so the sender knows it was seen before the agent has anything to
-say. A [decision model](/langsmith/llm-gateway-decision-models) scores a fixed
-vocabulary and returns one of its emoji, so the reaction reflects what the
-message says.
-
-Reactions are on by default and need no code. They require a gateway
-credential:
+When a run picks up an inbound message, the agent reacts to it with an emoji, so
+the sender knows it was seen before the agent has anything to say. A
+[decision model](/langsmith/llm-gateway-decision-models) scores a fixed
+vocabulary and answers with one of its emoji. Any failure falls back to `eyes`
+and never delays the reply.
 
 <Warning>
-  The decision model is served through the LangSmith gateway with
-  bring-your-own-key, so the deployment's workspace needs `TYPESAFE_API_KEY` as
-  a [provider secret](/langsmith/llm-gateway-admin-setup#1-add-provider-secrets).
-  Without it, every message receives the generic `eyes` reaction instead.
-
-  The gateway bearer is read from `LANGSMITH_GATEWAY_API_KEY`, falling back to
-  `LANGSMITH_API_KEY`. A deployment's own LangSmith API key is not granted
-  gateway access, so set `LANGSMITH_GATEWAY_API_KEY` explicitly.
+  The decision model is bring-your-own-key, so the workspace needs
+  `TYPESAFE_API_KEY` as a
+  [provider secret](/langsmith/llm-gateway-admin-setup#1-add-provider-secrets)
+  or every message receives `eyes`. Set `LANGSMITH_GATEWAY_API_KEY` as the
+  gateway bearer: a deployment's own LangSmith key has no gateway access.
 </Warning>
-
-The reaction is a courtesy and never blocks a reply. Any failure — a missing
-credential, a timeout, an unrecognized answer, or a choice the model is not
-confident in — falls back to the `eyes` reaction, and the run continues
-unaffected.
 
 :::python
 <ParamField path="reactions" type="bool | dict" default="True">
-  Whether to react to the message that starts a run. Pass `False` to turn
-  reactions off, or a mapping to override the `model` or `emoji` vocabulary.
+  Pass `False` to turn reactions off, or a mapping with `model` or `emoji` to
+  override the decision model or the vocabulary.
 </ParamField>
+
+```python
+channel = channels.slack(
+    name="Support Bot",
+    reactions={"emoji": {
+        "bug": "A defect or incorrect behaviour.",
+        "wave": "A greeting or hello.",
+        "eyes": "Anything that does not clearly fit another option.",
+    }},
+)
+```
 :::
 
 :::js
 <ParamField path="reactions" type="boolean | object" default="true">
-  Whether to react to the message that starts a run. Pass `false` to turn
-  reactions off, or an object to override the `model` or `emoji` vocabulary.
+  Pass `false` to turn reactions off, or an object with `model` or `emoji` to
+  override the decision model or the vocabulary.
 </ParamField>
-:::
 
-To turn reactions off:
-
-:::python
-```python
-from managed_deepagents import channels
-
-channel = channels.slack(
-    name="Support Bot",
-    description="Answers support questions",
-    reactions=False,
-)
-```
-:::
-
-:::js
-```typescript
-import { channels } from "managed-deepagents";
-
-export const channel = channels.slack({
-  name: "Support Bot",
-  description: "Answers support questions",
-  reactions: false,
-});
-```
-:::
-
-### Supply your own vocabulary
-
-Pass `emoji` as a mapping of Slack short name to a description of when to use
-it. The model scores only the emoji you supply, so the reaction is always one
-of them. Descriptions are what the model matches against, so describe the
-situation rather than the picture.
-
-:::python
-```python
-channel = channels.slack(
-    name="Support Bot",
-    reactions={
-        "bug": "A defect or incorrect behaviour.",
-        "mag": "A code review or pull request to look at.",
-        "wave": "A greeting or hello.",
-        "eyes": "Anything that does not clearly fit another option.",
-    },
-)
-```
-:::
-
-:::js
 ```typescript
 export const channel = channels.slack({
   name: "Support Bot",
   reactions: {
     emoji: {
       bug: "A defect or incorrect behaviour.",
-      mag: "A code review or pull request to look at.",
       wave: "A greeting or hello.",
       eyes: "Anything that does not clearly fit another option.",
     },
@@ -306,14 +256,12 @@ export const channel = channels.slack({
 ```
 :::
 
-Every key must be a Slack emoji short name, without the surrounding colons. A
-name Slack does not recognize fails silently: the reaction is chosen but never
-appears. Include an option that covers anything unremarkable, so ordinary
-messages have somewhere to land.
-
-A vocabulary cannot be larger than the number of options the model scores in
-one request. The default model takes 255. Declaring more is rejected when the
-channel is declared, rather than failing for every message at runtime.
+Keys are Slack short names without the surrounding colons, and a name Slack does
+not recognize is chosen but never appears. The model matches on the
+descriptions, so describe the situation rather than the picture, and include one
+option that covers anything unremarkable. A vocabulary cannot exceed the options
+the model scores at once — 255 for the default — and a larger one is rejected
+when the channel is declared.
 
 ## Deploy the agent
 
