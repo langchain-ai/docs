@@ -18,7 +18,7 @@ Fetch and read the full migration guide at https://docs.langchain.com/oss/javasc
 
 ## Breaking changes
 
-- **Tool names are prefixed with the server name by default.** `MCPAdapter` names tools `{server}__{tool}` (for example `weather__get_forecast`), even with a single server, unless you set `prefixToolNameWithServerName`; 1.x defaulted it to `false`. Set `prefixToolNameWithServerName: false` to keep 1.x names. `loadMcpTools` still defaults to `false`.
+- **Tool names are prefixed with the server name by default.** `MCPAdapter` names tools `{server}__{tool}` (for example `weather__get_forecast`), even with a single server, unless you set `prefixToolNameWithServerName`; 1.x defaulted it to `false`. Set `prefixToolNameWithServerName: false` to keep 1.x names. `loadMcpTools` still defaults to `false`. Check approval rules in particular: `humanInTheLoopMiddleware` and `createDeepAgent` match `interruptOn` keys by exact tool name without warning, so a rule for `delete_repo` stops pausing `github__delete_repo`. Longer names can also exceed a model provider's tool-name limit; see [Multiple servers](/oss/langchain/mcp/connections#multiple-servers).
 - **Elicitation pauses runs by default.** When a modern server asks for input during a tool call, the adapter raises a LangGraph @[`interrupt`] and the run stops until you resume it with `createMCPElicitationResume`. A checkpointer is needed only when a tool elicits. Set `elicitation: false` on a server to keep the 1.x behavior. See [Elicitation](#elicitation).
 - **Tool content is always standard content blocks.** 1.x defaulted `useStandardContentBlocks` to `false`. 2.0 removes the option, rejects it, and always returns standard blocks, so images and audio carry `data` and `mimeType` instead of `image_url` data URLs. See [Tool results](#tool-results).
 - **Configuration is strict.** Unknown keys and removed options throw when the adapter is constructed. See [Removed options](#removed-options).
@@ -91,8 +91,11 @@ Other API changes:
 
 - Read configuration from `adapter.config.servers` instead of `adapter.config.mcpServers`. This is a snapshot; changing it does not reconfigure the adapter.
 - `SSEConnection` accepts only legacy SSE. Use `StreamableHTTPConnection` for HTTP, or `Connection` for any transport.
+- `ToolException` and `MCPClientError` are now exported. Recognize them with `ToolException.isInstance(error)` and `MCPClientError.isInstance(error)`, which check a brand rather than the error's `name`.
+- `setLoggingLevel()` is legacy-only and throws when a connected server negotiated the modern protocol; set `logLevel` on each modern server instead.
+- A server's own `defaultToolTimeout` now overrides the top-level one. In 1.x, the top-level value won.
 
-`getClient()` now returns the SDK 2 `Client` from `@modelcontextprotocol/client`. `loadMcpTools(serverName, client)` converts tools from an SDK client you build yourself.
+`getClient()` now returns the SDK 2 `Client` from `@modelcontextprotocol/client`. `loadMcpTools(serverName, client)` converts tools from an SDK client you build yourself. An SDK `Client` negotiates the legacy protocol by default, so create it with `versionNegotiation: { mode: "auto" }` if its tools should elicit through interrupts. To connect it to an in-process server over `InMemoryTransport`, serve that server with `serveStdio(factory, { transport: serverSide })`; `server.connect()` serves only the legacy protocol.
 
 ## Removed options
 
@@ -196,11 +199,11 @@ For the full guide, see [Authentication](/oss/langchain/mcp/auth).
 
 ## Elicitation
 
-Elicitation is new in 2.0: 1.x had no elicitation support. When a server negotiates the modern protocol, the adapter raises each elicitation request as a LangGraph @[`interrupt`] by default. A tool that requests input now pauses the run.
+Elicitation is new in 2.0: 1.x had no elicitation support. When a server negotiates the modern protocol, the adapter by default raises each round of requested input as one LangGraph @[`interrupt`], whose `requests` holds every question. A tool that requests input now pauses the run.
 
 - **Checkpointer**: A tool needs a checkpointer only when it asks for input. Otherwise, direct invocation still works.
-- **Interrupt payload**: Each interrupt's `value` is an `MCPElicitationInterrupt`. Its `server` and `tool` fields identify the caller, and `requests` contains the form or URL requests keyed by the server's request key.
-- **Resume**: Answer every key in `requests` with `{ action, content? }`, where `action` is `"accept"`, `"decline"`, or `"cancel"`. Accepted form content must match `requestedSchema`. Pass `createMCPElicitationResume(interrupt, responses)` as the `resume` value in a LangGraph `Command`.
+- **Interrupt payload**: Each interrupt's `value` is an `MCPElicitationInterrupt`, with `type: "mcp_elicitation"`, `server`, `tool`, `arguments` (the effective tool arguments), `requests` (the form or URL requests keyed by the server's request key), and an optional `toolCallId` (the tool call that asked). Check `type` before handling it when other interrupts can occur.
+- **Resume**: Answer every key in `requests` with `{ action, content? }`, where `action` is `"accept"`, `"decline"`, or `"cancel"`. Accepted form content must match `requestedSchema`. Pass `createMCPElicitationResume(interrupt, responses)` as the `resume` value in a LangGraph `Command`. It copies the interrupt's `toolCallId` into the answer, so parallel calls each receive their own answer; prefer it over a bare `{ responses }` value. To answer several interrupts at once, merge the objects it returns.
 - **Opt out**: Set `elicitation: false` on an individual modern server.
 - **Replays**: Resuming runs the tool again from the beginning, including `beforeToolCall`. Make sure repeating that work does not duplicate side effects.
 - **Legacy servers**: Set an `onElicitation` handler on a server with `mode: "legacy"`. This handler is also new in 2.0.
@@ -239,7 +242,7 @@ Only elicitation is answered through these interrupts. Requests for [sampling](h
 - **Artifacts**: Blocks routed to the artifact keep their MCP format, including in `afterToolCall`. Original resource blocks and content metadata are retained in `mcp_content` entries when conversion would otherwise lose them.
 - **Embedded resources**: Converting a result no longer fetches resource URIs. Call `readResource()` explicitly when you need to fetch a resource. When routed to model content, embedded text resources become text blocks. Embedded binary resources become image, audio, or file blocks according to their MIME type.
 - **Resource links**: A `resource_link` block becomes a `file` block with `url`, `mimeType`, and resource metadata. Update consumers of the 1.x `source_type` and `mime_type` fields.
-- **Tool errors**: When a server returns a result with `isError`, the adapter returns a `ToolMessage` with `status: "error"` for an agent's tool call. Direct invocation with plain arguments still throws a `ToolException`, with the MCP response in `error.result`.
+- **Tool errors**: When a server returns a result with `isError`, the adapter returns a `ToolMessage` with `status: "error"` for an agent's tool call. Direct invocation with plain arguments still throws a `ToolException`, with the MCP response in `error.result`. Because these results are returned rather than thrown, they no longer trigger exception-based handling such as `toolRetryMiddleware` or a `ToolNode` `handleToolErrors` function. Check `ToolMessage.status` (for example in `wrapToolCall`) to retry them. The server's error text is always sent to the model, even when `outputHandling` routes text to the artifact.
 - **Other failures**: Connection and validation failures still throw. Network errors and invalid tool inputs or outputs raise exceptions. Read the exception's `message` for details; `cause` is not always set.
 - **Hook results**: Hooks preserve returned `ToolMessage` and LangGraph `Command` objects instead of flattening or rejecting them. `afterToolCall` receives successful results only.
 - **Resource reads**: `readResource()` preserves SDK content metadata. Narrow each item with `"text" in content` or `"blob" in content`.
