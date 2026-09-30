@@ -202,6 +202,119 @@ export const channel = channels.slack({
 </ParamField>
 :::
 
+## React to the message that starts a run
+
+When a run picks up an inbound message, the agent adds an emoji reaction to
+that message, so the sender knows it was seen before the agent has anything to
+say. A [decision model](/langsmith/llm-gateway-decision-models) scores a fixed
+vocabulary and returns one of its emoji, so the reaction reflects what the
+message says.
+
+Reactions are on by default and need no code. They require a gateway
+credential:
+
+<Warning>
+  The decision model is served through the LangSmith gateway with
+  bring-your-own-key, so the deployment's workspace needs `TYPESAFE_API_KEY` as
+  a [provider secret](/langsmith/llm-gateway-admin-setup#1-add-provider-secrets).
+  Without it, every message receives the generic `eyes` reaction instead.
+
+  The gateway bearer is read from `LANGSMITH_GATEWAY_API_KEY`, falling back to
+  `LANGSMITH_API_KEY`. A deployment's own LangSmith API key is not granted
+  gateway access, so set `LANGSMITH_GATEWAY_API_KEY` explicitly.
+</Warning>
+
+The reaction is a courtesy and never blocks a reply. Any failure — a missing
+credential, a timeout, an unrecognized answer, or a choice the model is not
+confident in — falls back to the `eyes` reaction, and the run continues
+unaffected.
+
+:::python
+<ParamField path="reactions" type="bool | dict" default="True">
+  Whether to react to the message that starts a run. Pass `False` to turn
+  reactions off, or a mapping to override the `model` or `emoji` vocabulary.
+</ParamField>
+:::
+
+:::js
+<ParamField path="reactions" type="boolean | object" default="true">
+  Whether to react to the message that starts a run. Pass `false` to turn
+  reactions off, or an object to override the `model` or `emoji` vocabulary.
+</ParamField>
+:::
+
+To turn reactions off:
+
+:::python
+```python
+from managed_deepagents import channels
+
+channel = channels.slack(
+    name="Support Bot",
+    description="Answers support questions",
+    reactions=False,
+)
+```
+:::
+
+:::js
+```typescript
+import { channels } from "managed-deepagents";
+
+export const channel = channels.slack({
+  name: "Support Bot",
+  description: "Answers support questions",
+  reactions: false,
+});
+```
+:::
+
+### Supply your own vocabulary
+
+Pass `emoji` as a mapping of Slack short name to a description of when to use
+it. The model scores only the emoji you supply, so the reaction is always one
+of them. Descriptions are what the model matches against, so describe the
+situation rather than the picture.
+
+:::python
+```python
+channel = channels.slack(
+    name="Support Bot",
+    reactions={
+        "bug": "A defect or incorrect behaviour.",
+        "mag": "A code review or pull request to look at.",
+        "wave": "A greeting or hello.",
+        "eyes": "Anything that does not clearly fit another option.",
+    },
+)
+```
+:::
+
+:::js
+```typescript
+export const channel = channels.slack({
+  name: "Support Bot",
+  reactions: {
+    emoji: {
+      bug: "A defect or incorrect behaviour.",
+      mag: "A code review or pull request to look at.",
+      wave: "A greeting or hello.",
+      eyes: "Anything that does not clearly fit another option.",
+    },
+  },
+});
+```
+:::
+
+Every key must be a Slack emoji short name, without the surrounding colons. A
+name Slack does not recognize fails silently: the reaction is chosen but never
+appears. Include an option that covers anything unremarkable, so ordinary
+messages have somewhere to land.
+
+A vocabulary cannot be larger than the number of options the model scores in
+one request. The default model takes 255. Declaring more is rejected when the
+channel is declared, rather than failing for every message at runtime.
+
 ## Deploy the agent
 
 During deployment, Managed Deep Agents provisions your agent in Slack from the channel declaration.
@@ -282,6 +395,7 @@ Files stay scoped to the Slack thread they arrived in, because every thread gets
 ## See also
 
 - [Channels overview](/langsmith/managed-deep-agents-channels): understand how channels connect messaging services to an agent.
+- [Decision models](/langsmith/llm-gateway-decision-models): configure the model that scores reaction emoji.
 - [Agent-owned interrupts](/langsmith/managed-deep-agents-agent-owned-interrupts): post a Slack form from a tool and resume the run on submit.
 - [Sandboxes](/langsmith/managed-deep-agents-sandboxes): give the agent the filesystem that file transfers read and write.
 - [Deploy an agent](/langsmith/managed-deep-agents-deploy): configure and deploy a managed deep agent.
