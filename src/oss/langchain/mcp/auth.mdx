@@ -114,13 +114,15 @@ const adapter = new MCPAdapter({
 
 Without `onUnauthorized`, a 401 fails the connection with the SDK's `UnauthorizedError`. See [Handle authentication errors](#handle-authentication-errors).
 
+Each named server opens its own connection, so servers in one adapter authenticate independently, as the two servers in this example do.
+
 The adapter re-exports the `AuthProvider` and `OAuthClientProvider` types, so you can type a provider without importing the SDK.
 
 ## OAuth authentication
 
 OAuth lets users authorize your application to access an MCP server. Pass an `OAuthClientProvider` as `authProvider`. The SDK handles discovery, client registration, the code exchange, and token refresh. Your application supplies the provider's storage, browser redirect, and callback handler.
 
-Add `@modelcontextprotocol/client` 2.2.0 or later (the adapter's own range) as a direct dependency, so your app and the adapter share one SDK copy. The callback transport and `SdkHttpError` come from it. Implement your provider using the SDK's [OAuth client guide](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/clients/oauth.md). Configure its `redirectUrl` for your callback route, and store client information, tokens, the PKCE verifier, and discovery state. Include `invalidateCredentials()` so rejected refresh credentials can trigger a new login.
+Add `@modelcontextprotocol/client` 2.2.0 or later as a direct dependency. The adapter depends on the same range, so your app and the adapter share one SDK copy. The callback transport and `SdkHttpError` come from it. Implement your provider using the SDK's [OAuth client guide](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/clients/oauth.md). Configure its `redirectUrl` for your callback route, and store client information, tokens, the PKCE verifier, and discovery state. Include `invalidateCredentials()` so rejected refresh credentials can trigger a new login.
 
 Keep each provider and its storage separate for each user and MCP server. The example below also binds each pending login to an authenticated application session. Read the user and session IDs from your application's session middleware, never from callback query parameters.
 
@@ -270,17 +272,13 @@ The adapter re-exports `UnauthorizedError`. Import `SdkHttpError` from `@modelco
 
 When a server rejects the credentials during a tool call, the tool fails with a `ToolException` instead. Under `createAgent`, the model sees it as an error message and the run continues.
 
-Discovery retries failures caused by `UnauthorizedError` or HTTP 401 on the next call, even when `onConnectionError` skips failed servers. A later login can recover without recreating the adapter. Other errors from `token()` or `onUnauthorized()`, such as a failed token-store request, do not count as authentication failures. When skipped, those connections remain blocked until `close()` clears them.
+Discovery retries failures caused by `UnauthorizedError` or HTTP 401 on the next call, even when `onConnectionError` skips failed servers. A later login can recover without recreating the adapter. Other errors from `token()` or `onUnauthorized()`, such as a failed token-store request, do not count as authentication failures. When `onConnectionError` skips a connection after one of these errors, that connection stays blocked until `close()` clears it.
 
 ## Header precedence
 
 Once a provider has a token, it replaces a configured `Authorization` header. Until then, the header is sent, so a static API key can fall back to OAuth.
 
 The SDK also forwards a static `Authorization` header to the authorization server's discovery, registration, and token endpoints, not only to the MCP server. Do not pair a secret API key with an OAuth provider whose authorization server lives on another origin.
-
-## Per-server authentication
-
-Each named server takes its own `authProvider` and `headers` and opens its own connection, so the servers in one adapter authenticate independently. No grouping construct is needed: the [bearer token example](#bearer-token) gives two servers different credentials.
 
 ## Per-user authentication
 

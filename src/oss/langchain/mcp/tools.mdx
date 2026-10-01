@@ -149,13 +149,13 @@ Every nested field is optional: a server may provide tool annotations, `_meta`, 
 `annotations` holds the server's MCP tool annotations, such as `readOnlyHint` and `destructiveHint`. A server may omit them, so the field can be `undefined`.
 :::
 
-Read optional metadata defensively, so a missing field returns a default rather than raising:
+Read optional metadata defensively, so a missing field returns a default rather than failing:
 
 :::python
 <McpToolMetadataPy />
 :::
 :::js
-These examples import types from `@modelcontextprotocol/client`; add it as a direct dependency.
+This example and the [human-in-the-loop example](#human-in-the-loop) import types from `@modelcontextprotocol/client`; add it as a direct dependency.
 
 <McpToolMetadataJs />
 :::
@@ -242,7 +242,7 @@ Interrupt-driven elicitation requires a modern MCP server and is enabled by defa
 
 `createMCPElicitationResume` addresses the answer to the interrupt that requested it. The response uses the server's request key. Build every resume value with `createMCPElicitationResume` rather than a bare `{ responses }` object, which does not say which interrupt it answers.
 
-Each interrupt's `value` is an `MCPElicitationInterrupt`: `type: "mcp_elicitation"`, `server`, `tool`, `arguments` (the effective tool arguments), and `requests`. Check `type` when the same agent can also raise human-in-the-loop interrupts.
+Each interrupt's `value` is an `MCPElicitationInterrupt`: `type: "mcp_elicitation"`, `server`, `tool` (the server's own tool name, without the prefix), `arguments` (the effective tool arguments), and `requests`. Check `type` when the same agent can also raise human-in-the-loop interrupts.
 
 When several calls pause at once, answer every interrupt. Merge the objects that `createMCPElicitationResume` returns into one `Command({ resume })`, for example `Object.assign({}, ...paused.__interrupt__!.map((q) => createMCPElicitationResume(q, answers)))`, or resume until `__interrupt__` is empty. A resume that answers only the first interrupt leaves the others paused.
 :::
@@ -270,6 +270,12 @@ Only elicitation is answered this way. The adapter declares only the elicitation
 <Note>
 Interrupt-driven elicitation answers a server that returns its request as an `InputRequiredResult`. A server that only pushes elicitation over a legacy handshake session cannot be answered this way.
 </Note>
+
+:::js
+<Accordion title="Cloudflare Workers">
+On Cloudflare Workers, enable `nodejs_compat` and call `AsyncLocalStorageProviderSingleton.initializeGlobalInstance(new AsyncLocalStorage())` before running the agent, with the singleton from `@langchain/core/singletons` and `AsyncLocalStorage` from `node:async_hooks`. Without it, a tool that asks for input fails with the missing-checkpointer error even when the agent has one.
+</Accordion>
+:::
 
 ## See also
 
