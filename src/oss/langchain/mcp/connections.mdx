@@ -78,7 +78,7 @@ If you want a session held open across several calls, keep the adapter's context
 :::
 
 :::js
-Constructing an adapter validates its configuration without opening connections. `listTools()` and `listToolsets()` connect when they discover tools. Keep the adapter open while your agent uses those tools.
+Constructing an adapter validates its configuration without opening connections. `listTools()`, `listToolsets()`, `getClient()`, and the resource methods connect when they run discovery. Keep the adapter open while your agent uses those tools.
 
 To discover tools, run an agent, and release the connections, pass your MCP server's HTTP URL to `runAgent`:
 
@@ -117,6 +117,10 @@ To discover tools from both transports, pass a calendar server's HTTP URL and a 
 `listToolsets()` groups tools by server name. `listTools()` returns one array; pass a server name or an array of names to select which tools it returns. Selection filters the result, but discovery still contacts every configured server. A failure on an unselected server can fail the call.
 
 The adapter prefixes tool names with their server name by default, such as `calendar__search` and `files__search`. Set `prefixToolNameWithServerName: false` to keep raw names. `listTools()` throws if its selected tools contain duplicate names.
+
+OpenAI and Anthropic accept only letters, digits, `_`, and `-` in tool names (`^[a-zA-Z0-9_-]+$`), up to 64 characters for OpenAI and 128 for Anthropic. The adapter does not rename a prefixed name that breaks these limits, so keep server names short and free of dots and spaces.
+
+Set `defaultToolTimeout` (in milliseconds) at the top level to apply it to every server's tools; it wins over a server's own `defaultToolTimeout`.
 :::
 
 ## Scale a deployment
@@ -150,7 +154,9 @@ Keep the adapter open across runs. Close it during application shutdown, after a
 
 Discovery throws on connection failures by default. Set `onConnectionError: "ignore"`, or provide a callback that returns normally, to continue with the remaining servers. Non-authentication failures keep that connection skipped on later discoveries, even with `cacheMode: "refresh"`. Close the adapter to clear skipped connections before discovering again. Authentication failures are retried on the next discovery.
 
-Stdio servers support `restart` settings for subprocess recovery. HTTP and SSE servers support `reconnect` settings when configured with `mode: "legacy"`.
+Stdio servers support `restart` settings, and HTTP and SSE servers support `reconnect` settings when configured with `mode: "legacy"`. After a restart, call `listTools()` again and use the returned tools; tools returned before the restart keep the closed connection.
+
+Modern MCP servers keep no session, so their replicas can run behind any load balancer. A sessionful legacy server still needs sticky routing to one replica. A modern server that runs several replicas must share one `requestState` signing key across them, or an elicitation answer that reaches a different replica is rejected.
 :::
 
 ## Caching
@@ -215,6 +221,10 @@ Each server's `mode` controls its negotiation independently:
 - **`"auto"`** (the default): Try the current protocol and fall back for a legacy-only server.
 - **`"modern"`**: Require protocol version `2026-07-28` and fail instead of using legacy MCP.
 - **`"legacy"`**: Skip modern probing and use the legacy client interface.
+
+In `"auto"` mode, a URL server that answers the Streamable HTTP request with 404 or 405 is retried over SSE, at the same URL and then with a trailing `/mcp` replaced by `/sse`. In `"legacy"` mode, any 4xx falls back unless `automaticSSEFallback: false`.
+
+`setLoggingLevel()` is legacy-only and throws when a connected server negotiated the modern protocol; set `logLevel` on each modern server instead.
 :::
 
 ## See also

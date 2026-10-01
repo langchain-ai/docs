@@ -99,7 +99,7 @@ The adapter throws transport failures. When a tool runs inside `createAgent`, th
 
 <McpToolErrorsJs />
 
-If you invoke an adapted tool directly with plain arguments, a server result with `isError: true` throws a `ToolException` instead.
+If you invoke an adapted tool directly with plain arguments, a server result with `isError: true` throws a `ToolException` instead, with the MCP result in `error.result`.
 :::
 
 ## Tool metadata
@@ -155,6 +155,8 @@ Read optional metadata defensively, so a missing field returns a default rather 
 <McpToolMetadataPy />
 :::
 :::js
+These examples import types from `@modelcontextprotocol/client`; add it as a direct dependency.
+
 <McpToolMetadataJs />
 :::
 
@@ -170,6 +172,10 @@ Read the destructive hint from metadata once during tool discovery. Then give th
 
 :::js
 <McpDestructiveGateJs />
+
+<Warning>
+`interruptOn` keys must be the adapter's tool names, which include the server prefix (`crm__delete_file`). An unprefixed key never matches, so the tool runs without approval.
+</Warning>
 :::
 
 When the agent calls a tool that the predicate gates, the run pauses. Approve the call to run it, or reject it to skip the tool and tell the model:
@@ -230,11 +236,17 @@ Resume with `Command(resume={"responses": {key: answer}})`. The interrupt payloa
 :::
 
 :::js
-Interrupt-driven elicitation requires a modern MCP server and is enabled by default. Set `elicitation: false` on the server to opt out. For a legacy server, configure an `onElicitation` handler with `mode: "legacy"` instead.
+Interrupt-driven elicitation requires a modern MCP server and is enabled by default. Set `elicitation: false` on the server to opt out. For a legacy server, configure an `onElicitation` handler with `mode: "legacy"` instead. Without a checkpointer, a tool that asks for input fails with an error `ToolMessage` instead of pausing.
 
 <McpElicitationJs />
 
-`createMCPElicitationResume` addresses the answer to the interrupt that requested it. The response uses the server's request key.
+`createMCPElicitationResume` addresses the answer to the interrupt that requested it. The response uses the server's request key. Build every resume value with `createMCPElicitationResume` rather than a bare `{ responses }` object, which does not say which interrupt it answers.
+
+Each interrupt's `value` is an `MCPElicitationInterrupt`: `type: "mcp_elicitation"`, `server`, `tool`, `arguments` (the effective tool arguments), and `requests`. Check `type` when the same agent can also raise human-in-the-loop interrupts.
+
+When several calls pause at once, answer every interrupt. Merge the objects that `createMCPElicitationResume` returns into one `Command({ resume })`, for example `Object.assign({}, ...paused.__interrupt__!.map((q) => createMCPElicitationResume(q, answers)))`, or resume until `__interrupt__` is empty. A resume that answers only the first interrupt leaves the others paused.
+
+On Cloudflare Workers, enable `nodejs_compat` and call `AsyncLocalStorageProviderSingleton.initializeGlobalInstance(new AsyncLocalStorage())` before running the agent, with the singleton from `@langchain/core/singletons` and `AsyncLocalStorage` from `node:async_hooks`. Without it, a tool that asks for input fails with the missing-checkpointer error even when the agent has one.
 :::
 
 <Note>
@@ -249,7 +261,13 @@ Each answer uses one of these actions:
 
 The adapter forwards the answer to the server, which decides how the tool call finishes.
 
+:::python
 Only elicitation is answered this way. A server that instead asks for [sampling](https://modelcontextprotocol.io/specification/2025-06-18/client/sampling) or [roots](https://modelcontextprotocol.io/specification/2025-06-18/client/roots) raises an error, because the modern, sessionless protocol has no live back-channel for those requests. See [Sampling and roots](/oss/migrate/langchain-mcp-adapters#sampling-and-roots).
+:::
+
+:::js
+Only elicitation is answered this way. The adapter declares only the elicitation capability on each call, so a tool that needs [sampling](https://modelcontextprotocol.io/specification/2025-06-18/client/sampling) or [roots](https://modelcontextprotocol.io/specification/2025-06-18/client/roots) fails with a `ToolException`, which `createAgent` returns to the model as an error `ToolMessage`. See [Sampling and roots](/oss/migrate/langchain-mcp-adapters#sampling-and-roots).
+:::
 
 <Note>
 Interrupt-driven elicitation answers a server that returns its request as an `InputRequiredResult`. A server that only pushes elicitation over a legacy handshake session cannot be answered this way.
