@@ -18,21 +18,17 @@ This flow requires internet access and does not support air-gapped installations
 
 The hosted OAuth service handles authorization with the shared Slack app. Your deployment stores its own encrypted bot token and sends notifications directly to Slack. The shared app's Client Secret stays with the hosted service.
 
-LangSmith derives the callback from your existing deployment URL settings. It appends `/v1/platform/slack/callback` to the first configured API base: `LANGSMITH_PUBLIC_API_ENDPOINT`, `LANGCHAIN_PLATFORM_ENDPOINT`, or `LANGCHAIN_ENDPOINT`. If that base is empty or relative, it uses `LANGSMITH_URL` plus `/api/v1/platform/slack/callback`. Deployment base paths are preserved.
-
-Current Helm charts derive `LANGSMITH_PUBLIC_API_ENDPOINT` from `config.hostname` and `config.basePath`. Use those chart settings instead of adding a duplicate environment variable. A separate frontend hostname does not change the API callback.
-
 To enable the connection:
 
 1. Obtain the hosted OAuth service origin from your account representative.
-2. Register your deployment's exact derived HTTPS callback URL with the hosted service operator. For the standard self-hosted ingress, use `https://<your-langsmith-host>/api/v1/platform/slack/callback`. Include any deployment base path. For custom routing, set the optional callback override below and register that URL instead.
+2. Register your deployment's exact HTTPS callback URL with the hosted service operator. For the standard self-hosted ingress, use `https://<your-langsmith-host>/api/v1/platform/slack/callback`. If your ingress uses a different API prefix, register the URL that reaches that callback on your deployment.
 3. Configure the following environment variables on the LangSmith backend using your deployment's [environment variable configuration](/langsmith/self-host-environment-variables):
 
    | Variable | Value |
    | --- | --- |
    | `LANGSMITH_SLACK_OAUTH_BROKER_URL` | The HTTPS origin of the hosted OAuth service. |
-   | `LANGSMITH_URL` | Your existing browser-facing LangSmith URL, including any base path. Notification links use this URL. The Helm chart sets it from your hostname settings. |
-   | `LANGSMITH_SLACK_SELF_HOSTED_CALLBACK_URI` | Optional override for custom ingress. When set, use the exact HTTPS callback URL registered in step 2. Standard deployments can omit it. |
+   | `LANGSMITH_SLACK_SELF_HOSTED_CALLBACK_URI` | The exact HTTPS callback URL registered in step 2. |
+   | `LANGSMITH_URL` | The browser-facing origin of your self-hosted LangSmith instance. Notification links use this origin. |
 
 4. Keep the existing `API_KEY_SALT` encryption secret consistent between the API and notification workers so they can decrypt stored bot tokens. See [Use an existing secret](/langsmith/self-host-using-an-existing-secret).
 5. Restart the affected services and reload LangSmith. The Slack connection controls appear when your backend has a valid OAuth configuration.
@@ -71,12 +67,12 @@ Slack notifications send content outside your deployment to the selected workspa
 
 ## Troubleshoot the connection
 
-- **Slack is absent:** Confirm that your release supports the connection and the broker URL and resolved callback are valid HTTPS URLs. Reload the UI after restarting the backend.
+- **Slack is absent:** Confirm that your release supports the connection, both OAuth environment variables have valid HTTPS URLs, and you have reloaded the UI after restarting the backend.
 - **Authorization cannot start:** Confirm that the backend can reach the hosted OAuth service and that the service operator registered the exact callback URL, including its scheme, host, port, and path.
 - **Authorization expires or fails after returning:** Start **Connect Slack** again. Authorization expires after 10 minutes and callbacks cannot be reused. Check browser access to the callback and backend access to the hosted OAuth service.
 - **A private channel is absent:** Invite the LangSmith app to the channel, then refresh the channel picker.
 - **Messages do not arrive:** Confirm Slack Web API egress, matching encryption secrets on the API and workers, and the destination's event and priority filters. If someone removed the app from Slack, reconnect the workspace.
-- **Links open the wrong host:** Set `LANGSMITH_URL` to your self-hosted UI URL, including any base path.
+- **Links open the wrong host:** Set `LANGSMITH_URL` to your self-hosted UI origin.
 
 ## See also
 
