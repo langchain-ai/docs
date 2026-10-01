@@ -229,9 +229,9 @@ await client.runs.create(threadId, assistantId, {
 
 This policy mounts nothing until your deployment authenticates callers as people. Configure [Supabase](/langsmith/managed-deep-agents-identity#configure-identity-with-supabase) or your own backend first.
 
-### Mount user memory in a shared channel
+### Mount user memory in a private channel
 
-Your agent personalizes answers in a Slack direct message, and the same person gets generic answers in a team channel. That is the default, because the runtime cannot tell whether a channel is private.
+Your team works in a private Slack channel where everyone present is already trusted with each other's context, and the agent gives generic answers there while personalizing in direct messages. That is the default, because the runtime cannot tell a private channel from a public one. Your deployment can, so supply that knowledge in a policy.
 
 `allow` receives the run context. Managed channel runs carry the current delivery under `context.channel`, with the original provider event alongside it, so a policy can read the channel type and the Slack user. The default user-memory policy is itself this shape, where `"im"` means a one-to-one direct message:
 
@@ -257,16 +257,17 @@ allow: (context) => context.channel?.rawEvent?.channel_type === "im";
 ```
 :::
 
-To widen it, keep the direct message case and add the channel runs you want to allow. This policy mounts user memory for people on an allowlist:
+To widen it, keep the direct message case and name the channels you treat as private:
 
 :::python
 ```python memory.py
 from managed_deepagents import ManagedChannelContext, MemoryLayer, define_memory
 
-CHANNEL_MEMORY_ALLOWLIST = {"U0A1B2C3D4E"}
+# Channels whose members are trusted with each other's context.
+PRIVATE_CHANNELS = {"C0A1B2C3D4E"}
 
 
-def allow_dms_and_allowlisted_channels(context: object) -> bool:
+def allow_private_conversations(context: object) -> bool:
     try:
         if not isinstance(context, ManagedChannelContext):
             return False
@@ -275,14 +276,18 @@ def allow_dms_and_allowlisted_channels(context: object) -> bool:
             return False
         if raw_event.get("channel_type") == "im":
             return True
-        return raw_event.get("user") in CHANNEL_MEMORY_ALLOWLIST
+        return raw_event.get("channel") in PRIVATE_CHANNELS
     except Exception:
         return False
 
 
-memory = define_memory(user=MemoryLayer(allow=allow_dms_and_allowlisted_channels))
+memory = define_memory(user=MemoryLayer(allow=allow_private_conversations))
 ```
 :::
+
+Match on the channel rather than the Slack event type. A message sent to a channel reports a `channel_type`, but an app mention does not carry that field, so a policy that reads only `channel_type` denies mentions in the same channel it otherwise allows.
+
+Everyone in an allowed channel sees answers drawn from the memory of whoever asked. Name a channel here only when its members should see each other's context.
 
 Deliveries that carry no provider event do not receive user memory under the default policy.
 
