@@ -122,7 +122,7 @@ The adapter re-exports the `AuthProvider` and `OAuthClientProvider` types, so yo
 
 OAuth lets users authorize your application to access an MCP server. Pass an `OAuthClientProvider` as `authProvider`. The SDK handles discovery, client registration, the code exchange, and token refresh. Your application supplies the provider's storage, browser redirect, and callback handler.
 
-Add `@modelcontextprotocol/client` 2.2.0 or later as a direct dependency. The adapter depends on the same range, so your app and the adapter share one SDK copy. The callback transport and `SdkHttpError` come from it. Implement your provider using the SDK's [OAuth client guide](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/clients/oauth.md). Configure its `redirectUrl` for your callback route, and store client information, tokens, the PKCE verifier, and discovery state. Include `invalidateCredentials()` so rejected refresh credentials can trigger a new login.
+Add `@modelcontextprotocol/client` 2.2.0 or later as a direct dependency. The adapter depends on the same range, so your app and the adapter share one SDK copy. The callback transport, `SdkHttpError`, and `SseError` come from it. Implement your provider using the SDK's [OAuth client guide](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/clients/oauth.md). Configure its `redirectUrl` for your callback route, and store client information, tokens, the PKCE verifier, and discovery state. Include `invalidateCredentials()` so rejected refresh credentials can trigger a new login.
 
 Keep each provider and its storage separate for each user and MCP server. The example below also binds each pending login to an authenticated application session. Read the user and session IDs from your application's session middleware, never from callback query parameters.
 
@@ -163,6 +163,18 @@ function createMcpSession(
     servers: { crm: { url: serverUrl, authProvider } },
   });
 
+  function causedByUnauthorized(error: unknown): boolean {
+    // Discovery wraps UnauthorizedError in MCPClientError, and wraps it
+    // again when an HTTP connection falls back to SSE. Walk a few hops.
+    let current: unknown = error;
+    for (let depth = 0; depth <= 3; depth += 1) {
+      if (UnauthorizedError.isInstance(current)) return true;
+      if (!(current instanceof Error)) return false;
+      current = current.cause;
+    }
+    return false;
+  }
+
   async function listTools() {
     // Reuse the pending login instead of starting another redirect.
     if (authorizationUrl) return { authorizationUrl };
@@ -171,7 +183,7 @@ function createMcpSession(
     } catch (error) {
       if (
         MCPClientError.isInstance(error) &&
-        UnauthorizedError.isInstance(error.cause) &&
+        causedByUnauthorized(error) &&
         authorizationUrl
       ) {
         return { authorizationUrl };
@@ -249,26 +261,33 @@ For a server configured with `transport: "sse"`, use `SSEClientTransport` in the
 
 ## Handle authentication errors
 
-A connection rejected for credentials throws an `MCPClientError`. This example handles HTTP authentication failures with either of these immediate causes:
+A connection rejected for credentials throws an `MCPClientError`. The SDK error sits one level down its `cause` chain, or two when an HTTP connection falls back to SSE. This example walks a few levels and handles HTTP authentication failures with either of these causes:
 
 - **`UnauthorizedError`**: The SDK cannot recover on its own. An OAuth login is needed, or a token provider has no `onUnauthorized`.
-- **An HTTP 401 `SdkHttpError`** (`status: 401`): The server rejects the credentials, or none were provided.
+- **An HTTP 401** (an `SdkHttpError` with `status: 401`, or an `SseError` with `code: 401` over SSE): The server rejects the credentials, or none were provided.
 
 ```typescript
 import { MCPClientError, UnauthorizedError } from "@langchain/mcp-adapters";
-import { SdkHttpError } from "@modelcontextprotocol/client";
+import { SdkHttpError, SseError } from "@modelcontextprotocol/client";
 
 function authFailure(error: unknown): "login" | "rejected" | undefined {
   if (!MCPClientError.isInstance(error)) return undefined;
 
-  if (UnauthorizedError.isInstance(error.cause)) return "login";
-  if (SdkHttpError.isInstance(error.cause) && error.cause.status === 401)
-    return "rejected";
+  let current: unknown = error;
+  for (let depth = 0; depth <= 3; depth += 1) {
+    if (UnauthorizedError.isInstance(current)) return "login";
+    if (SdkHttpError.isInstance(current) && current.status === 401)
+      return "rejected";
+    if (SseError.isInstance(current) && current.code === 401)
+      return "rejected";
+    if (!(current instanceof Error)) return undefined;
+    current = current.cause;
+  }
   return undefined;
 }
 ```
 
-The adapter re-exports `UnauthorizedError`. Import `SdkHttpError` from `@modelcontextprotocol/client`. An `MCPClientError` message includes the SDK's error text, so log it rather than show it to users.
+The adapter re-exports `UnauthorizedError`. Import `SdkHttpError` and `SseError` from `@modelcontextprotocol/client`. An `MCPClientError` message includes the SDK's error text, so log it rather than show it to users.
 
 When a server rejects the credentials during a tool call, the tool fails with a `ToolException` instead. Under `createAgent`, the model sees it as an error message and the run continues.
 
