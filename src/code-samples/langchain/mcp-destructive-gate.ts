@@ -39,7 +39,7 @@ async function gateDestructiveTools(serverUrl: string) {
 
   const agent = createAgent({
     // KEEP MODEL
-    model: "claude-sonnet-5-5",
+    model: "claude-sonnet-5",
     tools,
     middleware: [humanInTheLoopMiddleware({ interruptOn })],
     checkpointer: new MemorySaver(),

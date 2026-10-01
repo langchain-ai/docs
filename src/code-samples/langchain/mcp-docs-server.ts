@@ -10,7 +10,7 @@ async function main() {
   try {
     const tools = await adapter.listTools();
     // KEEP MODEL
-    const agent = createAgent({ model: "claude-sonnet-5-5", tools });
+    const agent = createAgent({ model: "claude-sonnet-5", tools });
     // :remove-start:
     assert.ok(tools.length > 0, "The docs server must expose tools.");
     assert.ok(agent);

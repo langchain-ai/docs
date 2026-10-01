@@ -19,7 +19,7 @@ async function runAgent(serverUrl: string) {
     // :remove-end:
     const agent = createAgent({
       // KEEP MODEL
-      model: "claude-sonnet-5-5",
+      model: "claude-sonnet-5",
       tools,
     });
     // :remove-start:

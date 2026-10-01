@@ -22,7 +22,7 @@ async function bookWithElicitation(serverUrl: string) {
     // A checkpointer saves the interrupted run so it can resume.
     const agent = createAgent({
       // KEEP MODEL
-      model: "claude-sonnet-5-5",
+      model: "claude-sonnet-5",
       tools,
       checkpointer: new MemorySaver(),
     });

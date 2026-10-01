@@ -47,7 +47,7 @@ export async function makeGraph() {
   // :remove-end:
   return createAgent({
     // KEEP MODEL
-    model: "claude-sonnet-5-5",
+    model: "claude-sonnet-5",
     tools,
   });
 }

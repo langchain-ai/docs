@@ -13,7 +13,7 @@ async function readStructuredContent(serverUrl: string) {
     await validateTools(tools);
     // :remove-end:
     // KEEP MODEL
-    const agent = createAgent({ model: "claude-sonnet-5-5", tools });
+    const agent = createAgent({ model: "claude-sonnet-5", tools });
     // :remove-start:
     assert.ok(agent);
     if (!process.env.ANTHROPIC_API_KEY) {
