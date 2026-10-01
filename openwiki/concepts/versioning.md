@@ -5,10 +5,12 @@ description: Explains how the documentation builder selects source families and 
 tags: [documentation-pipeline, routes, language-versioning, redirects]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-30T08:22:34.653Z
+    at: 2026-10-01T08:23:32.263Z
 sources:
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
+  - id: openwiki-source-17f3856bce97f37118963062
+    resource: repo://pipeline/preprocessors/handle_auto_links.py
   - id: openwiki-source-06a4c757b1153b7de4f47a0e
     resource: repo://pipeline/preprocessors/markdown_preprocessor.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
@@ -19,9 +21,15 @@ sources:
     resource: repo://src/langsmith/managed-deep-agents-mcp-endpoint.mdx
   - id: openwiki-source-243c6e17a513bece229a34b9
     resource: repo://src/language-toggle.js
+  - id: openwiki-source-dd63acff5f24d1b92eaf7193
+    resource: repo://src/oss/javascript/integrations/chat/index.mdx
+  - id: openwiki-source-0bbd982f783595e2d0ac49ae
+    resource: repo://src/oss/langgraph/interrupts.mdx
+  - id: openwiki-source-7bfe816fdba0201671040464
+    resource: repo://src/oss/python/integrations/providers/all_providers.mdx
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-30T08:22:34.653Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-01T08:23:32.263Z" }
 ---
 
 # Versioned Documentation and Routes
@@ -66,6 +74,8 @@ A full `build_all()` removes and recreates `build/`, builds ordinary OSS for Pyt
 
 Language-owned OSS directories filter a dual build rather than appear in the final route. In a Python pass, `src/oss/javascript/...` is skipped, and vice versa. The selected `python` or `javascript` source component is removed before output, so `src/oss/python/concepts/example.mdx` emits at `/oss/python/concepts/example`, not a doubled path.
 
+The current provider catalogue at `src/oss/python/integrations/providers/all_providers.mdx` is consequently Python-only, while `src/oss/javascript/integrations/chat/index.mdx` is JavaScript-only. This ownership choice does not exempt either page from target transforms: the JavaScript chat page's unqualified Markdown snippet imports and bare `/oss/langchain/...` links are scoped to JavaScript output, while a bare integration card route in the Python catalogue is scoped to Python output. Put a page in an owned subtree because its content belongs to that SDK, not because its navigation should appear in a particular language menu.
+
 Ordinary LangSmith documents are emitted once below `/langsmith/`, excluding Managed Deep Agents files, and use the Python preprocessing target. That target is a rendering default; it does not make every ordinary LangSmith page Python documentation.
 
 The full-build collectors reject symlinks—even links to regular files—and resolved paths outside the collection root. This prevents a source-tree link from introducing host files into an artifact.
@@ -89,6 +99,8 @@ This diagram shows the transformation ordering for a regular generated Markdown 
 
 Use `:::python` and `:::js` only for content that differs by target. Conditional rendering keeps matching content without its fences and removes the nonmatching supported block. Escaped `\:::` becomes literal `:::`, while unsupported labels and unclosed blocks remain unchanged. The renderer is regex-based rather than code-fence-aware; escape a literal conditional marker instead of relying on a Markdown code fence to protect it.
 
+The shared LangGraph interrupts page is a current example: it contains Python and JavaScript branches for target-specific `thread_id`, interrupt-result, import, and resume syntax. Its `@[`interrupt`]` references are resolved before conditional blocks are selected, using the active conditional scope or the target default. Keep references whose API mapping differs inside their corresponding branch; a code fence protects the autolink scanner but does not protect conditional-looking markers from the later renderer.
+
 An unqualified absolute OSS link such as `/oss/deepagents/overview` becomes `/oss/python/deepagents/overview` or `/oss/javascript/deepagents/overview` in a targeted artifact. Rewriting skips image URLs, already-prefixed URLs, and the language-agnostic Deep Agents Code and OpenWiki roots. In targeted MDX, an import from `/snippets/component.mdx` likewise becomes `/snippets/python/component.mdx` or `/snippets/javascript/component.mdx`; an already scoped import remains unchanged.
 
 Shared Markdown snippets are emitted as Python and JavaScript copies with target-specific preprocessing and absolute rewritten links. The original snippet path is a Python-targeted default for unversioned importers; targeted pages import their matching copy. This avoids links whose correctness depends on a consumer's nesting depth.
@@ -109,7 +121,7 @@ The dedicated full-build discovery pass only selects direct `managed-deep-agents
 
 ### Navigation versus redirects
 
-The Python and TypeScript Build dropdowns each contain a **Managed Deep Agents** tab. Both enumerate corresponding language-prefixed suffixes in **Get started**, **Agent capabilities** (including a nested **Channels** group), and **Build and deploy**; the latter includes the MCP endpoint. When adding a new variant, add matching entries to both tabs only after confirming both emitted routes exist.
+The Python and TypeScript Build dropdowns each contain a **Managed Deep Agents** tab. Both enumerate corresponding language-prefixed suffixes in **Get started**, **Agent capabilities** with a nested **Channels** group, and **Build and deploy**; the latter includes the MCP endpoint. When adding a new variant, add matching entries to both tabs only after confirming both emitted routes exist.
 
 Unversioned `/langsmith/managed-deep-agents...` URLs are compatibility inputs, not generated pages. `docs.json` redirects current unversioned routes—including overview, quickstart, channels, deployment, CLI, identity, MCP connectors, and other family pages—to Python. It also maps historical aliases such as `managed-deep-agents-invoke`, `-sdk`, `-api`, older channel paths, and connector paths to Python destinations. These redirects preserve inbound links and establish Python as the legacy default; they do not replace the JavaScript artifacts or navigation.
 
