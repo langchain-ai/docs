@@ -1,7 +1,7 @@
 ---
 title: Add schedules to Managed Deep Agents
 sidebarTitle: Schedules
-description: Declare managed cron schedules for Managed Deep Agents deployments.
+description: Declare managed cron schedules for Managed Deep Agents deployments, or create them at runtime.
 ---
 
 import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
@@ -244,11 +244,179 @@ To test the agent behavior a schedule triggers, send the schedule's `prompt` or 
 
 <ManagedDeepAgentsTestAndDeploy />
 
-When the deployment reaches `DEPLOYED`, `mda deploy` searches for existing Managed Deep Agents-owned cron jobs on the deployed Agent Server, deletes them, and creates cron jobs for the current `schedules/` declarations. Removing a local schedule file and redeploying removes the corresponding managed cron.
+When the deployment reaches `DEPLOYED`, `mda deploy` deletes the cron jobs that earlier `schedules/` declarations created and creates cron jobs for the current declarations. Removing a local schedule file and redeploying removes the corresponding managed cron. Schedules created at runtime stay.
 
 <Warning>
 If you deploy with `--no-wait`, the CLI triggers the remote build and exits before the deployment reaches `DEPLOYED`, so it does not reconcile schedules during that invocation. Run `mda deploy` without `--no-wait` when adding, changing, or removing schedules.
 </Warning>
+
+## Create schedules at runtime
+
+<Note>
+Runtime schedules require `managed-deepagents` 0.9.0 or later.
+</Note>
+
+Use `schedules` in a tool or middleware to create schedules while the agent runs. Each schedule belongs to the current user or to the agent.
+
+:::python
+```python tools/schedules.py
+from langchain.tools import tool
+from managed_deepagents import schedules
+
+
+@tool
+async def remind_me(prompt: str, cron: str, timezone: str = "UTC") -> str:
+    """Run a prompt for the current user on a cron schedule."""
+    item = await schedules.create(
+        owner={"type": "user"},
+        cron=cron,
+        timezone=timezone,
+        prompt=prompt,
+    )
+    return f"Created schedule {item['id']}."
+```
+:::
+
+:::js
+```ts tools/schedules.ts
+import { tool } from "langchain";
+import { z } from "zod";
+import { schedules } from "managed-deepagents";
+
+export const remindMe = tool(
+  async ({ prompt, cron, timezone }) => {
+    const item = await schedules.create({
+      owner: { type: "user" },
+      cron,
+      timezone,
+      prompt,
+    });
+    return `Created schedule ${item.id}.`;
+  },
+  {
+    name: "remind_me",
+    description: "Run a prompt for the current user on a cron schedule.",
+    schema: z.object({
+      prompt: z.string(),
+      cron: z.string(),
+      timezone: z.string().default("UTC"),
+    }),
+  },
+);
+```
+:::
+
+To run a schedule once, pass `at` in place of `cron`:
+
+:::python
+```python
+from datetime import datetime, timedelta, timezone
+
+await schedules.create(
+    owner={"type": "user"},
+    at=datetime.now(timezone.utc) + timedelta(hours=1),
+    prompt="Remind me to check the deploy.",
+)
+```
+:::
+
+:::js
+```ts
+await schedules.create({
+  owner: { type: "user" },
+  at: new Date(Date.now() + 60 * 60_000),
+  prompt: "Remind me to check the deploy.",
+});
+```
+:::
+
+### Create options
+
+<ParamField path="owner" type="object" required>
+  `{ type: "user" }` selects the authenticated person of the current run, and the schedule runs as that person. An optional `id` must match that person. `{ type: "agent" }` selects the schedules the agent owns, which run as the agent's service identity.
+</ParamField>
+
+<ParamField path="cron" type="string">
+  A five-field cron expression for a recurring schedule. Give exactly one of `cron` and `at`.
+</ParamField>
+
+:::python
+<ParamField path="at" type="datetime | str">
+  A `datetime` with a time zone, or an ISO 8601 timestamp that ends with `Z` or a UTC offset. The schedule runs once. The runtime rounds it up to the next whole minute. It must be at least one minute and at most 365 days in the future.
+</ParamField>
+:::
+
+:::js
+<ParamField path="at" type="Date | string">
+  A `Date`, or an ISO 8601 timestamp that ends with `Z` or a UTC offset. The schedule runs once. The runtime rounds it up to the next whole minute. It must be at least one minute and at most 365 days in the future.
+</ParamField>
+:::
+
+<ParamField path="timezone" type="string" default="UTC">
+  An IANA time zone for `cron`, such as `America/Los_Angeles`. Do not pass it with `at`.
+</ParamField>
+
+<ParamField path="prompt" type="string">
+  A prompt that each run receives as a user message. Give exactly one of `prompt` and `input`.
+</ParamField>
+
+<ParamField path="input" type="object | object[]">
+  A structured LangGraph input for each run.
+</ParamField>
+
+:::python
+<ParamField path="new_thread" type="bool">
+  `True` starts each run on a new thread. `False` continues the current thread. Defaults to `True` with `cron` and `False` with `at`.
+</ParamField>
+:::
+
+:::js
+<ParamField path="newThread" type="boolean">
+  `true` starts each run on a new thread. `false` continues the current thread. Defaults to `true` with `cron` and `false` with `at`.
+</ParamField>
+:::
+
+<ParamField path="paused" type="boolean" default="false">
+  Create the schedule without running it.
+</ParamField>
+
+<ParamField path="metadata" type="object">
+  JSON metadata for your own use. Keys that start with `mda_` are reserved.
+</ParamField>
+
+When a tool creates a schedule in a channel run, such as a Slack conversation, each run posts its final answer to that channel. A new thread posts a new Slack message, and the current thread replies in the same Slack thread.
+
+### Manage schedules
+
+:::python
+```python
+owner = {"type": "user"}
+
+page = await schedules.list(owner=owner, limit=20)
+item = await schedules.get(page["items"][0]["id"], owner=owner)
+await schedules.update(item["id"], {"paused": True}, owner=owner)
+await schedules.delete(item["id"], owner=owner)
+```
+:::
+
+:::js
+```ts
+const owner = { type: "user" } as const;
+
+const page = await schedules.list({ owner, limit: 20 });
+const item = await schedules.get(page.items[0].id, { owner });
+await schedules.update(item.id, { paused: true }, { owner });
+await schedules.delete(item.id, { owner });
+```
+:::
+
+:::python
+`update` accepts `cron`, `at`, `timezone`, `prompt`, `input`, `paused`, and `metadata`. `list` hides expired one-time schedules unless you pass `include_expired=True`. For the agent owner, `list` and `get` also return the schedules in `schedules/`, which you change in code.
+:::
+
+:::js
+`update` accepts `cron`, `at`, `timezone`, `prompt`, `input`, `paused`, and `metadata`. `list` hides expired one-time schedules unless you pass `includeExpired: true`. For the agent owner, `list` and `get` also return the schedules in `schedules/`, which you change in code.
+:::
 
 ## Troubleshoot schedules
 
