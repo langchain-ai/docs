@@ -8,7 +8,7 @@ import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-ag
 
 Normally, a managed deep agent's conversational memory is scoped to a thread or session. Durable memory is optional knowledge that an agent can retain across threads, sessions, and deployments. Managed Deep Agents do not have durable memory by default.
 
-Durable memory is backed by the [Context Hub](/langsmith/use-the-context-hub) and comes in two independent layers. Enable either layer or both.
+Durable memory is backed by the [Context Hub](/langsmith/use-the-context-hub) and comes in two independent layers. Enable the layer you need.
 
 <ManagedDeepAgentsPublicBetaNote />
 
@@ -55,7 +55,7 @@ Most agents need one layer, not both. Decide which by asking whose knowledge the
 **Declaring both layers is a tradeoff.** When both mount, the agent chooses which one to write to on each save, following the routing rules in your `instructions.md`. State those rules explicitly, and keep personal details out of agent memory, which every caller can read. Declare both only when the agent retains both kinds of knowledge. To review the target layer before a write is stored, see [Require approval before a memory write](#require-approval-before-a-memory-write).
 </Note>
 
-Omitting a layer disables it. The runtime never copies content between layers.
+Omitting a layer disables it, and removing the memory declaration turns durable memory off entirely. Neither deletes what is already stored. The runtime never copies content between layers.
 
 Use durable memory for knowledge the agent should learn while it runs and reuse later. For always-on behavior, use [instructions](/langsmith/managed-deep-agents-instructions) instead. For task-specific procedures, use [skills](/langsmith/managed-deep-agents-skills) instead.
 
@@ -271,6 +271,8 @@ A policy widens access within the caller the runtime already authenticated. It c
 
 A verified Studio user receives every declared layer, and the runtime does not call the user layer's policy. The local `mda dev` principal resolves the same way. Policy behavior is therefore not observable in either environment.
 
+The runtime evaluates a policy only while a run executes, so inspecting a graph does not call it. Native Node additionally requires Agent Server to pass run context to the graph factory.
+
 Exercise a policy from a real caller against a deployment: a Slack message, or your own application sending its own context.
 
 ## Require approval before a memory write
@@ -358,9 +360,11 @@ Each mount holds hot memory and cold memory:
 | Path | Use |
 | --- | --- |
 | `AGENTS.md` at the root of a mount | **Hot memory** for compact, frequently relevant knowledge. Its contents are loaded into every model call. |
-| Other files under a mount | **Cold memory** for detailed knowledge that the agent reads only when relevant. |
+| Other files under a mount | **Cold memory** for detailed knowledge, read only when the agent opens the file. |
 
-Keep hot memory compact because it consumes context on every run. Put detailed material, such as procedures, decision logs, and research notes, in cold files, and link to them from hot memory when useful.
+Keep hot memory compact because it consumes context on every run.
+
+The agent does not tier memory on its own. Left to itself it writes what it learns into `AGENTS.md`, so hot memory grows with every fact it keeps. To hold detailed material out of every model call, say so in your instructions: name the cold files to write, such as procedures, decision logs, and research notes, and tell the agent to link to them from `AGENTS.md`.
 
 The agent reads and updates memory with the built-in [`read_file`](/oss/deepagents/tools#built-in-harness-tools), [`edit_file`](/oss/deepagents/tools#built-in-harness-tools), and [`write_file`](/oss/deepagents/tools#built-in-harness-tools) tools. A hot file that does not exist yet stays empty until the first write.
 
@@ -374,7 +378,7 @@ Treat memory as untrusted input: content saved by one caller is loaded for later
 
 ## Test memory
 
-Studio is the way to exercise user memory without a Slack workspace. A verified Studio user receives every declared memory layer, and the runtime does not call the user layer's `allow` policy for them. A declared layer that appears to do nothing in Studio is usually not declared at all, so check `memory.py` or `memory.ts` first.
+Studio is the way to exercise memory without a Slack workspace. A verified Studio user receives every declared layer, so a layer that appears to do nothing there is usually not declared at all. Check `memory.py` or `memory.ts` first.
 
 Where Studio writes depends on what you are running:
 
@@ -383,13 +387,9 @@ Where Studio writes depends on what you are running:
 
 Local memory and deployed memory are separate stores, so a fact you teach the agent under `mda dev` does not appear after you deploy.
 
-The runtime evaluates a policy only while a run executes. Inspecting a graph does not call it. Native Node additionally requires Agent Server to pass run context to the graph factory.
+Policies are the exception to all of this, because neither environment calls them. See [Test a policy](#test-a-policy).
 
 For more information, see [Local development](/langsmith/managed-deep-agents-local-development).
-
-## Disable memory
-
-Omit a layer to disable it. Remove the memory declaration to turn durable memory off entirely. Disabling a layer stops the agent from reaching it, but does not delete stored memory.
 
 ## Deployment
 
