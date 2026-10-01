@@ -300,6 +300,67 @@ A verified Studio user receives every declared layer, and the runtime does not c
 
 Exercise a policy from a real caller against a deployment: a Slack message, or your own application sending its own context.
 
+## Require approval before a memory write
+
+A policy decides whether a layer mounts. It does not decide what the agent writes once it has. When a person should see a change to their own memory before it is saved, pause the tool call instead.
+
+:::python
+Add a `FilesystemPermission` rule in `mode="interrupt"` over the mount path:
+
+```python agent.py
+from deepagents import FilesystemPermission
+from managed_deepagents import define_deep_agent
+
+from tools.policies import search_policies
+
+agent = define_deep_agent(
+    name="office-helpdesk",
+    model="openai:gpt-5.5",
+    tools=[search_policies],
+    permissions=[
+        FilesystemPermission(
+            operations=["write"],
+            paths=["/memories/user/**"],
+            mode="interrupt",
+        ),
+    ],
+)
+```
+
+The agent calls `write_file` on `/memories/user/AGENTS.md`, the run pauses before the tool runs, and Slack or Studio renders an approval card. The reviewer can approve, edit, reject, or respond. Nothing is written until they approve.
+
+<Note>
+`mode="interrupt"` requires `deepagents>=0.6.8`. Unlike `create_deep_agent`, `define_deep_agent` needs no `checkpointer` argument, because the managed runtime supplies one.
+</Note>
+
+Interrupt-mode rules merge with any `interrupt_on` you pass and resume the same way. For the resume flow, see [Human-in-the-loop](/oss/deepagents/human-in-the-loop). For rule structure and path matching, see [Permissions](/oss/deepagents/permissions).
+
+Add `"read"` to `operations` to pause on `read_file`, `ls`, `glob`, and `grep` as well. Hot memory is not covered either way: the contents of `AGENTS.md` load into every model call rather than through a tool call, so no rule matches them. Only cold files pass through `read_file`.
+:::
+
+:::js
+Interrupt mode is not yet available in TypeScript. `FilesystemPermission` supports `"allow"` and `"deny"`, so a rule can block writes to a mount but cannot pause for approval:
+
+```ts agent.ts
+import { defineDeepAgent } from "managed-deepagents";
+
+import { searchPolicies } from "./tools/policies";
+
+export const agent = defineDeepAgent({
+  name: "office-helpdesk",
+  model: "openai:gpt-5.5",
+  tools: [searchPolicies],
+  permissions: [
+    {
+      operations: ["write"],
+      paths: ["/memories/user/**"],
+      mode: "deny",
+    },
+  ],
+});
+```
+:::
+
 ## Identify the person behind user memory
 
 User memory is keyed on the authenticated principal for the run, not on anything the caller passes in. Where that principal comes from depends on how the run started:
