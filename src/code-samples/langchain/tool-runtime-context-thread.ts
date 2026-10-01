@@ -1,6 +1,7 @@
 // :snippet-start: tool-runtime-context-thread-js
 import * as z from "zod";
 import { ChatOpenAI } from "@langchain/openai";
+import { MemorySaver } from "@langchain/langgraph";
 import { createAgent, tool } from "langchain";
 
 const getUserName = tool(
@@ -21,24 +22,41 @@ const contextSchema = z.object({
 const agent = createAgent({
   model: new ChatOpenAI({ model: "gpt-5.5" }),
   tools: [getUserName],
+  checkpointer: new MemorySaver(),
   contextSchema,
 });
 
-const result = await agent.invoke(
+const threadId = crypto.randomUUID();
+const threadConfig = {
+  configurable: { thread_id: threadId },
+  context: { user_name: "John Smith" },
+};
+
+let result = await agent.invoke(
   {
     messages: [{ role: "user", content: "What is my name?" }],
   },
-  {
-    configurable: { thread_id: crypto.randomUUID() },
-    context: { user_name: "John Smith" },
-  },
+  threadConfig,
 );
+console.log(result.messages.at(-1)?.content);
+
+result = await agent.invoke(
+  {
+    messages: [{ role: "user", content: "What was my name again?" }],
+  },
+  threadConfig,
+);
+console.log(result.messages.at(-1)?.content);
 // :snippet-end:
 
 // :remove-start:
 async function main() {
   const last = result.messages[result.messages.length - 1];
-  if (!last.text.includes("John Smith")) {
+  const text =
+    typeof last.content === "string"
+      ? last.content
+      : (last.text ?? JSON.stringify(last.content));
+  if (!text.includes("John Smith")) {
     throw new Error(`expected model to surface name, got: ${text}`);
   }
   console.log("✓ tool runtime context and thread_id invoke sample completed");
