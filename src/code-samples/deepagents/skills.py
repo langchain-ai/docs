@@ -185,7 +185,7 @@ agent = create_deep_agent(
         SkillsMiddleware(
             backend=backend,
             sources=["/skills/"],
-            skill_tools=[list_issues, create_issue],
+            tools=[list_issues, create_issue],
         ),
     ],
 )
@@ -231,7 +231,7 @@ agent = create_deep_agent(
         SkillsMiddleware(
             backend=backend,
             sources=["/skills/"],
-            skill_tools=resolve_skill_tools,
+            tools=resolve_skill_tools,
         ),
     ],
 )
@@ -257,7 +257,7 @@ def resolve_skill_tools(name: str, runtime: Runtime) -> list[BaseTool]:
 # :remove-start:
 assert resolve_skill_tools("linear", Runtime()) == linear_tools
 assert SkillsMiddleware(
-    backend=backend, sources=["/skills/"], skill_tools=resolve_skill_tools
+    backend=backend, sources=["/skills/"], tools=resolve_skill_tools
 )
 
 
@@ -298,7 +298,7 @@ agent = create_deep_agent(
         SkillsMiddleware(
             backend=backend,
             sources=["/skills/"],
-            skill_tools=resolve_skill_tools,
+            tools=resolve_skill_tools,
         ),
     ],
 )
