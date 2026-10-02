@@ -1,0 +1,158 @@
+---
+title: LLM Gateway quickstart
+sidebarTitle: Quickstart
+description: Call models across providers with one LangSmith API key, then view the trace and set a spend limit.
+mode: wide
+---
+
+import LLMGatewayBetaNote from '/snippets/python/langsmith/llm-gateway-beta-note.mdx';
+
+<LLMGatewayBetaNote />
+
+The LLM Gateway calls models across configured providers through one endpoint with one [LangSmith API key](/langsmith/create-account-api-key). Send a request, view its trace, then set a spend limit.
+
+<Info>
+An administrator must [enable the gateway, add a provider secret, and grant access](/langsmith/llm-gateway-admin-setup) once for your workspace. After that, you need only a workspace-scoped LangSmith API key attached to a role with the `gateway:invoke` and `workspaces:read` [permissions](/langsmith/organization-workspace-operations).
+</Info>
+
+<Steps>
+
+<Step title="Send a request" icon="send" id="send-a-request">
+
+A gateway call is an ordinary model request pointed at the gateway base URL and authenticated with your LangSmith API key. Use Chat completions to call the gateway from an application you already have, or Deep Agents to build an agent that routes through it.
+
+<Tabs>
+
+<Tab title="Chat completions">
+
+Point any OpenAI-compatible client at `https://gateway.smith.langchain.com/v1` and set `model` to a provider-prefixed ID.
+
+<CodeGroup>
+
+```bash cURL
+export LANGSMITH_API_KEY="lsv2_..."
+
+curl https://gateway.smith.langchain.com/v1/chat/completions \
+    -H "Authorization: Bearer $LANGSMITH_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"model":"anthropic/claude-opus-5","messages":[{"role":"user","content":"Explain what an LLM gateway does in one sentence."}]}'
+```
+
+```python Python
+import os
+
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://gateway.smith.langchain.com/v1",
+    api_key=os.environ["LANGSMITH_API_KEY"],
+)
+response = client.chat.completions.create(
+    model="anthropic/claude-opus-5",
+    messages=[{"role": "user", "content": "Explain what an LLM gateway does in one sentence."}],
+)
+print(response.choices[0].message.content)
+```
+
+```typescript TypeScript
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: "https://gateway.smith.langchain.com/v1",
+  apiKey: process.env.LANGSMITH_API_KEY,
+});
+const response = await client.chat.completions.create({
+  model: "anthropic/claude-opus-5",
+  messages: [{ role: "user", content: "Explain what an LLM gateway does in one sentence." }],
+});
+console.log(response.choices[0].message.content);
+```
+
+</CodeGroup>
+
+The same endpoint also accepts Anthropic Messages and OpenAI Responses requests. See [API formats](/langsmith/llm-gateway-api-formats).
+
+</Tab>
+
+<Tab title="Deep Agents">
+
+Set `LANGSMITH_GATEWAY` to route every supported chat model in the process through the gateway.
+
+<CodeGroup>
+
+```python Python
+# pip install "deepagents>=0.1.0"
+# export LANGSMITH_API_KEY="lsv2_..."
+# export LANGSMITH_GATEWAY="true"
+from deepagents import create_deep_agent
+
+agent = create_deep_agent(model="anthropic:claude-opus-5")
+result = agent.invoke({"messages": [{"role": "user", "content": "Explain what an LLM gateway does in one sentence."}]})
+print(result["messages"][-1].content)
+```
+
+```typescript TypeScript
+// npm install deepagents
+// export LANGSMITH_API_KEY="lsv2_..."
+// export LANGSMITH_GATEWAY="true"
+import { createDeepAgent } from "deepagents";
+
+const agent = createDeepAgent({ model: "anthropic:claude-opus-5" });
+const result = await agent.invoke({
+  messages: [{ role: "user", content: "Explain what an LLM gateway does in one sentence." }],
+});
+console.log(result.messages[result.messages.length - 1].content);
+```
+
+</CodeGroup>
+
+To route specific calls rather than all calls, use the standard endpoint in the Chat completions tab and set `model` to a provider-prefixed ID.
+
+</Tab>
+
+</Tabs>
+
+</Step>
+
+<Step title="View the trace" icon="activity" id="view-the-trace">
+
+Open [LangSmith](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=langsmith-llm-gateway-quickstart) and go to the tracing project named `gateway` or `gateway-<short_api_key>-<api_key_id>` in your workspace. Your request appears there with its token counts, cost, and latency.
+
+</Step>
+
+<Step title="Set a spend limit" icon="shield" id="set-a-spend-limit">
+
+Go to **LLM Gateway** in LangSmith and create a spend policy, such as a daily $10 cap on your API key. Once the cap is reached, the gateway returns a `402` with a message naming the policy that blocked the request:
+
+```json
+{"error": "Request blocked by gateway policies: R&D Spend Cap"}
+```
+
+For the full guide, see [Spend policies](/langsmith/llm-gateway-spend-policies).
+
+</Step>
+
+</Steps>
+
+These examples use the US gateway. For the EU, APAC, and AWS hostnames, see [Use a regional gateway](/langsmith/llm-gateway-how-it-works#use-a-regional-gateway). For BYOC, see [Use a BYOC data plane](/langsmith/llm-gateway-how-it-works#use-a-byoc-data-plane).
+
+## Next steps
+
+- [Overview](/langsmith/llm-gateway): what the gateway provides, how credentials are managed, and when to use the standard API.
+- [How the gateway works](/langsmith/llm-gateway-how-it-works): what happens to each request, how credentials resolve, and where the gateway is available.
+- [API formats](/langsmith/llm-gateway-api-formats): use Chat Completions, Messages, or Responses through the standard endpoint.
+- [Set up coding agents](/langsmith/llm-gateway-coding-agents): route Claude Code, Codex, Gemini CLI, or Deep Agents Code through the gateway.
+- [Direct model access](/langsmith/llm-gateway-direct-model-access): use provider-native request and response formats.
+- [Prompt Hub with the gateway](/langsmith/manage-prompts-programmatically#use-with-the-langsmith-gateway): route Prompt Hub model calls through the gateway.
+- [Data policy](/langsmith/llm-gateway-data-policy): prevent sensitive data from reaching providers.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/llm-gateway-quickstart.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
