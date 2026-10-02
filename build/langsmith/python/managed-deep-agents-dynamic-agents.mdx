@@ -1,0 +1,234 @@
+---
+title: Dynamic Managed Deep Agents
+sidebarTitle: Dynamic agents
+description: Select the model, tools, instructions, skills, MCP servers, and sandbox of a managed deep agent from the context of each run.
+---
+
+import ManagedDeepAgentsPublicBetaNote from '/snippets/python/langsmith/managed-deep-agents-public-beta-note.mdx';
+
+A dynamic agent selects its configuration at the start of each run from the run's context. One deployment can serve several audiences, tasks, or repositories without a separate agent for each variation.
+
+<ManagedDeepAgentsPublicBetaNote />
+
+For example, using dynamic context, a support agent can give internal staff a stronger model and an internal case tool, while customers get a smaller model and a help center search tool. A coding agent can pick instructions, skills, and sandbox settings based on the repository a task targets. Each run resolves its own configuration, so concurrent runs do not affect each other.
+
+## Define a dynamic agent
+
+Decorate a resolver with `@dynamic` and assign it to the module-level `agent`. A dynamic resolver accepts one `ManagedRunContext` argument and returns `define_deep_agent(...)`. The argument contains the run-scoped data described in [Pass run context](#pass-run-context).
+
+```python agent.py
+from managed_deepagents import DeepAgentDefinition, ManagedRunContext, define_deep_agent, dynamic
+from tools.support import customer_lookup, inspect_internal_case
+
+
+@dynamic
+def build_agent(ctx: ManagedRunContext) -> DeepAgentDefinition:
+    internal = isinstance(ctx, dict) and ctx.get("role") == "internal"
+    return define_deep_agent(
+        name="support",
+        model="openai:gpt-5.5" if internal else "openai:gpt-5-mini",
+        tools=[inspect_internal_case] if internal else [customer_lookup],
+        instructions="Help support staff." if internal else "Help customers.",
+        skills=["./skills/internal-support" if internal else "./skills/customer-support"],
+    )
+
+
+agent = build_agent
+```
+
+Use `@dynamic` only on the resolver assigned to `agent`. Leave helper functions undecorated. Use a synchronous resolver when selection only reads `ctx`. Use `async` when the selection logic must await an operation.
+
+
+
+
+The `name` must be an inline string literal in the returned definition. `mda build` reads it without calling the resolver and uses it as the graph ID and default deployment name. See [Build and deploy](#build-and-deploy).
+
+## Pass run context
+
+Clients pass application data in the `context` field of the Agent Server run request:
+
+```python
+await client.runs.create(
+    thread_id,
+    assistant_id,
+    input={"messages": [{"role": "user", "content": "Where is my order?"}]},
+    context={"role": "customer"},
+)
+```
+
+
+
+
+The resolver's context type is `ManagedRunContext`. Direct API runs receive the application context the client sent. Runs from a managed [channel](/langsmith/python/managed-deep-agents-channels), such as Slack, receive MDA's channel context instead. Check the shape before reading application fields, as `isinstance(ctx, dict)` does in the earlier example.
+
+
+
+
+<Warning>
+Run context is application data, not verified identity. A client can send any value. Derive security-sensitive roles from authenticated server state, and have [tools](/langsmith/python/managed-deep-agents-tools) check authorization when they are called.
+</Warning>
+
+## What a resolver can select
+
+A dynamic agent can select `model`, `tools`, `subagents`, `middleware`, `instructions`, `skills`, `mcp`, and `sandbox`. Standard agent fields behave as described in [Agent definition](/langsmith/python/managed-deep-agents-agent-definition#parameters).
+
+Select a model dynamically when requests have different quality, latency, or cost needs. For example, use a smaller model for routine lookups and a more capable model for complex investigations. Both can share one deployment.
+
+The managed fields fall back to the project's discovered resources when omitted:
+
+| Field | Omitted | Empty | Set |
+|---|---|---|---|
+| `instructions=` | Uses [`instructions.md`](/langsmith/python/managed-deep-agents-instructions). | `""` clears authored instructions. | Replaces `instructions.md` for the run. |
+| `skills=` | Exposes every discovered project skill. | `[]` exposes no skills. | Exposes only the selected skills. See [Select skills](#select-skills). |
+| `mcp=` | Uses the discovered MCP declaration. | `[]` exposes no MCP tools. | Replaces the discovered MCP declaration. See [Select MCP servers](#select-mcp-servers). |
+| `sandbox=` | Uses the discovered sandbox. | `None` disables the sandbox for the run. | Replaces the discovered sandbox options. See [Select sandbox options](#select-sandbox-options). |
+
+
+
+
+These managed fields are available only in a dynamic agent. A static agent continues to configure them through project files. See [Project structure](/langsmith/python/managed-deep-agents-project-structure).
+
+[Memory](/langsmith/python/managed-deep-agents-memory) is not selectable. Declare it in the root memory file. Its `allow(context)` policies already decide access for each run.
+
+### Select skills
+
+Each entry in the skills list is either the path of an authored skill directory under `skills/` or a generated skill definition. After the resolver returns, MDA validates the selection, copies the selected skill files into a read-only view, and mounts that view at `/skills` for the run.
+
+Pass authored skill paths as strings relative to the project root, such as `"./skills/refunds"`. Convert `Path` values with `str()`.
+
+```python
+define_deep_agent(
+    name="support",
+    skills=["./skills/refunds", "./skills/escalations"],
+)
+```
+
+
+
+
+A path must point to a skill directory that exists in the project. A generated skill cannot reuse the name of an authored skill. To write skills, see [Skills](/langsmith/python/managed-deep-agents-skills).
+
+### Select MCP servers
+
+Pass a list of definitions returned by `define_mcp(...)`. A non-empty list replaces the project's discovered MCP declaration for the run. Other connectors stay active, and the selected servers go through the same tool loading and credential checks.
+
+
+
+
+Build the definition in a helper that takes the run context. This example gives every run the LangChain docs and Notion servers, and adds Linear for the engineering team:
+
+```python config/mcp.py
+from managed_deepagents import ManagedRunContext, connections, define_mcp
+
+
+def define_dynamic_mcp(ctx: ManagedRunContext):
+    servers = {
+        "langchainDocs": {
+            "transport": "http",
+            "url": "https://docs.langchain.com/mcp",
+            # Select by raw MCP tool name; MDA adds the server-name prefix at runtime.
+            "include_tools": ["search_docs_by_lang_chain"],
+        },
+        "notion": {
+            "transport": "http",
+            "url": "https://mcp.notion.com/mcp",
+            "connection": connections.get("notion", {"type": "user"}),
+        },
+    }
+
+    if isinstance(ctx, dict) and ctx.get("team") == "engineering":
+        servers["linear"] = {
+            "transport": "http",
+            "url": "https://mcp.linear.app/mcp",
+            "connection": connections.get("linear", {"type": "user"}),
+        }
+
+    return define_mcp(servers=servers)
+```
+
+
+
+
+<Note>
+Keep these helpers out of `tools/mcp.*`. That file is the static MCP declaration, and `mda build` requires it to export `mcp`.
+</Note>
+
+For server options such as tool allowlists and credentials, see [MCP connectors](/langsmith/python/managed-deep-agents-mcp-connectors) and [Manage connections](/langsmith/python/managed-deep-agents-connections).
+
+### Select sandbox options
+
+Return a definition from `define_sandbox(...)` to replace the discovered sandbox options for the run, or `None` to disable the sandbox. This helper gives build tasks longer timeouts and turns the sandbox off for runs that only answer questions:
+
+```python config/sandbox.py
+from managed_deepagents import ManagedRunContext, define_sandbox
+
+
+def define_dynamic_sandbox(ctx: ManagedRunContext):
+    task = ctx.get("task") if isinstance(ctx, dict) else None
+
+    if task == "question":
+        return None
+    if task == "build":
+        return define_sandbox(idle_ttl_seconds=1800, default_timeout=1200)
+    return define_sandbox(idle_ttl_seconds=600, default_timeout=600)
+```
+
+
+
+
+Sandbox setup and image baking stay in the `sandbox/` directory. For sandbox options, see [Sandboxes](/langsmith/python/managed-deep-agents-sandboxes).
+
+### Use the helpers in the resolver
+
+Call both helpers from the resolver with the same context:
+
+```python agent.py
+from config.mcp import define_dynamic_mcp
+from config.sandbox import define_dynamic_sandbox
+from managed_deepagents import DeepAgentDefinition, ManagedRunContext, define_deep_agent, dynamic
+
+
+@dynamic
+def build_agent(ctx: ManagedRunContext) -> DeepAgentDefinition:
+    return define_deep_agent(
+        name="support",
+        mcp=[define_dynamic_mcp(ctx)],
+        sandbox=define_dynamic_sandbox(ctx),
+    )
+
+
+agent = build_agent
+```
+
+
+
+
+## Build and deploy
+
+`mda build` detects a dynamic agent without calling the resolver, because run context exists only at runtime. As a result:
+
+- **The name must be static.** The build reads the inline string-literal `name` from the returned definition and uses it as the graph ID and default deployment name. If the name is computed or the resolver has several possible return statements, the build falls back to `agent`. `mda deploy --name` changes the deployment name, not the graph ID.
+- **Model dependencies are not detected.** Add the integration package for every model the resolver can return to the project's dependencies.
+
+List those packages in `pyproject.toml`.
+
+
+
+
+## Write a resolver
+
+- **Keep the resolver repeatable and free of side effects.** MDA can call the resolver again for retries and resumes. Do not create records, call external APIs, or mutate state in the resolver.
+- **Handle an empty context.** Agent Server sometimes loads the graph for inspection, such as schema requests, without a run. In that case MDA calls the resolver with `{}`. A real run resolves again with the actual context.
+- **Keep interrupting middleware stable.** Do not select middleware that can interrupt a run based on context. A resumed run rebuilds the graph, and the middleware that raised the interrupt must still be present.
+- **Use middleware for changes within a run.** The resolver runs once per run. To change behavior between model steps in the same run, use [custom middleware](/langsmith/python/managed-deep-agents-middleware).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/managed-deep-agents-dynamic-agents.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
