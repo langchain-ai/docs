@@ -1,0 +1,160 @@
+---
+title: Operate self-hosted Sandboxes
+sidebarTitle: Upgrades and operations
+description: Plan self-hosted Sandbox upgrades, understand host drains and failure recovery, protect shared storage, and monitor production capacity.
+---
+
+Self-hosted Sandbox operations center on the host pool and its shared storage. Host replacements affect running workloads; storage failures can affect the entire pool. Use this guide to plan upgrades and distinguish a recoverable interruption from loss of persistent data.
+
+Start with [Sandbox architecture](/langsmith/self-host-sandbox-architecture) and [capacity planning](/langsmith/self-host-sandbox-scaling). Follow the [self-hosted upgrade guide](/langsmith/self-host-upgrades) for the platform-wide upgrade procedure and release requirements.
+
+## Understand a rolling upgrade
+
+The `sandbox-host` image packages the host daemon and runtime artifacts, including Firecracker, guest artifacts, and the JuiceFS client. Set `images.sandboxHostImage.tag` to the runtime image for your LangSmith release. Follow release-specific instructions when upgrading older storage layouts.
+
+The host Deployment uses `maxSurge: 0` and `maxUnavailable: 1`. Kubernetes terminates a host before creating its replacement, then waits for the replacement to become ready. Required one-host-per-node placement and the shared host port prevent two host pods from occupying the same node.
+
+<Frame caption="A healthy four-host pool has three ready hosts during each replacement. The timeline is illustrative; drain and startup durations depend on the workload and storage.">
+  <img src="/images/langsmith/sandboxes/self-host-rollout.svg" alt="Four host rows on a rollout timeline. Each row moves from the old version through drain and startup to the new version. Replacements happen one at a time, leaving three of four hosts ready until the rollout finishes." />
+</Frame>
+
+A normal rollout temporarily removes one host's capacity. With a single-host pool, new creates fail while that host restarts. Existing unready hosts or infrastructure failures can reduce capacity further; `maxUnavailable` is not a guarantee against unrelated outages.
+
+For host-owned JuiceFS mounts, startup includes mounting the filesystem and checking storage access before opening the host listener. A replacement that cannot access storage blocks progress instead of accepting sandbox traffic.
+
+<Warning>
+A rolling upgrade is not live migration or uninterrupted execution. Sandboxes on a draining host pause, and their open connections can disconnect. Applications must handle reconnects and interrupted work.
+</Warning>
+
+## Follow a host drain
+
+A graceful host shutdown attempts to suspend persistent sandboxes before the pod exits:
+
+<Steps>
+  <Step title="Stop new placement">
+    The host enters a draining state and notifies the platform backend. New sandbox placements use other ready hosts.
+  </Step>
+  <Step title="Save running sandboxes">
+    The host stops routing to each sandbox as it suspends that VM. It attempts to save the VM's memory to JuiceFS and reports the sandbox stopped.
+  </Step>
+  <Step title="Release the host">
+    The host keeps renewing its Lease while stopping workloads. Once the VMs have stopped, it releases the Lease and tears down its storage mount.
+  </Step>
+  <Step title="Resume on demand">
+    A later start or wake request places the sandbox on an available, compatible host. A complete saved memory image allows processes to resume; otherwise recovery uses the persisted filesystem.
+  </Step>
+</Steps>
+
+Stopped sandboxes do not all restart when the replacement host becomes ready. They remain stopped until explicitly started or reached through a request path that wakes them.
+
+Open execution streams, tunnels, and service connections to affected sandboxes need to reconnect. A saved memory image does not preserve a client's network connection.
+
+### Budget enough time to drain
+
+`sandboxes.sandboxHost.deployment.terminationGracePeriodSeconds` defaults to `300`. Kubernetes can kill the host when that grace period expires, even if some memory captures are incomplete.
+
+Measure a drain with representative sandbox density and memory use. Check the shutdown summary for duration, successful suspends, and failures. Increase the grace period when captures cannot complete, and keep node-maintenance drain timeouts longer than that period.
+
+An incomplete drain can lose running memory and require crash recovery for affected sandboxes. Increasing the timeout does not solve storage unavailability or insufficient capacity.
+
+### Coordinate node maintenance
+
+Node replacement and Kubernetes upgrades also terminate host pods. Configure your node maintenance process to respect graceful shutdown and avoid draining several sandbox hosts simultaneously.
+
+Enable `sandboxes.sandboxHost.pdb.enabled` to use the chart's PodDisruptionBudget for voluntary evictions. Its default budget permits one unavailable host. A PDB does not prevent node failure, direct pod deletion, or every provider-specific maintenance action.
+
+Keep node autoscaling consistent with the host autoscaler. Where your node autoscaler supports eviction protection, prevent it from independently evicting active host pods during routine consolidation. Let host scale-down drain workloads before removing empty nodes. Check your autoscaler's behavior rather than assuming one annotation works for every provider.
+
+Do not accelerate a rollout by deleting multiple host pods or increasing disruption beyond the capacity you have tested.
+
+### Diagnose a stalled rollout
+
+Compare desired, ready, and updated host counts. Then inspect pod events and node provisioning:
+
+- **Hosts stay `Pending`**: Check node pool limits, infrastructure quota, regional capacity, node selectors, taints, and resource requests.
+- **Hosts start but do not become ready**: Check KVM availability, runtime logs, and access to JuiceFS metadata and object storage.
+- **Hosts remain terminating**: Inspect drain progress and storage latency before changing the grace period.
+
+If desired replicas exceed schedulable capacity, the rollout may be unable to meet its availability floor. Restore capacity first. The `sandbox-host.smith.langchain.com/autoscale-override` Deployment annotation can temporarily pin the host count when autoscaling is enabled. Use it only after evaluating remaining capacity, and remove the override afterward. A lower target does not fix the underlying capacity shortage.
+
+## Plan machine changes
+
+Memory snapshots include CPU and virtual machine state. Do not assume that a saved VM can resume across different CPU models or incompatible host kernels.
+
+Keep a consistent CPU model in the sandbox pool. Before changing the node family or operating system image, test both a suspended sandbox and a memory snapshot on the target nodes. Plan for cold starts and loss of in-memory work if restore is incompatible.
+
+Persistent disk recovery is separate from memory restore. Applications that need durable progress should write it to persistent storage rather than rely only on saved process memory.
+
+## Understand failure impact
+
+| Event | Platform behavior | Workload impact |
+| --- | --- | --- |
+| Host crash or node loss | Waits for fencing before starting affected sandboxes on another host. | Running memory is lost. Persistent sandboxes recover from persisted disk on a later start or wake request. |
+| Prolonged loss of Kubernetes API access | Hosts that cannot renew their Leases fence themselves to avoid conflicting writers. | Can stop workloads on one host or across the pool, depending on the outage. |
+| Host-owned JuiceFS mount failure | The host stops accepting work and stops its VMs before exiting. | Affected sandboxes lose running memory; recovery requires working shared storage. |
+| Metadata Redis unavailable | Filesystem operations stall or fail; sustained mount health failures can stop hosts. | Creates and running workloads can fail across the pool. |
+| Object storage unavailable or throttled | Uncached reads and uploads stall or fail; new hosts may fail readiness. | Slow or failing I/O and reduced ready capacity. |
+| No ready hosts | New creates fail with `NoSandboxHostsAvailable`. | Clients must retry after capacity becomes available. |
+| Metadata or object data lost | Restoring hosts alone cannot restore the filesystem. | Recover the backing stores from tested backups. |
+
+Fencing prevents a replacement from writing a persistent sandbox's disk while the old host might still be running. Recovery is therefore not instantaneous after a host disappears. Do not bypass that delay by manually changing sandbox ownership or deleting shared storage state.
+
+## Protect sandbox storage
+
+The JuiceFS metadata store and object store form one persistent filesystem. Protect them separately from the platform's cache and queue Redis.
+
+- **Dedicated metadata Redis**: Use `noeviction`, high availability, persistence, and backups. Do not flush or recreate it as part of cache maintenance.
+- **Memory headroom**: Alert before Redis reaches its memory limit. With `noeviction`, writes fail when memory is exhausted rather than evicting filesystem metadata.
+- **Object retention**: Do not apply lifecycle rules that delete live JuiceFS objects or move them to an inaccessible storage tier.
+- **Recovery testing**: Test restoring filesystem metadata and object data together. A replica improves availability but does not replace backups.
+- **Private access**: Keep storage and host endpoints private. Use the installation guide's identity and secret configuration for your environment.
+
+Choose backup frequency and retention for your recovery objectives. Do not assume an object-store backup alone contains the file tree needed to recover a sandbox.
+
+## Monitor the pool
+
+The host exposes Prometheus metrics on its internal `/metrics` endpoint. Scrape it through your private monitoring infrastructure, not public ingress. See [Export LangSmith telemetry](/langsmith/export-backend) for platform monitoring setup.
+
+The elected host exports these pool gauges:
+
+| Metric | Meaning |
+| --- | --- |
+| `langsmith_sandbox_host_pool_assigned_cpu_millicores` | CPU committed to sandboxes on ready hosts. |
+| `langsmith_sandbox_host_pool_capacity_cpu_millicores` | CPU capacity of ready hosts. |
+| `langsmith_sandbox_host_pool_ready_hosts` | Ready hosts in the pool. |
+| `langsmith_sandbox_host_pool_desired_replicas` | Replica target when autoscaling is active. |
+
+Also monitor host pod readiness, `Pending` pods, node memory and disk pressure, storage latency, Redis memory and evictions, sandbox startup failures, and drain duration. A persistent gap between desired and ready hosts calls for checking node provisioning and host startup, not only workload demand.
+
+### Check production readiness
+
+Before running production workloads:
+
+- Confirm the dedicated nodes expose KVM and match the host selector and tolerations.
+- Reserve memory for guests, the host runtime, JuiceFS, and Kubernetes overhead.
+- Align host limits, node limits, infrastructure quotas, and workspace quotas.
+- Test scaling from the minimum pool size with a cold cache.
+- Test one-host loss and a one-host-at-a-time upgrade under load.
+- Verify application behavior when execution streams or service connections disconnect.
+- Measure drain duration and set compatible pod and node shutdown timeouts.
+- Confirm metadata Redis uses `noeviction` and has tested backups and restore procedures.
+- Monitor object-store access, metadata capacity, and the gap between desired and ready hosts.
+
+## See also
+
+- [Sandbox architecture and lifecycle](/langsmith/self-host-sandbox-architecture)
+- [Scale self-hosted Sandboxes](/langsmith/self-host-sandbox-scaling)
+- [Enable Sandboxes](/langsmith/deploy-self-hosted-full-platform#enable-sandboxes)
+- [Upgrade self-hosted LangSmith](/langsmith/self-host-upgrades)
+- [Plan platform disaster recovery](/langsmith/self-host-disaster-recovery)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/self-host-sandbox-operations.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
