@@ -69,49 +69,108 @@ Slack destinations use the configured Slack app to post messages. They do not se
 
 ## Create Jira work items
 
-The **Jira** destination sends Engine events to a Jira Automation incoming webhook. Configure a Jira rule to turn new Engine issues into Jira work items. LangSmith sends the [webhook payload](#webhook-payload-reference) with the `X-Automation-Webhook-Token` header. Jira destinations use this token for authentication and do not have an HMAC signing secret.
+The **Jira** destination sends Engine events to a [Jira Automation incoming webhook](https://support.atlassian.com/cloud-automation/docs/configure-the-incoming-webhook-trigger-in-atlassian-automation/). A Jira automation flow creates a work item for each new Engine issue. LangSmith sends the [webhook payload](#webhook-payload-reference) with the `X-Automation-Webhook-Token` authentication header.
 
-Use the final incoming-webhook URL. Jira deliveries do not follow redirects, including redirects on the same host. A `3xx` response is a permanent delivery error and is not retried. This keeps the token and payload on the configured endpoint.
+You need permission to manage Jira automation and a project where the flow can create work items. Importing the template also requires Jira administrator access. Jira Cloud calls projects *spaces* and automation rules *flows* in newer interfaces. The instructions below use those labels.
 
-You need permission to manage Jira automation rules and a project where the rule can create work items. Jira Cloud hosts the incoming webhook on Atlassian's infrastructure. For Jira Data Center, verify that your installed version's endpoint accepts the required token header. LangSmith's deployment type does not determine whether you use Jira Cloud or Data Center.
+For Jira Cloud, [import the template](#import-the-jira-cloud-template) or [create the flow manually](#create-the-flow-manually). Then [connect the flow to LangSmith](#connect-the-flow-to-langsmith) and verify ticket creation. For Jira Data Center, verify your installed version's payload handling and support for the token header before using these mappings. The template is for Jira Cloud.
 
-To create a work item for each new Engine issue:
+### Import the Jira Cloud template
+
+The template configures the incoming webhook and the creation action's summary and description. It contains no credentials or project identifiers. You still select your space and issue type, generate a secret, and enable the flow.
+
+To import the template:
+
+1. Download [the Jira Cloud automation template](/langsmith/engine-jira-automation.json) and save it as `engine-jira-automation.json`.
+2. In Jira, go to **Settings** > **System** > **Global automation**.
+3. Select **Actions** > **Import flows**, called **Import rules** in older interfaces. Upload the JSON file.
+4. Select **LangSmith Engine: create Jira work items** and restrict it to your intended space. Leave **Import flow owners** unchecked, then click **Next** and **Done**. Jira imports the flow as **DISABLED**.
+5. Open the imported flow and its **Create work item** action. Select your **Space** and a concrete **Issue type**, such as **Task**. Configure any additional required fields, then save the flow without enabling it.
+6. Continue with [Connect the flow to LangSmith](#connect-the-flow-to-langsmith).
+
+### Create the flow manually
+
+To configure the same flow without importing JSON:
 
 <Steps>
-  <Step title="Configure the incoming webhook in Jira">
-    Create a Jira Automation rule with an **Incoming webhook** trigger. If Jira requires a saved rule to generate the URL, save it without enabling it first.
+  <Step title="Add an incoming webhook trigger">
+    Open your Jira space's **Automation** settings and create a flow. Choose **Incoming webhook** as the trigger. Leave trigger conditions empty.
 
-    Select **No work items from the webhook**, called **No issues from the webhook** in older interfaces. Engine sends its own event payload, rather than Jira issue keys.
-
-    Generate the trigger's secret/token. Copy the webhook URL and token before saving. Keep the token out of the URL; LangSmith sends it in the authentication header.
+    If Jira displays **Save or enable flow to access URL and secret**, continue adding the creation action. The complete webhook settings appear after the first save.
   </Step>
-  <Step title="Add the Jira creation action">
-    Restrict the rule to the intended project. Add a **Create work item** action, called **Create issue** in older interfaces. Select an existing project and issue type, and configure any fields Jira requires.
+  <Step title="Configure the creation action">
+    Add **Create work item**, called **Create issue** in older interfaces. Select the intended **Space** and a concrete **Issue type**, such as **Task**. Replace **Same work type** if Jira selects it by default: an Engine webhook has no Jira work item to inherit from.
 
-    For Jira Cloud, set **Summary** to `{{webhookData.object.name}}`. Set **Description** to:
+    Set **Summary** to:
+
+    ```text
+    {{webhookData.object.name}}
+    ```
+
+    Set **Description** to:
 
     ```text
     {{webhookData.object.description}}
 
-    Severity: {{webhookData.object.severity}}
-    LangSmith issue: {{webhookData.object.url}}
+    Engine severity: {{webhookData.object.severity}}
+    Engine issue: {{webhookData.object.url}}
     ```
 
-    Jira Cloud exposes the envelope's `data` member as `webhookData`. Use `webhookData.object.*` for issue fields. The extra `.data` in `webhookData.data.object.name` resolves to an empty summary. Verify payload handling in your installed Jira Data Center version before using these mappings there.
-  </Step>
-  <Step title="Add the Jira destination in LangSmith">
-    On the **Engine** page, click **Configure Engine**. Under **Notifications**, click **Add** and select **Jira**. Enter the **Jira Webhook URL** and **Jira webhook token** from the trigger.
+    Configure any other fields your project requires. The severity above is text in the description; it does not set Jira's **Priority** field.
 
-    Under **Notify when**, select only `issue.created` for this creation rule. Choose the **Minimum issue severity**, then click **Add**. Enable the rule in Jira.
+    Jira Cloud exposes the envelope's `data` member as `webhookData`. Use `webhookData.object.*`. Adding another `.data`, as in `webhookData.data.object.name`, produces an empty summary.
   </Step>
-  <Step title="Verify Jira created the work item">
-    After Engine creates an issue that matches your severity filter, check Jira's automation audit log. Confirm that the rule succeeds and creates a work item with the expected summary, description, severity, and LangSmith issue link.
+  <Step title="Save without enabling">
+    Name the flow. Open the dropdown beside **Save and enable** and select **Save without enabling**. Reopen **Incoming webhook** after saving to access its URL, secret, and work item criteria.
 
-    An HTTP success means Jira accepted the webhook, not that it created a work item. Rule conditions, required fields, actor permissions, and automation usage limits can prevent creation.
+    Put the title mapping in the creation action's **Summary** field. Do not add a trigger condition such as `{{webhookData.object.name}}` equals itself; leave **Add condition** unused for this flow.
   </Step>
 </Steps>
 
-LangSmith stores the Jira token without displaying it again. To replace it, enter a new token. Changing the webhook URL also requires entering a token for the replacement URL. If you lose the token, rotate it in Jira and update the LangSmith destination.
+### Connect the flow to LangSmith
+
+Both setup methods require the following steps before notifications can create work items:
+
+<Steps>
+  <Step title="Choose the webhook's work item criteria">
+    Open **Incoming webhook** and select **No work items from the webhook**, called **No issues from the webhook** in older interfaces. Do not use **Issues provided in the webhook HTTP POST body**. That mode expects Jira issue keys, which Engine does not send.
+  </Step>
+  <Step title="Copy the URL and generate a secret">
+    Copy **Webhook URL**. Under **Secret**, click **Regenerate** (or **Generate**, if shown). Copy the new secret before saving: Jira masks it afterward. Save the flow.
+
+    Use the URL and secret from this same trigger. The secret becomes LangSmith's **Jira webhook token**. It is not an Atlassian API token or a webhook signing secret. Keep it out of the URL.
+
+    Use the final incoming-webhook URL. Jira deliveries do not follow redirects, including redirects on the same host. A `3xx` response is a permanent delivery error and is not retried.
+  </Step>
+  <Step title="Add the Jira destination and enable the flow">
+    In LangSmith, open your project's **Engine** page. Select **Configure Engine** > **Notifications** > **Add** > **Jira**. Paste the trigger's URL into **Jira Webhook URL** and its secret into **Jira webhook token**.
+
+    Under **Notify when**, select only **Issue created** (`issue.created`). Selecting trace-added events also runs the creation action and can create extra tickets for the same Engine issue. Choose **Minimum issue severity**, then click **Add**.
+
+    In Jira, enable the flow and confirm that its status is **ENABLED**.
+  </Step>
+  <Step title="Verify a new audit entry and work item">
+    After Engine creates a new issue that matches your severity filter, open the Jira flow's **Audit log**. Confirm a new successful execution, expand the creation action, and open the work item it created. Check its summary, description, Engine severity, and Engine issue link.
+
+    Existing Engine issues are not a test of **Issue created**. Wait for a new matching issue after enabling the flow and saving the destination.
+
+    An HTTP success does not prove Jira ran the flow or created a ticket. An incorrect webhook secret can return HTTP success with no audit entry. Verify both the audit entry and the new work item.
+  </Step>
+</Steps>
+
+LangSmith stores the Jira token without displaying it again. If you regenerate the secret in Jira, update **Jira webhook token** in LangSmith too. Changing the webhook URL requires entering the matching token. If you lose the secret, regenerate it in Jira and update the destination.
+
+### Troubleshoot Jira automation
+
+| Symptom | What to check |
+| --- | --- |
+| Jira says to save the flow before showing the URL and secret. | Add the creation action, select **Save without enabling**, then reopen **Incoming webhook**. |
+| Jira rejects a trigger condition or disables saving. | Remove the condition. Put `{{webhookData.object.name}}` in the creation action's **Summary** field. |
+| No new entry appears in Jira's automation audit log. | Confirm the flow is **ENABLED**, a new Engine issue matches the event and severity filters, and the URL and token come from the same trigger. Regenerate the secret and update LangSmith if uncertain. HTTP success alone does not verify the token. |
+| Jira expects issue keys or cannot determine the work type. | Select **No work items from the webhook** in the trigger. Select a concrete issue type, such as **Task**, in the creation action. |
+| The summary is empty. | Use `{{webhookData.object.name}}`, without the extra `.data`. |
+| The audit log records a failed execution. | Expand the failed step. Check required fields, the selected space and issue type, the flow actor's create permissions, and Jira automation usage limits. |
+| Multiple work items appear for one Engine issue. | Select only **Issue created** in LangSmith. Check for duplicate Jira destinations in LangSmith. |
 
 ### Reach a private Jira endpoint
 
