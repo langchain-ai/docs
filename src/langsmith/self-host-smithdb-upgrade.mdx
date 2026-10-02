@@ -1,0 +1,39 @@
+---
+title: Upgrade SmithDB
+sidebarTitle: Upgrades
+description: SmithDB Helm values that change in each LangSmith major version and how to carry your current configuration forward.
+---
+
+Update your SmithDB Helm values for the version you are upgrading to, then follow [Upgrade an installation](/langsmith/self-host-upgrades).
+
+<AccordionGroup>
+<Accordion title="0.17" id="0-17" defaultOpen>
+
+The 0.17 chart moves the default SmithDB cache from local SSD to a per-pod volume and renames the cache volume, the autoscaling keys, and the migration Job values.
+
+### Before you begin
+
+- Run the latest 0.16 chart release, with SmithDB healthy.
+- Leave the `smithdb.langsmith.ingestion`, `query`, and `migration` flags as they are. Change routing in a separate Helm update.
+
+### Update your values
+
+Make these changes in your values file before running `helm upgrade`:
+
+1. **Cache handling**: The 0.17 default cache is a per-pod volume, not node local SSD. Upgrading with unchanged values moves every SmithDB cache off local SSD. To stay on local SSD, add the 0.17 local SSD values from [Cache storage](/langsmith/self-host-smithdb-infrastructure#cache-storage). If you already use network-attached volumes, replace the per-component overrides with `smithdb.cache.storageClassName`, as shown on the same page.
+2. **Cache volume names**: The cache volume is now named `cache`. In any `deployment.volumes` or `volumeMounts` override, rename `local-ssd-storage` to `cache`.
+3. **Autoscaling keys**: HPA settings for query, ingestion, and compaction worker move from `autoscaling.*` to `autoscaling.hpa.*`. Old compaction worker keys fail the render; old query and ingestion keys are ignored and the HPA uses chart defaults. Move your settings under `hpa`. To scale compaction workers on queue depth instead, see [Scale with KEDA instead](/langsmith/self-host-smithdb-scale#scale-with-keda-instead).
+4. **Migration Job values**: `smithdb.migration.deployment` is now `smithdb.migration.job`, with the same keys under it. Rename the block.
+
+For every value and its default, see the [chart README](https://github.com/langchain-ai/helm/tree/main/charts/langsmith#smithdb-resource-tiers).
+
+### Verify
+
+After the upgrade, confirm SmithDB pods are running, each disk-using pod has the cache you intended, and routing is unchanged. The commands are in [Step 3 of Install LangSmith with SmithDB](/langsmith/self-host-smithdb-install#step-3-configure-and-deploy-smithdb-services) and [Cache storage](/langsmith/self-host-smithdb-infrastructure#cache-storage). Pods stuck `Pending` after the cache change usually mean the claim cannot bind or an `ephemeral-storage` override is still in place; see [Troubleshoot SmithDB](/langsmith/self-host-smithdb-troubleshooting#supporting-infrastructure).
+
+### After the upgrade
+
+SmithDB now exports the `critical` metrics profile by default. If your dashboards use metrics that disappeared, set `SMITHDB_<SERVICE>__METRICS__MODE` to `all` in `smithdb.commonEnv`.
+
+</Accordion>
+</AccordionGroup>
