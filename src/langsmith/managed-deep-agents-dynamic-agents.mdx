@@ -1,5 +1,5 @@
 ---
-title: Configure Managed Deep Agents per run
+title: Dynamic Managed Deep Agents
 sidebarTitle: Dynamic agents
 description: Select the model, tools, instructions, skills, MCP servers, and sandbox of a managed deep agent from the context of each run.
 ---
@@ -10,28 +10,7 @@ A dynamic agent selects its configuration at the start of each run from the run'
 
 <ManagedDeepAgentsPublicBetaNote />
 
-For example, a support agent can give internal staff a stronger model and an internal case tool, while customers get a smaller model and a help center search tool. A coding agent can pick instructions, skills, and sandbox settings based on the repository a task targets.
-
-## How dynamic agents work
-
-:::python
-A static agent exports the result of `define_deep_agent(...)`. A dynamic agent exports a resolver decorated with `@dynamic`. Managed Deep Agents calls the resolver with the run context, and the resolver returns a normal agent definition:
-:::
-
-:::js
-A static agent exports the result of `defineDeepAgent(...)`. A dynamic agent exports a resolver wrapped in `dynamic(...)`. Managed Deep Agents calls the resolver with the run context, and the resolver returns a normal agent definition:
-:::
-
-```text
-Static entry  ───────────────────────► DeepAgentDefinition
-                                               │
-Dynamic entry ── resolve(context) ───► DeepAgentDefinition
-                                               │
-                                               ▼
-                                        Runnable graph
-```
-
-The runtime validates the returned definition and compiles it through the same path as a static agent. Each run resolves independently, so concurrent runs can use different configurations without changing project files or affecting each other.
+For example, a support agent can give internal staff a stronger model and an internal case tool, while customers get a smaller model and a help center search tool. A coding agent can pick instructions, skills, and sandbox settings based on the repository a task targets. Each run resolves its own configuration, so concurrent runs don't affect each other.
 
 ## Define a dynamic agent
 
@@ -51,7 +30,7 @@ def build_agent(ctx: ManagedRunContext) -> DeepAgentDefinition:
         model="openai:gpt-5.5" if internal else "openai:gpt-5-mini",
         tools=[inspect_internal_case] if internal else [customer_lookup],
         instructions="Help support staff." if internal else "Help customers.",
-        skills=["skills/internal-support" if internal else "skills/customer-support"],
+        skills=["./skills/internal-support" if internal else "./skills/customer-support"],
     )
 
 
@@ -65,11 +44,8 @@ The resolver can be synchronous or `async`.
 Wrap a resolver in `dynamic(...)` and export it as `agent`. The resolver receives the run context and returns `defineDeepAgent(...)`:
 
 ```ts agent.ts
-import { join } from "node:path";
 import { defineDeepAgent, dynamic } from "managed-deepagents";
 import { customerLookup, inspectInternalCase } from "./tools/support";
-
-const skill = (name: string) => join(import.meta.dirname, "skills", name);
 
 export const agent = dynamic((ctx) => {
   const internal = "role" in ctx && ctx.role === "internal";
@@ -79,7 +55,7 @@ export const agent = dynamic((ctx) => {
     model: internal ? "openai:gpt-5.5" : "openai:gpt-5-mini",
     tools: internal ? [inspectInternalCase] : [customerLookup],
     instructions: internal ? "Help support staff." : "Help customers.",
-    skills: [skill(internal ? "internal-support" : "customer-support")],
+    skills: [internal ? "./skills/internal-support" : "./skills/customer-support"],
   });
 });
 ```
@@ -158,12 +134,12 @@ These managed fields are available only in a dynamic agent. A static agent conti
 Each entry in the skills list is either the path of an authored skill directory under `skills/` or a generated skill definition. After the resolver returns, MDA validates the selection, copies the selected skill files into a read-only view, and mounts that view at `/skills` for the run.
 
 :::python
-Pass authored skill paths as strings, such as `"skills/refunds"`. Convert `Path` values with `str()`.
+Pass authored skill paths as strings relative to the project root, such as `"./skills/refunds"`. Convert `Path` values with `str()`.
 
 ```python
 define_deep_agent(
     name="support",
-    skills=["skills/refunds", "skills/escalations"],
+    skills=["./skills/refunds", "./skills/escalations"],
 )
 ```
 :::
@@ -172,10 +148,7 @@ define_deep_agent(
 ```ts
 defineDeepAgent({
   name: "support",
-  skills: [
-    join(import.meta.dirname, "skills", "refunds"),
-    join(import.meta.dirname, "skills", "escalations"),
-  ],
+  skills: ["./skills/refunds", "./skills/escalations"],
 });
 ```
 :::
@@ -186,25 +159,145 @@ A path must point to a skill directory that exists in the project. A generated s
 
 :::python
 Pass a list of definitions returned by `define_mcp(...)`. A non-empty list replaces the project's discovered MCP declaration for the run. Other connectors stay active, and the selected servers go through the same tool loading and credential checks.
+:::
 
+:::js
+Pass an array of definitions returned by `defineMcp(...)`. A non-empty array replaces the project's discovered MCP declaration for the run. Other connectors stay active, and the selected servers go through the same tool loading and credential checks.
+:::
+
+Build the definition in a helper that takes the run context. This example gives every run the LangChain docs and Notion servers, and adds Linear for the engineering team:
+
+:::python
+```python config/mcp.py
+from managed_deepagents import ManagedRunContext, connections, define_mcp
+
+
+def get_dynamic_mcp(ctx: ManagedRunContext):
+    servers = {
+        "langchainDocs": {
+            "transport": "http",
+            "url": "https://docs.langchain.com/mcp",
+            # Select by raw MCP tool name; MDA adds the server-name prefix at runtime.
+            "include_tools": ["search_docs_by_lang_chain"],
+        },
+        "notion": {
+            "transport": "http",
+            "url": "https://mcp.notion.com/mcp",
+            "connection": connections.get("notion", {"type": "user"}),
+        },
+    }
+
+    if isinstance(ctx, dict) and ctx.get("team") == "engineering":
+        servers["linear"] = {
+            "transport": "http",
+            "url": "https://mcp.linear.app/mcp",
+            "connection": connections.get("linear", {"type": "user"}),
+        }
+
+    return define_mcp(servers=servers)
+```
+:::
+
+:::js
+```ts config/mcp.ts
+import { connections, defineMcp, type ManagedRunContext } from "managed-deepagents";
+
+export function getDynamicMcp(ctx: ManagedRunContext) {
+  const engineering = "team" in ctx && ctx.team === "engineering";
+
+  return defineMcp({
+    servers: {
+      langchainDocs: {
+        transport: "http",
+        url: "https://docs.langchain.com/mcp",
+        // Select by raw MCP tool name; MDA adds the server-name prefix at runtime.
+        includeTools: ["search_docs_by_lang_chain"],
+      },
+      notion: {
+        transport: "http",
+        url: "https://mcp.notion.com/mcp",
+        connection: connections.get("notion", { type: "user" }),
+      },
+      ...(engineering
+        ? {
+            linear: {
+              transport: "http",
+              url: "https://mcp.linear.app/mcp",
+              connection: connections.get("linear", { type: "user" }),
+            },
+          }
+        : {}),
+    },
+  });
+}
+```
+:::
+
+<Note>
+Keep these helpers out of `tools/mcp.*`. That file is the static MCP declaration, and `mda build` requires it to export `mcp`.
+</Note>
+
+For server options such as tool allowlists and credentials, see [MCP connectors](/langsmith/managed-deep-agents-mcp-connectors) and [Manage connections](/langsmith/managed-deep-agents-connections).
+
+### Select sandbox options
+
+:::python
+Return a definition from `define_sandbox(...)` to replace the discovered sandbox options for the run, or `None` to disable the sandbox. This helper gives build tasks longer timeouts and turns the sandbox off for runs that only answer questions:
+
+```python config/sandbox.py
+from managed_deepagents import ManagedRunContext, define_sandbox
+
+
+def get_dynamic_sandbox(ctx: ManagedRunContext):
+    task = ctx.get("task") if isinstance(ctx, dict) else None
+
+    if task == "question":
+        return None
+    if task == "build":
+        return define_sandbox(idle_ttl_seconds=1800, default_timeout=1200)
+    return define_sandbox(idle_ttl_seconds=600, default_timeout=600)
+```
+:::
+
+:::js
+Return a definition from `defineSandbox(...)` to replace the discovered sandbox options for the run, or `null` to disable the sandbox. This helper gives build tasks longer timeouts and turns the sandbox off for runs that only answer questions:
+
+```ts config/sandbox.ts
+import { defineSandbox, type ManagedRunContext } from "managed-deepagents";
+
+export function getDynamicSandbox(ctx: ManagedRunContext) {
+  const task = "task" in ctx ? ctx.task : undefined;
+
+  if (task === "question") {
+    return null;
+  }
+  if (task === "build") {
+    return defineSandbox({ idleTtlSeconds: 1800, defaultTimeout: 1200 });
+  }
+  return defineSandbox({ idleTtlSeconds: 600, defaultTimeout: 600 });
+}
+```
+:::
+
+Sandbox setup and image baking stay in the `sandbox/` directory. For sandbox options, see [Sandboxes](/langsmith/managed-deep-agents-sandboxes).
+
+### Use the helpers in the resolver
+
+Call both helpers from the resolver with the same context:
+
+:::python
 ```python agent.py
-from managed_deepagents import DeepAgentDefinition, ManagedRunContext, define_deep_agent, define_mcp, dynamic
+from config.mcp import get_dynamic_mcp
+from config.sandbox import get_dynamic_sandbox
+from managed_deepagents import DeepAgentDefinition, ManagedRunContext, define_deep_agent, dynamic
 
 
 @dynamic
 def build_agent(ctx: ManagedRunContext) -> DeepAgentDefinition:
-    needs_docs = isinstance(ctx, dict) and ctx.get("needs_docs") is True
-    docs = define_mcp(
-        servers={
-            "langchainDocs": {
-                "transport": "http",
-                "url": "https://docs.langchain.com/mcp",
-            },
-        },
-    )
     return define_deep_agent(
         name="support",
-        mcp=[docs] if needs_docs else [],
+        mcp=[get_dynamic_mcp(ctx)],
+        sandbox=get_dynamic_sandbox(ctx),
     )
 
 
@@ -213,68 +306,20 @@ agent = build_agent
 :::
 
 :::js
-Pass an array of definitions returned by `defineMcp(...)`. A non-empty array replaces the project's discovered MCP declaration for the run. Other connectors stay active, and the selected servers go through the same tool loading and credential checks.
-
 ```ts agent.ts
-import { defineDeepAgent, defineMcp, dynamic } from "managed-deepagents";
+import { defineDeepAgent, dynamic } from "managed-deepagents";
+import { getDynamicMcp } from "./config/mcp";
+import { getDynamicSandbox } from "./config/sandbox";
 
-const docs = defineMcp({
-  servers: {
-    langchainDocs: {
-      transport: "http",
-      url: "https://docs.langchain.com/mcp",
-    },
-  },
-});
-
-export const agent = dynamic((ctx) => {
-  const needsDocs = "needsDocs" in ctx && ctx.needsDocs === true;
-
-  return defineDeepAgent({
+export const agent = dynamic((ctx) =>
+  defineDeepAgent({
     name: "support",
-    mcp: needsDocs ? [docs] : [],
-  });
-});
+    mcp: [getDynamicMcp(ctx)],
+    sandbox: getDynamicSandbox(ctx),
+  })
+);
 ```
 :::
-
-For server options such as tool allowlists and credentials, see [MCP connectors](/langsmith/managed-deep-agents-mcp-connectors).
-
-### Select sandbox options
-
-:::python
-Pass a definition returned by `define_sandbox(...)` to replace the discovered sandbox options for the run, or `None` to disable the sandbox:
-
-```python
-from managed_deepagents import define_sandbox
-
-# Inside the resolver
-define_deep_agent(
-    name="support",
-    sandbox=define_sandbox(idle_ttl_seconds=600, default_timeout=600)
-    if long_running
-    else None,
-)
-```
-:::
-
-:::js
-Pass a definition returned by `defineSandbox(...)` to replace the discovered sandbox options for the run, or `null` to disable the sandbox:
-
-```ts
-import { defineSandbox } from "managed-deepagents";
-
-// Inside the resolver
-defineDeepAgent({
-  name: "support",
-  sandbox: longRunning
-    ? defineSandbox({ idleTtlSeconds: 600, defaultTimeout: 600 })
-    : null,
-});
-```
-:::
-
-Sandbox setup and image baking stay in the `sandbox/` directory. For sandbox options, see [Sandboxes](/langsmith/managed-deep-agents-sandboxes).
 
 ## Build and deploy
 
