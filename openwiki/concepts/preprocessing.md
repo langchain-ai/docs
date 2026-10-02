@@ -1,7 +1,7 @@
 ---
 type: documentation pipeline
-title: Preprocessing
-description: Build-time transformations that turn authored Markdown and MDX into language-specific documentation artifacts. Covers scoped cross-references, CTA attribution, conditional content, and output-time route and snippet rewrites.
+title: Documentation Preprocessing
+description: Build-time transformations that turn authored Markdown and MDX into language-specific documentation artifacts. Covers scoped cross-references, CTA attribution, conditional content, output-time route rewrites, and strict cross-reference validation.
 tags: [build, markdown, preprocessing, cross-references, language-versioning, api-reference]
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
@@ -26,10 +26,10 @@ sources:
     resource: repo://tests/unit_tests/test_handle_auto_links.py
   - id: openwiki-source-5255204fc494ae04cd6ba685
     resource: repo://tests/unit_tests/test_utm_links.py
+generated: { by: "openwiki/0.4.3", at: "2026-10-02T08:21:54.688Z" }
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-29T08:22:38.059Z
-generated: { by: "openwiki/0.4.3", at: "2026-09-29T08:22:38.059Z" }
+    at: 2026-10-02T08:21:54.688Z
 ---
 
 ## Overview
@@ -60,7 +60,7 @@ flowchart TD
     SnippetProcess --> SnippetOutput["Language-prefixed snippet artifacts"]
 ```
 
-The diagram shows the regular-page sequence and the separate Python and JavaScript branches used for shared snippets.
+The diagram shows the ordered regular-page sequence and the separate Python and JavaScript branches used for shared snippets.
 
 This is the ordered regular-file path. Snippet Markdown uses a dedicated path that emits language-specific copies and bypasses footer generation.
 
@@ -87,9 +87,11 @@ Authors can write `@[link_name]`, `@[title][link_name]`, and `@[`link_name`]`. `
 
 Resolution starts in `default_scope`. A `:::python` or `:::js` line changes the active scope; a bare closing `:::` resets it to the default scope. Regular backtick and tilde code fences prevent both reference replacement and scope changes within their content. An unclosed regular fence protects the remaining input from reference replacement.
 
-`SCOPE_LINK_MAPS` is derived from host-and-scope `LINK_MAPS` entries: relative targets are joined to a map host, while absolute targets remain absolute. Its Python and JS mappings cover the core LangChain and LangGraph APIs, Deep Agents, MCP, deployment, and provider integrations, with selected cross-scope aliases. The special runtime `global` scope logs an error and falls back to Python.
+`SCOPE_LINK_MAPS` is assembled by scope from host-and-scope `LINK_MAPS` entries: relative targets are joined to the entry host, while absolute targets remain absolute. The maps deliberately allow one key to resolve differently in Python and JavaScript and include compatibility aliases where shared prose needs the other language's API spelling.
 
-A missing key is deliberately non-fatal: preprocessing logs it at info level with file, line, key, and scope, then leaves the authored marker literal. Add or correct mappings in `pipeline/preprocessors/link_map.py`, then run the cross-reference validator. See [Cross-Reference Links](/openwiki/operations/cross-references.md).
+The current MCP surface illustrates that distinction. Python mappings include the core `MCPAdapter`, `MCPAdapter.list_tools`, `MCPToolArtifact`, and `as_langchain_tool`, as well as adapter-package client, loading, interceptor, callback, and session/connection keys such as `MultiServerMCPClient`, `load_mcp_tools`, `ToolCallInterceptor`, `Connection`, `StdioConnection`, and `StreamableHttpConnection`. JavaScript maps `MCPAdapter` and `MCPAdapter.listTools` to its JavaScript reference surface. Use the spelling appropriate to the fenced language; do not assume that a Python client or connection key is available in the JS map.
+
+A missing key is deliberately non-fatal **during a build**: preprocessing logs it at info level with file, line, key, and scope, then leaves the authored marker literal. The special runtime `global` scope logs an error and falls back to Python. Add or correct mappings in `pipeline/preprocessors/link_map.py`, then run the strict source-validation gate described below. See [Cross-Reference Links](/openwiki/operations/cross-references.md).
 
 ### 2. LangSmith CTA attribution
 
@@ -105,9 +107,9 @@ The implementation is a whole-input regular-expression transformation, rather th
 
 ## Validation and fence boundaries
 
-`make check-cross-refs` is the authoring gate for missing mappings; preprocessing only logs unresolved references. The command runs `scripts/check_cross_refs.py` on Markdown and MDX under `src/`, reusing the cross-reference and fence patterns. It skips regular code fences, escaped references, `snippets/code-samples/`, and paths containing `node_modules`; files that cannot be decoded as UTF-8 are skipped with a warning.
+`make check-cross-refs` is the strict authoring gate for missing mappings; it is intentionally different from the non-fatal behavior of build-time preprocessing. The command runs `scripts/check_cross_refs.py` on Markdown and MDX under `src/`, reusing the cross-reference and fence patterns. It skips regular code fences, escaped references, `snippets/code-samples/`, and paths containing `node_modules`; files that cannot be decoded as UTF-8 are skipped with a warning.
 
-The validator checks a shared, unfenced `oss/` reference against **both** Python and JS maps because that content is built for both variants. `oss/python/` and `oss/javascript/` instead use one scope, as do language fences. Any unresolved reference makes the command exit with status 1.
+The validator checks a shared, unfenced `oss/` reference against **both** Python and JS maps because that content is built for both variants. `oss/python/` and `oss/javascript/` instead use one scope, as do language fences. It requires resolution in **all** applicable scopes, so a Python-only MCP reference in shared unfenced OSS content fails rather than silently producing a literal reference in the JavaScript output. Any unresolved reference makes the command exit with status 1.
 
 ## Output-time rewrites
 
@@ -126,7 +128,7 @@ Snippet Markdown is processed separately for each language, with preprocessing p
 - Invalid conditional targets, and exceptions from regular content or file processing, are logged and re-raised, stopping that build path.
 - Source-footer generation is best-effort: an internal failure is logged and the original content is returned.
 
-When extending this pipeline, preserve the order. Scope-sensitive references must resolve while conditional fences still exist. Keep the rewrite exclusion guards: removing them can double-prefix routes or break the deliberately language-agnostic products. New reusable Markdown snippets must continue to receive language-specific copies because importing pages can be deeply nested.
+When extending this pipeline, preserve the order. Scope-sensitive references must resolve while conditional fences still exist. Keep the rewrite exclusion guards: removing them can double-prefix routes or break the deliberately language-agnostic products. New reusable Markdown snippets must continue to receive language-specific copies because importing pages can be deeply nested. When adding a shared MCP reference, ensure that its key exists in both maps or fence it to the language that owns it.
 
 ## Focused regression coverage
 
