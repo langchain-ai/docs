@@ -79,11 +79,41 @@ If desired replicas exceed schedulable capacity, the rollout may be unable to me
 
 ## Plan machine changes
 
-Memory snapshots include CPU and virtual machine state. Do not assume that a saved VM can resume across different CPU models or incompatible host kernels.
+Memory snapshots include CPU and virtual machine state. Do not assume that a saved VM can resume across different CPU models or incompatible host kernels. [Firecracker's snapshot compatibility guidance](https://github.com/firecracker-microvm/firecracker/blob/main/docs/snapshotting/snapshot-support.md#where-can-i-resume-my-snapshots) requires matching hardware and software configurations, with limited, explicitly caveated exceptions.
 
-Keep a consistent CPU model in the sandbox pool. Before changing the node family or operating system image, test both a suspended sandbox and a memory snapshot on the target nodes. Plan for cold starts and loss of in-memory work if restore is incompatible.
+Keep a consistent CPU model in the sandbox pool. Treat changes to the CPU vendor or model, host kernel, or sandbox runtime as transitions that require restore testing. A newer CPU or kernel does not automatically make a destination compatible. Compatibility in one direction does not establish compatibility in reverse.
 
-Persistent disk recovery is separate from memory restore. Applications that need durable progress should write it to persistent storage rather than rely only on saved process memory.
+### Example transitions, not a support matrix
+
+<Note>
+These are documentation-based examples, not a tested LangSmith compatibility matrix or an expansion of supported platforms. Every lower-risk candidate still requires validation on your exact deployment. Keep the exposed CPU model and features, host kernel, and sandbox runtime consistent. Confirm that the destination meets the [Sandbox platform and KVM requirements](/langsmith/deploy-self-hosted-full-platform#enable-sandboxes).
+</Note>
+
+The examples concern host-node changes, not changes to a saved microVM's guest configuration.
+
+| Cloud | Lower-risk candidate to validate | Do not assume memory-restore compatibility |
+| --- | --- | --- |
+| AWS | Replace an `m6i.metal` node with another using the same exposed CPU configuration and software versions. [M6i instances](https://aws.amazon.com/ec2/instance-types/m6i/) use Intel Ice Lake processors. | `m6i.metal` (Ice Lake) → `m5n.metal` (Cascade Lake). Firecracker explicitly identifies this direction as incompatible. See also the [M5n processor specifications](https://aws.amazon.com/ec2/instance-types/m5/). |
+| GCP | Replace or resize N2 nodes while preserving the same exposed CPU platform, kernel, and runtime. Verify the actual CPU rather than relying on the machine-family name. | An N2 node on Ice Lake → an N2 node on Cascade Lake. The [N2 series](https://docs.cloud.google.com/compute/docs/general-purpose-machines#n2_series) includes both platforms; staying within N2 does not establish memory compatibility. |
+| Azure | `Standard_D16ds_v6` → `Standard_D32ds_v6`, with the same kernel and runtime. Both [Ddsv6 sizes](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/ddsv6-series) list the Intel Xeon Platinum 8573C (Emerald Rapids). Matching the listed processor makes this a candidate to test, not a guarantee. | A Dsv3 node replacement that exposes a different CPU model, even without a SKU change. The [Dsv3 series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/dsv3-series) lists multiple generations, from Haswell through Emerald Rapids. |
+
+A matching SKU or family is not sufficient evidence. Provider placement and available processors can vary. For example, [Google's CPU platform documentation](https://docs.cloud.google.com/compute/docs/cpu-platforms) describes machine types with multiple CPU platforms and how platform selection works.
+
+<Warning>
+An x86-64 memory snapshot cannot resume on an Arm CPU. An instruction-set change also requires architecture-compatible guest software; booting the same x86-64 filesystem on Arm is not a recovery strategy. Do not treat a CPU architecture change as an ordinary node resize.
+</Warning>
+
+### Validate a transition before rollout
+
+To validate the source-to-target transition:
+
+1. Confirm that the target exposes `/dev/kvm` and meets the supported platform requirements.
+2. Record the exposed CPU model and features, host kernel, and `sandbox-host` image version on both source and target nodes.
+3. Use isolated test capacity matching the target configuration. Resume a persistent sandbox suspended on a source node, and separately create a sandbox from a memory snapshot captured there. Confirm both run on a target node, not the original host.
+4. Verify that in-memory state survives, then exercise representative workload paths. A successful VM boot alone does not establish compatibility.
+5. Test the reverse direction if the rollout requires rollback. Do not assume that a snapshot captured on the target can resume on an older source configuration.
+
+If restoration is incompatible, plan for cold starts and loss of in-memory work rather than relying on memory migration. Persistent disk recovery is separate from memory restore. Applications that need durable progress should write it to persistent storage rather than rely only on saved process memory.
 
 ## Understand failure impact
 
