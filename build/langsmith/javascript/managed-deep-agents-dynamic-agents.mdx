@@ -1,0 +1,206 @@
+---
+title: Configure Managed Deep Agents per run
+sidebarTitle: Dynamic agents
+description: Select the model, tools, instructions, skills, MCP servers, and sandbox of a managed deep agent from the context of each run.
+---
+
+import ManagedDeepAgentsPublicBetaNote from '/snippets/javascript/langsmith/managed-deep-agents-public-beta-note.mdx';
+
+A dynamic agent selects its configuration at the start of each run from the run's context. One deployment can serve several audiences, tasks, or repositories without a separate agent for each variation.
+
+<ManagedDeepAgentsPublicBetaNote />
+
+For example, a support agent can give internal staff a stronger model and an internal case tool, while customers get a smaller model and a help center search tool. A coding agent can pick instructions, skills, and sandbox settings based on the repository a task targets.
+
+## How dynamic agents work
+
+
+
+A static agent exports the result of `defineDeepAgent(...)`. A dynamic agent exports a resolver wrapped in `dynamic(...)`. Managed Deep Agents calls the resolver with the run context, and the resolver returns a normal agent definition:
+
+
+```text
+Static entry  ───────────────────────► DeepAgentDefinition
+                                               │
+Dynamic entry ── resolve(context) ───► DeepAgentDefinition
+                                               │
+                                               ▼
+                                        Runnable graph
+```
+
+The runtime validates the returned definition and compiles it through the same path as a static agent. Each run resolves independently, so concurrent runs can use different configurations without changing project files or affecting each other.
+
+## Define a dynamic agent
+
+
+
+Wrap a resolver in `dynamic(...)` and export it as `agent`. The resolver receives the run context and returns `defineDeepAgent(...)`:
+
+```ts agent.ts
+import { join } from "node:path";
+import { defineDeepAgent, dynamic } from "managed-deepagents";
+import { customerLookup, inspectInternalCase } from "./tools/support";
+
+const skill = (name: string) => join(import.meta.dirname, "skills", name);
+
+export const agent = dynamic((ctx) => {
+  const internal = "role" in ctx && ctx.role === "internal";
+
+  return defineDeepAgent({
+    name: "support",
+    model: internal ? "openai:gpt-5.5" : "openai:gpt-5-mini",
+    tools: internal ? [inspectInternalCase] : [customerLookup],
+    instructions: internal ? "Help support staff." : "Help customers.",
+    skills: [skill(internal ? "internal-support" : "customer-support")],
+  });
+});
+```
+
+The resolver can be synchronous or `async`.
+
+
+The `name` must be an inline string literal in the returned definition. `mda build` reads it without calling the resolver and uses it as the graph ID and default deployment name. See [Build and deploy](#build-and-deploy).
+
+## Pass run context
+
+Clients pass application data in the `context` field of the Agent Server run request:
+
+
+
+```ts
+await client.runs.create(threadId, assistantId, {
+  input: { messages: [{ role: "user", content: "Where is my order?" }] },
+  context: { role: "customer" },
+});
+```
+
+
+
+
+The resolver's context type is `ManagedRunContext`. Direct API runs receive the application context the client sent. Runs from a managed [channel](/langsmith/javascript/managed-deep-agents-channels), such as Slack, receive `{ channel: … }` instead. Check for a field before reading it, as `"role" in ctx` does in the earlier example.
+
+
+<Warning>
+Run context is application data, not verified identity. A client can send any value. Derive security-sensitive roles from authenticated server state, and have [tools](/langsmith/javascript/managed-deep-agents-tools) check authorization when they are called.
+</Warning>
+
+## What a resolver can select
+
+A dynamic agent can select `model`, `tools`, `subagents`, `middleware`, `instructions`, `skills`, `mcp`, and `sandbox`. Standard agent fields behave as described in [Agent definition](/langsmith/javascript/managed-deep-agents-agent-definition#parameters).
+
+The managed fields fall back to the project's discovered resources when omitted:
+
+
+
+| Field | Omitted | Empty | Set |
+|---|---|---|---|
+| `instructions` | Uses [`instructions.md`](/langsmith/javascript/managed-deep-agents-instructions). | `""` clears authored instructions. | Replaces `instructions.md` for the run. |
+| `skills` | Exposes every discovered project skill. | `[]` exposes no skills. | Exposes only the selected skills. See [Select skills](#select-skills). |
+| `mcp` | Uses the discovered MCP declaration. | `[]` exposes no MCP tools. | Replaces the discovered MCP declaration. See [Select MCP servers](#select-mcp-servers). |
+| `sandbox` | Uses the discovered sandbox. | `null` disables the sandbox for the run. | Replaces the discovered sandbox options. See [Select sandbox options](#select-sandbox-options). |
+
+
+These managed fields are available only in a dynamic agent. A static agent continues to configure them through project files. See [Project structure](/langsmith/javascript/managed-deep-agents-project-structure).
+
+[Memory](/langsmith/javascript/managed-deep-agents-memory) is not selectable. Declare it in the root memory file. Its `allow(context)` policies already decide access for each run.
+
+### Select skills
+
+Each entry in the skills list is either the path of an authored skill directory under `skills/` or a generated skill definition. After the resolver returns, MDA validates the selection, copies the selected skill files into a read-only view, and mounts that view at `/skills` for the run.
+
+
+
+```ts
+defineDeepAgent({
+  name: "support",
+  skills: [
+    join(import.meta.dirname, "skills", "refunds"),
+    join(import.meta.dirname, "skills", "escalations"),
+  ],
+});
+```
+
+
+A path must point to a skill directory that exists in the project. A generated skill cannot reuse the name of an authored skill. To write skills, see [Skills](/langsmith/javascript/managed-deep-agents-skills).
+
+### Select MCP servers
+
+
+
+Pass an array of definitions returned by `defineMcp(...)`. A non-empty array replaces the project's discovered MCP declaration for the run. Other connectors stay active, and the selected servers go through the same tool loading and credential checks.
+
+```ts agent.ts
+import { defineDeepAgent, defineMcp, dynamic } from "managed-deepagents";
+
+const docs = defineMcp({
+  servers: {
+    langchainDocs: {
+      transport: "http",
+      url: "https://docs.langchain.com/mcp",
+    },
+  },
+});
+
+export const agent = dynamic((ctx) => {
+  const needsDocs = "needsDocs" in ctx && ctx.needsDocs === true;
+
+  return defineDeepAgent({
+    name: "support",
+    mcp: needsDocs ? [docs] : [],
+  });
+});
+```
+
+
+For server options such as tool allowlists and credentials, see [MCP connectors](/langsmith/javascript/managed-deep-agents-mcp-connectors).
+
+### Select sandbox options
+
+
+
+Pass a definition returned by `defineSandbox(...)` to replace the discovered sandbox options for the run, or `null` to disable the sandbox:
+
+```ts
+import { defineSandbox } from "managed-deepagents";
+
+// Inside the resolver
+defineDeepAgent({
+  name: "support",
+  sandbox: longRunning
+    ? defineSandbox({ idleTtlSeconds: 600, defaultTimeout: 600 })
+    : null,
+});
+```
+
+
+Sandbox setup and image baking stay in the `sandbox/` directory. For sandbox options, see [Sandboxes](/langsmith/javascript/managed-deep-agents-sandboxes).
+
+## Build and deploy
+
+`mda build` detects a dynamic agent without calling the resolver, because run context exists only at runtime. As a result:
+
+- **The name must be static.** The build reads the inline string-literal `name` from the returned definition and uses it as the graph ID and default deployment name. If the name is computed or the resolver has several possible return statements, the build falls back to `agent`. `mda deploy --name` changes the deployment name, not the graph ID.
+- **Model dependencies are not detected.** Add the integration package for every model the resolver can return to the project's dependencies.
+
+
+
+List those packages in `package.json`.
+
+
+## Write a resolver
+
+- **Keep the resolver repeatable and free of side effects.** MDA can call the resolver again for retries and resumes. Do not create records, call external APIs, or mutate state in the resolver.
+- **Handle an empty context.** Agent Server sometimes loads the graph for inspection, such as schema requests, without a run. In that case MDA calls the resolver with `{}`. A real run resolves again with the actual context.
+- **Keep interrupting middleware stable.** Do not select middleware that can interrupt a run based on context. A resumed run rebuilds the graph, and the middleware that raised the interrupt must still be present.
+- **Use middleware for changes within a run.** The resolver runs once per run. To change behavior between model steps in the same run, use [custom middleware](/langsmith/javascript/managed-deep-agents-middleware).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/managed-deep-agents-dynamic-agents.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
