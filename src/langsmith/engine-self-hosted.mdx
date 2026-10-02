@@ -60,23 +60,6 @@ Enable access to Anthropic's Claude models and OpenAI's GPT models in your provi
 
 Your model provider bills you for these calls. LangSmith meters Engine's usage in LSUs, as it does for LangSmith Intelligence.
 
-#### Connect to your providers privately
-
-Engine calls each provider's standard API hostname from the `standalone-insights` pods. To keep that traffic off the public internet, set up your cloud's private connection to the provider so the same hostname resolves to private addresses inside your network:
-
-| **Provider** | **Hostname Engine calls** | **Private connection** |
-| --- | --- | --- |
-| Amazon Bedrock | `bedrock-mantle.<region>.api.aws` | An interface VPC endpoint for `com.amazonaws.<region>.bedrock-mantle`, with private DNS enabled or a Route 53 private hosted zone for the hostname |
-| Google Vertex AI | `<region>-aiplatform.googleapis.com`, or `aiplatform.googleapis.com` for the global region | Private Service Connect for Google APIs, with private DNS for `googleapis.com` |
-| Azure AI Foundry | `<resource>.openai.azure.com` and `<resource>.services.ai.azure.com` | A private endpoint for the Foundry resource, with its private DNS zones |
-| Anthropic, OpenAI | `api.anthropic.com`, `api.openai.com` | Not available. These providers need public egress. |
-
-Engine doesn't accept custom endpoint URLs, so private connectivity works through DNS: the standard hostname must resolve to your private endpoint from the Engine pods.
-
-If Engine authenticates with [cloud identity](#use-cloud-identity-for-your-model-providers), the pods also need to reach your cloud's token service, such as an interface VPC endpoint for AWS STS on AWS.
-
-Usage reporting to LangSmith Intelligence is a separate connection. On AWS, `https://beacon.aws.langchain.com/intelligence` records usage and supports [AWS PrivateLink](#connect-with-aws-privatelink), so an installation can run Engine on Bedrock and report usage without public egress. The default `https://beacon.langchain.com/intelligence` needs public egress.
-
 ## What LangSmith Intelligence retains
 
 LSI does not persist the content of prompts or model responses. It retains the following metadata for usage attribution and billing:
@@ -87,105 +70,6 @@ LSI does not persist the content of prompts or model responses. It retains the f
 When Engine runs on your own model providers, this metadata is all LSI receives. Your self-hosted LangSmith records Engine's usage and reports it to the endpoint in [`engine.intelligenceBaseUrl`](#allow-egress-to-langsmith-intelligence) every hour, authenticated with your license.
 
 For model-provider retention and training commitments, see [Engine security](/langsmith/engine-security).
-
-## Connect to LangSmith Intelligence
-
-### AWS (available in US)
-
-The gateway host is [`beacon.aws.langchain.com`](#allow-egress-to-langsmith-intelligence). LSI routes requests to AWS Bedrock in LangChain's AWS environment.
-
-#### Connect with AWS PrivateLink
-
-Before configuring PrivateLink, complete [Install Engine](#install-engine), including its Helm and egress configuration.
-
-[AWS PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/) routes Engine traffic from your VPC to LSI without exposing that traffic to the public internet. The LSI endpoint service is hosted in `us-east-2`, and AWS supports access from VPCs in other regions.
-
-Before you begin, collect your AWS account ID, VPC ID, private subnet IDs, and a security group for the interface endpoint. Configure that endpoint security group to allow inbound TCP traffic on port 443 only from the security group attached to the nodes or workloads that run Engine, or from the smallest private CIDR that contains them. Do not allow `0.0.0.0/0`.
-
-To connect your VPC to LSI:
-
-<Steps>
-  <Step title="Request access">
-    Contact your account representative or [sales@langchain.dev](mailto:sales@langchain.dev) with your AWS account ID. LangChain adds your account to the endpoint service's allowed principals list.
-  </Step>
-
-  <Step title="Create the interface VPC endpoint">
-    Configure the AWS provider for the region that contains your VPC. Keep `service_region` set to `us-east-2`, including when your VPC is in another region. Select one private subnet per availability zone.
-
-    <Note>
-    The `service_region` argument requires HashiCorp AWS provider `5.82.0` or later.
-    </Note>
-
-    ```hcl
-    resource "aws_vpc_endpoint" "langsmith_intelligence" {
-      vpc_id              = var.vpc_id
-      service_name        = "com.amazonaws.vpce.us-east-2.vpce-svc-054f37092752bff6b"
-      service_region      = "us-east-2"
-      vpc_endpoint_type   = "Interface"
-      subnet_ids          = var.private_subnet_ids
-      security_group_ids  = [var.security_group_id]
-      private_dns_enabled = false
-    }
-    ```
-  </Step>
-
-  <Step title="Wait for LangChain to accept the connection">
-    The endpoint status changes from `pendingAcceptance` to `available` after LangChain accepts the connection. Allow a few minutes for the change to propagate before testing connectivity.
-  </Step>
-
-  <Step title="Route the LSI hostname to the endpoint">
-    Enable DNS resolution and DNS hostnames for your VPC. Then, create a Route 53 private hosted zone and alias record so `beacon.aws.langchain.com` resolves to the VPC endpoint inside your VPC. Keep this hostname unchanged so TLS certificate validation succeeds. The private hosted zone also prevents fallback to public DNS when the endpoint is unavailable.
-
-    ```hcl
-    resource "aws_route53_zone" "langsmith_intelligence" {
-      name = "beacon.aws.langchain.com"
-
-      vpc {
-        vpc_id = var.vpc_id
-      }
-    }
-
-    resource "aws_route53_record" "langsmith_intelligence" {
-      zone_id = aws_route53_zone.langsmith_intelligence.zone_id
-      name    = "beacon.aws.langchain.com"
-      type    = "A"
-
-      alias {
-        name                   = aws_vpc_endpoint.langsmith_intelligence.dns_entry[0].dns_name
-        zone_id                = aws_vpc_endpoint.langsmith_intelligence.dns_entry[0].hosted_zone_id
-        evaluate_target_health = true
-      }
-    }
-    ```
-
-    If workloads use a corporate DNS resolver instead of the Amazon-provided resolver, configure conditional forwarding to Route 53 Resolver or create an equivalent private DNS override for `beacon.aws.langchain.com` that points to the endpoint DNS name.
-  </Step>
-
-  <Step title="Verify private connectivity">
-    From a node or container that runs Engine, resolve the gateway hostname:
-
-    ```bash
-    getent ahostsv4 beacon.aws.langchain.com
-    ```
-
-    Confirm that the result contains the private IP addresses assigned to the endpoint network interfaces. Then start an analysis and confirm that it completes successfully. If the analysis does not complete, review the Engine installation and egress configuration.
-  </Step>
-</Steps>
-
-<Frame caption="AWS: LangSmith and Engine run in your VPC; LSI and Bedrock run in LangChain's AWS environment.">
-  <img
-    src="/langsmith/images/engine-self-hosted-aws.png"
-    alt="Architecture diagram of self-hosted LangSmith in your VPC connected by AWS PrivateLink to LangSmith Intelligence and Bedrock in LangChain's AWS environment."
-  />
-</Frame>
-
-### Usage reporting only
-
-When Engine runs on your own model providers, it only needs LSI for usage reporting. The default `engine.intelligenceBaseUrl`, `https://beacon.langchain.com/intelligence`, records usage. It doesn't serve Engine's models.
-
-<Note>
-This is the same host self-hosted LangSmith uses for license verification and billing telemetry, so it adds a path rather than a new egress destination. See [Configure egress](/langsmith/self-host-egress).
-</Note>
 
 ## Model selection and quality
 
@@ -254,7 +138,7 @@ Engine also adds configuration to `platform-backend` and `ingest-queue`, which d
     | Your own model providers | `https://beacon.langchain.com/intelligence` (the default) |
     | Your own model providers, air-gapped | `""` (see [Air-gapped installations](#air-gapped-installations)) |
 
-    The AWS URL also records usage, so it works for organizations on either option.
+    The AWS URL also records usage, so it works for organizations on either option. The default URL only records usage, on the same host self-hosted LangSmith already uses for license verification and billing telemetry, so it adds a path rather than a new egress destination.
 
     If Engine will run on your own model providers, also allow outbound HTTPS from the `standalone-insights` pods to each provider's API endpoint. To keep that traffic on private networking, see [Connect to your providers privately](#connect-to-your-providers-privately).
 
@@ -478,6 +362,114 @@ engine:
 ```
 
 Engine stops dispatching runs. Insights shares the same deployment, so the `standalone-insights` pods keep running when `insights.enabled` is `true`.
+
+## Connect privately
+
+Engine works over public egress. To keep its traffic on private networking, connect to LangSmith Intelligence with AWS PrivateLink, or connect to your own model providers through your cloud's private endpoints.
+
+### Connect with AWS PrivateLink
+
+The LangSmith Intelligence gateway, `beacon.aws.langchain.com`, routes requests to Amazon Bedrock in LangChain's AWS environment.
+
+Before configuring PrivateLink, complete [Install Engine](#install-engine), including its Helm and egress configuration.
+
+[AWS PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/) routes Engine traffic from your VPC to LSI without exposing that traffic to the public internet. The LSI endpoint service is hosted in `us-east-2`, and AWS supports access from VPCs in other regions.
+
+Before you begin, collect your AWS account ID, VPC ID, private subnet IDs, and a security group for the interface endpoint. Configure that endpoint security group to allow inbound TCP traffic on port 443 only from the security group attached to the nodes or workloads that run Engine, or from the smallest private CIDR that contains them. Do not allow `0.0.0.0/0`.
+
+To connect your VPC to LSI:
+
+<Steps>
+  <Step title="Request access">
+    Contact your account representative or [sales@langchain.dev](mailto:sales@langchain.dev) with your AWS account ID. LangChain adds your account to the endpoint service's allowed principals list.
+  </Step>
+
+  <Step title="Create the interface VPC endpoint">
+    Configure the AWS provider for the region that contains your VPC. Keep `service_region` set to `us-east-2`, including when your VPC is in another region. Select one private subnet per availability zone.
+
+    <Note>
+    The `service_region` argument requires HashiCorp AWS provider `5.82.0` or later.
+    </Note>
+
+    ```hcl
+    resource "aws_vpc_endpoint" "langsmith_intelligence" {
+      vpc_id              = var.vpc_id
+      service_name        = "com.amazonaws.vpce.us-east-2.vpce-svc-054f37092752bff6b"
+      service_region      = "us-east-2"
+      vpc_endpoint_type   = "Interface"
+      subnet_ids          = var.private_subnet_ids
+      security_group_ids  = [var.security_group_id]
+      private_dns_enabled = false
+    }
+    ```
+  </Step>
+
+  <Step title="Wait for LangChain to accept the connection">
+    The endpoint status changes from `pendingAcceptance` to `available` after LangChain accepts the connection. Allow a few minutes for the change to propagate before testing connectivity.
+  </Step>
+
+  <Step title="Route the LSI hostname to the endpoint">
+    Enable DNS resolution and DNS hostnames for your VPC. Then, create a Route 53 private hosted zone and alias record so `beacon.aws.langchain.com` resolves to the VPC endpoint inside your VPC. Keep this hostname unchanged so TLS certificate validation succeeds. The private hosted zone also prevents fallback to public DNS when the endpoint is unavailable.
+
+    ```hcl
+    resource "aws_route53_zone" "langsmith_intelligence" {
+      name = "beacon.aws.langchain.com"
+
+      vpc {
+        vpc_id = var.vpc_id
+      }
+    }
+
+    resource "aws_route53_record" "langsmith_intelligence" {
+      zone_id = aws_route53_zone.langsmith_intelligence.zone_id
+      name    = "beacon.aws.langchain.com"
+      type    = "A"
+
+      alias {
+        name                   = aws_vpc_endpoint.langsmith_intelligence.dns_entry[0].dns_name
+        zone_id                = aws_vpc_endpoint.langsmith_intelligence.dns_entry[0].hosted_zone_id
+        evaluate_target_health = true
+      }
+    }
+    ```
+
+    If workloads use a corporate DNS resolver instead of the Amazon-provided resolver, configure conditional forwarding to Route 53 Resolver or create an equivalent private DNS override for `beacon.aws.langchain.com` that points to the endpoint DNS name.
+  </Step>
+
+  <Step title="Verify private connectivity">
+    From a node or container that runs Engine, resolve the gateway hostname:
+
+    ```bash
+    getent ahostsv4 beacon.aws.langchain.com
+    ```
+
+    Confirm that the result contains the private IP addresses assigned to the endpoint network interfaces. Then start an analysis and confirm that it completes successfully. If the analysis does not complete, review the Engine installation and egress configuration.
+  </Step>
+</Steps>
+
+<Frame caption="AWS: LangSmith and Engine run in your VPC; LSI and Bedrock run in LangChain's AWS environment.">
+  <img
+    src="/langsmith/images/engine-self-hosted-aws.png"
+    alt="Architecture diagram of self-hosted LangSmith in your VPC connected by AWS PrivateLink to LangSmith Intelligence and Bedrock in LangChain's AWS environment."
+  />
+</Frame>
+
+### Connect to your providers privately
+
+Engine calls each provider's standard API hostname from the `standalone-insights` pods. To keep that traffic off the public internet, set up your cloud's private connection to the provider so the same hostname resolves to private addresses inside your network:
+
+| **Provider** | **Hostname Engine calls** | **Private connection** |
+| --- | --- | --- |
+| Amazon Bedrock | `bedrock-mantle.<region>.api.aws` | An interface VPC endpoint for `com.amazonaws.<region>.bedrock-mantle`, with private DNS enabled or a Route 53 private hosted zone for the hostname |
+| Google Vertex AI | `<region>-aiplatform.googleapis.com`, or `aiplatform.googleapis.com` for the global region | Private Service Connect for Google APIs, with private DNS for `googleapis.com` |
+| Azure AI Foundry | `<resource>.openai.azure.com` and `<resource>.services.ai.azure.com` | A private endpoint for the Foundry resource, with its private DNS zones |
+| Anthropic, OpenAI | `api.anthropic.com`, `api.openai.com` | Not available. These providers need public egress. |
+
+Engine doesn't accept custom endpoint URLs, so private connectivity works through DNS: the standard hostname must resolve to your private endpoint from the Engine pods.
+
+If Engine authenticates with [cloud identity](#use-cloud-identity-for-your-model-providers), the pods also need to reach your cloud's token service, such as an interface VPC endpoint for AWS STS on AWS.
+
+Usage reporting to LangSmith Intelligence is a separate connection. On AWS, `https://beacon.aws.langchain.com/intelligence` records usage and supports [AWS PrivateLink](#connect-with-aws-privatelink), so an installation can run Engine on Bedrock and report usage without public egress. The default `https://beacon.langchain.com/intelligence` needs public egress.
 
 ## Air-gapped installations
 
