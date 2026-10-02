@@ -31,6 +31,11 @@ import SkillsReloadUpdateStatePy from '/snippets/code-samples/skills-reload-upda
 import SkillsReloadUpdateStateJs from '/snippets/code-samples/skills-reload-update-state-js.mdx';
 import SkillsReloadMiddlewarePy from '/snippets/code-samples/skills-reload-middleware-py.mdx';
 import SkillsReloadMiddlewareJs from '/snippets/code-samples/skills-reload-middleware-js.mdx';
+import SkillsToolsListPy from '/snippets/code-samples/skills-tools-list-py.mdx';
+import SkillsToolsResolverPy from '/snippets/code-samples/skills-tools-resolver-py.mdx';
+import SkillsToolsIntegrationPy from '/snippets/code-samples/skills-tools-integration-py.mdx';
+import SkillsToolsPerUserPy from '/snippets/code-samples/skills-tools-per-user-py.mdx';
+import SkillsToolsSearchPy from '/snippets/code-samples/skills-tools-search-py.mdx';
 
 Skills package domain expertise, such as workflows, best practices, scripts, reference docs, and templates, into reusable directories. The agent gets a summary of the contents on startup and discovers and reads the contained files only when relevant.
 
@@ -336,6 +341,87 @@ scripts/extract.py
 ````
 
 For each file you reference, state what it contains and when the agent should use it. Keep references one level deep from `SKILL.md`. Avoid deeply nested reference chains that force the agent through multiple reads to reach the information it needs.
+
+:::python
+
+## Add tools to skills
+
+A skill can bring its own tools. The agent sees them only after it reads the skill, so their schemas stay out of the prompt until a task needs them.
+
+Skill tools are a Deep Agents feature, not part of the [Agent Skills specification](https://agentskills.io/specification). Deep Agents reads the tool names from the spec's free-form `metadata` field. They are unrelated to the spec's `allowed-tools` field, which pre-approves tools rather than adding them.
+
+<Note>Skill tools require `deepagents>=TODO`.</Note>
+
+List the tools under `metadata.include_tools` in the skill's frontmatter, separated by spaces. A YAML list does not match any tool.
+
+```yaml
+name: linear
+description: Triage and file Linear issues. Use when the user reports a bug or asks about the Linear backlog.
+metadata:
+  include_tools: list_issues create_issue
+```
+
+Pass the tools to `SkillsMiddleware` as `tools`, not to the agent's `tools`. Pass the middleware to `create_deep_agent` in place of the `skills` argument, with the same paths as `sources`:
+
+<SkillsToolsListPy />
+
+Skill tools follow these rules:
+
+- The agent can call a skill tool only after it reads the skill's `SKILL.md`.
+- When [summarization](/oss/deepagents/context-engineering#summarization) drops that read from the conversation, the tool is unavailable until the agent reads the skill again.
+
+<Note>
+On models that accept new tools mid-conversation, Deep Agents adds a skill tool after the read, which keeps the prompt cache valid. On other models, it adds the tool to the request's `tools`, which invalidates the cache. See the [Anthropic](/oss/integrations/chat/anthropic#change-tools-mid-conversation) and [OpenAI](/oss/integrations/chat/openai#add-tools-mid-conversation) integration pages.
+</Note>
+
+### Resolve tools at runtime
+
+A tool's real name is not always practical to list in a skill. A generated name such as `mcp_linear_list_issues_ab12` is hard to write by hand, and may not stay the same.
+
+To map readable names to real tools, pass a resolver function as the middleware's `tools`. The resolver receives each `include_tools` name and the graph's `Runtime`, and returns the tools for that name.
+
+The skill lists readable names:
+
+```yaml
+metadata:
+  include_tools: list_issues create_issue
+```
+
+The resolver maps each one to its real tool:
+
+<SkillsToolsResolverPy />
+
+One name can also stand for many tools, such as every tool from the Linear MCP server. List one name in the skill:
+
+```yaml
+metadata:
+  include_tools: linear
+```
+
+Then return all of the server's tools from the resolver:
+
+<SkillsToolsIntegrationPy />
+
+The resolver also receives the graph's `Runtime`, so it can return each user's own tools. Pass the user as [runtime context](/oss/deepagents/context-engineering#runtime-context) and read it from `runtime.context`:
+
+<SkillsToolsPerUserPy />
+
+When you write a resolver:
+
+- Keep it fast. It runs on every model call after the agent reads the skill, and again before each skill tool call.
+- The resolver can be async. If it is, run the agent through its async methods, such as `ainvoke`.
+
+### Combine with provider tool search
+
+@[`ProviderToolSearchMiddleware`] hides deferred tools until the model searches for them. When a skill lists a deferred tool, reading the skill reveals it without a search.
+
+Pass the deferred tool to the agent's `tools` as usual, not the middleware's:
+
+<SkillsToolsSearchPy />
+
+Before the agent reads the skill, the tool is still available through search. See [Provider tool search](/oss/langchain/middleware/built-in#provider-tool-search).
+
+:::
 
 ## Backends and remote skill loading
 
@@ -749,6 +835,22 @@ Use [LangSmith](https://smith.langchain.com) traces to debug skill discovery, `r
 2. **Keep paths within the skill directory.** File paths resolve against the backend. Confirm supporting files exist at the paths your instructions reference.
 
 3. **Sync skills into sandboxes.** If you use [sandbox backends](/oss/deepagents/sandboxes), skill files outside the container are not available until you copy them in. See [Sandbox scripts](#sandbox-scripts) and [syncing skills and memories with custom middleware](/oss/deepagents/going-to-production#example-syncing-skills-and-memories-with-custom-middleware).
+
+:::python
+
+### Skill tool not available
+
+**Problem**: The agent cannot call a tool that a skill lists in `include_tools`.
+
+**Solutions**:
+
+1. **Check that the agent read the skill.** Skill tools appear only after the agent reads `SKILL.md`, and disappear when summarization drops that read. See [Add tools to skills](#add-tools-to-skills).
+
+2. **Write `include_tools` as a string.** Separate names with spaces. A YAML list never matches a tool.
+
+3. **Check the names.** Each name must match a tool passed to the agent or to `SkillsMiddleware`, or a name your resolver handles. Deep Agents logs unmatched names at `DEBUG` level only, so enable debug logging for the `deepagents` logger to see them.
+
+:::
 
 ### Scripts fail to run
 
