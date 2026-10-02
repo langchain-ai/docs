@@ -61,7 +61,7 @@ All GitHub connections use HTTPS. DNS resolution, routing, and certificate trust
 
 | Source | Destination | Purpose |
 | --- | --- | --- |
-| User's browser | GitHub web host and LangSmith callback URL | Sign-in, App authorization, and installation. |
+| User's browser | GitHub web host and LangSmith authorization callback URL | Sign-in, App authorization, and installation. |
 | LangSmith services and Engine workers | GitHub web and API hosts | Authorization, repository information, branch and diff operations, PR creation/status, and App identity. |
 | Sandbox hosts | GitHub web host | Clone repositories and push fix branches. |
 | GitHub | LangSmith webhook URL | Link PRs to issues and complete issues after a merge. |
@@ -153,24 +153,30 @@ Choose the tab for the account that owns the App. These paths apply on the GitHu
 
 Use these settings for all GitHub environments and App owners. For field definitions, see [Register a GitHub App](https://docs.github.com/en/enterprise-cloud@latest/apps/creating-github-apps/registering-a-github-app/registering-a-github-app). Replace `https://langsmith.example.com` with the browser-facing URL of your LangSmith deployment.
 
-If LangSmith uses a base path, include it. For example, a deployment at `https://langsmith.example.com/langsmith` uses `https://langsmith.example.com/langsmith/api-host/v1/integrations/forge/github/callback` as its callback URL.
+GitHub labels the authorization callback field **Callback URL** or **Redirect URI**. Both names refer to the URL where GitHub returns users after authorization.
+
+If LangSmith uses a base path, include it. For example, a deployment at `https://langsmith.example.com/langsmith` uses `https://langsmith.example.com/langsmith/api-host/v1/integrations/forge/github/callback` as its authorization callback URL.
 
 | GitHub setting | Value |
 | --- | --- |
 | **GitHub App name** | A unique name for your deployment, such as `acme-langsmith-engine`. |
 | **Homepage URL** | Your LangSmith URL, such as `https://langsmith.example.com`. |
-| **Callback URL** | `https://langsmith.example.com/api-host/v1/integrations/forge/github/callback` |
+| **Callback URL** / **Redirect URI** | `https://langsmith.example.com/api-host/v1/integrations/forge/github/callback` |
+| **Allow wildcard matching** | Leave disabled, if shown. |
 | **Request user authorization (OAuth) during installation** | Enabled. Engine needs the authorization callback to finish connecting an installation. |
-| **Expire user authorization tokens** | Leave enabled. |
+| **Expire user authorization tokens** | Leave enabled, if shown. |
 | **Enable Device Flow** | Leave disabled. |
-| **Setup URL** | Leave unset. GitHub uses the callback when OAuth during installation is enabled. |
+| **Setup URL** | Leave unset. When OAuth during installation is enabled, GitHub uses the authorization callback URL and may disable this field. |
+| **Redirect on update** | Optional. Redirects users after they update an installation. |
 | **Webhook: Active** | Enabled. |
 | **Webhook URL** | `https://langsmith.example.com/api-host/v1/integrations/forge/github/webhook` |
 | **Webhook secret** | A separately generated random secret, also configured in LangSmith. |
 | **SSL verification** | Enabled. |
 | **Where can this GitHub App be installed?** | The visibility selected in [Choose who owns the App](#choose-who-owns-the-app). This field does not appear for enterprise-owned Apps. |
 
-{/* Screenshot: show the Callback URL and enabled "Request user authorization (OAuth) during installation" setting in the GitHub App form. Use https://langsmith.example.com for the URL. Exclude client secrets, private keys, and webhook-secret values. */}
+For an existing App, manage token expiration under **Optional Features** > **User-to-server token expiration**. See [GitHub's token expiration settings](https://docs.github.com/en/enterprise-cloud@latest/apps/creating-github-apps/authenticating-with-a-github-app/refreshing-user-access-tokens#configuring-your-app-to-use-user-access-tokens-that-expire).
+
+{/* Screenshot: show the authorization callback field labeled "Redirect URI" on GHEC or "Callback URL" on GHES, with "Request user authorization (OAuth) during installation" enabled. If shown, include "Allow wildcard matching" disabled and Setup URL unavailable. Use https://langsmith.example.com for the URL. Exclude client secrets, private keys, and webhook-secret values. */}
 
 Generate the webhook secret with a cryptographically secure generator or your secret manager, using at least 32 random bytes. Save it for the LangSmith configuration.
 
@@ -197,7 +203,7 @@ From the App's settings page:
 1. Record the **App ID** and **Client ID**. The numeric App ID is different from the Client ID and installation ID.
 2. Under **Client secrets**, select **Generate a new client secret** and save it immediately in your secret manager.
 3. Under **Private keys**, select **Generate a private key** and store the downloaded PEM file securely.
-4. Copy the **App page URL** exactly as GitHub provides it, preserving any enterprise namespace. Do not copy the developer settings URL or an installation URL ending in `/installations/new`.
+4. Copy the URL under **Public link** exactly as shown, including its full path. Do not copy the developer settings URL or an installation URL ending in `/installations/new`.
 
 Keep the webhook secret entered during registration. Continue with the LangSmith configuration below before installing and connecting the App.
 
@@ -234,7 +240,7 @@ hostBackend:
   deployment:
     extraEnv:
       - name: FORGE_GITHUB_APP_PUBLIC_LINK
-        value: "<app-page-url-copied-from-github>"
+        value: "<public-link-copied-from-github>"
       - name: FORGE_GITHUB_CLIENT_ID
         value: "<client-id>"
       - name: ENGINE_GITHUB_OAUTH_REDIRECT_URI
@@ -263,9 +269,9 @@ hostBackend:
 
 Keep `FORGE_GITHUB_WEB_BASE_URL` and `FORGE_GITHUB_APP_ID` in `commonEnv` so API and background workloads receive the same values. Remove duplicate definitions of these two variables from component-specific `extraEnv` sections.
 
-Set `FORGE_GITHUB_APP_PUBLIC_LINK` to the App page URL saved during registration. LangSmith uses it to construct the installation link.
+Set `FORGE_GITHUB_APP_PUBLIC_LINK` to the **Public link** copied from the App's settings. LangSmith uses it to construct the installation link.
 
-Set `ENGINE_GITHUB_OAUTH_REDIRECT_URI` to the exact callback URL saved in GitHub, including any LangSmith base path. The chart's `config.hostname`, `config.frontendHostname` if used, and `config.basePath` must also describe the URL users open in their browser.
+Set `ENGINE_GITHUB_OAUTH_REDIRECT_URI` to the exact value entered in GitHub's **Callback URL** or **Redirect URI** field, including any LangSmith base path. The chart's `config.hostname`, `config.frontendHostname` if used, and `config.basePath` must also describe the URL users open in their browser.
 
 Apply the complete values file through your normal deployment process, using a matching LangSmith image and chart release. For Helm upgrades, see [Upgrade a self-hosted deployment](/langsmith/self-host-upgrades).
 
@@ -334,7 +340,7 @@ For a private-key rotation, add the new key in GitHub, update the deployment Sec
 
 For webhook-secret rotation, coordinate the GitHub and LangSmith values. Deliveries during a mismatch fail signature verification. Review **Recent deliveries** and redeliver failed events after both sides use the new secret.
 
-Replacing the App requires installing the replacement and reconnecting affected LangSmith workspaces. Plan for an interruption until repository access is restored. Transferring App ownership can also change where it can be installed and its App page URL; review GitHub's transfer behavior before making the change.
+Replacing the App requires installing the replacement and reconnecting affected LangSmith workspaces. Plan for an interruption until repository access is restored. Transferring App ownership can also change where it can be installed and its public link; review GitHub's transfer behavior before making the change.
 
 Do not change `FORGE_GITHUB_WEB_BASE_URL` on an existing connected deployment as a migration procedure. Changing the URL does not migrate repository connections or existing PR references. Plan a migration with LangChain support before switching GitHub instances.
 
@@ -342,10 +348,10 @@ Do not change `FORGE_GITHUB_WEB_BASE_URL` on an existing connected deployment as
 
 | Symptom | What to check |
 | --- | --- |
-| **GitHub is not configured** | Confirm the App ID, Client ID, Client secret, private key, state secret, and App page URL are set. Check the GitHub URL format and complete the rollout. This notice identifies missing configuration; it does not test whether credentials are valid. |
+| **GitHub is not configured** | Confirm the App ID, Client ID, Client secret, private key, state secret, and App's public link are set. Check the GitHub URL format and complete the rollout. This notice identifies missing configuration; it does not test whether credentials are valid. |
 | GitHub is temporarily unavailable after authorization | Confirm that the Client secret and private key belong to the configured App ID and Client ID. Check GitHub connectivity and certificate trust, then restart **Connect GitHub**. |
 | GitHub authorization opens on the wrong instance | Check `FORGE_GITHUB_WEB_BASE_URL` in shared configuration and remove conflicting component overrides. |
-| The callback returns HTML or 404 | Check the `/api-host` route, LangSmith base path, and exact callback URL. |
+| The callback returns HTML or 404 | Check the `/api-host` route, LangSmith base path, and exact authorization callback URL. |
 | Installation finishes in GitHub but does not connect in LangSmith | Enable **Request user authorization (OAuth) during installation**, verify the Client ID/secret belong to that App, and restart the connection from LangSmith. |
 | Repositories appear, but cloning or pushing fails | Check sandbox-host DNS, routing, private-IP settings, certificate trust, and GitHub IP/push policies. |
 | PR creation fails after a successful push | Check **Pull requests: Read and write**, draft PR availability, and the selected base branch. |
