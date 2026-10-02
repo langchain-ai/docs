@@ -20,8 +20,11 @@ Before running individual commands, try the bundled scripts:
 # Full deployment health check + next-step guidance
 make status
 
-# Secret Manager validation
-make secrets    # → manage-secrets.sh validate
+# Check that all required secrets exist in Secret Manager
+./infra/scripts/manage-secrets.sh validate
+
+# Interactive Secret Manager tool (list, get, set, validate, delete)
+make secrets
 ```
 
 ## Known issues
@@ -41,7 +44,7 @@ Error 403: ... has not been used in project <project-id> before or it is disable
 ```bash
 gcloud services enable cloudresourcemanager.googleapis.com --project <project-id>
 cd modules/gcp/infra
-terraform apply -var-file=terraform.tfvars
+terraform apply
 ```
 
 ### GKE cluster API server not accessible after apply
@@ -60,7 +63,7 @@ Error: Get "https://<cluster-endpoint>/api/v1/namespaces": dial tcp: connection 
 gcloud container clusters describe <cluster-name> \
   --region <region> --project <project-id> --format="value(status)"
 
-terraform apply -var-file=terraform.tfvars
+terraform apply
 ```
 
 ### GKE nodes not joining (NotReady)
@@ -97,11 +100,11 @@ gcloud sql instances describe <instance-name> --format="value(ipAddresses)"
 gcloud compute networks peerings list --network <vpc-name>
 ```
 
-If peering is missing, ensure `enable_private_service_connection = true` and re-apply:
+Terraform creates the private service connection when `postgres_source = "external"`, `redis_source = "external"`, `enable_sandboxes = true`, or SmithDB creates its own metastore. If peering is missing, confirm one of those settings is in `terraform.tfvars` and re-apply:
 
 ```bash
-terraform apply -var-file=terraform.tfvars -target=module.networking
-terraform apply -var-file=terraform.tfvars
+terraform apply -target=module.networking
+terraform apply
 ```
 
 ### Memorystore Redis connection timeout
@@ -130,9 +133,8 @@ kubectl run redis-test --rm -it --image=redis:7 -n langsmith -- \
 **Fix**
 
 ```bash
-kubectl get svc -n envoy-gateway-system \
-  -l gateway.envoyproxy.io/owning-gateway-name=langsmith-gateway \
-  -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}'
+kubectl get gateway -n envoy-gateway-system \
+  -o jsonpath='{.items[0].status.addresses[0].value}'
 
 kubectl describe certificate <cert-name> -n langsmith
 kubectl get challenges -n langsmith
@@ -161,7 +163,7 @@ kubectl get serviceaccount langsmith-backend -n langsmith \
   -o jsonpath='{.metadata.annotations.iam\.gke\.io/gcp-service-account}'
 ```
 
-The GCP service account must have `roles/storage.objectAdmin` on the bucket. If the annotation itself is missing, apply the fix in the Workload Identity section below. For S3-compatible mode, create an HMAC key under Cloud Storage → Settings → Interoperability; its service account also needs `roles/storage.objectAdmin` on the bucket.
+The GCP service account must have `roles/storage.objectAdmin` on the bucket. If the annotation itself is missing, apply the fix in the Workload Identity section below. For S3-compatible mode, create an HMAC key under **Cloud Storage** > **Settings** > **Interoperability**; its service account also needs `roles/storage.objectAdmin` on the bucket.
 
 ### Envoy Gateway webhook blocking GKE operations
 
@@ -197,7 +199,7 @@ kubectl rollout status deployment/envoy-gateway -n envoy-gateway-system
 **Recovery:** Update your DNS A record to the new IP:
 
 ```bash
-kubectl get gateway -n langsmith -o jsonpath='{.items[0].status.addresses[0].value}'
+kubectl get gateway -n envoy-gateway-system -o jsonpath='{.items[0].status.addresses[0].value}'
 
 gcloud dns record-sets update <your-domain>. \
   --type=A --ttl=300 \
@@ -214,7 +216,7 @@ gcloud dns record-sets update <your-domain>. \
 Error: googleapi: Error 409: The instance is protected from deletion.
 ```
 
-**Cause:** `gke_deletion_protection = true` (default) or `postgres_deletion_protection = true` prevents Terraform from destroying the resources.
+**Cause:** `gke_deletion_protection`, `postgres_deletion_protection`, or `smithdb_metastore_deletion_protection` is `true`. Cloud SQL enforces deletion protection at the API level as well as in Terraform, so changing `terraform.tfvars` has no effect until the change is applied.
 
 **Fix**
 
@@ -222,12 +224,22 @@ Error: googleapi: Error 409: The instance is protected from deletion.
 # terraform.tfvars
 gke_deletion_protection      = false
 postgres_deletion_protection = false
+
+# Only when enable_smithdb = true and smithdb_metastore_source = "create"
+smithdb_metastore_deletion_protection = false
+smithdb_bucket_force_destroy          = true
 ```
 
 ```bash
-terraform apply -var-file=terraform.tfvars
-terraform destroy
+terraform -chdir=infra apply \
+  -target=module.gke_cluster -target=module.cloudsql \
+  -target=module.smithdb -target=module.networking
+
+source infra/scripts/setup-env.sh
+make destroy
 ```
+
+Drop the `module.smithdb` target if you never enabled SmithDB. The targeted apply avoids reconciling the in-cluster add-ons that a full `make apply` would recreate.
 
 ### Workload Identity not working (GCS permission denied)
 
@@ -264,9 +276,9 @@ make deploy
 
 ### `langsmith-ksa` missing Workload Identity annotation
 
-**Symptom:** Operator-spawned agent pods fail to start or get stuck in `Pending`. Logs show permission errors or the agent bootstrap job hangs.
+**Symptom:** Operator-spawned agent pods fail to start or get stuck in `Pending`. Logs show permission errors.
 
-**Cause:** `langsmith-ksa` is created by the LangSmith operator (not Helm) and does not survive namespace teardowns or fresh cluster rebuilds. `deploy.sh` re-annotates it post-deploy; if a previous deploy was interrupted, the annotation may be missing.
+**Cause:** Terraform creates `langsmith-ksa` in the `k8s-bootstrap` module and annotates it only when `enable_gcp_iam_module = true`. `deploy.sh` re-applies the annotation after each deploy. The annotation is missing if the IAM module is off, the namespace was deleted out-of-band, or a previous deploy was interrupted.
 
 **Diagnosis**
 
@@ -331,7 +343,7 @@ gcloud projects add-iam-policy-binding <project-id> \
 
 **Symptom:** Pods crash with database connection errors immediately after deploy, or `kubectl get secrets -n langsmith` does not list `langsmith-postgres-credentials` / `langsmith-redis-credentials`.
 
-**Cause:** The `k8s-bootstrap` module creates these Secrets. They are absent if `terraform apply` was not run, failed partway through, or the namespace was deleted out-of-band.
+**Cause:** The `k8s-bootstrap` module creates these Secrets when `postgres_source` or `redis_source` is `external`. They are absent if `terraform apply` was not run, failed partway through, or the namespace was deleted out-of-band.
 
 **Fix**
 
@@ -375,7 +387,7 @@ kubectl get clusterissuer
 ### Gateway and load balancer
 
 ```bash
-kubectl get gateway -n langsmith
+kubectl get gateway -n envoy-gateway-system
 kubectl get httproute -n langsmith
 kubectl get svc -n envoy-gateway-system -o wide
 kubectl get pods -n envoy-gateway-system
@@ -428,7 +440,7 @@ gcloud secrets versions access latest \
   --secret=langsmith-<prefix>-<env>-postgres-password \
   --project <project-id>
 
-make secrets
+./infra/scripts/manage-secrets.sh validate
 ```
 
 ### Quick health check
@@ -438,7 +450,7 @@ echo "=== Context ===" && kubectl config current-context
 echo "=== Nodes ===" && kubectl get nodes
 echo "=== Pods ===" && kubectl get pods -n langsmith
 echo "=== Certificate ===" && kubectl get certificate -n langsmith
-echo "=== Gateway ===" && kubectl get gateway -n langsmith
+echo "=== Gateway ===" && kubectl get gateway -n envoy-gateway-system
 echo "=== Secrets ===" && kubectl get secrets -n langsmith | grep -E "langsmith-postgres-credentials|langsmith-redis-credentials"
 echo "=== Helm ===" && helm status langsmith -n langsmith 2>/dev/null | grep -E "STATUS|LAST DEPLOYED"
 ```

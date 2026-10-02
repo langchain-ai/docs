@@ -11,7 +11,7 @@ Use this page as a reference while planning a rollout or troubleshooting an exis
 - Platform layers and deployment tiers (light versus production).
 - Module descriptions and dependencies.
 - Networking, Workload Identity, and traffic flow.
-- Add-ons: LangSmith Deployment, Fleet, Insights, and Polly.
+- Add-ons: LangSmith Deployment, Fleet, Insights, Polly, SmithDB, and Sandboxes.
 - GCP managed services and Secret Manager integration.
 
 If you are ready to install, start with the [deployment walkthrough](/langsmith/self-host-terraform-gcp-deploy).
@@ -28,10 +28,12 @@ LangSmith on GCP deploys in up to five stages. Each stage adds a capability laye
 | 2 | LangSmith base | frontend, backend, platform-backend, queue, ace-backend, clickhouse, playground |
 | 3 | LangSmith Deployment | host-backend, listener, operator + per-deployment pods |
 | 4 | Fleet | standalone-fleet-api-server, standalone-fleet-tool-server, standalone-fleet-trigger-server, standalone-fleet-queue |
-| 5 | Insights + Polly | Clio analytics (ClickHouse-backed), Polly eval agent |
+| 5 | Insights + Polly | Insights analytics (ClickHouse-backed), Polly eval agent |
+
+SmithDB (`enable_smithdb`) and Sandboxes (`enable_sandboxes`) are optional add-ons outside these stages. Each adds its own node pools and managed services to the same cluster and namespace.
 
 <Note>
-Fleet (chart v0.15+) is the current form of the feature formerly called Agent Builder. Enable it with `enable_fleet`. Unlike the deprecated `enable_agent_builder` path, it does not require the LangSmith Deployment layer. The two flags are mutually exclusive and share the same encryption key. See [Enable add-ons](/langsmith/self-host-terraform-gcp-deploy#enable-add-ons) in the deployment guide.
+Fleet is the current form of the feature formerly called Agent Builder. Enable it with `enable_fleet`. Unlike the deprecated `enable_agent_builder` path, it does not require the LangSmith Deployment layer. The two flags are mutually exclusive and share the same encryption key. See [Enable add-ons](/langsmith/self-host-terraform-gcp-deploy#enable-add-ons) in the deployment guide.
 </Note>
 
 ## Module descriptions
@@ -43,11 +45,15 @@ Fleet (chart v0.15+) is the current form of the feature formerly called Agent Bu
 | `postgres` | `infra/modules/postgres/` | Cloud SQL PostgreSQL instance, regional HA standby, private IP, deletion protection |
 | `redis` | `infra/modules/redis/` | Memorystore Redis STANDARD_HA tier, private IP within VPC |
 | `storage` | `infra/modules/storage/` | GCS bucket with versioning and lifecycle rules for `ttl_s/` (14 days) and `ttl_l/` (400 days) prefixes |
-| `k8s-bootstrap` | `infra/modules/k8s-bootstrap/` | `langsmith` namespace, Kubernetes Secrets for Postgres and Redis URLs, cert-manager and KEDA Helm releases |
+| `k8s-bootstrap` | `infra/modules/k8s-bootstrap/` | `langsmith` namespace and `langsmith-ksa` ServiceAccount, Kubernetes Secrets for Postgres, Redis, the license key, ClickHouse, and TLS, resource quotas and network policies, cert-manager and KEDA Helm releases |
 | `ingress` | `infra/modules/ingress/` | Envoy Gateway Helm release, GatewayClass, HTTPRoute, optional HTTPS Gateway listener |
 | `iam` | `infra/modules/iam/` | GCP service account and Workload Identity bindings for GCS access (wired by default) |
 | `dns` | `infra/modules/dns/` | Cloud DNS managed zone and managed cert (optional, enable with `enable_dns_module`) |
 | `secrets` | `infra/modules/secrets/` | Secret Manager secret bundle (optional, enable with `enable_secret_manager_module`) |
+| `smithdb` | `infra/modules/smithdb/` | SmithDB Cloud SQL metastore, GCS object-store bucket, and Workload Identity service account (optional, enable with `enable_smithdb`) |
+| `smithdb-nodes` | `infra/modules/smithdb-nodes/` | Local SSD cache and compute node pools for SmithDB (GKE Standard only) |
+
+When `enable_sandboxes = true`, Terraform also reuses the `redis` module for a dedicated Memorystore instance that holds JuiceFS metadata, and the `k8s-cluster` module adds a sandbox-host node pool with nested virtualization.
 
 ## Deployment tiers
 
@@ -118,7 +124,7 @@ In-cluster ClickHouse is dev/POC only (single pod, no replication, no backups). 
 </Warning>
 
 <Note>
-[SmithDB](https://www.langchain.com/blog/introducing-smithdb?utm_source=docs) is LangSmith's purpose-built observability backend, available for Self-hosted starting with self-hosted version 0.16.0 (see [self-hosted support](/langsmith/smithdb-sdk-migration#about-self-hosted)). These Terraform modules provision ClickHouse, so the guidance in the previous sections applies to current deployments.
+[SmithDB](https://www.langchain.com/blog/introducing-smithdb?utm_source=docs) is LangSmith's purpose-built observability backend, available for Self-hosted starting with self-hosted version 0.16.0 (see [self-hosted support](/langsmith/smithdb-sdk-migration#about-self-hosted)). Set `enable_smithdb = true` to provision its metastore, object-store bucket, and node pools. SmithDB runs alongside ClickHouse, so the ClickHouse guidance in the previous sections still applies. Refer to [SmithDB](/langsmith/self-host-terraform-gcp-deploy#smithdb) in the deployment guide for the staged rollout.
 </Note>
 
 ### One-time jobs
@@ -161,14 +167,15 @@ When `postgres_source = "external"` and `redis_source = "external"` (the recomme
 
 - Trace payloads: large inputs and outputs, attachments.
 - The shipped Helm values use native GCS mode (`engine: GCS`, `apiURL: https://storage.googleapis.com`), authenticated through Workload Identity with no HMAC keys.
-- An S3-compatible mode (`engine: S3`) is also supported, shown in `helm/values/examples/langsmith-values.yaml`. It requires HMAC keys: create one under Cloud Storage → Settings → Interoperability and pass them to Helm via `config.blobStorage.accessKey` and `config.blobStorage.accessKeySecret`.
+- An S3-compatible mode (`engine: S3`) is also supported, shown in `helm/values/examples/langsmith-values.yaml`. It requires HMAC keys: create one under **Cloud Storage** > **Settings** > **Interoperability** and pass them to Helm via `config.blobStorage.accessKey` and `config.blobStorage.accessKeySecret`.
 - Lifecycle rules: `ttl_s/` prefix (14 days default), `ttl_l/` prefix (400 days default).
 - The GCS bucket is always required, regardless of tier.
 
-### Secret Manager (optional module)
+### Secret Manager
 
-- Stores a single JSON secret bundle (generated LangSmith secret key, Postgres password, Redis password) when `enable_secret_manager_module = true`.
-- Core secrets (`langsmith-postgres-credentials`, `langsmith-redis-credentials`) are always stored in Kubernetes Secrets by `k8s-bootstrap` regardless of this module. Secret Manager provides an additional durable store for secrets that must survive cluster recreation.
+- `infra/scripts/setup-env.sh` stores the license key, passwords, salts, and encryption keys in Secret Manager as `langsmith-<name_prefix>-<environment>-<key>` and exports them as `TF_VAR_*` variables.
+- The optional `secrets` module (`enable_secret_manager_module = true`) adds a separate JSON bundle with a generated LangSmith secret key and the Postgres and Redis passwords.
+- Kubernetes Secrets are written by Terraform and the deploy script, not synced from Secret Manager. See [Secret Manager integration](#secret-manager-integration).
 
 ## Cluster infrastructure
 
@@ -206,7 +213,7 @@ GKE pod
 
 The GSA is defined by the `iam` module and output as `workload_identity_annotation`. `init-values.sh` writes these annotations into `values-overrides.yaml` automatically.
 
-In native GCS mode (the shipped default), the GSA bindings above are sufficient. The optional S3-compatible mode (`engine: S3`) also requires HMAC keys: create one under Cloud Storage → Settings → Interoperability and pass it to Helm.
+In native GCS mode (the shipped default), the GSA bindings above are sufficient. The optional S3-compatible mode (`engine: S3`) also requires HMAC keys: create one under **Cloud Storage** > **Settings** > **Interoperability** and pass it to Helm.
 
 ## Network topology
 
@@ -217,7 +224,7 @@ In native GCS mode (the shipped default), the GSA bindings above are sufficient.
 | Services | `10.8.0.0/20` | GKE ClusterIP services (secondary range) |
 | Private service connection | `/16` allocated by Google | Cloud SQL, Memorystore private IPs |
 
-Cloud SQL and Memorystore are accessed exclusively via private IP. The networking module establishes a private service connection (VPC peering to Google's managed network) whenever `postgres_source = "external"` or `redis_source = "external"`.
+Cloud SQL and Memorystore are accessed exclusively via private IP. The networking module establishes a private service connection (VPC peering to Google's managed network) whenever `postgres_source = "external"`, `redis_source = "external"`, `enable_sandboxes = true`, or SmithDB creates its own metastore (`enable_smithdb = true` with `smithdb_metastore_source = "create"`).
 
 ## Traffic flow
 
@@ -252,43 +259,39 @@ Internal traffic (private IPs, never leaving VPC):
 
 ## Secret Manager integration
 
-Without Secret Manager:
-
 ```txt
-terraform.tfvars → terraform apply → kubernetes_secret (postgres, redis)
+source setup-env.sh → Secret Manager → TF_VAR_* in your shell
+  ├─→ terraform apply → kubernetes_secret (postgres, redis, license, ClickHouse, TLS)
+  └─→ make deploy     → langsmith-config Secret (license, salt, JWT, admin, encryption keys)
 ```
 
-With Secret Manager:
-
-```txt
-terraform.tfvars → terraform apply ─┬─→ kubernetes_secret (postgres, redis)
-                                    └─→ Secret Manager (durable copy, survives cluster recreation)
-```
-
-Terraform writes the Kubernetes Secrets directly in both cases. Enabling Secret Manager adds a durable copy of the Postgres password, Redis password, and generated secret key outside the cluster. Nothing syncs Secret Manager back into the cluster, so no External Secrets Operator is installed on GCP (unlike the AWS modules, which use it to sync from SSM Parameter Store).
+Terraform writes the infrastructure Kubernetes Secrets, and `deploy.sh` builds the `langsmith-config` Secret from the exported `TF_VAR_*` values and `LANGSMITH_ADMIN_EMAIL`. Nothing syncs Secret Manager into the cluster, so no External Secrets Operator is installed on GCP. Re-source `setup-env.sh` in a new shell before running `make apply`, `make deploy`, or `make destroy`.
 
 ## Terraform module graph
 
+The following graph is simplified to the main dependency edges.
+
 ```txt
 google_project_service (APIs enabled)
-  └── module.networking
-        ├── module.gke_cluster
-        │     └── time_sleep.wait_for_cluster
-        │           ├── module.cloudsql      (count = postgres_source == "external")
-        │           ├── module.redis         (count = redis_source    == "external")
-        │           ├── module.storage
-        │           ├── module.iam           (count = enable_gcp_iam_module)
-        │           ├── module.secrets       (count = enable_secret_manager_module)
-        │           ├── module.dns           (count = enable_dns_module)
-        │           ├── module.k8s_bootstrap
-        │           └── module.ingress       (count = install_ingress)
-        └── (private_service_connection when external services)
+  └── module.networking                (private service connection when external services)
+        ├── module.cloudsql              (count = postgres_source == "external")
+        ├── module.redis                 (count = redis_source    == "external")
+        ├── module.sandbox_juicefs_redis (count = enable_sandboxes)
+        ├── module.smithdb               (count = enable_smithdb)
+        └── module.gke_cluster
+              ├── module.smithdb_nodes   (count = enable_smithdb and not Autopilot)
+              └── time_sleep.wait_for_cluster
+                    ├── module.k8s_bootstrap
+                    │     └── Fleet, Polly, Insights, and SmithDB secrets (when enabled)
+                    └── module.ingress   (count = install_ingress)
+
+module.storage
+  └── module.iam                       (count = enable_gcp_iam_module; k8s_bootstrap waits on it)
+
+module.secrets (count = enable_secret_manager_module), module.dns (count = enable_dns_module)
 ```
 
-The `infra` layer does not install the LangSmith chart. The application stage installs it one of two ways, both consuming the same layered values files under `helm/values/`:
-
-- Deploy script: `make init-values && make deploy` runs `helm upgrade --install`.
-- Terraform `app` layer: `make init-values && make init-app && make apply-app` manages the chart as a `helm_release` resource. `make init-app` pulls the `infra` outputs (cluster, bucket, Workload Identity annotation) into `app/infra.auto.tfvars.json`, so the `app` layer reads them without a remote-state data source.
+Terraform does not install the LangSmith chart. `make init-values && make deploy` installs it with `helm upgrade --install`, using the layered values files under `helm/values/`.
 
 ## Verification commands
 

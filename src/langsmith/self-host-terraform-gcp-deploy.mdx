@@ -9,7 +9,7 @@ Deploy LangSmith to GCP with the public [Terraform modules](https://github.com/l
 The install runs in two stages:
 
 1. **Infrastructure**: Terraform provisions VPC, GKE, Cloud SQL, Memorystore, GCS, and Workload Identity.
-2. **Application**: the LangSmith chart, installed with the deploy script or the Terraform `app` layer.
+2. **Application**: the LangSmith Helm chart, installed with the deploy script or with `helm` directly.
 
 After the base install, enable optional add-ons by setting flags and redeploying.
 
@@ -18,7 +18,7 @@ After the base install, enable optional add-ons by setting flags and redeploying
 graph TB
     subgraph stage1["Set up infrastructure"]
         direction LR
-        Start["setup-env.sh<br/>secrets to Secret Manager"]
+        Start["source setup-env.sh<br/>secrets to Secret Manager"]
         TF["terraform apply"]
         Infra["VPC · GKE · Cloud SQL<br/>Memorystore · GCS<br/>Workload Identity"]
         Bootstrap["Bootstrap workloads<br/>cert-manager · KEDA<br/>Envoy Gateway"]
@@ -26,7 +26,7 @@ graph TB
     end
     subgraph stage2["Deploy the application"]
         direction LR
-        Deploy["make init-values + deploy<br/>helm install langsmith"]
+        Deploy["make init-values<br/>make deploy"]
         DNS["Point DNS A record<br/>at Gateway IP"]
         Cert["cert-manager issues<br/>Let's Encrypt cert"]
         Running["LangSmith running<br/>all pods healthy"]
@@ -48,6 +48,8 @@ graph TB
     style stage2 fill:none,stroke:#40668D,stroke-width:1px
 ```
 
+The DNS and certificate steps apply when you set a domain with `tls_certificate_source = "letsencrypt"`. With `tls_certificate_source = "none"`, LangSmith serves HTTP on the Gateway IP.
+
 ## Prerequisites
 
 ### Required tools
@@ -55,7 +57,7 @@ graph TB
 | Tool | Version | Purpose |
 |---|---|---|
 | Google Cloud SDK (`gcloud`) | 450 | Authenticate, query GCP resources, manage GKE credentials |
-| Terraform | 1.5 | Run the infrastructure modules |
+| Terraform | 1.11 | Run the infrastructure modules |
 | `kubectl` | 1.28 | Inspect the GKE cluster |
 | Helm | 3.12 | Install and manage the LangSmith chart |
 
@@ -107,6 +109,11 @@ The principal running Terraform needs the following roles on the target project.
 | `roles/storage.admin` | Create GCS buckets and lifecycle policies |
 | `roles/resourcemanager.projectIamAdmin` | Grant IAM bindings during provisioning |
 | `roles/servicenetworking.networksAdmin` | Create private service connections (required for Cloud SQL and Redis) |
+| `roles/compute.securityAdmin` | Create firewall rules and SSL certificates |
+| `roles/iam.serviceAccountUser` | Attach service accounts to GKE nodes |
+| `roles/serviceusage.serviceUsageAdmin` | Enable the required GCP APIs |
+
+Add `roles/secretmanager.admin` so `setup-env.sh` and the optional `secrets` module can write to Secret Manager, `roles/dns.admin` when `enable_dns_module = true`, and `roles/cloudkms.admin` on the key when `smithdb_bucket_kms_key` is set. The module's [PERMISSIONS.md](https://github.com/langchain-ai/terraform/blob/main/modules/gcp/PERMISSIONS.md) lists the full set.
 
 ### Authenticate
 
@@ -116,7 +123,7 @@ gcloud config set project <your-project-id>
 gcloud auth application-default login
 ```
 
-You also need a LangSmith license key ([contact our sales team](https://www.langchain.com/contact-sales)) and a domain or subdomain that resolves to GCP.
+You also need a LangSmith license key ([contact our sales team](https://www.langchain.com/contact-sales)). For HTTPS, you also need a domain or subdomain whose DNS you control.
 
 ## Quickstart
 
@@ -137,6 +144,7 @@ make quickstart
 # 3. Load secrets into Secret Manager
 #    Must be sourced, not executed
 source infra/scripts/setup-env.sh
+export LANGSMITH_ADMIN_EMAIL="admin@example.com"
 
 # 4. Validate environment
 make preflight
@@ -155,7 +163,7 @@ make init-values
 make deploy
 
 # 8. Get the Gateway IP for DNS
-kubectl get gateway -n langsmith \
+kubectl get gateway -n envoy-gateway-system \
   -o jsonpath='{.items[0].status.addresses[0].value}'
 ```
 
@@ -191,7 +199,7 @@ Generate `terraform.tfvars` with the interactive wizard:
 make quickstart
 ```
 
-The wizard prompts for project ID, naming prefix, region, GKE sizing, TLS source, external vs in-cluster services, and the optional add-on flags. It writes `infra/terraform.tfvars`. Re-running preselects existing values; press Enter at each prompt to keep the current config.
+The wizard asks you to choose a Dev/POC or Production profile, then prompts for project ID, naming prefix, region, GKE sizing, TLS source, external vs in-cluster services, and the optional add-on flags. The Production profile offers the add-ons; the Dev/POC profile turns them off. It writes `infra/terraform.tfvars`. Re-running preselects existing values; press Enter at each prompt to keep the current config.
 
 Prefer to edit manually:
 
@@ -200,22 +208,19 @@ cp infra/terraform.tfvars.example infra/terraform.tfvars
 vi infra/terraform.tfvars
 ```
 
-The minimum required variables:
+For a smallest-footprint dev install, start from `infra/terraform.tfvars.minimum` instead. A typical production configuration:
 
 ```hcl
-project_id            = "<your-gcp-project-id>"
-name_prefix           = "ls"
-environment           = "prod"
-langsmith_license_key = "<your-license-key>"
-langsmith_domain      = "langsmith.example.com"
+project_id       = "<your-gcp-project-id>"
+name_prefix      = "ls"
+environment      = "prod"
+langsmith_domain = "langsmith.example.com"
 
 region = "us-west2"
 zone   = "us-west2-a"
 
-postgres_source   = "external"
-postgres_password = "<strong-password>"   # or: export TF_VAR_postgres_password=...
-
-redis_source = "external"
+postgres_source = "external"
+redis_source    = "external"
 
 clickhouse_source = "in-cluster"
 
@@ -225,7 +230,7 @@ letsencrypt_email      = "ops@example.com"
 enable_langsmith_deployment = true
 ```
 
-See the [GCP variables reference](/langsmith/self-host-terraform-gcp-variables) for every input variable.
+Keep the license key and passwords out of `terraform.tfvars`. `setup-env.sh` stores them in Secret Manager and exports them as `TF_VAR_*` variables. See the [GCP variables reference](/langsmith/self-host-terraform-gcp-variables) for every input variable.
 
 <Tip>
 Configure a remote state backend before applying. Copy `infra/backend.tf.example` to `infra/backend.tf` and point it at a GCS bucket you control. Local state is fragile and can be lost during directory restructuring.
@@ -237,13 +242,9 @@ Configure a remote state backend before applying. Copy `infra/backend.tf.example
 source infra/scripts/setup-env.sh
 ```
 
-The script reads `terraform.tfvars`, derives the secret prefix, and for each secret either reuses an exported value, reads the existing Secret Manager secret, auto-generates one (for salts and Fernet keys), or prompts you. The license key and admin password are the two values you supply interactively. The script must be sourced because `make` cannot export environment variables back to the parent shell.
+The script reads `project_id`, `name_prefix`, `environment`, and `region` from `terraform.tfvars` and stores each secret as `langsmith-<name_prefix>-<environment>-<key>`. For each secret it reuses an exported value, reads the existing Secret Manager secret, auto-generates one (for the API key salt, JWT secret, and Fernet keys), or prompts you. You supply the Postgres password, the license key, and the initial admin password. The admin password needs at least 12 characters with a lowercase letter, an uppercase letter, and a symbol. The script must be sourced because `make` cannot export environment variables back to the parent shell.
 
-Verify the secrets are present:
-
-```bash
-make secrets
-```
+`make deploy` reads these `TF_VAR_*` values and `LANGSMITH_ADMIN_EMAIL` from the same shell, so run it from the shell where you sourced the script. To list, read, or rotate a secret later, run `make secrets`.
 
 ### Preflight checks
 
@@ -251,7 +252,7 @@ make secrets
 make preflight
 ```
 
-`make preflight` validates that the active `gcloud` credentials can perform each required action, that the required GCP APIs are enabled, and that the target region has the SKUs the modules request. Catching gaps here is faster than discovering them mid-`terraform apply`.
+`make preflight` validates the `gcloud` authentication, project billing, the required GCP APIs, the IAM permissions Terraform needs, and regional quotas such as CPUs. Pass `ARGS="--domain <your-domain>"` to also check for a matching Cloud DNS zone. Catching gaps here is faster than discovering them mid-`terraform apply`.
 
 ### Apply
 
@@ -273,8 +274,8 @@ Equivalent direct Terraform flow:
 cd modules/gcp/infra
 
 terraform init
-terraform plan -var-file=terraform.tfvars
-terraform apply -var-file=terraform.tfvars
+terraform plan
+terraform apply
 ```
 
 ### Configure kubectl
@@ -298,12 +299,11 @@ cert-manager, KEDA, and the LangSmith namespace secrets should all be in place.
 
 ## Deploy LangSmith
 
-Use one of the three supported deployment paths:
+Use one of the two supported deployment paths:
 
 | Path | Command | When to use |
 |---|---|---|
 | [Script-driven Helm deploy _(recommended)_](#script-driven-helm-deploy-recommended) | `make init-values && make deploy` | Interactive output, kubeconfig refresh, preflight checks. Best for first-time deploys and day-2 re-deploys. |
-| [Terraform-managed Helm release](#terraform-managed-helm-release) | `make init-app && make apply-app` | Helm release managed in Terraform state alongside infrastructure. Best for GitOps and CI/CD pipelines. |
 | [Manual Helm install](#manual-helm-install) | `helm upgrade --install langsmith langchain/langsmith ...` | Direct `helm` usage without the wrapper scripts. Best for teams with existing Helm tooling. |
 
 ### Script-driven Helm deploy (recommended)
@@ -317,31 +317,17 @@ make init-values
 make deploy
 ```
 
-`init-values.sh` prompts for the admin email, then reads `sizing_profile` and the `enable_*` flags from `terraform.tfvars` and copies matching values files from `helm/values/examples/` into `helm/values/`. It also generates `values-overrides.yaml` with your hostname, Workload Identity annotations, and GCS bucket name.
+`init-values.sh` takes the admin email from `LANGSMITH_ADMIN_EMAIL` (or prompts for it), then reads `sizing_profile` and the `enable_*` flags from `terraform.tfvars` and copies matching values files from `helm/values/examples/` into `helm/values/`. It also generates `values-overrides.yaml` with your hostname, Workload Identity annotations, and GCS bucket name.
 
-`make deploy` runs `helm/scripts/deploy.sh`, which refreshes the kubeconfig, runs preflight checks, applies the layered values files, and runs `helm upgrade --install`.
+`make deploy` runs `helm/scripts/deploy.sh`, which refreshes the kubeconfig, runs preflight checks, builds the `langsmith-config` Kubernetes Secret from the `TF_VAR_*` values and `LANGSMITH_ADMIN_EMAIL`, applies the layered values files, and runs `helm upgrade --install`.
+
+<Note>
+The deploy script installs Helm chart version `~0.16.0` by default and refuses versions outside the 0.16 line. To pin a specific 0.16 release, set `langsmith_helm_chart_version` in `terraform.tfvars` or export `CHART_VERSION`.
+</Note>
 
 Expect 8 to 12 minutes for the chart to install and pods to become ready.
 
-If you completed the script-driven deploy, skip to [Verify and configure DNS](#verify-and-configure-dns). The following two paths are alternatives to the script-driven deploy.
-
-### Terraform-managed Helm release
-
-Keep the entire deployment under Terraform. The `app` layer wraps the same chart and layered values files as the deploy script, managed as a `helm_release` resource.
-
-```bash
-cd modules/gcp
-
-make init-values  # generate the layered values files
-make init-app     # pull infra outputs into app/infra.auto.tfvars.json
-make apply-app    # terraform apply the Helm release
-```
-
-Set app-layer inputs in `app/terraform.tfvars` (`admin_email` is required; `hostname`, `chart_version`, `sizing`, and the `enable_*` flags are optional). The `app` layer uses its own variable names: `sizing` (not `sizing_profile`) and `enable_agent_deploys` (not `enable_deployments`). `make init-app` populates the infra-derived inputs (cluster, bucket, Workload Identity annotation) into `app/infra.auto.tfvars.json`.
-
-The release is applied with `wait = false` because operator-spawned agents can take 10+ minutes on a cold cluster; a passing `terraform apply` means the release was accepted, not that every pod is ready.
-
-If you completed the Terraform-managed Helm release, skip to [Verify and configure DNS](#verify-and-configure-dns). The following path is an alternative.
+If you completed the script-driven deploy, skip to [Verify and configure DNS](#verify-and-configure-dns). The following path is an alternative to the script-driven deploy.
 
 ### Manual Helm install
 
@@ -367,7 +353,7 @@ helm repo update
 helm upgrade --install langsmith langchain/langsmith \
   --namespace langsmith \
   --create-namespace \
-  --version ~0.15.1 \
+  --version ~0.16.0 \
   -f ../helm/values/values.yaml \
   -f ../helm/values/values-overrides.yaml \
   --set config.langsmithLicenseKey="<your-license-key>" \
@@ -377,7 +363,7 @@ helm upgrade --install langsmith langchain/langsmith \
   --set config.basicAuth.initialOrgAdminEmail="$ADMIN_EMAIL" \
   --set config.basicAuth.initialOrgAdminPassword="$ADMIN_PASSWORD" \
   --set config.agentBuilder.encryptionKey="$AGENT_BUILDER_ENCRYPTION_KEY" \
-  --set config.insights.encryptionKey="$INSIGHTS_ENCRYPTION_KEY" \
+  --set insights.encryptionKey="$INSIGHTS_ENCRYPTION_KEY" \
   --set config.blobStorage.bucketName="$(terraform output -raw storage_bucket_name)" \
   --set gateway.enabled=true \
   --set ingress.enabled=false \
@@ -385,7 +371,7 @@ helm upgrade --install langsmith langchain/langsmith \
 ```
 
 <Note>
-To use S3-compatible blob storage instead of Workload Identity, add `--set config.blobStorage.engine=S3` and pass HMAC keys with `--set config.blobStorage.accessKey=<key>` and `--set config.blobStorage.accessKeySecret=<secret>`. Create the HMAC key under Cloud Storage → Settings → Interoperability.
+To use S3-compatible blob storage instead of Workload Identity, add `--set config.blobStorage.engine=S3` and pass HMAC keys with `--set config.blobStorage.accessKey=<key>` and `--set config.blobStorage.accessKeySecret=<secret>`. Create the HMAC key under **Cloud Storage** > **Settings** > **Interoperability**.
 </Note>
 
 ### Verify and configure DNS
@@ -393,14 +379,15 @@ To use S3-compatible blob storage instead of Workload Identity, add `--set confi
 ```bash
 kubectl get pods -n langsmith
 
-EXTERNAL_IP=$(kubectl get svc -n envoy-gateway-system \
-  -l gateway.envoyproxy.io/owning-gateway-name=langsmith-gateway \
-  -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}')
+EXTERNAL_IP=$(kubectl get gateway -n envoy-gateway-system \
+  -o jsonpath='{.items[0].status.addresses[0].value}')
 
 echo "Create A record: $EXTERNAL_IP -> <your-langsmith-domain>"
 
 kubectl get certificate -n langsmith
 ```
+
+Terraform also records the address: `make tf ARGS="output -raw ingress_ip"`. The Gateway is named `<name_prefix>-<environment>-gateway`.
 
 cert-manager cannot issue the Let's Encrypt certificate until the DNS A record resolves to the Gateway IP. Create the record at your DNS provider, wait for propagation, then re-check the certificate status.
 
@@ -437,11 +424,15 @@ langsmith-queue-xxx                1/1  Running    0
 
 ## Enable add-ons
 
-Each add-on is gated by a flag in `infra/terraform.tfvars`. Set the flag, re-apply Terraform, then re-run `make init-values && make deploy`.
+Each add-on is gated by a flag in `infra/terraform.tfvars`. Set the flag, then re-run `make init-values && make deploy`. Run `make apply` first for add-ons that create cloud resources: Fleet, standalone Polly, and standalone Insights (with external Postgres or Redis), SmithDB, and Sandboxes.
+
+<Note>
+The add-ons in this section require Helm chart version 0.16.0 or later, which is the version the deploy script installs.
+</Note>
 
 ### LangSmith Deployment
 
-Adds `host-backend`, `listener`, and `operator`. Required before enabling Agent Builder or Insights. KEDA is installed automatically when `enable_langsmith_deployment = true`.
+Adds `host-backend`, `listener`, and `operator`. Required before enabling the deprecated Agent Builder path or `enable_polly`. KEDA is installed by Terraform when `enable_langsmith_deployment = true` (the default).
 
 ```hcl
 # infra/terraform.tfvars
@@ -451,8 +442,7 @@ enable_deployments = true
 ```bash
 cd modules/gcp
 
-make apply        # push the enable_deployments flag
-make init-values  # pick up the change
+make init-values  # copy langsmith-values-agent-deploys.yaml
 make deploy       # roll out host-backend + listener + operator
 ```
 
@@ -472,13 +462,13 @@ kubectl get pods -n keda
 ### Fleet
 
 <Note>
-Fleet is the current form of the feature formerly called Agent Builder, deployed as a standalone service (chart v0.15+).
+Fleet is the current form of the feature formerly called Agent Builder, deployed as a standalone service.
 </Note>
 
-You can enable Fleet with `enable_fleet`. Unlike the deprecated `enable_agent_builder` path, it does not require LangSmith Deployment. Terraform provisions a dedicated `fleet` database on Cloud SQL and wires the `langsmith-fleet-postgres` and `langsmith-fleet-redis` secrets to the existing Cloud SQL and Memorystore instances. Fleet reuses `langsmith_agent_builder_encryption_key`, so migrating from `enable_agent_builder` keeps the same key and data.
+You can enable Fleet with `enable_fleet`. Unlike the deprecated `enable_agent_builder` path, it does not require LangSmith Deployment. With external Postgres and Redis, Terraform provisions a dedicated `langsmith_fleet` database on Cloud SQL and creates the `langsmith-fleet-postgres` and `langsmith-fleet-redis` secrets that point at the existing Cloud SQL and Memorystore instances. Fleet reuses `langsmith_agent_builder_encryption_key`, so migrating from `enable_agent_builder` keeps the same key and data.
 
 <Note>
-Fleet requires the LangSmith Helm chart 0.15.0 or later and the Agent Builder or Fleet entitlement in your license.
+Fleet requires the Agent Builder or Fleet entitlement in your license.
 </Note>
 
 ```hcl
@@ -489,7 +479,7 @@ enable_fleet = true
 ```bash
 cd modules/gcp
 
-make apply        # provision the fleet Cloud SQL database + secrets
+make apply        # provision the Fleet Cloud SQL database + secrets
 make init-values  # copy langsmith-values-fleet.yaml
 make deploy       # roll out the standalone-fleet-* services
 ```
@@ -501,16 +491,16 @@ kubectl get pods -n langsmith | grep standalone-fleet
 ```
 
 <Warning>
-Do not enable `enable_fleet` and `enable_agent_builder` together. The Fleet values file sets `config.agentBuilder.enabled: false`, so the two add-ons are mutually exclusive.
+Do not enable `enable_fleet` and `enable_agent_builder` together. The deploy script refuses the combination, because Fleet replaces the legacy Agent Builder path.
 </Warning>
 
 ### Agent Builder (deprecated)
 
 <Note>
-On GCP, `enable_agent_builder` is deprecated in favor of [Fleet](#fleet) (`enable_fleet`, chart v0.15+). Use Fleet for new deployments. This section documents the older path for existing installs.
+On GCP, `enable_agent_builder` is deprecated in favor of [Fleet](#fleet) (`enable_fleet`). Use Fleet for new deployments. This section documents the older path for existing installs.
 </Note>
 
-Prerequisite: LangSmith Deployment healthy. Adds `agent-builder-tool-server`, `agent-builder-trigger-server`, and an `agentBootstrap` Job that registers the Polly agent URL.
+Prerequisite: LangSmith Deployment healthy. Adds the Agent Builder UI and its tool and trigger servers. Helm chart 0.16 removed the bundled agent bootstrap Job, so this path no longer registers an agent runtime, and the deploy script warns when you enable it without Fleet.
 
 ```hcl
 # infra/terraform.tfvars
@@ -525,27 +515,17 @@ make deploy
 Verify:
 
 ```bash
-kubectl get pods -n langsmith | grep -E "tool-server|trigger-server|bootstrap"
+kubectl get pods -n langsmith | grep -E "tool-server|trigger-server"
 ```
-
-Roll the frontend after `agentBootstrap` completes so it picks up the `langsmith-polly-config` ConfigMap:
-
-```bash
-kubectl rollout restart deployment langsmith-frontend -n langsmith
-```
-
-<Warning>
-Skipping the frontend restart makes Polly show "Unable to connect to LangGraph server".
-</Warning>
 
 ### Insights and Polly
 
-Prerequisite: Agent Builder healthy. Insights enables ClickHouse-backed trace analytics. Polly is the AI eval and monitoring agent. Enable both together.
+Insights enables ClickHouse-backed trace analytics. Polly is the AI eval and monitoring agent.
 
 ```hcl
 # infra/terraform.tfvars
 enable_insights = true
-enable_polly    = true
+enable_polly    = true   # requires enable_deployments = true
 ```
 
 ```bash
@@ -553,10 +533,14 @@ make init-values
 make deploy
 ```
 
+With `clickhouse_source = "in-cluster"`, `init-values.sh` writes the Insights values file directly. With an external ClickHouse, it prompts for the connection details and creates the `langsmith-clickhouse` Kubernetes Secret.
+
+To run Insights or Polly against the Cloud SQL and Memorystore instances instead of in-cluster databases, also set `enable_standalone_insights = true` or `enable_standalone_polly = true`. Neither requires LangSmith Deployment. With external Postgres and Redis, run `make apply` first so Terraform creates the dedicated databases and secrets.
+
 Verify:
 
 ```bash
-kubectl get pods -n langsmith | grep -E "clio|polly"
+kubectl get pods -n langsmith | grep -E "insights|polly"
 kubectl get pods -n langsmith -w
 ```
 
@@ -564,22 +548,73 @@ kubectl get pods -n langsmith -w
 `insights_encryption_key` and `polly_encryption_key` must never change after first enable. Rotating either permanently breaks existing encrypted data.
 </Warning>
 
+### SmithDB
+
+SmithDB is the columnar store and query engine that runs alongside ClickHouse in the LangSmith release. `enable_smithdb` provisions a dedicated Cloud SQL metastore (PostgreSQL 18), a GCS object-store bucket, a Workload Identity service account, and Local SSD and compute node pools. SmithDB requires GKE Standard; Terraform rejects it on Autopilot.
+
+```hcl
+# infra/terraform.tfvars
+enable_smithdb = true
+```
+
+```bash
+make apply
+make init-values  # copy langsmith-values-smithdb.yaml and generate its overrides
+make deploy
+```
+
+LangSmith then moves to SmithDB in stages. ClickHouse stays enabled throughout. Set each flag in `terraform.tfvars` only after the previous stage is healthy, and re-run `make init-values && make deploy` after each change:
+
+1. `smithdb_ingestion_enabled = true` routes new writes to SmithDB as well as ClickHouse.
+2. `smithdb_migration_enabled = true` backfills historical data from ClickHouse.
+3. `smithdb_query_enabled = true` serves UI and API reads from SmithDB.
+
+<Note>
+The historical migration stage requires Helm chart version 0.16.6 or later.
+</Note>
+
+Verify:
+
+```bash
+kubectl get pods -n langsmith | grep smithdb
+```
+
+### Sandboxes
+
+`enable_sandboxes` provisions the infrastructure for LangSmith Sandboxes: a KVM-capable sandbox-host node pool, a dedicated Memorystore instance for JuiceFS metadata, and the JuiceFS CSI configuration Secret. Sandboxes require GKE Standard and `enable_gcp_iam_module = true`, and the module expects external Redis (`redis_source = "external"`).
+
+```hcl
+# infra/terraform.tfvars
+enable_sandboxes       = true
+sandbox_host_image_tag = "<sandbox-host-image-tag>"
+```
+
+```bash
+make apply
+source infra/scripts/setup-env.sh   # generates the sandbox callback signing key
+make init-values
+make deploy
+```
+
+If your Helm release name is not `langsmith`, set `platform_backend_component_label` to `<release-name>-platform-backend` so the sandbox host can reach the platform backend.
+
 ### Expected pods by add-on
 
 **LangSmith Deployment adds:** `langsmith-host-backend`, `langsmith-listener`, `langsmith-operator`.
 
-**Fleet adds:** `standalone-fleet-api-server`, `standalone-fleet-tool-server`, `standalone-fleet-trigger-server`, `standalone-fleet-queue`.
+**Fleet adds:** `langsmith-standalone-fleet-api-server` and the other `standalone-fleet-*` workloads.
 
-**Agent Builder adds:** `langsmith-agent-builder-tool-server`, `langsmith-agent-builder-trigger-server`, `langsmith-agent-builder-bootstrap` (Completed), `agent-builder-<hash>` (operator-spawned).
+**Agent Builder adds:** `langsmith-agent-builder-tool-server`, `langsmith-agent-builder-trigger-server`.
 
-**Insights and Polly add:** `clio-<hash>` (Insights analytics), `smith-polly-<hash>` (Polly agent), `lg-<hash>-0` (LangGraph StatefulSet).
+**Standalone Insights and Polly add:** `langsmith-standalone-insights-api-server`, `langsmith-standalone-polly-api-server`, and their queue workloads.
+
+**SmithDB adds:** `langsmith-smithdb-cluster-manager`, `langsmith-smithdb-ingestion`, `langsmith-smithdb-query`, `langsmith-smithdb-compaction`, `langsmith-smithdb-compaction-worker`.
 
 ## Key watchouts
 
 - `config.deployment.url` must include `https://`. Without it, operator-spawned agents stay stuck in `DEPLOYING`.
 - `config.deployment.enabled: true` is required for LangSmith Deployment. Setting only the URL without `enabled: true` causes the chart to silently skip `listener` and `operator`.
 - Encryption keys must never change after first enable. Rotating `insights_encryption_key` or `polly_encryption_key` permanently breaks existing encrypted data.
-- Roll the frontend after first Polly enable. `agentBootstrap` creates the `langsmith-polly-config` ConfigMap after registering. Frontend pods started before bootstrap completes do not pick it up automatically.
 - Envoy Gateway IP changes on teardown. GCP releases the external IP when the Gateway is deleted. After a re-apply, a new IP is issued, so update your DNS A record.
 - `langsmith-ksa` annotation is not permanent. The operator creates `langsmith-ksa` at runtime; it does not survive namespace deletion. `deploy.sh` re-annotates it idempotently. Re-run `make deploy` if operator pods lose GCS access after a cluster rebuild.
 
