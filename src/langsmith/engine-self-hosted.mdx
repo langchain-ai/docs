@@ -39,7 +39,7 @@ Each organization chooses how Engine runs its models under **Settings > Engine >
 | **Model selection** | Managed and tuned by LangChain | Managed by LangChain, within the model families your providers offer |
 | **Data processing agreement** | LangChain's, with ZDR for every provider | Yours, with each provider you use |
 | **Billing** | LangChain bills Engine's usage in LSUs. | Your provider bills you for model calls. LangChain bills Engine's usage in LSUs, at a lower rate than LangSmith Intelligence. |
-| **Availability** | AWS US | Any cloud, with any provider region your cluster can reach |
+| **Availability** | AWS US | Any cloud, with supported models and endpoints your cluster can reach |
 
 For LangSmith Intelligence in other clouds or regions, [contact our sales team](https://www.langchain.com/contact-sales).
 
@@ -174,9 +174,11 @@ Engine also adds configuration to `platform-backend` and `ingest-queue`, which d
       openssl rand -hex 32
       ```
 
-    Store both in your predefined Kubernetes Secret rather than in your config file. See [Use an existing secret](/langsmith/self-host-using-an-existing-secret#parameters). When you install or upgrade with `helm`, the chart checks that the Secret has both keys and names any that are missing.
+    Store both in your predefined Kubernetes Secret before installing or upgrading the chart. See [Use an existing secret](/langsmith/self-host-using-an-existing-secret#parameters). When Helm can read the existing Secret from the cluster, the chart checks for both keys and names any that are missing. `helm template` and GitOps renders skip that lookup, so verify the keys are present separately.
 
     To rotate the encryption key, copy the current value to `engine_encryption_key_previous` and set the new key as `engine_encryption_key`. The previous key is accepted for decryption only, so runs encrypted just before the swap still complete.
+
+    When introducing or rotating the usage signing secret, pause new Engine work and wait for running scans to finish. Update `platform-backend`, `ingest-queue`, and the shared Engine and Insights API server and queue to use the same signing secret. After all four components are healthy, resume Engine and [verify an analysis and Engine usage](#verify-the-installation). The previous encryption key does not provide a fallback for usage signatures.
   </Step>
 </Steps>
 
@@ -236,31 +238,95 @@ engine:
 
 #### Use cloud identity for your model providers
 
-Amazon Bedrock, Google Vertex AI, and Azure AI Foundry can authenticate with the cloud identity of Engine's pods instead of credentials saved in LangSmith. List those providers in `engine.workloadIdentityProviders`, and grant the identity through the service accounts of the shared Engine deployment:
+Amazon Bedrock, Google Vertex AI, and Azure AI Foundry can authenticate with the cloud identity of Engine's pods instead of credentials saved in LangSmith. List those providers in `engine.workloadIdentityProviders`. Configure identity for both the API server and queue of the shared Engine and Insights deployment:
 
-```yaml
-engine:
-  workloadIdentityProviders:
-    - bedrock
+<Tabs>
+  <Tab title="Amazon EKS">
+    Configure IAM roles for service accounts (IRSA). Trust the namespace and service account of both Engine workloads, and grant the role access to the Bedrock models Engine uses.
 
-engineInsightsAgent:
-  apiServer:
-    serviceAccount:
-      annotations:
-        eks.amazonaws.com/role-arn: "arn:aws:iam::<account-id>:role/<engine-model-access-role>"
-  queue:
-    serviceAccount:
-      annotations:
-        eks.amazonaws.com/role-arn: "arn:aws:iam::<account-id>:role/<engine-model-access-role>"
-```
+    ```yaml
+    engine:
+      workloadIdentityProviders:
+        - bedrock
 
-Use the annotation for your platform, such as IAM roles for service accounts on EKS or Workload Identity on GKE.
+    engineInsightsAgent:
+      apiServer:
+        serviceAccount:
+          annotations:
+            eks.amazonaws.com/role-arn: "arn:aws:iam::<account-id>:role/<engine-model-access-role>"
+      queue:
+        serviceAccount:
+          annotations:
+            eks.amazonaws.com/role-arn: "arn:aws:iam::<account-id>:role/<engine-model-access-role>"
+    ```
+  </Tab>
+  <Tab title="Google GKE">
+    Enable Workload Identity Federation for GKE on the cluster and the node pools that run Engine. Grant each Engine Kubernetes service account `roles/iam.workloadIdentityUser` on the Google service account. Bind each member as `serviceAccount:<cluster-project-id>.svc.id.goog[<namespace>/<kubernetes-service-account>]`.
+
+    Grant the Google service account Vertex AI inference permissions, such as `roles/aiplatform.user`, in the project that hosts the models. Enable the required models in that project.
+
+    ```yaml
+    engine:
+      workloadIdentityProviders:
+        - vertex
+
+    engineInsightsAgent:
+      apiServer:
+        serviceAccount:
+          annotations:
+            iam.gke.io/gcp-service-account: "<service-account>@<project-id>.iam.gserviceaccount.com"
+        deployment:
+          extraEnv:
+            - name: GOOGLE_CLOUD_PROJECT
+              value: "<vertex-project-id>"
+      queue:
+        serviceAccount:
+          annotations:
+            iam.gke.io/gcp-service-account: "<service-account>@<project-id>.iam.gserviceaccount.com"
+        deployment:
+          extraEnv:
+            - name: GOOGLE_CLOUD_PROJECT
+              value: "<vertex-project-id>"
+    ```
+
+    Engine uses Application Default Credentials (ADC) to resolve the identity and project. Set `GOOGLE_CLOUD_PROJECT` on both workloads to the intended Vertex AI project. Engine currently uses the `global` Vertex AI location; the required models must be available there.
+  </Tab>
+  <Tab title="Azure AKS">
+    Enable the AKS OIDC issuer and Microsoft Entra Workload ID. Create a federated identity credential for each Engine Kubernetes service account on your managed identity. Use the cluster's OIDC issuer, audience `api://AzureADTokenExchange`, and subject `system:serviceaccount:<namespace>:<kubernetes-service-account>` for each.
+
+    Grant the identity inference permissions on the Azure AI Foundry resource for every model Engine uses. An Azure OpenAI role alone does not establish access to Claude models.
+
+    ```yaml
+    engine:
+      workloadIdentityProviders:
+        - azure
+
+    engineInsightsAgent:
+      apiServer:
+        serviceAccount:
+          annotations:
+            azure.workload.identity/client-id: "<managed-identity-client-id>"
+        deployment:
+          labels:
+            azure.workload.identity/use: "true"
+      queue:
+        serviceAccount:
+          annotations:
+            azure.workload.identity/client-id: "<managed-identity-client-id>"
+        deployment:
+          labels:
+            azure.workload.identity/use: "true"
+    ```
+
+    Both workloads need the service account annotation and pod label. Save the Foundry resource name under **Settings > Engine > Model providers**.
+  </Tab>
+</Tabs>
 
 <Warning>
 A provider listed in `engine.workloadIdentityProviders` counts as configured without saved credentials, so any Organization Admin can select it. Scope the identity to the models Engine uses.
 </Warning>
 
-Azure AI Foundry still needs its resource name, and Amazon Bedrock can take a region. Enter them under **Settings > Engine > Model providers**.
+Saved credentials take precedence over cloud identity. When switching a provider, apply the cloud identity configuration before removing its saved credentials. Then remove only that provider's saved API keys or service account JSON under **Settings > Engine > Model providers**. For Bedrock, also remove any saved access key, secret access key, and session token. Keep the Azure AI Foundry resource name and any Bedrock region setting, then [test the provider](#test-a-provider) again.
 
 <Warning>
 Upgrades from older Insights image pins require one extra check: if your values pin `images.engineInsightsAgentImage.repository` to the retired `langsmith-clio` image, remove or update that pin. Engine and Insights now run on `langsmith-insights-engine`, and the chart rejects `langsmith-clio`. For more information, see [Mirror images for your LangSmith installation](/langsmith/self-host-mirroring-images#additional-images-for-engine).
@@ -275,7 +341,7 @@ helm template langsmith langchain/langsmith \
   --namespace <namespace>
 ```
 
-The chart validates the Engine configuration at render time and fails with a message naming the missing value, so this command catches a misconfiguration before it reaches your cluster.
+The chart validates Engine values at render time and names missing values. This command does not check keys in an existing Kubernetes Secret; verify those before applying the chart.
 
 Apply the updated chart:
 
@@ -305,13 +371,15 @@ If Engine does not appear in the LangSmith UI after this, the most common causes
 
 After [enabling and configuring Engine](#turn-on-engine-in-langsmith) in the LangSmith UI, [test each selected provider](#test-a-provider), then start an Engine analysis and confirm that results appear for the tracing project. This verifies the complete path through Engine, Sandboxes, and your model providers or LangSmith Intelligence. Running pods alone does not verify that path.
 
+Check Engine usage under **Settings > Engine** for aggregate spend by workspace and project. Usage reporting and billing updates are asynchronous, so spend may appear later than the analysis results. For an air-gapped installation, verify the recorded usage through [Usage export](#air-gapped-installations).
+
 If the analysis does not complete, check that Engine pods are running, the sandbox workspace has quota available, and the cluster can reach your model providers or the LangSmith Intelligence gateway URL configured in `engine.intelligenceBaseUrl`.
 
 ### Turn on Engine in LangSmith
 
 Enabling Engine in Helm makes the feature available; it does not start any scans. After enabling the chart values, finish setup in LangSmith:
 
-1. An [Organization Admin](/langsmith/rbac#organization-admin) turns Engine on for the organization under **Settings > Engine enablement**. For more information, see [Find and fix issues](/langsmith/engine#enable-engine-for-your-organization).
+1. An [Organization Admin](/langsmith/rbac#organization-admin) turns Engine on for the organization under **Settings > Engine**. For more information, see [Find and fix issues](/langsmith/engine#enable-engine-for-your-organization).
 1. An Organization Admin [chooses how Engine runs its models](#choose-model-providers) under **Settings > Engine > Model providers**. Engine doesn't start any runs until this is saved.
 1. Any user turns on Engine for a tracing project from the project's **Engine** tab. For more information, see [Turn on Engine for a tracing project](/langsmith/engine#turn-on-engine-for-a-tracing-project).
 
@@ -320,6 +388,8 @@ Enabling Engine in Helm makes the feature available; it does not start any scans
 Under **Settings > Engine > Model providers**, an Organization Admin selects LangSmith Intelligence, one or more of your own providers, or both. Credentials are saved as organization secrets and apply to every workspace in the organization.
 
 LangSmith Intelligence appears only when your installation's `engine.intelligenceBaseUrl` serves Engine's models.
+
+When LangSmith Intelligence is available and selected, it takes priority over your selected providers. Leave it unselected to keep inference on your own providers.
 
 To use your own providers:
 
@@ -344,6 +414,8 @@ To use your own providers:
       <Tab title="Azure AI Foundry">
         An API key and the name of your Azure AI Foundry resource.
 
+        Engine sends all Azure model calls to this resource. OpenAI deployment names must match the model names Engine expects; custom deployment aliases are not supported. Contact your account team for the required names for your Engine version.
+
         To use the cloud identity of Engine's pods instead of an API key, see [Use cloud identity for your model providers](#use-cloud-identity-for-your-model-providers).
       </Tab>
       <Tab title="OpenAI">
@@ -354,10 +426,10 @@ To use your own providers:
     A provider with complete credentials shows as configured. To change them later, click the key icon next to the provider.
   </Step>
   <Step title="Test the provider" id="test-a-provider">
-    Click **Test connection**. Engine sends a small request to each model it uses on that provider, with the saved credentials, and shows whether each request succeeded and, if not, why.
+    Click **Test connection**. Engine sends a small request to each model it uses on that provider, with the saved credentials or configured cloud identity. It shows whether each request succeeded and, if not, why.
   </Step>
   <Step title="Select providers and save">
-    Select the providers Engine may use, then save. Engine uses a mix of models from the providers you select.
+    Select the providers Engine may use, then save.
   </Step>
 </Steps>
 
