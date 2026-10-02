@@ -259,6 +259,58 @@ assert resolve_skill_tools("linear", Runtime()) == linear_tools
 assert SkillsMiddleware(
     backend=backend, sources=["/skills/"], skill_tools=resolve_skill_tools
 )
+
+
+def linear_tools_for_user(user_id: str) -> list[BaseTool]:
+    """Stand-in for your lookup, such as the user's own Linear MCP connection."""
+    return linear_tools
+
+
+backend = FilesystemBackend(root_dir=str(example_dir), virtual_mode=True)
+# :remove-end:
+
+# :snippet-start: skills-tools-per-user-py
+from dataclasses import dataclass
+
+from deepagents import create_deep_agent
+from deepagents.middleware import SkillsMiddleware
+from langchain.tools import BaseTool
+from langgraph.runtime import Runtime
+
+
+@dataclass
+class Context:
+    user_id: str
+
+
+def resolve_skill_tools(name: str, runtime: Runtime[Context]) -> list[BaseTool]:
+    if name != "linear":
+        return []
+    return linear_tools_for_user(runtime.context.user_id)
+
+
+# KEEP MODEL
+agent = create_deep_agent(
+    model="anthropic:claude-sonnet-4-6",
+    backend=backend,
+    context_schema=Context,
+    middleware=[
+        SkillsMiddleware(
+            backend=backend,
+            sources=["/skills/"],
+            skill_tools=resolve_skill_tools,
+        ),
+    ],
+)
+
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "File a bug: checkout button does nothing."}]},
+    context=Context(user_id="user-123"),
+)
+# :snippet-end:
+
+# :remove-start:
+assert result["messages"]
 # :remove-end:
 
 # :snippet-start: skills-tools-search-py
