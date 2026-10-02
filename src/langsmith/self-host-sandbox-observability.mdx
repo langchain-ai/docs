@@ -1,0 +1,89 @@
+---
+title: Monitor self-hosted sandboxes with Datadog
+sidebarTitle: Sandbox metrics
+description: Collect sandbox host metrics and import a Datadog dashboard for your self-hosted LangSmith deployment.
+---
+
+The Sandbox Vitals dashboard displays operational metrics for [LangSmith sandboxes](/langsmith/sandboxes) running in your infrastructure. Use it to monitor capacity, lifecycle latency, execution, resource usage, and host health.
+
+Import the dashboard into your own Datadog organization. The download contains a dashboard definition, not telemetry or access to LangChain's hosted monitoring.
+
+## Check prerequisites
+
+The dashboard requires an existing self-hosted deployment using the `sandbox-host` Firecracker runtime. The collection example requires a chart with the `sandboxes.sandboxHost.deployment.podAnnotations` setting. Check your installed chart's values schema before applying it. Older runtime versions may not emit every metric.
+
+You also need:
+
+- **Datadog Agent**: Version 7.36 or later, with Kubernetes Autodiscovery and the [OpenMetrics integration](https://docs.datadoghq.com/integrations/openmetrics/).
+- **Agent coverage**: An Agent on the sandbox nodes. Preserve your existing Agent tolerations and add support for the sandbox node taint if needed.
+- **Private connectivity**: Agent access to the sandbox host's existing metrics listener on port `19190`. Do not expose this listener through public ingress. The host uses the node network, so restrict access with your node firewall configuration.
+- **Permissions**: Permission to import a dashboard in Datadog and update your LangSmith Helm release.
+
+Configure the Agent's site and credentials through your existing Datadog installation. The example does not install Datadog or enable sandboxes.
+
+## Collect and import metrics
+
+To set up the dashboard:
+
+1. Download `datadog-dashboard.json` and `datadog-values.yaml` from the [sandbox observability example](https://github.com/langchain-ai/helm/tree/main/charts/langsmith/examples/sandbox-observability).
+2. Follow the example's instructions to merge the OpenMetrics annotation into your existing release values. If you already collect these metrics, reconcile the checks to avoid duplicate scraping.
+3. Apply the values with your existing release manager and the same chart version you currently run. Changing pod annotations rolls sandbox-host pods and suspends their running sandboxes. Schedule this update in a maintenance window.
+4. Check the Agent's scrape status. Confirm that `langsmith_sandbox_host_live_sandboxes` and `langsmith_sandbox_host_juicefs_mount_ready` reach Datadog.
+5. Create a dashboard in Datadog and import the downloaded JSON through its dashboard import action.
+
+The example collects metrics without an additional namespace prefix. Datadog counter names use `.count` instead of `_total`. Histogram widgets use `.sum` and `.count` to calculate mean duration. The collection settings retain these series alongside histogram distributions. Review custom-metric usage and label cardinality in your Datadog plan.
+
+## Select your deployment
+
+The `env`, `cluster`, and `namespace` filters select host and JuiceFS metrics. Their defaults are `*`, so missing tags do not hide all data. Select your deployment after import.
+
+| Filter | Tag | Scope |
+| --- | --- | --- |
+| `env` | `env` | Host, JuiceFS, and API traces |
+| `cluster` | `kube_cluster_name` | Host and JuiceFS |
+| `namespace` | `kube_namespace` | Host and JuiceFS |
+| `api_service` | `service` | API traces only |
+| `gcs_bucket` | `bucket_name` | GCS storage only |
+| `s3_bucket` | `bucketname` | S3 storage only |
+
+The collection example attaches the namespace tag. Configure the Agent's cluster name and environment tags. If you use another cluster tag, update both the filter prefix and the dashboard's group-by clauses.
+
+Dashboard filters are not access controls. Use Datadog permissions to control access to telemetry in your organization.
+
+## Configure optional sections
+
+### API traces
+
+API widgets require Datadog APM metrics named `trace.http.request` and `trace.http.request.hits`. For tracing setup, see [Export LangSmith telemetry](/langsmith/export-backend#traces).
+
+Select the service that emits your sandbox API spans using `api_service`, which defaults to `platform-backend`. Select one service to avoid counting the same request more than once. Verify metric and `resource_name` values in your account: OpenTelemetry instrumentation can produce different names.
+
+API widgets use only `env` and `api_service`, not the host cluster or namespace filters. In a shared Datadog organization, select an environment and service that identify the intended deployment. Host-side command counts and duration do not require APM.
+
+### JuiceFS mount metrics
+
+JuiceFS exports its own `juicefs_*` metrics separately from the sandbox host. The optional `datadog-juicefs-values.yaml` example collects both listeners.
+
+Apply it only after confirming that the Agent can reach the mount's metrics listener on private port `9567`. JuiceFS defaults to loopback; the example does not change its bind address. If you change the mount's metrics address, restrict access to the intended private network and preserve existing mount options. This change also requires a host rollout.
+
+The example README covers other listener addresses and externally managed mounts. Logical filesystem size can differ from physical bucket usage because of sparse images and copy-on-write clones.
+
+### Cloud storage
+
+The object storage widgets require the Datadog AWS or GCP integration for your account. Set `s3_bucket` or `gcs_bucket` to your exact JuiceFS bucket name. Their placeholder defaults intentionally select no bucket.
+
+These widgets ignore environment and Kubernetes filters because cloud metrics may not carry those tags. Remove unused provider widgets. Azure Blob Storage requires provider-specific queries; the host and JuiceFS sections remain independent of your storage provider.
+
+## Troubleshoot missing data
+
+Check a continuously exported gauge and the Agent's scrape status before interpreting an empty failure graph. A counter may have no series until an event occurs. A host that exits before the next scrape may also lose its final counter increment; check logs when investigating an exit.
+
+Pool gauges come from the elected host leader, including capacity observations when autoscaling is disabled. The desired-replica target updates only when scaling is active. It does not represent the configured replica count in a fixed-replica deployment.
+
+For empty optional sections, check the integration, metric names, and filter values before changing the runtime.
+
+## See also
+
+- [Export LangSmith telemetry](/langsmith/export-backend)
+- [Configure an observability collector](/langsmith/langsmith-collector)
+- [LangSmith sandboxes](/langsmith/sandboxes)
