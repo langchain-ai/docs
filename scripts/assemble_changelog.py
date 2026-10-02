@@ -32,6 +32,7 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -264,11 +265,30 @@ def effective_status(frag: Fragment, flag_index: dict[str, dict], have_token: bo
 
 
 def render_bullet(frag: Fragment) -> str:
-    text = frag.body
+    text = _normalize_prose(frag.body)
     if frag.docs_link and "](" not in text:
         sep = " " if text.endswith(".") else ". "
         text = f"{text}{sep}[Learn more]({frag.docs_link})."
     return f"- {text}"
+
+
+def _normalize_prose(text: str) -> str:
+    """Normalize generated changelog prose to the docs Vale conventions."""
+    parts = re.split(
+        r"(`[^`]*`|\]\([^)]*\)|\b(?:GET|POST|PUT|PATCH|DELETE) /[^\s`]*?/url\b)",
+        text,
+    )
+    for index, part in enumerate(parts):
+        if part.startswith(("`", "](")):
+            continue
+        if re.match(r"(?:GET|POST|PUT|PATCH|DELETE) /", part):
+            parts[index] = f"`{part}`"
+            continue
+        part = re.sub(r"\s*([—–])\s*", r"\1", part)
+        part = re.sub(r"\burl\b", "URL", part, flags=re.IGNORECASE)
+        part = re.sub(r"(?<=\d) (?=(?:B|kB|MB|GB|TB|ns|ms|s|min|h|d) )", "", part)
+        parts[index] = re.sub(r"\bdrill-down\b", "detailed", part, flags=re.IGNORECASE)
+    return "".join(parts)
 
 
 def render_update_block(
