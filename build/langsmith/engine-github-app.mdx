@@ -1,0 +1,171 @@
+---
+title: Create a GitHub App for self-hosted Engine
+sidebarTitle: Create a GitHub App
+description: Choose an App owner and configure GitHub App registration for GitHub.com, Enterprise Cloud with data residency, or Enterprise Server.
+---
+
+Self-hosted Engine uses a GitHub App that you create on your GitHub instance. The same App can serve multiple LangSmith workspaces and projects. You do not create an App for each repository or Engine user.
+
+This guide covers GitHub's UI. Start with the [operator setup guide](/langsmith/engine-github-self-hosted) for LangSmith prerequisites and deployment configuration. LangSmith Cloud uses a managed App and does not require these steps.
+
+## Choose who owns the App
+
+An App's **owner** manages its registration and credentials. An **installation** grants that App access to selected repositories in an organization or account. An App owned by one organization can access another organization's repositories when its visibility permits installation there.
+
+Choose ownership and visibility based on the repositories Engine needs:
+
+| Repositories to connect | App configuration |
+| --- | --- |
+| Repositories in one organization | Create the App in that organization. Select **Only on this account** if it does not need installations elsewhere. |
+| Repositories in several organizations within an enterprise | Create an enterprise-owned App and install it in each organization. This keeps installation limited to the enterprise. |
+| Repositories in multiple organizations, or a mix of organizations and personal accounts, without managed users | Create an organization-owned App with **Any account**, then install it in each target account. On GHES, **Any account** applies only within that server. |
+| Repositories owned by one personal account, without managed users | Create the App in the personal account and select **Only on this account**. |
+
+Making an App public allows other accounts to install it. It does not make your repositories public or grant access to them without installation.
+
+### Enterprise Managed Users
+
+[GitHub Enterprise Cloud with data residency](https://docs.github.com/en/enterprise-cloud@latest/admin/data-residency/about-github-enterprise-cloud-with-data-residency) on `ghe.com` uses Enterprise Managed Users (EMU). Enterprise Cloud on GitHub.com can also use EMU. Signing in with SSO alone does not mean an enterprise uses EMU.
+
+For EMU, use organization-owned repositories. A managed user can register an App, but this Engine App cannot be installed on a managed user's personal account. See GitHub's [managed-user restrictions](https://docs.github.com/en/enterprise-cloud@latest/admin/managing-iam/understanding-iam-for-enterprises/abilities-and-restrictions-of-managed-user-accounts#github-apps).
+
+An enterprise-owned App provides a central owner for access across organizations. GitHub can also offer **This enterprise** instead of **Any account** when registering an App under an account within an EMU enterprise. **Only on this account** limits an organization-owned App to that organization. Follow the options on your GitHub instance; multi-organization access requires a separate installation in each organization.
+
+An App registered under an enterprise has internal visibility automatically. It cannot be installed on personal accounts. See GitHub's [App visibility rules](https://docs.github.com/en/enterprise-cloud@latest/apps/creating-github-apps/registering-a-github-app/making-a-github-app-public-or-private).
+
+Only enterprise members can authorize an enterprise-owned App. If outside collaborators need to connect repositories in LangSmith, review the App's ownership and their enterprise access before creating it.
+
+{/* Screenshot: show the organization-owned App visibility choices on an EMU enterprise, including "Only on this account" and "This enterprise" if offered. Use a test organization and crop out personal account details. This image should illustrate the choice, not replace the visibility table. */}
+
+## Open the registration form
+
+Sign in on the GitHub instance that hosts your repositories. An App registered on GitHub.com cannot be reused as an App on GHES or on a `ghe.com` enterprise.
+
+### GitHub.com, including Enterprise Cloud
+
+You must be an organization owner or have permission to manage its Apps.
+
+To register an organization-owned App:
+
+1. Open your profile menu and select **Your organizations**.
+2. Next to the organization that should own the App, select **Settings**.
+3. Open **Developer settings** > **GitHub Apps** > **New GitHub App**.
+
+To register a personal-account App, open your profile menu and select **Settings** > **Developer settings** > **GitHub Apps** > **New GitHub App**.
+
+For an enterprise-owned App, use the [enterprise registration steps](#register-an-enterprise-owned-app).
+
+### Enterprise Cloud with data residency
+
+Open your enterprise's address, such as `https://example.ghe.com`, and sign in through your identity provider. Use the organization registration steps above for one organization, or [register an enterprise-owned App](#register-an-enterprise-owned-app) for central management across organizations.
+
+Use your `ghe.com` site throughout registration and installation. Your personal GitHub.com account and its Apps are separate from this enterprise.
+
+### GitHub Enterprise Server
+
+Open your GHES web address, such as `https://git.example.com`. Use the organization or personal-account registration steps above on that server. The steps are the same whether GHES runs in your cloud account or on premises.
+
+For an organization-owned App that must also access personal repositories, choose **Any account**. An enterprise-owned App cannot be installed on personal accounts. See the [GHES App visibility guide](https://docs.github.com/en/enterprise-server@3.20/apps/creating-github-apps/registering-a-github-app/making-a-github-app-public-or-private), selecting your server's documentation version.
+
+### Register an enterprise-owned App
+
+An enterprise owner completes these steps. Enterprise-owned Apps require GHES 3.17 or later. On older GHES versions, use an organization-owned App with the visibility needed for your repositories.
+
+To register the App:
+
+1. Open your profile menu. With managed users, select **Your enterprise**. With personal accounts, select **Your enterprises**, then open the enterprise's **Settings**.
+2. In the enterprise sidebar, under **Settings**, select **GitHub Apps**.
+3. Select **New GitHub App** and complete the form below. Enterprise-owned Apps do not have the **Only on this account** / **Any account** choice.
+
+For GitHub's instructions, see [Create an App for your enterprise](https://docs.github.com/en/enterprise-cloud@latest/admin/managing-github-apps-for-your-enterprise/creating-github-apps-for-your-enterprise).
+
+{/* Screenshot: show Enterprise settings > GitHub Apps and the New GitHub App action on GHEC with data residency. If GHES navigation differs, add a second image labeled with its GHES version. Use test account names; omit account identifiers and credentials. */}
+
+<Note>
+Creating an enterprise-owned App does not grant access to every repository in the enterprise. Install it on each organization whose repositories Engine needs. Installing an App on the enterprise account itself grants enterprise-level permissions, not repository access.
+</Note>
+
+## Complete the registration form
+
+Use the following settings for all three GitHub environments. Replace `https://langsmith.example.com` with the browser-facing URL of your LangSmith deployment.
+
+If LangSmith uses a base path, include it. For example, a deployment at `https://langsmith.example.com/langsmith` uses `https://langsmith.example.com/langsmith/api-host/v1/integrations/forge/github/callback` as its callback URL.
+
+| GitHub setting | Value |
+| --- | --- |
+| **GitHub App name** | A unique name for your deployment, such as `acme-langsmith-engine`. |
+| **Homepage URL** | Your LangSmith URL, such as `https://langsmith.example.com`. |
+| **Callback URL** | `https://langsmith.example.com/api-host/v1/integrations/forge/github/callback` |
+| **Request user authorization (OAuth) during installation** | Enabled. Engine needs the authorization callback to finish connecting an installation. |
+| **Expire user authorization tokens** | Leave enabled. |
+| **Enable Device Flow** | Leave disabled. |
+| **Setup URL** | Leave unset. GitHub uses the callback when OAuth during installation is enabled. |
+| **Webhook: Active** | Enabled. |
+| **Webhook URL** | `https://langsmith.example.com/api-host/v1/integrations/forge/github/webhook` |
+| **Webhook secret** | A separately generated random secret, also configured in LangSmith. |
+| **SSL verification** | Enabled. |
+| **Where can this GitHub App be installed?** | The visibility selected in [Choose who owns the App](#choose-who-owns-the-app). This field does not appear for enterprise-owned Apps. |
+
+{/* Screenshot: show the Callback URL and enabled "Request user authorization (OAuth) during installation" setting in the GitHub App form. Use https://langsmith.example.com for the URL. Exclude client secrets, private keys, and webhook-secret values. */}
+
+Generate the webhook secret with a cryptographically secure generator or your secret manager, using at least 32 random bytes. Save it for the LangSmith configuration.
+
+Under **Permissions** > **Repository permissions**, configure:
+
+| Permission | Access | Purpose |
+| --- | --- | --- |
+| **Contents** | Read and write | Read code and push Engine's fix branches. |
+| **Pull requests** | Read and write | Create draft PRs and read their status. |
+| **Metadata** | Read-only, selected automatically | Identify repositories. |
+
+Leave organization, account, and enterprise permissions unset. Engine's standard investigation and fix workflow does not require administration, workflow, or Checks permissions.
+
+Under **Subscribe to events**, select **Pull request**. These events let Engine link externally created PRs that include Engine's issue reference and mark issues complete after a merge.
+
+{/* Screenshot: show Contents and Pull requests set to Read and write, Metadata set to Read-only, and the Pull request event selected. Crop to these settings; do not include any credentials. */}
+
+Select **Create GitHub App**.
+
+## Save the App values
+
+From the App's settings page, collect the following for your LangSmith operator:
+
+| Value | How to obtain it |
+| --- | --- |
+| **App ID** | Copy the numeric App ID from the registration. It is different from the Client ID and installation ID. |
+| **Client ID** | Copy the OAuth Client ID. |
+| **Client secret** | Under **Client secrets**, select **Generate a new client secret** and save it immediately in your secret manager. |
+| **Private key** | Under **Private keys**, select **Generate a private key** and store the downloaded PEM file securely. |
+| **App page URL** | Copy the App's public page URL exactly as GitHub provides it. Enterprise-owned Apps can use a different URL path from organization-owned Apps. |
+| **Webhook secret** | Use the value entered during registration. |
+
+For the App page URL, do not copy the developer settings page or an installation URL ending in `/installations/new`. LangSmith uses the App page to construct the installation link. Preserve any enterprise namespace in the URL.
+
+Complete [Configure LangSmith](/langsmith/engine-github-self-hosted#configure-langsmith) before connecting the App from a workspace.
+
+## Install and connect the App
+
+After the operator configures LangSmith, start from **Connect GitHub** in Engine. Select the organization or account to install on, then select **Only select repositories** and choose the repositories Engine needs. Complete any administrator approval or SSO prompts.
+
+For several organizations, repeat for each one using **Install on another GitHub organization or repository...** in LangSmith. An organization owner can perform the installation. Repository administrators in an EMU enterprise can install this App only while it requests no organization permissions and enterprise policy permits the installation.
+
+If GitHub sends an installation request to an administrator, wait for approval, then start **Connect GitHub** again in LangSmith. Approval in GitHub does not finish the LangSmith connection automatically.
+
+If you installed the App directly from GitHub first, still complete **Connect GitHub** in the target LangSmith workspace and select that installation. A GitHub installation alone does not connect a LangSmith workspace.
+
+## See also
+
+- [Connect repositories](/langsmith/engine-github#connect-repositories)
+- [Verify the integration](/langsmith/engine-github-self-hosted#verify-the-integration)
+- [Register a GitHub App](https://docs.github.com/en/enterprise-cloud@latest/apps/creating-github-apps/registering-a-github-app/registering-a-github-app)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/engine-github-app.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
