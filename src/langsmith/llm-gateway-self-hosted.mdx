@@ -11,7 +11,7 @@ import LLMGatewayBetaNote from '/snippets/langsmith/llm-gateway-beta-note.mdx';
 The LLM Gateway (the `agent-gateway` service) proxies model calls from agents, coding agents, and optionally your LangSmith deployment to upstream LLM providers, applying policies at granular scopes for reliability, spend limits, and PII or secrets redaction. This guide enables it on a self-hosted Kubernetes install using the Helm chart. For the SaaS equivalent, see [LLM Gateway](/langsmith/llm-gateway).
 
 <Note>
-Enabling the gateway requires Helm chart version 0.17.29rc4 or later.
+Enabling the gateway requires LangSmith version 0.17.29rc4 or later, which ships in Helm chart version 0.17.0-rc.56 or later.
 </Note>
 
 <Info>
@@ -43,6 +43,7 @@ agentGateway:
   #     requests: { cpu: 100m, memory: 256Mi }
   # autoscaling:
   #   enabled: false
+  #   createHpa: true
   #   minReplicas: 1
   #   maxReplicas: 5
   #   targetCPUUtilizationPercentage: 50
@@ -63,19 +64,23 @@ agentGateway:
     targetCPUUtilizationPercentage: 60
 ```
 
+The chart creates the HorizontalPodAutoscaler only when both `autoscaling.enabled` and `autoscaling.createHpa` are `true`.
+
 </Step>
 
 <Step title="Apply and verify" icon="rocket">
 
-Apply the chart. See [Upgrade an installation](/langsmith/self-host-upgrades) for additional instructions.
+Apply the chart with chart version 0.17.0-rc.56 or later. Release candidate charts do not appear in `helm search` results unless you pass `--devel`. See [Upgrade an installation](/langsmith/self-host-upgrades) for additional instructions.
 
 ```bash
+helm search repo langchain/langsmith --versions --devel
+
 helm upgrade --install langsmith langchain/langsmith \
-  --version 0.17.29rc4 \
+  --version <chart-version> \
   -f values.yaml --timeout=20m
 ```
 
-Verify the deployment is healthy:
+Verify the deployment is healthy. The Deployment is named `<release-fullname>-agent-gateway`, which is `langsmith-agent-gateway` for a release named `langsmith`:
 
 ```bash
 kubectl get deploy langsmith-agent-gateway
@@ -99,7 +104,7 @@ When enabled, the chart injects `PRESIDIO_ANALYZER_URL` into the gateway pod so 
 
 ## Expose the gateway externally
 
-The gateway uses the same Ingress as the LangSmith UI and API. If `ingress.enabled=true` is already set in your Helm values, the gateway becomes reachable at `https://<your-hostname>/gateway/` as soon as you set `agentGateway.enabled=true`. No separate Ingress, LoadBalancer, or DNS record is required.
+The gateway uses the same Ingress as the LangSmith UI and API. If `ingress.enabled=true` is already set in your Helm values, the gateway becomes reachable at `https://<your-hostname>/gateway/` as soon as you set `agentGateway.enabled=true`. No separate Ingress, LoadBalancer, or DNS record is required. If you set `config.basePath`, the route moves to `https://<your-hostname>/<basePath>/gateway/`, and every gateway URL on this page needs the same prefix.
 
 Check from any host that can reach your Ingress:
 
@@ -241,7 +246,7 @@ For the full guide, see [Spend policies](/langsmith/llm-gateway-spend-policies).
 
 - The gateway makes outbound HTTP calls to provider LLM endpoints. Any custom provider URLs you configure must be validated against your egress policy; the service uses LangSmith's SSRF-protection library for custom and configured provider URLs. Built-in providers resolve to fixed, provider-owned hostnames and aren't a user-controlled-URL path.
 - External clients should reach the gateway through the frontend's `/gateway/` path so requests inherit the same TLS termination, auth, and rate limiting as the rest of the LangSmith API. Creating a second Ingress or LoadBalancer directly to port `8083` bypasses those controls.
-- `AGENT_GATEWAY_URL` is derived from the chart's `agentGateway.name`, `namespace`, and `clusterDomain` values. Overriding any of those on an existing install requires a rolling restart of every pod that reads the value.
+- `AGENT_GATEWAY_URL` is derived from the Helm release fullname and the chart's `agentGateway.name`, `agentGateway.service.port`, `namespace`, and `clusterDomain` values. Overriding any of those on an existing install requires a rolling restart of every pod that reads the value.
 
 ## Next steps
 
