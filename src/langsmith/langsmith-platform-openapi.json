@@ -278,7 +278,7 @@
           "tracer-sessions"
         ],
         "summary": "Delete tracer session",
-        "description": "Delete a specific project.",
+        "description": "Delete a specific project.\n\nReturns 202 when deletion is accepted. Cleanup runs asynchronously.\nLocation identifies the affected project, not a cleanup-status endpoint.\nFor a caller with read access, GET at that URL returns 200 with the project\nwhile it is still available, or 404 after the project is removed. A 404 does\nnot confirm that background trace cleanup has finished. Polling for cleanup\ncompletion is not supported.",
         "operationId": "delete_tracer_session_api_v1_sessions__session_id__delete",
         "security": [
           {
@@ -304,11 +304,14 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
+          "202": {
+            "description": "Deletion accepted; background cleanup may still be running.",
+            "headers": {
+              "Location": {
+                "description": "The affected project URL, not a cleanup-status endpoint.",
+                "schema": {
+                  "type": "string"
+                }
               }
             }
           },
@@ -8978,8 +8981,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],
@@ -11024,7 +11027,7 @@
           "feedback"
         ],
         "summary": "Create feedback",
-        "description": "Create a new feedback.\n\n`session_id` is required: it identifies the tracing project the feedback\nbelongs to.",
+        "description": "Create a new feedback.\n\n`session_id` identifies the tracing project the feedback belongs to. It is\nrequired unless the feedback is addressed by `address`, or by `agent_id` and\n`agent_environment`, which name that project through an Agent environment\nthat already exists.",
         "operationId": "create_feedback_api_v1_feedback_post",
         "security": [
           {
@@ -11057,6 +11060,15 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "agent_id or agent_environment is invalid, or no Agent environment matches them. Feedback does not create one."
+          },
+          "403": {
+            "description": "The feedback key is reserved, or Agent addressing is not enabled for this workspace."
+          },
+          "409": {
+            "description": "The addressed Agent is archived, or its environment is bound to a tracing project that is not Agent-owned."
           },
           "422": {
             "description": "Validation Error",
@@ -20971,7 +20983,7 @@
           "orgs"
         ],
         "summary": "Update org service key",
-        "description": "Update an API key's role(s) in place without rotating the key.\n\nOrganization Operators cannot assign the Organization Admin role or change\na key that already holds it, and no key can change its own roles. Applies\nto both org-scoped and workspace-scoped keys.",
+        "description": "Update an API key's role(s) in place without rotating the key.\n\nOrganization Operators cannot assign the Organization Admin role or change\na key that already holds it, and no key can change its own roles.\nWorkspace-scoped keys also require key-management permission in every\nworkspace they cover. Applies to both org-scoped and workspace-scoped keys.",
         "operationId": "update_org_service_key_api_v1_orgs_current_service_keys__api_key_id__patch",
         "security": [
           {
@@ -22189,7 +22201,7 @@
           "me"
         ],
         "summary": "Update onboarding state field",
-        "description": "Update a specific onboarding completion field for the current user.\n\nValid fields:\n- tracing_completed_at\n- lgstudio_completed_at\n- playground_completed_at\n- evaluation_completed_at\n- success_viewed_at",
+        "description": "Update a specific onboarding completion field for the current user.\n\nValid fields:\n- tracing_completed_at\n- lgstudio_completed_at\n- playground_completed_at\n- evaluation_completed_at\n- success_viewed_at\n- agent_platform_welcome_viewed_at",
         "operationId": "update_onboarding_state_field_api_v1_me_onboarding_state__field__put",
         "security": [
           {
@@ -26333,10 +26345,10 @@
             "name": "limit",
             "in": "query",
             "schema": {
-              "type": "integer",
-              "default": 20,
               "minimum": 1,
               "maximum": 100,
+              "type": "integer",
+              "default": 20,
               "title": "Limit"
             }
           },
@@ -26345,9 +26357,9 @@
             "name": "offset",
             "in": "query",
             "schema": {
+              "minimum": 0,
               "type": "integer",
               "default": 0,
-              "minimum": 0,
               "title": "Offset"
             }
           },
@@ -27696,8 +27708,8 @@
             "name": "min_start_time",
             "in": "query",
             "schema": {
-              "type": "string",
               "format": "date-time",
+              "type": "string",
               "title": "Min Start Time"
             }
           },
@@ -27706,8 +27718,8 @@
             "name": "max_start_time",
             "in": "query",
             "schema": {
-              "type": "string",
               "format": "date-time",
+              "type": "string",
               "title": "Max Start Time"
             }
           },
@@ -27933,8 +27945,8 @@
             "name": "min_start_time",
             "in": "query",
             "schema": {
-              "type": "string",
               "format": "date-time",
+              "type": "string",
               "title": "Min Start Time"
             }
           },
@@ -27943,8 +27955,8 @@
             "name": "max_start_time",
             "in": "query",
             "schema": {
-              "type": "string",
               "format": "date-time",
+              "type": "string",
               "title": "Max Start Time"
             }
           }
@@ -28599,8 +28611,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],
@@ -28718,8 +28730,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],
@@ -28837,6 +28849,83 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/platform/datasets/{dataset_id}/examples/{example_id}": {
+      "delete": {
+        "description": "Soft-delete an example, preserving prior versions and their attachments. If the latest version is already deleted, the request succeeds without creating another version. Deletion is recorded at the current time or just after the latest version, whichever is later. For future-dated versions, latest reads reflect deletion immediately; timestamp reads reflect deletion only at or after the recorded deletion timestamp.",
+        "tags": [
+          "examples"
+        ],
+        "summary": "Delete an example",
+        "parameters": [
+          {
+            "description": "Dataset ID",
+            "name": "dataset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Example ID",
+            "name": "example_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Example deleted or already deleted"
+          },
+          "400": {
+            "description": "Invalid dataset or example ID",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/shared.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not authorized to update this dataset",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/shared.ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Example not found in this dataset",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/shared.ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "API Key": [],
+            "Tenant ID": []
+          },
+          {
+            "Bearer Auth": [],
+            "Tenant ID": []
+          }
+        ],
+        "x-public": true
       }
     },
     "/api/v1/platform/evaluators": {
@@ -30375,8 +30464,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],
@@ -30465,8 +30554,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],
@@ -30548,8 +30637,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],
@@ -31120,8 +31209,8 @@
             "name": "trace_id",
             "in": "query",
             "schema": {
-              "type": "string",
               "format": "uuid",
+              "type": "string",
               "title": "Trace Id"
             }
           },
@@ -34393,8 +34482,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],
@@ -36162,8 +36251,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],
@@ -36235,8 +36324,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           },
           {
@@ -36262,8 +36351,8 @@
             "name": "trace_id",
             "in": "query",
             "schema": {
-              "type": "string",
               "format": "uuid",
+              "type": "string",
               "title": "Trace Id"
             }
           }
@@ -36337,8 +36426,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           },
           {
@@ -36347,8 +36436,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           },
           {
@@ -36357,8 +36446,8 @@
             "in": "query",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "date-time",
+              "type": "string",
               "title": "Start Time"
             }
           },
@@ -36455,8 +36544,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           },
           {
@@ -36549,8 +36638,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           },
           {
@@ -36673,8 +36762,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           },
           {
@@ -36683,8 +36772,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           },
           {
@@ -36785,8 +36874,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           },
           {
@@ -36795,8 +36884,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           },
           {
@@ -36805,8 +36894,8 @@
             "in": "query",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "date-time",
+              "type": "string",
               "title": "Start Time"
             }
           },
@@ -36931,8 +37020,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],
@@ -37193,8 +37282,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           },
           {
@@ -37203,8 +37292,8 @@
             "in": "query",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
+              "type": "string",
               "title": "Project Id"
             }
           },
@@ -37275,8 +37364,8 @@
             "name": "start_time",
             "in": "query",
             "schema": {
-              "type": "string",
               "format": "date-time",
+              "type": "string",
               "title": "Start Time"
             }
           }
@@ -37410,8 +37499,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],
@@ -37525,8 +37614,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           },
           {
@@ -37638,8 +37727,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],
@@ -38325,7 +38414,7 @@
     },
     "/api/v2/sandboxes/boxes/{name}/download-url": {
       "post": {
-        "description": "Generate a tokenized link that downloads a single file from a sandbox with no further authentication. This mints a token rather than creating an addressable resource, so it returns 200 with no Location header. The token pins the sandbox, the file path, the response content type and disposition, and the sandbox flags, so a link cannot be repointed at another file or served under a weaker policy. The file is always served with a Content-Security-Policy: a sandbox directive, plus a default-src holding every fetch to the sandbox's own download host and a set of pre-approved third-party origins. csp_sandbox_flags may loosen the sandbox with allow-downloads, allow-forms, allow-modals, allow-orientation-lock, allow-pointer-lock, allow-popups, allow-presentation, allow-scripts, or allow-top-navigation-by-user-activation. allow-same-origin is not accepted, so a served file never shares an origin with anything. csp_source_bundles selects the third-party origins: cdnjs, google-fonts, jsdelivr, and unpkg are all allowed when the field is omitted, and 'none' holds the file to the sandbox alone. Because every file of one sandbox is served from the same host, a page can load sibling files it has links for, but only by their own link URLs. Links never expire unless expires_in_seconds is set. The link is served from the sandbox service domain, not the API host.",
+        "description": "Generate a tokenized link that downloads a single file from a sandbox with no further authentication. This mints a token rather than creating an addressable resource, so it returns 200 with no Location header. The token pins the sandbox, the file path, the response content type and disposition, and the sandbox flags, so a link cannot be repointed at another file or served under a weaker policy. The file is always served with a Content-Security-Policy: a sandbox directive, plus a default-src holding every fetch to the file's own download host and a set of pre-approved third-party origins. csp_sandbox_flags may loosen the sandbox with allow-downloads, allow-forms, allow-modals, allow-orientation-lock, allow-pointer-lock, allow-popups, allow-presentation, allow-same-origin, allow-scripts, or allow-top-navigation-by-user-activation. Every file is served from its own host, derived from the sandbox and the path, so allow-same-origin gives a page localStorage and IndexedDB that no other file can read, and re-minting a link for the same file keeps them. csp_sandbox set to false drops the sandbox directive altogether, and csp_sandbox_flags must then be omitted. csp_source_bundles selects the third-party origins: cdnjs, google-fonts, jsdelivr, and unpkg are all allowed when the field is omitted, 'none' holds the file to its own host, and 'any' sends no default-src at all. Links never expire unless expires_in_seconds is set. The link is served from the sandbox service domain, not the API host.",
         "tags": [
           "sandboxes"
         ],
@@ -40092,8 +40181,8 @@
             "in": "query",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "date-time",
+              "type": "string",
               "title": "Start Time"
             }
           },
@@ -40103,8 +40192,8 @@
             "in": "query",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "date-time",
+              "type": "string",
               "title": "End Time"
             }
           },
@@ -40140,10 +40229,10 @@
             "name": "page_size",
             "in": "query",
             "schema": {
-              "type": "integer",
-              "default": 20,
               "minimum": 1,
               "maximum": 100,
+              "type": "integer",
+              "default": 20,
               "title": "Page Size"
             }
           },
@@ -41522,8 +41611,8 @@
             "in": "query",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
+              "type": "string",
               "title": "Project Id"
             }
           }
@@ -41727,8 +41816,8 @@
             "in": "query",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
+              "type": "string",
               "title": "Project Id"
             }
           }
@@ -41862,8 +41951,8 @@
             "in": "query",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
+              "type": "string",
               "title": "Session Id"
             }
           }
@@ -42014,10 +42103,10 @@
             "name": "page_size",
             "in": "query",
             "schema": {
-              "type": "integer",
-              "default": 20,
               "minimum": 1,
               "maximum": 100,
+              "type": "integer",
+              "default": 20,
               "title": "Page Size"
             }
           },
@@ -42027,8 +42116,8 @@
             "in": "query",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
+              "type": "string",
               "title": "Project Id"
             }
           },
@@ -42375,8 +42464,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           },
           {
@@ -42393,8 +42482,8 @@
             "name": "max_start_time",
             "in": "query",
             "schema": {
-              "type": "string",
               "format": "date-time",
+              "type": "string",
               "title": "Max Start Time"
             }
           },
@@ -42403,8 +42492,8 @@
             "name": "min_start_time",
             "in": "query",
             "schema": {
-              "type": "string",
               "format": "date-time",
+              "type": "string",
               "title": "Min Start Time"
             }
           },
@@ -42414,8 +42503,8 @@
             "in": "query",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
+              "type": "string",
               "title": "Project Id"
             }
           },
@@ -42701,8 +42790,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],
@@ -42800,8 +42889,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],
@@ -42934,8 +43023,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           },
           {
@@ -42945,8 +43034,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],
@@ -43041,8 +43130,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           },
           {
@@ -43052,8 +43141,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],
@@ -43141,8 +43230,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           },
           {
@@ -43152,8 +43241,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],
@@ -44194,8 +44283,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],
@@ -44267,8 +44356,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],
@@ -44385,8 +44474,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],
@@ -44495,10 +44584,10 @@
             "name": "limit",
             "in": "query",
             "schema": {
-              "type": "integer",
-              "default": 50,
               "minimum": 1,
               "maximum": 100,
+              "type": "integer",
+              "default": 50,
               "title": "Limit"
             }
           },
@@ -44506,9 +44595,9 @@
             "name": "offset",
             "in": "query",
             "schema": {
+              "minimum": 0,
               "type": "integer",
               "default": 0,
-              "minimum": 0,
               "title": "Offset"
             }
           }
@@ -45367,8 +45456,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],
@@ -45471,10 +45560,10 @@
             "name": "page_size",
             "in": "query",
             "schema": {
-              "type": "integer",
-              "default": 20,
               "minimum": 1,
               "maximum": 100,
+              "type": "integer",
+              "default": 20,
               "title": "Page Size"
             }
           },
@@ -47722,6 +47811,9 @@
           "delete_sso_settings",
           "update_default_sso_provision_organization",
           "update_login_methods",
+          "create_oidc_integration",
+          "update_oidc_integration",
+          "delete_oidc_integration",
           "update_organization_info",
           "update_business_info",
           "update_payment_plan",
@@ -47758,6 +47850,7 @@
           "create_tagging",
           "delete_tagging",
           "create_agent",
+          "create_agent_environment",
           "update_agent",
           "delete_agent",
           "create_agent_runtime_binding",
@@ -47832,6 +47925,8 @@
           "attach_access_policies",
           "detach_access_policies",
           "read_role_access_policies",
+          "create_team",
+          "add_team_members",
           "create_scim_token",
           "update_scim_token",
           "delete_scim_token",
@@ -47868,6 +47963,7 @@
           "get_annotation_queue_items",
           "submit_nps_response",
           "submit_product_feedback",
+          "update_trace_flight_score",
           "create_mcp_server",
           "update_mcp_server",
           "delete_mcp_server",
@@ -48115,6 +48211,8 @@
           "query_thread_stats",
           "query_thread_traces",
           "query_threads",
+          "list_github_thread_outcomes",
+          "query_github_thread_outcomes",
           "list_pairwise_queues",
           "get_pairwise_queue",
           "list_pairwise_entries",
@@ -49495,6 +49593,11 @@
             "$ref": "#/components/schemas/BulkExportCompression",
             "default": "zstandard"
           },
+          "is_rollup_disabled": {
+            "type": "boolean",
+            "title": "Is Rollup Disabled",
+            "default": false
+          },
           "interval_hours": {
             "anyOf": [
               {
@@ -49654,6 +49757,11 @@
           "compression": {
             "$ref": "#/components/schemas/BulkExportCompression",
             "default": "zstandard"
+          },
+          "is_rollup_disabled": {
+            "type": "boolean",
+            "title": "Is Rollup Disabled",
+            "default": false
           },
           "interval_hours": {
             "anyOf": [
@@ -50778,13 +50886,22 @@
             },
             "type": "array",
             "title": "Failed"
+          },
+          "rejected": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Rejected"
           }
         },
         "type": "object",
         "required": [
           "migrated",
           "skipped",
-          "failed"
+          "failed",
+          "rejected"
         ],
         "title": "CompositeMigrationResult",
         "description": "Per-id outcome of a composite migration batch."
@@ -56543,7 +56660,45 @@
               }
             ],
             "title": "Session Id",
-            "description": "Required. The ID of the tracing project (session) the feedback belongs to."
+            "description": "Required unless the feedback is addressed by agent_id and agent_environment. The ID of the tracing project (session) the feedback belongs to."
+          },
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id",
+            "description": "Beta. Only supported in workspaces where Agent addressing is enabled; other workspaces get a 403. The Agent's id, not a UUID: 1 to 63 lowercase ASCII letters, digits, or hyphens, starting with a letter and ending with a letter or digit (e.g. support-agent). Addresses the tracing project through an Agent instead of session_id. Sent together with agent_environment, and never alongside session_id. The Agent and the environment must already exist; sending feedback does not create them."
+          },
+          "agent_environment": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "LOCAL",
+                  "DEVELOPMENT",
+                  "STAGING",
+                  "PRODUCTION"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Environment",
+            "description": "Beta. Only supported in workspaces where Agent addressing is enabled; other workspaces get a 403. The Agent environment whose tracing project the feedback belongs to. Matched case-insensitively. Sent together with agent_id."
+          },
+          "address": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/address.AgentAddress"
+              }
+            ],
+            "description": "Beta. Only supported in workspaces where Agent addressing is enabled; other workspaces get a 403. Addresses the tracing project through an Agent environment instead of session_id. Never combined with agent_id, agent_environment, or session_id. The Agent and the environment must already exist; sending feedback does not create them."
           },
           "trace_id": {
             "anyOf": [
@@ -62053,8 +62208,24 @@
             ],
             "title": "Display Name"
           },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
           "config": {
             "$ref": "#/components/schemas/OrganizationConfig"
+          },
+          "topic_search_enabled": {
+            "type": "boolean",
+            "title": "Topic Search Enabled",
+            "default": false
           },
           "engine_enabled": {
             "anyOf": [
@@ -62391,6 +62562,17 @@
             "type": "string",
             "title": "Display Name"
           },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
           "tier": {
             "anyOf": [
               {
@@ -62642,6 +62824,11 @@
             ],
             "title": "Llm Auth Proxy Allowed Urls"
           },
+          "topic_search_enabled": {
+            "type": "boolean",
+            "title": "Topic Search Enabled",
+            "default": false
+          },
           "engine_enabled": {
             "anyOf": [
               {
@@ -62694,7 +62881,8 @@
           "ORGANIZATION_OPERATOR",
           "ORGANIZATION_USER",
           "ORGANIZATION_VIEWER",
-          "ORGANIZATION_RESTRICTED"
+          "ORGANIZATION_RESTRICTED",
+          "CUSTOM"
         ],
         "title": "OrganizationRoles"
       },
@@ -62912,6 +63100,11 @@
               }
             ],
             "title": "Llm Auth Proxy Allowed Urls"
+          },
+          "topic_search_enabled": {
+            "type": "boolean",
+            "title": "Topic Search Enabled",
+            "default": false
           },
           "engine_enabled": {
             "anyOf": [
@@ -76664,6 +76857,18 @@
             ],
             "title": "Success Viewed At"
           },
+          "agent_platform_welcome_viewed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Platform Welcome Viewed At"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -77150,6 +77355,43 @@
         ],
         "title": "Tenant",
         "description": "Tenant schema."
+      },
+      "address.AgentAddress": {
+        "type": "object",
+        "required": [
+          "environment",
+          "id",
+          "kind"
+        ],
+        "properties": {
+          "environment": {
+            "description": "`environment` is the Agent environment.",
+            "type": "string",
+            "enum": [
+              "LOCAL",
+              "DEVELOPMENT",
+              "STAGING",
+              "PRODUCTION"
+            ],
+            "example": "PRODUCTION"
+          },
+          "id": {
+            "description": "`id` is the Agent's user-assigned id.",
+            "type": "string",
+            "maxLength": 63,
+            "minLength": 1,
+            "example": "support-agent",
+            "pattern": "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+          },
+          "kind": {
+            "enum": [
+              "AGENT"
+            ],
+            "type": "string",
+            "x-stainless-const": true
+          }
+        },
+        "additionalProperties": false
       },
       "agent.CreateIssuesAgentRequest": {
         "type": "object",
@@ -78198,8 +78440,8 @@
             "type": "boolean"
           },
           "byoc_external_id": {
-            "readOnly": true,
             "description": "ByocExternalID is the organization's assigned AWS external ID, stored only in org config.",
+            "readOnly": true,
             "anyOf": [
               {
                 "type": "string"
@@ -80998,6 +81240,10 @@
           "customer_info": {
             "$ref": "#/components/schemas/info.CustomerInfo"
           },
+          "engine_github_web_base_url": {
+            "type": "string",
+            "format": "uri"
+          },
           "git_sha": {
             "type": "string"
           },
@@ -81227,6 +81473,17 @@
           },
           "fix_dispatched_at": {
             "type": "string"
+          },
+          "fix_handoff_bot_user_id": {
+            "description": "Non-nil once the issue is handed off to a coding agent; Engine skips its\nown fix run while it is set.",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "fix_pr_number": {
             "type": "integer"
@@ -82421,6 +82678,16 @@
           "api_key_creation_from_api_keys_enabled": {
             "type": "boolean"
           },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "byoc_create_saas_workspace_enabled": {
             "type": "boolean"
           },
@@ -82563,6 +82830,10 @@
           "tier": {
             "type": "string"
           },
+          "topic_search_enabled": {
+            "type": "boolean",
+            "default": false
+          },
           "workspace_admin_can_invite_to_org": {
             "type": "boolean"
           }
@@ -82575,14 +82846,16 @@
           "ORGANIZATION_OPERATOR",
           "ORGANIZATION_USER",
           "ORGANIZATION_VIEWER",
-          "ORGANIZATION_RESTRICTED"
+          "ORGANIZATION_RESTRICTED",
+          "CUSTOM"
         ],
         "x-enum-varnames": [
           "OrganizationRoleAdmin",
           "OrganizationRoleOperator",
           "OrganizationRoleUser",
           "OrganizationRoleViewer",
-          "OrganizationRoleRestricted"
+          "OrganizationRoleRestricted",
+          "OrganizationRoleCustom"
         ]
       },
       "orgs.SCIMGroup": {
@@ -83662,6 +83935,28 @@
       "runs.Run": {
         "type": "object",
         "properties": {
+          "address": {
+            "description": "Beta. Addresses the run to an Agent environment in place of\nsession_id or session_name. Cannot be combined with agent_id or\nagent_environment. Only workspaces enabled for Agent addressing accept\nit; others get a 403.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/address.AgentAddress"
+              }
+            ]
+          },
+          "agent_environment": {
+            "description": "Beta. The Agent environment the run belongs to, case-insensitive;\nrequires agent_id. Only workspaces enabled for Agent addressing accept it;\nothers get a 403.",
+            "type": "string",
+            "enum": [
+              "LOCAL",
+              "DEVELOPMENT",
+              "STAGING",
+              "PRODUCTION"
+            ]
+          },
+          "agent_id": {
+            "description": "Beta, superseded by address. Addresses the run to an Agent, with\nagent_environment, in place of session_id or session_name. Only\nworkspaces enabled for Agent addressing accept it; others get a 403.",
+            "type": "string"
+          },
           "dotted_order": {
             "type": "string"
           },
@@ -84501,6 +84796,10 @@
           "content_type": {
             "type": "string"
           },
+          "csp_sandbox": {
+            "description": "CSPSandbox false serves the file with no CSP sandbox directive; omit to keep it.",
+            "type": "boolean"
+          },
           "csp_sandbox_flags": {
             "description": "CSPSandboxFlags loosen the CSP sandbox the file is served under; omit for the most restrictive policy.",
             "type": "array",
@@ -84515,7 +84814,8 @@
                 "allow-popups",
                 "allow-presentation",
                 "allow-scripts",
-                "allow-top-navigation-by-user-activation"
+                "allow-top-navigation-by-user-activation",
+                "allow-same-origin"
               ]
             }
           },
@@ -84529,7 +84829,8 @@
                 "google-fonts",
                 "jsdelivr",
                 "unpkg",
-                "none"
+                "none",
+                "any"
               ]
             }
           },
@@ -84913,6 +85214,13 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/sandboxes.ProxyHeader"
+            }
+          },
+          "match_headers": {
+            "description": "MatchHeaders restricts a header injection rule to requests carrying every listed header, each written \"name: value\" with a lowercase name and an exact value. Pair with headers of the same name to swap a placeholder the sandbox sends (e.g. \"authorization: Bearer account-b\") for a real credential, so one host can serve several accounts. Rules are evaluated in order and the first match wins.",
+            "type": "array",
+            "items": {
+              "type": "string"
             }
           },
           "match_hosts": {
@@ -85330,7 +85638,7 @@
         "type": "object",
         "properties": {
           "access": {
-            "description": "Access selects the login mode, mutually exclusive with the minted token.\nOmit the field for token mode: mint a short-lived service token (default).\n  \"restricted\" — LangSmith login: any user with SandboxesRead on the sandbox.\n  \"workspace\"  — LangSmith login: any member of the owning workspace.\n  \"off\"        — remove an existing LangSmith login grant and mint a token.\nA LangSmith login grant is durable; token mode is refused (409) while one exists.",
+            "description": "Access selects the login mode, mutually exclusive with the minted token.\nOmit the field for token mode: mint a short-lived service token (default).\n  \"restricted\" — LangSmith login: the sandbox's creator, or any user with SandboxesExec on it (admins by default).\n  \"workspace\"  — LangSmith login: any member of the owning workspace.\n  \"off\"        — remove an existing LangSmith login grant and mint a token.\nA LangSmith login grant is durable; token mode is refused (409) while one exists.",
             "type": "string",
             "enum": [
               "restricted",
@@ -87092,6 +87400,21 @@
             "description": "Keep empty Slack fields in the response. The frontend uses an explicit\nempty string to distinguish URL destinations from Slack destinations.",
             "type": "string"
           },
+          "slack_handoff": {
+            "description": "SlackHandoff is nil when no coding-agent hand-off is set on this destination.",
+            "anyOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/webhooks.SlackHandoffResponse"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "slack_team_id": {
             "type": "string"
           },
@@ -87213,6 +87536,17 @@
           "name": {
             "type": "string",
             "example": "Ada Lovelace"
+          }
+        }
+      },
+      "webhooks.SlackHandoffResponse": {
+        "type": "object",
+        "required": [
+          "bot_user_id"
+        ],
+        "properties": {
+          "bot_user_id": {
+            "type": "string"
           }
         }
       },

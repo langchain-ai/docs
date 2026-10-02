@@ -2,13 +2,13 @@
 title: SmithDB metrics reference
 sidebarTitle: Metrics reference
 description: Metrics to watch on each SmithDB component, what they measure, and how to read them.
-noindex: true
-hidden: true
 ---
 
 SmithDB components expose Prometheus metrics at `/metrics` on each pod's HTTP port. This page lists the metrics worth watching for each component and how to read them. For scrape and export configuration, see [Configure SmithDB observability](/langsmith/self-host-smithdb-observability).
 
 Names are as they appear on `/metrics`. If your collector adds a namespace or prefix, adjust accordingly.
+
+For Datadog and Grafana dashboards built on these metrics, with the scrape annotations each one expects, see the [SmithDB observability examples](https://github.com/langchain-ai/helm/tree/main/charts/langsmith/examples/smithdb-observability) in the LangSmith Helm chart repository.
 
 <Note>
 This page covers metrics SmithDB emits. Kubernetes signals such as OOM kills, container restarts, CPU and memory against limits, and cache disk usage are worth alerting on but come from your infrastructure monitoring, not from SmithDB.
@@ -63,6 +63,24 @@ Compaction has two entries because the failure modes are separate: jobs can fail
 | `compaction_job_latency_seconds` | Histogram | Job creation to completion. Includes queue wait, so it rises when workers saturate as well as when jobs are slow. |
 | `compaction_worker_capacity_used` | Gauge | In-flight capacity cost by `job_kind`, against `compaction_worker_capacity_limit`. Sustained use near the limit explains skipped jobs and a growing queue. |
 | `compaction_worker_running_tasks` | Gauge | Tasks running by `job_kind`. Zero while the queue is non-empty means workers are stalled, not busy. |
+
+## Migration
+
+Migration Job pods emit metrics during a [historical migration](/langsmith/self-host-smithdb-migrate). How you aggregate a metric across pods depends on its type:
+
+- **Gauges**: Report totals for the whole migration. The values come from TaskDB and refresh every two minutes. Every pod reports the same values, so aggregate with `max`, not `sum`.
+- **Counters**: Track the work each pod does. Sum their rates across pods.
+
+Migration Job pods emit the following metrics:
+
+| Metric | Type | Description |
+| --- | --- | --- |
+| `migration_tasks` | Gauge | Migration tasks, labeled `kind` (`run` or `feedback`) and `status` (`pending`, `running`, `completed`, or `failed`). Progress is the `completed` count against the total across statuses. |
+| `migration_jobs` | Gauge | Migration jobs, labeled `kind` and `status`. Run jobs finish as `promoted` and feedback jobs as `validated`. `failed` and `validation_failed` are failures, and every other status means the job is still in progress. |
+| `migration_run_tasks_completed_total` | Counter | Run tasks completed by the pod. The rate is migration throughput in tasks. |
+| `migration_run_task_planned_rows_migrated_total` | Counter | Rows in the run tasks the pod completed, as counted in ClickHouse when the tasks were planned. The rate is migration throughput in rows. |
+
+Migration does not retry failed tasks or jobs on its own. Any `failed` task, or a `failed` or `validation_failed` job count, keeps the migration Job from reaching `Complete`. The Job keeps running until you resolve the failure. See [Migration Job failures](/langsmith/self-host-smithdb-troubleshooting#migration-job-failures).
 
 ## All components
 

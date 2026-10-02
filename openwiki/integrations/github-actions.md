@@ -1,67 +1,37 @@
 ---
 type: CI and privileged automation topology
 title: GitHub Actions and CI/CD
-description: Repository automation separates untrusted pull-request validation from metadata-only pull-request-target automation and trusted secret-backed or repository-writing maintenance. This page maps the CI gates, generated documentation refreshes, integration intake, and review-PR lifecycle.
+description: Repository automation separates untrusted pull-request validation from metadata-only pull-request-target automation and trusted secret-backed or repository-writing maintenance. This page maps CI gates, generated documentation refreshes, code-sample validation, deployed-site coverage checks, integration intake, and review-PR lifecycle.
 tags: [github-actions, ci-cd, automation, security, testing, versioning]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-02T08:21:54.688Z
 sources:
-  - id: openwiki-source-dea5cd08ee99ad0f836ba18b
-    resource: repo://.github/labeler.yml
-  - id: openwiki-source-c4f328e2e1685f1c7e2bc076
-    resource: repo://.github/OWNERS
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
   - id: openwiki-source-f35e7c44cc1805709393a581
     resource: repo://.github/workflows/_lint.yml
   - id: openwiki-source-4d9cccca7700db7220ec055e
     resource: repo://.github/workflows/_test.yml
-  - id: openwiki-source-21617d8a6b2b570989a7c900
-    resource: repo://.github/workflows/check-version-claims.yml
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
-  - id: openwiki-source-1ca506cf29eca9b87a087220
-    resource: repo://.github/workflows/external-integration-pr-comment.yml
-  - id: openwiki-source-d11cee5031c401f0c9a33c44
-    resource: repo://.github/workflows/htmltest-linear.yml
-  - id: openwiki-source-61ff424071398cdd00f5a60d
-    resource: repo://.github/workflows/htmltest.yml
-  - id: openwiki-source-1db901655f02af312133801d
-    resource: repo://.github/workflows/integration-submission.yml
-  - id: openwiki-source-ef56860c50d9dcbe676ff21e
-    resource: repo://.github/workflows/labeler.yml
-  - id: openwiki-source-6d4b4e707b8d60b6ccfa3425
-    resource: repo://.github/workflows/openwiki-update.yml
-  - id: openwiki-source-4c203a05e0a78b2d5fd991b4
-    resource: repo://.github/workflows/pr-welcome-comment.yml
-  - id: openwiki-source-0976291f8216a4c7151f20a7
-    resource: repo://.github/workflows/refresh-external-versions.yml
   - id: openwiki-source-5153f86e64d6ee0b305f72b3
     resource: repo://.github/workflows/refresh-langsmith-openapi.yml
-  - id: openwiki-source-e83a75b928e2024ab3b035c4
-    resource: repo://.github/workflows/sync-deepagents-signatures.yml
-  - id: openwiki-source-751a704f6f25787856371177
-    resource: repo://.github/workflows/test-code-samples-linear.yml
   - id: openwiki-source-97746d8f3662d803e625550e
     resource: repo://.github/workflows/test-code-samples.yml
   - id: openwiki-source-4de47c60d7e3210385c34d35
     resource: repo://.github/workflows/update-package-downloads.yml
-  - id: openwiki-source-6b3ad04031a04803eb901844
-    resource: repo://scripts/check_external_versions.py
-  - id: openwiki-source-99b53585619b83f258314f8b
-    resource: repo://scripts/check_version_claims.py
+  - id: openwiki-source-05ccef8d4cf1698187f20464
+    resource: repo://pyproject.toml
   - id: openwiki-source-2654e40275744504b4ca7e2b
     resource: repo://scripts/code_sample_tracing.py
-  - id: openwiki-source-f36d9ac44867b9e853539abd
-    resource: repo://scripts/parse_integration_submission_issue.py
-  - id: openwiki-source-63d8ba810a7c0181c548a307
-    resource: repo://scripts/refresh_integration_downloads.py
+  - id: openwiki-source-697851c98229599f97376bfb
+    resource: repo://scripts/process_langsmith_openapi.py
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
-  - id: openwiki-source-a10b62517b8302a8d4cf3b31
-    resource: repo://tests/unit_tests/test_check_external_versions.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-24T08:22:38.580Z" }
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-24T08:22:38.580Z
+  - id: openwiki-source-e0401fc6d5f2a13d30455bd9
+    resource: repo://src/code-samples/package.json
+generated: { by: "openwiki/0.4.3", at: "2026-10-02T08:21:54.688Z" }
 ---
 
 ## Topology and trust boundary
@@ -128,6 +98,8 @@ uv run python pipeline/tools/partner_pkg_table.py
 
 For internal PRs, the workflow checks out full history, computes the merge base with the PR base, and selects changed supported `.py`, `.ts`, `.java`, `.kt`, `.go`, and `.sh` files below `src/code-samples/`. Manual and scheduled runs set `RUN_ALL=true`; they test all samples and have a 90-minute limit instead of the PR job's 60 minutes. The runner provisions pgvector PostgreSQL, Python and `uv`, Node, Java/JBang, and Go from `src/code-samples/go.mod`.
 
+MCP samples are part of that same selected or full set, not a separate workflow. Python validation relies on the root locked environment's `langchain[mcp]` and `fastmcp` dependencies; TypeScript validation installs the shared `src/code-samples` package, which pins `@langchain/mcp-adapters` and the Model Context Protocol client, node, SDK, and server packages. Representative samples start in-process or loopback MCP servers and assert tool discovery, adapter construction, metadata handling, and cleanup. A sample that deliberately contacts `https://docs.langchain.com/mcp` still depends on that remote service; do not describe the suite as entirely offline or mock it merely to make CI green.
+
 The sample runner retries recognized LangSmith HTTP 429 output up to three attempts and records persistent rate limiting as a skip. Ordinary sample failures and trace-collection failures fail the run. Only a manual or monthly full run enables `CODE_SAMPLE_TRACING`: after successful samples, it finds an eligible agent-like LangSmith root run, shares it publicly, and records its identifiers and link in `src/code-samples/trace-links.json`. A source file with more than one snippet marker is recorded as `skipped_multi_snippet`; it must be split before one trace can safely represent it.
 
 ```mermaid
@@ -159,7 +131,7 @@ See [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md) for sn
 
 - **Path labels:** `labeler.yml` uses `fuxingloh/multi-labeler` with `.github/labeler.yml`. The protected `internal` and `external` labels have `sync: false`, so path synchronization does not overwrite them.
 - **Owner summary:** for a non-draft opened or ready PR, `pr-welcome-comment.yml` reads `.github/OWNERS` from `pr.base.ref`, applies last-match ownership rules to changed-file metadata, optionally requests opted-in owners other than the author, and posts the ownership summary. It does not check out PR code.
-- **External-integration nudge:** `external-integration-pr-comment.yml` identifies relevant external contributions from changed-file metadata, treats membership lookup errors conservatively as external, labels qualifying PRs, and posts one marker-idempotent issue-form nudge. It reads only candidate MDX front matter through the GitHub API to avoid the nudge for `featured: true` pages; it never checks out or executes fork content.
+- **External-integration nudge:** `external-integration-pr-comment.yml` identifies relevant external contributions from changed-file metadata, treats membership lookup errors conservatively as external, labels qualifying PRs, posts one marker-idempotent issue-form nudge, and closes the PR. It reads only candidate MDX front matter through the GitHub API to avoid the nudge and close for `featured: true` pages; it never checks out or executes fork content.
 
 Do not add a fork-head checkout, execute a PR-supplied script, or interpolate untrusted PR fields into shell in these workflows. Put executable validation on ordinary `pull_request`; put secret-backed or repository-writing work on a controlled trusted path.
 
@@ -205,11 +177,35 @@ make export-htmltest
 
 This external-URL check of the Mint export is distinct from CI's build/link check. `htmltest-linear.yml` creates a Linear issue only when a scheduled **Htmltest Mint Export** run fails or is cancelled, attaching the failed run URL with the Linear secret and team-key variable. `test-code-samples-linear.yml` has the same scheduled-only `workflow_run` safeguard for failed or cancelled **Test Code Samples** runs. These producer-event guards must remain: they are escalation paths, not general issue creators.
 
+### Deployed `llms.txt` coverage
+
+`check-llms-urls.yml` is a separate, read-only deployed-site check. It runs manually or every Monday at 07:13 UTC, checks out only to run `python3 scripts/check_llms_urls.py`, and has a 10-minute job limit. It does not build documentation: Mintlify generates `llms.txt` and, when it is large, nested `/_llms/` indexes outside this repository. The check therefore observes the served `https://docs.langchain.com` site rather than source or `build/` output.
+
+```mermaid
+flowchart TD
+  Root["Served llms.txt"] --> Crawl["Follow same-site nested llms indexes"]
+  Crawl --> Pages["Normalize listed page URLs"]
+  Sitemap["Served sitemap.xml"] --> Compare{"Every sitemap URL listed"}
+  Pages --> Compare
+  Compare -->|"yes"| Pass["Coverage passes"]
+  Compare -->|"no"| Fail["Print up to 40 missing URLs and fail"]
+```
+
+This check compares the deployed sitemap with pages reachable through the deployed LLM index hierarchy.
+
+The crawler follows only `https` Markdown links under the configured base URL; links containing `/_llms/` are more indexes, while page links have `.md` and landing-page `/index` suffixes normalized before comparison. Network connection failures are retried three times with increasing delays, but HTTP errors fail immediately. On a coverage gap it prints up to 40 missing URLs and exits nonzero. Because Mintlify owns index generation, first confirm that no custom `llms.txt` was added to the build, then report a genuine gap to Mintlify; this workflow does not create a Linear escalation or a repository fix PR.
+
+For an explicit deployment target, run:
+
+```bash
+python3 scripts/check_llms_urls.py --base-url https://www.mintlify.com/docs
+```
+
 ### Standing refresh PRs and signature snippets
 
 `refresh-external-versions.yml` runs Monday at 08:00 UTC or manually with write permissions. `check_external_versions.py --write` can rewrite only validated, exactly-once captured version digits from allowed sources. If `src/` has no diff, it exits; otherwise it appends to an open `chore/refresh-external-versions` PR or creates it. In write mode unreadable upstream entries are reported without blocking other resolvable updates, so reviewers still need to assess the surrounding requirement.
 
-`refresh-langsmith-openapi.yml` runs daily at 10:00 UTC or manually. It processes the LangSmith specification, saves the generated `src/langsmith/langsmith-platform-openapi.json`, then appends to an existing `chore/refresh-langsmith-openapi` PR or creates one only if the processed file differs. Review the generated diff rather than hand-editing it; see [Reference Documentation](/openwiki/integrations/reference-docs.md).
+`refresh-langsmith-openapi.yml` is a trusted, daily 10:00 UTC or manual writer: its sole job receives `contents` and `pull-requests` write permission, fetches and processes the LangSmith specification, and stages only `src/langsmith/langsmith-platform-openapi.json` for review. `process_langsmith_openapi.py` accepts network input only from `api.smith.langchain.com`, marks configured fleet, internal, and health operations hidden, normalizes visible operation titles, assigns and orders public tag groups, then writes deterministic formatted JSON. It uses the standing `chore/refresh-langsmith-openapi` branch: a run restores the generated file onto that branch, exits on no diff, appends a commit to its open PR, or force-pushes and creates a new PR only when no such PR exists. Review the generated diff rather than hand-editing it; see [Reference Documentation](/openwiki/integrations/reference-docs.md).
 
 `sync-deepagents-signatures.yml` is a trusted weekday 09:00 UTC or manual writer. It runs `scripts/sync_deepagents_signatures.py`, checks exactly the Python and JavaScript Deep Agents configuration-option snippet files, and creates a timestamped PR only when either changed. Unlike the standing refresh workflows, each changed run uses a new timestamped branch.
 
@@ -222,9 +218,9 @@ The pull-request action maintains the `openwiki/update` branch and is restricted
 1. Keep fork-head code on ordinary validation paths without secrets or write tokens. Keep `pull_request_target` workflows metadata-only.
 2. Change a generator input or generator, regenerate, and commit generated output; do not weaken the generated-file gate casually.
 3. Retain both offline external-URL validation and render-time URL safety checks.
-4. Skip forks before secret-dependent sample execution; retain merge-base selection for internal PRs and all-sample selection for full runs.
+4. Skip forks before secret-dependent sample execution; retain merge-base selection for internal PRs and all-sample selection for full runs. Keep the root Python MCP dependencies and shared TypeScript MCP dependencies in sync with their lockfiles.
 5. Preserve trace refresh ordering: test, generate, compare artifacts, then create or update a PR.
-6. For trusted writers, retain their no-change exits and branch strategy: standing branches where configured, timestamped branches where configured.
+6. For trusted writers, retain their no-change exits and branch strategy: standing branches where configured, timestamped branches where configured. In particular, keep the OpenAPI fetch-host allowlist and post-processing rules with its standing review PR path.
 7. Keep maintainer authorization before checkout and agent invocation, and keep all GitHub writes owned by the workflow.
 8. Keep Linear escalation limited to failed or cancelled scheduled producer runs.
 
@@ -233,6 +229,7 @@ The pull-request action maintains the `openwiki/update` branch and is restricted
 - [Mintlify](/openwiki/integrations/mintlify.md)
 - [Reference Documentation](/openwiki/integrations/reference-docs.md)
 - [Testing Overview](/openwiki/testing/test-overview.md)
+- [CLI Tools and Make Targets](/openwiki/operations/cli-tools.md)
 - [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md)
 - [Integration Listing Automation](/openwiki/workflows/integration-listing-automation.md)
 - [Agent Skills](/openwiki/operations/agent-skills.md)
