@@ -83,6 +83,23 @@ When you select more than one provider, Engine runs Claude on the first selected
 
 Your model provider bills you for these calls. LangSmith meters Engine's usage in LSUs, as it does for LangSmith Intelligence.
 
+#### Connect to your providers privately
+
+Engine calls each provider's standard API hostname from the `standalone-insights` pods. To keep that traffic off the public internet, set up your cloud's private connection to the provider so the same hostname resolves to private addresses inside your network:
+
+| Provider | Hostname Engine calls | Private connection |
+| --- | --- | --- |
+| Amazon Bedrock | `bedrock-mantle.<region>.api.aws` | An interface VPC endpoint for `com.amazonaws.<region>.bedrock-mantle`, with private DNS enabled or a Route 53 private hosted zone for the hostname |
+| Google Vertex AI | `<region>-aiplatform.googleapis.com`, or `aiplatform.googleapis.com` for the global region | Private Service Connect for Google APIs, with private DNS for `googleapis.com` |
+| Azure AI Foundry | `<resource>.openai.azure.com` and `<resource>.services.ai.azure.com` | A private endpoint for the Foundry resource, with its private DNS zones |
+| Anthropic, OpenAI | `api.anthropic.com`, `api.openai.com` | Not available. These providers need public egress. |
+
+Engine doesn't accept custom endpoint URLs, so private connectivity works through DNS: the standard hostname must resolve to your private endpoint from the Engine pods.
+
+If Engine authenticates with [cloud identity](#use-cloud-identity-for-your-model-providers), the pods also need to reach your cloud's token service, such as an interface VPC endpoint for AWS STS on AWS.
+
+Usage reporting to LangSmith Intelligence is a separate connection. On AWS, `https://beacon.aws.langchain.com/intelligence` records usage and supports [AWS PrivateLink](#connect-with-aws-privatelink), so an installation can run Engine on Bedrock and report usage without public egress. The default `https://beacon.langchain.com/intelligence` needs public egress.
+
 ## What LangSmith Intelligence retains
 
 LSI does not persist the content of prompts or model responses. It retains the following metadata for usage attribution and billing:
@@ -262,7 +279,7 @@ Engine also adds configuration to `platform-backend` and `ingest-queue`, which d
 
     The AWS URL also records usage, so it works for organizations on either option.
 
-    If Engine will run on your own model providers, also allow outbound HTTPS from the `standalone-insights` pods to each provider's API endpoint.
+    If Engine will run on your own model providers, also allow outbound HTTPS from the `standalone-insights` pods to each provider's API endpoint. To keep that traffic on private networking, see [Connect to your providers privately](#connect-to-your-providers-privately).
 
     Add each destination as a specific allowlist entry rather than opening general egress. To keep traffic to LangSmith Intelligence on private networking, [connect with AWS PrivateLink](#connect-with-aws-privatelink). Requests to LangSmith Intelligence use a short-lived license JWT obtained during LangSmith license verification. Engine's traffic is separate from the billing and operational telemetry described in [Configure egress](/langsmith/self-host-egress), even where it shares a host.
   </Step>
