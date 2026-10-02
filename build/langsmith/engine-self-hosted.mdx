@@ -1,0 +1,522 @@
+---
+title: LangSmith Engine on Self-hosted
+sidebarTitle: Self-hosted
+description: Install LangSmith Engine on a self-hosted LangSmith instance, choose whether it runs its models on LangSmith Intelligence or your own model providers, and understand what it depends on outside your environment.
+---
+
+<Info>
+Self-hosted Engine requires LangSmith Helm chart `0.16.0` or later and a license that includes the Engine entitlement. It is not available on earlier chart versions. [Contact our sales team](https://www.langchain.com/contact-sales) to have the entitlement added to your order.
+
+Running Engine on [your own model providers](#your-own-model-providers) and [air-gapped installations](#air-gapped-installations) require LangSmith Helm chart `0.17.0` or later. Earlier chart versions run Engine only on LangSmith Intelligence.
+</Info>
+
+LangSmith Engine is an agent within LangSmith that monitors your production traces, clusters them into issues, diagnoses each issue against your source code, proposes a fix as a PR, and identifies ground truth evals to add to your datasets. For a product overview, see [Engine](/langsmith/engine-overview).
+
+In self-hosted LangSmith, Engine's orchestration, including its detect, fix, and verify loop, runs inside your VPC as part of LangSmith. An Organization Admin chooses where Engine's model calls run:
+
+- **LangSmith Intelligence (LSI):** a LangChain-managed zero data retention (ZDR) service that runs Engine's models for you.
+- **Your own model providers:** Anthropic, Amazon Bedrock, Google Vertex AI, Azure AI Foundry, or OpenAI, with credentials or cloud identity you control.
+
+Either way, Engine reports usage metadata to LangSmith Intelligence for billing, unless your installation is [air-gapped](#air-gapped-installations).
+
+This page covers what Engine depends on outside your environment, how to [choose how Engine runs its models](#choose-how-engine-runs-its-models), and how to [install Engine](#install-engine) on your instance. To connect Engine to your source code, create and configure your own GitHub App as described in [Connect Engine to GitHub](/langsmith/engine-github).
+
+Engine works with two kinds of data:
+
+- **Code** (optional)**:** Your agent's source, which Engine reads to diagnose issues and propose fixes.
+- **Traces:** Runtime data from your agents, which can include user messages, tool outputs, and PII.
+
+To diagnose issues, generate fixes, and write evaluators, Engine sends the parts of this data it needs to its models, on [LangSmith Intelligence or your own model providers](#choose-how-engine-runs-its-models).
+
+## Choose how Engine runs its models
+
+Each organization chooses how Engine runs its models under **Settings > Engine > Model providers**. Engine doesn't start any runs until a choice is saved.
+
+| | **LangSmith Intelligence** | **Your own model providers** |
+| --- | --- | --- |
+| **Who runs the models** | LangChain, with the providers it selects | Your provider accounts |
+| **Credentials** | None. Engine authenticates with your LangSmith license. | API keys or cloud identity you provide |
+| **Model selection** | Managed and tuned by LangChain | Managed by LangChain, within the model families your providers offer |
+| **Data processing agreement** | LangChain's, with ZDR for every provider | Yours, with each provider you use |
+| **Availability** | AWS US | Any cloud, with any provider region your cluster can reach |
+
+For LangSmith Intelligence in other clouds or regions, [contact our sales team](https://www.langchain.com/contact-sales).
+
+### LangSmith Intelligence
+
+LSI is a LangChain-managed service that runs Engine's models.
+
+The flow:
+
+- Your self-hosted Engine sends an HTTPS request to the LSI gateway at `https://beacon.aws.langchain.com/intelligence`.
+- Engine authenticates with a short-lived license JWT obtained during LangSmith license verification. You don't provide model-provider credentials.
+- LSI validates the JWT and routes the request to the model provider over private networking inside LangChain's environment.
+- LSI returns the response to your self-hosted Engine.
+
+Each request carries the trace content, code, and intermediate outputs Engine needs to do its work. LSI and the model provider process that content to serve the request.
+
+Your cluster must allow outbound HTTPS to that gateway. The connection can use public egress or private connectivity. To keep Engine traffic on private networking, follow [Connect with AWS PrivateLink](#connect-with-aws-privatelink).
+
+If the connection to LSI is unavailable, Engine stops and returns an error rather than degrading to lower-quality output. The rest of your LangSmith deployment is unaffected, and Engine tries again on its next scheduled scan.
+
+### Your own model providers
+
+Engine calls your providers directly from your cluster. Prompts and responses go only to your provider, under your agreement with that provider. LangChain doesn't receive them.
+
+Engine supports Anthropic, Amazon Bedrock, Google Vertex AI, Azure AI Foundry, and OpenAI. It uses a mix of models from the providers you select, so for the best results, add credentials for every provider you have access to.
+
+Enable access to Anthropic's Claude models and OpenAI's GPT models in your provider accounts, where your provider offers them. On Azure, use an Azure AI Foundry resource. To confirm that Engine can reach the models it uses, run [**Test connection**](#test-a-provider).
+
+Your model provider bills you for these calls. LangSmith meters Engine's usage in LSUs, as it does for LangSmith Intelligence.
+
+#### Connect to your providers privately
+
+Engine calls each provider's standard API hostname from the `standalone-insights` pods. To keep that traffic off the public internet, set up your cloud's private connection to the provider so the same hostname resolves to private addresses inside your network:
+
+| **Provider** | **Hostname Engine calls** | **Private connection** |
+| --- | --- | --- |
+| Amazon Bedrock | `bedrock-mantle.<region>.api.aws` | An interface VPC endpoint for `com.amazonaws.<region>.bedrock-mantle`, with private DNS enabled or a Route 53 private hosted zone for the hostname |
+| Google Vertex AI | `<region>-aiplatform.googleapis.com`, or `aiplatform.googleapis.com` for the global region | Private Service Connect for Google APIs, with private DNS for `googleapis.com` |
+| Azure AI Foundry | `<resource>.openai.azure.com` and `<resource>.services.ai.azure.com` | A private endpoint for the Foundry resource, with its private DNS zones |
+| Anthropic, OpenAI | `api.anthropic.com`, `api.openai.com` | Not available. These providers need public egress. |
+
+Engine doesn't accept custom endpoint URLs, so private connectivity works through DNS: the standard hostname must resolve to your private endpoint from the Engine pods.
+
+If Engine authenticates with [cloud identity](#use-cloud-identity-for-your-model-providers), the pods also need to reach your cloud's token service, such as an interface VPC endpoint for AWS STS on AWS.
+
+Usage reporting to LangSmith Intelligence is a separate connection. On AWS, `https://beacon.aws.langchain.com/intelligence` records usage and supports [AWS PrivateLink](#connect-with-aws-privatelink), so an installation can run Engine on Bedrock and report usage without public egress. The default `https://beacon.langchain.com/intelligence` needs public egress.
+
+## What LangSmith Intelligence retains
+
+LSI does not persist the content of prompts or model responses. It retains the following metadata for usage attribution and billing:
+
+- Account, workspace, and project identifiers used to attribute usage.
+- Model and token-usage metadata used for billing.
+
+When Engine runs on your own model providers, this metadata is all LSI receives. Your self-hosted LangSmith records Engine's usage and reports it to the endpoint in [`engine.intelligenceBaseUrl`](#allow-egress-to-langsmith-intelligence) every hour, authenticated with your license.
+
+For model-provider retention and training commitments, see [Engine security](/langsmith/engine-security).
+
+## Connect to LangSmith Intelligence
+
+### AWS (available in US)
+
+The gateway host is [`beacon.aws.langchain.com`](#allow-egress-to-langsmith-intelligence). LSI routes requests to AWS Bedrock in LangChain's AWS environment.
+
+#### Connect with AWS PrivateLink
+
+Before configuring PrivateLink, complete [Install Engine](#install-engine), including its Helm and egress configuration.
+
+[AWS PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/) routes Engine traffic from your VPC to LSI without exposing that traffic to the public internet. The LSI endpoint service is hosted in `us-east-2`, and AWS supports access from VPCs in other regions.
+
+Before you begin, collect your AWS account ID, VPC ID, private subnet IDs, and a security group for the interface endpoint. Configure that endpoint security group to allow inbound TCP traffic on port 443 only from the security group attached to the nodes or workloads that run Engine, or from the smallest private CIDR that contains them. Do not allow `0.0.0.0/0`.
+
+To connect your VPC to LSI:
+
+<Steps>
+  <Step title="Request access">
+    Contact your account representative or [sales@langchain.dev](mailto:sales@langchain.dev) with your AWS account ID. LangChain adds your account to the endpoint service's allowed principals list.
+  </Step>
+
+  <Step title="Create the interface VPC endpoint">
+    Configure the AWS provider for the region that contains your VPC. Keep `service_region` set to `us-east-2`, including when your VPC is in another region. Select one private subnet per availability zone.
+
+    <Note>
+    The `service_region` argument requires HashiCorp AWS provider `5.82.0` or later.
+    </Note>
+
+    ```hcl
+    resource "aws_vpc_endpoint" "langsmith_intelligence" {
+      vpc_id              = var.vpc_id
+      service_name        = "com.amazonaws.vpce.us-east-2.vpce-svc-054f37092752bff6b"
+      service_region      = "us-east-2"
+      vpc_endpoint_type   = "Interface"
+      subnet_ids          = var.private_subnet_ids
+      security_group_ids  = [var.security_group_id]
+      private_dns_enabled = false
+    }
+    ```
+  </Step>
+
+  <Step title="Wait for LangChain to accept the connection">
+    The endpoint status changes from `pendingAcceptance` to `available` after LangChain accepts the connection. Allow a few minutes for the change to propagate before testing connectivity.
+  </Step>
+
+  <Step title="Route the LSI hostname to the endpoint">
+    Enable DNS resolution and DNS hostnames for your VPC. Then, create a Route 53 private hosted zone and alias record so `beacon.aws.langchain.com` resolves to the VPC endpoint inside your VPC. Keep this hostname unchanged so TLS certificate validation succeeds. The private hosted zone also prevents fallback to public DNS when the endpoint is unavailable.
+
+    ```hcl
+    resource "aws_route53_zone" "langsmith_intelligence" {
+      name = "beacon.aws.langchain.com"
+
+      vpc {
+        vpc_id = var.vpc_id
+      }
+    }
+
+    resource "aws_route53_record" "langsmith_intelligence" {
+      zone_id = aws_route53_zone.langsmith_intelligence.zone_id
+      name    = "beacon.aws.langchain.com"
+      type    = "A"
+
+      alias {
+        name                   = aws_vpc_endpoint.langsmith_intelligence.dns_entry[0].dns_name
+        zone_id                = aws_vpc_endpoint.langsmith_intelligence.dns_entry[0].hosted_zone_id
+        evaluate_target_health = true
+      }
+    }
+    ```
+
+    If workloads use a corporate DNS resolver instead of the Amazon-provided resolver, configure conditional forwarding to Route 53 Resolver or create an equivalent private DNS override for `beacon.aws.langchain.com` that points to the endpoint DNS name.
+  </Step>
+
+  <Step title="Verify private connectivity">
+    From a node or container that runs Engine, resolve the gateway hostname:
+
+    ```bash
+    getent ahostsv4 beacon.aws.langchain.com
+    ```
+
+    Confirm that the result contains the private IP addresses assigned to the endpoint network interfaces. Then start an analysis and confirm that it completes successfully. If the analysis does not complete, review the Engine installation and egress configuration.
+  </Step>
+</Steps>
+
+<Frame caption="AWS: LangSmith and Engine run in your VPC; LSI and Bedrock run in LangChain's AWS environment.">
+  <img
+    src="/langsmith/images/engine-self-hosted-aws.png"
+    alt="Architecture diagram of self-hosted LangSmith in your VPC connected by AWS PrivateLink to LangSmith Intelligence and Bedrock in LangChain's AWS environment."
+  />
+</Frame>
+
+### Usage reporting only
+
+When Engine runs on your own model providers, it only needs LSI for usage reporting. The default `engine.intelligenceBaseUrl`, `https://beacon.langchain.com/intelligence`, records usage. It doesn't serve Engine's models.
+
+<Note>
+This is the same host self-hosted LangSmith uses for license verification and billing telemetry, so it adds a path rather than a new egress destination. See [Configure egress](/langsmith/self-host-egress).
+</Note>
+
+## Model selection and quality
+
+Engine uses different models, each tuned for its role, to cluster issues, diagnose root causes against your code, generate fixes, and write evaluators that verify them. LangChain tunes these models for quality and token efficiency, and updates them as better models become available. This applies on both LangSmith Intelligence and your own model providers.
+
+On your own providers, Engine uses the models LangChain selects within the Claude and GPT families. When Engine moves to a newer model, enable it in your provider accounts, then run [**Test connection**](#test-a-provider) to confirm access.
+
+## Where Engine processes data
+
+In a self-hosted deployment, Engine separates data handling between your environment and LangChain's:
+
+- **Your environment:** Engine orchestration and LangSmith-stored traces remain in your self-hosted environment.
+- **LangChain's environment, with LangSmith Intelligence:** LSI and the model provider process content that Engine sends. LSI retains the billing metadata described above.
+- **Your model providers, with your own providers:** Your providers process content that Engine sends, under your agreements with them. LangChain receives only the billing metadata described above.
+
+Engine's deployment-independent data handling, including zero data retention with every model provider and no use of customer data to train or fine-tune models, is described in [Engine security](/langsmith/engine-security).
+
+If you enable external notifications, Engine also sends notification content to your configured Slack channels or webhook endpoints. For Slack app setup and the content sent to Slack, see [Connect self-hosted LangSmith to Slack](/langsmith/self-host-slack).
+
+## Install Engine
+
+Engine is disabled by default. It requires [Sandboxes](/langsmith/deploy-self-hosted-full-platform#enable-sandboxes), a connection to [LangSmith Intelligence](#allow-egress-to-langsmith-intelligence) unless your installation is [air-gapped](#air-gapped-installations), an externally reachable [`config.hostname`](#verify-your-hostname-is-externally-reachable), and an [Engine encryption key](#generate-the-engine-encryption-key). Complete the prerequisites before enabling Engine.
+
+Engine and [Insights](/langsmith/deploy-self-hosted-full-platform#enable-fleet-insights-and-chat) run from the same image and share one deployment. Insights is not required for Engine. If your installation already runs Insights, enabling Engine adds configuration rather than new pods.
+
+### Components
+
+Enabling Engine provisions or reuses:
+
+- `standalone-insights-api-server`: serves both the `engine` and `insights` graphs.
+- `standalone-insights-queue`: background run processing for Engine and Insights.
+- A dedicated PostgreSQL and Redis instance for the shared deployment, each replaceable with an external instance.
+- The sandbox components described under [Enable Sandboxes](/langsmith/deploy-self-hosted-full-platform#enable-sandboxes).
+
+Engine also adds configuration to `platform-backend` and `ingest-queue`, which dispatch and schedule its runs.
+
+### Prerequisites
+
+<Steps>
+  <Step title="Enable Sandboxes">
+    Complete [Enable Sandboxes](/langsmith/deploy-self-hosted-full-platform#enable-sandboxes) first, including the KVM-capable node pool and JuiceFS storage.
+
+    Engine's sandboxes are associated with one workspace. An install with Engine must have a [shared organization](/langsmith/administration-overview#organizations). If the shared organization has exactly one workspace, LangSmith uses that workspace. If the shared organization has more than one workspace, LangSmith does not choose one automatically. You must set `engine.sandboxTenantId` to the workspace ID.
+
+    <Warning>
+    Use a workspace reserved for Engine:
+
+    - Engine's sandboxes are not billed on the Sandboxes product because Engine meters its own usage in LSUs.
+    - Engine's sandboxes use the same concurrent sandbox, CPU, and memory quotas as other sandboxes in the workspace. If the workspace is near its limits, Engine runs can fail or leave less capacity for interactive sandboxes.
+    - Engine's sandboxes are listed in that workspace and can be stopped by anyone with access to it.
+    - Each sandbox runs agent-generated code.
+    - Repository credentials remain in the sandbox auth proxy and are not available to code running inside the sandbox.
+    </Warning>
+  </Step>
+
+  <Step title="Confirm the license entitlement">
+    Engine is licensed separately, in the same way as Sandboxes. Your license must carry the Engine entitlement. LangSmith validates your license key against `https://beacon.langchain.com` at startup and periodically thereafter, so the entitlement takes effect without you changing any configuration once it is added to your order.
+  </Step>
+
+  <Step title="Allow egress to LangSmith Intelligence and your model providers" id="allow-egress-to-langsmith-intelligence">
+    Set `engine.intelligenceBaseUrl` for how Engine will run its models, and allow outbound HTTPS from the cluster to that URL:
+
+    | **Engine runs its models on** | **`engine.intelligenceBaseUrl`** |
+    | --- | --- |
+    | LangSmith Intelligence | `https://beacon.aws.langchain.com/intelligence` |
+    | Your own model providers | `https://beacon.langchain.com/intelligence` (the default) |
+    | Your own model providers, air-gapped | `""` (see [Air-gapped installations](#air-gapped-installations)) |
+
+    The AWS URL also records usage, so it works for organizations on either option.
+
+    If Engine will run on your own model providers, also allow outbound HTTPS from the `standalone-insights` pods to each provider's API endpoint. To keep that traffic on private networking, see [Connect to your providers privately](#connect-to-your-providers-privately).
+
+    Add each destination as a specific allowlist entry rather than opening general egress. To keep traffic to LangSmith Intelligence on private networking, [connect with AWS PrivateLink](#connect-with-aws-privatelink). Requests to LangSmith Intelligence use a short-lived license JWT obtained during LangSmith license verification. Engine's traffic is separate from the billing and operational telemetry described in [Configure egress](/langsmith/self-host-egress), even where it shares a host.
+  </Step>
+
+  <Step title="Verify your hostname is externally reachable" id="verify-your-hostname-is-externally-reachable">
+    Engine's sandboxes call your LangSmith install using the `langsmith` CLI, so `config.hostname` must be reachable from the sandbox network. Helm validation rejects `localhost` and in-cluster `*.svc` addresses.
+
+    Serve that hostname through your ingress with TLS, as described in [Set up an ingress](/langsmith/self-host-ingress). Engine does not require you to expose anything beyond the address your own users already reach. Sandbox egress is allowlisted to your LangSmith hostname, `github.com`, `api.github.com`, and the Python package registries. Per-run credentials are injected by a proxy outside the sandbox rather than being readable inside it.
+  </Step>
+
+  <Step title="Generate the Engine encryption key" id="generate-the-engine-encryption-key">
+    Engine uses its own Fernet key to encrypt the run payloads LangSmith passes to it, which carry short-lived credentials. Generate one:
+
+    ```bash
+    python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    ```
+
+    Store it in your predefined Kubernetes Secret as `engine_encryption_key` rather than in your config file. See [Use an existing secret](/langsmith/self-host-using-an-existing-secret#parameters).
+
+    To rotate the key later, copy the current value to `engine_encryption_key_previous` and set the new key as `engine_encryption_key`. The previous key is accepted for decryption only, so runs encrypted just before the swap still complete.
+  </Step>
+</Steps>
+
+### Enable with Helm
+
+Add the following to your [`langsmith_config.yaml`](/langsmith/kubernetes#configure-your-helm-charts), alongside the complete Sandboxes values from [Enable Sandboxes](/langsmith/deploy-self-hosted-full-platform#enable-sandboxes). These examples show only the Engine-specific values and the `sandboxes.enabled` flag.
+
+<Tabs>
+  <Tab title="Using Kubernetes secrets (recommended)">
+    Reference your existing Secret by name. The chart reads `engine_encryption_key` from it automatically.
+
+    ```yaml
+    config:
+      existingSecretName: "<your-secret-name>"
+      # Must be reachable from the sandbox network.
+      hostname: "https://langsmith.example.com"
+
+    engine:
+      enabled: true
+      intelligenceBaseUrl: "https://beacon.aws.langchain.com/intelligence"
+
+    sandboxes:
+      enabled: true
+    ```
+  </Tab>
+  <Tab title="Using inline values">
+    Set the encryption key directly in your config file.
+
+    <Warning>
+    This puts a live credential in your config file. Do not commit it to version control; prefer the Kubernetes Secret.
+    </Warning>
+
+    ```yaml
+    config:
+      hostname: "https://langsmith.example.com"
+
+    engine:
+      enabled: true
+      intelligenceBaseUrl: "https://beacon.aws.langchain.com/intelligence"
+      encryptionKey: "<engine-encryption-key>"
+
+    sandboxes:
+      enabled: true
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+If your install has a shared organization with more than one workspace, set the workspace that owns Engine's sandboxes:
+</Note>
+
+```yaml
+engine:
+  sandboxTenantId: "<workspace-id>"
+```
+
+#### Use cloud identity for your model providers
+
+Amazon Bedrock, Google Vertex AI, and Azure AI Foundry can authenticate with the cloud identity of Engine's pods instead of credentials saved in LangSmith. List those providers in `engine.workloadIdentityProviders`, and grant the identity through the service accounts of the shared Engine deployment:
+
+```yaml
+engine:
+  workloadIdentityProviders:
+    - bedrock
+
+engineInsightsAgent:
+  apiServer:
+    serviceAccount:
+      annotations:
+        eks.amazonaws.com/role-arn: "arn:aws:iam::<account-id>:role/<engine-model-access-role>"
+  queue:
+    serviceAccount:
+      annotations:
+        eks.amazonaws.com/role-arn: "arn:aws:iam::<account-id>:role/<engine-model-access-role>"
+```
+
+Use the annotation for your platform, such as IAM roles for service accounts on EKS or Workload Identity on GKE.
+
+<Warning>
+A provider listed in `engine.workloadIdentityProviders` counts as configured without saved credentials, so any Organization Admin can select it. Scope the identity to the models Engine uses.
+</Warning>
+
+Azure AI Foundry still needs its resource name, and Amazon Bedrock can take a region. Enter them under **Settings > Engine > Model providers**.
+
+<Warning>
+Upgrades from older Insights image pins require one extra check: if your values pin `images.engineInsightsAgentImage.repository` to the retired `langsmith-clio` image, remove or update that pin. Engine and Insights now run on `langsmith-insights-engine`, and the chart rejects `langsmith-clio`. For more information, see [Mirror images for your LangSmith installation](/langsmith/self-host-mirroring-images#additional-images-for-engine).
+</Warning>
+
+Validate the updated chart before applying it:
+
+```bash
+helm template langsmith langchain/langsmith \
+  --values langsmith_config.yaml \
+  --version <version> \
+  --namespace <namespace>
+```
+
+The chart validates the Engine configuration at render time and fails with a message naming the missing value, so this command catches a misconfiguration before it reaches your cluster.
+
+Apply the updated chart:
+
+```bash
+helm upgrade -i langsmith langchain/langsmith \
+  --values langsmith_config.yaml \
+  --version <version> \
+  --namespace <namespace> \
+  --wait
+```
+
+### Verify the installation
+
+Confirm the shared Engine and Insights deployment is running:
+
+```bash
+kubectl get pods -n <namespace> | grep standalone-insights
+```
+
+Both the API server and queue pods should be `Running`. Then, confirm `platform-backend` is healthy, since it dispatches Engine runs:
+
+```bash
+kubectl rollout status deployment/langsmith-platform-backend -n <namespace>
+```
+
+If Engine does not appear in the LangSmith UI after this, the most common causes are a license without the Engine entitlement and the organization-level toggle described in [Turn on Engine in LangSmith](#turn-on-engine-in-langsmith).
+
+After [enabling and configuring Engine](#turn-on-engine-in-langsmith) in the LangSmith UI, [test each selected provider](#test-a-provider), then start an Engine analysis and confirm that results appear for the tracing project. This verifies the complete path through Engine, Sandboxes, and your model providers or LangSmith Intelligence. Running pods alone does not verify that path.
+
+If the analysis does not complete, check that Engine pods are running, the sandbox workspace has quota available, and the cluster can reach your model providers or the LangSmith Intelligence gateway URL configured in `engine.intelligenceBaseUrl`.
+
+### Turn on Engine in LangSmith
+
+Enabling Engine in Helm makes the feature available; it does not start any scans. After enabling the chart values, finish setup in LangSmith:
+
+1. An [Organization Admin](/langsmith/rbac#organization-admin) turns Engine on for the organization under **Settings > Engine enablement**. For more information, see [Find and fix issues](/langsmith/engine#enable-engine-for-your-organization).
+1. An Organization Admin [chooses how Engine runs its models](#choose-model-providers) under **Settings > Engine > Model providers**. Engine doesn't start any runs until this is saved.
+1. Any user turns on Engine for a tracing project from the project's **Engine** tab. For more information, see [Turn on Engine for a tracing project](/langsmith/engine#turn-on-engine-for-a-tracing-project).
+
+### Choose model providers
+
+Under **Settings > Engine > Model providers**, an Organization Admin selects LangSmith Intelligence, one or more of your own providers, or both. Credentials are saved as organization secrets and apply to every workspace in the organization.
+
+LangSmith Intelligence appears only when your installation's `engine.intelligenceBaseUrl` serves Engine's models.
+
+To use your own providers:
+
+<Steps>
+  <Step title="Add credentials">
+    Click **Add credentials** next to the provider and enter:
+
+    <Tabs>
+      <Tab title="Anthropic">
+        An Anthropic API key.
+      </Tab>
+      <Tab title="Amazon Bedrock">
+        An AWS access key ID and secret access key, with an optional session token, or a Bedrock API key (bearer token). Optionally, an AWS region.
+
+        To use the cloud identity of Engine's pods instead, see [Use cloud identity for your model providers](#use-cloud-identity-for-your-model-providers).
+      </Tab>
+      <Tab title="Google Vertex AI">
+        A service account key in JSON format.
+
+        To use the cloud identity of Engine's pods instead, see [Use cloud identity for your model providers](#use-cloud-identity-for-your-model-providers).
+      </Tab>
+      <Tab title="Azure AI Foundry">
+        An API key and the name of your Azure AI Foundry resource.
+
+        To use the cloud identity of Engine's pods instead of an API key, see [Use cloud identity for your model providers](#use-cloud-identity-for-your-model-providers).
+      </Tab>
+      <Tab title="OpenAI">
+        An OpenAI API key, and optionally your OpenAI organization ID.
+      </Tab>
+    </Tabs>
+
+    A provider with complete credentials shows as configured. To change them later, click the key icon next to the provider.
+  </Step>
+  <Step title="Test the provider" id="test-a-provider">
+    Click **Test connection**. Engine sends a small request to each model it uses on that provider, with the saved credentials, and shows whether each request succeeded and, if not, why.
+  </Step>
+  <Step title="Select providers and save">
+    Select the providers Engine may use, then save. Engine uses a mix of models from the providers you select.
+  </Step>
+</Steps>
+
+If Engine runs fail after you save:
+
+- **No provider selected:** Engine doesn't start runs until at least one provider is selected and saved.
+- **Rejected credentials:** **Test connection** reports which provider rejected them. Update the credentials and test again.
+- **Model not available:** enable the model in your provider account, then test again.
+
+Connecting a GitHub repository is optional and improves Engine's diagnosis and fixes. Without one, Engine cannot read your source code or open pull requests. To create the GitHub App and configure `host-backend`, see [Connect Engine to GitHub](/langsmith/engine-github#self-hosted).
+
+### Disable Engine
+
+Set `engine.enabled` to `false` and re-apply:
+
+```yaml
+engine:
+  enabled: false
+```
+
+Engine stops dispatching runs. Insights shares the same deployment, so the `standalone-insights` pods keep running when `insights.enabled` is `true`.
+
+## Air-gapped installations
+
+Installations with an offline license and no connection to LangSmith Intelligence can run Engine on their own model providers:
+
+- Set `engine.intelligenceBaseUrl` to `""`.
+- Choose your own model providers under **Settings > Engine > Model providers**. LangSmith Intelligence isn't available.
+- Allow outbound HTTPS from the `standalone-insights` pods to your model providers, or route it through your own network path to them.
+
+Engine records its usage in your installation. An Organization Admin downloads it with the rest of your usage from **Settings > Usage export** and sends it to your LangChain account team on the schedule in your agreement.
+
+Air-gapped installations don't show Engine spend, and spend limits other than `0` aren't enforced. Set a limit of `0` to pause Engine for an organization or a project.
+
+## See also
+
+- [Engine](/langsmith/engine-overview)
+- [Configure Engine](/langsmith/engine)
+- [Connect Engine to GitHub](/langsmith/engine-github)
+- [Engine security](/langsmith/engine-security)
+- [Engine notifications](/langsmith/engine-notifications)
+- [Connect self-hosted LangSmith to Slack](/langsmith/self-host-slack)
+- [Enable additional LangSmith features](/langsmith/deploy-self-hosted-full-platform)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/engine-self-hosted.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
