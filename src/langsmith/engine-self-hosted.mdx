@@ -391,6 +391,16 @@ LangSmith Intelligence appears only when your installation's `engine.intelligenc
 
 When LangSmith Intelligence is available and selected, it takes priority over your selected providers. Leave it unselected to keep inference on your own providers.
 
+Engine selects models from the providers you enable. Model requirements follow the Engine image tag in `images.engineInsightsAgentImage.tag`, not the Helm chart version. For these images, grant access to the following models in each selected provider:
+
+| **Provider** | **Engine `0.17.29rc7`** | **Engine `0.17.29rc11`** |
+| --- | --- | --- |
+| Anthropic | `claude-opus-5` | `claude-opus-5-5` |
+| Amazon Bedrock | `anthropic.claude-opus-5` | `anthropic.claude-opus-5-5` |
+| Google Vertex AI | `claude-opus-5` | `claude-opus-5-5` |
+| Azure AI Foundry | `claude-opus-5`, `gpt-5.6-sol` | `claude-opus-5-5`, `gpt-5.6-sol` |
+| OpenAI | `gpt-5.6-sol` | `gpt-5.6-sol` |
+
 To use your own providers:
 
 <Steps>
@@ -404,22 +414,23 @@ To use your own providers:
       <Tab title="Amazon Bedrock">
         An AWS access key ID and secret access key, with an optional session token, or a Bedrock API key (bearer token). Optionally, an AWS region.
 
+        Engine uses the Bedrock Mantle API. Enable access to the listed Claude model in the selected AWS account and region. Grant the calling identity Mantle inference and model-subscription permissions; see [AmazonBedrockMantleInferenceAccess](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AmazonBedrockMantleInferenceAccess.html) for the required actions.
+
+        If no region is saved, Engine uses `us-east-1`, including with workload identity. It does not inherit the EKS cluster's region.
+
         To use the cloud identity of Engine's pods instead, see [Use cloud identity for your model providers](#use-cloud-identity-for-your-model-providers).
       </Tab>
       <Tab title="Google Vertex AI">
-        A service account key in JSON format.
+        A service account key in JSON format. Engine uses the JSON's `project_id` as the inference project and calls the `global` location.
+
+        Enable the required Claude model through [Model Garden](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/partner-models/use-partner-models) in that project. Grant the service account `roles/aiplatform.user` in the same project.
 
         To use the cloud identity of Engine's pods instead, see [Use cloud identity for your model providers](#use-cloud-identity-for-your-model-providers).
       </Tab>
       <Tab title="Azure AI Foundry">
-        Model requirements follow the Engine image tag in `images.engineInsightsAgentImage.tag`, not the Helm chart version. For the images below, confirm that your resource region has access and quota for both models. To configure Azure:
+        Confirm that your resource region has access and quota for both models listed for your Engine image. To configure Azure:
 
-        1. Create both model deployments in the same Azure AI Foundry resource, using the exact deployment names below. Engine uses Claude as its primary model and GPT as its fallback. Custom deployment aliases are not supported for either model family.
-
-           | **Engine image tag** | **Claude model and deployment name** | **GPT model and deployment name** |
-           | --- | --- | --- |
-           | `0.17.29rc7` | Claude Opus 5: `claude-opus-5` | GPT 5.6 Sol: `gpt-5.6-sol` |
-           | `0.17.29rc11` | Claude Opus 5.5: `claude-opus-5-5` | GPT 5.6 Sol: `gpt-5.6-sol` |
+        1. Create both model deployments in the same Azure AI Foundry resource. Use the model IDs in the table as the exact deployment names. Engine uses Claude as its primary model and GPT as its fallback. Custom deployment aliases are not supported for either model family.
 
            Follow the [Claude deployment instructions](https://platform.claude.com/docs/en/build-with-claude/claude-in-microsoft-foundry) and check [Azure OpenAI model availability](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/responses). Accept the Azure Marketplace terms when creating your first Claude deployment.
         1. Enter an API key and the resource name, not its full URL. To use the cloud identity of Engine's pods instead of an API key, see [Use cloud identity for your model providers](#use-cloud-identity-for-your-model-providers).
@@ -557,6 +568,8 @@ Engine calls each provider's standard API hostname from the `standalone-insights
 Engine doesn't accept custom endpoint URLs, so private connectivity works through DNS: the standard hostname must resolve to your private endpoint from the Engine pods.
 
 If Engine authenticates with [cloud identity](#use-cloud-identity-for-your-model-providers), the pods also need to reach your cloud's token service, such as an interface VPC endpoint for AWS STS on AWS.
+
+With saved Vertex AI service account JSON, also allow HTTPS to `oauth2.googleapis.com` for token exchange, alongside `aiplatform.googleapis.com` for inference.
 
 Usage reporting to LangSmith Intelligence is a separate connection. On AWS, `https://beacon.aws.langchain.com/intelligence` records usage and supports [AWS PrivateLink](#connect-with-aws-privatelink), so an installation can run Engine on Bedrock and report usage without public egress. The default `https://beacon.langchain.com/intelligence` needs public egress.
 
