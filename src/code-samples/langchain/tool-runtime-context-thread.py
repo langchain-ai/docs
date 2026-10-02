@@ -5,6 +5,7 @@ from langchain.agents import create_agent
 from langchain.tools import tool, ToolRuntime
 from langchain_core.utils.uuid import uuid7
 from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import InMemorySaver
 
 
 USER_DATABASE = {
@@ -48,14 +49,27 @@ agent = create_agent(
     model,
     tools=[get_account_info],
     context_schema=UserContext,
+    checkpointer=InMemorySaver(),
     system_prompt="You are a financial assistant.",
 )
 
+thread_id = str(uuid7())
+config = {"configurable": {"thread_id": thread_id}}
+context = UserContext(user_id="user123")
+
 result = agent.invoke(
     {"messages": [{"role": "user", "content": "What's my current balance?"}]},
-    config={"configurable": {"thread_id": str(uuid7())}},
-    context=UserContext(user_id="user123"),
+    config=config,
+    context=context,
 )
+print(result["messages"][-1].content_blocks)
+
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "What was my balance again?"}]},
+    config=config,
+    context=context,
+)
+print(result["messages"][-1].content_blocks)
 # :snippet-end:
 
 # :remove-start:
@@ -63,5 +77,7 @@ if __name__ == "__main__":
     last = result["messages"][-1]
     text = last.content_blocks[0]["text"] if last.content_blocks else str(last.content)
     assert "5000" in text or "$5" in text or "5,000" in text, text
+    # Checkpointer keeps prior turns in state for the shared thread_id.
+    assert len(result["messages"]) > 2, len(result["messages"])
     print("✓ tool runtime context and thread_id invoke sample completed")
 # :remove-end:

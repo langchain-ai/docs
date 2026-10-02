@@ -505,6 +505,34 @@ Notes:
 - For StoreBackend routing, ensure a store is provided via `create_deep_agent(model=..., store=...)` or provisioned by the platform.
 - Deep Agents write internal data (offloaded tool results, conversation history) to the default backend. Use `StateBackend` as the default to keep these artifacts ephemeral and avoid writing them to disk or a persistent store. See the [FilesystemBackend tip](#filesystembackend-local-disk) for a complete example.
 
+## Offload binary content
+
+Binary content offloading stores inline media in the backend instead of keeping base64 payloads in message history. This reduces checkpoint size for agents that read binary files or receive inline media in user messages. Offloading is opt-in and disabled by default.
+
+:::python
+<Note>
+Binary content offloading requires `deepagents>=0.7.21`.
+</Note>
+
+Set `offload_binary_content=True` on `FilesystemMiddleware` and pass it in the `middleware` list to `create_deep_agent`. Use the same backend for the agent and the middleware.
+
+Payloads are stored under `/blobs/<sha256>` by default. If you set `artifacts_root` on the middleware, blobs are stored under that root instead.
+:::
+
+:::js
+Set `offloadBinaryContent: true` in `createFilesystemMiddleware` and pass the middleware in the `middleware` array to `createDeepAgent`. Use the same backend for the agent and the middleware.
+
+Payloads are stored under `/blobs/<sha256>`.
+:::
+
+Message history keeps content-addressed references. Before each model call, the middleware restores the original media from its cache or the backend. Re-reading unchanged content reuses the same blob; changed content creates a new blob.
+
+Use a backend that stores blobs outside graph state, such as a sandbox or `FilesystemBackend`. Offloading has no effect when the blob path routes to `StateBackend`, including through `CompositeBackend`. If you keep `StateBackend` as the default backend, route the blob directory to external storage.
+
+<Note>
+Inline media in user messages is replaced at the next model call. The original input payload still appears in earlier checkpoints. Keep the blob storage available when resuming a thread so the middleware can restore its media.
+</Note>
+
 ## Custom backends
 
 Implement a custom backend to connect Deep Agents to storage systems such as databases, object stores, and remote filesystems. See [community-built backends](/oss/integrations/backends) for examples.
