@@ -99,7 +99,7 @@ Engine's deployment-independent data handling, including zero data retention wit
 
 ## Install Engine
 
-Engine is disabled by default. It requires [Sandboxes](/langsmith/deploy-self-hosted-full-platform#enable-sandboxes), a connection to [LangSmith Intelligence](#allow-egress-to-langsmith-intelligence) unless your installation is [air-gapped](#air-gapped-installations), an externally reachable [`config.hostname`](#verify-your-hostname-is-externally-reachable), and an [Engine encryption key](#generate-the-engine-encryption-key). Complete the prerequisites before enabling Engine.
+Engine is disabled by default. It requires [Sandboxes](/langsmith/deploy-self-hosted-full-platform#enable-sandboxes), a connection to [LangSmith Intelligence](#allow-egress-to-langsmith-intelligence) unless your installation is [air-gapped](#air-gapped-installations), an externally reachable [`config.hostname`](#verify-your-hostname-is-externally-reachable), and [Engine's keys](#generate-engines-keys). Complete the prerequisites before enabling Engine.
 
 Engine and [Insights](/langsmith/deploy-self-hosted-full-platform#enable-fleet-insights-and-chat) run from the same image and share one deployment. Insights is not required for Engine. If your installation already runs Insights, enabling Engine adds configuration rather than new pods.
 
@@ -159,16 +159,24 @@ Engine also adds configuration to `platform-backend` and `ingest-queue`, which d
     Serve that hostname through your ingress with TLS, as described in [Set up an ingress](/langsmith/self-host-ingress). Engine does not require you to expose anything beyond the address your own users already reach. Sandbox egress is allowlisted to your LangSmith hostname, `github.com`, `api.github.com`, and the Python package registries. Per-run credentials are injected by a proxy outside the sandbox rather than being readable inside it.
   </Step>
 
-  <Step title="Generate the Engine encryption key" id="generate-the-engine-encryption-key">
-    Engine uses its own Fernet key to encrypt the run payloads LangSmith passes to it, which carry short-lived credentials. Generate one:
+  <Step title="Generate Engine's keys" id="generate-engines-keys">
+    Engine needs two keys of its own:
 
-    ```bash
-    python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-    ```
+    - **Encryption key** (`engine_encryption_key`): a Fernet key that encrypts the run payloads LangSmith passes to Engine, which carry short-lived credentials.
 
-    Store it in your predefined Kubernetes Secret as `engine_encryption_key` rather than in your config file. See [Use an existing secret](/langsmith/self-host-using-an-existing-secret#parameters).
+      ```bash
+      python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+      ```
 
-    To rotate the key later, copy the current value to `engine_encryption_key_previous` and set the new key as `engine_encryption_key`. The previous key is accepted for decryption only, so runs encrypted just before the swap still complete.
+    - **Usage signing secret** (`engine_usage_signing_secret`): signs the usage reports Engine sends to LangSmith. Use at least 32 random characters.
+
+      ```bash
+      openssl rand -hex 32
+      ```
+
+    Store both in your predefined Kubernetes Secret rather than in your config file. See [Use an existing secret](/langsmith/self-host-using-an-existing-secret#parameters). When you install or upgrade with `helm`, the chart checks that the Secret has both keys and names any that are missing.
+
+    To rotate the encryption key, copy the current value to `engine_encryption_key_previous` and set the new key as `engine_encryption_key`. The previous key is accepted for decryption only, so runs encrypted just before the swap still complete.
   </Step>
 </Steps>
 
@@ -178,7 +186,7 @@ Add the following to your [`langsmith_config.yaml`](/langsmith/kubernetes#config
 
 <Tabs>
   <Tab title="Using Kubernetes secrets (recommended)">
-    Reference your existing Secret by name. The chart reads `engine_encryption_key` from it automatically.
+    Reference your existing Secret by name. The chart reads `engine_encryption_key` and `engine_usage_signing_secret` from it.
 
     ```yaml
     config:
@@ -195,10 +203,10 @@ Add the following to your [`langsmith_config.yaml`](/langsmith/kubernetes#config
     ```
   </Tab>
   <Tab title="Using inline values">
-    Set the encryption key directly in your config file.
+    Set Engine's keys directly in your config file.
 
     <Warning>
-    This puts a live credential in your config file. Do not commit it to version control; prefer the Kubernetes Secret.
+    This puts live credentials in your config file. Do not commit it to version control; prefer the Kubernetes Secret.
     </Warning>
 
     ```yaml
@@ -209,6 +217,7 @@ Add the following to your [`langsmith_config.yaml`](/langsmith/kubernetes#config
       enabled: true
       intelligenceBaseUrl: "https://beacon.aws.langchain.com/intelligence"
       encryptionKey: "<engine-encryption-key>"
+      usageSigningSecret: "<engine-usage-signing-secret>"
 
     sandboxes:
       enabled: true
