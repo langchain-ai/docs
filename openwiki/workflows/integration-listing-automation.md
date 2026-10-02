@@ -5,7 +5,7 @@ description: Explains how package metadata, hosted integration frontmatter, and 
 tags: [integrations, automation, documentation, metadata, ci]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-01T08:23:32.263Z
+    at: 2026-10-02T08:21:54.688Z
 sources:
   - id: openwiki-source-8bdd8b6031ea08044f515d8c
     resource: repo://.agents/skills/submit-integration/SKILL.md
@@ -35,7 +35,7 @@ sources:
     resource: repo://src/oss/python/integrations/document_loaders/index.mdx
   - id: openwiki-source-7bfe816fdba0201671040464
     resource: repo://src/oss/python/integrations/providers/all_providers.mdx
-generated: { by: "openwiki/0.4.3", at: "2026-10-01T08:23:32.263Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-02T08:21:54.688Z" }
 ---
 
 # Integration Listing Automation
@@ -74,11 +74,11 @@ flowchart TD
     Overview --> Output["Generated overview MDX"]
 ```
 
-This shows the separate ownership paths for the generated table snippets and provider overview.
+This shows the separate ownership paths for generated table snippets and the provider overview.
 
-`refresh_integration_downloads.py` scans supported component directories for Python and JavaScript, excluding `index.mdx`, templates, and example data. It reads hosted frontmatter, adds matching external rows, and sorts available download counts descending and names secondarily; unavailable values sort last. An external name links to its `docs_url`; a hosted name links to its local integration route. Python and JavaScript chat landing pages import the resulting snippets, making those snippets public documentation dependencies rather than standalone files.
+`refresh_integration_downloads.py` scans supported component directories for Python and JavaScript, excluding `index.mdx`, templates, and example data. It reads hosted frontmatter, adds matching external rows, and sorts available download counts descending and names secondarily; unavailable values sort last. An external name links to its `docs_url`; a hosted name links to its local integration route. Python and JavaScript component landing pages import the resulting snippets, making those snippets public documentation dependencies rather than standalone files.
 
-Tables are component-aware: chat has capability marks, middleware has availability and source, retrievers have hosting and package fields, and vectorstore columns appear only when any row supplies that capability. The generator writes an all-rows snippet for every supported component that has rows and writes a featured snippet for chat or whenever a component has featured rows. Numeric `data-sort-value` attributes provide first-paint and offline ordering while the client can refresh badges.
+Tables are component-aware: chat has capability marks, middleware has availability and source, retrievers have hosting and package fields, and vectorstore columns appear only when a row declares them. The generator writes an all-rows snippet for every supported component that has rows and writes a featured snippet for chat or whenever a component has featured rows. Numeric `data-sort-value` attributes provide first-paint and offline ordering while the client can refresh badges.
 
 Run from the repository root:
 
@@ -86,7 +86,7 @@ Run from the repository root:
 uv run python scripts/refresh_integration_downloads.py --write
 ```
 
-The generated header is an ownership marker. Review the regenerated diff for language, component, link target, capability cells, and unavailable-download handling; repair metadata or generator logic and rerun rather than patching a row under `src/snippets/oss/`.
+By default the command prints generated tables instead of writing them. `--language` and `--component` can restrict a run to one supported language or component. The generated header is an ownership marker. Review the regenerated diff for language, component, link target, capability cells, and unavailable-download handling; repair metadata or generator logic and rerun rather than patching a row under `src/snippets/oss/`.
 
 ### URL validation is a pre-emission boundary
 
