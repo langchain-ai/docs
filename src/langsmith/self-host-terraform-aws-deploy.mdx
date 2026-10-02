@@ -4,11 +4,11 @@ sidebarTitle: Deploy
 description: End-to-end walkthrough for provisioning LangSmith self-hosted on AWS EKS using the LangChain Terraform modules.
 ---
 
-Deploy LangSmith to AWS with the public [Terraform modules](https://github.com/langchain-ai/terraform/tree/main/modules/aws). Managing the deployment as code lets you version, review, and reproduce your LangSmith environment across accounts instead of clicking through the AWS Console.
+Deploy LangSmith to AWS with the public [Terraform modules](https://github.com/langchain-ai/terraform/tree/v0.16.101/modules/aws). Managing the deployment as code lets you version, review, and reproduce your LangSmith environment across accounts instead of clicking through the AWS Console.
 
 The install runs in two stages:
 
-1. **Infrastructure**: Terraform provisions VPC, EKS, RDS, ElastiCache, S3, and IAM.
+1. **Infrastructure**: Terraform provisions VPC, EKS, RDS, ElastiCache, S3, the ALB, and IAM, then bootstraps the cluster add-ons.
 2. **Application**: Helm installs the LangSmith chart against the cluster.
 
 After the base install, enable optional add-ons by setting flags and redeploying.
@@ -18,34 +18,29 @@ After the base install, enable optional add-ons by setting flags and redeploying
 graph TB
     subgraph stage1["Set up infrastructure"]
         direction LR
-        Start["setup-env.sh<br/>secrets to SSM"]
-        TF["terraform apply"]
+        Start["source setup-env.sh<br/>secrets to SSM"]
+        TF["make apply"]
         Infra["VPC · EKS · RDS<br/>ElastiCache · S3 · ALB<br/>IAM"]
-        Bootstrap["k8s-bootstrap<br/>ESO · KEDA<br/>cert-manager"]
+        Bootstrap["k8s-bootstrap<br/>ESO · KEDA<br/>Envoy Gateway"]
         Start --> TF --> Infra -->|EKS ready| Bootstrap
     end
     subgraph stage2["Deploy the application"]
         direction LR
-        Deploy["deploy.sh<br/>ARNs + hostname<br/>ESO syncs secrets"]
-        Helm["helm install<br/>langsmith chart"]
-        First{"First<br/>deploy?"}
+        Deploy["make init-values<br/>+ make deploy"]
+        Helm["helm upgrade --install<br/>ESO syncs secrets"]
         Running["LangSmith running<br/>all pods healthy"]
-        Deploy --> Helm --> First
-        First -->|no| Running
-        First -->|yes, re-run| Helm
+        Deploy --> Helm --> Running
     end
     stage1 --> stage2
 
     classDef trigger fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900
     classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
     classDef neutral fill:#F2FAFF,stroke:#40668D,stroke-width:2px,color:#2F4B68
-    classDef decision fill:#FDF3FF,stroke:#7E65AE,stroke-width:2px,color:#504B5F
     classDef output fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33
 
     class Start trigger
     class TF,Bootstrap,Deploy,Helm process
     class Infra neutral
-    class First decision
     class Running output
 
     style stage1 fill:none,stroke:#40668D,stroke-width:1px
@@ -59,9 +54,9 @@ graph TB
 | Tool | Version | Purpose |
 |---|---|---|
 | AWS CLI | v2 | Authenticate, query AWS resources, manage EKS kubeconfig |
-| Terraform | 1.5 | Run the infrastructure modules |
-| `kubectl` | 1.33 | Inspect the EKS cluster |
-| Helm | 3.12 | Install and manage the LangSmith chart |
+| Terraform | 1.11 or later | Run the infrastructure modules |
+| `kubectl` | 1.34 or later | Inspect the EKS cluster |
+| Helm | 3.12 or later | Install and manage the LangSmith chart |
 | `eksctl` | latest | Optional, handy for kubeconfig and debugging |
 
 Install on macOS:
@@ -84,19 +79,10 @@ For Linux, follow the [AWS CLI install guide](https://docs.aws.amazon.com/cli/la
 
 ### Required AWS IAM permissions
 
-The IAM user or role running Terraform needs permission to create and manage the cloud foundation. The following managed policies cover the full surface area. Use them as a starting point and trim down to least-privilege once the deployment is stable.
-
-| Policy | Purpose |
-|---|---|
-| `AmazonEKSClusterPolicy` | Create and manage EKS clusters |
-| `AmazonVPCFullAccess` | Create VPC, subnets, route tables, and NAT |
-| `AmazonRDSFullAccess` | Create and manage RDS PostgreSQL instances |
-| `AmazonElastiCacheFullAccess` | Create ElastiCache Redis clusters |
-| `AmazonS3FullAccess` | Create S3 buckets and VPC endpoints |
-| `IAMFullAccess` | Create IRSA roles and policies |
+The IAM user or role running Terraform needs `AdministratorAccess`, or `PowerUserAccess` plus `IAMFullAccess`. The module creates IAM roles and policies for IRSA, so `PowerUserAccess` alone is not enough. For a scoped-down policy, refer to [`PERMISSIONS.md`](https://github.com/langchain-ai/terraform/blob/v0.16.101/modules/aws/PERMISSIONS.md) in the module.
 
 <Tip>
-Run `make preflight` from `modules/aws/` after authenticating. The preflight script confirms that the active credentials can perform each required action and reports the first missing permission, which is faster than discovering gaps mid-`terraform apply`.
+Run `make preflight` from `modules/aws/` after authenticating. The read-only checks confirm the active credentials, the region, and the CLI tools, and stop at the first failure. To also test that the credentials can create resources, run `make preflight ARGS="--create-test-resources"`.
 </Tip>
 
 ### Authenticate
@@ -124,16 +110,14 @@ aws ec2 describe-availability-zones --query 'AvailabilityZones[].ZoneName' --out
 
 ### License key and domain
 
-Two non-AWS items must be ready before `terraform apply`:
-
-- **LangSmith license key.** [Contact our sales team](https://www.langchain.com/contact-sales) to request one. The key is stored in AWS SSM Parameter Store by the setup script, not in `tfvars`.
-- **Domain or subdomain** that resolves to the AWS account, plus an ACM certificate covering it (or `letsencrypt` / `none` for the `tls_certificate_source` variable).
+- **LangSmith license key.** [Contact our sales team](https://www.langchain.com/contact-sales) to request one. The setup script stores the key in AWS SSM Parameter Store, not in `tfvars`.
+- **Domain (optional).** Set `langsmith_domain` to serve LangSmith on your own hostname. With a domain and no `acm_certificate_arn`, Terraform creates a Route 53 hosted zone, requests an ACM certificate, and creates the ALB alias record. To use an existing hosted zone instead, set `dns_create_zone = false` and `dns_existing_zone_id`. To bring your own certificate, set `acm_certificate_arn`. Leave `langsmith_domain` empty to reach LangSmith on the ALB hostname. Without a domain, set `acm_certificate_arn`, or set `tls_certificate_source = "none"` to serve plain HTTP.
 
 ### Cluster sizing reference
 
 Two independent settings control capacity:
 
-- **Infrastructure capacity** sets instance types and node counts directly through the infra variables `eks_managed_node_groups`, `postgres_instance_type`, and `redis_instance_type`. The module defaults are one `m5.4xlarge` node group (min 3, max 10), `db.t3.large` for RDS, and `cache.m6g.xlarge` for ElastiCache.
+- **Infrastructure capacity** sets instance types and node counts directly through the infra variables `eks_managed_node_groups`, `postgres_instance_type`, and `redis_instance_type`. The module defaults are one `m5.4xlarge` node group (min 3, max 10), `db.t3.large` for RDS, and `cache.m6g.xlarge` for ElastiCache. The `infra/terraform.tfvars.dev`, `terraform.tfvars.minimum`, and `terraform.tfvars.production` templates set smaller or larger values.
 - **`sizing_profile`** selects the Helm sizing overlay (pod resource requests and limits). `init-values.sh` and `deploy.sh` read it; Terraform does not.
 
 Size the infrastructure for your target tier before deploying. For per-tier recommendations, refer to [Scaling guidance](/langsmith/self-host-scale).
@@ -162,34 +146,36 @@ make quickstart
 #    Must be sourced, not executed
 source infra/scripts/setup-env.sh
 
-# 4. Provision infrastructure (~20 to 25 min)
+# 4. Provision infrastructure
 make init
 make plan
 make apply
 
 # 5. Configure kubectl
-make kubeconfig
+source infra/scripts/set-kubeconfig.sh
 kubectl get nodes
 
-# 6. Deploy LangSmith via Helm (~5 to 10 min)
+# 6. Deploy LangSmith with Helm
 make init-values
 make deploy
 
 # 7. Confirm
 kubectl get pods -n langsmith
-kubectl get ingress -n langsmith
+kubectl get httproute -n langsmith
 ```
 
-To chain infrastructure and application in one command:
+`make deploy` prints the LangSmith URL when it finishes.
+
+To chain infrastructure and application in one command, first run `make quickstart` and `source infra/scripts/setup-env.sh` in the same shell, then:
 
 ```bash
 make quickdeploy          # interactive, prompts before terraform apply
 make quickdeploy-auto     # non-interactive, auto-approves terraform
 ```
 
-`make quickdeploy` runs `terraform apply` → `kubeconfig` → `init-values` → `helm deploy` in sequence. If any step fails, the command exits with instructions for resuming from that step.
+`make quickdeploy` runs `terraform apply`, sources `set-kubeconfig.sh`, then runs `init-values` and `deploy.sh`. It stops if the `setup-env.sh` exports are missing. If a step fails, the command prints the commands to resume from that step.
 
-The following sections cover each phase in detail.
+The following sections cover each stage in detail.
 
 ## Provision infrastructure
 
@@ -202,10 +188,11 @@ Terraform provisions the following AWS resources:
 | RDS PostgreSQL | LangSmith operational data |
 | ElastiCache Redis | Queue and cache |
 | S3 bucket + VPC endpoint | Trace payload blob storage |
-| ALB + listeners | Public ingress with TLS |
-| SSM Parameter Store entries | Application secrets, synced into the cluster by External Secrets Operator |
+| ALB + listeners | Public entry point; terminates TLS |
 | IRSA roles + IAM policies | Per-service AWS access |
-| KEDA, cert-manager, ESO | Bootstrap workloads installed alongside infrastructure |
+| KEDA, External Secrets Operator, Envoy Gateway | Bootstrap workloads installed alongside infrastructure. Envoy Gateway is the default ingress. cert-manager is added only for Let's Encrypt. |
+
+Application secrets live in SSM Parameter Store. `setup-env.sh` writes them, not Terraform, and External Secrets Operator syncs them into the cluster.
 
 ### Clone and configure
 
@@ -222,7 +209,7 @@ Generate `terraform.tfvars` with the interactive wizard:
 make quickstart
 ```
 
-The wizard prompts for naming prefix, region, EKS sizing, TLS source, external vs in-cluster services, and the optional add-on flags. It writes `infra/terraform.tfvars`. Re-running the wizard preselects existing values; press Enter at each prompt to keep the current config.
+The wizard walks through 13 sections, including naming, region, networking, EKS sizing, data sources, TLS and DNS, ingress, and the optional add-on flags. It writes `infra/terraform.tfvars`. When the file already exists, the wizard offers to update it with the existing values preselected, start fresh, or cancel, and it backs up the original file first. Some settings, such as the bring-your-own security group variables (`*_existing_security_group_id`), are not in the wizard; set them in `terraform.tfvars` by hand.
 
 Prefer to edit by hand? Copy the example and fill in the required fields:
 
@@ -238,7 +225,7 @@ name_prefix = "acme"
 environment = "prod"
 region      = "us-west-2"
 
-eks_cluster_version = "1.33"
+eks_cluster_version = "1.34"
 eks_managed_node_groups = {
   default = {
     name           = "node-group-default"
@@ -252,14 +239,14 @@ postgres_source = "external"
 redis_source    = "external"
 
 tls_certificate_source = "acm"
-acm_certificate_arn    = "arn:aws:acm:us-west-2:<account-id>:certificate/<cert-id>"
 langsmith_domain       = "langsmith.example.com"
+# acm_certificate_arn  = "arn:aws:acm:us-west-2:<account-id>:certificate/<cert-id>"  # optional with a domain
 ```
 
 See the [AWS variables reference](/langsmith/self-host-terraform-aws-variables) for every input variable.
 
 <Tip>
-Configure a remote state backend before applying. Edit `infra/backend.tf` to point at an S3 bucket and DynamoDB lock table you control. The Terraform repo ships a local backend by default for first-time evaluations.
+Configure a remote state backend before applying. Copy `infra/backend.tf.example` to `infra/backend.tf` and set the S3 bucket, key, region, and DynamoDB lock table. Without it, Terraform keeps state locally.
 </Tip>
 
 ### Load secrets into SSM Parameter Store
@@ -268,22 +255,27 @@ Configure a remote state backend before applying. Edit `infra/backend.tf` to poi
 source infra/scripts/setup-env.sh
 ```
 
-The script reads `terraform.tfvars`, derives the SSM path `/langsmith/{name_prefix}-{environment}/`, then for each secret either reuses an exported value, reads the existing SSM parameter, auto-generates one (for salts and tokens), or prompts you. The license key and admin password are the two values you supply interactively. The script must be sourced (not executed) because `make` cannot export environment variables back to the parent shell.
+The script reads `terraform.tfvars`, derives the SSM path `/langsmith/{name_prefix}-{environment}/`, then for each secret either reuses an exported value, reads the existing SSM parameter, auto-generates one, or prompts you. You supply three values interactively: the license key, the admin password, and the admin email. The script must be sourced (not executed) because `make` cannot export environment variables back to the parent shell.
 
 The script manages the following SSM parameters:
 
 | SSM key | How it is set | Notes |
 |---|---|---|
-| `postgres-password` | Prompt | RDS uses this password |
-| `redis-auth-token` | Auto-generated (`openssl rand -hex 32`) | ElastiCache requires hex |
+| `postgres-password` | Auto-generated (`openssl rand -hex 32`) | RDS master password |
+| `redis-auth-token` | Auto-generated (hex) | ElastiCache auth token |
+| `sandbox-juicefs-redis-auth-token` | Auto-generated (hex) | Only when `enable_sandboxes = true` |
 | `langsmith-api-key-salt` | Auto-generated (`openssl rand -base64 32`) | Never rotate, breaks all API keys |
 | `langsmith-jwt-secret` | Auto-generated (`openssl rand -base64 32`) | Never rotate, invalidates all sessions |
+| `sandbox-callback-signing-jwk` | Auto-generated Ed25519 key | Only when `enable_sandboxes = true` |
 | `langsmith-license-key` | Prompt | From [our sales team](https://www.langchain.com/contact-sales) |
-| `langsmith-admin-password` | Prompt | Must contain a symbol |
+| `langsmith-admin-password` | Prompt | At least 12 characters, with lowercase, uppercase, and a symbol |
+| `langsmith-admin-email` | Prompt | Initial organization admin |
 | `deployments-encryption-key` | Auto-generated Fernet key | LangSmith Deployment add-on |
-| `agent-builder-encryption-key` | Auto-generated Fernet key | Agent Builder add-on (reused by Fleet) |
+| `agent-builder-encryption-key` | Auto-generated Fernet key | Used by Fleet; the name predates the rename |
 | `insights-encryption-key` | Auto-generated Fernet key | Insights add-on |
-| `polly-encryption-key` | Auto-generated Fernet key | Polly add-on |
+| `polly-encryption-key` | Auto-generated Fernet key | LangSmith Chat (formerly Polly) add-on |
+
+If you turn on `enable_sandboxes` later, source `setup-env.sh` again before `make apply` so it creates the sandbox secrets.
 
 Verify the secrets are present and the `TF_VAR_*` environment variables are exported:
 
@@ -293,144 +285,127 @@ make secrets
 
 ### Apply
 
-<Note>
-Provisioning the AWS cloud foundation takes 20 to 25 minutes on a clean account. Do not interrupt the apply.
-</Note>
-
 ```bash
 make init
 make plan
 make apply
 ```
 
-`make plan` shows the proposed diff. Review the output before applying. `make apply` provisions in dependency order: VPC and security groups, then EKS (about 12 minutes) and RDS (about 8 minutes, in parallel), then node groups, ElastiCache, S3, and the ALB.
+`make plan` shows the proposed diff. Review the output before applying. `make apply` runs a single `terraform apply` across all modules; Terraform orders the resources by dependency. Pass `ARGS="-auto-approve"` to skip the confirmation prompt.
 
 ### Configure kubectl
 
 ```bash
-make kubeconfig
+source infra/scripts/set-kubeconfig.sh
 kubectl get nodes
-kubectl get pods -n kube-system
+kubectl get pods -A
 ```
 
-All nodes should report `Ready` and the core add-ons (CoreDNS, kube-proxy, VPC CNI, KEDA, ESO) should be `Running`. cert-manager runs only when `tls_certificate_source = letsencrypt` or `create_cert_manager_irsa = true`.
+`set-kubeconfig.sh` writes a dedicated `~/.kube/langsmith-<cluster>` file and exports `KUBECONFIG`, so it leaves `~/.kube/config` untouched. `make kubeconfig` only prints this command.
+
+All nodes should report `Ready`. The core add-ons should be `Running`: CoreDNS, kube-proxy, and the VPC CNI in `kube-system`, KEDA in `keda`, External Secrets Operator in `external-secrets`, and Envoy Gateway in `envoy-gateway-system`. cert-manager runs only when `tls_certificate_source = "letsencrypt"` or `create_cert_manager_irsa = true`.
 
 ## Deploy LangSmith
 
-Two deployment paths are supported. Pick one.
-
-### Script-driven Helm deploy (recommended)
-
-Best for most deployments. Interactive prompts guide you through sizing and product choices.
-
 ```bash
-cd modules/aws
-
 make init-values
 make deploy
 ```
 
-`init-values.sh` prompts for the admin email, then reads `sizing_profile` and the `enable_*` flags from `terraform.tfvars` and copies the matching values files from `helm/values/examples/` into `helm/values/`. On re-runs it preserves your choices and refreshes Terraform outputs.
+`make init-values` reads `sizing_profile` and the `enable_*` flags from `terraform.tfvars`, writes `helm/values/langsmith-values-overrides.yaml` from the Terraform outputs, and copies the matching values files from `helm/values/examples/` into `helm/values/`. It reuses the admin email from SSM. On re-runs it refreshes the Terraform outputs and copies an add-on values file only when it is missing, so your edits to existing files survive.
 
 `make deploy` runs `helm/scripts/deploy.sh`, which:
 
-1. Refreshes the kubeconfig.
+1. Refreshes the kubeconfig with `aws eks update-kubeconfig`.
 2. Runs preflight checks (AWS credentials, cluster reachability, the `langchain` Helm repo).
 3. Applies the External Secrets Operator `ClusterSecretStore` and `ExternalSecret` so the cluster reads secrets directly from SSM.
-4. Installs the LangSmith Helm chart with the layered values files.
+4. Resolves the chart version.
+5. Runs `helm upgrade --install` with the layered values files and waits for the core pods.
+6. Upgrades once more when no `langsmith_domain` is set and the load balancer hostname changed, then prints the LangSmith URL.
 
-Expect 5 to 10 minutes for the chart to install and pods to become ready.
+### Chart version
 
-#### Verify
+`deploy.sh` installs the latest patch on the LangSmith chart 0.16 line (`~0.16.0`) by default. To pin an exact patch, set `langsmith_helm_chart_version = "0.16.x"` in `terraform.tfvars`, or run `CHART_VERSION=0.16.x make deploy`. The environment variable wins over the `tfvars` setting. `deploy.sh` rejects versions off the 0.16 line, and it rejects values files that still use chart 0.15 keys (`config.insights`, `config.polly`, `backend.agentBootstrap`).
+
+### Verify
 
 ```bash
 kubectl get pods -n langsmith
-kubectl get ingress -n langsmith
+kubectl get httproute -n langsmith
 ```
 
-When all pods are `Running` and the ingress shows the ALB DNS name, the deployment is ready. Use the domain you configured in `langsmith_domain` (or the ALB DNS name) to reach the UI.
-
-If you completed the script-driven deploy, you are done. The following section is an alternative deployment path, not an additional step.
-
-### Terraform-managed Helm deploy
-
-Best for teams that want the full deployment in Terraform state, or for "bring your own infrastructure" scenarios. The `app/` module manages the External Secrets Operator wiring, the `helm_release`, and feature toggles directly.
-
-```bash
-cd modules/aws
-
-# Generate Helm values files from templates (required, the app module reads these)
-make init-values
-
-# Pull infra outputs into app/infra.auto.tfvars.json
-make init-app
-
-# Configure app-specific settings
-cp app/terraform.tfvars.example app/terraform.tfvars
-# Edit app/terraform.tfvars, set admin_email, sizing, and feature toggles
-
-# Deploy
-make plan-app
-make apply-app
-```
-
-The `app/terraform.tfvars` file controls the application configuration:
-
-```hcl
-admin_email          = "admin@example.com"
-sizing               = "production"   # production | production-large | dev | none
-enable_agent_deploys = true
-enable_agent_builder = true
-enable_insights      = true
-enable_polly         = true
-clickhouse_host      = "clickhouse.example.com"
-```
-
-<Warning>
-`make init-values` is required before `make plan-app`. The app module reads the values files from `helm/values/` and `init-values` populates them from `helm/values/examples/` based on the sizing and add-on choices in `infra/terraform.tfvars`.
-</Warning>
-
-For "bring your own infrastructure", skip `make init-app` and set all variables manually in `app/terraform.tfvars`.
+When all pods are `Running`, open the URL that `make deploy` printed. It uses `langsmith_domain` when set, or the ALB hostname. Run `make status` at any time for a summary of every layer and the next step to run.
 
 ## Enable add-ons
 
-Each add-on is gated by a flag in `infra/terraform.tfvars`. Set the flag, re-run `make init-values` to copy the matching values file, then re-run `make deploy`.
+Each add-on is gated by a flag in `infra/terraform.tfvars`. Set the flag, run `make apply`, re-run `make init-values` to copy the matching values file, then re-run `make deploy`. `make apply` is required for add-ons that create AWS resources: Fleet with external storage (the default), LangSmith Chat or Insights with external storage, sandboxes, and SmithDB. For the rest, `make apply` makes no changes.
 
 ```hcl
-enable_deployments     = true   # LangGraph Platform (required for Fleet, Agent Builder, and Polly)
-enable_fleet           = true   # Fleet (formerly Agent Builder), standalone service (chart v0.15+)
-enable_agent_builder   = false  # Older agent-builder path; mutually exclusive with enable_fleet
-enable_insights        = true   # ClickHouse-backed analytics
-enable_polly           = true   # Polly AI eval and monitoring
-enable_usage_telemetry = false  # Extended usage telemetry
+enable_deployments     = true            # LangSmith Deployment (listener, operator, host-backend)
+enable_fleet           = true            # Fleet (formerly Agent Builder)
+fleet_storage          = "external"      # default; "in-cluster" uses chart StatefulSets
+enable_polly           = true            # LangSmith Chat (formerly Polly)
+polly_storage          = "in-cluster"    # default; "external" uses RDS and ElastiCache
+enable_insights        = true            # AI-powered trace analysis
+insights_storage       = "in-cluster"    # default; "external" uses RDS and ElastiCache
+enable_sandboxes       = false           # LangSmith Sandboxes
+enable_smithdb         = false           # SmithDB
+enable_usage_telemetry = false           # Extended usage telemetry
 ```
 
 ```bash
+make apply
 make init-values
 make deploy
 ```
 
-For details on each add-on, see [LangSmith Deployment](/langsmith/deploy-self-hosted-full-platform).
+`enable_agent_builder` was removed with chart 0.16. Setting it to `true` fails validation, so delete it from existing `tfvars` files and use `enable_fleet`. `enable_standalone_polly` and `enable_standalone_insights` remain as legacy shorthand for `polly_storage = "external"` and `insights_storage = "external"`.
+
+For details on agent deployment, see [LangSmith Deployment](/langsmith/deploy-self-hosted-full-platform).
 
 ### Fleet
 
 <Note>
-Fleet is the current form of the feature formerly called Agent Builder, deployed as a standalone service (chart v0.15+).
+Fleet is the current form of the feature formerly called Agent Builder. It requires the LangSmith Helm chart 0.16 line and the Fleet entitlement in your license.
 </Note>
 
-You can enable Fleet with `enable_fleet`. On AWS, it requires `enable_deployments = true`, because the Fleet chat UI resolves OAuth provider and token connections through the host-backend that ships with LangSmith Deployment. It also requires external Postgres and Redis (`postgres_source = "external"` and `redis_source = "external"`).
+Enable Fleet with `enable_fleet = true`. Fleet installs the host-backend it needs, so `enable_deployments` is optional.
 
-Terraform creates a dedicated `langsmith_fleet` database on RDS and wires the `langsmith-fleet-postgres` and `langsmith-fleet-redis` secrets to the existing RDS and ElastiCache instances. Fleet reuses `langsmith_agent_builder_encryption_key`, so migrating from `enable_agent_builder` keeps the same key and data.
+With `fleet_storage = "external"` (the default), Fleet requires external Postgres and Redis (`postgres_source = "external"` and `redis_source = "external"`). Terraform creates a dedicated `langsmith_fleet` database on RDS and wires the `langsmith-fleet-postgres` and `langsmith-fleet-redis` secrets to the existing RDS and ElastiCache instances. Set `fleet_storage = "in-cluster"` to use the PostgreSQL and Redis StatefulSets in the chart instead.
 
-<Note>
-Fleet requires the LangSmith Helm chart 0.15.0 or later and the Agent Builder or Fleet entitlement in your license.
-</Note>
+Fleet reuses the `agent-builder-encryption-key` SSM parameter, so deployments that migrate from Agent Builder keep the same key and data.
 
-Fleet installs the `standalone-fleet-api-server`, `standalone-fleet-tool-server`, `standalone-fleet-trigger-server`, and `standalone-fleet-queue` services.
+### LangSmith Chat and Insights
 
-<Warning>
-Do not enable `enable_fleet` and `enable_agent_builder` together. The Fleet values file sets `config.agentBuilder.enabled: false`, so the two add-ons are mutually exclusive.
-</Warning>
+`enable_polly` turns on LangSmith Chat (formerly Polly), and `enable_insights` turns on Insights. Neither requires `enable_deployments`. Both default to in-cluster storage. Set `polly_storage = "external"` or `insights_storage = "external"` to use dedicated databases on the shared RDS and ElastiCache instances; this requires `postgres_source = "external"` and `redis_source = "external"`. Each add-on needs its entitlement in your license.
+
+### Sandboxes
+
+`enable_sandboxes = true` adds a sandbox-host node group on bare-metal x86_64 instances with KVM (`m5d.metal` by default) and a dedicated ElastiCache instance for JuiceFS metadata. Sandboxes require the LangSmith Helm chart 0.16 line.
+
+To enable sandboxes on an existing deployment:
+
+```bash
+# After setting enable_sandboxes = true in infra/terraform.tfvars
+source infra/scripts/setup-env.sh
+make apply
+make init-values
+make deploy
+```
+
+Sourcing `setup-env.sh` again creates the JuiceFS Redis auth token and the sandbox callback signing key. The `sandbox_*` variables control the node count, instance types, and JuiceFS settings; see the [variables reference](/langsmith/self-host-terraform-aws-variables#sandboxes).
+
+### SmithDB
+
+`enable_smithdb = true` provisions the SmithDB dependencies: a metastore PostgreSQL instance, an S3 bucket, an IRSA role, and Karpenter node pools on local NVMe instances. `make init-values` then writes `langsmith-values-smithdb.yaml` and `langsmith-values-smithdb-overrides.yaml`, and `make deploy` stops if either file is missing.
+
+Three gates move traffic to SmithDB after the services are healthy:
+
+- `smithdb_ingestion_enabled` routes new writes to SmithDB.
+- `smithdb_migration_enabled` migrates historical ClickHouse data. It requires ingestion.
+- `smithdb_query_enabled` serves queries from SmithDB. It requires ingestion.
+
+All three require `enable_smithdb = true`. Keep `smithdb_karpenter_chart_version` (default `1.6.3`) compatible with `eks_cluster_version` per the [Karpenter compatibility matrix](https://karpenter.sh/docs/upgrading/compatibility/). See the [variables reference](/langsmith/self-host-terraform-aws-variables#smithdb) for the full list.
 
 ## Optional: private EKS cluster with bastion
 
@@ -450,44 +425,53 @@ create_bastion            = true
 # bastion_ssh_allowed_cidrs = ["203.0.113.0/24"]
 ```
 
-Connect via SSM Session Manager:
+Connect through SSM Session Manager:
 
 ```bash
-terraform output bastion_ssm_command
+make tf ARGS="output bastion_ssm_command"
 aws ssm start-session --target <instance-id> --region us-west-2
 ```
 
 <Note>
-The bastion lives in a public subnet for SSM agent connectivity but does not need a public IP if your VPC has the SSM, SSMMessages, and EC2Messages VPC endpoints. The bastion comes preinstalled with `kubectl`, `helm`, `terraform`, `git`, and `jq`, with kubeconfig already configured for the EKS cluster. Install the [Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html) for the AWS CLI on your workstation.
+The bastion runs in a private subnet with no public IP and reaches SSM through the NAT gateway. Setting `bastion_enable_ssh = true` moves it to a public subnet with a public IP. Set `bastion_existing_security_group_id` to attach your own security group. The bastion comes preinstalled with `kubectl`, `helm`, `terraform`, `git`, and `jq`, with kubeconfig already configured for the EKS cluster. Install the [Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html) for the AWS CLI on your workstation.
 </Note>
 
-## Optional: Envoy Gateway ingress
+## Ingress, DNS, and TLS
 
-The default ingress is the AWS Load Balancer Controller (ALB). Set `enable_envoy_gateway = true` in `terraform.tfvars` to install [Envoy Gateway](https://gateway.envoyproxy.io/) instead. Envoy Gateway is required for multi-namespace dataplane deployments where the `langgraph-dataplane` chart runs in its own namespace.
+The ALB is always the entry point and terminates TLS. Behind it, [Envoy Gateway](https://gateway.envoyproxy.io/) is the default ingress: the ALB forwards to the Envoy pods through a TargetGroupBinding, and the LangSmith chart creates `HTTPRoute` resources instead of an `Ingress`.
 
-```hcl
-# infra/terraform.tfvars
-enable_envoy_gateway = true
-```
+| Setting in `terraform.tfvars` | Ingress |
+|---|---|
+| None of the flags set | Envoy Gateway behind the ALB (default) |
+| `enable_envoy_gateway = false` | ALB Ingress created by the AWS Load Balancer Controller |
+| `enable_istio_gateway = true` | Istio gateway behind the ALB |
+| `enable_nginx_ingress = true` | NGINX ingress controller behind the ALB (legacy) |
 
-```bash
-source infra/scripts/setup-env.sh
-make apply
+Terraform rejects a configuration that turns on more than one of these.
 
-make init-values
-cp helm/values/examples/langsmith-values-ingress-envoy-gateway.yaml helm/values/
-make deploy
-```
+<Warning>
+Deployments created before Envoy Gateway became the default, with no gateway flag set, switch to Envoy Gateway on the next `make apply`. To keep ALB Ingress, set `enable_envoy_gateway = false` before applying.
+</Warning>
 
-The deploy script annotates the Envoy Gateway NLB service with the ACM certificate ARN automatically when `tls_certificate_source = "acm"`. TLS terminates at the NLB; Envoy sees plain HTTP internally.
+`tls_certificate_source` selects the certificate:
 
-When running the dataplane chart in a separate namespace, apply the RBAC manifest once per dataplane namespace:
+- `acm` (default): An ACM certificate on the ALB, either created by Terraform for `langsmith_domain` or supplied with `acm_certificate_arn`. Works with every ingress option.
+- `letsencrypt`: cert-manager with Let's Encrypt. Requires `letsencrypt_email`.
+- `none`: Plain HTTP with no certificate.
+
+For Let's Encrypt DNS-01 through Route 53, which Istio requires, set `create_cert_manager_irsa = true` and `cert_manager_hosted_zone_id`. Terraform creates the DNS-01 issuer when `langsmith_domain` is set. `create_cert_manager_irsa` and `tls_certificate_source = "letsencrypt"` are mutually exclusive.
+
+To attach your own ACM certificate and a Route 53 alias record after deployment, run `make tls`.
+
+### Split dataplane namespace
+
+Envoy Gateway supports routing to a `langgraph-dataplane` chart that runs in its own namespace. Apply the RBAC manifest once per dataplane namespace:
 
 ```bash
 kubectl apply -f helm/values/examples/dataplane-rbac.yaml
 ```
 
-This grants the `langsmith-host-backend` ServiceAccount read access to pods, pod logs, deployments, and ReplicaSets in the dataplane namespace. Without it, agent run logs do not stream in the LangSmith UI.
+The manifest targets the `langsmith-agents` namespace; edit it for a different namespace. It grants the `langsmith-host-backend` ServiceAccount read access to pods, pod logs, deployments, and ReplicaSets in the dataplane namespace. Without it, agent run logs do not stream in the LangSmith UI.
 
 ## Next steps
 
