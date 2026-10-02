@@ -173,6 +173,7 @@ Each rule specifies:
 | `type` | Omit for header injection; `aws` or `gcp` for provider auth |
 | `match_hosts` | Required for header rules; rejected on `aws` and `gcp` rules. Bare hostnames, or a leading `*.` wildcard in front of a registrable domain (`*.github.com`, not `*.com` or `*`). No scheme, path, or port. The wildcard does not match the apex domain |
 | `match_paths` | Paths to match (empty = all paths). Header rules only |
+| `match_headers` | Request headers the rule requires, each written `"name: value"` with a lowercase name and an exact value. Header rules only; see [Match on request headers](#match-on-request-headers) |
 | `headers` | Headers to inject, each with a `name`, `type`, and `value`. Header rules only |
 | `aws` / `gcp` | Provider credentials; see [Authenticate AWS requests](#authenticate-aws-requests) and [Authenticate GCP requests](#authenticate-gcp-requests) |
 | `env_vars` | Environment variables to set in the sandbox while the rule is enabled |
@@ -205,15 +206,58 @@ Variables managed by an enabled AWS or GCP auth rule (`AWS_ACCESS_KEY_ID`, `AWS_
 
 Every sandbox also has the common CA-bundle environment variables pointed at the system trust store, which includes the proxy's CA, so tools that pin their own bundle still verify proxy-injected hosts. Set any of them yourself to override.
 
+The following rule sets a placeholder `GH_TOKEN` so `gh` starts. `gh` sends that value as `Authorization: token <GH_TOKEN>`, so the rule matches on the placeholder and replaces it with the real token:
+
 ```json
 {
   "name": "github-api",
   "match_hosts": ["api.github.com"],
+  "match_headers": ["authorization: token proxy-injected"],
   "headers": [
     {"name": "Authorization", "type": "opaque", "value": "Bearer <github-token>"}
   ],
   "env_vars": {"GH_TOKEN": "proxy-injected"}
 }
+```
+
+### Match on request headers
+
+A rule's `match_headers` limits it to requests that carry every listed header with the listed value. Use it to serve several accounts on one host: give each account its own rule with a different placeholder, and have the sandbox send the placeholder for the account it wants. The proxy replaces the placeholder with that account's credential, so no real credential enters the sandbox.
+
+- **Format**: Each entry is `"name: value"`. The name must be lowercase. The value is compared exactly, is stored in plaintext, and is returned by the API, so use a placeholder, never a secret.
+- **Repeated names**: A rule may list each header name only once.
+- **Order**: Header rules match first-match-wins in list order, so list rules with `match_headers` before a rule for the same host without them.
+- **Forwarding**: A matched header is forwarded unchanged unless the rule's `headers` sets the same name, which replaces it.
+
+The following rules give `gh` two GitHub accounts. `GH_TOKEN` defaults to the first account's placeholder, and a command selects the second account by overriding it:
+
+```json
+{
+  "rules": [
+    {
+      "name": "github-account-a",
+      "match_hosts": ["api.github.com"],
+      "match_headers": ["authorization: token account-a"],
+      "headers": [
+        {"name": "Authorization", "type": "workspace_secret", "value": "Bearer {GITHUB_TOKEN_A}"}
+      ],
+      "env_vars": {"GH_TOKEN": "account-a"}
+    },
+    {
+      "name": "github-account-b",
+      "match_hosts": ["api.github.com"],
+      "match_headers": ["authorization: token account-b"],
+      "headers": [
+        {"name": "Authorization", "type": "workspace_secret", "value": "Bearer {GITHUB_TOKEN_B}"}
+      ]
+    }
+  ]
+}
+```
+
+```bash
+gh api user                        # account A
+GH_TOKEN=account-b gh api user     # account B
 ```
 
 ## Authenticate AWS requests
