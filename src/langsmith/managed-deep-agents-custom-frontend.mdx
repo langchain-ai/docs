@@ -8,7 +8,7 @@ import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-ag
 
 A custom frontend is any application you write that calls a deployment directly instead of reaching the agent through a [channel](/langsmith/managed-deep-agents-channels) or [LangSmith Studio](/langsmith/managed-deep-agents-local-development#start-local-studio). Use one when the agent belongs inside a product surface you control, such as a support console, an internal dashboard, or a customer-facing chat page.
 
-Managed Deep Agents deployments run on [LangSmith Agent Server](/langsmith/agent-server-overview), so a frontend talks to the same threads, runs, and streaming endpoints that every Agent Server client uses. Nothing on the agent side changes to support one.
+Managed Deep Agents deployments run on [LangSmith Agent Server](/langsmith/agent-server-overview). A frontend talks to the same threads, runs, and streaming endpoints that every Agent Server client uses.
 
 <ManagedDeepAgentsPublicBetaNote />
 
@@ -16,17 +16,17 @@ Managed Deep Agents deployments run on [LangSmith Agent Server](/langsmith/agent
 
 Where your frontend code runs determines which [identity](/langsmith/managed-deep-agents-identity) mode it can use. A LangSmith API key grants access to the whole workspace, so it must never reach a browser.
 
-| Frontend | Credential lives in | Identity mode |
+| Frontend | Calls the deployment from | Identity mode |
 | --- | --- | --- |
-| Browser application (React, Vue, Svelte, Angular) | The user's browser | [Supabase](/langsmith/managed-deep-agents-identity#configure-identity-with-supabase) or [your own backend](/langsmith/managed-deep-agents-identity#configure-identity-with-your-own-backend) |
-| Server route or proxy that forwards browser requests | Your server | [LangSmith API key](/langsmith/managed-deep-agents-identity#configure-identity-with-a-langsmith-api-key) |
-| Python application (Streamlit, Gradio, Dash) | Your server | LangSmith API key |
+| Browser application (React, Vue, Svelte, Angular) | The user's browser | [Supabase](/langsmith/managed-deep-agents-identity#configure-identity-with-supabase) |
+| Server route or proxy in front of a browser application | Your server | [Your own backend](/langsmith/managed-deep-agents-identity#configure-identity-with-your-own-backend) |
+| Python application (Streamlit, Gradio, Dash) | Your server | [LangSmith API key](/langsmith/managed-deep-agents-identity#configure-identity-with-a-langsmith-api-key) |
 | Local development with `mda dev` | No credential required | Any |
 
-Supabase and backend identity also give each signed-in user private threads. The API-key default does not: every caller holding the key shares the same thread space.
+Supabase and backend identity both give each signed-in user private threads. The API-key default does not: every caller holding the key shares the same thread space. A Python application that already authenticates its own users can use backend identity for the same isolation.
 
 <Warning>
-Anyone with a LangSmith API key can reach the deployment and every other resource in the workspace. Shipping one in browser JavaScript exposes it to every visitor. Use Supabase or backend identity for browser applications, or keep the key on a server route that the browser calls instead.
+Anyone with a LangSmith API key can reach the deployment and every other resource in the workspace. Shipping one in browser JavaScript exposes it to every visitor. When the browser calls the deployment directly, use Supabase. When your own API calls it on the user's behalf, use backend identity, which authenticates with an ingress secret instead.
 </Warning>
 
 ## Connect to the deployment
@@ -35,7 +35,7 @@ A frontend needs two values.
 
 **Deployment API URL.** `mda deploy` prints the LangSmith deployment dashboard URL, not the API URL. Open that dashboard, then copy the **API URL** from the deployment details view. The local server started by [`mda dev`](/langsmith/managed-deep-agents-local-development) serves the same routes at the URL the CLI prints.
 
-**Assistant ID.** Clients pass the agent's `name` from the [agent definition](/langsmith/managed-deep-agents-agent-definition#parameters), which Managed Deep Agents also uses as the graph ID:
+**Assistant ID.** Clients pass the agent's `name` from the [agent definition](/langsmith/managed-deep-agents-agent-definition#parameters). Managed Deep Agents also uses that name as the graph ID:
 
 :::python
 ```python agent.py
@@ -59,7 +59,7 @@ export const agent = defineDeepAgent({
 ```
 :::
 
-Clients address an agent named `research-assistant` as `assistantId: "research-assistant"`. Renaming the agent changes the value clients send, so treat the name as part of the deployment's public interface.
+Clients address an agent named `research-assistant` with that same string. Renaming the agent changes the value clients send, so treat the name as part of the deployment's public interface.
 
 ## Build a web frontend
 
@@ -85,6 +85,7 @@ export function Chat() {
   const stream = useStream({
     apiUrl: import.meta.env.VITE_DEPLOYMENT_API_URL,
     assistantId: "research-assistant",
+    // accessToken comes from your Supabase auth session.
     defaultHeaders: { Authorization: `Bearer ${accessToken}` },
   });
 
@@ -111,9 +112,9 @@ export function Chat() {
 }
 ```
 
-`defaultHeaders` carries the Supabase access token that the signed-in user obtained from your auth flow. For the API-key default, pass `apiKey` instead, which the SDK sends as `x-api-key`. Only do so from code that runs on a server.
+`defaultHeaders` carries the Supabase access token from the signed-in user's auth session. For the API-key default, pass `apiKey` instead, which the SDK sends as `x-api-key`. Only do so from code that runs on a server. Under backend identity the browser never reaches the deployment, so point `apiUrl` at your own API and forward the run from there.
 
-These patterns apply unchanged to a Managed Deep Agents deployment: [tool-call rendering](/oss/langchain/frontend/tool-calling), [generative UI](/oss/langchain/frontend/generative-ui-overview), [human-in-the-loop approval](/oss/langchain/frontend/human-in-the-loop), [queued submissions](/oss/langchain/frontend/message-queues), and [durable rejoin](/oss/langchain/frontend/join-rejoin).
+The same frontend patterns work against a Managed Deep Agents deployment. See [tool-call rendering](/oss/langchain/frontend/tool-calling), [generative UI](/oss/langchain/frontend/generative-ui-overview), [human-in-the-loop approval](/oss/langchain/frontend/human-in-the-loop), [queued submissions](/oss/langchain/frontend/message-queues), and [durable rejoin](/oss/langchain/frontend/join-rejoin).
 
 ### Handle authorization interrupts
 
@@ -121,7 +122,7 @@ When the agent needs a [user-owned connection](/langsmith/managed-deep-agents-co
 
 ## Build a Python frontend
 
-Streamlit, Gradio, and Dash render on the server, so the LangSmith API key stays out of the browser and the API-key default works without extra setup. All three use the same [LangGraph SDK](https://reference.langchain.com/python/langgraph-sdk) client, so the connection code below applies to any of them.
+Streamlit, Gradio, and Dash render on the server. The LangSmith API key stays out of the browser, so the API-key default works without extra setup. All three use the same [LangGraph SDK](https://reference.langchain.com/python/langgraph-sdk) client, so the connection code below applies to any of them.
 
 Install the SDK alongside your application framework:
 
@@ -153,7 +154,7 @@ for chunk in client.runs.stream(
 Three details govern how that loop behaves:
 
 - **`api_key`**: Sets the `x-api-key` header. Passing `headers={"x-api-key": ...}` instead raises `ValueError: Cannot set reserved header 'x-api-key'`.
-- **Environment fallback**: When `api_key` is omitted, the client tries `LANGGRAPH_API_KEY`, then `LANGSMITH_API_KEY`, then `LANGCHAIN_API_KEY`. For Supabase or backend identity, pass `api_key=None` explicitly and put the token in `headers`, or a stray environment variable attaches a second credential.
+- **Environment fallback**: When `api_key` is omitted, the client tries `LANGGRAPH_API_KEY`, then `LANGSMITH_API_KEY`, then `LANGCHAIN_API_KEY`. For Supabase or backend identity, pass `api_key=None` explicitly and put the token in `headers`. Otherwise a stray environment variable attaches a second credential.
 - **`messages/partial`**: Carries the whole message so far, not a delta. Replace the rendered text on each event rather than appending, or the output repeats itself.
 
 ### Stream into a Streamlit chat
