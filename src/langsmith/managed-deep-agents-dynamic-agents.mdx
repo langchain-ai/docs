@@ -10,12 +10,12 @@ A dynamic agent selects its configuration at the start of each run from the run'
 
 <ManagedDeepAgentsPublicBetaNote />
 
-For example, using dynamic context, a support agent can give internal staff a stronger model and an internal case tool, while customers get a smaller model and a help center search tool. A coding agent can pick instructions, skills, and sandbox settings based on the repository a task targets. Each run resolves its own configuration, so concurrent runs don't affect each other.
+For example, using dynamic context, a support agent can give internal staff a stronger model and an internal case tool, while customers get a smaller model and a help center search tool. A coding agent can pick instructions, skills, and sandbox settings based on the repository a task targets. Each run resolves its own configuration, so concurrent runs do not affect each other.
 
 ## Define a dynamic agent
 
 :::python
-Decorate a resolver with `@dynamic` and assign it to the module-level `agent`. The resolver receives the run context and returns `define_deep_agent(...)`:
+Decorate a resolver with `@dynamic` and assign it to the module-level `agent`. A dynamic resolver accepts one `ManagedRunContext` argument and returns `define_deep_agent(...)`. The argument contains the run-scoped data described in [Pass run context](#pass-run-context).
 
 ```python agent.py
 from managed_deepagents import DeepAgentDefinition, ManagedRunContext, define_deep_agent, dynamic
@@ -37,11 +37,11 @@ def build_agent(ctx: ManagedRunContext) -> DeepAgentDefinition:
 agent = build_agent
 ```
 
-The resolver can be synchronous or `async`.
+Use `@dynamic` only on the resolver assigned to `agent`. Leave helper functions undecorated. Use a synchronous resolver when selection only reads `ctx`. Use `async` when the selection logic must await an operation.
 :::
 
 :::js
-Wrap a resolver in `dynamic(...)` and export it as `agent`. The resolver receives the run context and returns `defineDeepAgent(...)`:
+Wrap a resolver in `dynamic(...)` and export it as `agent`. A dynamic resolver accepts one `ManagedRunContext` argument and returns `defineDeepAgent(...)`. The argument contains the run-scoped data described in [Pass run context](#pass-run-context).
 
 ```ts agent.ts
 import { defineDeepAgent, dynamic } from "managed-deepagents";
@@ -60,7 +60,7 @@ export const agent = dynamic((ctx) => {
 });
 ```
 
-The resolver can be synchronous or `async`.
+Use `dynamic(...)` only on the resolver exported as `agent`. Leave helper functions unwrapped. Use a synchronous resolver when selection only reads `ctx`. Use `async` when the selection logic must await an operation.
 :::
 
 The `name` must be an inline string literal in the returned definition. `mda build` reads it without calling the resolver and uses it as the graph ID and default deployment name. See [Build and deploy](#build-and-deploy).
@@ -104,6 +104,8 @@ Run context is application data, not verified identity. A client can send any va
 ## What a resolver can select
 
 A dynamic agent can select `model`, `tools`, `subagents`, `middleware`, `instructions`, `skills`, `mcp`, and `sandbox`. Standard agent fields behave as described in [Agent definition](/langsmith/managed-deep-agents-agent-definition#parameters).
+
+Select a model dynamically when requests have different quality, latency, or cost needs. For example, use a smaller model for routine lookups and a more capable model for complex investigations. Both can share one deployment.
 
 The managed fields fall back to the project's discovered resources when omitted:
 
@@ -172,7 +174,7 @@ Build the definition in a helper that takes the run context. This example gives 
 from managed_deepagents import ManagedRunContext, connections, define_mcp
 
 
-def get_dynamic_mcp(ctx: ManagedRunContext):
+def define_dynamic_mcp(ctx: ManagedRunContext):
     servers = {
         "langchainDocs": {
             "transport": "http",
@@ -202,7 +204,7 @@ def get_dynamic_mcp(ctx: ManagedRunContext):
 ```ts config/mcp.ts
 import { connections, defineMcp, type ManagedRunContext } from "managed-deepagents";
 
-export function getDynamicMcp(ctx: ManagedRunContext) {
+export function defineDynamicMcp(ctx: ManagedRunContext) {
   const engineering = "team" in ctx && ctx.team === "engineering";
 
   return defineMcp({
@@ -248,7 +250,7 @@ Return a definition from `define_sandbox(...)` to replace the discovered sandbox
 from managed_deepagents import ManagedRunContext, define_sandbox
 
 
-def get_dynamic_sandbox(ctx: ManagedRunContext):
+def define_dynamic_sandbox(ctx: ManagedRunContext):
     task = ctx.get("task") if isinstance(ctx, dict) else None
 
     if task == "question":
@@ -265,7 +267,7 @@ Return a definition from `defineSandbox(...)` to replace the discovered sandbox 
 ```ts config/sandbox.ts
 import { defineSandbox, type ManagedRunContext } from "managed-deepagents";
 
-export function getDynamicSandbox(ctx: ManagedRunContext) {
+export function defineDynamicSandbox(ctx: ManagedRunContext) {
   const task = "task" in ctx ? ctx.task : undefined;
 
   if (task === "question") {
@@ -287,8 +289,8 @@ Call both helpers from the resolver with the same context:
 
 :::python
 ```python agent.py
-from config.mcp import get_dynamic_mcp
-from config.sandbox import get_dynamic_sandbox
+from config.mcp import define_dynamic_mcp
+from config.sandbox import define_dynamic_sandbox
 from managed_deepagents import DeepAgentDefinition, ManagedRunContext, define_deep_agent, dynamic
 
 
@@ -296,8 +298,8 @@ from managed_deepagents import DeepAgentDefinition, ManagedRunContext, define_de
 def build_agent(ctx: ManagedRunContext) -> DeepAgentDefinition:
     return define_deep_agent(
         name="support",
-        mcp=[get_dynamic_mcp(ctx)],
-        sandbox=get_dynamic_sandbox(ctx),
+        mcp=[define_dynamic_mcp(ctx)],
+        sandbox=define_dynamic_sandbox(ctx),
     )
 
 
@@ -308,14 +310,14 @@ agent = build_agent
 :::js
 ```ts agent.ts
 import { defineDeepAgent, dynamic } from "managed-deepagents";
-import { getDynamicMcp } from "./config/mcp";
-import { getDynamicSandbox } from "./config/sandbox";
+import { defineDynamicMcp } from "./config/mcp";
+import { defineDynamicSandbox } from "./config/sandbox";
 
 export const agent = dynamic((ctx) =>
   defineDeepAgent({
     name: "support",
-    mcp: [getDynamicMcp(ctx)],
-    sandbox: getDynamicSandbox(ctx),
+    mcp: [defineDynamicMcp(ctx)],
+    sandbox: defineDynamicSandbox(ctx),
   })
 );
 ```
