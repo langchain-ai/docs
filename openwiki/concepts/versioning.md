@@ -20,6 +20,8 @@ sources:
     resource: repo://src/language-toggle.js
   - id: openwiki-source-dd63acff5f24d1b92eaf7193
     resource: repo://src/oss/javascript/integrations/chat/index.mdx
+  - id: openwiki-source-48c15e590fa648a01213c561
+    resource: repo://src/oss/javascript/integrations/document_loaders/index.mdx
   - id: openwiki-source-4d3d0f53cb13c1c1b72f3662
     resource: repo://src/oss/javascript/langchain/mcp-v1.mdx
   - id: openwiki-source-c6258cab179201344bfb89d2
@@ -30,6 +32,8 @@ sources:
     resource: repo://src/oss/langchain/mcp/index.mdx
   - id: openwiki-source-0bbd982f783595e2d0ac49ae
     resource: repo://src/oss/langgraph/interrupts.mdx
+  - id: openwiki-source-40800c01aa5ea143782c9738
+    resource: repo://src/oss/python/integrations/document_loaders/index.mdx
   - id: openwiki-source-7bfe816fdba0201671040464
     resource: repo://src/oss/python/integrations/providers/all_providers.mdx
   - id: openwiki-source-5fb3e6d5f1b7fba58bbcc170
@@ -38,8 +42,8 @@ sources:
     resource: repo://tests/unit_tests/test_builder.py
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-02T08:21:54.688Z
-generated: { by: "openwiki/0.4.3", at: "2026-10-02T08:21:54.688Z" }
+    at: 2026-10-03T08:20:07.933Z
+generated: { by: "openwiki/0.4.3", at: "2026-10-03T08:20:07.933Z" }
 ---
 
 # Versioned Documentation and Routes
@@ -85,6 +89,8 @@ A full `build_all()` removes and recreates `build/`, builds ordinary OSS for Pyt
 Language-owned OSS directories filter a dual build rather than appear in the final route. In a Python pass, `src/oss/javascript/...` is skipped, and vice versa. The selected `python` or `javascript` source component is removed before output, so `src/oss/python/concepts/example.mdx` emits at `/oss/python/concepts/example`, not a doubled path.
 
 The current provider catalogue at `src/oss/python/integrations/providers/all_providers.mdx` is consequently Python-only, while `src/oss/javascript/integrations/chat/index.mdx` is JavaScript-only. This ownership choice does not exempt either page from target transforms: the JavaScript chat page's unqualified Markdown snippet imports and bare `/oss/langchain/...` links are scoped to JavaScript output, while a bare integration card route in the Python catalogue is scoped to Python output. Put a page in an owned subtree because its content belongs to that SDK, not because its navigation should appear in a particular language menu.
+
+The document-loader indexes demonstrate that matching route suffixes do not make a source shared: the Python index imports a Python downloads snippet and documents `lazy_load()`, while the JavaScript index imports its JavaScript counterpart and documents `loadAndSplit()`. Because the two sources are in the respective language-owned subtrees, the builder emits each only in its matching family while still rewriting their unqualified internal links and Markdown snippet imports for that target.
 
 Ordinary LangSmith documents are emitted once below `/langsmith/`, excluding Managed Deep Agents files, and use the Python preprocessing target. That target is a rendering default; it does not make every ordinary LangSmith page Python documentation.
 

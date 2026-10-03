@@ -3,9 +3,6 @@ type: generated API publication workflow
 title: LangSmith Platform OpenAPI Refresh
 description: Documents the trusted daily workflow that curates the LangSmith platform OpenAPI specification into the reviewed input for Mintlify's public REST API reference. Covers allowlisted fetching, public-documentation filtering, title and group normalization, and the standing review pull request.
 tags: [langsmith, openapi, automation, github-actions, mintlify, security]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-02T08:21:54.688Z
 sources:
   - id: openwiki-source-5153f86e64d6ee0b305f72b3
     resource: repo://.github/workflows/refresh-langsmith-openapi.yml
@@ -13,11 +10,16 @@ sources:
     resource: repo://AGENTS.md
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
+  - id: openwiki-source-49f717adb7cc59501f5c17ac
+    resource: repo://scripts/filter_mint_broken_links.py
   - id: openwiki-source-697851c98229599f97376bfb
     resource: repo://scripts/process_langsmith_openapi.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
-generated: { by: "openwiki/0.4.3", at: "2026-10-02T08:21:54.688Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-03T08:20:07.933Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-03T08:20:07.933Z
 ---
 
 # LangSmith Platform OpenAPI Refresh
@@ -96,7 +98,7 @@ This design maintains at most one outstanding refresh PR instead of creating a d
 
 The processor's failure modes are intentionally direct: a disallowed fetch hostname raises `ValueError`; network, TLS, timeout, or JSON-decoding failures prevent a candidate from being produced; and GitHub checkout, push, or PR failures stop the shell step because it uses `set -euo pipefail`. A no-diff result is a successful no-op, not a failed refresh.
 
-There is no repository command that proves Mintlify rendered every LangSmith REST endpoint page. `make check-openapi` currently validates the Agent Server spec, not the platform artifact. The normal build/link checks also filter deployment-generated OpenAPI routes because those pages do not exist in the local build. Inspect a Mintlify preview or the deployed site for the rendered REST endpoint surface; use the processor command to verify transformation and the refresh PR to verify the candidate change.
+There is no repository command that proves Mintlify rendered every LangSmith REST endpoint page. `make check-openapi` currently validates only `langsmith/agent-server-openapi.json`, not the platform artifact. The local broken-link filter explicitly removes `/langsmith/smith-api` reports (alongside the other deployment-generated OpenAPI route families) because those pages do not exist in the local build. Inspect a Mintlify preview or the deployed site for the rendered REST endpoint surface; use the processor command to verify transformation and the refresh PR to verify the candidate change.
 
 ## Safe change checklist
 

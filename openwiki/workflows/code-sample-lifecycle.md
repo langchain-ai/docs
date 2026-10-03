@@ -1,11 +1,11 @@
 ---
 type: documentation workflow
 title: Code Sample Lifecycle
-description: How runnable documentation programs become generated MDX snippets, are validated across language toolchains, and can deliberately publish public LangSmith traces. Includes the MCP adapter 2 TypeScript samples, their local remove-region harnesses, shared dependency lockfile, and trusted CI refresh boundary.
+description: How runnable documentation programs become generated MDX snippets, are validated across language toolchains, and can deliberately publish public LangSmith traces. Includes shared TypeScript dependency and lockfile ownership, MCP adapter samples, and focused verification boundaries.
 tags: [code-samples, documentation, mdx, testing, tracing, github-actions, mcp]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-02T08:21:54.688Z
+    at: 2026-10-03T08:20:07.933Z
 sources:
   - id: openwiki-source-ddbddbe474c8dc57119458d7
     resource: repo://.agents/skills/docs-code-samples/SKILL.md
@@ -45,7 +45,7 @@ sources:
     resource: repo://src/code-samples/package.json
   - id: openwiki-source-b68d7bad2afd9a38e8c331d5
     resource: repo://tests/unit_tests/test_generate_code_snippet_mdx.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-02T08:21:54.688Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-03T08:20:07.933Z" }
 ---
 
 ## Ownership and lifecycle
@@ -67,7 +67,7 @@ flowchart TD
   Eligible -->|"no"| Skip["Record trace exclusion"]
 ```
 
-This is the executable-documentation path; public trace sharing is a separate credentialed publication branch, not ordinary validation.
+This diagram shows the executable-documentation path and its separate credentialed trace-publication branch.
 
 ## Author visible code and executable harnesses
 
@@ -75,7 +75,7 @@ Supported sample extensions are `.py`, `.ts`, `.java`, `.kt`, `.go`, and `.sh`. 
 
 The extractor is intentionally line based rather than a language parser. It accepts indented markers, removes matched `:remove-start:` / `:remove-end:` regions from the displayed body, dedents the result, and rejects unclosed snippet or remove markers. A remove region affects presentation only: its code still executes when the complete source file runs. Use it for assertions, local fixtures, cleanup, and credential-dependent paths that make the documented example safely testable without putting that machinery in docs.
 
-Arrange the harness so the visible construction or invocation actually runs before an early `SystemExit`, `process.exit`, or `exit 0`. A trailing harness can assert the values created by the snippet and clean up servers or adapters; a pre-snippet terminating region only proves parsing. All TypeScript regions execute in one module and therefore share imports and top-level bindings. Split independently runnable snippets into different `.ts` files if they would redeclare an import, `const`, `let`, class, or function.
+Arrange the harness so the visible construction or invocation actually runs before an early `SystemExit`, `process.exit`, or `exit 0`. A trailing harness can assert the values created by the snippet and clean up servers or adapters; a pre-snippet terminating region only proves parsing. Regions in a TypeScript source file execute in the same module and therefore share imports and top-level bindings. Split independently runnable snippets into different `.ts` files if they would redeclare an import, `const`, `let`, class, or function.
 
 ### MCP adapter 2 sample pattern
 
@@ -90,7 +90,7 @@ These files deliberately keep reader-facing adapter code inside their snippet ma
 
 ### Shared language dependencies
 
-Python samples run in the repository's uv environment. TypeScript samples are ESM programs run from `src/code-samples/`, which owns the shared `package.json` and committed `package-lock.json`; add a runtime dependency there and refresh the lockfile rather than creating per-sample installation. The MCP examples additionally rely on the pinned MCP adapter and Model Context Protocol packages in that owner. `make test-code-samples` installs the shared package before executing TypeScript samples.
+Python samples run in the repository's uv environment. TypeScript samples are ESM programs run from `src/code-samples/`, which owns the shared `package.json` and committed `package-lock.json`; add a runtime dependency there and refresh the lockfile rather than creating a per-sample installation. The manifest declares direct requirements while the lockfile records the resolved package tree used by the samples. The MCP examples additionally rely on the pinned adapter and Model Context Protocol packages in that owner. `make test-code-samples` installs the shared package before executing TypeScript samples.
 
 Go samples similarly share `src/code-samples/go.mod` and `go.sum`; the runner invokes `go run` from `src/code-samples/`, and CI selects Go from that module file. For all languages, child processes inherit the environment, so a source can require provider credentials or `POSTGRES_URI` and can call live services.
 
@@ -127,7 +127,7 @@ make code-snippets
 
 `FILES` is a space-separated explicit list. Invalid, missing, unsupported, or out-of-tree entries are warned about and skipped. Without it, the runner recursively selects eligible source files (excluding `node_modules` and `__pycache__`) in Python, TypeScript, Java, Kotlin, Go, then shell order. It runs Python through `uv run python`, TypeScript through `npx tsx`, Java/Kotlin through JBang with Java 21, Go through `go run`, and shell through `bash`. The default timeout is 1,200 seconds and `CODE_SAMPLE_TIMEOUT_SECONDS` overrides it.
 
-Ordinary nonzero exits, timeouts, missing executables, and trace-collection exceptions fail the runner. A detected LangSmith 429 is retried three total times with 15-second delays and is then reported as skipped rather than failed. A rate-limited sample was not validated and does not produce a trace. The focused generator test protects CodeGroup expansion exclusions, language-specific Google provider keys, the camel-case TypeScript `{ googleSearch: {} }` tool shape, and the minimum resolved `@langchain/google` version needed for mixed built-in and function tools.
+Ordinary nonzero exits, timeouts, missing executables, and trace-collection exceptions fail the runner. A detected LangSmith 429 is retried three total times with 15-second delays and is then reported as skipped rather than failed. A rate-limited sample was not validated and does not produce a trace. The focused generator test protects CodeGroup expansion exclusions, language-specific Google provider keys, the camel-case TypeScript `{ googleSearch: {} }` tool shape, and the minimum declared and lockfile-resolved `@langchain/google` version needed for mixed built-in and function tools. It is a focused regression guard for that shared TypeScript dependency contract, not a replacement for running a changed sample.
 
 ## Public traces are a trusted publication action
 
@@ -148,7 +148,7 @@ Only manual and scheduled full runs enable tracing and public sharing. Once such
 3. Put fixture, assertion, and cleanup code in remove regions, but make the complete source execute the visible path.
 4. Keep TypeScript module scope collision-free and update the shared package manifest **and lockfile** when dependencies change.
 5. For an MCP adapter sample, use a local server fixture when practical, assert the intended adapter behavior, and close adapter and server resources in `finally`.
-6. Run the focused source with `FILES`, the generator unit test when generation or shared TypeScript dependencies change, then `make code-snippets` and review MDX.
+6. Run the focused source with `FILES`, the generator unit test when generation or the shared TypeScript dependency contract changes, then `make code-snippets` and review MDX.
 7. Use trace refresh only as a deliberate credentialed public-publication operation; rely on trusted full-run CI for automated refreshes.
 
 ## Related pages
