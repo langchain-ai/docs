@@ -3,9 +3,6 @@ type: integration
 title: Mintlify Integration
 description: Mintlify renders the generated documentation tree and deployment-time OpenAPI references for docs.langchain.com. This page defines repository ownership, route configuration, operational handoffs, and the limits of local validation.
 tags: [mintlify, documentation, navigation, openapi, deployment]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-01T08:23:32.263Z
 sources:
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
@@ -39,7 +36,10 @@ sources:
     resource: repo://src/docs.json
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-01T08:23:32.263Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-03T08:20:07.933Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-03T08:20:07.933Z
 ---
 
 # Mintlify Integration
@@ -89,11 +89,13 @@ make check-openapi
 
 The Mint link-check targets build first, run from `build/` with redirect checking, filter deployment-time OpenAPI routes, standalone-snippet sections, and documented checker false positives, and fail only for remaining actionable indented link entries. The reusable link-check workflow uses Node 22 and runs the anchor check plus the Agent Server OpenAPI validation. The filter's unit tests verify that snippet-only sections and the known optional SmithDB anchor exclusions are removed while ordinary broken links and non-exempt anchors remain actionable.
 
+`make check-openapi` builds first, then runs `mint openapi-check langsmith/agent-server-openapi.json` from `build/`; despite its broad name, it validates only the Agent Server specification. Validate another input explicitly if its syntax changes.
+
 These commands validate repository-generated content; they do **not** prove that deployment-generated reference pages were rendered. `make export` is a separate, deliberately limited operation: Mint export rebuilds the documentation and writes `build/export.zip` by default; it requires a Mint CLI with export support, Node 20 or 22 rather than Node 25 or later, and an Enterprise Mintlify plan. `htmltest` validates the exported archive with internal paths and hashes disabled because the export is not a complete page set, so it cannot establish internal navigation correctness.
 
 ## OpenAPI reference boundary
 
-Mintlify is configured with three OpenAPI sections: committed Agent Server and LangSmith REST specifications generate under `langsmith/agent-server-api` and `langsmith/smith-api`, while the Control Plane specification is fetched from `https://api.host.langchain.com/openapi.json` at deployment. The Control Plane group intentionally omits a `directory`; the local-filtered `/api-reference/` family is likewise not a repository page tree.
+Mintlify is configured with three OpenAPI sections: committed Agent Server and LangSmith REST specifications generate under `langsmith/agent-server-api` and `langsmith/smith-api`, while the Control Plane specification is fetched from `https://api.host.langchain.com/openapi.json` at deployment. The Control Plane group intentionally omits a `directory`; Mintlify therefore uses its default `/api-reference/` route family. The specifications are inputs in the build tree where committed, but Mintlify-generated endpoint pages are not.
 
 | Reference group | Input ownership | Explicit Mintlify directory |
 | --- | --- | --- |
