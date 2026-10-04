@@ -1,11 +1,8 @@
 ---
 type: documentation route model
 title: Versioned Documentation and Routes
-description: Explains how the documentation builder selects source families and emits Python, JavaScript, and language-agnostic routes. Covers build-time rendering, link and snippet rewriting, Managed Deep Agents navigation, and compatibility redirects.
+description: Explains how the documentation builder selects source families and emits Python, JavaScript, and language-agnostic routes. Covers build-time rendering, link and snippet rewriting, language-owned MCP migration material, Mintlify navigation, and compatibility redirects.
 tags: [documentation-pipeline, routes, language-versioning, redirects]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-01T08:23:32.263Z
 sources:
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
@@ -23,20 +20,33 @@ sources:
     resource: repo://src/language-toggle.js
   - id: openwiki-source-dd63acff5f24d1b92eaf7193
     resource: repo://src/oss/javascript/integrations/chat/index.mdx
+  - id: openwiki-source-4d3d0f53cb13c1c1b72f3662
+    resource: repo://src/oss/javascript/langchain/mcp-v1.mdx
+  - id: openwiki-source-c6258cab179201344bfb89d2
+    resource: repo://src/oss/javascript/migrate/langchain-mcp-adapters.mdx
+  - id: openwiki-source-d1c9b8a212b3f593c4e2fcfd
+    resource: repo://src/oss/langchain/mcp/connections.mdx
+  - id: openwiki-source-867d24ecd094a73112272b9b
+    resource: repo://src/oss/langchain/mcp/index.mdx
   - id: openwiki-source-0bbd982f783595e2d0ac49ae
     resource: repo://src/oss/langgraph/interrupts.mdx
   - id: openwiki-source-7bfe816fdba0201671040464
     resource: repo://src/oss/python/integrations/providers/all_providers.mdx
+  - id: openwiki-source-5fb3e6d5f1b7fba58bbcc170
+    resource: repo://src/oss/python/migrate/langchain-mcp-adapters.mdx
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-01T08:23:32.263Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-02T08:21:54.688Z
+generated: { by: "openwiki/0.4.3", at: "2026-10-02T08:21:54.688Z" }
 ---
 
 # Versioned Documentation and Routes
 
-`DocumentationBuilder` derives generated documentation routes from source paths under `src/`. `src/docs.json` is a separate public-navigation and redirect configuration: its entries must refer to routes the builder emits, but a sidebar entry neither creates a page nor determines its source ownership. Treat **source ownership**, **emitted routes**, **navigation**, and **compatibility redirects** as four separate contracts.
+`DocumentationBuilder` derives generated documentation routes from source paths under `src/`. `src/docs.json` is separate Mintlify configuration for public navigation and redirects: its entries must refer to routes the builder emits, but a sidebar entry neither creates a page nor determines source ownership. Treat **source ownership**, **emitted routes**, **Mintlify navigation**, and **compatibility redirects** as four separate contracts.
 
-## Route families
+## Emitted route families
 
 | Source family | Emitted route(s) | Preprocessing target |
 | --- | --- | --- |
@@ -60,11 +70,11 @@ flowchart TD
     Family --> Managed["Managed Deep Agents"]
     Managed --> ManagedPy["LangSmith Python route"]
     Managed --> ManagedJs["LangSmith JavaScript route"]
-    ManagedPy --> Config["docs.json navigation and redirects"]
-    ManagedJs --> Config
+    ManagedPy --> Mintlify["Mintlify navigation and redirects"]
+    ManagedJs --> Mintlify
 ```
 
-This is builder routing by source path. Configuration follows it; it is not an ownership classifier.
+This is builder routing by source path. Mintlify configuration follows it; it is not an ownership classifier.
 
 ## Build lifecycle and ownership rules
 
@@ -105,13 +115,21 @@ An unqualified absolute OSS link such as `/oss/deepagents/overview` becomes `/os
 
 Shared Markdown snippets are emitted as Python and JavaScript copies with target-specific preprocessing and absolute rewritten links. The original snippet path is a Python-targeted default for unversioned importers; targeted pages import their matching copy. This avoids links whose correctness depends on a consumer's nesting depth.
 
+## Language-owned MCP adapter content
+
+Source placement makes the current MCP documentation intentionally asymmetric where the APIs differ. The shared `src/oss/langchain/mcp/` overview and connections pages build for both route families; their `:::python` and `:::js` sections select the appropriate SDK guidance, and their bare internal `/oss/langchain/mcp...` links are rewritten to the reader's language route.
+
+The migration guides are language-owned: `src/oss/python/migrate/langchain-mcp-adapters.mdx` emits only at `/oss/python/migrate/langchain-mcp-adapters`, while `src/oss/javascript/migrate/langchain-mcp-adapters.mdx` emits only at `/oss/javascript/migrate/langchain-mcp-adapters`. The JavaScript guide documents the 1.x-to-2.0 adapter upgrade, including `MCPAdapter`, the `servers` configuration, per-server protocol modes, stricter configuration validation, and the tool-name-prefix default. Do not place this material in shared content merely because both pages use the same route suffix.
+
+Likewise, `src/oss/javascript/langchain/mcp-v1.mdx` is JavaScript-owned and emits only to `/oss/javascript/langchain/mcp-v1`. Its `:::js` warning directs 1.x users to the shared current MCP documentation and migration guide; the `:::python` branch in that source is removed in the JavaScript artifact. This lets the legacy page retain a shared-source-shaped warning without creating a Python legacy route. If a legacy or migration page needs to be discoverable, add it to the matching language's Mintlify navigation only after verifying its emitted route; source ownership alone does not create navigation.
+
 ## Unversioned OSS products
 
 Deep Agents Code and OpenWiki are explicit exceptions to ordinary OSS duplication. They emit once at their unprefixed roots, and `python` is used only as a deterministic conditional-rendering fallback. Links within those roots remain unprefixed; a bare link from either product to ordinary OSS resolves to the Python OSS route.
 
-`docs.json` lists the same unprefixed OpenWiki routes in the OpenWiki tab of both the Python and TypeScript Build dropdowns. The language-toggle script hides the switcher on `/oss/openwiki` because no alternate language route exists. Deep Agents Code is likewise unversioned regardless of where navigation places it.
+`docs.json` lists the same unprefixed OpenWiki routes in the OpenWiki tab of both the Python and TypeScript Build dropdowns. The language-toggle script hides the switcher on `/oss/openwiki` because no alternate language route exists. Deep Agents Code is likewise unversioned regardless of where Mintlify navigation places it.
 
-## Managed Deep Agents: variants and legacy URLs
+## Managed Deep Agents variants
 
 Managed Deep Agents is the LangSmith exception. A direct child of `src/langsmith/` named `managed-deep-agents*` with a `.md` or `.mdx` extension is classified as a variant page for an individual build. It produces Python and JavaScript artifacts, each with target-specific conditional content, snippets, and rewritten OSS and Managed Deep Agents links; it does not produce an unversioned artifact.
 
@@ -119,11 +137,13 @@ Author internal family links as bare `/langsmith/managed-deep-agents...` URLs wh
 
 The dedicated full-build discovery pass only selects direct `managed-deep-agents*.mdx` files. Although the individual-file classifier accepts `.md`, the full pass will not emit a `.md` page. Use a direct `.mdx` file for a Managed Deep Agents page that must appear in a full build.
 
-### Navigation versus redirects
+### Mintlify navigation
 
 The Python and TypeScript Build dropdowns each contain a **Managed Deep Agents** tab. Both enumerate corresponding language-prefixed suffixes in **Get started**, **Agent capabilities** with a nested **Channels** group, and **Build and deploy**; the latter includes the MCP endpoint. When adding a new variant, add matching entries to both tabs only after confirming both emitted routes exist.
 
-Unversioned `/langsmith/managed-deep-agents...` URLs are compatibility inputs, not generated pages. `docs.json` redirects current unversioned routes—including overview, quickstart, channels, deployment, CLI, identity, MCP connectors, and other family pages—to Python. It also maps historical aliases such as `managed-deep-agents-invoke`, `-sdk`, `-api`, older channel paths, and connector paths to Python destinations. These redirects preserve inbound links and establish Python as the legacy default; they do not replace the JavaScript artifacts or navigation.
+### Compatibility redirects
+
+Unversioned `/langsmith/managed-deep-agents...` URLs are compatibility inputs, not generated pages. `docs.json` redirects current unversioned routes—including overview, quickstart, channels, deployment, CLI, identity, MCP connectors, and other family pages—to Python. It also maps historical aliases such as `managed-deep-agents-invoke`, `-sdk`, `-api`, older channel paths, and connector paths to Python destinations. These redirects preserve inbound links and establish Python as the legacy default; they do not replace the JavaScript artifacts or Mintlify navigation.
 
 When adding or moving a Managed Deep Agents page:
 
