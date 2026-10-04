@@ -206,7 +206,7 @@ Do not rename this product to a LangSmith name. It was tried on 2026-09-15 and r
 
 The Overview tab's landing page is `langsmith/langsmith-setup-overview`, which covers this product's four areas: agent-based workspaces, hosting, account, and govern. It follows `langsmith/govern-overview`: `sidebarTitle: Overview`, `mode: "wide"`, an `## Explore` card group. It does not link the product's other menu items, and cards for them were removed on 2026-09-16.
 
-Its **Agent-based workspaces** group holds `langsmith/agents`, `langsmith/agent-environments`, `langsmith/navigate-agents`, and `langsmith/build-an-agent`, and carries a group-level `"tag": "Beta"` because agent-based workspaces are in private beta. The group tag is why none of those four pages carries a page-level `tag`. The group was in Lifecycle > Home until 2026-09-16. See [Home](#home).
+Its **Agent-based workspaces** group holds `langsmith/agents`, `langsmith/agent-environments`, `langsmith/navigate-agents`, `langsmith/create-an-agent`, `langsmith/build-an-agent`, and `langsmith/deploy-to-agent-environment`, and carries a group-level `"tag": "Beta"` because agent-based workspaces are in private beta. The group tag is why none of those six pages carries a page-level `tag`. The group was in Lifecycle > Home until 2026-09-16. See [Home](#home).
 
 These four pages are **listed**, decided on 2026-09-18. The alternative was to leave them unlisted, with URLs but no `docs.json` entries, reachable by direct link and absent from the sidebar, search, and sitemap, which is how whiteglove customers are served elsewhere and how seven other LangSmith pages already work. Listed won because the group sits under LangSmith setup rather than Home, which is a narrow enough surface for a private beta, and because an enabled customer should be able to find the pages without being handed a link. Do not unlist them without reopening that decision.
 
@@ -244,7 +244,7 @@ Because nav names and directories diverge, use this to go from a file to its pla
 | `src/oss/contributing/` | Build → Contribute |
 | `src/langsmith/managed-deep-agents*.mdx` | Build → Managed Deep Agents |
 | `src/langsmith/fleet/` | Products and setup → No-code agents |
-| `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx`, `build-an-agent.mdx` | Products and setup → LangSmith setup → Overview → Agent-based workspaces |
+| `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx`, `create-an-agent.mdx`, `build-an-agent.mdx`, `deploy-to-agent-environment.mdx` | Products and setup → LangSmith setup → Overview → Agent-based workspaces |
 | `src/langsmith/*.mdx` (everything else) | Test, Deploy, Monitor, or LangSmith setup, depending on subject |
 
 ### Reference docs
