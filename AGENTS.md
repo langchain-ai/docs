@@ -115,7 +115,11 @@ Five menu items: Home, Build, Test, Deploy, Monitor.
 
 #### Home
 
-Single page (`src/index.mdx`).
+`src/index.mdx` alone. This menu item has no groups.
+
+The agent concept pages sat here in a **Core concepts** group, since renamed, from 2026-09-15 to 2026-09-16, with three matching cards on the home page. Both were removed on 2026-09-16, and the group now lives in Products and setup > LangSmith setup > Overview. See [LangSmith setup](#langsmith-setup). The reason is the release stage: agent-based workspaces are in private beta for a hand-picked group of customers, and the home page is the one surface every reader lands on, so a `Beta` group there reads as a general announcement. Do not move the group back without a stage change.
+
+`src/index.mdx` is `mode: "custom"`, so it renders no sidebar and its body is hand-written HTML wrappers with `<h2 class=...>` section headings rather than markdown. Any card added here is the only route to what it links, because the page has no sidebar to fall back on.
 
 #### Build
 
@@ -191,12 +195,24 @@ Six tabs, all files flat in `src/langsmith/`:
 
 | Tab | Groups |
 |-----|--------|
-| Overview | Single page |
+| Overview | Hosting, Agent-based workspaces |
 | Account | Billing & usage |
 | Cloud | Reference |
 | BYOC | No groups |
 | Self-hosted | Get started by cloud provider, Deploy with Terraform (AWS, GCP, Azure), Setup guides (Manage an installation), Configuration, Connect external services, Platform auth & access control, SmithDB, Self-hosted observability, Hybrid, Scripts, Reference |
 | Govern | Organization (Workspace setup), Users & access control, Tools, Auditing, Data & compliance, Additional resources (FAQ) |
+
+Do not rename this product to a LangSmith name. It was tried on 2026-09-15 and reverted the same day, for two reasons that still hold. `Deep Agents Code` lives in this product and is sourced from `src/oss/deepagents/code/`, so a LangSmith name would claim pages LangSmith does not own. And Test, Deploy, and Monitor are 100% `src/langsmith/`, so most LangSmith documentation sits in the *other* product: naming this one LangSmith tells a reader it is a section when it is most of the site.
+
+The Overview tab's landing page is `langsmith/langsmith-setup-overview`, which covers this product's four areas: agent-based workspaces, hosting, account, and govern. It follows `langsmith/govern-overview`: `sidebarTitle: Overview`, `mode: "wide"`, an `## Explore` card group. It does not link the product's other menu items, and cards for them were removed on 2026-09-16.
+
+Its **Agent-based workspaces** group holds `langsmith/agents`, `langsmith/agent-environments`, `langsmith/navigate-agents`, and `langsmith/build-an-agent`, and carries a group-level `"tag": "Beta"` because agent-based workspaces are in private beta. The group tag is why none of those four pages carries a page-level `tag`. The group was in Lifecycle > Home until 2026-09-16. See [Home](#home).
+
+These four pages are **listed**, decided on 2026-09-18. The alternative was to leave them unlisted, with URLs but no `docs.json` entries, reachable by direct link and absent from the sidebar, search, and sitemap, which is how whiteglove customers are served elsewhere and how seven other LangSmith pages already work. Listed won because the group sits under LangSmith setup rather than Home, which is a narrow enough surface for a private beta, and because an enabled customer should be able to find the pages without being handed a link. Do not unlist them without reopening that decision.
+
+It was called **Core concepts** until 2026-09-16. Renamed because the group name has to carry the `Beta` tag sensibly: "Core concepts `Beta`" says LangSmith's concepts are in beta, when what is in beta is the workspace arrangement. The old name also over-claimed, since traces, runs, tracing projects, datasets, and evaluation are core concepts too and live under Monitor and Test. The new name matches the term the marker snippets and `administration-overview` already use.
+
+`langsmith/platform-setup` is no longer the tab's landing page. It sits in the **Hosting** group with `sidebarTitle: Compare options`, while its `title` stays `Set up LangSmith`, and it compares Cloud, BYOC, and Self-hosted. It is `mode: "wide"`, so it renders a sidebar and a table of contents, and its body is plain markdown. The wrapper `div`s, the hand-written `<h1>`, and the `<h2 class=...>` headings that `mode: "custom"` required are gone as of 2026-09-16, so do not reintroduce them without changing the mode back. The mode and the body are a pair: custom mode supplies no default typography.
 
 #### Other menu items
 
@@ -228,6 +244,7 @@ Because nav names and directories diverge, use this to go from a file to its pla
 | `src/oss/contributing/` | Build → Contribute |
 | `src/langsmith/managed-deep-agents*.mdx` | Build → Managed Deep Agents |
 | `src/langsmith/fleet/` | Products and setup → No-code agents |
+| `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx`, `build-an-agent.mdx` | Products and setup → LangSmith setup → Overview → Agent-based workspaces |
 | `src/langsmith/*.mdx` (everything else) | Test, Deploy, Monitor, or LangSmith setup, depending on subject |
 
 ### Reference docs
@@ -509,6 +526,12 @@ Reserve "the platform" for LangSmith. LangChain is the open agent engineering ec
 1. Create `src/oss/javascript/integrations/<component>/<provider>.mdx`
 2. Add the page to the component's index page (`src/oss/javascript/integrations/<component>/index.mdx`); only edit `src/docs.json` when creating a brand-new component group
 3. If the provider has an overview page at `src/oss/javascript/integrations/providers/<provider>.mdx`, add or update a section there linking to the new page (`/oss/integrations/<component>/<provider>`)
+
+**Beta callouts on agent-based workspace pages:** every page in the
+`Agent-based workspaces` group opens with the shared
+`/snippets/langsmith/agent-beta-note.mdx` callout, placed after the page's
+opening definition and before the first `##` heading. Do not hand-write a
+per-page variant, and do not add a page-level `tag` on top of the group tag.
 
 **Add a reusable snippet:**
 
