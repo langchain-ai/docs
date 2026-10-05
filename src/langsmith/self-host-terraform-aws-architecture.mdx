@@ -58,7 +58,7 @@ In-cluster ClickHouse is dev/POC only (single pod, no replication, no backups). 
 </Warning>
 
 <Note>
-[SmithDB](https://www.langchain.com/blog/introducing-smithdb?utm_source=docs) is LangSmith's purpose-built observability backend, available for Self-hosted starting with self-hosted version 0.16.0 (see [self-hosted support](/langsmith/smithdb-sdk-migration#about-self-hosted)). The AWS modules provision ClickHouse by default. Setting `enable_smithdb = true` also provisions SmithDB's dependencies: a dedicated metastore RDS PostgreSQL instance, an S3 object-store bucket, an IRSA role, and Karpenter NodePools for NVMe instance-store nodes. ClickHouse stays enabled throughout version 0.16. See [SmithDB](/langsmith/self-host-terraform-aws-deploy#smithdb) in the deployment guide.
+[SmithDB](https://www.langchain.com/blog/introducing-smithdb?utm_source=docs) is LangSmith's purpose-built observability backend, available for Self-hosted starting with self-hosted version 0.16.0 (see [self-hosted support](/langsmith/smithdb-sdk-migration#about-self-hosted)). The AWS modules provision ClickHouse by default. Setting `enable_smithdb = true` also provisions SmithDB's dependencies: a dedicated metastore RDS PostgreSQL instance (with `smithdb_metastore_source = "create"`, the default), an S3 object-store bucket, an IRSA role, and Karpenter NodePools for NVMe instance-store nodes. ClickHouse stays enabled throughout version 0.16. See [SmithDB](/langsmith/self-host-terraform-aws-deploy#smithdb) in the deployment guide.
 </Note>
 
 ### One-time jobs
@@ -128,7 +128,7 @@ Two Terraform modules install the cluster-level services LangSmith depends on. T
 | `aws-load-balancer-controller` | `eks` | `kube-system` | Yes | Registers pods with the Terraform-managed ALB through `TargetGroupBinding`, and provisions an ALB from Kubernetes Ingress objects in ALB Ingress mode. |
 | `cluster-autoscaler` | `eks` | `kube-system` | Yes | Scales EC2 node groups based on pod scheduling pressure. |
 | `ebs-csi-driver` | `eks` | `kube-system` | Yes | Provisions EBS volumes for PersistentVolumeClaims (used by ClickHouse). |
-| Karpenter | `eks` | `kube-system` | Yes | Provisions SmithDB's NVMe instance-store and compute nodes. Installed only when `enable_smithdb = true`. |
+| Karpenter | `eks` | `karpenter` | Yes | Provisions SmithDB's NVMe instance-store and compute nodes. Installed only when `enable_smithdb = true`. |
 | KEDA | `k8s-bootstrap` | `keda` | No | Kubernetes Event-driven Autoscaling. Scales `queue` and `ingest-queue` on Redis queue depth. Required for the LangSmith Deployment add-on. |
 | Envoy Gateway | `k8s-bootstrap` | `envoy-gateway-system` | No | Default ingress gateway behind the ALB. Skipped when you select Istio, NGINX, or ALB Ingress. |
 | cert-manager | `k8s-bootstrap` | `cert-manager` | Optional | Automates TLS certificate issuance. With `tls_certificate_source = letsencrypt` it uses an HTTP-01 issuer through the ALB and needs no IRSA. With `create_cert_manager_irsa = true` it uses DNS-01 through Route 53 with an IRSA role. Installed only in those two cases. |
@@ -161,7 +161,7 @@ Set `alb_existing_security_group_id`, `postgres_existing_security_group_id`, `re
 ```mermaid actions={false}
 graph TD
     Internet(["Internet"])
-    ALB["AWS Application Load Balancer<br/>port 80/443, TLS via ACM or Let's Encrypt"]
+    ALB["AWS Application Load Balancer<br/>port 80/443, TLS via ACM"]
 
     subgraph EKS["EKS cluster (private subnets)"]
         EGS["envoy-gateway-system<br/>Envoy proxy, ClusterIP Service,<br/>TargetGroupBinding"]
@@ -199,10 +199,10 @@ graph TD
     ALB["AWS Application Load Balancer<br/>ACM TLS termination at 443"]
 
     subgraph EGS["envoy-gateway-system"]
-        Envoy["Envoy proxy<br/>GatewayClass: eg, Gateway: langsmith-gateway"]
+        Envoy["Envoy proxy<br/>GatewayClass: eg"]
     end
 
-    LangSmith["langsmith namespace<br/>backend, frontend, playground, queue, clickhouse"]
+    LangSmith["langsmith namespace<br/>Gateway: langsmith-gateway<br/>backend, frontend, playground, queue, clickhouse"]
     Agents["langsmith-agents namespace (optional dataplane)<br/>langgraph-dataplane listener, operator, agent pods"]
 
     Internet -->|HTTPS| ALB
@@ -257,11 +257,11 @@ Standard Kubernetes Ingress is namespace-scoped. The ALB controller routes only 
 
 ### ALB in front of Envoy Gateway
 
-The default layout keeps the ALB for SSO (Okta or Cognito OIDC), WAF, and TLS, with Envoy Gateway behind it:
+In the default layout, the ALB handles TLS and DNS, with Envoy Gateway behind it. Optional WAF attaches to the ALB:
 
 ```txt
 Internet
-  → ALB (WAF, SSO, TLS, DNS)
+  → ALB (TLS, DNS, optional WAF)
     → Envoy proxy pods (ClusterIP Service, TargetGroupBinding from k8s-bootstrap)
        → HTTPRoute → langsmith namespace        (control plane)
        → HTTPRoute → langsmith-agents namespace (split dataplane)
@@ -366,8 +366,8 @@ These constraints were validated during the April 2026 gateway permutation test 
 | 4 | Istio port | Istio 1.23 or later ingressgateway listens on port 80 via `NET_BIND_SERVICE`, not port 8080. ALB TGB health check and security group rules must target port 80. |
 | 5 | NGINX TGB port | NGINX ingress-nginx controller pods listen on port 80. The TargetGroupBinding target type is `ip`. |
 | 6 | Envoy Gateway port | The Envoy proxy pods listen on port 10080 (the Gateway's port 80 plus Envoy's 10000 offset for non-root). The ALB target group and node security group rule use 10080; the TargetGroupBinding references the Envoy `ClusterIP` Service on port 80, with target type `ip`. |
-| 7 | Destroy order | Always run `make destroy` first and let Terraform handle namespace and Helm release lifecycle. Pre-deleting namespaces causes the `helm_release` resource to time out because Helm cannot uninstall cleanly into a terminating namespace. |
-| 8 | Stuck terminating namespaces | KEDA's stale `external.metrics.k8s.io/v1beta1` API group causes `NamespaceDeletionDiscoveryFailure`. Fix: `kubectl delete apiservice v1beta1.external.metrics.k8s.io` before re-running `make destroy`. |
+| 7 | Destroy order | Run `make uninstall`, then `make destroy`. Do not pre-delete namespaces: Helm cannot uninstall cleanly into a terminating namespace, so the `helm_release` resource times out. |
+| 8 | Stuck terminating namespaces | KEDA's stale `external.metrics.k8s.io/v1beta1` API group causes `NamespaceDeletionDiscoveryFailure`. Fix: clear the namespace's `spec.finalizers` and submit the result to the finalize subresource with `kubectl replace --raw "/api/v1/namespaces/<ns>/finalize" -f -`, then re-run `make destroy`. |
 
 ## Verification commands
 

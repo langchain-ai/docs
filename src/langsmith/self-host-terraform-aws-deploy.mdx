@@ -173,7 +173,7 @@ make quickdeploy          # interactive, prompts before terraform apply
 make quickdeploy-auto     # non-interactive, auto-approves terraform
 ```
 
-`make quickdeploy` runs `terraform apply`, sources `set-kubeconfig.sh`, then runs `init-values` and `deploy.sh`. It stops if the `setup-env.sh` exports are missing. If a step fails, the command prints the commands to resume from that step.
+`make quickdeploy` runs `terraform apply`, sources `set-kubeconfig.sh`, then runs `init-values` and `deploy.sh`. It stops if the `setup-env.sh` exports are missing. If `terraform apply` fails, fix the issue and re-run `make quickdeploy`. If a later step fails, the command prints the `make` target to retry.
 
 The following sections cover each stage in detail.
 
@@ -188,7 +188,7 @@ Terraform provisions the following AWS resources:
 | RDS PostgreSQL | LangSmith operational data |
 | ElastiCache Redis | Queue and cache |
 | S3 bucket + VPC endpoint | Trace payload blob storage |
-| ALB + listeners | Public entry point; terminates TLS |
+| ALB + listeners | Entry point; terminates TLS with `acm` |
 | IRSA roles + IAM policies | Per-service AWS access |
 | KEDA, External Secrets Operator, Envoy Gateway | Bootstrap workloads installed alongside infrastructure. Envoy Gateway is the default ingress. cert-manager is added only for Let's Encrypt. |
 
@@ -312,14 +312,14 @@ make init-values
 make deploy
 ```
 
-`make init-values` reads `sizing_profile` and the `enable_*` flags from `terraform.tfvars`, writes `helm/values/langsmith-values-overrides.yaml` from the Terraform outputs, and copies the matching values files from `helm/values/examples/` into `helm/values/`. It reuses the admin email from SSM. On re-runs it refreshes the Terraform outputs and copies an add-on values file only when it is missing, so your edits to existing files survive.
+`make init-values` reads `sizing_profile` and the `enable_*` flags from `terraform.tfvars`, writes `helm/values/langsmith-values-overrides.yaml` from the Terraform outputs, and copies the matching values files from `helm/values/examples/` into `helm/values/`. It reuses the admin email from the existing overrides file, or takes it from `LANGSMITH_ADMIN_EMAIL` (set by `setup-env.sh`), or prompts for it. On re-runs it refreshes the Terraform outputs and copies an add-on values file only when it is missing, so your edits to existing files survive.
 
 `make deploy` runs `helm/scripts/deploy.sh`, which:
 
-1. Refreshes the kubeconfig with `aws eks update-kubeconfig`.
-2. Runs preflight checks (AWS credentials, cluster reachability, the `langchain` Helm repo).
-3. Applies the External Secrets Operator `ClusterSecretStore` and `ExternalSecret` so the cluster reads secrets directly from SSM.
-4. Resolves the chart version.
+1. Resolves the chart version and confirms it is on the 0.16 line.
+2. Refreshes the kubeconfig with `aws eks update-kubeconfig`.
+3. Runs preflight checks (AWS credentials, cluster reachability, the `langchain` Helm repo).
+4. Applies the External Secrets Operator `ClusterSecretStore` and `ExternalSecret` so the cluster reads secrets directly from SSM.
 5. Runs `helm upgrade --install` with the layered values files and waits for the core pods.
 6. Upgrades once more when no `langsmith_domain` is set and the load balancer hostname changed, then prints the LangSmith URL.
 
@@ -338,7 +338,7 @@ When all pods are `Running`, open the URL that `make deploy` printed. It uses `l
 
 ## Enable add-ons
 
-Each add-on is gated by a flag in `infra/terraform.tfvars`. Set the flag, run `make apply`, re-run `make init-values` to copy the matching values file, then re-run `make deploy`. `make apply` is required for add-ons that create AWS resources: Fleet with external storage (the default), LangSmith Chat or Insights with external storage, sandboxes, and SmithDB. For the rest, `make apply` makes no changes.
+Each add-on is gated by a flag in `infra/terraform.tfvars`. Set the flag, run `make apply`, re-run `make init-values` to copy the matching values file, then re-run `make deploy`. `make apply` is required for add-ons that Terraform provisions: Fleet with external storage (the default), LangSmith Chat or Insights with external storage, sandboxes, and SmithDB. Sandboxes and SmithDB create AWS resources. External storage creates a database on the existing RDS instance and the matching Kubernetes secrets. For the rest, `make apply` makes no changes.
 
 ```hcl
 enable_deployments     = true            # LangSmith Deployment (listener, operator, host-backend)
@@ -438,7 +438,7 @@ The bastion runs in a private subnet with no public IP and reaches SSM through t
 
 ## Ingress, DNS, and TLS
 
-The ALB is always the entry point and terminates TLS. Behind it, [Envoy Gateway](https://gateway.envoyproxy.io/) is the default ingress: the ALB forwards to the Envoy pods through a TargetGroupBinding, and the LangSmith chart creates `HTTPRoute` resources instead of an `Ingress`.
+The ALB is always the entry point. With `acm`, it terminates TLS. Behind it, [Envoy Gateway](https://gateway.envoyproxy.io/) is the default ingress: the ALB forwards to the Envoy pods through a TargetGroupBinding, and the LangSmith chart creates `HTTPRoute` resources instead of an `Ingress`.
 
 | Setting in `terraform.tfvars` | Ingress |
 |---|---|
@@ -461,7 +461,7 @@ Deployments created before Envoy Gateway became the default, with no gateway fla
 
 For Let's Encrypt DNS-01 through Route 53, which Istio requires, set `create_cert_manager_irsa = true` and `cert_manager_hosted_zone_id`. Terraform creates the DNS-01 issuer when `langsmith_domain` is set. `create_cert_manager_irsa` and `tls_certificate_source = "letsencrypt"` are mutually exclusive.
 
-To attach your own ACM certificate and a Route 53 alias record after deployment, run `make tls`.
+To add an ACM certificate and a Route 53 alias record after deployment, run `make tls`. It requires `langsmith_domain` in `terraform.tfvars`, requests and DNS-validates a certificate unless `acm_certificate_arn` is already set, and writes the certificate ARN to `terraform.tfvars`. Then run `make apply`, `make init-values`, and `make deploy`.
 
 ### Split dataplane namespace
 
