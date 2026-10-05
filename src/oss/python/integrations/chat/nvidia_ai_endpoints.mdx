@@ -41,7 +41,7 @@ For more information on accessing embedding models through this API, refer to th
 ## Install the package
 
 ```bash
-pip install -qU langchain-nvidia-ai-endpoints langchain
+pip install -qU langchain-nvidia-ai-endpoints
 ```
 
 ## Access the NVIDIA API Catalog
@@ -85,9 +85,11 @@ Now we can access models in the NVIDIA API Catalog. [Nemotron](https://www.nvidi
 ```python
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 
-# Nemotron 3 Ultra - frontier reasoning and agentic workflows
-llm = ChatNVIDIA(model="nvidia/nemotron-3-ultra-550b-a55b")
+# Nemotron 3.5 Super VL - text, image, and agent workflows
+llm = ChatNVIDIA(model="nvidia/nemotron-3.5-super-vl-120b-a12b", max_completion_tokens=8192)
 ```
+
+The API model ID is `nvidia/nemotron-3.5-super-vl-120b-a12b`. Check [NVIDIA Build](https://build.nvidia.com/) for endpoint availability.
 
 Any other model from the API Catalog can be used by passing its model ID:
 
@@ -102,9 +104,34 @@ result = llm.invoke("Write a ballad about LangChain.")
 print(result.content)
 ```
 
+Nemotron 3.5 Super VL also supports structured output:
+
+```python
+schema = {
+    "type": "object",
+    "properties": {"city": {"type": "string"}},
+    "required": ["city"],
+    "additionalProperties": False,
+}
+response = llm.with_structured_output(schema).invoke("Return Denver as the city.")
+print(response["city"])
+```
+
+For short classification or extraction tasks, you can disable thinking on the
+structured-output runnable to reduce reasoning tokens and latency. Check the
+answers on your own schema before using this setting broadly:
+
+```python
+fast_structured = llm.with_structured_output(schema).bind(
+    chat_template_kwargs={"enable_thinking": False}
+)
+response = fast_structured.invoke("Return Denver as the city.")
+print(response["city"])
+```
+
 ## Enable thinking mode
 
-Some NVIDIA reasoning models support a configurable thinking mode. Enable thinking for a single request by passing `thinking_mode=True` to `invoke`:
+Some NVIDIA reasoning models, including Nemotron 3.5 Super VL, support a configurable thinking mode. Enable thinking for a single request by passing `thinking_mode=True` to `invoke`:
 
 ```python
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
@@ -141,101 +168,6 @@ response = model.invoke("Solve this step by step: 17 * 23", thinking_mode=True)
 ```python
 thinking_model = model.with_thinking_mode(enabled=True)
 response = thinking_model.invoke("Solve this step by step: 17 * 23")
-```
-
-## Use Nemotron 3.5 Super VL
-
-Nemotron 3.5 Super VL accepts text and image input through `ChatNVIDIA`. Use it for chat, structured output, or as the model in a deep agent.
-
-<Note>
-    Super 3.5 is in early access. These examples require the connector changes in [langchain-nvidia PR #370](https://github.com/langchain-ai/langchain-nvidia/pull/370) and access to the model on your NVIDIA endpoint. Confirm that your endpoint serves the model ID below before running the examples. Early-access endpoint instructions can specify a different model ID and credentials.
-</Note>
-
-The following examples use the connector's registered model ID, an 8,192-token completion limit, and explicitly enabled thinking:
-
-```python
-from langchain_nvidia_ai_endpoints import ChatNVIDIA
-
-super_model = ChatNVIDIA(
-    model="nvidia/nemotron-3.5-super-vl-120b-a12b",
-    max_completion_tokens=8192,
-    chat_template_kwargs={"enable_thinking": True},
-)
-response = super_model.invoke("Plan a three-step research workflow for competitive analysis.")
-print(response.content_blocks)
-```
-
-### Return structured output
-
-Pass a JSON schema to `with_structured_output` to parse the response into a dictionary:
-
-```python
-schema = {
-    "type": "object",
-    "properties": {"city": {"type": "string"}},
-    "required": ["city"],
-    "additionalProperties": False,
-}
-structured_model = super_model.with_structured_output(schema)
-response = structured_model.invoke("Return Denver as the city.")
-print(response["city"])
-```
-
-To disable thinking for this structured-output runnable, bind the request parameter after calling `with_structured_output`:
-
-```python
-non_thinking_model = structured_model.bind(
-    chat_template_kwargs={"enable_thinking": False}
-)
-response = non_thinking_model.invoke("Return Denver as the city.")
-print(response["city"])
-```
-
-### Describe an image
-
-Encode a local PNG and include it in a [standard image content block](/oss/langchain/messages#multimodal). Replace `photo.png` with the path to your image:
-
-```python
-import base64
-from pathlib import Path
-
-from langchain.messages import HumanMessage
-
-image = base64.b64encode(Path("photo.png").read_bytes()).decode("ascii")
-message = HumanMessage(content=[
-    {"type": "text", "text": "Describe this image."},
-    {"type": "image", "base64": image, "mime_type": "image/png"},
-])
-response = super_model.invoke([message])
-print(response.content_blocks)
-```
-
-### Use with Deep Agents
-
-[Deep Agents](/oss/deepagents/overview) provides a built-in agent loop and tools. Install `deepagents`, then pass `super_model` to `create_deep_agent`:
-
-```bash
-pip install deepagents
-```
-
-```python
-from deepagents import create_deep_agent
-
-agent = create_deep_agent(model=super_model)
-result = agent.invoke({
-    "messages": [{
-        "role": "user",
-        "content": "Plan a three-step research workflow for competitive analysis.",
-    }]
-})
-print(result["messages"][-1].content_blocks)
-```
-
-This example uses the default Deep Agents harness without a model-specific profile. To ask the agent about the image, reuse `message` from the image example:
-
-```python
-result = agent.invoke({"messages": [message]})
-print(result["messages"][-1].content_blocks)
 ```
 
 ## Self-host with NVIDIA NIM Microservices
@@ -322,7 +254,7 @@ prompt = ChatPromptTemplate.from_messages(
         ("user", "{input}"),
     ]
 )
-chain = prompt | ChatNVIDIA(model="nvidia/nemotron-3-ultra-550b-a55b") | StrOutputParser()
+chain = prompt | ChatNVIDIA(model="nvidia/nemotron-3.5-super-vl-120b-a12b", max_completion_tokens=8192) | StrOutputParser()
 
 for txt in chain.stream({"input": "What are the key considerations when designing a multi-agent RAG system?"}):
     print(txt, end="")
@@ -330,7 +262,7 @@ for txt in chain.stream({"input": "What are the key considerations when designin
 
 ### General chat
 
-Models such as `meta/llama3-8b-instruct` and `mistralai/mixtral-8x22b-instruct-v0.1` are good all-around models that you can use for with any LangChain chat messages. Example below.
+Nemotron 3.5 Super VL also handles ordinary chat messages using the model ID shown above.
 
 ```python
 from langchain_core.output_parsers import StrOutputParser
@@ -340,7 +272,7 @@ from langchain_nvidia_ai_endpoints import ChatNVIDIA
 prompt = ChatPromptTemplate.from_messages(
     [("system", "You are a helpful AI assistant named Fred."), ("user", "{input}")]
 )
-chain = prompt | ChatNVIDIA(model="nvidia/nemotron-3-ultra-550b-a55b") | StrOutputParser()
+chain = prompt | ChatNVIDIA(model="nvidia/nemotron-3.5-super-vl-120b-a12b", max_completion_tokens=8192) | StrOutputParser()
 
 for txt in chain.stream({"input": "What's your name?"}):
     print(txt, end="")
@@ -368,7 +300,7 @@ for txt in chain.stream({"input": "How do I solve this fizz buzz problem?"}):
 
 ## Multimodal
 
-NVIDIA also supports multimodal inputs, meaning you can provide both images and text for the model to reason over. An example model supporting multimodal inputs is `nvidia/neva-22b`.
+NVIDIA also supports multimodal inputs, meaning you can provide both images and text for the model to reason over. Nemotron 3.5 Super VL accepts image inputs with model ID `nvidia/nemotron-3.5-super-vl-120b-a12b`.
 
 Below is an example use:
 
@@ -385,7 +317,7 @@ IPython.display.Image(image_content)
 ```python
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 
-llm = ChatNVIDIA(model="nvidia/neva-22b")
+llm = ChatNVIDIA(model="nvidia/nemotron-3.5-super-vl-120b-a12b", max_completion_tokens=8192)
 ```
 
 #### Passing an image as a URL
@@ -453,7 +385,7 @@ llm.invoke(f'What\'s in this image?\n<img src="{base64_with_mime_type}" />')
 
 ## Example usage within a `RunnableWithMessageHistory`
 
-Like any other integration, `ChatNVIDIA` is fine to support chat utilities like RunnableWithMessageHistory which is analogous to using `ConversationChain`. Below, we show the [LangChain `RunnableWithMessageHistory`](https://reference.langchain.com/python/langchain-core/runnables/history/RunnableWithMessageHistory) example applied to the `mistralai/mixtral-8x22b-instruct-v0.1` model.
+Like any other integration, `ChatNVIDIA` supports chat utilities such as `RunnableWithMessageHistory`. Below, we show the [LangChain `RunnableWithMessageHistory`](https://reference.langchain.com/python/langchain-core/runnables/history/RunnableWithMessageHistory) example with Nemotron 3.5 Super VL.
 
 ```python
 pip install -qU langchain
@@ -462,6 +394,7 @@ pip install -qU langchain
 ```python
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
 
 # store is a dictionary that maps session IDs to their corresponding chat histories.
 store = {}  # memory is maintained outside the chain
@@ -475,9 +408,9 @@ def get_session_history(session_id: str) -> InMemoryChatMessageHistory:
 
 
 chat = ChatNVIDIA(
-    model="nvidia/nemotron-3-ultra-550b-a55b",
+    model="nvidia/nemotron-3.5-super-vl-120b-a12b",
     temperature=0.1,
-    max_tokens=100,
+    max_completion_tokens=8192,
     top_p=1.0,
 )
 
