@@ -1,7 +1,7 @@
 ---
 title: Azure Terraform variables reference
 sidebarTitle: Variables
-description: Complete reference of Terraform variables for LangSmith self-hosted on Azure AKS.
+description: Reference of the main Terraform variables for LangSmith self-hosted on Azure AKS.
 ---
 
 Reference for the input variables you set in the [Azure Terraform module](https://github.com/langchain-ai/terraform/tree/main/modules/azure). Use it while filling in `terraform.tfvars` for the first time or tuning an existing deployment. For naming overrides and other advanced inputs not listed here, refer to [`infra/variables.tf`](https://github.com/langchain-ai/terraform/blob/main/modules/azure/infra/variables.tf).
@@ -19,9 +19,12 @@ For the end-to-end install, refer to the [deploy guide](/langsmith/self-host-ter
 |---|---|---|---|
 | `subscription_id` | none | yes | Azure subscription ID (GUID) for the deployment. Get it with `az account show --query id -o tsv`. |
 | `location` | `eastus` | no | Azure region for the deployment. |
-| `azure_environment` | `public` | no | Azure cloud: `public` (commercial Azure) or `usgovernment` (Azure Government). Sets the provider environment and the DNS and Blob endpoint names that differ between the two clouds. Overrides `ARM_ENVIRONMENT`. |
-| `name_prefix` | `""` | no | Name of this deployment, appended to every resource name and used as the default `environment` tag. Write it without a hyphen: `prod` gives `langsmith-rg-prod`. Lowercase letters and digits, separated by single hyphens. Empty means no suffix. |
+| `azure_environment` | `public` | no | Azure cloud: `public` (commercial Azure) or `usgovernment` (Azure Government). Sets the provider environment and the DNS and Blob endpoint names that differ between the two clouds. Overrides `ARM_ENVIRONMENT`. Azure Government does not offer Azure Managed Redis, so `usgovernment` requires `redis_source = "in-cluster"`. |
+| `name_prefix` | `""` | no | Name of this deployment, appended to every resource name and used as the default `environment` tag. Write it without a hyphen: `prod` gives `langsmith-rg-prod`, or `ls-rg-prod` with `unique_resource_names = true`. Lowercase letters and digits, separated by single hyphens. Empty means no suffix. |
 | `unique_resource_names` | `false` | no | Use the collision-resistant naming scheme (`ls-` base plus a per-subscription hash on globally unique names). Every `terraform.tfvars` template sets `true`. Leave it `false` on an existing deployment: turning it on renames every resource, which destroys and recreates PostgreSQL and Storage and loses their data. |
+| `name_suffix_salt` | `""` | no | Rotation counter mixed into the hash on the globally unique PostgreSQL, Redis, Storage, and Key Vault names. Bump it (`"2"`, then `"3"`) when an earlier deployment still holds those names, for example a soft-deleted Key Vault. No effect when `unique_resource_names = false`. Changing it on an existing deployment renames all four, which destroys and recreates PostgreSQL and Storage and loses their data. |
+| `create_resource_group` | `true` | no | Create the resource group. Set `false` to deploy into an existing group named by `existing_resource_group_name`, so the deployer needs rights on that group only. Terraform leaves the group's tags, locks, and policy assignments unchanged, and `terraform destroy` leaves the group in place. |
+| `existing_resource_group_name` | `""` | when `!create_resource_group` | Name of the existing resource group to deploy into. |
 | `environment` | `""` | no | Value of the `environment` tag on all resources. Empty uses `name_prefix`. Set it only when the tag needs to differ from the deployment name. |
 | `owner` | `""` | no | Email or team name of the resource owner. Applied as a tag. |
 | `cost_center` | `""` | no | Cost center or billing code. Applied as a tag. |
@@ -33,6 +36,7 @@ For the end-to-end install, refer to the [deploy guide](/langsmith/self-host-ter
 | Variable | Default | Required | Description |
 |---|---|---|---|
 | `create_vnet` | `true` | no | Create a new VNet. Set `false` to bring your own VNet. |
+| `vnet_address_space` | `["10.0.0.0/17"]` | no | Address space of the VNet Terraform creates. Ignored when `create_vnet = false`. Pick a range that does not overlap any network you peer with or reach over ExpressRoute or VPN. Moving it means moving the subnet prefixes too, since their defaults sit inside `10.0.0.0/17`. Plan rejects a subnet prefix outside this space. |
 | `vnet_id` | `""` | when `!create_vnet` | Existing VNet resource ID. Any subnet Terraform creates goes in this VNet's resource group. |
 | `aks_subnet_id` | `""` | when `!create_cluster` | Existing subnet ID for the AKS cluster. Empty creates the subnet in `vnet_id`. An existing subnet must carry the `Microsoft.Storage` and `Microsoft.KeyVault` service endpoints, which plan checks. |
 | `postgres_subnet_id` | `""` | no | Existing subnet ID for the PostgreSQL server. Empty creates the subnet in `vnet_id`. An existing subnet must be delegated to `Microsoft.DBforPostgreSQL/flexibleServers` and hold no other resources. |
@@ -54,6 +58,9 @@ For the end-to-end install, refer to the [deploy guide](/langsmith/self-host-ter
 | `create_cluster` | `true` | no | Create a new AKS cluster. Set `false` to attach to an existing cluster, which also requires `create_vnet = false` and `aks_subnet_id`. `istio-addon` ingress requires `true`. |
 | `existing_cluster_name` | `""` | when `!create_cluster` | Name of the existing AKS cluster to attach to. |
 | `existing_cluster_resource_group_name` | `""` | when `!create_cluster` | Resource group that holds the existing AKS cluster. |
+| `aks_kube_auth` | `auto` | no | How Terraform's Kubernetes and Helm providers sign in to the cluster: `auto`, `entra`, or `certificate`. `auto` uses Microsoft Entra ID through kubelogin when the cluster has Entra ID integration, and the client certificate otherwise. Entra sign-in needs kubelogin on the `PATH` and an `az login` with cluster-admin rights. |
+| `install_cert_manager` | `true` | no | Install cert-manager. Set `false` when an existing cluster already runs it, because Helm does not adopt a release it does not own. `tls_certificate_source = "dns01"` requires `true`. |
+| `install_keda` | `true` | no | Install KEDA, which scales the LangSmith queue workers on Redis queue depth. Set `false` when an existing cluster already runs it. |
 | `aks_sku_tier` | `Standard` | no | AKS control plane tier: `Free` (no SLA), `Standard` (uptime SLA), or `Premium` (adds long-term Kubernetes version support). Updates in place. |
 | `aks_network_mode` | `node-subnet` | no | Azure CNI IP address mode: `overlay` or `node-subnet`. Every `terraform.tfvars` template sets `overlay`, Microsoft's recommendation, where pods take addresses from `aks_pod_cidr` and the AKS subnet holds nodes only. The default keeps existing clusters unchanged. Fixed at cluster creation. |
 | `aks_pod_cidr` | `10.244.0.0/16` | no | Pod address range in `overlay` mode; ignored in `node-subnet` mode. Must not overlap the VNet, peered or on-premises networks, or `aks_service_cidr`. Each node takes a `/24`, so a `/16` carries 256 nodes. |
@@ -112,12 +119,14 @@ For the end-to-end install, refer to the [deploy guide](/langsmith/self-host-ter
 
 | Variable | Default | Required | Description |
 |---|---|---|---|
-| `create_keyvault` | `true` | no | Create a new Key Vault. Set `false` to attach to an existing vault. Terraform then writes its secrets into that vault and ignores `keyvault_default_action`, `keyvault_allowed_ips`, and `keyvault_purge_protection`. |
+| `create_keyvault` | `true` | no | Create a new Key Vault. Set `false` to attach to an existing vault. Terraform then writes its secrets into that vault and ignores `keyvault_default_action`, `keyvault_allowed_ips`, and `keyvault_purge_protection`. By default, Terraform does not grant itself access to an existing vault, so while `keyvault_manage_secrets = true`, grant the deployer Key Vault Secrets Officer on the vault before `make apply`, or the secret writes fail with 403. |
 | `existing_keyvault_name` | `""` | when `!create_keyvault` | Name of the existing Key Vault to attach to. |
 | `existing_keyvault_resource_group_name` | `""` | when `!create_keyvault` | Resource group that holds the existing Key Vault. |
 | `keyvault_name` | `""` | no | Key Vault name. Must be globally unique, 3 to 24 characters. Empty derives the name from the naming scheme. Used only when `create_keyvault = true`. |
 | `keyvault_purge_protection` | `true` | no | Enable purge protection. Set `false` for dev/test to allow immediate name reuse after destroy. |
 | `keyvault_default_action` | `Allow` | no | Default action for the Key Vault data-plane firewall. `Allow` keeps `make apply` and `make seed-secrets` working, because both write secrets through the data plane. Production sets `Deny` and populates `keyvault_allowed_ips`. |
+| `keyvault_manage_secrets` | `true` | no | Terraform writes `postgres-admin-password` and `langsmith-license-key` into the vault. `false` writes neither, so `make apply` needs no Key Vault data-plane access, and `make seed-secrets` writes all nine secrets afterward. Set `false` when the deployer cannot hold Key Vault Secrets Officer or when `keyvault_default_action = "Deny"` blocks the apply host. Changing it to `false` after an apply deletes both secrets from the vault, so remove them from state first. |
+| `terraform_principal_type` | `null` | no | Principal type of the identity running `terraform apply`, set on its Key Vault Secrets Officer grant: `User`, `Group`, or `ServicePrincipal`. `null` lets Azure infer it. Set it when the subscription delegates role assignment writes through an ABAC condition on `principalType`, which rejects requests that omit the field: `User` for an interactive `az login`, `ServicePrincipal` for CI. |
 | `keyvault_allowed_ips` | `[]` | no | Public IPs or CIDRs allowed through the Key Vault firewall when `keyvault_default_action = "Deny"`. The AKS subnet is allowlisted automatically via the `Microsoft.KeyVault` service endpoint. |
 
 ## Ingress
@@ -150,7 +159,7 @@ For the end-to-end install, refer to the [deploy guide](/langsmith/self-host-ter
 |---|---|---|---|
 | `langsmith_namespace` | `langsmith` | no | Kubernetes namespace for LangSmith. Used to scope Workload Identity for blob storage. |
 | `langsmith_release_name` | `langsmith` | no | Helm release name. Used for Workload Identity federated credential subjects. |
-| `langsmith_domain` | `""` | no | See [DNS and TLS](#dns-and-tls). |
+| `langsmith_domain` | `""` | when `dns01` or `create_dns_zone` | See [DNS and TLS](#dns-and-tls). |
 | `langsmith_helm_chart_version` | `""` | no | Pin a chart version for reproducible deploys. The deploy script precedence is the `CHART_VERSION` environment variable, then this variable, then the pinned line default `~0.16.0` (latest `0.16.x` patch). The deploy fails on any other chart line, except that `enable_smithdb = true` requires the `0.17` line. |
 | `langsmith_admin_email` | `""` | no | Initial org admin email (`initialOrgAdminEmail` in Helm values). Set via `make setup-env`. |
 
@@ -165,7 +174,7 @@ For the end-to-end install, refer to the [deploy guide](/langsmith/self-host-ter
 | `enable_agent_builder` | `false` | no | Enable the legacy Agent Builder UI, which Fleet replaces. Requires `enable_deployments = true`. Cannot be combined with `enable_fleet`. |
 | `enable_fleet` | `false` | no | Enable Fleet, the successor to Agent Builder. Requires `enable_deployments = true` and `postgres_source = "external"`. Cannot be combined with `enable_agent_builder`. Terraform also creates a `langsmith_fleet` database and the `langsmith-fleet-postgres` Kubernetes secret, so run `make apply` before deploying. |
 | `enable_insights` | `false` | no | Enable Insights (ClickHouse-backed analytics). |
-| `enable_polly` | `false` | no | Enable Polly (AI evaluation and monitoring). Needs `enable_deployments = true`. |
+| `enable_polly` | `false` | no | Enable Polly (AI evaluation and monitoring). Polly runs on LangSmith Deployment, so set `enable_deployments = true` as well. The deploy scripts do not check this. |
 
 ## SmithDB
 
@@ -173,7 +182,7 @@ SmithDB is optional. `enable_smithdb` provisions Azure resources, so run `make a
 
 | Variable | Default | Required | Description |
 |---|---|---|---|
-| `enable_smithdb` | `false` | no | Provision SmithDB infrastructure: a dedicated PostgreSQL 18 metastore, a Blob container, Workload Identity, and Premium SSD v2 cache volumes. |
+| `enable_smithdb` | `false` | no | Provision SmithDB infrastructure: a dedicated PostgreSQL 18 metastore, a Blob container, Workload Identity, and Premium SSD v2 cache volumes. Requires a non-empty `availability_zones`, because Premium SSD v2 attaches only to zonal VMs in most regions. |
 | `smithdb_ingestion_enabled` | `false` | no | Enable LangSmith writes to SmithDB once the infrastructure is healthy. Requires `enable_smithdb = true`. |
 | `smithdb_migration_enabled` | `false` | no | Enable the ClickHouse-to-SmithDB migration job. Requires `smithdb_ingestion_enabled = true`. |
 | `smithdb_query_enabled` | `false` | no | Enable SmithDB-backed queries. Requires `smithdb_ingestion_enabled = true`. |
@@ -204,7 +213,7 @@ SmithDB is optional. `enable_smithdb` provisions Azure resources, so run `make a
 
 ## Sensitive variables (set with `setup-env.sh`)
 
-`make setup-env` writes `postgres_admin_password`, `langsmith_license_key`, and `langsmith_admin_email` to `secrets.auto.tfvars`. `make apply` stores the license key and the PostgreSQL password in Azure Key Vault. Never set these inline in `terraform.tfvars`.
+`make setup-env` writes `postgres_admin_password`, `langsmith_license_key`, and `langsmith_admin_email` to `secrets.auto.tfvars`. `make apply` stores the license key and the PostgreSQL password in Azure Key Vault. With `keyvault_manage_secrets = false`, `make seed-secrets` stores them instead. Never set these inline in `terraform.tfvars`.
 
 The [PostgreSQL](#postgresql) and [LangSmith application](#langsmith-application) sections document `postgres_admin_password` and `langsmith_admin_email`. This table lists only the sensitive variable that does not appear elsewhere in this reference.
 

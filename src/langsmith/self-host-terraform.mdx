@@ -45,7 +45,7 @@ You also need:
 
 - A LangSmith license key. [Contact our sales team](https://www.langchain.com/contact-sales) to request one.
 - Permissions in the target cloud account to create VPC or VNet networking, a managed Kubernetes cluster, managed databases, object storage, secrets, and IAM roles.
-- A registered domain (or subdomain) for the LangSmith UI endpoint. Set `langsmith_domain` on GCP. AWS can serve LangSmith on the load balancer hostname, and Azure on a `dns_label` hostname, without one.
+- A registered domain (or subdomain) for the LangSmith UI endpoint. GCP requires one, set as `langsmith_domain`. It is optional on AWS, which can serve LangSmith on the load balancer hostname, and on Azure, which can serve it on a `dns_label` hostname with any ingress controller except AGIC.
 
 ## Deployment tiers
 
@@ -57,7 +57,7 @@ Each tier is a combination of settings in `terraform.tfvars`: `postgres_source`,
 | `production` | Cloud-managed (RDS, Cloud SQL, Azure Database for PostgreSQL) | Cloud-managed (ElastiCache, Memorystore, Azure Managed Redis) | [LangChain Managed ClickHouse](/langsmith/langsmith-managed-clickhouse) | Persistent, scalable production |
 | `production-large` | Cloud-managed, larger instance class | Cloud-managed, larger instance class | LangChain Managed ClickHouse | High-throughput production |
 
-On AWS and Azure, start from the `terraform.tfvars.minimum`, `terraform.tfvars.dev`, or `terraform.tfvars.production` template. On GCP, start from `terraform.tfvars.example` or `terraform.tfvars.minimum`.
+On AWS and Azure, start from the `terraform.tfvars.minimum`, `terraform.tfvars.dev`, or `terraform.tfvars.production` template. On GCP, start from `terraform.tfvars.example` or `terraform.tfvars.minimum`. The templates do not map one-to-one to these tiers: every template keeps ClickHouse in-cluster, and the dev templates use managed PostgreSQL and Redis. After copying one, set the three `*_source` values and `sizing_profile` to match the tier you want.
 
 <Warning>
 Use in-cluster ClickHouse for development and POC, not production. Production deployments must use [LangChain Managed ClickHouse](/langsmith/langsmith-managed-clickhouse) or a self-managed external ClickHouse cluster. Blob storage is always required because trace payloads must not live in ClickHouse.
@@ -69,12 +69,12 @@ Use in-cluster ClickHouse for development and POC, not production. Production de
 - **Compute:** Managed Kubernetes (EKS, AKS, or GKE) with autoscaling node pools sized per tier.
 - **Data plane:** Managed PostgreSQL, managed Redis or cache, and a blob storage bucket for trace payloads.
 - **Secrets:** Each module keeps application secrets in the cloud's secret store, then writes them into Kubernetes its own way. On AWS, [External Secrets Operator](https://external-secrets.io/) syncs them from SSM Parameter Store. On GCP, `setup-env.sh` stores them in Secret Manager, Terraform writes the Kubernetes Secrets, and `make deploy` builds the `langsmith-config` Secret. On Azure, `secrets.auto.tfvars` holds the Terraform inputs, Key Vault holds the application secrets, and `make k8s-secrets` copies them into the `langsmith-config-secret` Kubernetes Secret.
-- **Ingress:** Envoy Gateway (Gateway API) is the default on every provider. On AWS, an ALB forwards to it, and NGINX, Istio, or ALB Ingress alone are options. On Azure, and NGINX, self-managed Istio, the AKS Istio add-on, and Application Gateway Ingress Controller (AGIC) are options.
-- **Optional hardening:** On AWS, AWS Network Firewall with FQDN egress allowlists, WAFv2, CloudTrail, and a private EKS API endpoint with SSM bastion access. On Azure, a WAF policy (OWASP 3.2 plus bot protection, attached to Application Gateway with AGIC), Azure Monitor diagnostic settings, a jump VM, and Private Endpoints for Blob Storage.
+- **Ingress:** Envoy Gateway (Gateway API) is the default on every provider. On AWS, an ALB forwards to it, and NGINX, Istio, or ALB Ingress alone are options. On Azure, NGINX, self-managed Istio, the AKS Istio add-on, and Application Gateway Ingress Controller (AGIC) are options.
+- **Optional hardening:** On AWS, AWS Network Firewall with FQDN egress allowlists, WAFv2, CloudTrail, and a private EKS API endpoint with SSM bastion access. On Azure, a WAF policy (OWASP 3.2 plus bot protection, attached to Application Gateway with AGIC), Azure Monitor diagnostic settings, a jump VM, and private endpoints for Blob Storage.
 
 ## Enterprise feature toggles
 
-Each module exposes flags for the optional LangSmith add-ons. Toggle each in the `tfvars` file before running `make apply`.
+Each module exposes flags for the optional LangSmith add-ons. Toggle each in `terraform.tfvars`. Each module's `make deploy` reads the flags and generates the matching Helm values.
 
 - **[LangSmith Deployment](/langsmith/deploy-self-hosted-full-platform)** (`enable_deployments`): Agent Server plus the host-backend, listener, and operator that run and manage deployed agents.
 - **[Fleet](/langsmith/fleet)** (`enable_fleet`): The agent-building product, formerly Agent Builder, deployed as a standalone service.
@@ -82,7 +82,7 @@ Each module exposes flags for the optional LangSmith add-ons. Toggle each in the
 - **Polly** (`enable_polly`): AI evaluation and monitoring.
 
 <Note>
-On Azure, the Helm deploy scripts read these flags from `terraform.tfvars`, so `make init-values && make deploy` applies them. `enable_fleet` also creates Terraform resources, so run `make apply` first. There, Fleet requires `enable_deployments = true` and `postgres_source = "external"`, and cannot be combined with the legacy `enable_agent_builder` flag. On AWS, `enable_agent_builder = true` fails validation; use `enable_fleet`.
+On Azure, run `make init-values && make deploy` to apply a flag change. `enable_fleet` also creates Terraform resources, so run `make apply` first. On Azure, Fleet requires `enable_deployments = true` and `postgres_source = "external"`, and cannot be combined with the legacy `enable_agent_builder` flag. On AWS, `enable_agent_builder = true` fails validation; use `enable_fleet`.
 </Note>
 
 ## Next steps

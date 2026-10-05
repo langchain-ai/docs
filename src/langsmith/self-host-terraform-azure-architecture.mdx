@@ -103,7 +103,7 @@ ls-vnet-<name_prefix>
 └── subnet-redis          (Azure Managed Redis)
 ```
 
-Terraform also creates `subnet-postgres` when `enable_smithdb = true`, `subnet-bastion` when `create_bastion = true`, and `subnet-agic` when `ingress_controller = "agic"`. Network security groups attach to the subnets only when `enable_subnet_nsgs = true`.
+Terraform also creates `subnet-postgres` when `enable_smithdb = true`, `subnet-bastion` when `create_bastion = true`, and `subnet-agic` when `ingress_controller = "agic"`. It creates the bastion and AGIC subnets only in a VNet it creates; with `create_vnet = false`, supply `bastion_subnet_id` and `agic_subnet_id`. Network security groups attach to the subnets only when `enable_subnet_nsgs = true`.
 
 AKS nodes get no public IPs. By default, they egress through an outbound public IP on the AKS-managed load balancer. To send egress through your own firewall or a NAT gateway, supply the AKS subnet and set `aks_outbound_type` (see [Networking variables](/langsmith/self-host-terraform-azure-variables#networking)). The module README's "Egress through your network" section lists the destinations the egress path must allow. The AKS API server stays publicly reachable unless you set `aks_authorized_ip_ranges`. Postgres and Redis have no public endpoints; both are accessible only from within the VNet via private DNS resolution.
 
@@ -291,7 +291,7 @@ graph TB
     style stage2 fill:none,stroke:#40668D,stroke-width:1px
 ```
 
-`make deploy-all` runs every step after `make setup-env` in this order:
+The secrets flow runs in this order. `make deploy-all` runs steps 2 through 5, and `make apply` runs `make setup-env` first when `secrets.auto.tfvars` is missing:
 
 1. `make setup-env` writes `secrets.auto.tfvars`, which is gitignored and read by Terraform automatically. It prompts for the PostgreSQL admin password, the license key, and the initial org admin email. Set `LANGSMITH_PG_PASSWORD`, `LANGSMITH_LICENSE_KEY`, and `LANGSMITH_ADMIN_EMAIL` to skip the prompts. It never writes to Key Vault.
 1. `make apply` creates Key Vault. Terraform writes only `postgres-admin-password` and `langsmith-license-key` to it, and only when `keyvault_manage_secrets = true` (the default). The `k8s-bootstrap` module creates `langsmith-license`, plus `langsmith-postgres-secret` and `langsmith-redis-secret` for external Postgres and Redis.
