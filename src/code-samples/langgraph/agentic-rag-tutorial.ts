@@ -73,7 +73,7 @@ import { MessagesAnnotation } from "@langchain/langgraph";
 
 const State = MessagesAnnotation;
 const model = new ChatOpenAI({
-  model: "gpt-5.4-mini",
+  model: "gpt-6-luna",
   temperature: 0,
 }).bindTools(tools);
 
@@ -106,12 +106,12 @@ const gradeDocumentsSchema = z.object({
 });
 
 const gradeModel = new ChatOpenAI({
-  model: "gpt-5.4-mini",
+  model: "gpt-6-luna",
   temperature: 0,
 }).withStructuredOutput(gradeDocumentsSchema);
 // KEEP MODEL
 const gradeFallbackModel = new ChatOpenAI({
-  model: "gpt-5.4-mini",
+  model: "gpt-6-luna",
   temperature: 0,
 });
 
