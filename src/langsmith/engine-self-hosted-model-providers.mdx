@@ -1,0 +1,294 @@
+---
+title: Configure model providers for Engine on self-hosted
+sidebarTitle: Self-hosted model providers
+description: Choose the model providers LangSmith Engine uses on a self-hosted LangSmith instance, authenticate with credentials or cloud identity, and keep model traffic on private networking.
+---
+
+<Info>
+Running Engine on your own model providers requires LangSmith Helm chart `0.17.0` or later. Earlier chart versions run Engine only on [LangSmith Intelligence](/langsmith/engine-self-hosted#langsmith-intelligence).
+</Info>
+
+On self-hosted LangSmith, an Organization Admin chooses where [LangSmith Engine](/langsmith/engine) runs its model calls: on LangSmith Intelligence (LSI), on your own model providers, or both. Running Engine on your own providers keeps prompts and responses under your agreements with those providers. This page covers how to select providers, authenticate to them, and connect to them or to LSI over private networking. For a comparison of the two options, see [Choose how Engine runs its models](/langsmith/engine-self-hosted#choose-how-engine-runs-its-models). Complete [Install Engine](/langsmith/engine-self-hosted#install-engine) first.
+
+## Use your own model providers
+
+Engine calls your providers directly from your cluster. Prompts and responses go only to your provider, under your agreement with that provider. LangChain does not receive them.
+
+Engine supports Anthropic, OpenAI, Amazon Bedrock, Google Vertex AI, and Azure AI Foundry. It uses a mix of models from the providers you select, so for the best results, add credentials for every provider you have access to.
+
+Enable access to Anthropic's Claude models and OpenAI's GPT models in your provider accounts, where your provider offers them. On Azure, use an Azure AI Foundry resource. To confirm that Engine can reach the models it uses, run [**Test connection**](#test-a-provider).
+
+## Choose model providers
+
+Under **Settings > Engine > Model providers**, an Organization Admin selects LangSmith Intelligence, one or more of your own providers, or both. Credentials are saved as organization secrets and apply to every workspace in the organization.
+
+LangSmith Intelligence appears only when your installation's `engine.intelligenceBaseUrl` serves Engine's models.
+
+When LangSmith Intelligence is available and selected, it takes priority over your selected providers. Leave it unselected to keep inference on your own providers.
+
+Engine selects models from the providers you enable. Model requirements follow the Engine image tag in `images.engineInsightsAgentImage.tag`, not the Helm chart version. For these images, grant access to the following models in each selected provider:
+
+| **Provider** | **Engine `0.17.29rc7`** | **Engine `0.17.29rc11`** |
+| --- | --- | --- |
+| Anthropic | `claude-opus-5` | `claude-opus-5-5` |
+| Amazon Bedrock | `anthropic.claude-opus-5` | `anthropic.claude-opus-5-5` |
+| Google Vertex AI | `claude-opus-5` | `claude-opus-5-5` |
+| Azure AI Foundry | `claude-opus-5`, `gpt-5.6-sol` | `claude-opus-5-5`, `gpt-5.6-sol` |
+| OpenAI | `gpt-5.6-sol` | `gpt-5.6-sol` |
+
+To use your own providers:
+
+<Steps>
+  <Step title="Add credentials">
+    Click **Add credentials** next to the provider and enter:
+
+    <Tabs>
+      <Tab title="Anthropic">
+        An Anthropic API key.
+      </Tab>
+      <Tab title="Amazon Bedrock">
+        An AWS access key ID and secret access key, with an optional session token, or a Bedrock API key (bearer token). Optionally, an AWS region.
+
+        Engine uses the Bedrock Mantle API. Enable access to the listed Claude model in the selected AWS account and region. Grant the calling identity Mantle inference and model-subscription permissions. See [AmazonBedrockMantleInferenceAccess](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AmazonBedrockMantleInferenceAccess.html) for the required actions.
+
+        If no region is saved, Engine uses `us-east-1`, including with workload identity. It does not inherit the EKS cluster's region.
+
+        To use the cloud identity of Engine's pods instead, see [Use cloud identity for your model providers](#use-cloud-identity-for-your-model-providers).
+      </Tab>
+      <Tab title="Google Vertex AI">
+        A service account key in JSON format. Engine uses the JSON's `project_id` as the inference project and calls the `global` location.
+
+        Enable the required Claude model through [Model Garden](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/partner-models/use-partner-models) in that project. Grant the service account `roles/aiplatform.user` in the same project.
+
+        To use the cloud identity of Engine's pods instead, see [Use cloud identity for your model providers](#use-cloud-identity-for-your-model-providers).
+      </Tab>
+      <Tab title="Azure AI Foundry">
+        Confirm that your resource region has access and quota for both models listed for your Engine image. To configure Azure:
+
+        1. Create both model deployments in the same Azure AI Foundry resource. Use the model IDs in the table as the exact deployment names. Engine uses Claude as its primary model and GPT as its fallback. Custom deployment aliases are not supported for either model family.
+
+           Follow the [Claude deployment instructions](https://platform.claude.com/docs/en/build-with-claude/claude-in-microsoft-foundry) and check [Azure OpenAI model availability](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/responses). Accept the Azure Marketplace terms when creating your first Claude deployment.
+        1. Enter an API key and the resource name, not its full URL. To use the cloud identity of Engine's pods instead of an API key, see [Use cloud identity for your model providers](#use-cloud-identity-for-your-model-providers).
+        1. Run [**Test connection**](#test-a-provider) and confirm that both Claude and GPT requests succeed, including when selecting additional providers. After saving, [start an Engine analysis](/langsmith/engine-self-hosted#verify-the-installation) to verify the complete setup.
+      </Tab>
+      <Tab title="OpenAI">
+        An OpenAI API key, and optionally your OpenAI organization ID.
+      </Tab>
+    </Tabs>
+
+    A provider with complete credentials shows as configured. To change them later, click the key icon next to the provider.
+  </Step>
+  <Step title="Test the provider" id="test-a-provider">
+    Click **Test connection**. Engine sends a small request to each model it uses on that provider, with the saved credentials or configured cloud identity. It shows whether each request succeeded and, if not, why.
+  </Step>
+  <Step title="Select providers and save">
+    Select the providers Engine may use, then save.
+  </Step>
+</Steps>
+
+If Engine runs fail after you save:
+
+- **No provider selected:** Engine does not start runs until at least one provider is selected and saved.
+- **Rejected credentials:** **Test connection** reports which provider rejected them. Update the credentials and test again.
+- **Model not available:** enable the model in your provider account, then test again.
+
+## Use cloud identity for your model providers
+
+Instead of saving credentials, Amazon Bedrock, Google Vertex AI, and Azure AI Foundry can authenticate with the cloud identity of Engine's pods instead of credentials saved in LangSmith. List those providers in `engine.workloadIdentityProviders`. Configure identity for both the API server and queue of the shared Engine and Insights deployment:
+
+<Tabs>
+  <Tab title="Amazon EKS">
+    Configure IAM roles for service accounts (IRSA). Trust the namespace and service account of both Engine workloads, and grant the role access to the Bedrock models Engine uses.
+
+    ```yaml
+    engine:
+      workloadIdentityProviders:
+        - bedrock
+
+    engineInsightsAgent:
+      apiServer:
+        serviceAccount:
+          annotations:
+            eks.amazonaws.com/role-arn: "arn:aws:iam::<account-id>:role/<engine-model-access-role>"
+      queue:
+        serviceAccount:
+          annotations:
+            eks.amazonaws.com/role-arn: "arn:aws:iam::<account-id>:role/<engine-model-access-role>"
+    ```
+  </Tab>
+  <Tab title="Google GKE">
+    Enable Workload Identity Federation for GKE on the cluster and the node pools that run Engine. Grant each Engine Kubernetes service account `roles/iam.workloadIdentityUser` on the Google service account. Bind each member as `serviceAccount:<cluster-project-id>.svc.id.goog[<namespace>/<kubernetes-service-account>]`.
+
+    Grant the Google service account Vertex AI inference permissions, such as `roles/aiplatform.user`, in the project that hosts the models. Enable the required models in that project.
+
+    ```yaml
+    engine:
+      workloadIdentityProviders:
+        - vertex
+
+    engineInsightsAgent:
+      apiServer:
+        serviceAccount:
+          annotations:
+            iam.gke.io/gcp-service-account: "<service-account>@<project-id>.iam.gserviceaccount.com"
+        deployment:
+          extraEnv:
+            - name: GOOGLE_CLOUD_PROJECT
+              value: "<vertex-project-id>"
+      queue:
+        serviceAccount:
+          annotations:
+            iam.gke.io/gcp-service-account: "<service-account>@<project-id>.iam.gserviceaccount.com"
+        deployment:
+          extraEnv:
+            - name: GOOGLE_CLOUD_PROJECT
+              value: "<vertex-project-id>"
+    ```
+
+    Engine uses Application Default Credentials (ADC) to resolve the identity and project. Set `GOOGLE_CLOUD_PROJECT` on both workloads to the intended Vertex AI project. Engine currently uses the `global` Vertex AI location, so the required models must be available there.
+  </Tab>
+  <Tab title="Azure AKS">
+    Enable the AKS OIDC issuer and Microsoft Entra Workload ID. Create a federated identity credential for each Engine Kubernetes service account on your managed identity. Use the cluster's OIDC issuer, audience `api://AzureADTokenExchange`, and subject `system:serviceaccount:<namespace>:<kubernetes-service-account>` for each.
+
+    Grant the identity the Cognitive Services User role, scoped to the Azure AI Foundry resource that hosts Engine's models. An Azure OpenAI role alone does not establish access to Claude models.
+
+    ```yaml
+    engine:
+      workloadIdentityProviders:
+        - azure
+
+    engineInsightsAgent:
+      apiServer:
+        serviceAccount:
+          annotations:
+            azure.workload.identity/client-id: "<managed-identity-client-id>"
+        deployment:
+          labels:
+            azure.workload.identity/use: "true"
+      queue:
+        serviceAccount:
+          annotations:
+            azure.workload.identity/client-id: "<managed-identity-client-id>"
+        deployment:
+          labels:
+            azure.workload.identity/use: "true"
+    ```
+
+    Both workloads need the service account annotation and pod label. Save the Foundry resource name under **Settings > Engine > Model providers**.
+  </Tab>
+</Tabs>
+
+<Warning>
+A provider listed in `engine.workloadIdentityProviders` counts as configured without saved credentials, so any Organization Admin can select it. Scope the identity to the models Engine uses.
+</Warning>
+
+Saved credentials take precedence over cloud identity. When switching a provider, apply the cloud identity configuration before removing its saved credentials. Then remove only that provider's saved API keys or service account JSON under **Settings > Engine > Model providers**. For Bedrock, also remove any saved access key, secret access key, and session token. Keep the Azure AI Foundry resource name and any Bedrock region setting, then [test the provider](#test-a-provider) again.
+
+## Connect privately
+
+Engine works over public egress. To keep its traffic on private networking, connect to LangSmith Intelligence with AWS PrivateLink, or connect to your own model providers through your cloud's private endpoints.
+
+### Connect with AWS PrivateLink
+
+The LangSmith Intelligence gateway, `beacon.aws.langchain.com`, routes requests to Amazon Bedrock in LangChain's AWS environment.
+
+Before configuring PrivateLink, complete [Install Engine](/langsmith/engine-self-hosted#install-engine), including its Helm and egress configuration.
+
+[AWS PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/) routes Engine traffic from your VPC to LSI without exposing that traffic to the public internet. The LSI endpoint service is hosted in `us-east-2`, and AWS supports access from VPCs in other regions.
+
+Before you begin, collect your AWS account ID, VPC ID, private subnet IDs, and a security group for the interface endpoint. Configure that endpoint security group to allow inbound TCP traffic on port 443 only from the security group attached to the nodes or workloads that run Engine, or from the smallest private CIDR that contains them. Do not allow `0.0.0.0/0`.
+
+To connect your VPC to LSI:
+
+<Steps>
+  <Step title="Request access">
+    Contact your account representative or [sales@langchain.dev](mailto:sales@langchain.dev) with your AWS account ID. LangChain adds your account to the endpoint service's allowed principals list.
+  </Step>
+
+  <Step title="Create the interface VPC endpoint">
+    Configure the AWS provider for the region that contains your VPC. Keep `service_region` set to `us-east-2`, including when your VPC is in another region. Select one private subnet per availability zone.
+
+    <Note>
+    The `service_region` argument requires HashiCorp AWS provider `5.82.0` or later.
+    </Note>
+
+    ```hcl
+    resource "aws_vpc_endpoint" "langsmith_intelligence" {
+      vpc_id              = var.vpc_id
+      service_name        = "com.amazonaws.vpce.us-east-2.vpce-svc-054f37092752bff6b"
+      service_region      = "us-east-2"
+      vpc_endpoint_type   = "Interface"
+      subnet_ids          = var.private_subnet_ids
+      security_group_ids  = [var.security_group_id]
+      private_dns_enabled = false
+    }
+    ```
+  </Step>
+
+  <Step title="Wait for LangChain to accept the connection">
+    The endpoint status changes from `pendingAcceptance` to `available` after LangChain accepts the connection. Allow a few minutes for the change to propagate before testing connectivity.
+  </Step>
+
+  <Step title="Route the LSI hostname to the endpoint">
+    Enable DNS resolution and DNS hostnames for your VPC. Then, create a Route 53 private hosted zone and alias record so `beacon.aws.langchain.com` resolves to the VPC endpoint inside your VPC. Keep this hostname unchanged so TLS certificate validation succeeds. The private hosted zone also prevents fallback to public DNS when the endpoint is unavailable.
+
+    ```hcl
+    resource "aws_route53_zone" "langsmith_intelligence" {
+      name = "beacon.aws.langchain.com"
+
+      vpc {
+        vpc_id = var.vpc_id
+      }
+    }
+
+    resource "aws_route53_record" "langsmith_intelligence" {
+      zone_id = aws_route53_zone.langsmith_intelligence.zone_id
+      name    = "beacon.aws.langchain.com"
+      type    = "A"
+
+      alias {
+        name                   = aws_vpc_endpoint.langsmith_intelligence.dns_entry[0].dns_name
+        zone_id                = aws_vpc_endpoint.langsmith_intelligence.dns_entry[0].hosted_zone_id
+        evaluate_target_health = true
+      }
+    }
+    ```
+
+    If workloads use a corporate DNS resolver instead of the Amazon-provided resolver, configure conditional forwarding to Route 53 Resolver or create an equivalent private DNS override for `beacon.aws.langchain.com` that points to the endpoint DNS name.
+  </Step>
+
+  <Step title="Verify private connectivity">
+    From a node or container that runs Engine, resolve the gateway hostname:
+
+    ```bash
+    getent ahostsv4 beacon.aws.langchain.com
+    ```
+
+    Confirm that the result contains the private IP addresses assigned to the endpoint network interfaces. Then start an analysis and confirm that it completes successfully. If the analysis does not complete, review the Engine installation and egress configuration.
+  </Step>
+</Steps>
+
+### Connect to your providers privately
+
+Engine calls each provider's standard API hostname from the `standalone-insights` pods. To keep that traffic off the public internet, set up your cloud's private connection to the provider so the same hostname resolves to private addresses inside your network:
+
+| **Provider** | **Hostname Engine calls** | **Private connection** |
+| --- | --- | --- |
+| Amazon Bedrock | `bedrock-mantle.<region>.api.aws` | An interface VPC endpoint for `com.amazonaws.<region>.bedrock-mantle`, with private DNS enabled or a Route 53 private hosted zone for the hostname |
+| Google Vertex AI | `<region>-aiplatform.googleapis.com`, or `aiplatform.googleapis.com` for the global region | Private Service Connect for Google APIs, with private DNS for `googleapis.com` |
+| Azure AI Foundry | `<resource>.openai.azure.com` and `<resource>.services.ai.azure.com` | A private endpoint for the Foundry resource, with its private DNS zones |
+| Anthropic, OpenAI | `api.anthropic.com`, `api.openai.com` | Not available. These providers need public egress. |
+
+Engine does not accept custom endpoint URLs, so private connectivity works through DNS: the standard hostname must resolve to your private endpoint from the Engine pods.
+
+If Engine authenticates with [cloud identity](#use-cloud-identity-for-your-model-providers), the pods also need to reach your cloud's token service, such as an interface VPC endpoint for AWS STS on AWS.
+
+With saved Vertex AI service account JSON, also allow HTTPS to `oauth2.googleapis.com` for token exchange, alongside `aiplatform.googleapis.com` for inference.
+
+Usage reporting to LangSmith Intelligence is a separate connection. On AWS, `https://beacon.aws.langchain.com/intelligence` records usage and supports [AWS PrivateLink](#connect-with-aws-privatelink), so an installation can run Engine on Bedrock and report usage without public egress. The default `https://beacon.langchain.com/intelligence` needs public egress.
+
+## See also
+
+- [Engine on self-hosted](/langsmith/engine-self-hosted): Install Engine and choose how it runs its models.
+- [Engine security](/langsmith/engine-security#model-subprocessors): Model subprocessor controls.
+- [Configure egress](/langsmith/self-host-egress): Other outbound traffic from self-hosted LangSmith.
