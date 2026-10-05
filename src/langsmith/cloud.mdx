@@ -136,7 +136,7 @@ Some additional AWS services we use include:
 ## Allowlisting IP addresses
 
 ### Egress from LangChain SaaS
-All traffic leaving LangSmith services will be routed through a NAT gateway. All traffic will appear to originate from the following IP addresses:
+Internet-bound traffic leaving LangSmith services is routed through a NAT gateway and originates from the following IP addresses. Vertex AI requests can use a different path, as described in [Allow Vertex AI access](#allow-vertex-ai-access).
 
 <Note>
 Agents on [LangSmith Deployment](/langsmith/deployment) egress from a [separate IP list](/langsmith/cloud-platform-features#allowlist-ip-addresses).
@@ -154,6 +154,21 @@ Agents on [LangSmith Deployment](/langsmith/deployment) egress from a [separate 
 | 104.198.162.55 | 35.204.48.32   | 34.40.198.11   |                |
 
 It may be helpful to allowlist these IP addresses if connecting to your own AzureOpenAI service or other endpoints that may be required by the Playground or Online Evaluation.
+
+#### Allow Vertex AI access
+
+For Vertex AI connections from LangSmith SaaS on GCP, public egress IP allowlisting alone might not satisfy VPC Service Controls. Private Google Access keeps Google API traffic within Google's network instead of using the NAT gateway's public IP addresses. See Google's [source IP access guidance](https://docs.cloud.google.com/vpc-service-controls/docs/access-level-design#granting_access_based_on_source_ip).
+
+Configure a VPC Service Controls ingress rule for the source project corresponding to your LangSmith SaaS region:
+
+| LangSmith SaaS region | Source GCP project ID | Source project number for ingress rules |
+| -------------------- | --------------------- | -------------------------------------- |
+| US (`smith.langchain.com`) | `langchain-prod` | `projects/83409505503` |
+| APAC (`apac.smith.langchain.com`) | `langchain-apac-prod` | `projects/774533884377` |
+
+These source projects are specifically for Vertex AI connections from the US and APAC GCP SaaS regions. Use the numeric `projects/PROJECT_NUMBER` value in the ingress rule, not the project ID. Restrict the rule to the calling identity, your destination projects, and the required Vertex AI operations. The connection still requires the appropriate IAM permissions. See Google's [ingress rule configuration](https://docs.cloud.google.com/vpc-service-controls/docs/ingress-egress-rules).
+
+Select the source project by your LangSmith SaaS region, not the Vertex AI model's region. Pod or node scaling does not change the source project number. Moving the source workload or VPC network to another project can change the required allowlist.
 
 ### Ingress into LangChain SaaS
 The LangChain endpoints map to the following static IP addresses for traffic that terminates on our **GCP load balancers** (US/EU/APAC) or, for **AWS US**, on the **Network Load Balancer** in `us-east-2` (API and gateway hostnames):
