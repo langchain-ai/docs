@@ -106,7 +106,7 @@ retriever_tool.invoke({"query": "types of reward hacking"})
 from langchain.chat_models import init_chat_model
 from langgraph.graph import MessagesState
 
-response_model = init_chat_model("openai:gpt-5.4-mini", temperature=0)
+response_model = init_chat_model("openai:gpt-6-luna", temperature=0)
 
 
 def generate_query_or_respond(state: MessagesState):
@@ -164,7 +164,7 @@ class GradeDocuments(BaseModel):
     )
 
 
-grader_model = init_chat_model("openai:gpt-5.4-mini", temperature=0)
+grader_model = init_chat_model("openai:gpt-6-luna", temperature=0)
 
 
 def grade_documents(
