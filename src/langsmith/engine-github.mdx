@@ -27,7 +27,7 @@ For fixes, the repository must permit Engine's branches and draft PRs. Review [R
 
 To connect repositories to an existing Engine project:
 
-1. Open the tracing project or agent environment and go to its **Engine** tab and select **Configure Engine**.
+1. Open the tracing project or agent environment. In its **Engine** tab, select **Configure Engine**.
 2. Under **Code repository**, select **Connect GitHub**. If your workspace already has a connection, the repository picker appears instead.
 3. In GitHub, authorize the App configured for your LangSmith deployment. Install it on the organization or account that owns your code and select the repositories it can access. If the App is already installed, LangSmith may ask you to select an existing installation.
 4. Complete any GitHub approval prompts and return to LangSmith. Authorizing the App and installing it are separate steps: authorization identifies your GitHub account; installation grants the App access to repositories.
@@ -35,8 +35,6 @@ To connect repositories to an existing Engine project:
 6. Repeat for additional repositories. Each repository can have its own branch and subfolder.
 
 You can also connect repositories while first setting up Engine, under **Connect your agent's code repository**.
-
-If installation requires administrator approval, start **Connect GitHub** again after approval. Installing the App directly from GitHub also requires completing **Connect GitHub** in LangSmith. If an expected installation is missing, complete your GitHub organization's SSO authorization and try again.
 
 ### Choose the branch and subfolder
 
@@ -90,7 +88,8 @@ Engine does not fetch Git LFS file contents or initialize Git submodules.
 | GitHub is not configured, or the connection fails before GitHub opens | On self-hosted LangSmith, ask your operator to check the [deployment configuration](#configure-langsmith). |
 | Your organization is not an installation target | Confirm your GitHub role, organization approval policy, and the App's visibility. A private App can only be installed on its owning account. |
 | Your managed-user account is not an installation target | Use an organization-owned repository. Personal managed-user repositories cannot use this integration. |
-| A repository is missing | Check which GitHub account you authorized, the App's selected repositories, and whether the installation was connected to this LangSmith workspace. |
+| The App is installed, but LangSmith has no connection | Start **Connect GitHub** in LangSmith, including after an administrator approves installation or you install directly from GitHub. On self-hosted LangSmith, ask your operator to [check setup](#troubleshoot-setup) if authorization does not finish. |
+| An installation or repository is missing | Check which GitHub account you authorized, the App's selected repositories, and whether the installation was connected to this LangSmith workspace. Complete your organization's SSO authorization when prompted. |
 | Authorization succeeds, but the repository cannot be read | Check the App's repository access. On self-hosted LangSmith, also ask your operator to check [GitHub API and sandbox network access](#allow-network-access). Browser sign-in does not test those connections. |
 | A fix cannot be pushed | Check rules that apply to the new fix branch, including signed-commit requirements, branch restrictions, and pre-receive hooks. See [Repository policies](#repository-policies). |
 
@@ -98,12 +97,12 @@ Engine does not fetch Git LFS file contents or initialize Git submodules.
 
 ## Self-hosted configuration
 
-An operator registers a GitHub App on your GitHub instance and configures LangSmith to use it. Complete this setup once per LangSmith installation, then [connect repositories](#connect-repositories) in each workspace that needs access.
+An operator registers a GitHub App, configures LangSmith, and verifies the connection. Complete this setup once per LangSmith installation. Workspace users then [connect repositories](#connect-repositories) with that App.
 
 This configuration is separate from GitHub setup for LangSmith Deployments builds and previews.
 
 <Note>
-Use LangSmith v0.17.29 or later with Helm chart version 0.17.0 or later. Use the application images supplied with your chart release.
+Use Helm chart version 0.17.0 or later and the LangSmith application images supplied with that chart release.
 </Note>
 
 ### Before you start
@@ -122,8 +121,6 @@ The standard Helm chart exposes the GitHub callback and webhook routes under `/a
 For Engine's GitHub integration without LangSmith Deployments, contact LangChain support about routing before proceeding.
 </Warning>
 
-{/* Release check: confirm whether the release retains the Deployments routing prerequisite. Replace this warning only after an independently supported Engine routing configuration is available. */}
-
 ### Choose your GitHub environment
 
 Configure one GitHub instance and one App per LangSmith installation.
@@ -134,9 +131,9 @@ Set `ENGINE_GITHUB_WEB_BASE_URL` to your GitHub instance's web address:
 | --- | --- |
 | GitHub.com, including Enterprise Cloud | `https://github.com` |
 | Enterprise Cloud with data residency | `https://example.ghe.com` |
-| GitHub Enterprise Server (GHES) | `https://git.example.com` |
+| GitHub Enterprise Server (GHES) | `https://<ghes-hostname>` |
 
-Replace the example enterprise hostnames with your own. GHES uses the same configuration on cloud infrastructure and on premises.
+Replace the example enterprise address or GHES hostname placeholder with your own. GHES uses the same configuration on cloud infrastructure and on premises.
 
 Use HTTPS on port 443 and a fully qualified hostname, without a path such as `/api/v3` or an organization name. LangSmith determines the API endpoints automatically. SSH Git URLs and custom GitHub ports are not supported.
 
@@ -157,7 +154,7 @@ For API access, allow the host for your GitHub environment:
 
 - **GitHub.com**: `api.github.com`.
 - **Enterprise Cloud with data residency**: `api.example.ghe.com` for a web address of `https://example.ghe.com`.
-- **GHES**: The same host as the web address, such as `git.example.com`.
+- **GHES**: The same host as the web address, `<ghes-hostname>`.
 
 GitHub.com and `ghe.com` send webhooks from outside your network; GHES sends them from your GHES environment. The webhook URL must be reachable from that source. Browser access through a VPN does not establish webhook access.
 
@@ -166,8 +163,6 @@ For GitHub IP allow lists, include the outbound addresses of LangSmith services 
 Sandbox Git traffic requires direct routing to GitHub. Mandatory upstream HTTP/HTTPS forward proxies are not supported; `HTTPS_PROXY` on LangSmith API pods does not configure sandbox Git access.
 
 For private IP addresses or a private CA, include the [private-GHES settings](#private-ghes-deployments) when configuring LangSmith below.
-
-For a custom ingress, the callback and webhook URLs must route to the GitHub integration service.
 
 <a id="create-a-github-app"></a>
 
@@ -194,19 +189,19 @@ Public visibility allows other accounts to install the App. It does not make rep
 
 Enterprise-owned Apps have internal visibility and cannot be installed on personal accounts. Install in each organization; an enterprise-account installation does not grant repository access.
 
-Only enterprise members can authorize an enterprise-owned App. If outside collaborators need to connect repositories, review the App's ownership and their enterprise access before registration. See GitHub's [App visibility rules](https://docs.github.com/en/enterprise-cloud@latest/apps/creating-github-apps/registering-a-github-app/making-a-github-app-public-or-private) or the [GHES equivalent](https://docs.github.com/en/enterprise-server@3.20/apps/creating-github-apps/registering-a-github-app/making-a-github-app-public-or-private), selecting your server's documentation version.
+<Accordion title="Enterprise visibility and managed users" id="enterprise-managed-users">
+  Only enterprise members can authorize an enterprise-owned App. If outside collaborators need to connect repositories, review their enterprise access before choosing that ownership type. See GitHub's [App visibility rules](https://docs.github.com/en/enterprise-cloud@latest/apps/creating-github-apps/registering-a-github-app/making-a-github-app-public-or-private) or the [GHES equivalent](https://docs.github.com/en/enterprise-server@3.20/apps/creating-github-apps/registering-a-github-app/making-a-github-app-public-or-private), selecting your server's documentation version.
 
-#### Enterprise Managed Users
+  [GitHub Enterprise Cloud with data residency](https://docs.github.com/en/enterprise-cloud@latest/admin/data-residency/about-github-enterprise-cloud-with-data-residency) uses Enterprise Managed Users (EMU). Enterprise Cloud on GitHub.com can also use EMU; SSO alone does not mean an enterprise uses EMU.
 
-[GitHub Enterprise Cloud with data residency](https://docs.github.com/en/enterprise-cloud@latest/admin/data-residency/about-github-enterprise-cloud-with-data-residency) on `ghe.com` uses Enterprise Managed Users (EMU). Enterprise Cloud on GitHub.com can also use EMU. Signing in with SSO alone does not mean an enterprise uses EMU.
+  For EMU, connect organization-owned repositories. A managed user can register an App, but this Engine App cannot be installed on a managed user's personal account. See GitHub's [managed-user restrictions](https://docs.github.com/en/enterprise-cloud@latest/admin/managing-iam/understanding-iam-for-enterprises/abilities-and-restrictions-of-managed-user-accounts#github-apps).
 
-For EMU, use organization-owned repositories. A managed user can register an App, but this Engine App cannot be installed on a managed user's personal account. See GitHub's [managed-user restrictions](https://docs.github.com/en/enterprise-cloud@latest/admin/managing-iam/understanding-iam-for-enterprises/abilities-and-restrictions-of-managed-user-accounts#github-apps).
+  In an EMU enterprise, GitHub can show **This enterprise** instead of **Any account**. **Only on this account** limits an organization-owned App to that organization. Each target organization needs its own installation.
 
-In an EMU enterprise, GitHub can show **This enterprise** instead of **Any account**. **Only on this account** limits an organization-owned App to that organization. Each target organization needs its own installation.
+  An organization owner can install the App. Repository administrators in an EMU enterprise can install it only when it requests no organization permissions and enterprise policy permits installation.
 
-An organization owner can install the App. Repository administrators in an EMU enterprise can install it only when it requests no organization permissions and enterprise policy permits installation.
-
-{/* Screenshot: show the organization-owned App visibility choices on an EMU enterprise, including "Only on this account" and "This enterprise" if offered. Use a test organization and crop out personal account details. This image should illustrate the choice, not replace the visibility table. */}
+  {/* Screenshot: show the organization-owned App visibility choices on an EMU enterprise, including "Only on this account" and "This enterprise" if offered. Use a test organization and crop out personal account details. This image should illustrate the choice, not replace the visibility table. */}
+</Accordion>
 
 #### Open the registration form
 
@@ -291,23 +286,29 @@ Select **Create GitHub App**.
 
 #### Save the App values
 
-Collect the values below for the LangSmith configuration. Generate the Client secret and private key from the App's settings after selecting **Create GitHub App**:
+After creating the App, open its settings and prepare the credentials:
 
-| Value to obtain or generate | LangSmith environment variable |
+1. Under **Client secrets**, select **Generate a new client secret** and save it immediately.
+2. Under **Private keys**, select **Generate a private key**. Keep the downloaded PEM file; LangSmith needs its complete contents, including newlines.
+3. Generate a separate **OAuth state secret** of at least 32 random bytes with your secret manager or a cryptographically secure generator. Use it only in LangSmith; do not enter it into GitHub or reuse the webhook secret.
+
+Use this mapping when configuring LangSmith:
+
+| Value | LangSmith environment variable |
 | --- | --- |
-| Your GitHub instance's web address, from [Choose your GitHub environment](#choose-your-github-environment). | `ENGINE_GITHUB_WEB_BASE_URL` |
-| **App ID**: Copy the numeric App ID. This is different from the Client ID and installation ID. | `ENGINE_GITHUB_APP_ID` |
-| **Public link**: Copy the URL exactly, including its full path. | `ENGINE_GITHUB_APP_PUBLIC_LINK` |
-| **Client ID**: Copy from the App's settings. | `ENGINE_GITHUB_APP_CLIENT_ID` |
-| **Client secret**: Under **Client secrets**, select **Generate a new client secret** and save it immediately. | `ENGINE_GITHUB_APP_CLIENT_SECRET` |
-| **Private key**: Under **Private keys**, select **Generate a private key**. Use the complete downloaded PEM contents, preserving newlines. | `ENGINE_GITHUB_APP_PRIVATE_KEY` |
-| **Callback URL / Redirect URI**: Use the exact URL entered in GitHub, including any LangSmith base path. | `ENGINE_GITHUB_OAUTH_REDIRECT_URI` |
-| **Webhook secret**: Reuse the secret generated and entered into GitHub during registration. | `ENGINE_GITHUB_APP_WEBHOOK_SECRET` |
-| **OAuth state secret**: Generate a separate random secret of at least 32 bytes with your secret manager or a cryptographically secure generator. | `ENGINE_GITHUB_OAUTH_STATE_SECRET` |
+| GitHub instance's web address | `ENGINE_GITHUB_WEB_BASE_URL` |
+| **App ID** (numeric) | `ENGINE_GITHUB_APP_ID` |
+| **Public link** (full URL) | `ENGINE_GITHUB_APP_PUBLIC_LINK` |
+| **Client ID** | `ENGINE_GITHUB_APP_CLIENT_ID` |
+| **Client secret** | `ENGINE_GITHUB_APP_CLIENT_SECRET` |
+| **Private key** (PEM contents) | `ENGINE_GITHUB_APP_PRIVATE_KEY` |
+| **Callback URL** / **Redirect URI** | `ENGINE_GITHUB_OAUTH_REDIRECT_URI` |
+| **Webhook secret** | `ENGINE_GITHUB_APP_WEBHOOK_SECRET` |
+| **OAuth state secret** | `ENGINE_GITHUB_OAUTH_STATE_SECRET` |
 
-For **Public link**, do not use the developer settings URL or an installation URL ending in `/installations/new`.
+Copy the numeric **App ID**, not the Client ID or installation ID. Copy **Public link** exactly, including its full path; do not use the developer settings URL or an installation URL ending in `/installations/new`.
 
-The OAuth state secret protects the GitHub connection flow. It is used only in LangSmith; do not enter it into GitHub or reuse the webhook secret.
+Use the exact authorization callback URL and webhook secret entered in GitHub. Include any LangSmith base path in the callback URL. The GitHub web address is the one selected in [Choose your GitHub environment](#choose-your-github-environment).
 
 ### Configure LangSmith
 
@@ -324,7 +325,7 @@ Merge this configuration into your existing values file. Preserve any existing `
 ```yaml
 commonEnv:
   - name: ENGINE_GITHUB_WEB_BASE_URL
-    value: "https://git.example.com"
+    value: "https://<ghes-hostname>"
   - name: ENGINE_GITHUB_APP_ID
     value: "<app-id>"
 
@@ -419,7 +420,7 @@ A successful webhook response alone does not prove the event matched an Engine i
 | GitHub is temporarily unavailable after authorization | Confirm that the Client secret and private key belong to the configured App ID and Client ID. Check GitHub connectivity and certificate trust, then restart **Connect GitHub**. |
 | GitHub authorization opens on the wrong instance | Check `ENGINE_GITHUB_WEB_BASE_URL` in shared configuration and remove conflicting component overrides. |
 | The callback returns HTML or 404 | Check the `/api-host` route, LangSmith base path, and exact authorization callback URL. |
-| The App is installed, but LangSmith has no connection | Complete [Connect repositories](#connect-repositories) in LangSmith. If the flow does not finish, enable **Request user authorization (OAuth) during installation** and verify the App's Client ID and secret. |
+| Installation does not return to LangSmith | Enable **Request user authorization (OAuth) during installation**. Check the exact authorization callback URL and confirm the Client ID and Client secret belong to this App. Then restart **Connect GitHub** in LangSmith. |
 | Repositories appear, but cloning or pushing fails | Check sandbox-host DNS, routing, private-IP settings, certificate trust, and GitHub IP/push policies. |
 | PR creation fails after a successful push | Check **Pull requests: Read and write**, draft PR availability, and the selected base branch. |
 | A merge does not complete an issue | Check **Pull request** event subscription, webhook reachability, the matching webhook secret, and **Recent deliveries**. Redeliver failed events after correcting the cause. |
