@@ -5,7 +5,7 @@ const { test } = require("node:test");
 const { runInNewContext } = require("node:vm");
 
 const script = readFileSync(join(__dirname, "../src/changelog-navigation.js"), "utf8");
-const PAGE = "/langsmith/agent-server-changelog";
+const PAGE = "/langsmith/self-hosted-changelog";
 
 class Element {
   constructor(tagName, id = "", text = "") {
@@ -30,6 +30,10 @@ class Element {
         this.className = [...names].join(" ");
       },
     };
+  }
+
+  get firstChild() {
+    return this.children[0] || null;
   }
 
   appendChild(child) {
@@ -69,7 +73,7 @@ class Element {
 function setup({ path = PAGE, side = true, loading = false } = {}) {
   const root = new Element("html");
   root.dataset.currentPath = path;
-  const content = root.appendChild(new Element("main"));
+  const content = root.appendChild(new Element("main", "content"));
   if (side) root.appendChild(new Element("div", "content-side-layout"));
   const all = () => {
     const walk = (node) => [node, ...node.children.flatMap(walk)];
@@ -101,8 +105,11 @@ function setup({ path = PAGE, side = true, loading = false } = {}) {
   const flush = () => {
     while (frames.length) frames.shift()();
   };
-  const heading = (id, text = `\u200b${id.replaceAll("-", ".")}`) =>
-    content.appendChild(new Element("h2", id, text));
+  const heading = (id, text = `\u200b${id.replace("langsmith-", "langsmith@").replaceAll("-", ".").replace("@", "-")}`) => {
+    const update = content.appendChild(new Element("div"));
+    const body = update.appendChild(new Element("div"));
+    return body.appendChild(new Element("h2", id, text));
+  };
   const links = (id = "changelog-chapters-sidebar") =>
     document.getElementById(id).children[1].children;
   return { root, content, document, heading, links, flush, frames, notify: () => observer(), ready: () => ready() };
@@ -110,33 +117,45 @@ function setup({ path = PAGE, side = true, loading = false } = {}) {
 
 test("indexes only visible exact minor chapters, leaving patches and categories untouched", () => {
   const dom = setup();
-  const chapters = [dom.heading("v0-16", "\u200bv0.16"), dom.heading("v0-15", " v0.15 ")];
-  const excluded = ["v0-15-1", "v0-16-0rc2", "release-cadence", "new-features"].map((id) => dom.heading(id));
-  const hidden = dom.heading("v0-14");
+  const chapters = [dom.heading("langsmith-0-16-0", "\u200blangsmith-0.16.0"), dom.heading("langsmith-0-15-0", " langsmith-0.15.0 ")];
+  const excluded = ["langsmith-0-15-1", "langsmith-0-16-0-rc-2", "v0-15", "release-cadence", "new-features"].map((id) => dom.heading(id));
+  const patch = excluded[0];
+  const download = patch.parentElement.appendChild(new Element("a", "", "Download langsmith-0.15.1.tgz"));
+  download.href = "https://github.com/langchain-ai/helm/releases/download/langsmith-0.15.1/langsmith-0.15.1.tgz";
+  const patchChildren = [...patch.parentElement.children];
+  const hidden = dom.heading("langsmith-0-14-0");
   hidden.visible = false;
   dom.flush();
   assert.deepEqual(dom.links().map((link) => [link.href, link.textContent]), [
-    ["#v0-16", "v0.16"], ["#v0-15", "v0.15"],
+    ["#langsmith-0-16-0", "langsmith-0.16.0"], ["#langsmith-0-15-0", "langsmith-0.15.0"],
   ]);
   chapters.forEach((heading) => assert.ok(heading.classList.contains("changelog-chapter-heading")));
   [...excluded, hidden].forEach((heading) => assert.equal(heading.className, ""));
   assert.equal(dom.document.getElementById("changelog-chapters-inline").parentElement, dom.content);
-  assert.equal(dom.content.children[0].id, "changelog-chapters-inline");
+  assert.equal(dom.content.firstChild.id, "changelog-chapters-inline");
+  chapters.forEach((heading) => {
+    assert.equal(heading.parentElement.parentElement.parentElement, dom.content);
+    assert.deepEqual(heading.parentElement.children, [heading]);
+  });
+  assert.deepEqual(patch.parentElement.children, patchChildren);
+  assert.equal(patch.textContent, "\u200blangsmith-0.15.1");
+  assert.equal(download.textContent, "Download langsmith-0.15.1.tgz");
+  assert.equal(download.href, "https://github.com/langchain-ai/helm/releases/download/langsmith-0.15.1/langsmith-0.15.1.tgz");
 });
 
 test("other pages do not gain an index or modify ordinary headings", () => {
-  const dom = setup({ path: "/langsmith/self-hosted-changelog" });
-  const heading = dom.heading("v0-15");
+  const dom = setup({ path: "/langsmith/agent-server-changelog" });
+  const headings = [dom.heading("langsmith-0-15-0"), dom.heading("v0-15")];
   dom.flush();
   dom.notify();
   dom.flush();
-  assert.equal(heading.className, "");
+  headings.forEach((heading) => assert.equal(heading.className, ""));
   assert.equal(dom.document.querySelectorAll(".changelog-chapter-index").length, 0);
 });
 
 test("observer updates coalesce and do not rebuild unchanged indexes", () => {
   const dom = setup();
-  dom.heading("v0-15");
+  dom.heading("langsmith-0-15-0");
   dom.flush();
   const nav = dom.document.getElementById("changelog-chapters-sidebar");
   const originalLink = dom.links()[0];
@@ -151,7 +170,7 @@ test("observer updates coalesce and do not rebuild unchanged indexes", () => {
 
 test("leaving cleans up indexes and heading classes; reentering enhances again", () => {
   const dom = setup();
-  const heading = dom.heading("v0-15");
+  const heading = dom.heading("langsmith-0-15-0");
   dom.flush();
   dom.root.dataset.currentPath = "/langsmith/overview";
   dom.notify();
@@ -161,8 +180,30 @@ test("leaving cleans up indexes and heading classes; reentering enhances again",
   dom.root.dataset.currentPath = PAGE;
   dom.notify();
   dom.flush();
-  assert.equal(dom.links()[0].href, "#v0-15");
+  assert.equal(dom.links()[0].href, "#langsmith-0-15-0");
   assert.ok(heading.classList.contains("changelog-chapter-heading"));
+});
+
+test("filter rerenders remove and rebuild indexes from visible stable launches", () => {
+  const dom = setup();
+  const chapters = [dom.heading("langsmith-0-16-0"), dom.heading("langsmith-0-15-0")];
+  const preview = dom.heading("langsmith-0-17-0-rc-1");
+  preview.visible = false;
+  dom.flush();
+  assert.equal(dom.links().length, 2);
+  const originalNav = dom.document.getElementById("changelog-chapters-sidebar");
+  chapters.forEach((heading) => { heading.visible = false; });
+  preview.visible = true;
+  dom.notify();
+  dom.flush();
+  assert.equal(dom.document.querySelectorAll(".changelog-chapter-index").length, 0);
+  chapters[1].visible = true;
+  dom.notify();
+  dom.flush();
+  assert.notEqual(dom.document.getElementById("changelog-chapters-sidebar"), originalNav);
+  assert.deepEqual(dom.links().map((link) => link.href), ["#langsmith-0-15-0"]);
+  assert.equal(dom.document.querySelectorAll(".changelog-chapter-index").length, 2);
+  assert.equal(preview.className, "");
 });
 
 test("late chapters use the inline fallback without a sidebar and update on insertion", () => {
@@ -171,16 +212,16 @@ test("late chapters use the inline fallback without a sidebar and update on inse
   dom.ready();
   dom.flush();
   assert.equal(dom.document.querySelectorAll(".changelog-chapter-index").length, 0);
-  dom.heading("v0-16");
+  dom.heading("langsmith-0-16-0");
   dom.notify();
   dom.flush();
   const nav = dom.document.getElementById("changelog-chapters-inline");
   assert.ok(nav.classList.contains("changelog-chapter-index-fallback"));
   assert.equal(nav.attributes["aria-label"], "Minor release lines");
-  dom.heading("v0-15");
+  dom.heading("langsmith-0-15-0");
   dom.notify();
   dom.flush();
-  assert.deepEqual(dom.links(nav.id).map((link) => link.href), ["#v0-16", "#v0-15"]);
+  assert.deepEqual(dom.links(nav.id).map((link) => link.href), ["#langsmith-0-16-0", "#langsmith-0-15-0"]);
   assert.equal(dom.document.querySelectorAll(".changelog-chapter-index").length, 1);
   assert.equal(nav.replacements, 2);
 });

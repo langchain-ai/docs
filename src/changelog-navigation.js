@@ -1,8 +1,8 @@
 (function () {
   "use strict";
 
-  const PAGE = "/langsmith/agent-server-changelog";
-  const CHAPTER = /^v\d+-\d+$/;
+  const PAGE = "/langsmith/self-hosted-changelog";
+  const CHAPTER = /^langsmith-\d+-\d+-0$/;
   let scheduled = false;
 
   function updateIndex(nav, headings) {
@@ -56,8 +56,11 @@
     headings.forEach((heading) => heading.classList.add("changelog-chapter-heading"));
 
     const side = document.getElementById("content-side-layout");
-    const inline = mountIndex(headings[0].parentElement, "changelog-chapters-inline", headings, headings[0]);
-    inline.classList.toggle("changelog-chapter-index-fallback", !side);
+    const content = document.getElementById("content");
+    if (content) {
+      const inline = mountIndex(content, "changelog-chapters-inline", headings, content.firstChild);
+      inline.classList.toggle("changelog-chapter-index-fallback", !side);
+    }
     if (side) mountIndex(side, "changelog-chapters-sidebar", headings);
   }
 
