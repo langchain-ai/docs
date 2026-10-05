@@ -191,7 +191,7 @@ Six tabs, all files flat in `src/langsmith/`:
 
 | Tab | Groups |
 |-----|--------|
-| Overview | Single page |
+| Overview | Hosting, Agent-based workspaces |
 | Account | Billing & usage |
 | Cloud | Reference |
 | BYOC | No groups |
@@ -228,6 +228,7 @@ Because nav names and directories diverge, use this to go from a file to its pla
 | `src/oss/contributing/` | Build → Contribute |
 | `src/langsmith/managed-deep-agents*.mdx` | Build → Managed Deep Agents |
 | `src/langsmith/fleet/` | Products and setup → No-code agents |
+| `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx`, `create-an-agent.mdx`, `build-an-agent.mdx`, `deploy-to-agent-environment.mdx` | Products and setup → LangSmith setup → Overview → Agent-based workspaces |
 | `src/langsmith/*.mdx` (everything else) | Test, Deploy, Monitor, or LangSmith setup, depending on subject |
 
 ### Reference docs
@@ -509,6 +510,12 @@ Reserve "the platform" for LangSmith. LangChain is the open agent engineering ec
 1. Create `src/oss/javascript/integrations/<component>/<provider>.mdx`
 2. Add the page to the component's index page (`src/oss/javascript/integrations/<component>/index.mdx`); only edit `src/docs.json` when creating a brand-new component group
 3. If the provider has an overview page at `src/oss/javascript/integrations/providers/<provider>.mdx`, add or update a section there linking to the new page (`/oss/integrations/<component>/<provider>`)
+
+**Beta callouts on agent-based workspace pages:** every page in the
+`Agent-based workspaces` group opens with the shared
+`/snippets/langsmith/agent-beta-note.mdx` callout, placed after the page's
+opening definition and before the first `##` heading. Do not hand-write a
+per-page variant, and do not add a page-level `tag` on top of the group tag.
 
 **Add a reusable snippet:**
 
