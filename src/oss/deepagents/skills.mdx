@@ -361,13 +361,13 @@ metadata:
   include_tools: list_issues create_issue
 ```
 
-Pass the tools to `SkillsMiddleware` as `tools`, not to the agent's `tools`. Pass the middleware to `create_deep_agent` in place of the `skills` argument, with the same paths as `sources`:
+Passing `skills` to `create_deep_agent` creates a `SkillsMiddleware` for you. To add tools, create the middleware yourself and pass it in `middleware` instead. Give it your skill paths as `sources`, and your tools as `tools` on the middleware rather than on the agent:
 
 <SkillsToolsListPy />
 
 Skill tools follow these rules:
 
-- The agent can call a skill tool only after it reads the skill's `SKILL.md`.
+- Skill tools are gated. Until the agent reads the skill's `SKILL.md`, a call to one fails as an unknown tool, even if the model guesses its name and arguments.
 - When [summarization](/oss/deepagents/context-engineering#summarization) drops that read from the conversation, the tool is unavailable until the agent reads the skill again.
 
 <Note>
@@ -402,7 +402,7 @@ Then return all of the server's tools from the resolver:
 
 <SkillsToolsIntegrationPy />
 
-The resolver also receives the graph's `Runtime`, so it can return each user's own tools. Pass the user as [runtime context](/oss/deepagents/context-engineering#runtime-context) and read it from `runtime.context`:
+The resolver also receives the graph's `Runtime`, so it can return different tools for each run based on [runtime context](/oss/deepagents/context-engineering#runtime-context). For example, look up tools by user:
 
 <SkillsToolsPerUserPy />
 
@@ -411,15 +411,23 @@ When you write a resolver:
 - Keep it fast. It runs on every model call after the agent reads the skill, and again before each skill tool call.
 - The resolver can be async. If it is, run the agent through its async methods, such as `ainvoke`.
 
-### Combine with provider tool search
+### Keep a tool searchable
 
-@[`ProviderToolSearchMiddleware`] hides deferred tools until the model searches for them. When a skill lists a deferred tool, reading the skill reveals it without a search.
-
-Pass the deferred tool to the agent's `tools` as usual, not the middleware's:
+Skill tools, the ones you pass to `SkillsMiddleware`, are reachable only through their skill. If you also use @[`ProviderToolSearchMiddleware`], you can make a tool reachable either way, through search or by reading a skill. Pass the tool to the agent's `tools` and defer it. Reading the skill then reveals it without a search:
 
 <SkillsToolsSearchPy />
 
-Before the agent reads the skill, the tool is still available through search. See [Provider tool search](/oss/langchain/middleware/built-in#provider-tool-search).
+Unlike a skill tool, a deferred tool is not gated. The model can find and call it through search before the agent reads the skill. See [Provider tool search](/oss/langchain/middleware/built-in#provider-tool-search).
+
+How the agent reaches a tool depends on where you pass it:
+
+| Pass the tool to | Before the agent reads the skill | After the agent reads the skill |
+| --- | --- | --- |
+| `SkillsMiddleware(tools=...)` | Hidden, and calls fail | Visible |
+| The agent's `tools`, deferred | Available through provider tool search | Visible without a search |
+| The agent's `tools` | Visible, so `include_tools` has no effect | Visible |
+
+When a skill lists a tool the agent already has, including built-in tools such as `edit_file`, Deep Agents uses the agent's tool, not one with the same name in `SkillsMiddleware`.
 
 :::
 
