@@ -58,6 +58,7 @@ graph TB
 | Terraform | 1.11.0 or later | Run the infrastructure modules |
 | `kubectl` | latest | Inspect the AKS cluster |
 | Helm | 3.12 or later | Install and manage the LangSmith chart |
+| `kubelogin` | latest | Sign in to a cluster with Entra ID integration (`aks_entra_only`, or an attached cluster with Entra ID). Not needed otherwise |
 
 ```bash
 brew install azure-cli kubectl helm
@@ -67,7 +68,13 @@ az --version
 terraform version
 kubectl version --client
 helm version
+
+# Only for a cluster with Entra ID integration
+brew install Azure/kubelogin/kubelogin
+kubelogin --version
 ```
+
+With `aks_private_cluster_enabled = true`, run Terraform and the `make` targets from a host with a network path to the API server's private endpoint, such as a jump host in the cluster VNet or a peered network, with DNS that resolves the private zone. With `keyvault_private_endpoint_enabled = true`, `make apply`, `make seed-secrets`, and `make k8s-secrets` need a host that resolves the vault's private endpoint. See [Key Vault variables](/langsmith/self-host-terraform-azure-variables#key-vault).
 
 ### Required Azure RBAC
 
@@ -79,6 +86,8 @@ The identity running Terraform needs the following roles on the subscription:
 | `User Access Administrator` or `Role Based Access Control Administrator` | Create role assignments for Key Vault, Blob, cert-manager managed identities |
 
 `Owner` includes both. `Contributor` alone is insufficient because it cannot create role assignments.
+
+A user-assigned control-plane identity (`aks_control_plane_identity = "user"`) and private DNS zones you supply need further grants, listed in [PERMISSIONS.md](https://github.com/langchain-ai/terraform/blob/main/modules/azure/PERMISSIONS.md).
 
 ### Authenticate
 
@@ -276,6 +285,8 @@ make k8s-secrets   # Key Vault → langsmith-config-secret in the langsmith name
 `make seed-secrets` prompts for the LangSmith admin password, or reads `LANGSMITH_ADMIN_PASSWORD`. It generates the API key salt, the JWT secret, and four Fernet encryption keys. It writes only the secrets that are missing, so it is safe to re-run.
 
 `make k8s-secrets` reads 8 secrets from Key Vault and creates or updates `langsmith-config-secret`. Safe to re-run; uses `--dry-run=client | kubectl apply` to update in place.
+
+On a cluster with Entra ID integration, `make kubeconfig` converts the context to sign in through `kubelogin` as your `az` identity.
 
 ### Verify infrastructure
 

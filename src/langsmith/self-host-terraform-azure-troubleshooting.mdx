@@ -140,6 +140,14 @@ See [PERMISSIONS.md](https://github.com/langchain-ai/terraform/blob/main/modules
 
 **Fix:** Re-activate the role in the Azure portal (PIM > My roles > Activate) for longer than the apply takes. `make preflight` prints the time remaining on an active PIM activation.
 
+### `LinkedAuthorizationFailed` creating a private endpoint
+
+**Symptom:** With `storage_private_dns_zone_id` or `keyvault_private_dns_zone_id` set, `make apply` fails creating a private endpoint with `LinkedAuthorizationFailed`.
+
+**Cause:** The endpoint registers its record in the zone you supplied, which needs `Microsoft.Network/privateDnsZones/join/action` on that zone. An endpoint in a subnet the module did not create also needs `Microsoft.Network/virtualNetworks/subnets/join/action` on the subnet. A new grant can take 12 to 40 minutes to take effect, and Azure fails the endpoint until it does.
+
+**Fix:** Grant `Private DNS Zone Contributor` at the zone's resource group, and `Network Contributor` on the endpoint subnet, before the first apply. If the grants exist, wait and run `make apply` again. See [PERMISSIONS.md](https://github.com/langchain-ai/terraform/blob/main/modules/azure/PERMISSIONS.md#private-dns-zones-you-own).
+
 ### Istio addon revision not supported
 
 **Symptom:** `terraform apply` rejects the Istio revision (`Revision asm-1-XX is not supported`). Azure retires old ASM revisions regularly.
@@ -240,6 +248,14 @@ For causes 2 and 3, setting `keyvault_manage_secrets = false` takes Terraform ou
 - To move to Envoy Gateway: `ingress_controller = "envoy-gateway"`, then run `make apply`, `make init-values`, and `make deploy` back to back. LangSmith is unreachable from the apply until the deploy finishes. Update any DNS A record that points at the old IP.
 
 ## Application stage
+
+### `Could not read aks_resource_group_name`
+
+**Symptom:** After you upgrade the module, `make kubeconfig`, `make deploy`, or `make uninstall` stops with `Could not read aks_resource_group_name. Run 'make apply' to record it.`
+
+**Cause:** The scripts read the cluster's resource group from the `aks_resource_group_name` output, which an apply from an earlier module release did not record.
+
+**Fix:** Run `make apply`, then re-run the command.
 
 ### `dns_label` subdomain not resolving: TLS cert stuck pending
 
@@ -452,7 +468,7 @@ WorkloadIdentityCredential authentication failed.
 
 **Cause:** The pod's Kubernetes ServiceAccount has no federated credential on the Azure Managed Identity. Every pod that accesses Blob Storage needs one.
 
-**Fix:** Add the missing ServiceAccount to `service_accounts_for_workload_identity` in `infra/modules/k8s-cluster/main.tf`. The module passes the chart fullname as `var.langsmith_release_name`: the release name when it contains `langsmith`, otherwise `<release>-langsmith`. The list in module release v0.16.101:
+**Fix:** Add the missing ServiceAccount to `service_accounts_for_workload_identity` in `infra/modules/k8s-cluster/main.tf`. The module passes the chart fullname as `var.langsmith_release_name`: the release name when it contains `langsmith`, otherwise `<release>-langsmith`. The list in module release v0.16.105:
 
 ```hcl
 service_accounts_for_workload_identity = [

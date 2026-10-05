@@ -105,7 +105,7 @@ ls-vnet-<name_prefix>
 
 Terraform also creates `subnet-postgres` when `enable_smithdb = true`, `subnet-bastion` when `create_bastion = true`, and `subnet-agic` when `ingress_controller = "agic"`. It creates the bastion and AGIC subnets only in a VNet it creates; with `create_vnet = false`, supply `bastion_subnet_id` and `agic_subnet_id`. Network security groups attach to the subnets only when `enable_subnet_nsgs = true`.
 
-AKS nodes get no public IPs. By default, they egress through an outbound public IP on the AKS-managed load balancer. To send egress through your own firewall or a NAT gateway, supply the AKS subnet and set `aks_outbound_type` (see [Networking variables](/langsmith/self-host-terraform-azure-variables#networking)). The module README's "Egress through your network" section lists the destinations the egress path must allow. The AKS API server stays publicly reachable unless you set `aks_authorized_ip_ranges`. Postgres and Redis have no public endpoints; both are accessible only from within the VNet via private DNS resolution.
+AKS nodes get no public IPs. By default, they egress through an outbound public IP on the AKS-managed load balancer. To send egress through your own firewall or a NAT gateway, supply the AKS subnet and set `aks_outbound_type` (see [Networking variables](/langsmith/self-host-terraform-azure-variables#networking)). The module README's "Egress through your network" section lists the destinations the egress path must allow. The AKS API server is publicly reachable unless you restrict it with `aks_authorized_ip_ranges` or make it private with `aks_private_cluster_enabled`. Postgres and Redis have no public endpoints; both are accessible only from within the VNet via private DNS resolution. Terraform creates the private DNS zones in the deployment resource group and links them to the VNet. In a hub-and-spoke network, supply the central zones with `postgres_private_dns_zone_id`, `storage_private_dns_zone_id`, and `keyvault_private_dns_zone_id`, and the zones' owner links them.
 
 ## Application core services
 
@@ -192,6 +192,7 @@ When `postgres_source = "external"` and `redis_source = "external"` (the recomme
 ### Azure Key Vault
 
 - Centralized secret store for all LangSmith secrets.
+- Public endpoint behind the vault firewall by default. `keyvault_private_endpoint_enabled = true` moves the vault to a Private Endpoint and turns public access off, so Terraform and the secret scripts must run from inside the network.
 - Secret flow: `make seed-secrets` writes the app secrets to Key Vault, then `make k8s-secrets` builds `langsmith-config-secret` from them. See [Secret flow](#secret-flow).
 
 ## Workload Identity
@@ -344,7 +345,7 @@ Each module is count-controlled (`0` disabled, `1` enabled). Enable any combinat
 
 | Module | Variable | Use case |
 |---|---|---|
-| `waf` | `create_waf = true` | Azure WAF policy (OWASP 3.2 + bot protection), in `Detection` mode by default (`waf_mode`). With `ingress_controller = "agic"`, Terraform attaches it to the Application Gateway. With any other controller, the policy stays unattached until an Azure Front Door or a gateway you own references it. |
+| `waf` | `create_waf = true` | Azure WAF policy (OWASP 3.2 + bot protection), in `Detection` mode by default (`waf_mode`). With `ingress_controller = "agic"`, Terraform attaches it to the Application Gateway. With any other controller, the policy stays unattached until an Application Gateway you own references it. Azure Front Door cannot use this policy type. |
 | `diagnostics` | `create_diagnostics = true` | Log Analytics workspace + diagnostic settings for AKS, Key Vault, PostgreSQL, and the Application Gateway when `ingress_controller = "agic"`. Recommended for production observability. |
 | `bastion` | `create_bastion = true` | Jump VM with a static public IP for private AKS access via `az ssh vm` and Entra ID SSH. |
 | `dns` | `create_dns_zone = true` | Azure DNS zone + A record. Required for DNS-01 cert issuance with a custom domain. |
