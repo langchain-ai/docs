@@ -217,7 +217,8 @@ test("late chapters use the inline fallback without a sidebar and update on inse
   dom.flush();
   const nav = dom.document.getElementById("changelog-chapters-inline");
   assert.ok(nav.classList.contains("changelog-chapter-index-fallback"));
-  assert.equal(nav.attributes["aria-label"], "Minor release lines");
+  assert.equal(nav.attributes["aria-label"], "Minor releases");
+  assert.equal(nav.firstChild.textContent, "Minor releases");
   dom.heading("langsmith-0-15-0");
   dom.notify();
   dom.flush();

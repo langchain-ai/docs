@@ -11,7 +11,7 @@
     nav.dataset.chapters = signature;
 
     const title = document.createElement("strong");
-    title.textContent = "Minor release lines";
+    title.textContent = "Minor releases";
     const links = document.createElement("div");
     links.className = "changelog-chapter-links";
     for (const heading of headings) {
@@ -29,7 +29,7 @@
       nav = document.createElement("nav");
       nav.id = id;
       nav.className = "changelog-chapter-index";
-      nav.setAttribute("aria-label", "Minor release lines");
+      nav.setAttribute("aria-label", "Minor releases");
       parent.insertBefore(nav, before || null);
     }
     updateIndex(nav, headings);
