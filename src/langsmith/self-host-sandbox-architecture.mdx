@@ -24,7 +24,8 @@ A sandbox is a Firecracker microVM, not a Kubernetes pod. Each `sandbox-host` po
 The host Deployment uses required pod anti-affinity to place at most one host pod on each node. Its node selector and tolerations target a dedicated, KVM-capable node pool. Adding a sandbox does not create another pod.
 
 <Frame caption="The platform backend manages sandbox placement and traffic. Hosts run microVMs; shared storage keeps persistent state independent of a node.">
-  <img src="/images/langsmith/sandboxes/self-host-architecture.svg" alt="Self-hosted architecture showing apps connecting to the platform backend, three sandbox hosts on dedicated Kubernetes nodes, and shared PostgreSQL, Redis metadata, and object storage. Kubernetes Leases coordinate host health and scaling." />
+  <img className="block dark:hidden" src="/images/langsmith/sandboxes/self-host-architecture.svg" alt="Self-hosted architecture showing apps connecting to the platform backend, three sandbox hosts on dedicated Kubernetes nodes, and shared PostgreSQL, Redis metadata, and object storage. Kubernetes Leases coordinate host health and scaling." />
+  <img className="hidden dark:block" src="/images/langsmith/sandboxes/self-host-architecture-dark.svg" alt="Self-hosted architecture showing apps connecting to the platform backend, three sandbox hosts on dedicated Kubernetes nodes, and shared PostgreSQL, Redis metadata, and object storage. Kubernetes Leases coordinate host health and scaling." />
 </Frame>
 
 ### Understand component failure impact
@@ -55,7 +56,8 @@ One elected host observes pool health and runs the [host autoscaler](/langsmith/
 A host pod runs the sandbox daemon and Firecracker processes. In deployments with a host-owned JuiceFS mount, it also runs the JuiceFS client. The daemon connects to the agent inside each guest through `vsock`.
 
 <Frame caption="One Kubernetes pod contains multiple microVMs. The host needs KVM access; guest memory and node-local caches consume the node's resources.">
-  <img src="/images/langsmith/sandboxes/self-host-node.svg" alt="A dedicated node containing one privileged sandbox-host pod, its lifecycle and traffic proxy, two Firecracker microVMs with separate kernels and guest agents, and a JuiceFS client connected to shared storage. KVM and a disposable local cache sit on the node." />
+  <img className="block dark:hidden" src="/images/langsmith/sandboxes/self-host-node.svg" alt="A dedicated node containing one privileged sandbox-host pod, its lifecycle and traffic proxy, two Firecracker microVMs with separate kernels and guest agents, and a JuiceFS client connected to shared storage. KVM and a disposable local cache sit on the node." />
+  <img className="hidden dark:block" src="/images/langsmith/sandboxes/self-host-node-dark.svg" alt="A dedicated node containing one privileged sandbox-host pod, its lifecycle and traffic proxy, two Firecracker microVMs with separate kernels and guest agents, and a JuiceFS client connected to shared storage. KVM and a disposable local cache sit on the node." />
 </Frame>
 
 The host uses host networking on port `19190`. The platform backend connects to the host's node address; clients use the LangSmith API or [service URLs](/langsmith/sandbox-service-urls), not the host listener directly. Keep host listeners on private networks.
@@ -67,7 +69,7 @@ Host pods require privileged access for virtualization, networking, and mounts. 
 Creating a sandbox passes through the platform backend before reaching a host. Subsequent command, file, and service requests follow the same authorization boundary.
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {'lineColor': '#40668D', 'primaryColor': '#E5F4FF', 'primaryTextColor': '#030710', 'primaryBorderColor': '#006DDD', 'actorBkg': '#E5F4FF', 'actorBorder': '#006DDD', 'actorTextColor': '#030710', 'signalColor': '#40668D', 'signalTextColor': '#030710'}, 'sequence': {'width': 130, 'actorMargin': 30, 'mirrorActors': false, 'wrap': true}}}%%
+%%{init: {'theme': 'base', 'themeVariables': {'fontFamily': 'TWK Lausanne, Inter', 'fontSize': '15px', 'lineColor': '#40668D', 'primaryColor': '#E5F4FF', 'primaryTextColor': '#030710', 'primaryBorderColor': '#006DDD', 'actorBkg': '#E5F4FF', 'actorBorder': '#006DDD', 'actorTextColor': '#030710', 'actorLineColor': '#40668D', 'signalColor': '#40668D', 'signalTextColor': '#030710'}, 'sequence': {'width': 130, 'actorMargin': 30, 'mirrorActors': false, 'wrap': true}}}%%
 sequenceDiagram
     accTitle: Create and use a self-hosted sandbox
     accDescr: The client calls the platform backend, which records and places the sandbox. The selected host prepares its filesystem and boots a microVM. Later requests pass through the backend and host to the guest.
@@ -82,17 +84,17 @@ sequenceDiagram
     P->>H: Create
     H->>H: Prepare disk<br/>on JuiceFS
     H->>V: Warm restore<br/>or cold boot
-    V-->>H: Guest ready
-    H-->>P: Created
+    V->>H: Guest ready
+    H->>P: Created
     P->>D: Mark ready
-    P-->>C: Ready
+    P->>C: Ready
     C->>P: Execute / files /<br/>service URL
     P->>P: Authenticate<br/>and authorize
     P->>H: Authorized request
     H->>V: Forward to guest
-    V-->>H: Response
-    H-->>P: Response
-    P-->>C: Response
+    V->>H: Response
+    H->>P: Response
+    P->>C: Response
 ```
 
 Placement considers committed CPU and prefers the sandbox's previous host when its load is close to the least-loaded candidate. Returning to that host can reuse cached data. It is a preference, not a guarantee that a sandbox stays on one node.
@@ -118,6 +120,7 @@ JuiceFS Redis is durable storage, not the LangSmith cache Redis. Object storage 
 A persistent sandbox can resume on a different compatible host because its disk and successfully saved memory live on shared storage.
 
 ```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'fontFamily': 'TWK Lausanne, Inter', 'fontSize': '15px', 'lineColor': '#40668D', 'primaryTextColor': '#030710', 'textColor': '#030710', 'edgeLabelBackground': '#F2FAFF'}}}%%
 flowchart TB
     accTitle: Persistent sandbox lifecycle
     accDescr: Provisioning leads to running. A graceful stop saves memory and moves to stopped. A later start or wake restores on a compatible host. Host loss instead requires fencing and a cold boot from persisted disk, without the previous running memory.
@@ -130,8 +133,8 @@ flowchart TB
     R -->|Delete| D
     classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
     classDef output fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33
-    classDef alert fill:#F8E8E6,stroke:#B27D75,stroke-width:2px,color:#634643
-    classDef neutral fill:#F2FAFF,stroke:#40668D,stroke-width:2px,color:#2F4B68
+    classDef alert fill:#F8E8E6,stroke:#634643,stroke-width:2px,color:#634643
+    classDef neutral fill:#F2FAFF,stroke:#40668D,stroke-width:1px,color:#2F4B68
     class P,R process
     class S output
     class F alert
