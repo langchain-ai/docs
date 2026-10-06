@@ -1,13 +1,13 @@
 ---
 title: AWS data plane cost estimate
 sidebarTitle: Cost estimate
-description: Rough monthly cost of a default LangSmith data plane on AWS, with separate estimates for ClickHouse and SmithDB trace storage.
+description: Rough AWS cost of a LangSmith data plane, with a ClickHouse footprint and SmithDB node, metastore, and storage estimates.
 icon: brand-aws
 ---
 
-This is a rough monthly run-rate for a basic LangSmith data plane in your AWS account, using the default footprint. Actual cost varies by AWS region, traffic volume, storage growth, CloudWatch log volume, NAT and data-transfer usage, and whether committed-use discounts or reserved capacity apply.
+These are estimates, not a quote. Rates are AWS public on-demand prices for `us-east-1` Linux, retrieved on 22 September 2026. AWS changes them without notice. Your bill depends on region, usage, and any discount agreement with AWS, such as an Enterprise Discount Program or a Savings Plan.
 
-Trace storage is either ClickHouse or SmithDB. The shared services (PostgreSQL, Redis, EKS, networking, and object storage) appear in both tabs. The ClickHouse total does not include SmithDB, and the SmithDB tab does not include ClickHouse or ZooKeeper.
+The ClickHouse tab is a monthly run-rate for a whole default data plane. The SmithDB tab is only what SmithDB adds when it replaces ClickHouse as the trace store: a local-SSD node pool, a small general-compute pool, and a PostgreSQL 18 metastore. It does not include the EKS control plane, system nodes, Redis, application pods, or networking. SmithDB S3 is priced on its own, because it depends on how much trace data you keep.
 
 <Warning>
 Scaling capacity for any resource can be lowered when required, as long as the deployment remains within safe operating limits. For cost-conscious or pre-production deployments, Multi-AZ can be turned off. That lowers monthly cost and reduces fault tolerance.
@@ -31,17 +31,54 @@ Scaling capacity for any resource can be lowered when required, as long as the d
     Estimated total: **$2.2k–$3.2k/month**.
   </Tab>
   <Tab title="SmithDB">
-    SmithDB adds a PostgreSQL metastore, a regional blob store, and nodes with local NVMe. Those resources scale with trace volume, so this tab has no single monthly total.
+    Prices use the tested tiers in [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale). Each line includes the instances, one 100 GiB gp3 boot volume per node, and the metastore with 50 GB of storage. Hours per year are 8,760. S3 is excluded.
 
-    | Area | Rough monthly estimate | Notes |
-    | --- | --- | --- |
-    | RDS PostgreSQL | $100–$150 | `db.t4g.medium`, Multi-AZ, 50 GB starting storage. |
-    | SmithDB metastore | $100–$150 | Separate PostgreSQL database, same starting shape as LangSmith RDS. |
-    | ElastiCache Redis | $140–$280 | Lower end without read replicas. Higher end if read replicas are enabled. |
-    | EKS control plane | ~$73 | One EKS cluster at standard hourly pricing. |
-    | System node group | ~$210 | 3 `m6i.large` on-demand nodes. |
-    | SmithDB worker nodes | Scales with trace volume | Storage-optimized instances with local NVMe (`i4i` or `i8g`, `4xlarge` or `8xlarge`). Hosts query, ingestion, and compaction. |
-    | Networking | $150–$300 | NAT gateways, load balancers, PrivateLink or VPC endpoints, and low-volume data processing. Includes private connectivity to the SmithDB blob bucket. |
-    | S3, Secrets Manager, CloudWatch | $50–$200 | Low-volume baseline. The SmithDB blob store grows with trace volume. |
+    Pod sizes follow the tier: requests equal limits, so each pod is placed whole on one node. `compaction` and `cluster-manager` run on general compute (2.25 vCPU at Small, 4.25 vCPU at Medium). If your existing nodes already have that room, drop the general-compute line. The metastore is a dedicated PostgreSQL 18 database. Do not use a burstable `db.t3` or `db.t4g` class for it.
+
+    In `us-east-1` the local-NVMe pool is priced on `m6id`. Any family with enough local NVMe works. A single Small `m6id.4xlarge` has 16 vCPU and no room for node daemons, so the smallest single node is `m6id.8xlarge`.
+
+    | Layout | What a node loss does |
+    | --- | --- |
+    | A. One node | SSD workloads stop until a replacement node starts, then the cache rebuilds from S3. Data in S3 and the metastore is kept. |
+    | B. Two nodes, half-size replicas | Each SSD workload keeps one replica at half the tier CPU and memory. This split is not one of the three load-tested profiles. |
+    | B+. Two nodes, documented pod sizes | Pods on the surviving node keep running. The lost pods wait for a replacement. |
+    | C. Two full nodes | Documented pod sizes continue at two replicas each. |
+
+    Medium Option B runs `query` as two pods of 14 vCPU and 24 GiB, and `ingestion` and `compaction-worker` as two pods of 8 vCPU and 16 GiB each. Prices assume one `compaction-worker` replica at the documented size. Two replicas need 76 vCPU at Medium, which does not fit a single 64 vCPU node.
+
+    ### Small tier (10 ingest/s, 10 query/s)
+
+    | Layout | SSD pool | General compute | Metastore | Per year | Per month |
+    | --- | --- | --- | --- | --- | --- |
+    | A | 1 x `m6id.8xlarge` | 1 x `c6a.2xlarge` | `db.r6g.large` Single-AZ | $21,543 | $1,795 |
+    | B | 2 x `m6id.4xlarge` | 2 x `c6a.xlarge` | `db.r6g.large` Single-AZ | $21,735 | $1,811 |
+    | C | 2 x `m6id.8xlarge` | 2 x `c6a.2xlarge` | `db.r6g.large` Multi-AZ | $43,085 | $3,590 |
+
+    ### Medium tier (100 ingest/s, 40 query/s)
+
+    | Layout | SSD pool | General compute | Metastore | Per year | Per month |
+    | --- | --- | --- | --- | --- | --- |
+    | A | 1 x `m6id.16xlarge` | 1 x `c6a.2xlarge` | `db.r6g.xlarge` Multi-AZ | $44,146 | $3,679 |
+    | B | 2 x `m6id.8xlarge` | 2 x `c6a.xlarge` | `db.r6g.xlarge` Multi-AZ | $44,338 | $3,695 |
+    | B+ | 2 x `m6id.12xlarge` | 2 x `c6a.xlarge` | `db.r6g.xlarge` Multi-AZ | $60,968 | $5,081 |
+    | C | 2 x `m6id.16xlarge` | 2 x `c6a.2xlarge` | `db.r6g.xlarge` Multi-AZ | $80,278 | $6,690 |
+
+    One Small environment on layout A plus two Medium environments on layout B is $110,218 per year. The same shape with Medium on B+ is $143,478. Layout C for all three is $203,641. Large is a tested tier and is not priced here.
+
+    A 1-year Standard Reserved Instance, all upfront, for that one-Small-plus-two-Medium shape is about $64,718 on layout B and $64,338 if every environment uses layout A. Reserve a family only after the tier is confirmed, and pin the node pool to that family.
+
+    ### S3
+
+    SmithDB object storage is not in the totals. Standard storage is $0.023 per GB-month for the first 50 TB. Do not add lifecycle rules that expire objects. SmithDB deletes its own segments, and an external rule can delete live data.
+
+    | Data retained | Per year |
+    | --- | --- |
+    | 1 TB | $283 |
+    | 10 TB | $2,826 |
+    | 50 TB | $14,131 |
+
+    A ClickHouse backfill needs an extra `m6id.4xlarge` for the migration job (8 vCPU, 32 GiB, 100 GiB ephemeral) at about $693 per month. That node is only for the backfill.
+
+    See [Prepare SmithDB supporting infrastructure](/langsmith/self-host-smithdb-infrastructure) for the metastore, bucket, and cache disk.
   </Tab>
 </Tabs>
