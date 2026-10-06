@@ -1,0 +1,28 @@
+```ts
+import { ChatAnthropic } from "@langchain/anthropic";
+import { entrypoint, task, MemorySaver } from "@langchain/langgraph";
+
+let model = new ChatAnthropic({ model: "claude-sonnet-4-6" });
+
+const generateParagraph = task("generateParagraph", async (topic: string) => {
+  const response = await model.invoke([
+    { role: "system", content: "You are a helpful assistant that writes educational paragraphs." },
+    { role: "user", content: `Write a paragraph about ${topic}.` }
+  ]);
+  return response.text;
+});
+
+const checkpointer = new MemorySaver();
+
+const workflow = entrypoint(
+  { checkpointer, name: "workflow" },
+  async (topics: string[]) => {
+    const paragraphs = await Promise.all(topics.map(generateParagraph));
+    return paragraphs.join("\n\n");
+  }
+);
+
+const config = { configurable: { thread_id: crypto.randomUUID() } };
+const result = await workflow.invoke(["quantum computing", "climate change", "history of aviation"], config);
+console.log(result);
+```

@@ -1,0 +1,31 @@
+```python
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.func import entrypoint
+from langgraph.runtime import Runtime
+from langgraph.store.memory import InMemoryStore
+
+checkpointer = InMemorySaver()
+store = InMemoryStore()
+
+
+@entrypoint(checkpointer=checkpointer, store=store)
+def remember(inputs: dict, *, runtime: Runtime):
+    memory_store = runtime.store
+    namespace = (inputs["user_id"], "memories")
+    fact = inputs.get("fact")
+    if fact:
+        memory_store.put(namespace, "profile", {"fact": fact})
+    items = memory_store.search(namespace)
+    return [item.value for item in items]
+
+
+config_a = {"configurable": {"thread_id": "thread-a"}}
+config_b = {"configurable": {"thread_id": "thread-b"}}
+
+remember.invoke(
+    {"user_id": "user-1", "fact": "Prefers dark mode"},
+    config_a,
+)
+print(remember.invoke({"user_id": "user-1"}, config_b))
+# -> [{'fact': 'Prefers dark mode'}]
+```
