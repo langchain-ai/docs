@@ -1,0 +1,184 @@
+---
+title: Build checklist for the Graph API
+sidebarTitle: Build checklist
+description: Decide state, control flow, Send, Command, and node options as you build with the Graph API.
+---
+
+This guide walks through the decisions you make when building a graph. For install and an end-to-end agent example, see the [LangGraph quickstart](/oss/javascript/langgraph/quickstart). For a design walkthrough, see [Thinking in the Graph API](/oss/javascript/langgraph/thinking-in-graph-api). For concepts, see the [Graph API overview](/oss/javascript/langgraph/graph-api). To choose between the Graph API and the Functional API, see [Choosing between Graph and Functional APIs](/oss/javascript/langgraph/choosing-apis).
+
+## Build your graph
+
+Work through these decisions in order. Each step includes a short example and links to the how-to for full recipes.
+
+<Steps>
+<Step title="Define shared state">
+Decide what data nodes share and how updates merge.
+
+- Pick a schema (`TypedDict`, dataclass, or `StateSchema` in TypeScript).
+- Add a [reducer](/oss/javascript/langgraph/graph-api#reducers) for any key that multiple nodes write (for example, appending messages).
+- Use private or input/output schemas when the graph should hide internal channels from callers.
+
+
+
+```typescript
+import { StateSchema, ReducedValue } from "@langchain/langgraph";
+import { z } from "zod/v4";
+
+const State = new StateSchema({
+  foo: z.number(),
+  bar: new ReducedValue(
+    z.array(z.string()).default(() => []),
+    { reducer: (left, right) => left.concat(right) }
+  ),
+});
+```
+
+Here `foo` overwrites. `bar` concatenates.
+
+
+For schemas, reducers, messages, and private state, see [Define and update state](/oss/javascript/langgraph/graph-api-state).
+</Step>
+
+<Step title="Choose control flow">
+Decide how work moves between nodes.
+
+- **Sequence**: Fixed steps in order.
+- **Branch**: Conditional edges pick the next node from state.
+- **Parallel**: Fan-out to several nodes, then fan-in (often with reducers).
+- **Loop**: Cycle until a termination condition, or cap runs with a [recursion limit](/oss/javascript/langgraph/graph-api#recursion-limit).
+
+This sequence checks whether a number is even, then formats a message:
+
+
+
+```typescript
+import {
+  END,
+  START,
+  StateGraph,
+  StateSchema,
+  type GraphNode,
+} from "@langchain/langgraph";
+import * as z from "zod";
+
+const State = new StateSchema({
+  number: z.number(),
+  isEven: z.boolean().optional(),
+  message: z.string().optional(),
+});
+
+const checkEven: GraphNode<typeof State> = (state) => ({
+  isEven: state.number % 2 === 0,
+});
+
+const formatMessage: GraphNode<typeof State> = (state) => ({
+  message: state.isEven ? "The number is even." : "The number is odd.",
+});
+
+const graph = new StateGraph(State)
+  .addNode("checkEven", checkEven)
+  .addNode("formatMessage", formatMessage)
+  .addEdge(START, "checkEven")
+  .addEdge("checkEven", "formatMessage")
+  .addEdge("formatMessage", END)
+  .compile();
+
+await graph.invoke({ number: 7 });
+```
+
+
+For branches, parallel paths, and loops, see [Build sequences, branches, and loops](/oss/javascript/langgraph/graph-api-control-flow).
+</Step>
+
+<Step title="Decide if you need Send or Command">
+Most graphs only need nodes, edges, and conditional edges. Reach for the extras when the default model is not enough:
+
+- Use [`Send`](https://reference.langchain.com/javascript/langchain-langgraph/index/Send) when you must run the same node once per item, each with its own input, and the item count is only known at runtime (map-reduce / orchestrator-worker).
+- Use [`Command`](https://reference.langchain.com/javascript/langchain-langgraph/index/Command) when one step must both update state and choose the next node, resume after an [interrupt](/oss/javascript/langgraph/interrupts), or update state from a tool.
+
+
+
+```typescript
+import { Command, Send } from "@langchain/langgraph";
+
+// Send: fan out one worker per item
+graph.addConditionalEdges("nodeA", (state) => {
+  return state.subjects.map(
+    (subject) => new Send("generateJoke", { subject })
+  );
+});
+
+// Command: update state and route in one return
+graph.addNode(
+  "myNode",
+  (state) => {
+    return new Command({
+      update: { foo: "bar" },
+      goto: "myOtherNode",
+    });
+  },
+  { ends: ["myOtherNode"] }
+);
+```
+
+
+Otherwise keep routing in edges. For patterns and examples, see [Use Send and Command](/oss/javascript/langgraph/graph-api-send-command).
+</Step>
+
+<Step title="Configure nodes as needed">
+Add runtime options when reliability or cost matters:
+
+- Retries and timeouts for flaky or slow steps
+- Error handlers and graph-wide node defaults
+- Caching for expensive repeated work
+- Runtime context or config for dependencies that do not belong in state
+
+
+
+```typescript
+const graph = new StateGraph(State)
+  .addNode("nodeName", nodeFunction, { retryPolicy: {} })
+  .compile();
+```
+
+
+See [Configure nodes](/oss/javascript/langgraph/graph-api-nodes).
+</Step>
+
+<Step title="Visualize the graph">
+Render a Mermaid or PNG diagram to review topology and debug routing.
+
+
+
+```typescript
+const drawableGraph = await graph.getGraphAsync();
+console.log(drawableGraph.drawMermaid());
+```
+
+
+See [Visualize your graph](/oss/javascript/langgraph/graph-api-visualize).
+</Step>
+</Steps>
+
+## Next steps
+
+- [Thinking in the Graph API](/oss/javascript/langgraph/thinking-in-graph-api): Design walkthrough with the email agent
+- [Graph API overview](/oss/javascript/langgraph/graph-api): Concepts for state, nodes, edges, `Send`, and `Command`
+- [Define and update state](/oss/javascript/langgraph/graph-api-state)
+- [Build sequences, branches, and loops](/oss/javascript/langgraph/graph-api-control-flow)
+- [Use Send and Command](/oss/javascript/langgraph/graph-api-send-command)
+- [Configure nodes](/oss/javascript/langgraph/graph-api-nodes)
+- [Visualize your graph](/oss/javascript/langgraph/graph-api-visualize)
+- [LangGraph quickstart](/oss/javascript/langgraph/quickstart): End-to-end calculator agent
+- [Choosing between Graph and Functional APIs](/oss/javascript/langgraph/choosing-apis)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/langgraph/use-graph-api.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
