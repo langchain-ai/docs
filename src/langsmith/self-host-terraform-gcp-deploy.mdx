@@ -131,7 +131,7 @@ You also need a LangSmith license key ([contact our sales team](https://www.lang
 For a condensed cheat sheet of `make` targets, required variables, and common constraints, see the [GCP quick reference](/langsmith/self-host-terraform-gcp-quick-reference).
 </Tip>
 
-For the fastest path from zero to a running LangSmith instance, run these commands in order:
+For the fastest path from zero to a running LangSmith instance, run these commands in order. They deploy Helm chart 0.17. To deploy chart 0.16, see [Clone and configure](#clone-and-configure).
 
 ```bash
 # 1. Clone the public modules
@@ -192,6 +192,17 @@ cd terraform/modules/gcp
 ```
 
 All subsequent commands run from `modules/gcp/`. Run `make help` for the full target list.
+
+<Note>
+The `main` branch and `v0.17.x` release tags deploy Helm chart 0.17, and this guide describes them. `v0.16.x` tags deploy chart 0.16. To stay on chart 0.16, list the tags and check out the latest `v0.16.x` tag:
+
+```bash
+git tag -l 'v0.16.*' --sort=-v:refname | head -1
+git checkout <tag>
+```
+
+Notes that start with "On chart 0.16" describe where the 0.16 line differs. To move an existing deployment to chart 0.17, see [Upgrade from chart 0.16](#upgrade-from-chart-016).
+</Note>
 
 Generate `terraform.tfvars` with the interactive wizard:
 
@@ -322,7 +333,9 @@ make deploy
 `make deploy` runs `helm/scripts/deploy.sh`, which refreshes the kubeconfig, runs preflight checks, builds the `langsmith-config` Kubernetes Secret from the `TF_VAR_*` values and `LANGSMITH_ADMIN_EMAIL`, applies the layered values files, and runs `helm upgrade --install`.
 
 <Note>
-The deploy script installs Helm chart version `~0.16.0` by default and refuses versions outside the 0.16 line. To pin a specific 0.16 release, set `langsmith_helm_chart_version` in `terraform.tfvars` or export `CHART_VERSION`.
+The deploy script installs Helm chart version `~0.17.0` by default and refuses versions outside the 0.17 line. To pin a specific 0.17 release, set `langsmith_helm_chart_version` in `terraform.tfvars` or export `CHART_VERSION`.
+
+On chart 0.16, the default is `~0.16.0`, and the script refuses versions outside the 0.16 line.
 </Note>
 
 Expect 8 to 12 minutes for the chart to install and pods to become ready.
@@ -346,6 +359,8 @@ export ADMIN_PASSWORD="<strong-password>"
 
 The shipped `helm/values/values.yaml` sets `config.blobStorage.engine: GCS` (native GCS mode), so blob storage authenticates through Workload Identity with no HMAC keys. The per-component Workload Identity annotations live in `values-overrides.yaml`; generate it with `make init-values`, or add each component's `serviceAccount.annotations."iam.gke.io/gcp-service-account"` by hand.
 
+The following command installs chart 0.17. On chart 0.16, use `--version ~0.16.0`.
+
 ```bash
 helm repo add langchain https://langchain-ai.github.io/helm
 helm repo update
@@ -353,7 +368,7 @@ helm repo update
 helm upgrade --install langsmith langchain/langsmith \
   --namespace langsmith \
   --create-namespace \
-  --version ~0.16.0 \
+  --version ~0.17.0 \
   -f helm/values/values.yaml \
   -f helm/values/values-overrides.yaml \
   --set config.langsmithLicenseKey="<your-license-key>" \
@@ -427,7 +442,7 @@ langsmith-queue-xxx                1/1  Running    0
 Each add-on is gated by a flag in `infra/terraform.tfvars`. Set the flag, then re-run `make init-values && make deploy`. Run `make apply` first for add-ons that create cloud resources: Fleet, standalone Polly, and standalone Insights (with external Postgres or Redis), SmithDB, and Sandboxes.
 
 <Note>
-The add-ons in this section require Helm chart version 0.16.0 or later, which is the version the deploy script installs.
+The add-ons in this section require Helm chart version 0.16.0 or later.
 </Note>
 
 ### LangSmith Deployment
@@ -550,7 +565,14 @@ kubectl get pods -n langsmith -w
 
 ### SmithDB
 
-SmithDB is the columnar store and query engine that runs alongside ClickHouse in the LangSmith release. `enable_smithdb` provisions a dedicated Cloud SQL metastore (PostgreSQL 18), a GCS object-store bucket, a Workload Identity service account, and Local SSD and compute node pools. SmithDB requires GKE Standard; Terraform rejects it on Autopilot.
+SmithDB is the columnar store and query engine that runs alongside ClickHouse in the LangSmith release. `enable_smithdb` provisions a dedicated Cloud SQL metastore (PostgreSQL 18), a GCS object-store bucket, a Workload Identity service account, and cache and compute node pools. SmithDB requires GKE Standard; Terraform rejects it on Autopilot.
+
+Two variables shape the deployment:
+
+- **`smithdb_sizing`**: `minimal`, `small`, `medium`, or `large`. When unset, it follows `sizing_profile`. The `minimal` size creates no SmithDB node pools and runs on the general node pool.
+- **`smithdb_cache_storage`**: `local-ssd` for Local SSD cache nodes, or `network-disk` for a Hyperdisk Balanced volume per pod on a C3 cache pool. When unset, `minimal` uses `network-disk` and the other sizes use `local-ssd`.
+
+For the node pool and metastore defaults each size resolves to, see the [SmithDB variables](/langsmith/self-host-terraform-gcp-variables#smithdb).
 
 ```hcl
 # infra/terraform.tfvars
@@ -559,18 +581,24 @@ enable_smithdb = true
 
 ```bash
 make apply
-make init-values  # copy langsmith-values-smithdb.yaml and generate its overrides
+make init-values  # copy langsmith-values-smithdb.yaml and generate its sizing and overrides files
 make deploy
 ```
 
-LangSmith then moves to SmithDB in stages. ClickHouse stays enabled throughout. Set each flag in `terraform.tfvars` only after the previous stage is healthy, and re-run `make init-values && make deploy` after each change:
+The generated `langsmith-values-smithdb-sizing.yaml` sets the SmithDB resources, cache volumes, and node placement. Do not set those in `langsmith-values-smithdb.yaml`. To change the size or cache later, run `make smithdb-configure SIZING=<size> [CACHE=<local-ssd|network-disk>]`, then `make deploy-all`.
 
-1. `smithdb_ingestion_enabled = true` routes new writes to SmithDB as well as ClickHouse.
-2. `smithdb_migration_enabled = true` backfills historical data from ClickHouse.
-3. `smithdb_query_enabled = true` serves UI and API reads from SmithDB.
+LangSmith then moves to SmithDB in stages. ClickHouse stays enabled throughout. `make smithdb-phase` sets the stage flags in `terraform.tfvars`. Run `make deploy-all` after each stage, and move to the next stage only after the previous one is healthy:
+
+1. `make smithdb-phase PHASE=dual-write` sets `smithdb_ingestion_enabled = true`, which routes new writes to SmithDB as well as ClickHouse. `make quickstart` starts new installs in this stage.
+2. `make smithdb-phase PHASE=backfill` also sets `smithdb_migration_enabled = true`, which backfills historical data from ClickHouse. To choose where the backfill starts, add `START_TIME=<RFC 3339 timestamp>`.
+3. `make smithdb-phase PHASE=cutover` sets `smithdb_query_enabled = true` and turns the backfill off, so UI and API reads come from SmithDB. The target refuses cutover until the backfill finishes. With no backfill to wait for, add `FORCE=true`.
+
+`make smithdb-status` reports the current stage, sizing, pods, Jobs, and backfill progress.
+
+While the backfill runs, every chart version change requires deleting the backfill Job before the next deploy. `make deploy` stops and prints the `kubectl delete job` command. Backfill progress is kept, so the new Job resumes rather than starting over.
 
 <Note>
-The historical migration stage requires Helm chart version 0.16.6 or later.
+On chart 0.16, SmithDB always uses Local SSD and compute node pools, and `smithdb_sizing`, `smithdb_cache_storage`, and the `make smithdb-*` targets do not exist. Set the three stage flags in `terraform.tfvars` by hand, and run `make init-values && make deploy` after each change. The backfill stage requires Helm chart version 0.16.6 or later.
 </Note>
 
 Verify:
@@ -581,12 +609,11 @@ kubectl get pods -n langsmith | grep smithdb
 
 ### Sandboxes
 
-`enable_sandboxes` provisions the infrastructure for LangSmith Sandboxes: a KVM-capable sandbox-host node pool, a dedicated Memorystore instance for JuiceFS metadata, and the JuiceFS CSI configuration Secret. Sandboxes require GKE Standard and `enable_gcp_iam_module = true`, and the module expects external Redis (`redis_source = "external"`).
+`enable_sandboxes` provisions the infrastructure for LangSmith Sandboxes: a KVM-capable sandbox-host node pool, a dedicated Memorystore instance for JuiceFS metadata, and the JuiceFS configuration Secret. The sandbox-host pods mount JuiceFS themselves, and a `juicefs-format` Job prepares the volume on the first deploy. Sandboxes require GKE Standard and `enable_gcp_iam_module = true`, and the module expects external Redis (`redis_source = "external"`).
 
 ```hcl
 # infra/terraform.tfvars
-enable_sandboxes       = true
-sandbox_host_image_tag = "<sandbox-host-image-tag>"
+enable_sandboxes = true
 ```
 
 ```bash
@@ -597,6 +624,12 @@ make deploy
 ```
 
 If your Helm release name is not `langsmith`, set `platform_backend_component_label` to `<release-name>-platform-backend` so the sandbox host can reach the platform backend.
+
+The deploy script sets the sandbox-host image tag from the chart's app version, so the image always matches the chart.
+
+<Note>
+On chart 0.16, sandboxes mount JuiceFS through a JuiceFS CSI driver that the chart installs, and `sandbox_host_image_tag` is required in `terraform.tfvars`. Chart 0.17 ignores that variable.
+</Note>
 
 ### Expected pods by add-on
 
@@ -609,6 +642,25 @@ If your Helm release name is not `langsmith`, set `platform_backend_component_la
 **Standalone Insights and Polly add:** `langsmith-standalone-insights-api-server`, `langsmith-standalone-polly-api-server`, and their queue workloads.
 
 **SmithDB adds:** `langsmith-smithdb-cluster-manager`, `langsmith-smithdb-ingestion`, `langsmith-smithdb-query`, `langsmith-smithdb-compaction`, `langsmith-smithdb-compaction-worker`.
+
+## Upgrade from chart 0.16
+
+To move a deployment from a `v0.16.x` tag to chart 0.17:
+
+1. Check out `main` or the latest `v0.17.x` tag.
+2. Remove `sandbox_host_image_tag` from `infra/terraform.tfvars` if it is set.
+3. Run `make apply`. With SmithDB enabled, `make init-values` fails until the Terraform state includes the 0.17 module outputs.
+4. With SmithDB enabled, replace the 0.16 overlay, which chart 0.17 rejects. Then add back only the edits that do not set `nodeSelector`, `tolerations`, `volumes`, `volumeMounts`, or `resources`:
+
+   ```bash
+   cp helm/values/langsmith-values-smithdb.yaml helm/values/langsmith-values-smithdb-0.16.yaml
+   cp helm/values/examples/langsmith-values-smithdb.yaml helm/values/langsmith-values-smithdb.yaml
+   ```
+
+5. Run `make init-values` to regenerate the sandbox values without the chart 0.16 `sandboxes.juicefs.csi` block.
+6. Run `make deploy`. With Sandboxes enabled, the deploy stops while sandbox volumes are still mounted through the JuiceFS CSI driver, and prints the `kubectl delete` commands for the sandbox-host workload and JuiceFS claims. Run them, wait until only `juicefs-csi-*` pods remain, then run `make deploy` again. Running sandboxes stop, but their data stays in object storage and Redis, and chart 0.17 mounts the same JuiceFS volume.
+
+The 0.17 module also stops granting the LangSmith service account project-wide Secret Manager access. If a workload you added reads Secret Manager as that service account, set `grant_project_secret_accessor = true` or grant access to the specific secrets.
 
 ## Key watchouts
 

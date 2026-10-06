@@ -51,7 +51,7 @@ Fleet is the current form of the feature formerly called Agent Builder. Enable i
 | `dns` | `infra/modules/dns/` | Cloud DNS managed zone and managed cert (optional, enable with `enable_dns_module`) |
 | `secrets` | `infra/modules/secrets/` | Secret Manager secret bundle (optional, enable with `enable_secret_manager_module`) |
 | `smithdb` | `infra/modules/smithdb/` | SmithDB Cloud SQL metastore, GCS object-store bucket, and Workload Identity service account (optional, enable with `enable_smithdb`) |
-| `smithdb-nodes` | `infra/modules/smithdb-nodes/` | Local SSD cache and compute node pools for SmithDB (GKE Standard only) |
+| `smithdb-nodes` | `infra/modules/smithdb-nodes/` | Cache and compute node pools for SmithDB (GKE Standard only, none for `smithdb_sizing = "minimal"`). The cache pool uses Local SSD or, with `smithdb_cache_storage = "network-disk"`, C3 nodes with Hyperdisk volumes. On chart 0.16, the cache pool always uses Local SSD. |
 
 When `enable_sandboxes = true`, Terraform also reuses the `redis` module for a dedicated Memorystore instance that holds JuiceFS metadata, and the `k8s-cluster` module adds a sandbox-host node pool with nested virtualization.
 
@@ -210,6 +210,10 @@ GKE pod
 | `langsmith-host-backend` | Same | GCS `storage.objectAdmin` |
 | `langsmith-listener` | Same | GCS `storage.objectAdmin` |
 | `langsmith-ksa` (operator pods) | Same | GCS `storage.objectAdmin` |
+| `langsmith-sandbox-host` (juicefs-format Job) | Same | GCS `storage.objectAdmin` |
+| `juicefs-csi-node-sa` | Same | GCS `storage.objectAdmin`. Used by the chart 0.16 JuiceFS CSI driver; Terraform keeps the binding so old mount pods can read the bucket until the upgrade removes the driver. |
+
+sandbox-host runs on the host network, where GKE does not provide Workload Identity. It reads and writes the JuiceFS data as the sandbox node service account, which Terraform grants `storage.objectAdmin` limited to the JuiceFS prefix of the bucket.
 
 The GSA is defined by the `iam` module and output as `workload_identity_annotation`. `init-values.sh` writes these annotations into `values-overrides.yaml` automatically.
 
@@ -279,7 +283,7 @@ google_project_service (APIs enabled)
         ├── module.sandbox_juicefs_redis (count = enable_sandboxes)
         ├── module.smithdb               (count = enable_smithdb)
         └── module.gke_cluster
-              ├── module.smithdb_nodes   (count = enable_smithdb and not Autopilot)
+              ├── module.smithdb_nodes   (count = enable_smithdb, not Autopilot, not minimal)
               └── time_sleep.wait_for_cluster
                     └── module.k8s_bootstrap   (also waits on module.cloudsql and module.iam)
                           ├── Fleet, Polly, Insights, and SmithDB secrets (when enabled)

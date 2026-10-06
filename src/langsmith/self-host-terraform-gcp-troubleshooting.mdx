@@ -304,6 +304,75 @@ kubectl annotate serviceaccount langsmith-ksa -n langsmith \
   iam.gke.io/gcp-service-account="$WI" --overwrite
 ```
 
+### Deploy refuses chart 0.16 sandbox values
+
+**Symptom**
+
+```
+ERROR: values-overrides.yaml carries sandboxes.juicefs.csi, the chart 0.16 sandbox schema.
+```
+
+**Cause:** `values-overrides.yaml` was generated for chart 0.16. Chart 0.17 has no JuiceFS CSI driver and ignores the `sandboxes.juicefs.csi` block.
+
+**Fix:** Run `make apply`, then `make init-values` to regenerate the file, then `make deploy`.
+
+### Deploy refuses while JuiceFS CSI volumes remain
+
+**Symptom**
+
+```
+ERROR: namespace langsmith still mounts sandbox volumes through the chart 0.16 JuiceFS CSI driver.
+```
+
+**Cause:** Chart 0.17 removes the JuiceFS CSI driver. Upgrading while PersistentVolumeClaims or mount pods still use it leaves the old sandbox-host pods stuck in `Terminating`.
+
+**Fix:** Run the `kubectl delete` commands that the error prints while the driver still runs. Wait until `kubectl get pods -n langsmith | grep juicefs` lists only `juicefs-csi-*` pods, then run `make deploy` again. Running sandboxes stop. Their data stays in object storage and Redis, and chart 0.17 mounts the same JuiceFS volume.
+
+### Deploy refuses the chart 0.16 SmithDB overlay
+
+**Symptom**
+
+```
+ERROR: langsmith-values-smithdb.yaml has chart 0.16 SmithDB values that chart 0.17 rejects:
+```
+
+**Cause:** `init-values.sh` copies the SmithDB overlay only once, so a chart 0.16 copy stays in `helm/values/`. It sets the `local-ssd-storage` volume or `smithdb.migration.deployment`, which chart 0.17 replaces.
+
+**Fix:** Save your copy and start from the 0.17 example:
+
+```bash
+cp helm/values/langsmith-values-smithdb.yaml helm/values/langsmith-values-smithdb-0.16.yaml
+cp helm/values/examples/langsmith-values-smithdb.yaml helm/values/langsmith-values-smithdb.yaml
+```
+
+Add back only the edits that do not set `nodeSelector`, `tolerations`, `volumes`, `volumeMounts`, or `resources`. The generated `langsmith-values-smithdb-sizing.yaml` now sets those.
+
+### `init-values.sh` fails with missing SmithDB outputs
+
+**Symptom**
+
+```
+ERROR: enable_smithdb = true but smithdb_helm_values or the resolved metastore TLS
+       outputs are missing. The state is older than this module. Run 'make apply'.
+```
+
+**Cause:** The Terraform state predates the chart 0.17 module, which adds the SmithDB sizing and metastore outputs.
+
+**Fix:** Run `make apply`, then `make init-values`.
+
+### Deploy refuses because the SmithDB backfill Job changed
+
+**Symptom**
+
+```
+ERROR: the existing <job-name> Job does not match what this deploy renders,
+       and a Job's pod template cannot be changed in place:
+```
+
+**Cause:** A chart upgrade or a sizing change renders a different pod template for the backfill Job, and Kubernetes does not allow changing a Job's pod template.
+
+**Fix:** Delete the Job with the command the error prints, then run `make deploy` again. The backfill keeps its progress in the task database, so the new Job resumes instead of starting over.
+
 ### Helm release stuck in `pending-upgrade`
 
 **Symptom**
@@ -341,6 +410,8 @@ gcloud projects add-iam-policy-binding <project-id> \
   --member="user:$(gcloud config get account)" \
   --role="roles/secretmanager.admin"
 ```
+
+A workload you added that reads Secret Manager as the LangSmith service account loses access after an upgrade to `main` or a `v0.17.x` tag, because the project-wide `roles/secretmanager.secretAccessor` grant is now opt-in. Grant access on the specific secrets, or set `grant_project_secret_accessor = true` and run `make apply`.
 
 ### `langsmith-postgres-credentials` or `langsmith-redis-credentials` Secret missing
 

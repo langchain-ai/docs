@@ -11,6 +11,8 @@ Variables come in two categories:
 - **Non-sensitive** (region, sizing, feature flags): set in `infra/terraform.tfvars`.
 - **Sensitive** (license key, passwords, encryption keys): sourced through `infra/scripts/setup-env.sh`, which writes them to Google Secret Manager and exports them for the Terraform and Helm steps.
 
+Defaults reflect the `main` branch and `v0.17.x` tags, which deploy Helm chart 0.17. Rows that differ on `v0.16.x` tags, which deploy chart 0.16, say so.
+
 For the end-to-end install, refer to the [deploy guide](/langsmith/self-host-terraform-gcp-deploy). For how the modules fit together, refer to the [architecture reference](/langsmith/self-host-terraform-gcp-architecture).
 
 ## Core
@@ -104,7 +106,7 @@ For the end-to-end install, refer to the [deploy guide](/langsmith/self-host-ter
 | `langsmith_namespace` | `langsmith` | no | Kubernetes namespace for LangSmith. |
 | `langsmith_domain` | `langsmith.example.com` | no | Fully qualified domain name for LangSmith. |
 | `langsmith_license_key` | `""` | no | License key. Use `TF_VAR_langsmith_license_key`. |
-| `langsmith_helm_chart_version` | `""` | no | Helm chart version for the deploy script. Empty installs the latest `0.16.x` patch (`~0.16.0`). An exported `CHART_VERSION` takes precedence. The deploy script refuses versions outside the 0.16 line. |
+| `langsmith_helm_chart_version` | `""` | no | Helm chart version for the deploy script. Empty installs the latest `0.17.x` patch (`~0.17.0`). An exported `CHART_VERSION` takes precedence. The deploy script refuses versions outside the 0.17 line. On chart 0.16, the default is `~0.16.0` and the line is 0.16. |
 | `langsmith_release_name` | `langsmith` | no | Helm release name. Must match the release the deploy step installs, because chart-created service account names derive from it. |
 
 ## Ingress and TLS
@@ -132,6 +134,7 @@ For the end-to-end install, refer to the [deploy guide](/langsmith/self-host-ter
 |---|---|---|---|
 | `enable_gcp_iam_module` | `true` | no | Wire `modules/iam` for Workload Identity and bucket IAM bindings. |
 | `enable_secret_manager_module` | `false` | no | Wire `modules/secrets` to store generated bootstrap credentials in Secret Manager. |
+| `grant_project_secret_accessor` | `false` | no | Grant the LangSmith service account `roles/secretmanager.secretAccessor` on the whole project. No module component needs it; set `true` only for a workload you added that reads Secret Manager as that service account. On chart 0.16, the grant is always on and this variable does not exist. |
 | `enable_dns_module` | `false` | no | Wire `modules/dns` for Cloud DNS and a managed certificate. |
 | `dns_create_zone` | `true` | no | Create a new Cloud DNS managed zone when the DNS module is enabled. |
 | `dns_existing_zone_name` | `""` | when `!dns_create_zone` | Existing Cloud DNS zone to use. |
@@ -143,7 +146,7 @@ The Helm deploy scripts read these flags from `terraform.tfvars` to enable the m
 
 | Variable | Default | Required | Description |
 |---|---|---|---|
-| `sizing_profile` | `default` | no | Helm sizing: `production` (~20 users, ~100 traces/sec), `production-large` (~50 users, ~1000 traces/sec), `dev` (single-replica), `minimum` (cost-parking floor, not for production), or `default` (chart defaults). |
+| `sizing_profile` | `default` | no | Helm sizing: `production` (~20 users, ~100 traces/sec), `production-large` (~50 users, ~1000 traces/sec), `dev` (single-replica), `minimum` (cost-parking floor, not for production), or `default` (chart defaults). With `enable_smithdb = true`, also sets the `smithdb_sizing` default, and sets the `sandbox_host_machine_type` default. |
 | `enable_deployments` | `false` | no | Enable LangSmith Deployment (listener, operator, host-backend). Requires the Deployments license entitlement. |
 | `enable_agent_builder` | `false` | no | Enable Agent Builder. Requires `enable_deployments = true` and the Agent Builder entitlement. |
 | `enable_insights` | `false` | no | Enable Insights (ClickHouse-backed analytics). Requires the Insights entitlement. |
@@ -151,6 +154,7 @@ The Helm deploy scripts read these flags from `terraform.tfvars` to enable the m
 | `enable_fleet` | `false` | no | Enable Fleet standalone deployment. Does not require `enable_deployments`. Mutually exclusive with `enable_agent_builder`. Reuses `langsmith_agent_builder_encryption_key` when migrating from `enable_agent_builder`. |
 | `enable_standalone_polly` | `false` | no | Enable Polly standalone deployment. Does not require `enable_deployments`. Reuses `langsmith_polly_encryption_key`. |
 | `enable_standalone_insights` | `false` | no | Enable Insights standalone deployment. Does not require `enable_deployments`. Reuses `langsmith_insights_encryption_key`. |
+| `enable_sso_oidc` | `false` | no | Enable SSO login through a standard OIDC provider and turn off basic auth. `init-values.sh` reads the client ID, client secret, and issuer URL from the `TF_VAR_langsmith_oauth_client_id`, `TF_VAR_langsmith_oauth_client_secret`, and `TF_VAR_langsmith_oauth_issuer_url` variables, which `setup-env.sh` loads from Secret Manager. Enable only after the initial install with basic auth and after you confirm organization admin access, or you lock yourself out of the UI. Not available on chart 0.16. |
 | `enable_usage_telemetry` | `false` | no | Enable extended usage telemetry reporting (`PHONE_HOME_USAGE_REPORTING_ENABLED`). |
 
 ## SmithDB
@@ -159,19 +163,22 @@ SmithDB requires GKE Standard. Terraform rejects `enable_smithdb` on Autopilot, 
 
 | Variable | Default | Required | Description |
 |---|---|---|---|
-| `enable_smithdb` | `false` | no | Provision the SmithDB dependencies: Cloud SQL metastore, GCS object store, Workload Identity service account, and Local SSD and compute node pools. |
+| `enable_smithdb` | `false` | no | Provision the SmithDB dependencies: Cloud SQL metastore, GCS object store, Workload Identity service account, and cache and compute node pools. |
+| `smithdb_sizing` | `null` | no | `minimal`, `small`, `medium`, or `large`. `null` follows `sizing_profile`: `minimum` gives `minimal`, `dev` and `default` give `small`, `production` gives `medium`, and `production-large` gives `large`. `minimal` creates no SmithDB node pools and runs on the general node pool. Not available on chart 0.16. |
+| `smithdb_cache_storage` | `null` | no | `local-ssd` (Local SSD cache nodes) or `network-disk` (a Hyperdisk Balanced volume per pod on a C3 or C3D cache pool, or `standard-rwo` for `minimal`). `null` gives `network-disk` for `minimal` and `local-ssd` otherwise. A change replaces the cache node pool. Not available on chart 0.16. |
 | `smithdb_ingestion_enabled` | `false` | no | Route new writes to SmithDB as well as ClickHouse. Enable only after the SmithDB services pass readiness checks. |
-| `smithdb_migration_enabled` | `false` | no | Backfill historical data from ClickHouse. Requires `smithdb_ingestion_enabled` and Helm chart version 0.16.6 or later. Also runs an in-chart Postgres for migration task state. |
+| `smithdb_migration_enabled` | `false` | no | Backfill historical data from ClickHouse. Requires `smithdb_ingestion_enabled`. Also runs an in-chart Postgres for migration task state. On chart 0.16, requires Helm chart version 0.16.6 or later. |
+| `smithdb_migration_start_time` | `""` | no | Backfill start time in RFC 3339 format, for example `2026-01-01T00:00:00Z`. Empty keeps the chart default window. Not available on chart 0.16. |
 | `smithdb_query_enabled` | `false` | no | Serve UI and API reads from SmithDB. Requires `smithdb_ingestion_enabled`. |
 | `smithdb_metastore_source` | `create` | no | `create` (dedicated Cloud SQL instance) or `external` (bring your own, for example AlloyDB behind the Auth Proxy). Must be a dedicated, empty database, never the LangSmith operational Postgres. |
 | `smithdb_metastore_database_version` | `POSTGRES_18` | no | Cloud SQL version for the metastore. SmithDB requires PostgreSQL 18 or later. |
-| `smithdb_metastore_tier` | `db-custom-2-8192` | no | Cloud SQL machine tier for the metastore. |
+| `smithdb_metastore_tier` | `null` | no | Cloud SQL machine tier for a created metastore. `null` follows `smithdb_sizing`: `db-custom-2-8192` for `minimal`, `db-custom-4-16384` for `small`, `db-custom-6-32768` for `medium`, and `db-custom-10-65536` for `large`. On chart 0.16, the default is `db-custom-2-8192`. |
 | `smithdb_metastore_disk_size` | `50` | no | Metastore disk size in GB. Autoresize is on, so this is a floor. |
 | `smithdb_metastore_high_availability` | `false` | no | Run the metastore as a regional (HA) Cloud SQL instance. |
 | `smithdb_metastore_deletion_protection` | `true` | no | Prevent deletion of the metastore from Terraform and from the Cloud SQL API. Set `false` and apply that change before running destroy. |
 | `smithdb_metastore_ssl_mode` | `ENCRYPTED_ONLY` | no | Cloud SQL SSL enforcement for the metastore. |
-| `smithdb_metastore_use_ssl` | `true` | no | Connect to the metastore over TLS directly. Set `false` when `smithdb_metastore_use_auth_proxy = true`. |
-| `smithdb_metastore_use_auth_proxy` | `false` | no | Run a Cloud SQL Auth Proxy sidecar in every SmithDB Pod. Requires `smithdb_metastore_source = "create"` and `smithdb_metastore_use_ssl = false`. |
+| `smithdb_metastore_use_ssl` | `null` | no | Connect to the metastore over TLS directly. `null` resolves to the opposite of `smithdb_metastore_use_auth_proxy`. Must be `false` with the Auth Proxy. On chart 0.16, the default is `true`. |
+| `smithdb_metastore_use_auth_proxy` | `null` | no | Run a Cloud SQL Auth Proxy sidecar in every SmithDB Pod. `null` resolves to `true` for `smithdb_metastore_source = "create"` and `false` for `external`. Requires `smithdb_metastore_source = "create"` and `smithdb_metastore_use_ssl = false`. On chart 0.16, the default is `false`. |
 | `smithdb_auth_proxy_image` | `gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.25.0` | no | Cloud SQL Auth Proxy image for the sidecar. Pin an exact tag. |
 | `smithdb_metastore_master_username` | `smithdb` | no | Master username for the metastore. |
 | `smithdb_metastore_master_password` | `null` | no | Master password for the metastore. `null` auto-generates one. Set with `TF_VAR_smithdb_metastore_master_password`. |
@@ -186,12 +193,12 @@ SmithDB requires GKE Standard. Terraform rejects `enable_smithdb` on Autopilot, 
 | `smithdb_bucket_force_destroy` | `false` | no | Allow Terraform to delete a non-empty bucket on destroy. Set `true` only for test stacks. |
 | `smithdb_service_account_email` | `null` | no | Existing service account for the SmithDB pods. `null` creates a dedicated least-privilege one. |
 | `smithdb_node_locations` | `[]` | no | Zones for the SmithDB node pools. Empty uses every zone in the region; pin this after verifying machine type and Local SSD availability. |
-| `smithdb_instance_store_machine_type` | `n2-standard-16` | no | Machine type for the Local SSD cache pool. |
-| `smithdb_instance_store_local_ssd_count` | `2` | no | Local SSDs per cache node. Each disk holds 375 GB. Compute Engine accepts only specific counts per machine type. Set `0` for `-lssd` machine types that bundle their disks. |
-| `smithdb_instance_store_disk_size` | `100` | no | Boot disk size in GB for cache pool nodes. |
+| `smithdb_instance_store_machine_type` | `null` | no | Machine type for the cache pool. `null` follows the size and cache mode: `n2-standard-16`, `n2-standard-32`, or `n2-standard-64` for `local-ssd`, and `c3-standard-22`, `c3-standard-44`, or `c3-standard-88` for `network-disk`, for `small`, `medium`, and `large`. `network-disk` requires a C3 or C3D type. On chart 0.16, the default is `n2-standard-16`. |
+| `smithdb_instance_store_local_ssd_count` | `null` | no | Local SSDs per cache node. Each disk holds 375 GB. `null` gives `2`, `4`, or `8` for `small`, `medium`, and `large` with `local-ssd`, and `0` for `network-disk`. Compute Engine accepts only specific counts per machine type. Set `0` for `-lssd` machine types that bundle their disks. On chart 0.16, the default is `2`. |
+| `smithdb_instance_store_disk_size` | `null` | no | Boot disk size in GB for cache pool nodes. `null` gives `100` for `local-ssd` and `300` for `network-disk`. `network-disk` with the backfill requires at least `300`. On chart 0.16, the default is `100`. |
 | `smithdb_instance_store_min_nodes` | `0` | no | Minimum cache pool nodes per zone. `0` lets the pool scale to zero. |
 | `smithdb_instance_store_max_nodes` | `3` | no | Maximum cache pool nodes per zone. |
-| `smithdb_compute_machine_type` | `n2-standard-8` | no | Machine type for the compute pool (compaction, cluster manager). |
+| `smithdb_compute_machine_type` | `null` | no | Machine type for the compute pool (compaction, cluster manager, backfill task database). `null` gives `n2-standard-8` for `small` and `medium`, and `n2-standard-16` for `large`. On chart 0.16, the default is `n2-standard-8`. |
 | `smithdb_compute_disk_size` | `100` | no | Boot disk size in GB for compute pool nodes. |
 | `smithdb_compute_min_nodes` | `0` | no | Minimum compute pool nodes per zone. |
 | `smithdb_compute_max_nodes` | `3` | no | Maximum compute pool nodes per zone. |
@@ -203,23 +210,23 @@ Sandboxes require GKE Standard and `enable_gcp_iam_module = true`.
 | Variable | Default | Required | Description |
 |---|---|---|---|
 | `enable_sandboxes` | `false` | no | Provision the infrastructure for LangSmith Sandboxes. Requires Standard GKE, external Redis, Workload Identity, and sandbox-host nodes with usable Linux KVM (`/dev/kvm`). |
-| `sandbox_host_image_tag` | `""` | when sandboxes are enabled | sandbox-host image tag. `init-values.sh` exits without it. |
+| `sandbox_host_image_tag` | `""` | no | Deprecated and ignored; remove it from `terraform.tfvars`. The deploy script sets the sandbox-host image tag from the chart's app version. On chart 0.16, required when sandboxes are enabled, and `init-values.sh` exits without it. |
 | `sandbox_service_url_base_url` | `""` | no | Base URL for service URLs of HTTP services running inside sandboxes. Requires wildcard DNS and TLS for the host when set. |
 | `platform_backend_component_label` | `langsmith-platform-backend` | no | Component label of the platform-backend pods, excluded from the default-deny network policy so the sandbox host can reach them. Set to `<release-name>-platform-backend` if your Helm release is not named `langsmith`. |
-| `sandbox_host_machine_type` | `n2-standard-8` | no | Machine type for sandbox-host nodes. Must support nested virtualization. |
+| `sandbox_host_machine_type` | `null` | no | Machine type for sandbox-host nodes. Must support nested virtualization. `null` follows `sizing_profile`: `n2-standard-32` for `production` and `production-large`, `n2-standard-8` otherwise. C4 types are not supported, because the pool uses a pd-ssd boot disk. On chart 0.16, the default is `n2-standard-8`. |
 | `sandbox_host_node_count` | `1` | no | Initial sandbox-host nodes per zone. |
-| `sandbox_host_min_node_count` | `1` | no | Minimum sandbox-host nodes per zone. |
+| `sandbox_host_min_node_count` | `0` | no | Minimum sandbox-host nodes per zone. `0` lets the autoscaler keep only the nodes sandbox-host needs. On chart 0.16, the default is `1`. |
 | `sandbox_host_max_node_count` | `5` | no | Maximum sandbox-host nodes per zone. |
 | `sandbox_host_disk_size_gb` | `200` | no | Boot disk size in GB for sandbox-host nodes. |
-| `sandbox_host_ephemeral_local_ssd_count` | `0` | no | Local SSDs backing sandbox-host ephemeral storage for the JuiceFS cache. `0` keeps it on the boot disk. |
+| `sandbox_host_ephemeral_local_ssd_count` | `0` | no | Local SSDs backing kubelet and container runtime ephemeral storage on sandbox-host nodes. The JuiceFS cache stays on the boot disk, so these disks do not speed up sandbox file I/O. Accepts `0`, `1`, `2`, `4`, `8`, `16`, or `24`, subject to the machine type. |
 | `sandbox_default_container_requests` | `{ cpu = "100m", memory = "128Mi" }` | no | Default requests injected into sandbox containers that omit them. |
 | `sandbox_juicefs_name` | `sandbox-juicefs` | no | JuiceFS volume name for sandbox snapshots and filesystem state. |
 | `sandbox_juicefs_redis_memory_size` | `5` | no | Memory in GB for the dedicated JuiceFS metadata Memorystore instance. |
 | `sandbox_juicefs_redis_high_availability` | `true` | no | Use the Standard HA tier for the JuiceFS metadata Redis. |
 | `sandbox_juicefs_redis_prevent_destroy` | `false` | no | Prevent Terraform from destroying the JuiceFS metadata Redis. |
 | `sandbox_juicefs_redis_rdb_snapshot_period` | `null` | no | RDB snapshot period for the JuiceFS metadata Redis, for example `ONE_HOUR`. `null` disables RDB persistence. |
-| `sandbox_juicefs_csi_config_secret_name` | `juicefs-csi-config` | no | Kubernetes Secret holding the JuiceFS CSI configuration. |
-| `sandbox_juicefs_csi_config_secret_revision` | `1` | no | Increment to rewrite the JuiceFS CSI configuration Secret. |
+| `sandbox_juicefs_csi_config_secret_name` | `juicefs-csi-config` | no | Kubernetes Secret holding the sandbox JuiceFS configuration, passed to the chart as `sandboxes.juicefs.existingSecretName`. On chart 0.16, passed as `sandboxes.juicefs.csi.existingSecretName`. |
+| `sandbox_juicefs_csi_config_secret_revision` | `1` | no | Increment to rewrite the JuiceFS configuration Secret. The chart does not restart sandbox-host after the rewrite, so restart it after the apply. |
 
 ## Sensitive values (set with `setup-env.sh`)
 
