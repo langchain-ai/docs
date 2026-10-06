@@ -3,6 +3,9 @@ type: documentation route model
 title: Versioned Documentation and Routes
 description: Explains how the documentation builder selects source families and emits Python, JavaScript, and language-agnostic routes. Covers build-time rendering, link and snippet rewriting, language-owned MCP migration material, Mintlify navigation, and compatibility redirects.
 tags: [documentation-pipeline, routes, language-versioning, redirects]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-06T08:22:08.206Z
 sources:
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
@@ -36,9 +39,6 @@ sources:
     resource: repo://src/oss/python/migrate/langchain-mcp-adapters.mdx
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-02T08:21:54.688Z
 generated: { by: "openwiki/0.4.3", at: "2026-10-02T08:21:54.688Z" }
 ---
 
