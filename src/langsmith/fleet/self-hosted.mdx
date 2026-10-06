@@ -1,66 +1,51 @@
 ---
-title: Self-host Fleet, Insights, and Chat
+title: Self-host Fleet
 sidebarTitle: Self-hosted
-description: Enable Fleet, Insights, and Chat on a self-hosted LangSmith instance using Helm. Covers encryption keys, OAuth providers, and GitHub App setup.
+description: Enable Fleet on a self-hosted LangSmith instance using Helm. Covers the encryption key, OAuth providers for tools and triggers, and GitHub App setup.
 ---
+
+import SelfHostFeatureEncryptionKey from '/snippets/langsmith/self-host-feature-encryption-key.mdx';
+import SelfHostAgentBootstrapMigration from '/snippets/langsmith/self-host-agent-bootstrap-migration.mdx';
+import SelfHostApplyHelmChanges from '/snippets/langsmith/self-host-apply-helm-changes.mdx';
 
 <Info>
 Fleet requires [LangSmith Self-Hosted v0.13](https://changelog.langchain.com/announcements/langsmith-self-hosted-v0-13) or later. The standalone deployment model described below requires v0.15 or later.
 </Info>
 
-Fleet, Insights, and Chat are optional features you enable on top of the base [LangSmith self-hosted](/langsmith/self-hosted) platform. Each feature requires a Fernet encryption key. You can enable all three in a single Helm configuration.
+[Fleet](/langsmith/fleet/index) is an optional feature you enable on top of the base [LangSmith self-hosted](/langsmith/self-hosted) platform. Fleet is disabled by default. For the other optional features, see [Enable additional LangSmith features](/langsmith/deploy-self-hosted-full-platform).
 
-Before starting, follow the [Enable additional LangSmith features](/langsmith/deploy-self-hosted-full-platform) prerequisites, which cover KEDA, ingress, cluster capacity, storage, and egress.
+Before starting, complete the [prerequisites](/langsmith/deploy-self-hosted-full-platform#prerequisites) for additional features.
 
 ## Components
 
-Enabling these features provisions the following components in your cluster for each feature (Fleet, Insights, Chat):
+Enabling Fleet provisions the following components in your cluster:
 
-- `api-server`: The main API server that handles requests for the feature.
+- `api-server`: The main API server that handles Fleet requests.
 - `queue`: Background task processing queue.
-- `postgres`: Dedicated PostgreSQL instance for the feature's data. Can be replaced with an external PostgreSQL instance.
-- `redis`: Dedicated Redis instance for the feature's caching and pub/sub. Can be replaced with an external Redis instance.
-
-Fleet additionally provisions:
+- `postgres`: Dedicated PostgreSQL instance for Fleet data. Can be replaced with an external PostgreSQL instance.
+- `redis`: Dedicated Redis instance for caching and pub/sub. Can be replaced with an external Redis instance.
 - `toolServer`: Provides MCP tool execution for agents.
 - `triggerServer`: Handles webhooks and scheduled triggers.
 
-<Warning>
-As of chart `0.16.0`, Insights runs on `langsmith-insights-engine`, a combined image that serves both the `insights` and `engine` graphs, and the chart uses it by default. The previous Insights-only image, `langsmith-clio`, is retired.
+## Generate an encryption key
 
-If your values pin `images.engineInsightsAgentImage.repository` to `langsmith-clio`, remove or update that pin before upgrading. The chart rejects it. If you mirror images to a private registry, mirror `langsmith-insights-engine` and point the repository at your copy. See [Mirroring images](/langsmith/self-host-mirroring-images#additional-images-for-engine).
-</Warning>
+<SelfHostFeatureEncryptionKey feature="Fleet" secretKey="agent_builder_encryption_key" valuesKey="fleet" />
 
-## Generate encryption keys
+## Enable Fleet
 
-Each feature uses its own Fernet encryption key to encrypt feature-specific secrets such as credentials and tokens. Separate keys allow independent rotation and limit exposure if a key is compromised. Generate one key per feature using Python:
-
-```bash
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-```
-
-Store each key in a predefined Kubernetes secret rather than setting them directly in your config file. See [Use an existing secret](/langsmith/self-host-using-an-existing-secret#parameters) for the relevant parameters: `agent_builder_encryption_key`, `insights_encryption_key`, and `polly_encryption_key`.
-
-## Enable Fleet, Insights, and Chat
+<SelfHostAgentBootstrapMigration />
 
 <Steps>
   <Step title="Add the configuration to your langsmith_config.yaml">
     <Tabs>
       <Tab title="Using Kubernetes secrets (recommended)">
-        Reference your existing secret by name. The chart reads `agent_builder_encryption_key`, `insights_encryption_key`, and `polly_encryption_key` from it automatically.
+        Reference your existing secret by name. The chart reads `agent_builder_encryption_key` from it automatically.
 
         ```yaml
         config:
           existingSecretName: "<your-secret-name>"
 
         fleet:
-          enabled: true
-
-        insights:
-          enabled: true
-
-        # Chat (formerly Polly)
-        polly:
           enabled: true
 
         fleetToolServer:
@@ -71,20 +56,12 @@ Store each key in a predefined Kubernetes secret rather than setting them direct
         ```
       </Tab>
       <Tab title="Using inline values">
-        Set the encryption keys directly in your config file. Avoid committing this file to version control.
+        Set the encryption key directly in your config file. Avoid committing this file to version control.
 
         ```yaml
         fleet:
           enabled: true
           encryptionKey: "<fleet-encryption-key>"
-
-        insights:
-          enabled: true
-          encryptionKey: "<insights-encryption-key>"
-
-        polly:
-          enabled: true
-          encryptionKey: "<chat-encryption-key>"
 
         fleetToolServer:
           enabled: true
@@ -95,22 +72,16 @@ Store each key in a predefined Kubernetes secret rather than setting them direct
       </Tab>
     </Tabs>
 
-    <Warning>
-    If you are migrating from the legacy `agentBootstrap` deployment model, disable `backend.agentBootstrap` and the old `config.agentBuilder`, `config.insights`, and `config.polly` flags. These are the flags under the `config` section, not the top-level `fleet`, `insights`, and `polly` flags shown above.
-
-    You must also manually delete the existing Fleet, Insights, and Chat deployments through the LangSmith Deployments UI. If you did not use an external PostgreSQL database for Fleet with the legacy `agentBootstrap` model and want to preserve existing Fleet agents, contact technical support via the [Support Portal](https://support.langchain.com) before applying this configuration.
-    </Warning>
-
     <Note>
     `fleetToolServer` and `fleetTriggerServer` are required for Fleet. These replaced the deprecated `agentBuilderToolServer` and `agentBuilderTriggerServer` keys as of v15 of the Helm chart.
     </Note>
-
-    Each feature deploys its own dedicated PostgreSQL and Redis instances by default. To use external databases instead, configure the `postgres.external` and `redis.external` sections under each feature. For example:
+  </Step>
+  <Step title="(Optional) Use external databases">
+    Fleet deploys its own PostgreSQL and Redis instances by default. To use external instances instead, configure `fleet.postgres.external` and `fleet.redis.external`:
 
     ```yaml
     fleet:
       enabled: true
-      encryptionKey: "<fleet-encryption-key>"
       postgres:
         external:
           enabled: true
@@ -122,15 +93,7 @@ Store each key in a predefined Kubernetes secret rather than setting them direct
     ```
   </Step>
   <Step title="Apply the changes">
-    ```bash
-    helm upgrade -i langsmith langchain/langsmith --values langsmith_config.yaml --version <version> -n <namespace> --wait --debug
-    ```
-
-    Verify the Fleet, Insights, and Chat pods are running:
-
-    ```bash
-    kubectl get pods -n <namespace>
-    ```
+    <SelfHostApplyHelmChanges feature="Fleet" />
   </Step>
 </Steps>
 
@@ -692,17 +655,11 @@ Setup involves creating a GitHub App, gathering its credentials, storing them as
   </Step>
 </Steps>
 
-## Disable features
+## Disable Fleet
 
-To disable any combination of Fleet, Insights, and Chat, set the corresponding flags to `false` in your [`langsmith_config.yaml`](/langsmith/kubernetes#configure-your-helm-charts):
+To disable Fleet, set `fleet.enabled` to `false` in your [`langsmith_config.yaml`](/langsmith/kubernetes#configure-your-helm-charts):
 
 ```yaml
 fleet:
-  enabled: false
-
-insights:
-  enabled: false
-
-polly:
   enabled: false
 ```
