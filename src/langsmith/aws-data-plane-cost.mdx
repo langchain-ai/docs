@@ -5,9 +5,9 @@ description: Rough AWS cost of a LangSmith data plane, with a ClickHouse footpri
 icon: brand-aws
 ---
 
-These are estimates, not a quote. Rates are AWS public on-demand prices for `us-east-1` Linux, retrieved on 22 September 2026. AWS changes them without notice. Your bill depends on region, usage, and any discount agreement with AWS, such as an Enterprise Discount Program or a Savings Plan.
+These are estimates, not a quote. AWS changes its prices without notice. Your bill depends on region, usage, and any discount agreement with AWS, such as an Enterprise Discount Program or a Savings Plan.
 
-The ClickHouse tab is a monthly run-rate for a whole default data plane. The SmithDB tab is only what SmithDB adds when it replaces ClickHouse as the trace store: a local-SSD node pool, a small general-compute pool, and a PostgreSQL 18 metastore. It does not include the EKS control plane, system nodes, Redis, application pods, or networking. SmithDB S3 is priced on its own, because it depends on how much trace data you keep.
+The ClickHouse tab is a monthly run-rate for a whole default data plane. The SmithDB tab is only what SmithDB adds when it replaces ClickHouse as the trace store. It does not include the EKS control plane, system nodes, Redis, application pods, or networking. SmithDB prices are public `eu-west-3` (Paris) rates from 18–25 September 2026.
 
 <Warning>
 Scaling capacity for any resource can be lowered when required, as long as the deployment remains within safe operating limits. For cost-conscious or pre-production deployments, Multi-AZ can be turned off. That lowers monthly cost and reduces fault tolerance.
@@ -31,53 +31,30 @@ Scaling capacity for any resource can be lowered when required, as long as the d
     Estimated total: **$2.2k–$3.2k/month**.
   </Tab>
   <Tab title="SmithDB">
-    Prices use the tested tiers in [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale). Each line includes the instances, one 100 GiB gp3 boot volume per node, and the metastore with 50 GB of storage. Hours per year are 8,760. S3 is excluded.
+    This is the Small tier from [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale): about 10 runs per second and 10 queries per second. Each environment runs two Graviton nodes in two availability zones. `query` runs two replicas, one per zone, at the documented size (4 vCPU, 8 GiB, 200 GiB cache). `ingestion` (4 vCPU, 8 GiB, 100 GiB) and `compaction-worker` (8 vCPU, 16 GiB, 100 GiB) run one replica each, on opposite nodes. SmithDB publishes `arm64` images. Allow `arm64` on the node pool.
 
-    Pod sizes follow the tier: requests equal limits, so each pod is placed whole on one node. `compaction` and `cluster-manager` run on general compute (2.25 vCPU at Small, 4.25 vCPU at Medium). If your existing nodes already have that room, drop the general-compute line. The metastore is a dedicated PostgreSQL 18 database. Do not use a burstable `db.t3` or `db.t4g` class for it.
+    `compaction` and `cluster-manager` need 2.25 vCPU and 4.25 GiB and run on the existing LangSmith nodes. The tables charge that share at the `c6g.xlarge` rate ($798 per environment per year on demand, $464 reserved). The metastore is Aurora PostgreSQL 18 Serverless v2 in its own cluster, minimum 1 ACU, auto-pause off. I/O is extra at $0.22 per million requests. S3 is excluded.
 
-    In `us-east-1` the local-NVMe pool is priced on `m6id`. Any family with enough local NVMe works. A single Small `m6id.4xlarge` has 16 vCPU and no room for node daemons, so the smallest single node is `m6id.8xlarge`.
+    Production nodes are `m7gd.4xlarge` (16 vCPU, 64 GiB, 950 GB local NVMe) plus a 100 GiB gp3 boot volume. A lower environment can use two `c7g.4xlarge` nodes and put the 600 GiB cache on gp3. That is below the IOPS SmithDB documents for a network-attached cache, so use it only for light traffic.
 
-    | Layout | What a node loss does |
-    | --- | --- |
-    | A. One node | SSD workloads stop until a replacement node starts, then the cache rebuilds from S3. Data in S3 and the metastore is kept. |
-    | B. Two nodes, half-size replicas | Each SSD workload keeps one replica at half the tier CPU and memory. This split is not one of the three load-tested profiles. |
-    | B+. Two nodes, documented pod sizes | Pods on the surviving node keep running. The lost pods wait for a replacement. |
-    | C. Two full nodes | Documented pod sizes continue at two replicas each. |
+    | Environment | Nodes | Metastore | On demand, per year | Per month | 1-year reserved, per year | Per month |
+    | --- | --- | --- | --- | --- | --- | --- |
+    | Lower (gp3 cache) | 2 x `c7g.4xlarge` | Writer only | $15,016 | $1,251 | $10,061 | $838 |
+    | Production (local NVMe) | 2 x `m7gd.4xlarge` | Writer and reader | $21,023 | $1,752 | $13,485 | $1,124 |
 
-    Medium Option B runs `query` as two pods of 14 vCPU and 24 GiB, and `ingestion` and `compaction-worker` as two pods of 8 vCPU and 16 GiB each. Prices assume one `compaction-worker` replica at the documented size. Two replicas need 76 vCPU at Medium, which does not fit a single 64 vCPU node.
-
-    ### Small tier (10 ingest/s, 10 query/s)
-
-    | Layout | SSD pool | General compute | Metastore | Per year | Per month |
-    | --- | --- | --- | --- | --- | --- |
-    | A | 1 x `m6id.8xlarge` | 1 x `c6a.2xlarge` | `db.r6g.large` Single-AZ | $21,543 | $1,795 |
-    | B | 2 x `m6id.4xlarge` | 2 x `c6a.xlarge` | `db.r6g.large` Single-AZ | $21,735 | $1,811 |
-    | C | 2 x `m6id.8xlarge` | 2 x `c6a.2xlarge` | `db.r6g.large` Multi-AZ | $43,085 | $3,590 |
-
-    ### Medium tier (100 ingest/s, 40 query/s)
-
-    | Layout | SSD pool | General compute | Metastore | Per year | Per month |
-    | --- | --- | --- | --- | --- | --- |
-    | A | 1 x `m6id.16xlarge` | 1 x `c6a.2xlarge` | `db.r6g.xlarge` Multi-AZ | $44,146 | $3,679 |
-    | B | 2 x `m6id.8xlarge` | 2 x `c6a.xlarge` | `db.r6g.xlarge` Multi-AZ | $44,338 | $3,695 |
-    | B+ | 2 x `m6id.12xlarge` | 2 x `c6a.xlarge` | `db.r6g.xlarge` Multi-AZ | $60,968 | $5,081 |
-    | C | 2 x `m6id.16xlarge` | 2 x `c6a.2xlarge` | `db.r6g.xlarge` Multi-AZ | $80,278 | $6,690 |
-
-    One Small environment on layout A plus two Medium environments on layout B is $110,218 per year. The same shape with Medium on B+ is $143,478. Layout C for all three is $203,641. Large is a tested tier and is not priced here.
-
-    A 1-year Standard Reserved Instance, all upfront, for that one-Small-plus-two-Medium shape is about $64,718 on layout B and $64,338 if every environment uses layout A. Reserve a family only after the tier is confirmed, and pin the node pool to that family.
+    One lower environment plus two production environments is **$57,062 per year** on demand ($4,755 per month), or **$37,031 per year** reserved ($3,086 per month). Reserved prices are 1-year, all upfront. Aurora Serverless v2 and gp3 volumes stay on demand. The Medium tier (about 100 runs per second) and Large are not priced here.
 
     ### S3
 
-    SmithDB object storage is not in the totals. Standard storage is $0.023 per GB-month for the first 50 TB. Do not add lifecycle rules that expire objects. SmithDB deletes its own segments, and an external rule can delete live data.
+    At about 2 million traces a month, `eu-west-3` standard storage is $0.024 per GB-month. Do not add lifecycle or storage-class rules. SmithDB deletes its own segments, and an external rule can delete live data.
 
-    | Data retained | Per year |
-    | --- | --- |
-    | 1 TB | $283 |
-    | 10 TB | $2,826 |
-    | 50 TB | $14,131 |
+    | Stored size per trace | 14-day retention | 400-day retention |
+    | --- | --- | --- |
+    | 10 KB | $3 per year | $77 per year |
+    | 50 KB | $13 per year | $384 per year |
+    | 200 KB | $54 per year | $1,536 per year |
 
-    A ClickHouse backfill needs an extra `m6id.4xlarge` for the migration job (8 vCPU, 32 GiB, 100 GiB ephemeral) at about $693 per month. That node is only for the backfill.
+    A ClickHouse backfill needs an extra `m7gd.4xlarge` for the migration job (8 vCPU, 32 GiB, 100 GiB ephemeral) at about $728 per month. That cost stops when the backfill finishes.
 
     See [Prepare SmithDB supporting infrastructure](/langsmith/self-host-smithdb-infrastructure) for the metastore, bucket, and cache disk.
   </Tab>
