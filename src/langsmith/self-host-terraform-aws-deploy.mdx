@@ -4,7 +4,7 @@ sidebarTitle: Deploy
 description: End-to-end walkthrough for provisioning LangSmith self-hosted on AWS EKS using the LangChain Terraform modules.
 ---
 
-Deploy LangSmith to AWS with the public [Terraform modules](https://github.com/langchain-ai/terraform/tree/v0.16.101/modules/aws). Managing the deployment as code lets you version, review, and reproduce your LangSmith environment across accounts instead of clicking through the AWS Console.
+Deploy LangSmith to AWS with the public [Terraform modules](https://github.com/langchain-ai/terraform/tree/main/modules/aws). Managing the deployment as code lets you version, review, and reproduce your LangSmith environment across accounts instead of clicking through the AWS Console.
 
 The install runs in two stages:
 
@@ -79,7 +79,7 @@ For Linux, follow the [AWS CLI install guide](https://docs.aws.amazon.com/cli/la
 
 ### Required AWS IAM permissions
 
-The IAM user or role running Terraform needs `AdministratorAccess`, or `PowerUserAccess` plus `IAMFullAccess`. The module creates IAM roles and policies for IRSA, so `PowerUserAccess` alone is not enough. For a scoped-down policy, refer to [`PERMISSIONS.md`](https://github.com/langchain-ai/terraform/blob/v0.16.101/modules/aws/PERMISSIONS.md) in the module.
+The IAM user or role running Terraform needs `AdministratorAccess`, or `PowerUserAccess` plus `IAMFullAccess`. The module creates IAM roles and policies for IRSA, so `PowerUserAccess` alone is not enough. For a scoped-down policy, refer to [`PERMISSIONS.md`](https://github.com/langchain-ai/terraform/blob/main/modules/aws/PERMISSIONS.md) in the module.
 
 <Tip>
 Run `make preflight` from `modules/aws/` after authenticating. The read-only checks confirm the active credentials, the region, and the CLI tools, and stop at the first failure. To also test that the credentials can create resources, run `make preflight ARGS="--create-test-resources"`.
@@ -201,6 +201,12 @@ git clone https://github.com/langchain-ai/terraform.git
 cd terraform/modules/aws
 ```
 
+The `main` branch and `v0.17.*` release tags deploy LangSmith Helm chart v17, which this guide describes.
+
+<Note>
+To stay on chart v16, run `git checkout release/0.16` or check out a `v0.16.*` tag. Callouts in this guide mark where chart v16 differs.
+</Note>
+
 All subsequent commands run from `modules/aws/`. Run `make help` for the full target list.
 
 Generate `terraform.tfvars` with the interactive wizard:
@@ -316,7 +322,7 @@ make deploy
 
 `make deploy` runs `helm/scripts/deploy.sh`, which:
 
-1. Resolves the chart version and confirms it is on the 0.16 line.
+1. Resolves the chart version and confirms it is on the v17 line.
 2. Refreshes the kubeconfig with `aws eks update-kubeconfig`.
 3. Runs preflight checks (AWS credentials, cluster reachability, the `langchain` Helm repo).
 4. Applies the External Secrets Operator `ClusterSecretStore` and `ExternalSecret` so the cluster reads secrets directly from SSM.
@@ -325,7 +331,11 @@ make deploy
 
 ### Chart version
 
-`deploy.sh` installs the latest patch on the LangSmith chart 0.16 line (`~0.16.0`) by default. To pin an exact patch, set `langsmith_helm_chart_version = "0.16.x"` in `terraform.tfvars`, or run `CHART_VERSION=0.16.x make deploy`. The environment variable wins over the `tfvars` setting. `deploy.sh` rejects versions off the 0.16 line, and it rejects values files that still use chart 0.15 keys (`config.insights`, `config.polly`, `backend.agentBootstrap`).
+`deploy.sh` installs the latest patch on the LangSmith Helm chart v17 line (`~0.17.0`) by default. To pin an exact patch, set `langsmith_helm_chart_version = "0.17.x"` in `terraform.tfvars`, or run `CHART_VERSION=0.17.x make deploy`. The environment variable wins over the `tfvars` setting. `deploy.sh` rejects versions off the v17 line, and Terraform validation rejects a `langsmith_helm_chart_version` off that line at plan time. `deploy.sh` also rejects values files that still use chart 0.15 keys (`config.insights`, `config.polly`, `backend.agentBootstrap`).
+
+<Note>
+On chart v16, use a `v0.16.*` module release or the `release/0.16` branch. Those releases pin `~0.16.0` and accept only `0.16.x` versions. To move an existing chart v16 deployment to v17, follow [Upgrade from chart v16 to v17](#upgrade-from-chart-v16-to-v17).
+</Note>
 
 ### Verify
 
@@ -335,6 +345,29 @@ kubectl get httproute -n langsmith
 ```
 
 When all pods are `Running`, open the URL that `make deploy` printed. It uses `langsmith_domain` when set, or the ALB hostname. Run `make status` at any time for a summary of every layer and the next step to run.
+
+### Upgrade from chart v16 to v17
+
+A deployment with `enable_sandboxes = false` and `enable_smithdb = false` only moves the chart pin. Sandboxes and SmithDB need the extra steps below. Downgrading from chart v17 to v16 is not supported, so back up the database first.
+
+1. Check out a `v0.17.*` tag, or pull `main`.
+1. Run `make apply`. The v17 module changes no AWS resources, so Terraform reports no infrastructure changes.
+1. Run `make init-values`. It rewrites `langsmith-values-overrides.yaml` in the chart v17 Sandboxes schema.
+1. With `enable_smithdb = true`, update the SmithDB keys in the values files that `make init-values` does not overwrite. Chart v17 fails to render the old keys:
+   - In `helm/values/langsmith-values-smithdb.yaml`, rename `smithdb.migration.deployment` to `smithdb.migration.job`.
+   - In `helm/values/langsmith-values-sizing-*.yaml`, move `smithdb.query.autoscaling.*`, `smithdb.ingestion.autoscaling.*`, and `smithdb.compactionWorker.autoscaling.*` under `autoscaling.hpa.*`. In `langsmith-values-sizing-production-large.yaml`, rename the `local-ssd-storage` volume to `cache`.
+
+   If you have not customized these files, delete them and re-run `make init-values` to copy the v17 versions instead. For the chart changes behind these keys, see [Cache storage](/langsmith/self-host-smithdb-infrastructure#cache-storage).
+1. Run `make deploy`. With sandboxes running on chart v16, the first run stops with `namespace langsmith still mounts sandbox volumes through the chart 0.16 JuiceFS CSI driver` and prints the commands that drain the old volumes. Run them, wait until only `juicefs-csi-*` pods remain, then run `make deploy` again. Running sandboxes stop during the drain. Their data stays in S3 and Redis, and chart v17 mounts the same JuiceFS volume.
+1. Verify the sandbox cutover:
+
+   ```bash
+   kubectl get jobs -n langsmith -l app.kubernetes.io/component=juicefs-format
+   kubectl rollout status deployment -n langsmith -l app=sandbox-host --timeout=10m
+   kubectl get daemonset,statefulset -n langsmith | grep juicefs-csi   # expect no output
+   ```
+
+For every chart change in v17, see [Upgrade from v16 to v17](/langsmith/self-host-upgrades#upgrade-from-v16-to-v17) and the [`MIGRATION-0.16-to-0.17.md`](https://github.com/langchain-ai/terraform/blob/main/MIGRATION-0.16-to-0.17.md) guide in the Terraform repository.
 
 ## Enable add-ons
 
@@ -366,7 +399,7 @@ For details on agent deployment, see [LangSmith Deployment](/langsmith/deploy-se
 ### Fleet
 
 <Note>
-Fleet is the current form of the feature formerly called Agent Builder. It requires the LangSmith Helm chart 0.16 line and the Fleet entitlement in your license.
+Fleet is the current form of the feature formerly called Agent Builder. It requires LangSmith Helm chart v16 or later and the Fleet entitlement in your license.
 </Note>
 
 Enable Fleet with `enable_fleet = true`. Fleet installs the host-backend it needs, so `enable_deployments` is optional.
@@ -381,7 +414,13 @@ Fleet reuses the `agent-builder-encryption-key` SSM parameter, so deployments th
 
 ### Sandboxes
 
-`enable_sandboxes = true` adds a sandbox-host node group on bare-metal x86_64 instances with KVM (`m5d.metal` by default) and a dedicated ElastiCache instance for JuiceFS metadata. Sandboxes require the LangSmith Helm chart 0.16 line.
+`enable_sandboxes = true` adds a sandbox-host node group on bare-metal x86_64 instances with KVM (`m5d.metal` by default) and a dedicated ElastiCache instance for JuiceFS metadata. Sandboxes require LangSmith Helm chart v16 or later.
+
+`sandbox-host` mounts JuiceFS itself, and a `juicefs-format` Job formats the volume. `make init-values` writes `sandboxes.juicefs.existingSecretName` pointing at the `juicefs-csi-config` Secret, sets `sandboxes.juicefs.hostMount.cacheDirs` to the local NVMe cache paths on sandbox-host nodes when there are any, and puts the IRSA role annotation on `sandboxes.sandboxHost.serviceAccount`.
+
+<Note>
+On chart v16, the chart bundles the JuiceFS CSI driver instead. `make init-values` from a `v0.16.*` module release writes `sandboxes.juicefs.csi.existingSecretName` and puts the IRSA role annotation on `sandboxes.juicefs.csi.node.serviceAccount`. The `juicefs-csi-config` Secret is the same on both lines.
+</Note>
 
 To enable sandboxes on an existing deployment:
 
