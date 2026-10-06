@@ -4,6 +4,15 @@ sidebarTitle: Tasks
 description: Add retries, timeouts, caching, and error recovery to Functional API tasks and entrypoints.
 ---
 
+import LanggraphFunctionalApiTasksRetryPy from '/snippets/code-samples/langgraph-functional-api-tasks-retry-py.mdx';
+import LanggraphFunctionalApiTasksRetryJs from '/snippets/code-samples/langgraph-functional-api-tasks-retry-js.mdx';
+import LanggraphFunctionalApiTasksTimeoutPy from '/snippets/code-samples/langgraph-functional-api-tasks-timeout-py.mdx';
+import LanggraphFunctionalApiTasksTimeoutJs from '/snippets/code-samples/langgraph-functional-api-tasks-timeout-js.mdx';
+import LanggraphFunctionalApiTasksCachePy from '/snippets/code-samples/langgraph-functional-api-tasks-cache-py.mdx';
+import LanggraphFunctionalApiTasksCacheJs from '/snippets/code-samples/langgraph-functional-api-tasks-cache-js.mdx';
+import LanggraphFunctionalApiTasksResumePy from '/snippets/code-samples/langgraph-functional-api-tasks-resume-py.mdx';
+import LanggraphFunctionalApiTasksResumeJs from '/snippets/code-samples/langgraph-functional-api-tasks-resume-js.mdx';
+
 Attach retries, timeouts, caching, and error recovery to Functional API [tasks](/oss/langgraph/functional-api#task). Completed task results are [checkpointed](/oss/langgraph/persistence), so resume can restore them instead of running the work again.
 
 For concepts, see the [Functional API overview](/oss/langgraph/functional-api). For an ordered build path, see the [Build checklist for the Functional API](/oss/langgraph/use-functional-api). For Graph API nodes and the shared retry/timeout lifecycle, see [Fault tolerance](/oss/langgraph/fault-tolerance).
@@ -13,66 +22,13 @@ For concepts, see the [Functional API overview](/oss/langgraph/functional-api). 
 :::python
 Pass `retry_policy` on `@task`. The default `RetryPolicy` retries selected network and HTTP 5xx errors. It does not retry `ValueError`. This example retries `ValueError`.
 
-```python
-from langgraph.func import entrypoint, task
-from langgraph.types import RetryPolicy
-
-# Used only to simulate a transient failure. Do not use a global like this in production.
-attempts = 0
-
-retry_policy = RetryPolicy(retry_on=ValueError)
-
-
-@task(retry_policy=retry_policy)
-def get_info():
-    global attempts
-    attempts += 1
-
-    if attempts < 2:
-        raise ValueError("Failure")
-    return "OK"
-
-
-@entrypoint()
-def main(inputs):
-    return get_info().result()
-
-
-print(main.invoke({"any_input": "foobar"}))
-# 'OK'
-```
+<LanggraphFunctionalApiTasksRetryPy />
 :::
 
 :::js
 Pass `retry` on `task` (not `retryPolicy`). The default policy retries most errors except `TypeError`, `SyntaxError`, and `ReferenceError`. This example retries any `Error`.
 
-```typescript
-import { entrypoint, task } from "@langchain/langgraph";
-import type { RetryPolicy } from "@langchain/langgraph";
-
-// Used only to simulate a transient failure. Do not use a variable like this in production.
-let attempts = 0;
-
-const retryPolicy: RetryPolicy = {
-  retryOn: (error) => error instanceof Error,
-};
-
-const getInfo = task({ name: "getInfo", retry: retryPolicy }, () => {
-  attempts += 1;
-
-  if (attempts < 2) {
-    throw new Error("Failure");
-  }
-  return "OK";
-});
-
-const main = entrypoint({ name: "main" }, async (inputs: Record<string, unknown>) => {
-  return await getInfo();
-});
-
-console.log(await main.invoke({ any_input: "foobar" }));
-// 'OK'
-```
+<LanggraphFunctionalApiTasksRetryJs />
 :::
 
 ## Set a timeout
@@ -84,36 +40,7 @@ Pass `timeout` on `@task` or `@entrypoint` in seconds or as a `datetime.timedelt
 
 The first attempt sleeps past the timeout and raises @[`NodeTimeoutError`], which subclasses `TimeoutError`. The retry policy retries that error. The second attempt returns immediately.
 
-```python
-import asyncio
-
-from langgraph.errors import NodeTimeoutError
-from langgraph.func import entrypoint, task
-from langgraph.types import RetryPolicy
-
-attempts = 0
-
-
-@task(
-    timeout=1.0,
-    retry_policy=RetryPolicy(retry_on=NodeTimeoutError),
-)
-async def call_api(url: str) -> str:
-    global attempts
-    attempts += 1
-    if attempts < 2:
-        await asyncio.sleep(2)
-    return f"result from {url}"
-
-
-@entrypoint(timeout=5.0)
-async def workflow(inputs: dict) -> str:
-    return await call_api(inputs["url"])
-
-
-print(await workflow.ainvoke({"url": "https://example.com"}))
-# 'result from https://example.com'
-```
+<LanggraphFunctionalApiTasksTimeoutPy />
 :::
 
 :::js
@@ -121,36 +48,7 @@ Pass `timeout` on `task` or `entrypoint` in milliseconds, or as `{ idleTimeout: 
 
 The first attempt sleeps past the timeout. The retry policy retries. The second attempt returns immediately.
 
-```typescript
-import { entrypoint, task } from "@langchain/langgraph";
-
-let attempts = 0;
-
-const callApi = task(
-  {
-    name: "callApi",
-    timeout: 1_000,
-    retry: { maxAttempts: 3 },
-  },
-  async (url: string) => {
-    attempts += 1;
-    if (attempts < 2) {
-      await new Promise((resolve) => setTimeout(resolve, 2_000));
-    }
-    return `result from ${url}`;
-  }
-);
-
-const workflow = entrypoint(
-  { name: "workflow", timeout: 5_000 },
-  async (inputs: { url: string }) => {
-    return await callApi(inputs.url);
-  }
-);
-
-console.log(await workflow.invoke({ url: "https://example.com" }));
-// 'result from https://example.com'
-```
+<LanggraphFunctionalApiTasksTimeoutJs />
 :::
 
 ## Cache a task
@@ -158,163 +56,29 @@ console.log(await workflow.invoke({ url: "https://example.com" }));
 Cache a task result by input. Pass a cache on the [entrypoint](/oss/langgraph/functional-api#entrypoint) and a policy on the task. `ttl` is in seconds. The second call is a cache hit, so this run takes about 1 second, not 2.
 
 :::python
-```python
-import time
-
-from langgraph.cache.memory import InMemoryCache
-from langgraph.func import entrypoint, task
-from langgraph.types import CachePolicy
-
-
-@task(cache_policy=CachePolicy(ttl=120))  # [!code highlight]
-def slow_add(x: int) -> int:
-    time.sleep(1)
-    return x * 2
-
-
-@entrypoint(cache=InMemoryCache())
-def main(inputs: dict) -> dict[str, int]:
-    result1 = slow_add(inputs["x"]).result()
-    result2 = slow_add(inputs["x"]).result()
-    return {"result1": result1, "result2": result2}
-
-
-print(main.invoke({"x": 5}))
-# {'result1': 10, 'result2': 10}
-```
+<LanggraphFunctionalApiTasksCachePy />
 :::
 
 :::js
-```typescript
-import { InMemoryCache, entrypoint, task } from "@langchain/langgraph";
-
-const slowAdd = task(
-  {
-    name: "slowAdd",
-    cache: { ttl: 120 },  // [!code highlight]
-  },
-  async (x: number) => {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    return x * 2;
-  }
-);
-
-const main = entrypoint(
-  { cache: new InMemoryCache(), name: "main" },
-  async (inputs: { x: number }) => {
-    const result1 = await slowAdd(inputs.x);
-    const result2 = await slowAdd(inputs.x);
-    return { result1, result2 };
-  }
-);
-
-console.log(await main.invoke({ x: 5 }));
-// { result1: 10, result2: 10 }
-```
+<LanggraphFunctionalApiTasksCacheJs />
 :::
 
 ## Resume after an error
 
-A [checkpointer](/oss/langgraph/persistence) is required so completed task results survive the failed run. Resume the same `thread_id` with `None` (Python) or `null` (TypeScript).
+A [checkpointer](/oss/langgraph/persistence) is required so completed task results survive the failed run.
 
 `slow_task` is restored from the checkpoint. `get_info` runs again and returns `"OK"`. The entrypoint still returns the `slow_task` result.
 
 :::python
-```python
-import time
+Resume the same `thread_id` with `None`.
 
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.func import entrypoint, task
-
-# Used only to simulate a transient failure. Do not use a global like this in production.
-attempts = 0
-
-
-@task()
-def get_info():
-    global attempts
-    attempts += 1
-
-    if attempts < 2:
-        raise ValueError("Failure")
-    return "OK"
-
-
-checkpointer = InMemorySaver()
-
-
-@task
-def slow_task():
-    time.sleep(1)
-    return "Ran slow task."
-
-
-@entrypoint(checkpointer=checkpointer)
-def main(inputs):
-    slow_task_result = slow_task().result()
-    get_info().result()  # raises ValueError on the first run
-    return slow_task_result
-
-
-config = {"configurable": {"thread_id": "1"}}
-
-try:
-    main.invoke({"any_input": "foobar"}, config=config)
-except ValueError:
-    pass
-
-print(main.invoke(None, config=config))
-# 'Ran slow task.'
-```
+<LanggraphFunctionalApiTasksResumePy />
 :::
 
 :::js
-```typescript
-import { entrypoint, task, MemorySaver } from "@langchain/langgraph";
+Resume the same `thread_id` with `null`.
 
-// Used only to simulate a transient failure. Do not use a variable like this in production.
-let attempts = 0;
-
-const getInfo = task("getInfo", async () => {
-  attempts += 1;
-
-  if (attempts < 2) {
-    throw new Error("Failure");
-  }
-  return "OK";
-});
-
-const checkpointer = new MemorySaver();
-
-const slowTask = task("slowTask", async () => {
-  await new Promise((resolve) => setTimeout(resolve, 1000));
-  return "Ran slow task.";
-});
-
-const main = entrypoint(
-  { checkpointer, name: "main" },
-  async (inputs: Record<string, unknown>) => {
-    const slowTaskResult = await slowTask();
-    await getInfo(); // throws on the first run
-    return slowTaskResult;
-  }
-);
-
-const config = {
-  configurable: {
-    thread_id: "1",
-  },
-};
-
-try {
-  await main.invoke({ any_input: "foobar" }, config);
-} catch (err) {
-  // First run fails in getInfo.
-}
-
-console.log(await main.invoke(null, config));
-// 'Ran slow task.'
-```
+<LanggraphFunctionalApiTasksResumeJs />
 :::
 
 ## See also

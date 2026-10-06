@@ -4,10 +4,17 @@ sidebarTitle: Functional API
 description: Learn Functional API entrypoints and tasks, how checkpointing and replay work, and how to avoid common resume pitfalls.
 ---
 
-import LanggraphFunctionalApiInterruptStreamPy from '/snippets/code-samples/langgraph-functional-api-interrupt-stream-py.mdx';
-import LanggraphFunctionalApiInterruptResumePy from '/snippets/code-samples/langgraph-functional-api-interrupt-resume-py.mdx';
-import LanggraphFunctionalApiInterruptStreamJs from '/snippets/code-samples/langgraph-functional-api-interrupt-stream-js.mdx';
-import LanggraphFunctionalApiInterruptResumeJs from '/snippets/code-samples/langgraph-functional-api-interrupt-resume-js.mdx';
+import LanggraphFunctionalApiOverviewHelloPy from '/snippets/code-samples/langgraph-functional-api-overview-hello-py.mdx';
+import LanggraphFunctionalApiOverviewHelloAsyncPy from '/snippets/code-samples/langgraph-functional-api-overview-hello-async-py.mdx';
+import LanggraphFunctionalApiOverviewHelloJs from '/snippets/code-samples/langgraph-functional-api-overview-hello-js.mdx';
+import LanggraphFunctionalApiOverviewInjectPy from '/snippets/code-samples/langgraph-functional-api-overview-inject-py.mdx';
+import LanggraphFunctionalApiOverviewInjectJs from '/snippets/code-samples/langgraph-functional-api-overview-inject-js.mdx';
+import LanggraphFunctionalApiOverviewTaskPy from '/snippets/code-samples/langgraph-functional-api-overview-task-py.mdx';
+import LanggraphFunctionalApiOverviewTaskExecPy from '/snippets/code-samples/langgraph-functional-api-overview-task-exec-py.mdx';
+import LanggraphFunctionalApiOverviewTaskExecAsyncPy from '/snippets/code-samples/langgraph-functional-api-overview-task-exec-async-py.mdx';
+import LanggraphFunctionalApiOverviewTaskExecJs from '/snippets/code-samples/langgraph-functional-api-overview-task-exec-js.mdx';
+import LanggraphFunctionalApiOverviewEssayPy from '/snippets/code-samples/langgraph-functional-api-overview-essay-py.mdx';
+import LanggraphFunctionalApiOverviewEssayJs from '/snippets/code-samples/langgraph-functional-api-overview-essay-js.mdx';
 
 The **Functional API** adds LangGraph features ([persistence](/oss/langgraph/persistence), [memory](/oss/langgraph/add-memory), [human-in-the-loop](/oss/langgraph/interrupts), and [streaming](/oss/langgraph/streaming)) to ordinary functions. Use standard language control flow (`if` / `else`, loops, and function calls) instead of declaring a graph of nodes and edges.
 
@@ -59,34 +66,10 @@ Decorating the function produces a workflow object (a @[`Pregel`][Pregel.stream]
 
 <Tabs>
     <Tab title="Sync">
-    ```python
-    from langgraph.checkpoint.memory import InMemorySaver
-    from langgraph.func import entrypoint
-
-    checkpointer = InMemorySaver()
-
-    @entrypoint(checkpointer=checkpointer)
-    def my_workflow(name: str) -> str:
-        return f"Hello, {name}"
-
-    config = {"configurable": {"thread_id": "1"}}
-    my_workflow.invoke("Alice", config)  # "Hello, Alice"
-    ```
+    <LanggraphFunctionalApiOverviewHelloPy />
     </Tab>
     <Tab title="Async">
-    ```python
-    from langgraph.checkpoint.memory import InMemorySaver
-    from langgraph.func import entrypoint
-
-    checkpointer = InMemorySaver()
-
-    @entrypoint(checkpointer=checkpointer)
-    async def my_workflow(name: str) -> str:
-        return f"Hello, {name}"
-
-    config = {"configurable": {"thread_id": "1"}}
-    await my_workflow.ainvoke("Alice", config)  # "Hello, Alice"
-    ```
+    <LanggraphFunctionalApiOverviewHelloAsyncPy />
     </Tab>
 </Tabs>
 :::
@@ -98,21 +81,7 @@ The function **must accept a single positional argument** as the workflow input.
 
 The result is a workflow object. Call `invoke` to run it.
 
-```typescript
-import { MemorySaver, entrypoint } from "@langchain/langgraph";
-
-const checkpointer = new MemorySaver();
-
-const myWorkflow = entrypoint(
-  { checkpointer, name: "workflow" },
-  async (name: string): Promise<string> => {
-    return `Hello, ${name}`;
-  }
-);
-
-const config = { configurable: { thread_id: "1" } };
-await myWorkflow.invoke("Alice", config); // "Hello, Alice"
-```
+<LanggraphFunctionalApiOverviewHelloJs />
 :::
 
 <Warning>
@@ -123,159 +92,37 @@ Entrypoint **inputs** and **outputs** must be JSON-serializable when a checkpoin
 ### Run and resume
 
 :::python
-`@entrypoint` yields a workflow object. Call `invoke` / `ainvoke` for a final result. For streaming patterns (`stream_events`, custom data, message tokens), see [Stream with the Functional API](/oss/langgraph/functional-api-streaming).
-
-```python
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.func import entrypoint
-from langgraph.types import Command
-
-checkpointer = InMemorySaver()
-
-@entrypoint(checkpointer=checkpointer)
-def my_workflow(name: str) -> str:
-    return f"Hello, {name}"
-
-config = {"configurable": {"thread_id": "1"}}
-my_workflow.invoke("Alice", config)  # "Hello, Alice"
-
-# Resume after an interrupt with Command(resume=...)
-# my_workflow.invoke(Command(resume=True), config)
-
-# After fixing an error, resume the same thread with None
-# my_workflow.invoke(None, config)
-```
+Call `invoke` or `ainvoke` for a final result. For streams, see [Stream with the Functional API](/oss/langgraph/functional-api-streaming).
 :::
 
 :::js
-`entrypoint` returns a workflow with `invoke` and streaming methods. For streaming patterns, see [Stream with the Functional API](/oss/langgraph/functional-api-streaming).
-
-```typescript
-import { MemorySaver, Command, entrypoint } from "@langchain/langgraph";
-
-const checkpointer = new MemorySaver();
-
-const myWorkflow = entrypoint(
-  { checkpointer, name: "workflow" },
-  async (name: string): Promise<string> => {
-    return `Hello, ${name}`;
-  }
-);
-
-const config = { configurable: { thread_id: "1" } };
-await myWorkflow.invoke("Alice", config); // "Hello, Alice"
-
-// Resume after an interrupt with Command
-// await myWorkflow.invoke(new Command({ resume: true }), config);
-
-// After fixing an error, resume the same thread with null
-// await myWorkflow.invoke(null, config);
-```
+Call `invoke` for a final result. For streams, see [Stream with the Functional API](/oss/langgraph/functional-api-streaming).
 :::
 
-Resume after @[`interrupt`] by passing a resume value in @[`Command`]. For full human-in-the-loop recipes, see [Add human-in-the-loop with the Functional API](/oss/langgraph/functional-api-human-in-the-loop). For resume-after-error details, see [Resume after an error](/oss/langgraph/functional-api-tasks#resume-after-an-error).
+Resume after @[`interrupt`] by passing a resume value in @[`Command`]. For recipes, see [Add human-in-the-loop with the Functional API](/oss/langgraph/functional-api-human-in-the-loop).
+
+:::python
+After an error, resume the same `thread_id` with `None`. See [Resume after an error](/oss/langgraph/functional-api-tasks#resume-after-an-error).
+:::
+
+:::js
+After an error, resume the same `thread_id` with `null`. See [Resume after an error](/oss/langgraph/functional-api-tasks#resume-after-an-error).
+:::
 
 ### Short-term memory
 
 When an `entrypoint` has a `checkpointer`, successive invocations on the same **thread id** store state in [checkpoints](/oss/langgraph/checkpointers#checkpoints).
 
 :::python
-Add a `previous` parameter to the entrypoint. LangGraph sets it to whatever the last run on this thread returned. On the first run it is `None`. To save a different value for the next run, see [`entrypoint.final`](#entrypointfinal).
+Add a keyword-only `previous` parameter. LangGraph sets it to the last value saved on this thread. On the first run it is `None`. To save a different value for the next run, use @[`entrypoint.final`][entrypoint.final]. See [Return a different saved value](/oss/langgraph/functional-api-memory#return-a-different-saved-value).
 
-```python
-from typing import Any
-
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.func import entrypoint
-
-checkpointer = InMemorySaver()
-
-@entrypoint(checkpointer=checkpointer)
-def my_workflow(number: int, *, previous: Any = None) -> int:
-    previous = previous or 0
-    return number + previous
-
-config = {"configurable": {"thread_id": "1"}}
-
-my_workflow.invoke(1, config)  # 1 (previous was None)
-my_workflow.invoke(2, config)  # 3 (previous was 1)
-```
+For accumulate and inspecting checkpoints, see [Save state on a thread](/oss/langgraph/functional-api-memory#save-state-on-a-thread).
 :::
 
 :::js
-Call `getPreviousState` inside the entrypoint. It returns whatever the last run on this thread returned. On the first run it is `undefined`. To save a different value for the next run, see [`entrypoint.final`](#entrypointfinal).
+Call `getPreviousState` inside the entrypoint. It returns the last value saved on this thread. On the first run it is `undefined`. To save a different value for the next run, use @[`entrypoint.final`][entrypoint.final]. See [Return a different saved value](/oss/langgraph/functional-api-memory#return-a-different-saved-value).
 
-```typescript
-import { MemorySaver, entrypoint, getPreviousState } from "@langchain/langgraph";
-
-const checkpointer = new MemorySaver();
-
-const myWorkflow = entrypoint(
-  { checkpointer, name: "workflow" },
-  async (number: number) => {
-    const previous = getPreviousState<number>() ?? 0;
-    return number + previous;
-  }
-);
-
-const config = { configurable: { thread_id: "1" } };
-
-await myWorkflow.invoke(1, config); // 1 (previous was undefined)
-await myWorkflow.invoke(2, config); // 3 (previous was 1)
-```
-:::
-
-#### `entrypoint.final`
-
-:::python
-@[`entrypoint.final`][entrypoint.final] lets you **decouple** the value returned to the caller from the value saved for the next `previous` read. Annotate as `entrypoint.final[return_type, save_type]`.
-
-```python
-from typing import Any
-
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.func import entrypoint
-
-checkpointer = InMemorySaver()
-
-@entrypoint(checkpointer=checkpointer)
-def my_workflow(number: int, *, previous: Any = None) -> entrypoint.final[int, int]:
-    previous = previous or 0
-    # Return `previous` to the caller; save 2 * number for the next `previous`.
-    return entrypoint.final(value=previous, save=2 * number)
-
-config = {"configurable": {"thread_id": "1"}}
-
-my_workflow.invoke(3, config)  # 0 (previous was None)
-my_workflow.invoke(1, config)  # 6 (previous was 3 * 2)
-```
-:::
-
-:::js
-@[`entrypoint.final`][entrypoint.final] lets you **decouple** the value returned to the caller from the value saved for the next `getPreviousState` read.
-
-```typescript
-import { MemorySaver, entrypoint, getPreviousState } from "@langchain/langgraph";
-
-const checkpointer = new MemorySaver();
-
-const myWorkflow = entrypoint(
-  { checkpointer, name: "workflow" },
-  async (number: number) => {
-    const previous = getPreviousState<number>() ?? 0;
-    // Return `previous` to the caller; save 2 * number for the next previous state.
-    return entrypoint.final({
-      value: previous,
-      save: 2 * number,
-    });
-  }
-);
-
-const config = { configurable: { thread_id: "1" } };
-
-await myWorkflow.invoke(3, config); // 0 (previous was undefined)
-await myWorkflow.invoke(1, config); // 6 (previous was 3 * 2)
-```
+For accumulate and inspecting checkpoints, see [Save state on a thread](/oss/langgraph/functional-api-memory#save-state-on-a-thread).
 :::
 
 ### Injectable parameters
@@ -298,33 +145,7 @@ Declare injectable parameters with the appropriate name and type annotation.
 </Warning>
 
 <Accordion title="Requesting injectable parameters">
-  ```python
-  from typing import Any
-
-  from langchain_core.runnables import RunnableConfig
-  from langgraph.checkpoint.memory import InMemorySaver
-  from langgraph.func import entrypoint
-  from langgraph.runtime import Runtime
-  from langgraph.store.memory import InMemoryStore
-
-  checkpointer = InMemorySaver()
-  store = InMemoryStore()
-
-  @entrypoint(
-      checkpointer=checkpointer,
-      store=store,
-  )
-  def my_workflow(
-      some_input: dict,  # The input (for example, passed via `invoke`)
-      *,
-      previous: Any = None,  # Short-term memory from the previous invocation
-      config: RunnableConfig,  # Run-time configuration
-      runtime: Runtime,  # Context, store, and writer for the current run
-  ) -> dict:
-      memory_store = runtime.store
-      writer = runtime.stream_writer
-      ...
-  ```
+<LanggraphFunctionalApiOverviewInjectPy />
 </Accordion>
 :::
 
@@ -339,31 +160,7 @@ The `entrypoint` function can take a second `config` argument. LangGraph also pr
 | **config.writer** | A writer for custom streaming. See [Stream with the Functional API](/oss/langgraph/functional-api-streaming). |
 
 <Accordion title="Requesting injectable parameters">
-  ```typescript
-  import {
-    MemorySaver,
-    MemoryStore,
-    entrypoint,
-    getPreviousState,
-  } from "@langchain/langgraph";
-  import type { LangGraphRunnableConfig } from "@langchain/langgraph";
-
-  const checkpointer = new MemorySaver();
-  const store = new MemoryStore();
-
-  const myWorkflow = entrypoint(
-    { checkpointer, store, name: "workflow" },
-    async (
-      someInput: Record<string, unknown>,
-      config: LangGraphRunnableConfig
-    ) => {
-      const previous = getPreviousState();
-      const memoryStore = config.store;
-      const writer = config.writer;
-      return { previous, someInput };
-    }
-  );
-  ```
+<LanggraphFunctionalApiOverviewInjectJs />
 </Accordion>
 :::
 
@@ -379,14 +176,7 @@ A **task** is a discrete unit of work (for example, an API call or data step). T
 :::python
 Define tasks with the `@task` decorator:
 
-```python
-from langgraph.func import task
-
-@task
-def slow_computation(input_value: int) -> int:
-    # Long-running or side-effecting work
-    return input_value * 2
-```
+<LanggraphFunctionalApiOverviewTaskPy />
 :::
 
 :::js
@@ -415,37 +205,10 @@ Calling a task returns a future immediately. Resolve it with `.result()` (sync) 
 
 <Tabs>
     <Tab title="Sync">
-    ```python
-    from langgraph.checkpoint.memory import InMemorySaver
-    from langgraph.func import entrypoint, task
-
-    checkpointer = InMemorySaver()
-
-    @task
-    def slow_computation(input_value: int) -> int:
-        return input_value * 2
-
-    @entrypoint(checkpointer=checkpointer)
-    def my_workflow(some_input: int) -> int:
-        future = slow_computation(some_input)
-        return future.result()
-    ```
+    <LanggraphFunctionalApiOverviewTaskExecPy />
     </Tab>
     <Tab title="Async">
-    ```python
-    from langgraph.checkpoint.memory import InMemorySaver
-    from langgraph.func import entrypoint, task
-
-    checkpointer = InMemorySaver()
-
-    @task
-    async def slow_computation(input_value: int) -> int:
-        return input_value * 2
-
-    @entrypoint(checkpointer=checkpointer)
-    async def my_workflow(some_input: int) -> int:
-        return await slow_computation(some_input)
-    ```
+    <LanggraphFunctionalApiOverviewTaskExecAsyncPy />
     </Tab>
 </Tabs>
 :::
@@ -453,25 +216,10 @@ Calling a task returns a future immediately. Resolve it with `.result()` (sync) 
 :::js
 Calling a task returns a `Promise`. Await it inside the entrypoint:
 
-```typescript
-import { MemorySaver, entrypoint, task } from "@langchain/langgraph";
-
-const checkpointer = new MemorySaver();
-
-const slowComputation = task("slowComputation", async (inputValue: number) => {
-  return inputValue * 2;
-});
-
-const myWorkflow = entrypoint(
-  { checkpointer, name: "workflow" },
-  async (someInput: number): Promise<number> => {
-    return await slowComputation(someInput);
-  }
-);
-```
+<LanggraphFunctionalApiOverviewTaskExecJs />
 :::
 
-## When to use a task
+### When to use a task
 
 Use **tasks** when you need:
 
@@ -481,101 +229,11 @@ Use **tasks** when you need:
 * **Observability**: Track discrete steps in [LangSmith](/langsmith/observability).
 * **Retries**: Apply retry policies to discrete units of work. See [Configure Functional API tasks](/oss/langgraph/functional-api-tasks).
 
-## Pause for human review
+## Resume and checkpointing
 
-This workflow writes an essay and [interrupts](/oss/langgraph/interrupts) for human review:
+Resume replay depends on serialization, determinism, and idempotency.
 
-:::python
-```python
-import time
-
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.func import entrypoint, task
-from langgraph.types import interrupt
-
-@task
-def write_essay(topic: str) -> str:
-    """Write an essay about the given topic."""
-    time.sleep(1)  # Placeholder for a long-running task.
-    return f"An essay about topic: {topic}"
-
-@entrypoint(checkpointer=InMemorySaver())
-def workflow(topic: str) -> dict:
-    """Write an essay and pause for review."""
-    essay = write_essay(topic).result()
-    is_approved = interrupt({
-        # Any JSON-serializable payload. Surfaces as an Interrupt when streaming.
-        "essay": essay,
-        "action": "Please approve/reject the essay",
-    })
-
-    return {
-        "essay": essay,
-        "is_approved": is_approved,
-    }
-```
-:::
-
-:::js
-```typescript
-import { MemorySaver, entrypoint, task, interrupt } from "@langchain/langgraph";
-
-const writeEssay = task("writeEssay", async (topic: string) => {
-  // Placeholder for a long-running task.
-  await new Promise((resolve) => setTimeout(resolve, 1000));
-  return `An essay about topic: ${topic}`;
-});
-
-const workflow = entrypoint(
-  { checkpointer: new MemorySaver(), name: "workflow" },
-  async (topic: string) => {
-    const essay = await writeEssay(topic);
-    const isApproved = interrupt({
-      // Any JSON-serializable payload. Surfaces as an Interrupt when streaming.
-      essay,
-      action: "Please approve/reject the essay",
-    });
-
-    return {
-      essay,
-      isApproved,
-    };
-  }
-);
-```
-:::
-
-<Accordion title="Detailed explanation">
-  Invoke the workflow with a topic such as `"cat"`. It writes the essay, then pauses until a human provides a review. The pause can last indefinitely.
-
-  On resume, execution starts again at the beginning of the entrypoint.
-
-  :::python
-  Because the `write_essay` task result is checkpointed, that work is restored instead of recomputed.
-
-  <LanggraphFunctionalApiInterruptStreamPy />
-
-  After the review is provided, resume the workflow:
-
-  <LanggraphFunctionalApiInterruptResumePy />
-
-  The workflow completes and returns the essay with the approval decision.
-  :::
-
-  :::js
-  Because the `writeEssay` task result is checkpointed, that work is restored instead of recomputed.
-
-  <LanggraphFunctionalApiInterruptStreamJs />
-
-  After the review is provided, resume the workflow:
-
-  <LanggraphFunctionalApiInterruptResumeJs />
-
-  The workflow completes and returns the essay with the approval decision.
-  :::
-</Accordion>
-
-## Serialization
+### Serialization
 
 Two rules apply when a checkpointer is configured:
 
@@ -592,7 +250,7 @@ Use primitives such as objects, arrays, strings, numbers, and booleans.
 
 Serialization is what makes task results and intermediate values restorable for human-in-the-loop, fault tolerance, and parallel execution. Non-serializable values raise a runtime error when a checkpointer is configured.
 
-## Determinism
+### Determinism
 
 Resume does **not** continue from the exact line where execution stopped. Execution returns to a checkpoint boundary and **replays** forward until it hits the pause again.
 
@@ -608,11 +266,35 @@ Guidelines:
 * **Encapsulate non-deterministic operations**: Keep values that change between attempts (random numbers, wall-clock time) inside **tasks**.
 * **Use idempotent operations**: For partial failures and retries, see [Idempotency](#idempotency).
 
-## Idempotency
+### Idempotency
 
 Idempotency means running the same operation more than once has the same effect as running it once. Place API calls and other writes inside **tasks**, and design those tasks to be safe if they run again.
 
 On resume, LangGraph restores completed **task** results. A **task** that started but did not finish may run again, so use idempotency keys or check existing results before writing.
+
+## Pause for human review
+
+This workflow writes an essay and [interrupts](/oss/langgraph/interrupts) for human review:
+
+:::python
+<LanggraphFunctionalApiOverviewEssayPy />
+:::
+
+:::js
+<LanggraphFunctionalApiOverviewEssayJs />
+:::
+
+Invoke with a topic such as `"cat"`. The run writes the essay, then pauses at `interrupt`. The pause can last indefinitely. Resume starts at the beginning of the entrypoint.
+
+:::python
+The `write_essay` task result is restored, not recomputed.
+:::
+
+:::js
+The `writeEssay` task result is restored, not recomputed.
+:::
+
+For stream, resume, and tool-call review, see [Add human-in-the-loop with the Functional API](/oss/langgraph/functional-api-human-in-the-loop).
 
 ## Common pitfalls
 
