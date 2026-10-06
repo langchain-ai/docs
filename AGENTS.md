@@ -302,6 +302,8 @@ Use `@[ClassName]` to auto-link to API docs. Defined in `pipeline/preprocessors/
 
 **Images:** Store in `src/images/`. Use descriptive filenames and alt text.
 
+**SVG text:** Keep labels as native `<text>` when sharpness at reading size matters. Mintlify CLI 4.2.671 strips `<text>` and `<use>` from plain MDX; use a named-export JSX snippet for native SVG rendering, as in `src/snippets/sandbox-diagram.jsx`. Reference only trusted local assets, and compare the result at the actual docs column width rather than only in an enlarged viewer.
+
 **Icons:** Use Tabler names only (`icon="home"`, `icon="brand-github"`). For missing icons, use SVG path: `icon="/images/providers/name.svg"`
 
 Common Tabler names: `home` (not house), `tool` (not wrench), `player-play` (not play), `bulb` (not lightbulb), `alert-triangle` (not exclamation-triangle)
