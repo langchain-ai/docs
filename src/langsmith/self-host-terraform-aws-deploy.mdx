@@ -82,7 +82,7 @@ For Linux, follow the [AWS CLI install guide](https://docs.aws.amazon.com/cli/la
 The IAM user or role running Terraform needs `AdministratorAccess`, or `PowerUserAccess` plus `IAMFullAccess`. The module creates IAM roles and policies for IRSA, so `PowerUserAccess` alone is not enough. For a scoped-down policy, refer to [`PERMISSIONS.md`](https://github.com/langchain-ai/terraform/blob/main/modules/aws/PERMISSIONS.md) in the module.
 
 <Tip>
-Run `make preflight` from `modules/aws/` after authenticating. The read-only checks confirm the active credentials, the region, and the CLI tools, and stop at the first failure. To also test that the credentials can create resources, run `make preflight ARGS="--create-test-resources"`.
+Run `make preflight` from `modules/aws/` after you authenticate and create `infra/terraform.tfvars` (see [Clone and configure](#clone-and-configure)). The read-only checks confirm the CLI tools, the `tfvars` file, the active credentials, and the region, then probe read access to each AWS service the module uses. To also test that the credentials can create resources, run `make preflight ARGS="--create-test-resources"`.
 </Tip>
 
 ### Authenticate
@@ -110,8 +110,8 @@ aws ec2 describe-availability-zones --query 'AvailabilityZones[].ZoneName' --out
 
 ### License key and domain
 
-- **LangSmith license key.** [Contact our sales team](https://www.langchain.com/contact-sales) to request one. The setup script stores the key in AWS SSM Parameter Store, not in `tfvars`.
-- **Domain (optional).** Set `langsmith_domain` to serve LangSmith on your own hostname. With a domain and no `acm_certificate_arn`, Terraform creates a Route 53 hosted zone, requests an ACM certificate, and creates the ALB alias record. To use an existing hosted zone instead, set `dns_create_zone = false` and `dns_existing_zone_id`. To bring your own certificate, set `acm_certificate_arn`. Leave `langsmith_domain` empty to reach LangSmith on the ALB hostname. Without a domain, set `acm_certificate_arn`, or set `tls_certificate_source = "none"` to serve plain HTTP.
+- **LangSmith license key.** [Contact the LangChain sales team](https://www.langchain.com/contact-sales) to request one. The setup script stores the key in AWS SSM Parameter Store, not in `tfvars`.
+- **Domain (optional).** Set `langsmith_domain` to serve LangSmith on your own hostname. With a domain and no `acm_certificate_arn`, Terraform creates a Route 53 hosted zone, requests an ACM certificate, and creates the ALB alias record. To use an existing hosted zone instead, set `dns_create_zone = false` and `dns_existing_zone_id`. To bring your own certificate, set `acm_certificate_arn`. Leave `langsmith_domain` empty to reach LangSmith on the ALB hostname. Without a domain, set `tls_certificate_source = "none"` to serve plain HTTP. An `acm_certificate_arn` also works without a domain, but `make preflight-post` then fails its TLS check because `acm` expects `langsmith_domain`.
 
 ### Cluster sizing reference
 
@@ -215,7 +215,7 @@ Generate `terraform.tfvars` with the interactive wizard:
 make quickstart
 ```
 
-The wizard walks through 13 sections, including naming, region, networking, EKS sizing, data sources, TLS and DNS, ingress, and the optional add-on flags. It writes `infra/terraform.tfvars`. When the file already exists, the wizard offers to update it with the existing values preselected, start fresh, or cancel, and it backs up the original file first. Some settings, such as the bring-your-own security group variables (`*_existing_security_group_id`), are not in the wizard; set them in `terraform.tfvars` by hand.
+The wizard walks through 13 sections, including naming, region, networking, EKS sizing, data sources, TLS and DNS, ingress, and the optional add-on flags. It writes `infra/terraform.tfvars`. When the file already exists, the wizard offers to update it with the existing values preselected, start fresh, or cancel, and it backs up the original file first. Some settings, such as the bring-your-own security group variables (`*_existing_security_group_id`), are not in the wizard; set them in `terraform.tfvars` by hand. When the wizard updates an existing file, it drops hand-written settings like these, so restore them from `infra/terraform.tfvars.backup`.
 
 Prefer to edit by hand? Copy the example and fill in the required fields:
 
@@ -273,7 +273,7 @@ The script manages the following SSM parameters:
 | `langsmith-api-key-salt` | Auto-generated (`openssl rand -base64 32`) | Never rotate, breaks all API keys |
 | `langsmith-jwt-secret` | Auto-generated (`openssl rand -base64 32`) | Never rotate, invalidates all sessions |
 | `sandbox-callback-signing-jwk` | Auto-generated Ed25519 key | Only when `enable_sandboxes = true` |
-| `langsmith-license-key` | Prompt | From [our sales team](https://www.langchain.com/contact-sales) |
+| `langsmith-license-key` | Prompt | From [the LangChain sales team](https://www.langchain.com/contact-sales) |
 | `langsmith-admin-password` | Prompt | At least 12 characters, with lowercase, uppercase, and a symbol |
 | `langsmith-admin-email` | Prompt | Initial organization admin |
 | `deployments-encryption-key` | Auto-generated Fernet key | LangSmith Deployment add-on |
@@ -329,9 +329,9 @@ make deploy
 5. Runs `helm upgrade --install` with the layered values files and waits for the core pods.
 6. Upgrades once more when no `langsmith_domain` is set and the load balancer hostname changed, then prints the LangSmith URL.
 
-### Chart version
+### Pin the chart version
 
-`deploy.sh` installs the latest patch on the LangSmith Helm chart v17 line (`~0.17.0`) by default. To pin an exact patch, set `langsmith_helm_chart_version = "0.17.x"` in `terraform.tfvars`, or run `CHART_VERSION=0.17.x make deploy`. The environment variable wins over the `tfvars` setting. `deploy.sh` rejects versions off the v17 line, and Terraform validation rejects a `langsmith_helm_chart_version` off that line at plan time. `deploy.sh` also rejects values files that still use chart 0.15 keys (`config.insights`, `config.polly`, `backend.agentBootstrap`).
+`deploy.sh` installs the latest patch on the LangSmith Helm chart v17 line (`~0.17.0`) by default. To pin an exact patch, set `langsmith_helm_chart_version = "0.17.x"` in `terraform.tfvars`, or run `CHART_VERSION=0.17.x make deploy`. The environment variable wins over the `tfvars` setting. `deploy.sh` rejects versions off the v17 line, and Terraform validation rejects a `langsmith_helm_chart_version` off that line at plan time. `deploy.sh` also rejects values files that still use chart v15 keys (`config.insights`, `config.polly`, `backend.agentBootstrap`).
 
 <Note>
 On chart v16, use a `v0.16.*` module release or the `release/0.16` branch. Those releases pin `~0.16.0` and accept only `0.16.x` versions. To move an existing chart v16 deployment to v17, follow [Upgrade from chart v16 to v17](#upgrade-from-chart-v16-to-v17).
@@ -348,11 +348,15 @@ When all pods are `Running`, open the URL that `make deploy` printed. It uses `l
 
 ### Upgrade from chart v16 to v17
 
-A deployment with `enable_sandboxes = false` and `enable_smithdb = false` only moves the chart pin. Sandboxes and SmithDB need the extra steps below. Downgrading from chart v17 to v16 is not supported, so back up the database first.
+<Warning>
+Downgrading from chart v17 to v16 is not supported. Back up the database before you upgrade.
+</Warning>
+
+A deployment with `enable_sandboxes = false` and `enable_smithdb = false` only moves the chart pin. Sandboxes and SmithDB need the extra steps below. The module sets no Engine values, so if you enabled Engine in your own values overrides, also apply the Engine change in [Upgrade from v16 to v17](/langsmith/self-host-upgrades#upgrade-from-v16-to-v17).
 
 1. Check out a `v0.17.*` tag, or pull `main`.
 1. Run `make apply`. The v17 module changes no AWS resources, so Terraform reports no infrastructure changes.
-1. Run `make init-values`. It rewrites `langsmith-values-overrides.yaml` in the chart v17 Sandboxes schema.
+1. Run `make init-values`. It rewrites `langsmith-values-overrides.yaml` in the chart v17 sandbox schema.
 1. With `enable_smithdb = true`, update the SmithDB keys in the values files that `make init-values` does not overwrite. Chart v17 fails to render the old keys:
    - In `helm/values/langsmith-values-smithdb.yaml`, rename `smithdb.migration.deployment` to `smithdb.migration.job`.
    - In `helm/values/langsmith-values-sizing-*.yaml`, move `smithdb.query.autoscaling.*`, `smithdb.ingestion.autoscaling.*`, and `smithdb.compactionWorker.autoscaling.*` under `autoscaling.hpa.*`. In `langsmith-values-sizing-production-large.yaml`, rename the `local-ssd-storage` volume to `cache`.
@@ -392,14 +396,14 @@ make init-values
 make deploy
 ```
 
-`enable_agent_builder` was removed with chart 0.16. Setting it to `true` fails validation, so delete it from existing `tfvars` files and use `enable_fleet`. `enable_standalone_polly` and `enable_standalone_insights` remain as legacy shorthand for `polly_storage = "external"` and `insights_storage = "external"`.
+`enable_agent_builder` was removed in chart v16. Setting it to `true` fails validation at `terraform plan`, so delete it from existing `tfvars` files and use `enable_fleet`. `enable_standalone_polly` and `enable_standalone_insights` remain as legacy shorthand that enables the add-on with external storage (`enable_polly = true` with `polly_storage = "external"`, and the same for Insights).
 
 For details on agent deployment, see [LangSmith Deployment](/langsmith/deploy-self-hosted-full-platform).
 
 ### Fleet
 
 <Note>
-Fleet is the current form of the feature formerly called Agent Builder. It requires LangSmith Helm chart v16 or later and the Fleet entitlement in your license.
+Fleet is the current form of the feature formerly called Agent Builder. It requires LangSmith Helm chart v15 or later and the Fleet entitlement in your license.
 </Note>
 
 Enable Fleet with `enable_fleet = true`. Fleet installs the host-backend it needs, so `enable_deployments` is optional.
@@ -495,10 +499,10 @@ Deployments created before Envoy Gateway became the default, with no gateway fla
 `tls_certificate_source` selects the certificate:
 
 - `acm` (default): An ACM certificate on the ALB, either created by Terraform for `langsmith_domain` or supplied with `acm_certificate_arn`. Works with every ingress option.
-- `letsencrypt`: cert-manager with Let's Encrypt. Requires `letsencrypt_email`.
+- `letsencrypt`: cert-manager with Let's Encrypt, solving an HTTP-01 challenge through the ALB Ingress class. Works only in ALB Ingress mode (`enable_envoy_gateway = false`). Requires `letsencrypt_email`.
 - `none`: Plain HTTP with no certificate.
 
-For Let's Encrypt DNS-01 through Route 53, which Istio requires, set `create_cert_manager_irsa = true` and `cert_manager_hosted_zone_id`. Terraform creates the DNS-01 issuer when `langsmith_domain` is set. `create_cert_manager_irsa` and `tls_certificate_source = "letsencrypt"` are mutually exclusive.
+For Let's Encrypt DNS-01 through Route 53, which Istio requires, set `create_cert_manager_irsa = true`, `cert_manager_hosted_zone_id`, and `letsencrypt_email`. Terraform creates the DNS-01 issuer when `langsmith_domain` is set. `create_cert_manager_irsa` and `tls_certificate_source = "letsencrypt"` are mutually exclusive.
 
 To add an ACM certificate and a Route 53 alias record after deployment, run `make tls`. It requires `langsmith_domain` in `terraform.tfvars`, requests and DNS-validates a certificate unless `acm_certificate_arn` is already set, and writes the certificate ARN to `terraform.tfvars`. Then run `make apply`, `make init-values`, and `make deploy`.
 

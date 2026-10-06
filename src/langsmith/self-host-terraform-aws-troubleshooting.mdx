@@ -65,7 +65,7 @@ kubectl cluster-info
 aws sts get-caller-identity
 ```
 
-If the cluster was created with a different IAM principal, grant access through EKS access entries; the cluster does not use the `aws-auth` ConfigMap for this. Have the cluster creator or another cluster admin run:
+If the cluster was created with a different IAM principal, grant access through EKS access entries, which is how the module manages cluster access. Have the cluster creator or another cluster admin run:
 
 ```bash
 aws eks create-access-entry \
@@ -142,7 +142,7 @@ aws ec2 describe-vpc-endpoints \
   --filters "Name=service-name,Values=com.amazonaws.<region>.s3" \
   --query "VpcEndpoints[].State"
 
-# Run the test pod as an annotated service account; the bucket policy denies any other principal
+# Run the test pod as an annotated service account; other service accounts have no AWS credentials
 kubectl run s3-test --rm -it --image=amazon/aws-cli -n langsmith \
   --overrides='{"spec":{"serviceAccountName":"<annotated-service-account>"}}' -- \
   s3 ls s3://<bucket-name>
@@ -243,11 +243,14 @@ smithdb_metastore_deletion_protection = false   # only if SmithDB is enabled
 ```
 
 ```bash
+source infra/scripts/setup-env.sh
 make apply
 make destroy
 make purge-secrets
 make clean
 ```
+
+If you have not uninstalled LangSmith yet, run `make uninstall` before `make destroy`. For the full sequence, see [Teardown](/langsmith/self-host-terraform-aws-quick-reference#teardown).
 
 RDS takes a final snapshot named `<identifier>-final` unless `postgres_skip_final_snapshot = true`. With SmithDB enabled, the metastore RDS also takes a `-final` snapshot unless `smithdb_metastore_skip_final_snapshot = true`. A repeat destroy fails with `DBSnapshotAlreadyExists` while that snapshot exists; delete the old snapshot or set `postgres_skip_final_snapshot = true`.
 
@@ -410,11 +413,11 @@ make deploy
 
 Running sandboxes stop during the drain. Their data stays in S3 and Redis, and chart v17 mounts the same JuiceFS volume.
 
-### Chart 0.15 values files rejected
+### Chart v15 values files rejected
 
 **Symptom:** `make deploy` exits with `ERROR: these values files use the chart 0.15 schema, which chart 0.16 rejects:` followed by a list of files.
 
-**Cause:** Chart 0.16 removed `config.insights`, `config.polly`, and `backend.agentBootstrap`. `make init-values` creates add-on values files only when they are missing, so files generated on the 0.15 line survive the upgrade.
+**Cause:** Chart v16 removed `config.insights`, `config.polly`, and `backend.agentBootstrap`. `make init-values` creates add-on values files only when they are missing, so files generated on chart v15 survive the upgrade.
 
 **Fix:** Delete the listed files from `helm/values/`, then regenerate and redeploy:
 

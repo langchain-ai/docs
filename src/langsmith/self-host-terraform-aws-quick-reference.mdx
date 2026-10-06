@@ -101,7 +101,7 @@ Add-ons are controlled by `enable_*` flags in `infra/terraform.tfvars`. Set the 
 
 ```hcl
 # infra/terraform.tfvars
-enable_deployments     = true   # LangSmith Deployments (LangGraph Platform)
+enable_deployments     = true   # LangSmith Deployment (listener, operator, host-backend)
 enable_fleet           = true   # Fleet (formerly Agent Builder); needs external Postgres and Redis when fleet_storage = "external" (default)
 enable_insights        = true   # AI-powered trace analysis
 enable_polly           = true   # LangSmith Chat (formerly Polly)
@@ -114,7 +114,7 @@ make init-values
 make deploy
 ```
 
-`enable_agent_builder` is no longer supported. Setting it to `true` fails validation; use `enable_fleet` instead.
+`enable_agent_builder` was removed in chart v16. Setting it to `true` fails validation at `terraform plan`, so use `enable_fleet` instead.
 
 ## Sizing profiles
 
@@ -298,20 +298,28 @@ cd terraform/modules/aws
 #    whose EBS volume is otherwise left behind after destroy.
 DELETE_DATA_PVCS=true make uninstall
 
-# 2. Turn off deletion protection in infra/terraform.tfvars, then apply:
+# 2. Load the database and Redis credentials that apply and destroy require
+source infra/scripts/setup-env.sh
+
+# 3. Turn off deletion protection in infra/terraform.tfvars, then apply:
 #      postgres_deletion_protection          = false
 #      smithdb_metastore_deletion_protection = false   # only if SmithDB is enabled
 make apply
 
-# 3. Destroy infrastructure
+# 4. Empty the trace bucket, which Terraform cannot delete while it holds objects
+aws s3 rm s3://<bucket-name> --recursive
+
+# 5. Destroy infrastructure
 make destroy
 
-# 4. Delete this deployment's SSM parameters
+# 6. Delete this deployment's SSM parameters
 make purge-secrets
 
-# 5. Remove local state, generated values, logs, and terraform.tfvars
+# 7. Remove local state, generated values, logs, and terraform.tfvars
 make clean
 ```
+
+With SmithDB enabled, also empty the SmithDB bucket before `make destroy`, or set `smithdb_s3_force_destroy = true` in step 3. With bucket versioning enabled, `aws s3 rm` leaves old object versions behind; delete them in the S3 console or with `aws s3api delete-objects`.
 
 If `make destroy` cannot delete a module-created VPC because security groups created outside Terraform are still in it, run `make teardown-byo-sg BYO_SECURITY_GROUP_IDS="sg-..."`, then run `make destroy` again. The script refuses to run when `create_vpc = false`.
 

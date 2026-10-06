@@ -25,7 +25,7 @@ LangSmith on AWS deploys in two stages with one optional add-on. The infrastruct
 | Stage | Layer | What it adds |
 |---|---|---|
 | Infrastructure | AWS infrastructure | VPC + private/public subnets + single NAT gateway, EKS cluster + managed node group + cluster autoscaler, RDS PostgreSQL, ElastiCache Redis, S3 bucket + VPC Gateway Endpoint, ALB + ALB controller + EBS CSI driver + metrics server, k8s-bootstrap (KEDA, ESO, Envoy Gateway by default). Optional: Network Firewall, WAF, CloudTrail, ALB access logs, SmithDB, sandboxes. |
-| Application | LangSmith application | backend, frontend, playground, queue, ace-backend, clickhouse. Storage: RDS PostgreSQL (metadata) + S3 (trace blobs via VPC endpoint). Ingress: the ALB always fronts the cluster and forwards to Envoy Gateway (default), Istio, or NGINX, or to the ALB controller's Ingress when `enable_envoy_gateway = false`. |
+| Application | LangSmith application | backend, frontend, playground, queue, ace-backend, clickhouse. Storage: RDS PostgreSQL (metadata) + S3 (trace blobs via VPC endpoint). Ingress: the Terraform ALB forwards to Envoy Gateway (default), Istio, or NGINX. With `enable_envoy_gateway = false`, the ALB controller provisions its own ALB for the Ingress. |
 | Add-on (`enable_deployments = true`) | LangSmith Deployment | host-backend, listener, operator. Per deployed graph: api-server, queue, redis, postgres (operator-managed). Requires KEDA (installed alongside infrastructure via k8s-bootstrap). |
 
 ## Component to storage mapping
@@ -58,7 +58,7 @@ In-cluster ClickHouse is dev/POC only (single pod, no replication, no backups). 
 </Warning>
 
 <Note>
-[SmithDB](https://www.langchain.com/blog/introducing-smithdb?utm_source=docs) is LangSmith's purpose-built observability backend, available for Self-hosted starting with self-hosted version 0.16.0 (see [self-hosted support](/langsmith/smithdb-sdk-migration#about-self-hosted)). The AWS modules provision ClickHouse by default. Setting `enable_smithdb = true` also provisions SmithDB's dependencies: a dedicated metastore RDS PostgreSQL instance (with `smithdb_metastore_source = "create"`, the default), an S3 object-store bucket, an IRSA role, and Karpenter NodePools for NVMe instance-store nodes. ClickHouse stays enabled on chart v16 and v17. See [SmithDB](/langsmith/self-host-terraform-aws-deploy#smithdb) in the deployment guide.
+[SmithDB](https://www.langchain.com/blog/introducing-smithdb?utm_source=docs) is LangSmith's purpose-built observability backend, available for self-hosted starting with chart v16 (see [self-hosted support](/langsmith/smithdb-sdk-migration#about-self-hosted)). The AWS modules provision ClickHouse by default. Setting `enable_smithdb = true` also provisions SmithDB's dependencies: a dedicated metastore RDS PostgreSQL instance (with `smithdb_metastore_source = "create"`, the default), an S3 object-store bucket, an IRSA role, and Karpenter NodePools for NVMe instance-store nodes. ClickHouse stays enabled on chart v16 and v17. See [SmithDB](/langsmith/self-host-terraform-aws-deploy#smithdb) in the deployment guide.
 </Note>
 
 ### One-time jobs
@@ -109,7 +109,7 @@ When `enable_sandboxes = true`, Terraform provisions a second, dedicated ElastiC
 
 - Trace payloads: large inputs and outputs, attachments.
 - IRSA via `langsmith_irsa_role` (no static keys). VPC Gateway Endpoint, no public internet.
-- Encrypted with SSE-S3, or SSE-KMS when `s3_kms_key_arn` is set. Public access is blocked, and the bucket policy limits access to the LangSmith IRSA role through the VPC endpoint.
+- Encrypted with SSE-S3, or SSE-KMS when `s3_kms_key_arn` is set. Public access is blocked, and the bucket policy grants the LangSmith IRSA role access through the VPC endpoint.
 - Prefixes: `ttl_s/` (short TTL) and `ttl_l/` (long TTL).
 - The S3 bucket is always required, regardless of tier. Disabling blob storage breaks the cluster on large payloads.
 
@@ -121,7 +121,7 @@ When `enable_sandboxes = true`, Terraform provisions a second, dedicated ElastiC
 
 ## Cluster infrastructure
 
-Two Terraform modules install the cluster-level services LangSmith depends on. The `eks` module installs the AWS-integration controllers through `eks-blueprints-addons`; the `k8s-bootstrap` module installs the workload dependencies and the ingress gateways (see [Ingress options](#ingress-options)):
+Two Terraform modules install the cluster-level services LangSmith depends on. The `eks` module installs the AWS-integration controllers through `eks-blueprints-addons` and the EBS CSI driver as an EKS add-on; the `k8s-bootstrap` module installs the workload dependencies and the ingress gateways (see [Ingress options](#ingress-options)):
 
 | Service | Installed by | Namespace | IRSA | Purpose |
 |---|---|---|---|---|
@@ -136,7 +136,7 @@ Two Terraform modules install the cluster-level services LangSmith depends on. T
 
 ## IRSA roles
 
-IRSA replaces static credentials. IAM trusts the EKS cluster's OIDC issuer; service accounts in `langsmith`, `kube-system`, `external-secrets`, and `cert-manager` are annotated with role ARNs and pods receive temporary credentials via the EKS token webhook.
+IRSA replaces static credentials. IAM trusts the EKS cluster's OIDC issuer; service accounts in `langsmith`, `kube-system`, `external-secrets`, `cert-manager`, and (with SmithDB) `karpenter` are annotated with role ARNs and pods receive temporary credentials via the EKS token webhook.
 
 | Role | Defined in | Used by | Permissions |
 |---|---|---|---|
@@ -144,7 +144,7 @@ IRSA replaces static credentials. IAM trusts the EKS cluster's OIDC issuer; serv
 | `aws_iam_role.eso` | `aws/infra/main.tf` | ESO controller | `ssm:GetParameter`, `ssm:GetParameters`, `ssm:GetParametersByPath` on `/langsmith/{base_name}/*` in the deployment region |
 | `aws_iam_role.cert_manager` | `modules/cert-manager` | `cert-manager` | Route 53 `ChangeResourceRecordSets` and `ListResourceRecordSets` on the zone, plus `GetChange` and `ListHostedZonesByName`. Exists only when `create_cert_manager_irsa = true`. |
 | `aws_iam_role.smithdb` | `modules/smithdb` | SmithDB pods | Read, write, and multipart access on the SmithDB bucket, plus KMS when that key is set. Exists only when `enable_smithdb = true`. |
-| `AmazonEKSTFEBSCSIRole-*` | `modules/eks` | `ebs-csi-driver` | EBS volume management |
+| `AmazonEKSTFEBSCSIRole-*` | `modules/eks` | `ebs-csi-controller-sa` | EBS volume management |
 
 ## Network topology
 
@@ -152,7 +152,7 @@ IRSA replaces static credentials. IAM trusts the EKS cluster's OIDC issuer; serv
 
 With `create_vpc = true`, the module builds a `10.0.0.0/16` VPC across up to three availability zones, and works in two-AZ regions such as `us-west-1`. It uses /21 private and public subnets and a single NAT gateway.
 
-The module creates one VPC endpoint, an S3 gateway endpoint. When you bring a VPC without NAT or internet egress (`create_vpc = false`), create `com.amazonaws.<region>.ecr.api` and `com.amazonaws.<region>.ecr.dkr` interface endpoints with private DNS enabled, attached to a security group that allows TCP 443 from the EKS nodes, so nodes can pull images.
+The module creates one VPC endpoint, an S3 gateway endpoint. When you bring a VPC without NAT or internet egress (`create_vpc = false`), create `com.amazonaws.<region>.ecr.api` and `com.amazonaws.<region>.ecr.dkr` interface endpoints with private DNS enabled, attached to a security group that allows TCP 443 from the VPC CIDR, so nodes can pull images.
 
 Set `alb_existing_security_group_id`, `postgres_existing_security_group_id`, `redis_existing_security_group_id`, or `bastion_existing_security_group_id` to attach a security group you manage. Terraform attaches it but never writes rules to it.
 
@@ -240,7 +240,7 @@ Pod-to-pod, pod-to-RDS, and pod-to-ElastiCache traffic uses the local VPC route 
 
 ## Ingress options
 
-Four mutually exclusive ingress options ship with the modules. The Terraform-managed ALB fronts every option. The choice determines whether split dataplane (agent pods in a separate namespace) is supported.
+Four mutually exclusive ingress options ship with the modules. The Terraform-managed ALB fronts Envoy Gateway, NGINX, and Istio. In ALB Ingress mode, the AWS Load Balancer Controller provisions its own ALB and the Terraform ALB goes unused. The choice determines whether split dataplane (agent pods in a separate namespace) is supported.
 
 | Option | Variable | Split | Traffic path | When to use |
 |---|---|---|---|---|
@@ -277,13 +277,13 @@ The `tls_certificate_source` variable controls the certificate strategy:
 |---|---|---|
 | `none` | HTTP only, no certificate | Any |
 | `acm` | HTTPS:443 with HTTP to HTTPS redirect. ACM certificate, auto-provisioned or BYO. | Any (TLS terminates at the ALB) |
-| `letsencrypt` | HTTPS via cert-manager and Let's Encrypt, using an HTTP-01 challenge solved through the ALB | ALB |
+| `letsencrypt` | HTTPS via cert-manager and Let's Encrypt, using an HTTP-01 challenge solved through the ALB | ALB Ingress only |
 
 ### Why ACM versus cert-manager
 
 ACM certificates are non-exportable. AWS attaches them directly to the ALB, which makes ACM the right choice when TLS terminates at the ALB. With the module's gateways, TLS still terminates at the ALB, so ACM works with Envoy, Istio, and NGINX. cert-manager is only needed when you want TLS to terminate inside the cluster.
 
-The `letsencrypt` source is a reference implementation for the ALB path: it installs cert-manager with a Let's Encrypt HTTP-01 `ClusterIssuer` bound to the ALB ingress class. For in-cluster TLS on Istio or Envoy, set `create_cert_manager_irsa = true` instead, which uses a DNS-01 `ClusterIssuer` validated through Route 53. HTTP-01 (via ALB) and DNS-01 (via Route 53) are mutually exclusive. In production, swap the `ClusterIssuer` for any cert-manager-compatible issuer.
+The `letsencrypt` source is a reference implementation for the ALB path: it installs cert-manager with a Let's Encrypt HTTP-01 `ClusterIssuer` bound to the ALB ingress class. For in-cluster TLS on Istio, set `create_cert_manager_irsa = true` instead, which uses a DNS-01 `ClusterIssuer` validated through Route 53. HTTP-01 (via ALB) and DNS-01 (via Route 53) are mutually exclusive. In production, swap the `ClusterIssuer` for any cert-manager-compatible issuer.
 
 | Issuer | When to use |
 |---|---|

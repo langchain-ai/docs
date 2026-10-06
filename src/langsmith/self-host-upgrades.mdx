@@ -110,12 +110,16 @@ langsmith-queue-d58cb64f7-87d68          1/1     Running     0          15h
 
 ## Upgrade from v16 to v17
 
-Chart v17 (`0.17.x`) changes the values for SmithDB, Sandboxes, and Engine. Update your values file before you run `helm upgrade`. Chart v17 fails to render the SmithDB and Engine values below until you change them. If you deploy with the LangSmith Terraform modules, follow the upgrade steps for [AWS](/langsmith/self-host-terraform-aws-deploy#upgrade-from-chart-v16-to-v17) instead.
+Chart v17 changes the values for SmithDB, sandboxes, and Engine. Update your values file before you run `helm upgrade`. Chart v17 fails to render the SmithDB and Engine values below until you change them. If you deploy with the AWS Terraform modules, follow the [AWS upgrade steps](/langsmith/self-host-terraform-aws-deploy#upgrade-from-chart-v16-to-v17), which apply the SmithDB and sandbox changes to the module's values files.
 
-- **SmithDB**: Move `smithdb.migration.deployment` to `smithdb.migration.job`. With `smithdb.enabled: true`, move the flat autoscaling keys (`enabled`, `minReplicas`, `maxReplicas`, and the rest) on `query`, `ingestion`, `mutations`, `runRules`, `statsQuery`, and `compactionWorker` under `autoscaling.hpa.*`, or use `autoscaling.keda.*`. Enable only one scaler per workload. For the cache volume changes, see [Cache storage](/langsmith/self-host-smithdb-infrastructure#cache-storage).
+<Warning>
+Downgrading from chart v17 to v16 is not supported. Back up the database before you upgrade.
+</Warning>
+
+- **SmithDB**: Move `smithdb.migration.deployment` to `smithdb.migration.job`. With `smithdb.enabled: true`, move the flat autoscaling keys (`enabled`, `minReplicas`, `maxReplicas`, and the rest) on `query`, `ingestion`, `mutations`, `runRules`, `statsQuery`, and `compactionWorker` under `autoscaling.hpa.*`. For `compactionWorker`, you can use `autoscaling.keda.*` instead, but enable only one scaler. For the cache volume changes, see [Cache storage](/langsmith/self-host-smithdb-infrastructure#cache-storage).
 - **Sandboxes**: Chart v17 removes the bundled JuiceFS CSI driver, and `sandbox-host` mounts JuiceFS itself. Chart v17 ignores a leftover `sandboxes.juicefs.csi` block, so move its settings:
   - `sandboxes.juicefs.csi.existingSecretName` becomes `sandboxes.juicefs.existingSecretName`. The Secret keeps its keys.
-  - Set `sandboxes.juicefs.hostMount.cacheDirs` to at least one absolute host path for the JuiceFS cache. Chart v17 requires it.
+  - `sandboxes.juicefs.hostMount.cacheDirs` sets the host paths for the JuiceFS cache and defaults to `/var/cache/juicefs`. If you override it, list at least one absolute path.
   - Move the IRSA or Workload Identity annotation from `sandboxes.juicefs.csi.node.serviceAccount.annotations` to `sandboxes.sandboxHost.serviceAccount.annotations`.
 
   Before the upgrade, delete the `sandbox-host` workload and the JuiceFS PersistentVolumeClaims while the CSI driver still runs. Otherwise the old `sandbox-host` pods stay in `Terminating`. Running sandboxes stop, and their data stays in object storage and Redis.
