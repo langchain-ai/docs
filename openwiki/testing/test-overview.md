@@ -1,11 +1,11 @@
 ---
 type: validation guide
 title: Testing Overview
-description: Change-oriented guidance for selecting deterministic tests, generated-document checks, credentialed code-sample runs, remote OpenAPI refreshes, and hosted-site validation. It explains what each passing boundary does and does not establish.
-tags: [testing, pytest, ci, documentation, code-samples, openapi]
+description: Change-oriented guidance for routing documentation, changelog, generated-output, credentialed sample, remote, and hosted-site changes to the validation boundary that can establish the relevant guarantee.
+tags: [testing, pytest, ci, documentation, changelog, code-samples, openapi]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-02T08:21:54.688Z
+    at: 2026-10-06T08:22:08.206Z
 sources:
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
@@ -29,6 +29,8 @@ sources:
     resource: repo://pipeline/preprocessors/handle_auto_links.py
   - id: openwiki-source-05ccef8d4cf1698187f20464
     resource: repo://pyproject.toml
+  - id: openwiki-source-eb7a028ac20098c574b90426
+    resource: repo://scripts/assemble_changelog.py
   - id: openwiki-source-0a0a6c8d7a88288e6b6b9b5b
     resource: repo://scripts/check_cross_refs.py
   - id: openwiki-source-2654e40275744504b4ca7e2b
@@ -39,17 +41,23 @@ sources:
     resource: repo://scripts/process_langsmith_openapi.py
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
+  - id: openwiki-source-4150c2e25aef90010ad7b03d
+    resource: repo://src/changelog-navigation.js
   - id: openwiki-source-6a4f3df816b7f7f45b6ac5b1
     resource: repo://src/code-samples/conftest.py
   - id: openwiki-source-e0401fc6d5f2a13d30455bd9
     resource: repo://src/code-samples/package.json
+  - id: openwiki-source-5d310b0d0e3f7a2baf5a473a
+    resource: repo://tests/changelog-navigation.test.js
+  - id: openwiki-source-2c73e322d3e9ba3868329a78
+    resource: repo://tests/unit_tests/test_assemble_changelog.py
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
   - id: openwiki-source-b68d7bad2afd9a38e8c331d5
     resource: repo://tests/unit_tests/test_generate_code_snippet_mdx.py
   - id: openwiki-source-2ecfcd33b729fccd843ab705
     resource: repo://tests/unit_tests/test_handle_auto_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-02T08:21:54.688Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-06T08:22:08.206Z" }
 ---
 
 ## Choose the validation boundary
@@ -61,6 +69,8 @@ Start with the narrowest check that can prove the change, then add a boundary wh
 | Pipeline, parser, builder, link-map, or generator behavior | `make test TEST_FILE=tests/unit_tests/test_builder.py` | A local, fixture-controlled contract | A registry, provider, deployed page, or remote API works |
 | Code-sample TypeScript dependency or generated CodeGroup rule | `make test TEST_FILE=tests/unit_tests/test_generate_code_snippet_mdx.py` | Dependency floors and source-tree generation invariants | That a real provider request succeeds |
 | MCP or other `@[ref]` reference/map change | `make test TEST_FILE=tests/unit_tests/test_handle_auto_links.py` and `make check-cross-refs` | Resolver behavior and source references in applicable scopes | The rendered destination is reachable |
+| Changelog fragment ledger or recording behavior | `make test TEST_FILE=tests/unit_tests/test_assemble_changelog.py` | Ledger parsing, deduplication, and the tested render/record path under temporary files | A sibling `langchainplus` fragment set, Eppo rollout state, or a pasted changelog block is correct |
+| Self-hosted changelog chapter navigation | `node --test tests/changelog-navigation.test.js` | The isolated DOM harness accepts only visible stable minor-release headings and preserves its navigation lifecycle | Mintlify's production DOM, CSS, or deployment behavior |
 | Build, redirect, anchor, or committed OpenAPI artifact | `make broken-links-with-anchors` and `make check-openapi` | The generated `build/` tree passes Mint checks | The live upstream OpenAPI endpoint is current |
 | LangSmith platform OpenAPI refresh | `uv run python scripts/process_langsmith_openapi.py --input /path/to/openapi.json --write` | A supplied or allowlisted remote spec is processed deterministically into the committed artifact | That Mint renders every generated endpoint page as intended |
 | Runnable code sample | `make test-code-samples FILES="src/code-samples/..."` | The selected program ran in its real language environment with supplied services and credentials | That skipped rate-limited samples ran, or all documentation output is valid |
@@ -104,6 +114,33 @@ make test TEST_FILE=tests/unit_tests/test_builder.py
 - **Other deterministic metadata:** The integration `docs_url` validator makes no network calls or writes; it accepts HTTP(S) and single-leading-slash paths while rejecting unsafe or missing values. The provider overview is generated: CI regenerates it and rejects a diff, so change `packages.yml` or its generator rather than editing the overview directly.
 
 `make test-code-samples` installs the ESM package environment below `src/code-samples` before starting the runner. It declares `tsx` and the shared TypeScript dependencies, so it is the dependency owner for TypeScript examples rather than each sample file.
+
+### Changelog assembly and browser enhancement
+
+The changelog assembler has two distinct inputs: fragment YAML lives by default in the sibling checkout at `../langchainplus/.changelog`, while the publication ledger is the repository-owned `scripts/.changelog_published.txt`. It refuses a ledger path that resolves outside this repository, skips fragment names already in the ledger, and changes the ledger only when `--record` is supplied after it has rendered ready fragments. Therefore, use a temporary `--fragments-dir` and `--ledger` with the focused Python test for ledger and local rendering semantics; run the production invocation only when the sibling checkout is available and treat its output as a reviewable paste candidate rather than a published change.
+
+A fragment must provide title, body, components, and a `ready` or `held` status; `held` also requires a flag. Ready entries render directly. A held entry remains excluded without `EPPO_API_KEY`; with a token, the script reads the fixed HTTPS Eppo API and includes it only when the active production environment's first catch-all allocation has full exposure and one appropriate variation. Lookup errors leave held entries out rather than promoting them. `--promote` is deliberately stateful: it rewrites qualifying held fragments to `status: ready`; `--check-flag` is a credentialed diagnostic and does not assemble the weekly block.
+
+```mermaid
+flowchart TD
+  Fragments["Fragment YAML"] --> Validate["Validate and remove ledger entries"]
+  Ledger["Published ledger"] --> Validate
+  Validate --> Ready{"Status is ready"}
+  Ready -->|"yes"| Render["Render Update block"]
+  Ready -->|"held"| Token{"Eppo token available"}
+  Token -->|"no"| Hold["Report held and exclude"]
+  Token -->|"yes"| Rollout{"Fully rolled out"}
+  Rollout -->|"yes"| Render
+  Rollout -->|"no or lookup error"| Hold
+  Render --> Record{"--record"}
+  Record -->|"yes"| Write["Update sorted ledger"]
+  Record -->|"no"| Output["Print reviewable block"]
+  Write --> Output
+```
+
+This is the assembly decision path: a dry run produces review material, whereas `--record` also advances the repository's duplicate-prevention state.
+
+The self-hosted page enhancement is a separate Node test surface. `src/changelog-navigation.js` activates only at `/langsmith/self-hosted-changelog`; it collects visible `h2` IDs matching exactly `langsmith-<major>-<minor>-0`, adds index links, and uses a request-animation-frame-coalesced `MutationObserver` to rebuild on route or DOM changes. It removes generated indexes and heading classes when leaving the page. `tests/changelog-navigation.test.js` runs this browserless script in a minimal DOM and exercises stable-versus-patch/prerelease filtering, sidebar and inline fallback mounting, coalescing, cleanup, and filter-driven re-rendering. Run it explicitly with `node --test tests/changelog-navigation.test.js`: the reusable Python test job runs only `make test`, and the documentation workflow uses Node for Mint checks but does not invoke this Node test file.
 
 ### Rendered documentation is a separate boundary
 
@@ -175,6 +212,8 @@ Hosted `llms.txt` coverage is also deliberately outside the local build. The che
 - **`UV_FROZEN` or sync failure:** reconcile declarations and `uv.lock`.
 - **Cross-reference failure:** add/correct the scoped map key or fence the language-specific reference. A passing source gate does not validate final rendered URLs.
 - **Generated snippet/dependency failure:** update the shared TypeScript declaration and lockfile or preserve the generator's language/model invariant; follow with the affected live sample when appropriate.
+- **Changelog assembler test failure:** distinguish a local ledger/rendering regression from a live Eppo or sibling-checkout issue. The focused pytest uses temporary files and no token, so it cannot establish rollout eligibility or validate the production fragment directory.
+- **Changelog navigation test failure:** run `node --test tests/changelog-navigation.test.js` directly and repair the script's isolated DOM contract. A green Python CI job does not cover it; a green Node harness does not prove Mintlify's deployed DOM or styling.
 - **Mint link, anchor, redirect, or OpenAPI failure:** reproduce against the build tree. It is separate from source preprocessing and remote-spec refresh.
 - **OpenAPI refresh diff:** review policy effects and run build validation; a fetched spec is remote input, not a guarantee of rendered public documentation.
 - **Live sample failure:** inspect credentials, current provider behavior, service readiness, toolchains, and the sample. A green run with skips requires later execution of the skipped samples.
@@ -186,5 +225,7 @@ Hosted `llms.txt` coverage is also deliberately outside the local build. The che
 - [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md)
 - [Cross-References](/openwiki/operations/cross-references.md)
 - [Quickstart](/openwiki/quickstart.md)
+- [Builder Tests](/openwiki/testing/builder-tests.md)
+- [Changelog Publication](/openwiki/workflows/changelog-publication.md)
 - [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md)
 - [LangSmith OpenAPI Refresh](/openwiki/workflows/langsmith-openapi-refresh.md)
