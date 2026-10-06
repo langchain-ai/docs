@@ -244,7 +244,7 @@ To test the agent behavior a schedule triggers, send the schedule's `prompt` or 
 
 <ManagedDeepAgentsTestAndDeploy />
 
-When the deployment reaches `DEPLOYED`, `mda deploy` deletes the cron jobs that earlier `schedules/` declarations created and creates cron jobs for the current declarations. Removing a local schedule file and redeploying removes the corresponding managed cron. Schedules created at runtime stay.
+When the deployment reaches `DEPLOYED`, `mda deploy` deletes the cron jobs that earlier `schedules/` declarations created and creates cron jobs for the current declarations. Removing a local schedule file and redeploying removes the corresponding managed cron. Schedules created at runtime are unaffected.
 
 <Warning>
 If you deploy with `--no-wait`, the CLI triggers the remote build and exits before the deployment reaches `DEPLOYED`, so it does not reconcile schedules during that invocation. Run `mda deploy` without `--no-wait` when adding, changing, or removing schedules.
@@ -256,7 +256,23 @@ If you deploy with `--no-wait`, the CLI triggers the remote build and exits befo
 Runtime schedules require `managed-deepagents` 0.9.0 or later.
 </Note>
 
-Use `schedules` in a tool or middleware to create schedules while the agent runs. Each schedule belongs to the current user or to the agent.
+Declarations in `schedules/` are fixed when you deploy. The `schedules` API creates schedules while the agent runs, so the agent can set up recurring or one-time work in response to a conversation. Call it from a tool or from [middleware](/langsmith/managed-deep-agents-middleware). Each schedule belongs to the current user or to the agent.
+
+The agent reaches this API only through tools that you write. Expose the calls the agent needs, and leave out the ones it should not reach.
+
+When a tool creates a schedule during a [channel](/langsmith/managed-deep-agents-channels) run, such as a Slack conversation, the schedule inherits that channel. Each run posts its final answer back to it. A new thread posts a new Slack message, and the current thread replies in the existing Slack thread.
+
+:::python
+`new_thread` decides which of the two a schedule uses.
+:::
+
+:::js
+`newThread` decides which of the two a schedule uses.
+:::
+
+### Create a recurring schedule
+
+`remind_me` gives the agent a way to set up a recurring reminder for the person it is talking to. The agent calls it with the prompt to run and a cron expression for how often to run it. Each time the cron fires, a new run starts with that prompt as its user message. The agent decides what each scheduled run is asked to do.
 
 :::python
 ```python tools/schedules.py
@@ -306,29 +322,60 @@ export const remindMe = tool(
 ```
 :::
 
-To run a schedule once, pass `at` in place of `cron`:
+Asked in Slack to send a standup reminder every weekday, the agent calls `remind_me`. It passes a prompt of its own wording and the cron `0 9 * * 1-5`. Each weekday run posts its answer to that Slack conversation as a new message, because `cron` schedules default to a new thread.
+
+### Create a one-time schedule
+
+Pass `at` in place of `cron` for work that runs once. `follow_up_later` gives the agent a way to set a single follow-up, such as checking a deploy after it finishes.
 
 :::python
-```python
+```python tools/follow_up.py
 from datetime import datetime, timedelta, timezone
 
-await schedules.create(
-    owner={"type": "user"},
-    at=datetime.now(timezone.utc) + timedelta(hours=1),
-    prompt="Remind me to check the deploy.",
-)
+from langchain.tools import tool
+from managed_deepagents import schedules
+
+
+@tool
+async def follow_up_later(prompt: str, hours: int) -> str:
+    """Run a prompt once, a number of hours from now."""
+    item = await schedules.create(
+        owner={"type": "user"},
+        at=datetime.now(timezone.utc) + timedelta(hours=hours),
+        prompt=prompt,
+    )
+    return f"Scheduled a one-time follow-up: {item['id']}."
 ```
 :::
 
 :::js
-```ts
-await schedules.create({
-  owner: { type: "user" },
-  at: new Date(Date.now() + 60 * 60_000),
-  prompt: "Remind me to check the deploy.",
-});
+```ts tools/follow-up.ts
+import { tool } from "langchain";
+import { z } from "zod";
+import { schedules } from "managed-deepagents";
+
+export const followUpLater = tool(
+  async ({ prompt, hours }) => {
+    const item = await schedules.create({
+      owner: { type: "user" },
+      at: new Date(Date.now() + hours * 60 * 60_000),
+      prompt,
+    });
+    return `Scheduled a one-time follow-up: ${item.id}.`;
+  },
+  {
+    name: "follow_up_later",
+    description: "Run a prompt once, a number of hours from now.",
+    schema: z.object({
+      prompt: z.string(),
+      hours: z.number(),
+    }),
+  },
+);
 ```
 :::
+
+A one-time schedule defaults to the current thread, so its run continues the conversation that created it and replies in the same Slack thread.
 
 ### Create options
 
@@ -384,9 +431,9 @@ await schedules.create({
   JSON metadata for your own use. Keys that start with `mda_` are reserved.
 </ParamField>
 
-When a tool creates a schedule in a channel run, such as a Slack conversation, each run posts its final answer to that channel. A new thread posts a new Slack message, and the current thread replies in the same Slack thread.
-
 ### Manage schedules
+
+`list`, `get`, `update`, and `delete` cover the rest of a schedule's life. Expose them as tools when the agent should manage the schedules it created. An agent with `list` and `delete` can answer "what reminders do I have?" and cancel one on request. Pause a schedule with `update` instead of deleting it when the person wants it back later.
 
 :::python
 ```python
@@ -411,11 +458,11 @@ await schedules.delete(item.id, { owner });
 :::
 
 :::python
-`update` accepts `cron`, `at`, `timezone`, `prompt`, `input`, `paused`, and `metadata`. `list` hides expired one-time schedules unless you pass `include_expired=True`. For the agent owner, `list` and `get` also return the schedules in `schedules/`, which you change in code.
+`update` accepts `cron`, `at`, `timezone`, `prompt`, `input`, `paused`, and `metadata`. The channel and the thread choice are fixed at creation. `list` hides expired one-time schedules unless you pass `include_expired=True`. For the agent owner, `list` and `get` also return the schedules in `schedules/`, which you change in code.
 :::
 
 :::js
-`update` accepts `cron`, `at`, `timezone`, `prompt`, `input`, `paused`, and `metadata`. `list` hides expired one-time schedules unless you pass `includeExpired: true`. For the agent owner, `list` and `get` also return the schedules in `schedules/`, which you change in code.
+`update` accepts `cron`, `at`, `timezone`, `prompt`, `input`, `paused`, and `metadata`. The channel and the thread choice are fixed at creation. `list` hides expired one-time schedules unless you pass `includeExpired: true`. For the agent owner, `list` and `get` also return the schedules in `schedules/`, which you change in code.
 :::
 
 ## Troubleshoot schedules
