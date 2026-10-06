@@ -373,6 +373,37 @@ ERROR: the existing <job-name> Job does not match what this deploy renders,
 
 **Fix:** Delete the Job with the command the error prints, then run `make deploy` again. The backfill keeps its progress in the task database, so the new Job resumes instead of starting over.
 
+### JuiceFS format Job fails
+
+**Symptom**
+
+```
+✗ The JuiceFS format Job for release langsmith failed (<reason>).
+```
+
+**Cause:** The `juicefs-format` Job formats the sandbox volume in the GCS bucket through the `langsmith-sandbox-host` Workload Identity binding. When the reason is `DeadlineExceeded`, the Job did not finish within 300 seconds, usually because the pod could not schedule or the image pull was slow. For any other reason, the binding is usually missing or out of date.
+
+**Fix:**
+
+1. Find the cause. For `DeadlineExceeded`, look for `FailedScheduling` events or a slow image pull:
+
+    ```bash
+    kubectl describe job -n langsmith -l app.kubernetes.io/component=juicefs-format
+    ```
+
+    For any other reason, read the Job logs, then run `make apply` to restore the Workload Identity binding:
+
+    ```bash
+    kubectl logs -n langsmith -l app.kubernetes.io/component=juicefs-format
+    ```
+
+1. Delete the failed Job and deploy again. Helm does not rerun a failed Job when its manifest is unchanged, so the Job must be deleted first:
+
+    ```bash
+    kubectl delete job -n langsmith -l app.kubernetes.io/component=juicefs-format
+    make deploy
+    ```
+
 ### Helm release stuck in `pending-upgrade`
 
 **Symptom**
