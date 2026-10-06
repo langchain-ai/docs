@@ -45,11 +45,11 @@ async function gateDestructiveTools(serverUrl: string) {
     checkpointer: new MemorySaver(),
   });
   // :remove-start:
-  assert.equal(destructive.has("crm__delete_file"), true);
-  assert.equal(destructive.has("crm__list_files"), false);
+  assert.equal(destructive.has("crm_delete_file"), true);
+  assert.equal(destructive.has("crm_list_files"), false);
   assert.deepEqual(gate.allowedDecisions, ["approve", "reject"]);
-  assert.equal(interruptOn.crm__delete_file.when, needsApproval);
-  assert.equal(interruptOn.crm__list_files.when, needsApproval);
+  assert.equal(interruptOn.crm_delete_file.when, needsApproval);
+  assert.equal(interruptOn.crm_list_files.when, needsApproval);
   assert.ok(agent);
   // :remove-end:
   return { agent, adapter };
