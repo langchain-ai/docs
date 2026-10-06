@@ -1,0 +1,261 @@
+---
+title: Human-in-the-loop over MCP
+sidebarTitle: Human-in-the-loop over MCP
+description: Ask an MCP client for input when an agent exposed through the Agent Server MCP endpoint pauses, then resume the tool call with the answers.
+---
+
+When an agent exposed through the [MCP endpoint](/langsmith/server-mcp) calls [`interrupt`](https://reference.langchain.com/python/langgraph/types/interrupt), Agent Server sends the question to the MCP client with [elicitation](https://modelcontextprotocol.io/specification/2026-07-28/client/elicitation). When the client answers, Agent Server resumes the agent. A person can supply missing details, review a tool call, or complete a sign-in flow without leaving the MCP client.
+
+<Note>
+Human-in-the-loop over MCP requires `langgraph-api>=TBD` and an MCP client that uses protocol revision `2026-07-28` and declares the `elicitation` capability.
+</Note>
+
+## Pause and resume a tool call
+
+Each pause is one round trip between the client and Agent Server:
+
+1. The client calls the tool. Agent Server runs the agent on a new thread.
+2. The agent calls `interrupt()`. The tool call returns `"resultType": "input_required"`, with one `elicitation/create` request per question in `inputRequests` and an opaque `requestState`.
+3. The client asks the user. Then it calls the same tool again with the same arguments, the answers in `inputResponses` under the same keys, and the `requestState` it received.
+4. Agent Server resumes the agent. The result is either a new round of questions, with a new `requestState`, or the tool result.
+
+For example, a tool that asks for a name returns:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "resultType": "input_required",
+    "inputRequests": {
+      "user_name": {
+        "method": "elicitation/create",
+        "params": {
+          "mode": "form",
+          "message": "What is your name?",
+          "requestedSchema": {
+            "type": "object",
+            "properties": { "name": { "type": "string" } },
+            "required": ["name"]
+          }
+        }
+      }
+    },
+    "requestState": "01a112e7-0ab2-7300-8186-3d7c31945843.e-5ce_aqn3x97c-3mgWtA4psubQ0a4kExyrGE_HOHPI"
+  }
+}
+```
+
+The client answers by calling the tool again:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "greeter",
+    "arguments": {},
+    "inputResponses": {
+      "user_name": { "action": "accept", "content": { "name": "Ada" } }
+    },
+    "requestState": "01a112e7-0ab2-7300-8186-3d7c31945843.e-5ce_aqn3x97c-3mgWtA4psubQ0a4kExyrGE_HOHPI",
+    "_meta": {
+      "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+      "io.modelcontextprotocol/clientCapabilities": {
+        "elicitation": { "form": {}, "url": {} }
+      }
+    }
+  }
+}
+```
+
+Agent Server applies these rules to every round:
+
+- **One `requestState` per round**: Each round returns a new `requestState`. A reused or modified value fails with JSON-RPC error `-32602` (`Invalid or expired requestState`).
+- **Missing answers**: When `inputResponses` lacks an answer to a question, Agent Server asks the same questions again with the same `requestState`. It ignores answers to questions it did not ask.
+- **Answers in the first call**: Answers sent in the first call, without a `requestState`, answer the first round of questions.
+- **Repeated answers**: Agent Server resumes the agent once, even when the client sends the same answers more than once.
+- **Expiry**: Agent Server deletes the thread when the tool call finishes. A call that stays paused expires 24 hours after it started.
+
+## Ask for form input
+
+To ask for structured input, call `interrupt()` with a value whose `type` is `mcp_elicitation`. Each entry in `requests` is one question, with a `key`, a `message`, `"mode": "form"`, and a `requested_schema`:
+
+```python
+from langgraph.graph import START, StateGraph
+from langgraph.types import interrupt
+from typing_extensions import TypedDict
+
+
+class State(TypedDict, total=False):
+    greeting: str
+
+
+def ask_name(state: State) -> State:
+    reply = interrupt(
+        {
+            "type": "mcp_elicitation",
+            "requests": [
+                {
+                    "key": "user_name",
+                    "message": "What is your name?",
+                    "mode": "form",
+                    "requested_schema": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}},
+                        "required": ["name"],
+                    },
+                }
+            ],
+        }
+    )
+    answer = reply["responses"]["user_name"]
+    if answer["action"] != "accept":
+        return {"greeting": "Hello, stranger!"}
+    return {"greeting": f"Hello, {answer['content']['name']}!"}
+
+
+graph = StateGraph(State).add_node(ask_name).add_edge(START, "ask_name").compile()
+```
+
+The agent resumes with `{"responses": {key: answer}}`, one answer per question. Each answer has an `action` of `accept`, `decline`, or `cancel`, and an `accept` answer carries the form `content`. Agent Server passes declined and canceled answers to the agent, so the agent decides what happens next. In the example, a declined question returns `Hello, stranger!`.
+
+The tool result is the agent's final output as JSON text, such as `{"greeting":"Hello, Ada!"}`.
+
+Form schemas follow the MCP rules for elicitation:
+
+- **Fields**: The schema is a flat object. Each property is a string, number, integer, boolean, single-choice enum, or multi-select array of string choices.
+- **String formats**: Strings can use the `email`, `uri`, `date`, or `date-time` format.
+- **Size**: A form has at most 100 fields.
+- **Pydantic schemas**: Agent Server flattens JSON Schema generated by Pydantic, such as optional fields and enum references, into this shape.
+- **Sensitive data**: Agent Server refuses forms that ask for credentials or payment data, such as a password, token, API key, or card number. Ask for that data with a [URL question](#send-the-user-to-a-url) instead.
+
+When Agent Server cannot turn an interrupt into a valid question, the tool call ends with an error result whose text starts with `This tool needs input that can't be asked over MCP`.
+
+## Send the user to a URL
+
+Use `"mode": "url"` to send the user to a page, such as an OAuth consent screen, so that sensitive data never passes through the MCP client:
+
+```python
+from langgraph.graph import START, StateGraph
+from langgraph.types import interrupt
+from typing_extensions import TypedDict
+
+
+class State(TypedDict, total=False):
+    status: str
+
+
+def connect_calendar(state: State) -> State:
+    reply = interrupt(
+        {
+            "type": "mcp_elicitation",
+            "requests": [
+                {
+                    "key": "calendar_auth",
+                    "message": "Connect your calendar to continue.",
+                    "mode": "url",
+                    "url": "https://example.com/oauth/calendar/start",
+                }
+            ],
+        }
+    )
+    if reply["responses"]["calendar_auth"]["action"] != "accept":
+        return {"status": "not connected"}
+    return {"status": "connected"}
+
+
+graph = (
+    StateGraph(State)
+    .add_node(connect_calendar)
+    .add_edge(START, "connect_calendar")
+    .compile()
+)
+```
+
+An `accept` answer has no `content`. It confirms that the user finished the flow on that page. Agent Server does not open the URL: the client shows it to the user.
+
+The URL must use HTTPS, or HTTP on `localhost`, `127.0.0.1`, or `[::1]`. It cannot contain credentials, a fragment, an email address, or a value that looks like a token.
+
+The client must declare the `url` mode of the `elicitation` capability. A client that declares only `form` gets error `-32021`, with `{"elicitation": {"url": {}}}` in `data.requiredCapabilities`.
+
+## Review tool calls from human-in-the-loop middleware
+
+When an agent built with [`HumanInTheLoopMiddleware`](https://reference.langchain.com/python/langchain/agents/middleware/human_in_the_loop/HumanInTheLoopMiddleware) pauses for review, Agent Server turns the review into one form. The form message lists each proposed action and its arguments. For the action at position `N`, the form has these fields:
+
+- **`decision_N`**: Required. One of the decisions the middleware allows for that action: `approve`, `edit`, `reject`, or `respond`.
+- **`arguments_N`**: For `edit`, the new arguments as a JSON object encoded in a string. Present when the action allows `edit`.
+- **`message_N`**: The message for `reject` or `respond`. Present when the action allows either decision.
+
+A `decline` answer rejects every action when all of them allow `reject`. Otherwise, and for a `cancel` answer, the tool call ends with an error result. A review can include at most 20 actions. A review whose arguments have keys that look like secrets ends the tool call with an error.
+
+For more information on review decisions, see [Human-in-the-loop](/oss/python/langchain/human-in-the-loop).
+
+## Ask any other question
+
+Any other interrupt value becomes a one-field text question. A string value is the message, and any other value is shown as JSON:
+
+```python
+from langgraph.graph import START, StateGraph
+from langgraph.types import interrupt
+from typing_extensions import TypedDict
+
+
+class State(TypedDict, total=False):
+    region: str
+
+
+def choose_region(state: State) -> State:
+    region = interrupt("Which region should the service deploy to?")
+    return {"region": region}
+
+
+graph = (
+    StateGraph(State)
+    .add_node(choose_region)
+    .add_edge(START, "choose_region")
+    .compile()
+)
+```
+
+The client answers in a `response` field, such as `{"action": "accept", "content": {"response": "eu-west-1"}}`, and the agent resumes with that string. A `decline` or `cancel` answer ends the tool call with an error result: `The request for input was declined.` or `The request for input was cancelled.`
+
+## Support clients without elicitation
+
+Clients that cannot elicit get an explicit error when a tool pauses:
+
+- **Clients on `2026-07-28` without the `elicitation` capability**: The call fails with JSON-RPC error `-32021` (`Missing required client capability`) and HTTP 400. `data.requiredCapabilities` names the capability to declare.
+- **Clients on `2025-11-25` or earlier**: The tool returns an error result. Its first text block is `This tool paused to ask for human input, and this client can't answer it.`, and the second lists the pending interrupts as JSON.
+
+## Answer from a LangChain agent
+
+An agent that calls the tool through [`MCPAdapter`](https://reference.langchain.com/python/langchain/mcp/adapter/MCPAdapter) pauses with an `mcp_elicitation` interrupt and resumes with the user's answers. For the client code, see [Elicitation](/oss/python/langchain/mcp/tools#elicitation).
+
+After each answer, `MCPAdapter` calls the tool again from the start and replays the earlier answers. The agent behind the tool reruns up to each question, and the thread of the previous attempt stays paused until it expires. Place questions before expensive work or side effects.
+
+## Secure paused calls
+
+Agent Server protects paused calls as follows:
+
+- **Bound state**: A `requestState` works only for the tool name and arguments of the call that produced it.
+- **Authorization**: Agent Server reads the paused thread as the caller, through your [custom auth](/langsmith/custom-auth) handlers. A `requestState` from another user fails with error `-32602`.
+- **Stored value**: The thread stores only a hash of the token in `requestState`, so reading the thread metadata does not reveal a usable value.
+
+## See also
+
+- [MCP endpoint in Agent Server](/langsmith/server-mcp)
+- [Interrupts](/oss/python/langgraph/interrupts)
+- [Human-in-the-loop](/oss/python/langchain/human-in-the-loop)
+- [Elicitation in LangChain MCP tools](/oss/python/langchain/mcp/tools#elicitation)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/server-mcp-elicitation.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
