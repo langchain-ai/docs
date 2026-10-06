@@ -20,7 +20,6 @@ The agent should:
 - Search relevant documentation to answer questions
 - Draft appropriate responses
 - Escalate complex issues to human agents
-- Schedule follow-ups when needed
 
 Example scenarios to handle:
 
@@ -31,36 +30,15 @@ Example scenarios to handle:
 5. Complex technical issue: "Our API integration fails intermittently with 504 errors"
 ```
 
-To implement an agent with the Functional API, you usually follow the same five steps.
+To implement an agent with the Functional API, follow these five steps. Steps 1 and 2 are planning. Steps 3 through 5 turn that plan into types, tasks, and an entrypoint you can run.
 
 ## Step 1: Map out your workflow as discrete steps
 
-Start by identifying the distinct steps in your process. Each step becomes a **task** (a function that does one specific thing). Then sketch how the entrypoint calls those tasks and branches.
+Start by identifying the distinct steps in your process. Each step becomes a **task** (a function that does one specific thing). Then sketch how the entrypoint calls those tasks and branches. Do this before writing code.
 
-```mermaid
-flowchart TD
-    A[Entrypoint] --> B[Read Email]
-    B --> C[Classify Intent]
+![Functional API control flow: gather and draft on the left, review and send on the right](/images/langgraph-functional-thinking-flow.svg)
 
-    C -.-> D[Doc Search]
-    C -.-> E[Bug Track]
-    C -.-> F[Human Review]
-
-    D --> G[Draft Reply]
-    E --> G
-    F --> G
-
-    G -.-> H[Human Review]
-    G -.-> I[Send Reply]
-
-    H --> J[Return]
-    I --> J[Return]
-
-    classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
-    class A,B,C,D,E,F,G,H,I,J process
-```
-
-In the Functional API, that diagram is a planning tool. The real control flow lives in the entrypoint as `if`/`else` and sequential calls. The Graph API would encode the same paths as nodes and edges.
+That sketch mirrors the entrypoint: sequential calls and `if`/`else` on the left, then human review on the right. The Graph API would encode the same paths as nodes and edges.
 
 Now that the components are identified, clarify what each step needs to do:
 
@@ -73,12 +51,12 @@ Now that the components are identified, clarify what each step needs to do:
 - `Send Reply`: Dispatch the email response
 
 <Tip>
-Some steps always run in sequence (`Read Email` then `Classify Intent`). Others are conditional (`Doc Search` only for questions, `Bug Track` only for bugs). Encode those branches with ordinary control flow in the entrypoint.
+Some steps always run in sequence (`Read Email` then `Classify Intent`). Others are conditional (`Doc Search` for questions and feature requests, `Bug Track` only for bugs). Encode those branches with ordinary control flow in the entrypoint.
 </Tip>
 
 ## Step 2: Identify what each step needs to do
 
-For each task, determine what type of operation it represents and what inputs it needs.
+For each step from Step 1, decide what kind of work it is and what inputs it needs. Use the categories below, then expand the email-agent examples for concrete fields and retry choices.
 
 <CardGroup cols={2}>
     <Card title="LLM steps" icon="brain" href="#llm-steps">
@@ -108,7 +86,7 @@ When a step needs to understand, analyze, generate text, or make reasoning decis
 
     <Accordion title="Draft reply">
         - Static context (prompt): Tone guidelines, company policies, response templates
-        - Dynamic context (arguments): Classification results, search results, customer history
+        - Dynamic context (arguments): Classification results, search results
         - Desired outcome: Professional email response ready for review
     </Accordion>
 </AccordionGroup>
@@ -122,12 +100,6 @@ When a step needs to retrieve information from external sources:
         - Parameters: Query built from intent and topic
         - Retry strategy: Yes, with exponential backoff for transient failures
         - Caching: Could cache common queries to reduce API calls
-    </Accordion>
-
-    <Accordion title="Customer history lookup">
-        - Parameters: Customer email or ID
-        - Retry strategy: Yes, but with fallback to basic info if unavailable
-        - Caching: Yes, with time-to-live to balance freshness and performance
     </Accordion>
 </AccordionGroup>
 
@@ -168,12 +140,12 @@ In the Functional API, there is no shared graph state schema. Each task takes ar
 Ask yourself these questions about each piece of data:
 
 <CardGroup cols={2}>
-    <Card title="Pass as an argument or return value" icon="check">
-        Does a later task need this value? If yes, return it from the producing task and pass it forward.
+    <Card title="Share it across tasks" icon="check">
+        Does a later task need this value? If yes, **return** it from the task that creates it, store it in an entrypoint local variable, then **pass** it as an argument to the task that needs it.
     </Card>
 
-    <Card title="Keep local to one task" icon="code">
-        Is it only used to format a prompt or call inside one task? If yes, keep it inside that task.
+    <Card title="Keep it inside one task" icon="code">
+        Is it only used to format a prompt or make a call inside one task? If yes, keep it local to that task. Do not return it.
     </Card>
 </CardGroup>
 
@@ -181,12 +153,14 @@ For the email agent, the entrypoint needs to carry:
 
 - The original email and sender info (inputs to the workflow)
 - Classification results (needed by later branches and the draft step)
-- Search results and customer data (expensive to re-fetch)
+- Search results (expensive to re-fetch)
 - The draft response (needed through review and send)
 
 <Tip>
 Store and pass raw data, not formatted prompt text. Format prompts inside the task that calls the model. That keeps tasks reusable and makes checkpoints easier to inspect.
 </Tip>
+
+Define types for the values tasks exchange. These are ordinary TypedDicts or TypeScript types, not a Graph API state schema. Add them to your file now; the tasks and entrypoint in the next steps use them.
 
 :::python
 ```python
@@ -203,7 +177,6 @@ class EmailClassification(TypedDict):
 class EmailInput(TypedDict):
     email_content: str
     sender_email: str
-    email_id: str
 ```
 :::
 
@@ -219,16 +192,13 @@ type EmailClassification = {
 type EmailInput = {
   emailContent: string;
   senderEmail: string;
-  emailId: string;
 };
 ```
 :::
 
-These types document the values tasks exchange. They are ordinary TypedDicts or TypeScript types, not a Graph API state schema.
-
 ## Step 4: Build your tasks
 
-Implement each step as a task. Tasks checkpoint independently, can retry on failure, and return values the entrypoint can await.
+Turn each Step 1 unit of work into a task. Tasks checkpoint independently, can retry on failure, and return values the entrypoint can await.
 
 :::python
 A @[`@task`] is a Python function that does one unit of work and returns a result. Call it from an entrypoint and resolve it with `.result()` (or `await` in an async entrypoint).
@@ -240,7 +210,7 @@ A @[`task`] is a function that does one unit of work and returns a result. Call 
 
 ### Handle errors appropriately
 
-Different errors need different handling strategies:
+Before you fill in task bodies, consider how each task can fail. Attach retries on the task for transient errors. Use `interrupt()` in the entrypoint for human input. Use this table as a guide:
 
 | Error type | Who fixes it | Strategy | When to use |
 |------------|--------------|----------|-------------|
@@ -250,6 +220,10 @@ Different errors need different handling strategies:
 | Unexpected errors | Developer | Fail the run | Bugs that need a code fix |
 
 ### Implementing the email agent tasks
+
+Add one task per step from Step 1 (except human review, which uses `interrupt()` in the entrypoint in Step 5). The stubs below show the function signatures, return shapes, and retry policies for the email agent. Replace the placeholder bodies with your real LLM calls and API integrations. Put these tasks in the same file as the types from Step 3.
+
+`read_email` is a passthrough here. Keeping it as its own task still gives you a checkpoint before classification and a place to add real MIME parsing later.
 
 :::python
 ```python
@@ -269,12 +243,28 @@ def read_email(email_content: str, sender_email: str) -> dict:
 @task
 def classify_intent(email_content: str, sender_email: str) -> EmailClassification:
     """Classify intent and urgency with an LLM."""
-    # Call your LLM and return structured output
+    # Placeholder: replace with a real LLM call.
+    # This heuristic matches the try-out sample so interrupt() runs.
+    lowered = email_content.lower()
+    if "charged" in lowered or "billing" in lowered:
+        return {
+            "intent": "billing",
+            "urgency": "high",
+            "topic": "billing",
+            "summary": "Customer reports a billing problem",
+        }
+    if "crash" in lowered or "bug" in lowered:
+        return {
+            "intent": "bug",
+            "urgency": "medium",
+            "topic": "product bug",
+            "summary": "Customer reports a bug",
+        }
     return {
         "intent": "question",
         "urgency": "low",
-        "topic": "password reset",
-        "summary": "Customer asks how to reset password",
+        "topic": "general",
+        "summary": "Customer question",
     }
 
 
@@ -323,12 +313,30 @@ const readEmail = task("readEmail", async (emailContent: string, senderEmail: st
 const classifyIntent = task(
   "classifyIntent",
   async (emailContent: string, senderEmail: string): Promise<EmailClassification> => {
-    // Call your LLM and return structured output
+    // Placeholder: replace with a real LLM call.
+    // This heuristic matches the try-out sample so interrupt() runs.
+    const lowered = emailContent.toLowerCase();
+    if (lowered.includes("charged") || lowered.includes("billing")) {
+      return {
+        intent: "billing",
+        urgency: "high",
+        topic: "billing",
+        summary: "Customer reports a billing problem",
+      };
+    }
+    if (lowered.includes("crash") || lowered.includes("bug")) {
+      return {
+        intent: "bug",
+        urgency: "medium",
+        topic: "product bug",
+        summary: "Customer reports a bug",
+      };
+    }
     return {
       intent: "question",
       urgency: "low",
-      topic: "password reset",
-      summary: "Customer asks how to reset password",
+      topic: "general",
+      summary: "Customer question",
     };
   }
 );
@@ -369,9 +377,11 @@ const sendReply = task(
 ```
 :::
 
+You now have callable tasks. Next, compose them in an entrypoint.
+
 ## Step 5: Compose the entrypoint
 
-The entrypoint is the workflow. It calls tasks, branches with ordinary control flow, and pauses for humans with `interrupt()`. Compile it with a [checkpointer](/oss/langgraph/persistence) when you need durable execution and human-in-the-loop.
+The entrypoint is the workflow. Add it below the tasks. It calls those tasks in order, branches with `if`/`else` (the control flow from Step 1), and pauses for humans with `interrupt()`. Provide a [checkpointer](/oss/langgraph/persistence) when you need durable execution and human-in-the-loop.
 
 :::python
 ```python
@@ -390,7 +400,7 @@ def email_agent(inputs: EmailInput) -> dict:
     ).result()
 
     context: list[str] = []
-    if classification["intent"] == "question":
+    if classification["intent"] in ("question", "feature"):
         context = search_documentation(
             classification["topic"], classification["summary"]
         ).result()
@@ -406,10 +416,11 @@ def email_agent(inputs: EmailInput) -> dict:
         parsed["email_content"], classification, context
     ).result()
 
-    # Pause for human review on urgent or complex issues
-    if classification["urgency"] in ("high", "critical") or classification[
-        "intent"
-    ] == "complex":
+    # Pause for human review on billing, urgent, or complex issues
+    if (
+        classification["intent"] in ("billing", "complex")
+        or classification["urgency"] in ("high", "critical")
+    ):
         human_decision = interrupt(
             {
                 "email_content": parsed["email_content"],
@@ -446,7 +457,10 @@ const emailAgent = entrypoint(
     );
 
     let context: string[] = [];
-    if (classification.intent === "question") {
+    if (
+      classification.intent === "question" ||
+      classification.intent === "feature"
+    ) {
       context = await searchDocumentation(
         classification.topic,
         classification.summary
@@ -466,11 +480,12 @@ const emailAgent = entrypoint(
       context
     );
 
-    // Pause for human review on urgent or complex issues
+    // Pause for human review on billing, urgent, or complex issues
     if (
+      classification.intent === "billing" ||
+      classification.intent === "complex" ||
       classification.urgency === "high" ||
-      classification.urgency === "critical" ||
-      classification.intent === "complex"
+      classification.urgency === "critical"
     ) {
       const humanDecision = interrupt({
         emailContent: parsed.emailContent,
@@ -492,7 +507,7 @@ const emailAgent = entrypoint(
 
 ### Try out your agent
 
-Run the agent with an urgent billing issue that needs human review:
+After the entrypoint is defined, invoke it with a sample email. With the placeholder classifier above, this urgent billing message is treated as high urgency, so the run hits `interrupt()` and you can practice resume. Use the same `thread_id` for the first invoke and the resume invoke.
 
 :::python
 ```python
@@ -504,7 +519,6 @@ result = email_agent.invoke(
     {
         "email_content": "I was charged twice for my subscription! This is urgent!",
         "sender_email": "customer@example.com",
-        "email_id": "email_123",
     },
     config,
 )
@@ -533,7 +547,6 @@ const result = await emailAgent.invoke(
   {
     emailContent: "I was charged twice for my subscription! This is urgent!",
     senderEmail: "customer@example.com",
-    emailId: "email_123",
   },
   config
 );
@@ -589,10 +602,7 @@ Building this email agent shows the Functional API way of thinking:
 
 ### Task granularity trade-offs
 
-<Accordion title="How small should tasks be?" icon="adjustments">
-<Info>
 Most applications can use the breakdown above. Read this section when you are deciding whether to merge or split tasks.
-</Info>
 
 LangGraph checkpoints at **task** boundaries inside an entrypoint. When a run resumes after an interrupt or failure, completed task results load from the checkpoint. Work that lived in the entrypoint body outside a task may run again.
 
@@ -604,14 +614,13 @@ Why this breakdown fits the email agent:
 - **Testing:** Smaller tasks are easier to unit test and reuse.
 
 Merging `read_email` and `classify_intent` into one task is valid. You lose a checkpoint between them and repeat both on failure. For most agents, the observability benefit of separate tasks is worth it.
-</Accordion>
 
 ### Where to go from here
 
 This walkthrough introduces Functional API design. Extend it with:
 
 <CardGroup cols={2}>
-    <Card title="Build with the Functional API" icon="route" href="/oss/langgraph/use-functional-api">
+    <Card title="Build checklist" icon="route" href="/oss/langgraph/use-functional-api">
         Decision guide for workflows, tasks, streaming, interrupts, and memory
     </Card>
 
