@@ -9,21 +9,21 @@ const writeEssay = task("writeEssay", async (topic: string) => {
 
 const workflow = entrypoint(
   { checkpointer: new MemorySaver(), name: "workflow" },
-  async (_topic: string) => {
-    const essay = await writeEssay("cat");
+  async (topic: string) => {
+    const essay = await writeEssay(topic);
     const isApproved = interrupt({
       // Any json-serializable payload provided to interrupt as argument.
       // It will be surfaced on the client side as an Interrupt when streaming data
       // from the workflow.
-      essay, // The essay we want reviewed.
-      // We can add any additional information that we need.
+      essay, // The essay to review.
+      // You can add any additional information that you need.
       // For example, introduce a key called "action" with some instructions.
       action: "Please approve/reject the essay",
     });
 
     return {
       essay, // The essay that was generated
-      isApproved, // Response from HIL
+      isApproved, // Response from human review
     };
   },
 );
@@ -35,15 +35,13 @@ const config = {
   },
 };
 
-const stream = await workflow.streamEvents("cat", { ...config, version: "v2" });
+const stream = await workflow.streamEvents("cat", { ...config, version: "v3" });
 const initialChunks: Record<string, unknown>[] = [];
-for await (const event of stream) {
-  const chunk = event.data?.chunk;
-  if (chunk && typeof chunk === "object") {
-    console.log(chunk);
-    initialChunks.push(chunk as Record<string, unknown>);
+for await (const snapshot of stream.values) {
+  console.log(snapshot);
+  if (snapshot && typeof snapshot === "object") {
+    initialChunks.push(snapshot as Record<string, unknown>);
   }
 }
-// { writeEssay: "An essay about topic: cat" }
-// { __interrupt__: [Interrupt(...)] }
+// { __interrupt__: [Interrupt({ value: { essay: "An essay about topic: cat", ... } })] }
 ```
