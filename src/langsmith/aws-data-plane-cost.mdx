@@ -1,0 +1,47 @@
+---
+title: AWS data plane cost estimate
+sidebarTitle: Cost estimate
+description: Rough monthly cost of a default LangSmith data plane on AWS, with separate estimates for ClickHouse and SmithDB trace storage.
+icon: brand-aws
+---
+
+This is a rough monthly run-rate for a basic LangSmith data plane in your AWS account, using the default footprint. Actual cost varies by AWS region, traffic volume, storage growth, CloudWatch log volume, NAT and data-transfer usage, and whether committed-use discounts or reserved capacity apply.
+
+Trace storage is either ClickHouse or SmithDB. The shared services (PostgreSQL, Redis, EKS, networking, and object storage) appear in both tabs. The ClickHouse total does not include SmithDB, and the SmithDB tab does not include ClickHouse or ZooKeeper.
+
+<Warning>
+Scaling capacity for any resource can be lowered when required, as long as the deployment remains within safe operating limits. For cost-conscious or pre-production deployments, Multi-AZ can be turned off. That lowers monthly cost and reduces fault tolerance.
+</Warning>
+
+<Tabs>
+  <Tab title="ClickHouse">
+    ClickHouse can also run as a single node instead of a replicated cluster. That lowers monthly cost and reduces fault tolerance.
+
+    | Area | Rough monthly estimate | Notes |
+    | --- | --- | --- |
+    | RDS PostgreSQL | $100–$150 | `db.t4g.medium`, Multi-AZ, 50 GB starting storage. |
+    | ElastiCache Redis | $140–$280 | Lower end without read replicas. Higher end if read replicas are enabled. |
+    | EKS control plane | ~$73 | One EKS cluster at standard hourly pricing. |
+    | System node group | ~$210 | 3 `m6i.large` on-demand nodes. |
+    | Application, ClickHouse, and ZooKeeper worker nodes | $1,000–$1,500 | LangSmith pods and ClickHouse pods. |
+    | EBS volumes | $200–$350 | ClickHouse, ZooKeeper, node volumes, and gp3 performance settings. |
+    | Networking | $150–$300 | NAT gateways, load balancers, PrivateLink or VPC endpoints, and low-volume data processing. |
+    | S3, Secrets Manager, CloudWatch | $50–$200 | Low-volume baseline. Grows with trace payloads, logs, and retention. |
+
+    Estimated total: **$2.2k–$3.2k/month**.
+  </Tab>
+  <Tab title="SmithDB">
+    SmithDB adds a PostgreSQL metastore, a regional blob store, and nodes with local NVMe. Those resources scale with trace volume, so this tab has no single monthly total.
+
+    | Area | Rough monthly estimate | Notes |
+    | --- | --- | --- |
+    | RDS PostgreSQL | $100–$150 | `db.t4g.medium`, Multi-AZ, 50 GB starting storage. |
+    | SmithDB metastore | $100–$150 | Separate PostgreSQL database, same starting shape as LangSmith RDS. |
+    | ElastiCache Redis | $140–$280 | Lower end without read replicas. Higher end if read replicas are enabled. |
+    | EKS control plane | ~$73 | One EKS cluster at standard hourly pricing. |
+    | System node group | ~$210 | 3 `m6i.large` on-demand nodes. |
+    | SmithDB worker nodes | Scales with trace volume | Storage-optimized instances with local NVMe (`i4i` or `i8g`, `4xlarge` or `8xlarge`). Hosts query, ingestion, and compaction. |
+    | Networking | $150–$300 | NAT gateways, load balancers, PrivateLink or VPC endpoints, and low-volume data processing. Includes private connectivity to the SmithDB blob bucket. |
+    | S3, Secrets Manager, CloudWatch | $50–$200 | Low-volume baseline. The SmithDB blob store grows with trace volume. |
+  </Tab>
+</Tabs>
