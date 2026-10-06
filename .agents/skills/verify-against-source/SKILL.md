@@ -44,7 +44,7 @@ is weaker than the one above it.
 | LangChain | [langchain-ai/langchain](https://github.com/langchain-ai/langchain) | `libs/langchain_v1/langchain/` for v1, `libs/core/` for core, `libs/partners/` for provider packages |
 | LangGraph | [langchain-ai/langgraph](https://github.com/langchain-ai/langgraph) | `libs/langgraph/`, `libs/prebuilt/`, `libs/checkpoint*/`, `libs/cli/`, `libs/sdk-py/` and `libs/sdk-js/` |
 | Deep Agents | [langchain-ai/deepagents](https://github.com/langchain-ai/deepagents) | Also the source of the eval matrix the docs publish |
-| LangSmith SDK | [langchain-ai/langsmith-sdk](https://github.com/langchain-ai/langsmith-sdk) | The client libraries, public |
+| LangSmith SDK | [langchain-ai/langsmith-python](https://github.com/langchain-ai/langsmith-python) and [langchain-ai/langsmith-javascript](https://github.com/langchain-ai/langsmith-javascript) | The Python and JavaScript client libraries |
 | LangSmith platform | langchain-ai/langchainplus (private) | `smith-backend/` (Python API), `smith-go/` (Go services), `smith-frontend/` (UI labels and flows), `host-backend/`, `lc_config/` for settings and their defaults |
 | Agent Server | langchain-ai/langgraph-api (private) | Not in the OSS langgraph repo. Also the source of the Agent Server OpenAPI spec PRs |
 | Helm charts | [langchain-ai/helm](https://github.com/langchain-ai/helm) | `charts/langsmith/values.yaml` for defaults, `templates/_helpers.tpl` for the value-to-environment-variable mapping |
