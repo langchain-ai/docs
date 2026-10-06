@@ -122,14 +122,22 @@ const handleOrder = traceable(
   </Step>
 </Steps>
 
-## Use the agent's project with other endpoints
+## Resolve an address to its project ID
 
-An agent environment is backed by a [tracing project](/langsmith/observability-concepts#tracing-projects). Endpoints that read or manage that data identify the project by its ID, and with agent addressing you never choose or see a project name, so you cannot look the project up by name. Resolve the address to its project ID instead, then pass the ID wherever an endpoint takes a project (session) ID. For example:
+Agents, experiments, and evaluators each keep their traces in a [tracing project](/langsmith/observability-concepts#tracing-projects). Endpoints that read or manage that data identify the project by its ID, and with an address you never choose or see a project name, so you cannot look the project up by name. Resolve the address to its project ID instead, then pass the ID wherever an endpoint takes a project (session) ID. For example:
 
 - Querying runs, threads, and traces with `project_ids`
 - Reading or updating the project, and its views, insights, and alerts
 
-The resolve endpoint takes one address and returns the ID of its project:
+The resolve endpoint takes one address and returns the ID of its project. These addresses are supported:
+
+| Feature | Python | In the API | Takes traces |
+|---------|--------|------------|--------------|
+| An agent's environment | `ls.Agent("checkout", "production")` | `{"kind": "AGENT", "id": "checkout", "environment": "production"}` | Yes |
+| An experiment | `ls.Experiment("<experiment-id>")` | `{"kind": "EXPERIMENT", "id": "<experiment-id>"}` | No |
+| The workspace's evaluators | `ls.Evaluator()` | `{"kind": "EVALUATOR"}` | No |
+
+Only an agent can be sent traces, so the [addressing arguments](#addressing-arguments) take an `Agent`. The other addresses only identify a project to query. Evaluator traces share one project per workspace, so an evaluator address has no `id`.
 
 <CodeGroup>
 
@@ -143,7 +151,7 @@ agent = ls.Agent("checkout", "production")
 
 
 async def main() -> None:
-    project = await client.sessions.resolve(address=agent.to_agent_address())
+    project = await client.sessions.resolve(address=agent.to_api_address())
 
     async for run in client.runs.query_v2(project_ids=[project.session_id]):
         print(run.id)
@@ -167,7 +175,7 @@ curl -X POST "https://api.smith.langchain.com/api/v2/runs/query" \
 
 </CodeGroup>
 
-LangSmith returns a `404` if the agent environment does not exist or if you cannot read its project. The agent environment exists once you have sent a trace to it.
+LangSmith returns a `404` if the address names nothing in the workspace or if you cannot read its project. An agent environment exists once you have sent a trace to it.
 
 ## Addressing modes are mutually exclusive
 
