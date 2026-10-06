@@ -173,12 +173,12 @@ The private API server, Entra, and control-plane identity variables apply only t
 | `langsmith_namespace` | `langsmith` | no | Kubernetes namespace for LangSmith. Used to scope Workload Identity for blob storage. |
 | `langsmith_release_name` | `langsmith` | no | Helm release name. Used for Workload Identity federated credential subjects. |
 | `langsmith_domain` | `""` | when `dns01` or `create_dns_zone` | See [DNS and TLS](#dns-and-tls). |
-| `langsmith_helm_chart_version` | `""` | no | Pin a chart version for reproducible deploys. The deploy script precedence is the `CHART_VERSION` environment variable, then this variable, then the pinned line default `~0.16.0` (latest `0.16.x` patch). The deploy fails on any other chart line, except that `enable_smithdb = true` requires the `0.17` line. |
+| `langsmith_helm_chart_version` | `""` | no | Pin a chart version for reproducible deploys. The deploy script precedence is the `CHART_VERSION` environment variable, then this variable, then the pinned line default `~0.17.0` (latest `0.17.x` patch). The deploy fails on any other chart line. On a `v0.16.*` module tag, the default is `~0.16.0` and only the `0.16` line deploys. |
 | `langsmith_admin_email` | `""` | no | Initial org admin email (`initialOrgAdminEmail` in Helm values). Set via `make setup-env`. |
 
 ## Sizing and add-on flags
 
-`init-values.sh` and `deploy.sh` read these flags. Terraform ignores them, except `enable_fleet`. They control which Helm overlays the scripts generate.
+`init-values.sh` and `deploy.sh` read these flags. Terraform ignores them, except `enable_fleet` and a validation that `enable_gateway_pii_redaction` requires `enable_llm_gateway`. They control which Helm overlays the scripts generate. The `enable_llm_gateway`, `enable_gateway_pii_redaction`, and `enable_sso_oidc` flags exist only on `v0.17.*` module tags.
 
 | Variable | Default | Required | Description |
 |---|---|---|---|
@@ -188,10 +188,13 @@ The private API server, Entra, and control-plane identity variables apply only t
 | `enable_fleet` | `false` | no | Enable Fleet, the successor to Agent Builder. Requires `enable_deployments = true` and `postgres_source = "external"`. Cannot be combined with `enable_agent_builder`. Terraform also creates a `langsmith_fleet` database and the `langsmith-fleet-postgres` Kubernetes secret, so run `make apply` before deploying. |
 | `enable_insights` | `false` | no | Enable Insights (ClickHouse-backed analytics). |
 | `enable_polly` | `false` | no | Enable Polly (AI evaluation and monitoring). Polly runs on LangSmith Deployment, so set `enable_deployments = true` as well. The deploy scripts do not check this. |
+| `enable_llm_gateway` | `false` | no | Deploy the [LLM Gateway](/langsmith/llm-gateway), which is in beta. Requires chart 0.17. See [LLM Gateway](/langsmith/self-host-terraform-azure-deploy#llm-gateway). |
+| `enable_gateway_pii_redaction` | `false` | no | Run the Presidio analyzer beside the LLM Gateway to redact PII from gateway traffic, and turn redaction on for new organizations. Requires `enable_llm_gateway = true`. |
+| `enable_sso_oidc` | `false` | no | Switch login to SSO through an OIDC provider and disable basic auth. The deploy scripts read the client ID, client secret, and issuer URL from Key Vault. Enable only after you have logged in as the org admin with basic auth. See [SSO with OIDC](/langsmith/self-host-terraform-azure-deploy#sso-with-oidc). |
 
 ## SmithDB
 
-SmithDB is optional. `enable_smithdb` provisions Azure resources, so run `make apply` before deploying. It also requires the `0.17` chart line, so set `langsmith_helm_chart_version = "~0.17.0"`. For the full requirements, refer to [`SMITHDB.md`](https://github.com/langchain-ai/terraform/blob/main/modules/azure/SMITHDB.md).
+SmithDB is optional. `enable_smithdb` provisions Azure resources, so run `make apply` before deploying. It requires the `0.17` chart line, which `v0.17.*` module tags deploy by default. A `v0.16.*` tag cannot deploy SmithDB on Azure. For the full requirements, refer to [`SMITHDB.md`](https://github.com/langchain-ai/terraform/blob/main/modules/azure/SMITHDB.md).
 
 | Variable | Default | Required | Description |
 |---|---|---|---|

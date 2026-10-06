@@ -125,7 +125,7 @@ In-cluster ClickHouse is dev/POC only (single pod, no replication, no backups). 
 </Warning>
 
 <Note>
-[SmithDB](https://www.langchain.com/blog/introducing-smithdb?utm_source=docs) is LangSmith's purpose-built observability backend, available for Self-hosted starting with self-hosted version 0.16.0 (see [self-hosted support](/langsmith/smithdb-sdk-migration#about-self-hosted)). These Terraform modules provision ClickHouse by default, so the guidance in the previous sections applies to most deployments. Set `enable_smithdb = true` to add the SmithDB infrastructure: a dedicated PostgreSQL 18 metastore, a storage account and Blob container, Workload Identity, and Premium SSD v2 cache volumes. On Azure, SmithDB requires a stable release on the LangSmith Helm chart 0.17 line, because the 0.16 chart has no Azure SmithDB values.
+[SmithDB](https://www.langchain.com/blog/introducing-smithdb?utm_source=docs) is LangSmith's purpose-built observability backend, available for Self-hosted starting with self-hosted version 0.16.0 (see [self-hosted support](/langsmith/smithdb-sdk-migration#about-self-hosted)). These Terraform modules provision ClickHouse by default, so the guidance in the previous sections applies to most deployments. Set `enable_smithdb = true` to add the SmithDB infrastructure: a dedicated PostgreSQL 18 metastore, a storage account and Blob container, Workload Identity, and Premium SSD v2 cache volumes. On Azure, SmithDB requires a stable release on the LangSmith Helm chart 0.17 line, which the `v0.17.*` module tags deploy. The `v0.16.*` tags cannot deploy it, because the 0.16 chart has no Azure SmithDB values.
 </Note>
 
 ### One-time jobs
@@ -238,13 +238,15 @@ Every pod that reads blob storage env vars must have:
 | `langsmith-listener` | LangSmith Deployment add-on | Yes |
 | `langsmith-fleet-tool-server` | Fleet add-on | Yes |
 | `langsmith-fleet-trigger-server` | Fleet add-on | Yes |
+| `langsmith-agent-gateway` | LLM Gateway add-on | Yes |
+| `langsmith-presidio-analyzer` | LLM Gateway PII redaction | Yes |
 | `langsmith-frontend` | Application | No |
 | `langsmith-playground` | Application | No |
 | `langsmith-ace-backend` | Application | No |
 | `langsmith-clickhouse` | Application | No |
 | `langsmith-operator` | LangSmith Deployment add-on | No |
 
-All federated credentials are registered in `infra/modules/k8s-cluster/main.tf` under `service_accounts_for_workload_identity`. Each name is `<release>-<component>`, where `<release>` is the chart fullname (`langsmith` by default). SmithDB uses its own ServiceAccount and identity. Adding a new pod that accesses blob storage requires adding its ServiceAccount name to that list and running `make apply`.
+All federated credentials are registered in `infra/modules/k8s-cluster/main.tf` under `service_accounts_for_workload_identity`. Each name is `<release>-<component>`, where `<release>` is the chart fullname (`langsmith` by default). Terraform registers the two LLM Gateway credentials whether or not `enable_llm_gateway` is set. The `v0.16.*` module tags register only the first eight. SmithDB uses its own ServiceAccount and identity. Adding a new pod that accesses blob storage requires adding its ServiceAccount name to that list and running `make apply`.
 
 If a pod's ServiceAccount has no registered federated credential, Azure AD rejects the token exchange and the pod panics on startup:
 
@@ -297,7 +299,7 @@ The secrets flow runs in this order. `make deploy-all` runs steps 2 through 5, a
 1. `make setup-env` writes `secrets.auto.tfvars`, which is gitignored and read by Terraform automatically. It prompts for the PostgreSQL admin password, the license key, and the initial org admin email. Set `LANGSMITH_PG_PASSWORD`, `LANGSMITH_LICENSE_KEY`, and `LANGSMITH_ADMIN_EMAIL` to skip the prompts. It never writes to Key Vault.
 1. `make apply` creates Key Vault. Terraform writes only `postgres-admin-password` and `langsmith-license-key` to it, and only when `keyvault_manage_secrets = true` (the default). The `k8s-bootstrap` module creates `langsmith-license`, plus `langsmith-postgres-secret` and `langsmith-redis-secret` for external Postgres and Redis.
 1. `make seed-secrets` writes the app secrets straight to Key Vault: the admin password (prompted, or `LANGSMITH_ADMIN_PASSWORD`), the API key salt, the JWT secret, and four Fernet encryption keys. With `keyvault_manage_secrets = false`, it also writes the two secrets Terraform skipped.
-1. `make kubeconfig` fetches the AKS credentials. `make k8s-secrets` then reads Key Vault and creates `langsmith-config-secret` with all eight keys.
+1. `make kubeconfig` fetches the AKS credentials. `make k8s-secrets` then reads Key Vault and creates `langsmith-config-secret` with all eight keys, plus `oauth_client_id`, `oauth_client_secret`, and `oauth_issuer_url` when the `langsmith-oauth-*` secrets exist in Key Vault.
 1. `make init-values` and `make deploy` install the chart with `config.existingSecretName = "langsmith-config-secret"`. No secret appears inline in any values file.
 
 **Key rule:** `secrets.auto.tfvars` is never committed. Re-run `make setup-env` on any machine to restore it. The app secrets never pass through Terraform state. `make seed-secrets` never overwrites an existing secret, because a new API key salt, JWT secret, or Fernet key breaks a running deployment. Rotate a secret deliberately with `make keyvault`.

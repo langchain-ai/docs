@@ -358,7 +358,28 @@ make deploy
 
 **Cause:** LangSmith DB migrations are forward-only. Downgrading the chart leaves the DB at a revision the older app image cannot locate.
 
-**Fix:** Roll forward to the version you were on (or newer). Set `langsmith_helm_chart_version` in `terraform.tfvars` and re-deploy. `make deploy` accepts only the chart 0.16 line, or 0.17 with `enable_smithdb = true`. Always test new chart versions in a separate environment before upgrading production.
+**Fix:** Roll forward to the version you were on (or newer). Set `langsmith_helm_chart_version` in `terraform.tfvars` and re-deploy. On a `v0.17.*` module tag, `make deploy` accepts only the chart 0.17 line. A deployment that has run chart 0.17 cannot return to 0.16. The `v0.16.*` tags are for installations that never left 0.16. Always test new chart versions in a separate environment before upgrading production.
+
+### `make deploy` fails: `does not resolve to the chart 0.17 line`
+
+**Cause:** The `CHART_VERSION` environment variable or `langsmith_helm_chart_version` names a chart outside the 0.17 line, such as a 0.16 version left from an earlier deploy. `v0.17.*` module tags deploy only chart 0.17.
+
+**Fix:** Clear both to take the newest 0.17 patch (`unset CHART_VERSION`), or name a 0.17 patch such as `0.17.0`. To stay on chart 0.16, check out a `v0.16.*` module tag instead.
+
+### `make init-values` fails: `enable_sso_oidc = true but the following Key Vault secrets are missing`
+
+**Cause:** `enable_sso_oidc = true` disables basic auth, so the backend needs the OIDC client ID, client secret, and issuer URL. At least one of the `langsmith-oauth-*` secrets is not in Key Vault.
+
+**Fix:** Write the missing secrets, then re-create the Kubernetes secret and deploy:
+
+```bash
+./infra/scripts/manage-keyvault.sh set langsmith-oauth-client-id '<client-id>'
+./infra/scripts/manage-keyvault.sh set langsmith-oauth-client-secret '<client-secret>'
+./infra/scripts/manage-keyvault.sh set langsmith-oauth-issuer-url '<issuer-url>'
+make k8s-secrets
+make init-values
+make deploy
+```
 
 ### Helm install times out
 
@@ -468,7 +489,7 @@ WorkloadIdentityCredential authentication failed.
 
 **Cause:** The pod's Kubernetes ServiceAccount has no federated credential on the Azure Managed Identity. Every pod that accesses Blob Storage needs one.
 
-**Fix:** Add the missing ServiceAccount to `service_accounts_for_workload_identity` in `infra/modules/k8s-cluster/main.tf`. The module passes the chart fullname as `var.langsmith_release_name`: the release name when it contains `langsmith`, otherwise `<release>-langsmith`. The list in the v0.16 module releases:
+**Fix:** Add the missing ServiceAccount to `service_accounts_for_workload_identity` in `infra/modules/k8s-cluster/main.tf`. The module passes the chart fullname as `var.langsmith_release_name`: the release name when it contains `langsmith`, otherwise `<release>-langsmith`. The list in the v0.17 module releases:
 
 ```hcl
 service_accounts_for_workload_identity = [
@@ -480,8 +501,12 @@ service_accounts_for_workload_identity = [
   "${var.langsmith_release_name}-listener",              # LangSmith Deployment add-on
   "${var.langsmith_release_name}-fleet-tool-server",     # Fleet add-on
   "${var.langsmith_release_name}-fleet-trigger-server",  # Fleet add-on
+  "${var.langsmith_release_name}-agent-gateway",         # LLM Gateway add-on
+  "${var.langsmith_release_name}-presidio-analyzer",     # LLM Gateway PII redaction
 ]
 ```
+
+The `v0.16.*` module releases list only the first eight.
 
 ```bash
 make apply

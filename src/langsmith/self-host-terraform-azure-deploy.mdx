@@ -11,7 +11,11 @@ The install runs in two stages:
 1. **Infrastructure**: Terraform provisions AKS, Postgres, Redis, Blob Storage, Key Vault, cert-manager, KEDA, and ingress.
 2. **Application**: Helm installs the LangSmith chart against the cluster.
 
-After the base install, enable optional add-ons (LangSmith Deployment, Fleet, Insights, and Polly) by setting flags and redeploying.
+After the base install, enable optional add-ons (LangSmith Deployment, Fleet, Insights, Polly, SmithDB, and the LLM Gateway) and SSO by setting flags and redeploying.
+
+<Note>
+These pages follow the module's `v0.17.*` release tags, which deploy the LangSmith Helm chart 0.17 line. In a module tag, the first two numbers name the chart line and the last number is the module revision, so `v0.17.4` still deploys the newest 0.17 chart patch. To stay on chart 0.16, check out the newest `v0.16.*` tag instead. The `v0.16.*` tags have no LLM Gateway or SSO flags, cannot deploy SmithDB on Azure, and federate 8 Workload Identity ServiceAccounts instead of 10. A deployment that has run chart 0.17 cannot return to 0.16.
+</Note>
 
 ```mermaid actions={false}
 %%{init: {'flowchart': {'nodeSpacing': 25, 'rankSpacing': 30}}}%%
@@ -108,9 +112,10 @@ For a condensed cheat sheet of `make` targets, required variables, and common co
 For the fastest path from zero to a running LangSmith instance:
 
 ```bash
-# 1. Clone the public modules
+# 1. Clone the public modules and check out the newest v0.17 release
 git clone https://github.com/langchain-ai/terraform.git
 cd terraform/modules/azure
+git checkout "$(git tag -l 'v0.17.*' --sort=-v:refname | head -1)"
 
 # 2. Generate terraform.tfvars interactively
 make quickstart
@@ -165,10 +170,15 @@ Terraform provisions the following Azure resources:
 
 ### Clone and configure
 
+Clone the modules and check out the newest `v0.17.*` release tag:
+
 ```bash
 git clone https://github.com/langchain-ai/terraform.git
 cd terraform/modules/azure
+git checkout "$(git tag -l 'v0.17.*' --sort=-v:refname | head -1)"
 ```
+
+To deploy chart 0.16 instead, replace `v0.17.*` with `v0.16.*`.
 
 All subsequent commands run from `modules/azure/`. Run `make help` for the full target list.
 
@@ -284,7 +294,7 @@ make k8s-secrets   # Key Vault → langsmith-config-secret in the langsmith name
 
 `make seed-secrets` prompts for the LangSmith admin password, or reads `LANGSMITH_ADMIN_PASSWORD`. It generates the API key salt, the JWT secret, and four Fernet encryption keys. It writes only the secrets that are missing, so it is safe to re-run.
 
-`make k8s-secrets` reads 8 secrets from Key Vault and creates or updates `langsmith-config-secret`. Safe to re-run; uses `--dry-run=client | kubectl apply` to update in place.
+`make k8s-secrets` reads 8 secrets from Key Vault, plus the three `langsmith-oauth-*` secrets when they exist, and creates or updates `langsmith-config-secret`. Safe to re-run; uses `--dry-run=client | kubectl apply` to update in place.
 
 On a cluster with Entra ID integration, `make kubeconfig` converts the context to sign in through `kubelogin` as your `az` identity.
 
@@ -363,9 +373,10 @@ make deploy   # ~10 min
 8. Builds and logs the values chain, and rejects values files still on the chart 0.15 schema.
 9. Auto-recovers any stuck `pending-upgrade` Helm release before proceeding.
 10. For `envoy-gateway`, creates the `EnvoyProxy`, `GatewayClass`, and `langsmith-gateway` Gateway.
-11. Runs `helm upgrade --install langsmith langchain/langsmith --timeout 20m`. The chart version is `~0.16.0` unless `langsmith_helm_chart_version` or the `CHART_VERSION` environment variable sets another.
+11. Runs `helm upgrade --install langsmith langchain/langsmith --timeout 20m`. The chart version is `~0.17.0`, the newest 0.17 patch, unless `langsmith_helm_chart_version` or the `CHART_VERSION` environment variable names a 0.17 patch. The script rejects any other chart line.
 12. Waits for core deployments to roll out.
 13. Annotates the `langsmith-ksa` ServiceAccount with the Workload Identity client ID.
+14. With `enable_llm_gateway = true` and `ingress_controller` set to `nginx` or `agic`, applies the `<release>-llm-gateway` Ingress for `/gateway/` with a 900-second timeout. With the gateway off, it removes a leftover one.
 14. Prints the access URL and login credentials location.
 
 <Info>
@@ -434,7 +445,7 @@ az keyvault secret show \
 ```txt
 1. helm/values/values.yaml                              ← base values (chart defaults)
 2. helm/values/values-overrides.yaml                    ← hostname, WI client-id, auth, postgres/redis
-3. (add-on files when enable_* flags are set)           ← agent-deploys, agent-builder, fleet, insights, polly
+3. (add-on files when enable_* flags are set)           ← agent-deploys, agent-builder, fleet, insights, polly, llm-gateway, gateway-pii
 4. helm/values/langsmith-values-sizing-<profile>.yaml   ← resource requests + HPA settings
 5. helm/values/langsmith-values-smithdb*.yaml           ← when enable_smithdb = true
 ```
@@ -451,6 +462,27 @@ make init-values    # re-generate values after Terraform changes
 make kubeconfig     # refresh cluster credentials
 make k8s-secrets    # re-create langsmith-config-secret from Key Vault
 ```
+
+### Upgrade from chart 0.16
+
+<Warning>
+Back up the database before you upgrade. LangSmith database migrations are forward-only, so a deployment cannot return to chart 0.16 after it runs 0.17. For more information, see [Upgrade an installation](/langsmith/self-host-upgrades).
+</Warning>
+
+To move a deployment from chart 0.16 to 0.17:
+
+1. Check out the newest `v0.17.*` module tag:
+
+   ```bash
+   git fetch --tags
+   git checkout "$(git tag -l 'v0.17.*' --sort=-v:refname | head -1)"
+   ```
+
+1. Run `make apply`. It adds the two LLM Gateway federated credentials.
+1. Run `make init-values` to regenerate the values files in the chart 0.17 shape.
+1. Run `make deploy`.
+
+On Azure, the upgrade otherwise only moves the chart pin. An installation still on chart 0.15 must first follow `MIGRATION-0.15-to-0.16.md`. For the full list of chart changes, see [`MIGRATION-0.16-to-0.17.md`](https://github.com/langchain-ai/terraform/blob/main/MIGRATION-0.16-to-0.17.md).
 
 ## Enable add-ons
 
@@ -559,7 +591,7 @@ kubectl get pods -n langsmith | grep fleet
 
 ### Agent Builder
 
-`enable_agent_builder` is the legacy path. On chart 0.16, it adds the Agent Builder UI navigation item and the Fleet tool and trigger servers, but no agent runtime. Use [Fleet](#fleet) instead. The two flags are mutually exclusive, and `make deploy` stops with an error when both are set.
+`enable_agent_builder` is the legacy path. On chart 0.16 and later, it adds the Agent Builder UI navigation item and the Fleet tool and trigger servers, but no agent runtime. Use [Fleet](#fleet) instead. The two flags are mutually exclusive, and `make deploy` stops with an error when both are set.
 
 **Prerequisite:** LangSmith Deployment enabled (`enable_deployments = true`). Without it, `make deploy` stops with an error.
 
@@ -640,15 +672,14 @@ kubectl rollout restart deployment langsmith-frontend -n langsmith
 ### SmithDB
 
 <Warning>
-SmithDB on Azure requires the LangSmith Helm chart 0.17 line. A 0.17 release candidate is not a supported configuration.
+SmithDB on Azure requires a stable release on the LangSmith Helm chart 0.17 line, which the `v0.17.*` module tags deploy by default. A 0.17 release candidate is not a supported configuration, and a `v0.16.*` tag cannot deploy SmithDB on Azure.
 </Warning>
 
-`enable_smithdb = true` provisions the Azure infrastructure SmithDB needs: a dedicated PostgreSQL 18 metastore, a Blob container, a Workload Identity, and Premium SSD v2 cache volumes. Select the 0.17 chart line explicitly:
+`enable_smithdb = true` provisions the Azure infrastructure SmithDB needs: a dedicated PostgreSQL 18 metastore, a Blob container, a Workload Identity, and Premium SSD v2 cache volumes:
 
 ```hcl
 # infra/terraform.tfvars
-enable_smithdb               = true
-langsmith_helm_chart_version = "~0.17.0"
+enable_smithdb = true
 ```
 
 ```bash
@@ -660,6 +691,65 @@ make deploy
 
 For the version requirements and the ingestion, migration, and query flags, see `SMITHDB.md` in the [Azure module repo](https://github.com/langchain-ai/terraform/blob/main/modules/azure/SMITHDB.md).
 
+### LLM Gateway
+
+`enable_llm_gateway = true` deploys the [LLM Gateway](/langsmith/llm-gateway), which lets one LangSmith API key call models across the providers your organization configures. The LLM Gateway is in beta and requires chart 0.17.
+
+```hcl
+# infra/terraform.tfvars
+enable_llm_gateway           = true
+enable_gateway_pii_redaction = false   # true adds the Presidio analyzer for PII redaction
+```
+
+```bash
+cd terraform/modules/azure
+make init-values    # generates langsmith-values-llm-gateway.yaml
+make deploy
+```
+
+Clients reach the gateway on the LangSmith hostname:
+
+| Client format | Base URL |
+|---|---|
+| OpenAI Chat Completions and Responses | `https://<hostname>/gateway/v1` |
+| Anthropic Messages | `https://<hostname>/gateway` |
+
+After the deploy, an organization admin turns the gateway on for workspaces, adds provider secrets, and grants access. For more information, see [LLM Gateway admin setup](/langsmith/llm-gateway-admin-setup).
+
+- **Workload Identity**: Terraform federates the `<release>-agent-gateway` and `<release>-presidio-analyzer` ServiceAccounts whether or not the flag is set, so a cluster applied from a `v0.17.*` tag needs no `make apply`. On a cluster last applied from an older tag, run `make apply` once first.
+- **Timeouts**: Model calls can run for up to 900 seconds. With `ingress_controller` set to `nginx` or `agic`, `make deploy` gives `/gateway/` its own Ingress with a 900-second timeout, and `make uninstall` removes it. Istio sets no request timeout by default. With `envoy-gateway` or `none`, `make init-values` prints a warning, and you raise the timeout on that controller yourself.
+- **PII redaction**: `enable_gateway_pii_redaction = true` adds the Presidio analyzer and turns redaction on for new organizations. It requires `enable_llm_gateway = true`. The analyzer image, `mcr.microsoft.com/presidio-analyzer`, comes from Microsoft's registry, so a private registry mirror must include it under that path.
+
+### SSO with OIDC
+
+`enable_sso_oidc = true` switches LangSmith login from basic auth to [SSO](/langsmith/self-host-sso) through a standard OIDC provider, such as Microsoft Entra ID, Okta, Auth0, or Google Workspace.
+
+<Warning>
+Enable SSO only after the initial install, once you have logged in as the org admin with basic auth. The flag disables basic auth, so enabling it before an admin account exists locks you out of the UI. If you use SCIM, set it up after SSO.
+</Warning>
+
+To enable SSO:
+
+1. Store the OIDC client credentials in Key Vault:
+
+   ```bash
+   ./infra/scripts/manage-keyvault.sh set langsmith-oauth-client-id '<client-id>'
+   ./infra/scripts/manage-keyvault.sh set langsmith-oauth-client-secret '<client-secret>'
+   ./infra/scripts/manage-keyvault.sh set langsmith-oauth-issuer-url '<issuer-url>'
+   ```
+
+   For Entra ID, the issuer URL is `https://login.microsoftonline.com/<tenant-id>/v2.0`. The `/v2.0` suffix is required.
+1. Set `enable_sso_oidc = true` in `infra/terraform.tfvars`.
+1. Re-create the Kubernetes secret, regenerate the values, and deploy:
+
+   ```bash
+   make k8s-secrets
+   make init-values
+   make deploy
+   ```
+
+`make init-values` stops with an error when any of the three Key Vault secrets is missing.
+
 ### Add-on summary
 
 | Phase | New pods | Total ~running |
@@ -668,6 +758,7 @@ For the version requirements and the ingestion, migration, and query flags, see 
 | LangSmith Deployment | `host-backend`, `listener`, `operator` | ~20 |
 | Fleet | `fleet-tool-server`, `fleet-trigger-server`, and Fleet's in-cluster Redis | Varies |
 | Insights and Polly | `standalone-insights` and `standalone-polly` api-server and queue pods | Varies |
+| LLM Gateway | `agent-gateway`, plus `presidio-analyzer` with PII redaction | Varies |
 
 ## Ingress controllers
 
