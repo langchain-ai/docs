@@ -1,0 +1,109 @@
+---
+title: Enable Insights on Self-hosted
+sidebarTitle: Insights
+description: Enable Insights on a self-hosted LangSmith instance using Helm, including the encryption key, the shared Engine and Insights deployment, and external databases.
+---
+
+import SelfHostFeatureEncryptionKey from '/snippets/python/langsmith/self-host-feature-encryption-key.mdx';
+import SelfHostAgentBootstrapMigration from '/snippets/python/langsmith/self-host-agent-bootstrap-migration.mdx';
+import SelfHostApplyHelmChanges from '/snippets/python/langsmith/self-host-apply-helm-changes.mdx';
+
+[Insights](/langsmith/insights) analyzes your traces to detect usage patterns, common agent behaviors, and failure modes. On self-hosted LangSmith, Insights is an optional feature that runs alongside the base platform. For the other optional features, see [Enable additional LangSmith features](/langsmith/deploy-self-hosted-full-platform).
+
+<Note>
+As of Helm chart `0.16.0`, `insights.enabled` defaults to `true`. Provide the Insights encryption key before you upgrade, or set `insights.enabled` to `false`.
+</Note>
+
+Before starting, complete the [prerequisites](/langsmith/deploy-self-hosted-full-platform#prerequisites) for additional features.
+
+## Components
+
+Insights and [Engine](/langsmith/engine-self-hosted) share one deployment, configured in the `engineInsightsAgent` block. The chart renders it when either feature is enabled. It provisions the following components in your cluster:
+
+- `api-server`: The main API server that handles Insights requests.
+- `queue`: Background task processing queue.
+- `postgres`: Dedicated PostgreSQL instance. Can be replaced with an external PostgreSQL instance.
+- `redis`: Dedicated Redis instance for caching and pub/sub. Can be replaced with an external Redis instance.
+
+<Warning>
+As of chart `0.16.0`, Insights runs on `langsmith-insights-engine`, a combined image that serves both the `insights` and `engine` graphs, and the chart uses it by default. The previous Insights-only image, `langsmith-clio`, is retired.
+
+If your values pin `images.engineInsightsAgentImage.repository` to `langsmith-clio`, remove or update that pin before upgrading. The chart rejects it. If you mirror images to a private registry, mirror `langsmith-insights-engine` and point the repository at your copy. See [Mirroring images](/langsmith/self-host-mirroring-images#additional-images-for-engine).
+</Warning>
+
+## Generate an encryption key
+
+<SelfHostFeatureEncryptionKey feature="Insights" secretKey="insights_encryption_key" valuesKey="insights" />
+
+## Enable Insights
+
+<SelfHostAgentBootstrapMigration />
+
+<Steps>
+  <Step title="Add the configuration to your langsmith_config.yaml">
+    <Tabs>
+      <Tab title="Using Kubernetes secrets (recommended)">
+        Reference your existing secret by name. The chart reads `insights_encryption_key` from it automatically.
+
+        ```yaml
+        config:
+          existingSecretName: "<your-secret-name>"
+
+        insights:
+          enabled: true
+        ```
+      </Tab>
+      <Tab title="Using inline values">
+        Set the encryption key directly in your config file. Avoid committing this file to version control.
+
+        ```yaml
+        insights:
+          enabled: true
+          encryptionKey: "<insights-encryption-key>"
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+  <Step title="(Optional) Use external databases">
+    The shared Engine and Insights deployment runs its own PostgreSQL and Redis instances by default. To use external instances instead, configure `engineInsightsAgent.postgres.external` and `engineInsightsAgent.redis.external`:
+
+    ```yaml
+    engineInsightsAgent:
+      postgres:
+        external:
+          enabled: true
+          connectionUrl: "<insights-postgres-connection-url>"
+      redis:
+        external:
+          enabled: true
+          connectionUrl: "<insights-redis-connection-url>"
+    ```
+
+    Scaling, database, and resource settings for Insights live under `engineInsightsAgent`, not `insights`. Only `insights.enabled` and `insights.encryptionKey` stay under `insights`. The chart rejects `insights.postgres`, `insights.redis`, `insights.apiServer`, `insights.queue`, and `insights.namePrefix`.
+  </Step>
+  <Step title="Apply the changes">
+    <SelfHostApplyHelmChanges feature="Insights" />
+  </Step>
+</Steps>
+
+## Disable Insights
+
+To disable Insights, set `insights.enabled` to `false` in your [`langsmith_config.yaml`](/langsmith/kubernetes#configure-your-helm-charts):
+
+```yaml
+insights:
+  enabled: false
+```
+
+If Engine is enabled, the shared `engineInsightsAgent` deployment keeps running for Engine.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/self-host-insights.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
