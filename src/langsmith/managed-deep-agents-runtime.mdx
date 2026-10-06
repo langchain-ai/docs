@@ -1,0 +1,380 @@
+---
+title: Managed Deep Agents runtime
+sidebarTitle: Runtime
+description: Read run context, the verified caller, the channel delivery, and the sandbox from the native runtime types that agent factories, tools, and middleware receive.
+---
+
+import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
+
+Every function you write for a managed deep agent receives a runtime. The agent factory, each tool, and each middleware hook get the same native runtime that LangChain and LangGraph pass to an open source agent, with three managed fields added. Code that reads context, state, or the store works as it does in [LangChain](/oss/langchain/runtime), and your type checker sees your own context type.
+
+<ManagedDeepAgentsPublicBetaNote />
+
+## Understand the runtime types
+
+Managed Deep Agents extends one native type for each place your code runs:
+
+:::python
+| Code | Type | Extends |
+|---|---|---|
+| Agent factory | `ManagedServerRuntime[Context]` | `ServerRuntime` from `langgraph_sdk.runtime` |
+| Tool | `ManagedToolRuntime[Context, State]` | `ToolRuntime` from `langchain.tools` |
+| Middleware hook | `ManagedRuntime[Context]` | `Runtime` from `langgraph.runtime` |
+
+Type parameters follow the native order, so `ManagedToolRuntime` takes context first, then state. Both parameters are optional. `ManagedDeepAgentRuntime` is an alias for `ManagedToolRuntime`.
+
+Each type keeps every native field and method, such as `context`, `state`, `store`, `stream_writer`, and `tool_call_id`. Managed Deep Agents adds three fields:
+
+- **`server_info`**: Native server metadata plus the verified caller. Tools and middleware receive it.
+- **`channel`**: The verified channel delivery that started the run. `None` on direct API and schedule runs.
+- **`backend`**: The thread's [sandbox](/langsmith/managed-deep-agents-sandboxes) filesystem. `None` when the project declares no sandbox.
+:::
+
+:::js
+| Code | Type | Extends |
+|---|---|---|
+| Agent factory | `ManagedServerRuntime<Context>` | `ServerRuntime` from `@langchain/langgraph-sdk` |
+| Tool | `ManagedToolRuntime<State, Context>` | `ToolRuntime` from `@langchain/core/tools` |
+| Middleware hook | `ManagedRuntime<Context>` | `Runtime` from `langchain` |
+
+Type parameters follow the native order, so `ManagedToolRuntime` takes state first, then context. Both parameters are optional. `ManagedDeepAgentRuntime` is an alias for `ManagedToolRuntime`.
+
+Each type keeps every native field and method, such as `context`, `state`, `store`, `writer`, and `toolCallId`. Managed Deep Agents adds three fields:
+
+- **`serverInfo`**: Native server metadata plus the verified caller. Tools and middleware receive it.
+- **`channel`**: The verified channel delivery that started the run. `undefined` on direct API and schedule runs.
+- **`backend`**: The thread's [sandbox](/langsmith/managed-deep-agents-sandboxes) filesystem. `undefined` when the project declares no sandbox.
+:::
+
+## Separate context, caller, and delivery
+
+A run carries three kinds of data. Each comes from a different source and has a different level of trust, so the runtime keeps them in separate fields:
+
+:::python
+```text
+runtime
+  .context       Application data from the API caller
+  .server_info   Verified caller, set by the identity handler
+  .channel       Verified delivery, set by managed channel ingress
+```
+:::
+
+:::js
+```text
+runtime
+  .context       Application data from the API caller
+  .serverInfo    Verified caller, set by the identity handler
+  .channel       Verified delivery, set by managed channel ingress
+```
+:::
+
+- **Context**: Application data. API callers send it in the run's `context` parameter, and LangGraph validates it against the agent's context schema. Use it to select behavior, not to grant access.
+- **Server info**: The caller that [identity](/langsmith/managed-deep-agents-identity) resolved from a verified token. Managed Deep Agents strips identity keys that a client supplies through `configurable`, so this field is safe for authorization.
+- **Channel**: The [channel](/langsmith/managed-deep-agents-channels) delivery, such as a Slack message. Managed ingress verifies the delivery before the run starts. A `channel` key in a direct API call's context does not create `runtime.channel`.
+
+API callers pass context next to the input:
+
+:::python
+```python
+await client.runs.create(
+    thread_id,
+    "support",
+    input={"messages": [{"role": "user", "content": "Where is my order?"}]},
+    context={"tier": "fast"},
+)
+```
+:::
+
+:::js
+```ts
+await client.runs.create(threadId, "support", {
+  input: { messages: [{ role: "user", content: "Where is my order?" }] },
+  context: { tier: "fast" },
+});
+```
+:::
+
+### Handle channel runs without context
+
+A channel delivery carries no application context. Managed Deep Agents removes the delivery data before LangGraph validates context, so required fields in your context schema do not reject channel runs. Direct API runs keep native validation.
+
+:::python
+On channel runs, the agent factory, tools, and middleware receive `None` as context.
+:::
+
+:::js
+On channel runs, the agent factory and tools receive `undefined` as context. Native middleware receives an empty object.
+:::
+
+To tell a channel run from a direct run, check `runtime.channel`, not the shape of context.
+
+## Build the agent per run
+
+:::python
+To choose configuration for each run, export a sync or async function as `agent` instead of a definition. The function receives a `ManagedServerRuntime`: the native [`ServerRuntime`](/langsmith/graph-rebuild) that any LangGraph graph factory receives, plus `channel` and `backend`.
+
+```python agent.py
+from dataclasses import dataclass
+
+from managed_deepagents import ManagedServerRuntime, define_deep_agent
+
+
+@dataclass
+class AppContext:
+    tier: str = "standard"
+
+
+def agent(runtime: ManagedServerRuntime[AppContext]):
+    execution = runtime.execution_runtime
+    context = execution.context if execution is not None else None
+    fast = context is not None and context.tier == "fast"
+    return define_deep_agent(
+        name="support",
+        model="openai:gpt-5-mini" if fast else "openai:gpt-5.5",
+        context_schema=AppContext,
+    )
+```
+:::
+
+:::js
+To choose configuration for each run, export a sync or async function as `agent` instead of a definition. The function receives a `ManagedServerRuntime`: the native [`ServerRuntime`](/langsmith/graph-rebuild) that any LangGraph graph factory receives, plus `channel` and `backend`.
+
+```ts agent.ts
+import { defineDeepAgent, type ManagedServerRuntime } from "managed-deepagents";
+import { z } from "zod";
+
+const contextSchema = z.object({ tier: z.string().optional() });
+type AppContext = z.infer<typeof contextSchema>;
+
+export function agent(runtime: ManagedServerRuntime<AppContext>) {
+  const context = runtime.executionRuntime?.context;
+  const fast = context?.tier === "fast";
+  return defineDeepAgent({
+    name: "support",
+    model: fast ? "openai:gpt-5-mini" : "openai:gpt-5.5",
+    contextSchema,
+  });
+}
+```
+:::
+
+The factory can select the model, tools, middleware, instructions, skills, MCP definitions, and sandbox. Omitted selections use project resources.
+
+:::python
+Agent Server also calls the factory to read schemas, read state, and update state. `access_context` names the operation, and [`execution_runtime`](/langsmith/graph-rebuild#access-contexts) is `None` outside `threads.create_run`. Return the same graph structure and schemas from every call. During these calls, Managed Deep Agents skips managed resource reads and allocation.
+
+`channel` is available in the factory, so an agent can choose configuration per channel. `backend` is always `None` in the factory, because the factory itself selects the sandbox. The native `user`, `store`, and `ensure_user()` remain available.
+:::
+
+:::js
+Agent Server also calls the factory to read schemas, read state, and update state. `accessContext` names the operation, and [`executionRuntime`](/langsmith/graph-rebuild#access-contexts) is `null` outside `threads.create_run`. Return the same graph structure and schemas from every call. During these calls, Managed Deep Agents skips managed resource reads and allocation.
+
+`channel` is available in the factory, so an agent can choose configuration per channel. `backend` is always `undefined` in the factory, because the factory itself selects the sandbox.
+:::
+
+`mda build` reads the agent `name` without calling the factory, so pass `name` as an inline string. Install the model integrations for every model the factory can return.
+
+## Read the runtime in tools
+
+:::python
+Annotate the runtime parameter with `ManagedToolRuntime`. Managed Deep Agents injects the managed runtime for that parameter, whatever its name:
+
+```python tools/check_order.py
+from dataclasses import dataclass
+
+from langchain.tools import tool
+from managed_deepagents import ManagedToolRuntime
+
+
+@dataclass
+class AppContext:
+    region: str = "us"
+
+
+@tool
+async def check_order(order_id: str, runtime: ManagedToolRuntime[AppContext]) -> str:
+    """Check the status of an order."""
+    principal = runtime.server_info.principal if runtime.server_info else None
+    if principal is None:
+        return "Sign in to check orders."
+    if runtime.channel is not None and runtime.channel.post is not None:
+        await runtime.channel.post({"type": "content", "content": "Checking that order now."})
+    region = runtime.context.region if runtime.context else "us"
+    return f"Order {order_id} for {principal.id} ships from {region}."
+```
+:::
+
+:::js
+Annotate the runtime parameter with `ManagedToolRuntime`:
+
+```ts tools/check-order.ts
+import { tool } from "langchain";
+import type { ManagedToolRuntime } from "managed-deepagents";
+import { z } from "zod";
+
+type AppContext = { region?: string };
+
+export const checkOrder = tool(
+  async ({ orderId }, runtime: ManagedToolRuntime<unknown, AppContext>) => {
+    const principal = runtime.serverInfo?.principal;
+    if (!principal) return "Sign in to check orders.";
+    await runtime.channel?.post?.({
+      type: "content",
+      content: "Checking that order now.",
+    });
+    const region = runtime.context?.region ?? "us";
+    return `Order ${orderId} for ${principal.id} ships from ${region}.`;
+  },
+  {
+    name: "check_order",
+    description: "Check the status of an order.",
+    schema: z.object({ orderId: z.string() }),
+  }
+);
+```
+:::
+
+The principal is absent when no caller resolved, because identity is opt-in. A channel post sends an additional message, and the agent's final reply still posts automatically. For more on writing tools, see [Custom tools](/langsmith/managed-deep-agents-tools).
+
+## Read the runtime in middleware
+
+:::python
+Lifecycle and model hooks keep the native `Runtime[Context]` signature. Narrow with `isinstance` to read the managed fields:
+
+```python middleware/log_caller.py
+from dataclasses import dataclass
+
+from langchain.agents.middleware import AgentState, before_model
+from langgraph.runtime import Runtime
+from managed_deepagents import ManagedRuntime
+
+
+@dataclass
+class AppContext:
+    region: str = "us"
+
+
+@before_model
+def log_caller(state: AgentState, runtime: Runtime[AppContext]) -> None:
+    if not isinstance(runtime, ManagedRuntime):
+        return None
+    principal = runtime.server_info.principal if runtime.server_info else None
+    source = runtime.channel.provider if runtime.channel else "api"
+    print(f"{principal.id if principal else 'anonymous'} via {source}")
+    return None
+```
+
+Tool-call hooks receive a `ManagedToolRuntime`.
+:::
+
+:::js
+Cast the hook's runtime to `ManagedRuntime` to read the managed fields:
+
+```ts middleware/log-caller.ts
+import { createMiddleware } from "langchain";
+import type { ManagedRuntime } from "managed-deepagents";
+
+type AppContext = { region?: string };
+
+export const logCaller = createMiddleware({
+  name: "LogCaller",
+  beforeModel: (_state, runtime) => {
+    const { serverInfo, channel } = runtime as ManagedRuntime<AppContext>;
+    const caller = serverInfo?.principal?.id ?? "anonymous";
+    console.log(`${caller} via ${channel?.provider ?? "api"}`);
+    return undefined;
+  },
+});
+```
+
+Tool-call hooks receive a `ManagedToolRuntime`.
+:::
+
+The managed fields reach declarative subagents too, and they do not require an identity or sandbox declaration. For more on writing middleware, see [Custom middleware](/langsmith/managed-deep-agents-middleware).
+
+## Reference the managed fields
+
+### Server info
+
+:::python
+`runtime.server_info` is a `ManagedServerInfo`. It keeps the native `assistant_id`, `graph_id`, and `user` fields and adds the caller:
+
+- **`principal`**: The verified caller. `id` is the caller ID, `kind` is `"person"`, `"service"`, or `"channel"`, and `claims` holds the token claims. `claims["groups"]` is always a tuple of strings, and `claims["email"]` is always a string.
+- **`subject`**: The authority the run acts with. `authority` is `"agent"` or `"user"`, with `agent_id` and `user_id`.
+- **`link`**: The account link. `status` currently reports `"not_required"`.
+- **`source`**: Where the run entered. `provider` is a value such as `"http"`, `"schedule"`, `"studio"`, or `"slack"`, with an optional `thread_id`.
+
+Read the caller from `principal`, not from the native `user`.
+:::
+
+:::js
+`runtime.serverInfo` is a `ManagedServerInfo`. It keeps the native `assistantId`, `graphId`, and `user` fields and adds the caller:
+
+- **`principal`**: The verified caller. `id` is the caller ID, `kind` is `"person"`, `"service"`, or `"channel"`, and `claims` holds the token claims. `claims.groups` is always a string array, and `claims.email` is always a string.
+- **`subject`**: The authority the run acts with. `authority` is `"agent"` or `"user"`, with `agent_id` and `user_id`.
+- **`link`**: The account link. `status` currently reports `"not_required"`.
+- **`source`**: Where the run entered. `provider` is a value such as `"http"`, `"schedule"`, `"studio"`, or `"slack"`, with an optional `threadId`.
+
+Read the caller from `principal`, not from the native `user`.
+:::
+
+For identity providers and claim mapping, see [Identity](/langsmith/managed-deep-agents-identity).
+
+### Channel
+
+:::python
+`runtime.channel` is a `RuntimeChannel`:
+
+- **`name`**: The configured channel name.
+- **`provider`**: The provider label, such as `"slack"`.
+- **`event`**: The typed delivery. See the event types below.
+- **`raw_event`**: The original provider payload, when the channel supplies one. For Slack, this is the inner Slack event without HTTP headers or the Trigger envelope. A resume can omit it.
+- **`post`**: An async function that sends a message to the conversation that started the run. `None` when the channel cannot send.
+:::
+
+:::js
+`runtime.channel` is a `RuntimeChannel`:
+
+- **`name`**: The configured channel name.
+- **`provider`**: The provider label, such as `"slack"`.
+- **`event`**: The typed delivery. See the event types below.
+- **`rawEvent`**: The original provider payload, when the channel supplies one. For Slack, this is the inner Slack event without HTTP headers or the Trigger envelope. A resume can omit it.
+- **`post`**: An async function that sends a message to the conversation that started the run. `undefined` when the channel cannot send.
+:::
+
+`event.type` is one of:
+
+- **`message`**: A new message. `messages` holds the incoming messages.
+- **`user_prompt_response`**: A reply to an interactive prompt. Carries `action`, an optional `value`, and an optional `correlation_id`. See [Agent-owned interrupts](/langsmith/managed-deep-agents-agent-owned-interrupts).
+- **`interrupt_resume`**: A resume for a pending interrupt. `resume` holds the resume value.
+
+`post` accepts a content message, `{"type": "content", "content": ...}`, or a native message, `{"type": "native", "native": ...}`. The built-in Slack channel sends text content only. The reply target stays private: `post` has no address or destination override, and code cannot read or replace the target.
+
+### Backend
+
+`runtime.backend` reads and writes files in the thread's sandbox. See [Read and write sandbox files from code](/langsmith/managed-deep-agents-sandboxes#read-and-write-sandbox-files-from-code).
+
+## Upgrade from 0.8
+
+:::python
+- Read channel delivery from `runtime.channel`. Replace `runtime.context.channel["event"]` with `runtime.channel.event` and read provider data from `runtime.channel.raw_event`.
+- Type tools with `ManagedToolRuntime[Context, State]`. `ManagedDeepAgentRuntime` still works as an alias.
+- Narrow middleware runtimes with `isinstance(runtime, ManagedRuntime)`.
+- Use Python 3.11 or later. LangChain, LangGraph, and Deep Agents are now required dependencies.
+:::
+
+:::js
+- Read channel delivery from `runtime.channel`. Replace `runtime.context.channel.event` with `runtime.channel.event` and read provider data from `runtime.channel.rawEvent`.
+- Type tools with `ManagedToolRuntime<State, Context>`. `ManagedDeepAgentRuntime` still works as an alias.
+- Type middleware runtimes with `ManagedRuntime<Context>`.
+:::
+
+## See also
+
+- [Runtime](/oss/langchain/runtime)
+- [Rebuild graph at runtime](/langsmith/graph-rebuild)
+- [Agent definition](/langsmith/managed-deep-agents-agent-definition)
+- [Custom tools](/langsmith/managed-deep-agents-tools)
+- [Custom middleware](/langsmith/managed-deep-agents-middleware)
+- [Channels](/langsmith/managed-deep-agents-channels)
+- [Identity](/langsmith/managed-deep-agents-identity)
