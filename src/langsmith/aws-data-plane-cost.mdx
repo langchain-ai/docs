@@ -31,18 +31,16 @@ Scaling capacity for any resource can be lowered when required, as long as the d
     Estimated total: **$2.2k–$3.2k/month**.
   </Tab>
   <Tab title="SmithDB">
-    This is the Small tier from [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale): about 10 runs per second and 10 queries per second. Each environment runs two nodes in two availability zones.
+    This is the Small tier from [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale): about 10 runs per second and 10 queries per second. Compute, the metastore, and the cache disk below are one production environment. The bucket is extra.
 
-    Production nodes are `m7gd.4xlarge` (16 vCPU, 64 GiB, 950 GB local NVMe) plus a 100 GiB gp3 boot volume. A lower environment can use two `c7g.4xlarge` nodes and put the 600 GiB cache on gp3. That is below the IOPS SmithDB documents for a network-attached cache, so use it only for light traffic.
-
-    | Environment | Nodes | Per month |
+    | Area | Rough monthly estimate | Notes |
     | --- | --- | --- |
-    | Production (local NVMe) | 2 x `m7gd.4xlarge` | $1,752 |
+    | SmithDB compute | $1,542 | 2 x `m7gd.4xlarge` across two availability zones, plus a 100 GiB gp3 boot volume on each node. |
+    | Metastore | $210 | Aurora PostgreSQL 18 Serverless v2, 1 ACU minimum, 50 GB, writer and reader. I/O is extra. |
+    | Cache disk | $0 | 950 GB local NVMe on each compute node. No separate disk charge. |
+    | Bucket | $0–$123 | S3. At about 2 million traces a month, from under $1 (10 KB, 14 days) to about $123 (200 KB, 400 days). |
 
-    
-    ### S3
-
-    At about 2 million traces a month, here are rough estimates for S3 storage and retention costs:
+    Estimated total: **$1,752/month**, plus the bucket.
 
     | Stored size per trace | 14-day retention | 400-day retention |
     | --- | --- | --- |
@@ -50,18 +48,10 @@ Scaling capacity for any resource can be lowered when required, as long as the d
     | 50 KB | $13 per year | $368 per year |
     | 200 KB | $52 per year | $1,472 per year |
 
+    Do not add lifecycle or storage-class rules on the bucket. SmithDB deletes its own segments, and an external rule can delete live data.
+
     A ClickHouse backfill needs an extra `m7gd.4xlarge` for the migration job at about $728 per month. That cost stops when the backfill finishes (Job finishes in a few days depending on tracing volume).
 
-    ### Metastore, cache disk, and bucket
-
-    The monthly totals above already include the metastore and the cache disk. The bucket is the S3 cost in the previous section, and it is not in those totals.
-
-    | | Lower | Production |
-    | --- | --- | --- |
-    | Metastore | $108 per month | $210 per month |
-    | Cache disk | $56 per month (600 GiB gp3) | Included on the `m7gd` local NVMe |
-    | Bucket | S3 table above | S3 table above |
-
-    The metastore is Aurora PostgreSQL 18 Serverless v2 at a 1 ACU minimum, with 50 GB of storage. Production adds a reader in a second availability zone. I/O is extra. Setup for all three is in [Prepare SmithDB supporting infrastructure](/langsmith/self-host-smithdb-infrastructure).
+    See [Prepare SmithDB supporting infrastructure](/langsmith/self-host-smithdb-infrastructure) for how to set up the metastore, bucket, and cache disk.
   </Tab>
 </Tabs>
