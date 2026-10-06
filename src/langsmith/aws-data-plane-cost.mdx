@@ -7,15 +7,15 @@ icon: brand-aws
 
 These are estimates, not a quote. AWS changes its prices without notice. Your bill depends on region, usage, and any discount agreement with AWS, such as an Enterprise Discount Program or a Savings Plan.
 
-The ClickHouse tab is a monthly run-rate for a whole default data plane. The SmithDB tab is only what SmithDB adds when it replaces ClickHouse as the trace store. It does not include the EKS control plane, system nodes, Redis, application pods, or networking. SmithDB prices are public `eu-west-3` (Paris) rates from 18–25 September 2026.
+The ClickHouse tab is a monthly run-rate for a whole default data plane. The SmithDB tab is only what SmithDB adds when it replaces ClickHouse as the trace store. It does not include the EKS control plane, system nodes, Redis, application pods, or networking.
 
 <Warning>
-Scaling capacity for any resource can be lowered when required, as long as the deployment remains within safe operating limits. For cost-conscious or pre-production deployments, Multi-AZ can be turned off. That lowers monthly cost and reduces fault tolerance.
+Scaling capacity for any resource can be lowered when required, as long as the deployment remains within safe operating limits. For cost-conscious or pre-production deployments, Multi-AZ can be turned off. That lowers monthly cost but reduces fault tolerance.
 </Warning>
 
 <Tabs>
   <Tab title="ClickHouse">
-    ClickHouse can also run as a single node instead of a replicated cluster. That lowers monthly cost and reduces fault tolerance.
+    ClickHouse can also run as a single node instead of a replicated cluster. That lowers monthly cost but reduces fault tolerance.
 
     | Area | Rough monthly estimate | Notes |
     | --- | --- | --- |
@@ -31,30 +31,28 @@ Scaling capacity for any resource can be lowered when required, as long as the d
     Estimated total: **$2.2k–$3.2k/month**.
   </Tab>
   <Tab title="SmithDB">
-    This is the Small tier from [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale): about 10 runs per second and 10 queries per second. Each environment runs two Graviton nodes in two availability zones. `query` runs two replicas, one per zone, at the documented size (4 vCPU, 8 GiB, 200 GiB cache). `ingestion` (4 vCPU, 8 GiB, 100 GiB) and `compaction-worker` (8 vCPU, 16 GiB, 100 GiB) run one replica each, on opposite nodes. SmithDB publishes `arm64` images. Allow `arm64` on the node pool.
-
-    `compaction` and `cluster-manager` need 2.25 vCPU and 4.25 GiB and run on the existing LangSmith nodes. The tables charge that share at the `c6g.xlarge` rate ($798 per environment per year on demand, $464 reserved). The metastore is Aurora PostgreSQL 18 Serverless v2 in its own cluster, minimum 1 ACU, auto-pause off. I/O is extra at $0.22 per million requests. S3 is excluded.
+    This is the Small tier from [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale): about 10 runs per second and 10 queries per second. Each environment runs two nodes in two availability zones.
 
     Production nodes are `m7gd.4xlarge` (16 vCPU, 64 GiB, 950 GB local NVMe) plus a 100 GiB gp3 boot volume. A lower environment can use two `c7g.4xlarge` nodes and put the 600 GiB cache on gp3. That is below the IOPS SmithDB documents for a network-attached cache, so use it only for light traffic.
 
-    | Environment | Nodes | Metastore | On demand, per year | Per month | 1-year reserved, per year | Per month |
-    | --- | --- | --- | --- | --- | --- | --- |
-    | Lower (gp3 cache) | 2 x `c7g.4xlarge` | Writer only | $15,016 | $1,251 | $10,061 | $838 |
-    | Production (local NVMe) | 2 x `m7gd.4xlarge` | Writer and reader | $21,023 | $1,752 | $13,485 | $1,124 |
+    | Environment | Nodes | Per month |
+    | --- | --- | --- |
+    | Lower (gp3 cache) | 2 x `c7g.4xlarge` | $1,251 |
+    | Production (local NVMe) | 2 x `m7gd.4xlarge` | $1,752 |
 
     One lower environment plus two production environments is **$57,062 per year** on demand ($4,755 per month), or **$37,031 per year** reserved ($3,086 per month). Reserved prices are 1-year, all upfront. Aurora Serverless v2 and gp3 volumes stay on demand. The Medium tier (about 100 runs per second) and Large are not priced here.
 
     ### S3
 
-    At about 2 million traces a month, `eu-west-3` standard storage is $0.024 per GB-month. Do not add lifecycle or storage-class rules. SmithDB deletes its own segments, and an external rule can delete live data.
+    At about 2 million traces a month, `us-east-1` standard storage is $0.023 per GB-month for the first 50 TB. Do not add lifecycle or storage-class rules. SmithDB deletes its own segments, and an external rule can delete live data.
 
     | Stored size per trace | 14-day retention | 400-day retention |
     | --- | --- | --- |
-    | 10 KB | $3 per year | $77 per year |
-    | 50 KB | $13 per year | $384 per year |
-    | 200 KB | $54 per year | $1,536 per year |
+    | 10 KB | $2 per year | $74 per year |
+    | 50 KB | $13 per year | $368 per year |
+    | 200 KB | $52 per year | $1,472 per year |
 
-    A ClickHouse backfill needs an extra `m7gd.4xlarge` for the migration job (8 vCPU, 32 GiB, 100 GiB ephemeral) at about $728 per month. That cost stops when the backfill finishes.
+    A ClickHouse backfill needs an extra `m7gd.4xlarge` for the migration job at about $728 per month. That cost stops when the backfill finishes (Job finishes in a few days depending on tracing volume).
 
     See [Prepare SmithDB supporting infrastructure](/langsmith/self-host-smithdb-infrastructure) for the metastore, bucket, and cache disk.
   </Tab>
