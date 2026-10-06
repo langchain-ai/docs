@@ -4,228 +4,81 @@ sidebarTitle: Memory
 description: Use short-term checkpoints and long-term store memory in Functional API workflows.
 ---
 
-Add short-term and long-term memory to Functional API workflows. See also [Memory](/oss/langgraph/add-memory) and [Persistence](/oss/langgraph/persistence).
+Add memory to a Functional API [entrypoint](/oss/langgraph/functional-api#entrypoint) with a [checkpointer](/oss/langgraph/persistence) and, optionally, a [store](/oss/langgraph/stores). Checkpoints persist state across invocations of the same `thread_id`. A store persists facts across thread IDs.
 
-## Short-term memory
+For concepts, see the [Functional API overview](/oss/langgraph/functional-api). For Graph API memory recipes, see [Memory](/oss/langgraph/add-memory).
 
-Short-term memory allows storing information across different **invocations** of the same **thread id**. See [short-term memory](/oss/langgraph/functional-api#short-term-memory) for more details.
+## Save state on a thread
 
-### Manage checkpoints
-
-You can view and delete the information stored by the checkpointer.
-
-<a id="checkpoint"></a>
-#### View thread state
+Pass a checkpointer when you create the entrypoint. Identify each run with `thread_id`.
 
 :::python
+Add a keyword-only `previous` parameter. LangGraph sets it to the last value saved on this thread. On the first run it is `None`.
+
 ```python
-config = {
-    "configurable": {
-        "thread_id": "1",  # [!code highlight]
-        # optionally provide an ID for a specific checkpoint,
-        # otherwise the latest checkpoint is shown
-        # "checkpoint_id": "1f029ca3-1f5b-6704-8004-820c16b69a5a"  # [!code highlight]
-
-    }
-}
-graph.get_state(config)  # [!code highlight]
-```
-
-```
-StateSnapshot(
-    values={'messages': [HumanMessage(content="hi! I'm bob"), AIMessage(content='Hi Bob! How are you doing today?), HumanMessage(content="what's my name?"), AIMessage(content='Your name is Bob.')]}, next=(),
-    config={'configurable': {'thread_id': '1', 'checkpoint_ns': '', 'checkpoint_id': '1f029ca3-1f5b-6704-8004-820c16b69a5a'}},
-    metadata={
-        'source': 'loop',
-        'writes': {'call_model': {'messages': AIMessage(content='Your name is Bob.')}},
-        'step': 4,
-        'parents': {},
-        'thread_id': '1'
-    },
-    created_at='2025-05-05T16:01:24.680462+00:00',
-    parent_config={'configurable': {'thread_id': '1', 'checkpoint_ns': '', 'checkpoint_id': '1f029ca3-1790-6b0a-8003-baf965b6a38f'}},
-    tasks=(),
-    interrupts=()
-)
-```
-:::
-
-:::js
-```typescript
-const config = {
-  configurable: {
-    thread_id: "1",  // [!code highlight]
-    // optionally provide an ID for a specific checkpoint,
-    // otherwise the latest checkpoint is shown
-    // checkpoint_id: "1f029ca3-1f5b-6704-8004-820c16b69a5a" [!code highlight]
-  },
-};
-await graph.getState(config);  // [!code highlight]
-```
-
-```
-StateSnapshot {
-  values: {
-    messages: [
-      HumanMessage { content: "hi! I'm bob" },
-      AIMessage { content: "Hi Bob! How are you doing today?" },
-      HumanMessage { content: "what's my name?" },
-      AIMessage { content: "Your name is Bob." }
-    ]
-  },
-  next: [],
-  config: { configurable: { thread_id: '1', checkpoint_ns: '', checkpoint_id: '1f029ca3-1f5b-6704-8004-820c16b69a5a' } },
-  metadata: {
-    source: 'loop',
-    writes: { call_model: { messages: AIMessage { content: "Your name is Bob." } } },
-    step: 4,
-    parents: {},
-    thread_id: '1'
-  },
-  createdAt: '2025-05-05T16:01:24.680462+00:00',
-  parentConfig: { configurable: { thread_id: '1', checkpoint_ns: '', checkpoint_id: '1f029ca3-1790-6b0a-8003-baf965b6a38f' } },
-  tasks: [],
-  interrupts: []
-}
-```
-:::
-
-<a id="checkpoints"></a>
-#### View the history of the thread
-
-:::python
-```python
-config = {
-    "configurable": {
-        "thread_id": "1"  # [!code highlight]
-    }
-}
-list(graph.get_state_history(config))  # [!code highlight]
-```
-
-```
-[
-    StateSnapshot(
-        values={'messages': [HumanMessage(content="hi! I'm bob"), AIMessage(content='Hi Bob! How are you doing today? Is there anything I can help you with?'), HumanMessage(content="what's my name?"), AIMessage(content='Your name is Bob.')]},
-        next=(),
-        config={'configurable': {'thread_id': '1', 'checkpoint_ns': '', 'checkpoint_id': '1f029ca3-1f5b-6704-8004-820c16b69a5a'}},
-        metadata={'source': 'loop', 'writes': {'call_model': {'messages': AIMessage(content='Your name is Bob.')}}, 'step': 4, 'parents': {}, 'thread_id': '1'},
-        created_at='2025-05-05T16:01:24.680462+00:00',
-        parent_config={'configurable': {'thread_id': '1', 'checkpoint_ns': '', 'checkpoint_id': '1f029ca3-1790-6b0a-8003-baf965b6a38f'}},
-        tasks=(),
-        interrupts=()
-    ),
-    StateSnapshot(
-        values={'messages': [HumanMessage(content="hi! I'm bob"), AIMessage(content='Hi Bob! How are you doing today? Is there anything I can help you with?'), HumanMessage(content="what's my name?")]},
-        next=('call_model',),
-        config={'configurable': {'thread_id': '1', 'checkpoint_ns': '', 'checkpoint_id': '1f029ca3-1790-6b0a-8003-baf965b6a38f'}},
-        metadata={'source': 'loop', 'writes': None, 'step': 3, 'parents': {}, 'thread_id': '1'},
-        created_at='2025-05-05T16:01:23.863421+00:00',
-        parent_config={...}
-        tasks=(PregelTask(id='8ab4155e-6b15-b885-9ce5-bed69a2c305c', name='call_model', path=('__pregel_pull', 'call_model'), error=None, interrupts=(), state=None, result={'messages': AIMessage(content='Your name is Bob.')}),),
-        interrupts=()
-    ),
-    StateSnapshot(
-        values={'messages': [HumanMessage(content="hi! I'm bob"), AIMessage(content='Hi Bob! How are you doing today? Is there anything I can help you with?')]},
-        next=('__start__',),
-        config={...},
-        metadata={'source': 'input', 'writes': {'__start__': {'messages': [{'role': 'user', 'content': "what's my name?"}]}}, 'step': 2, 'parents': {}, 'thread_id': '1'},
-        created_at='2025-05-05T16:01:23.863173+00:00',
-        parent_config={...}
-        tasks=(PregelTask(id='24ba39d6-6db1-4c9b-f4c5-682aeaf38dcd', name='__start__', path=('__pregel_pull', '__start__'), error=None, interrupts=(), state=None, result={'messages': [{'role': 'user', 'content': "what's my name?"}]}),),
-        interrupts=()
-    ),
-    StateSnapshot(
-        values={'messages': [HumanMessage(content="hi! I'm bob"), AIMessage(content='Hi Bob! How are you doing today? Is there anything I can help you with?')]},
-        next=(),
-        config={...},
-        metadata={'source': 'loop', 'writes': {'call_model': {'messages': AIMessage(content='Hi Bob! How are you doing today? Is there anything I can help you with?')}}, 'step': 1, 'parents': {}, 'thread_id': '1'},
-        created_at='2025-05-05T16:01:23.862295+00:00',
-        parent_config={...}
-        tasks=(),
-        interrupts=()
-    ),
-    StateSnapshot(
-        values={'messages': [HumanMessage(content="hi! I'm bob")]},
-        next=('call_model',),
-        config={...},
-        metadata={'source': 'loop', 'writes': None, 'step': 0, 'parents': {}, 'thread_id': '1'},
-        created_at='2025-05-05T16:01:22.278960+00:00',
-        parent_config={...}
-        tasks=(PregelTask(id='8cbd75e0-3720-b056-04f7-71ac805140a0', name='call_model', path=('__pregel_pull', 'call_model'), error=None, interrupts=(), state=None, result={'messages': AIMessage(content='Hi Bob! How are you doing today? Is there anything I can help you with?')}),),
-        interrupts=()
-    ),
-    StateSnapshot(
-        values={'messages': []},
-        next=('__start__',),
-        config={'configurable': {'thread_id': '1', 'checkpoint_ns': '', 'checkpoint_id': '1f029ca3-0870-6ce2-bfff-1f3f14c3e565'}},
-        metadata={'source': 'input', 'writes': {'__start__': {'messages': [{'role': 'user', 'content': "hi! I'm bob"}]}}, 'step': -1, 'parents': {}, 'thread_id': '1'},
-        created_at='2025-05-05T16:01:22.277497+00:00',
-        parent_config=None,
-        tasks=(PregelTask(id='d458367b-8265-812c-18e2-33001d199ce6', name='__start__', path=('__pregel_pull', '__start__'), error=None, interrupts=(), state=None, result={'messages': [{'role': 'user', 'content': "hi! I'm bob"}]}),),
-        interrupts=()
-    )
-]
-```
-:::
-
-:::js
-```typescript
-const config = {
-  configurable: {
-    thread_id: "1",  // [!code highlight]
-  },
-};
-const history = [];  // [!code highlight]
-for await (const state of graph.getStateHistory(config)) {
-  history.push(state);
-}
-```
-
-```
-[
-  StateSnapshot {
-    values: {
-      messages: [
-        HumanMessage { content: "hi! I'm bob" },
-        AIMessage { content: "Hi Bob! How are you doing today? Is there anything I can help you with?" },
-        HumanMessage { content: "what's my name?" },
-        AIMessage { content: "Your name is Bob." }
-      ]
-    },
-    next: [],
-    config: { configurable: { thread_id: '1', checkpoint_ns: '', checkpoint_id: '1f029ca3-1f5b-6704-8004-820c16b69a5a' } },
-    metadata: { source: 'loop', writes: { call_model: { messages: AIMessage { content: "Your name is Bob." } } }, step: 4, parents: {}, thread_id: '1' },
-    createdAt: '2025-05-05T16:01:24.680462+00:00',
-    parentConfig: { configurable: { thread_id: '1', checkpoint_ns: '', checkpoint_id: '1f029ca3-1790-6b0a-8003-baf965b6a38f' } },
-    tasks: [],
-    interrupts: []
-  },
-  // ... more state snapshots
-]
-```
-:::
-
-### Decouple return value from saved value
-
-Use `entrypoint.final` to decouple what is returned to the caller from what is persisted in the checkpoint. This is useful when:
-
-* You want to return a computed result (e.g., a summary or status), but save a different internal value for use on the next invocation.
-* You need to control what gets passed to the previous parameter on the next run.
-
-:::python
-```python
-from langgraph.func import entrypoint
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.func import entrypoint
 
 checkpointer = InMemorySaver()
 
+
 @entrypoint(checkpointer=checkpointer)
-def accumulate(n: int, *, previous: int | None) -> entrypoint.final[int, int]:
+def accumulate(n: int, *, previous: int | None = None) -> int:
+    previous = previous or 0
+    return previous + n
+
+
+config = {"configurable": {"thread_id": "1"}}
+print(accumulate.invoke(1, config))  # 1
+print(accumulate.invoke(2, config))  # 3
+print(accumulate.invoke(3, config))  # 6
+```
+:::
+
+:::js
+Call `getPreviousState` inside the entrypoint. On the first run it is `undefined`.
+
+```typescript
+import { entrypoint, getPreviousState, MemorySaver } from "@langchain/langgraph";
+
+const checkpointer = new MemorySaver();
+
+const accumulate = entrypoint(
+  { checkpointer, name: "accumulate" },
+  async (n: number) => {
+    const previous = getPreviousState<number>() ?? 0;
+    return previous + n;
+  }
+);
+
+const config = { configurable: { thread_id: "1" } };
+console.log(await accumulate.invoke(1, config)); // 1
+console.log(await accumulate.invoke(2, config)); // 3
+console.log(await accumulate.invoke(3, config)); // 6
+```
+:::
+
+## Return a different saved value
+
+Use @[`entrypoint.final`][entrypoint.final] when the caller should receive one value and the next run should read another. `value` is returned to the caller. `save` is what the next `previous` / `getPreviousState` read sees.
+
+For example, return a status or summary, and save the full internal state.
+
+:::python
+```python
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.func import entrypoint
+
+checkpointer = InMemorySaver()
+
+
+@entrypoint(checkpointer=checkpointer)
+def accumulate(n: int, *, previous: int | None = None) -> entrypoint.final[int, int]:
     previous = previous or 0
     total = previous + n
-    # Return the *previous* value to the caller but save the *new* total to the checkpoint.
+    # Return the *previous* value to the caller but save the *new* total.
     return entrypoint.final(value=previous, save=total)
+
 
 config = {"configurable": {"thread_id": "my-thread"}}
 
@@ -237,17 +90,17 @@ print(accumulate.invoke(3, config=config))  # 3
 
 :::js
 ```typescript
-import { entrypoint, MemorySaver } from "@langchain/langgraph";
+import { entrypoint, getPreviousState, MemorySaver } from "@langchain/langgraph";
 
 const checkpointer = new MemorySaver();
 
 const accumulate = entrypoint(
   { checkpointer, name: "accumulate" },
-  async (n: number, previous?: number) => {
-    const prev = previous || 0;
-    const total = prev + n;
-    // Return the *previous* value to the caller but save the *new* total to the checkpoint.
-    return entrypoint.final({ value: prev, save: total });
+  async (n: number) => {
+    const previous = getPreviousState<number>() ?? 0;
+    const total = previous + n;
+    // Return the *previous* value to the caller but save the *new* total.
+    return entrypoint.final({ value: previous, save: total });
   }
 );
 
@@ -259,19 +112,150 @@ console.log(await accumulate.invoke(3, config)); // 3
 ```
 :::
 
-### Chatbot example
+## Inspect checkpoints
 
-An example of a simple chatbot using the functional API and the @[`InMemorySaver`] checkpointer.
+View or delete checkpoints on the `accumulate` workflow from [Return a different saved value](#return-a-different-saved-value). `values` is the saved checkpoint (`save`), not the value returned to the caller.
 
-The bot is able to remember the previous conversation and continue from where it left off.
+<a id="checkpoint"></a>
+### View thread state
+
+:::python
+```python
+config = {
+    "configurable": {
+        "thread_id": "my-thread",  # [!code highlight]
+        # optionally provide an ID for a specific checkpoint,
+        # otherwise the latest checkpoint is shown
+        # "checkpoint_id": "1f1c1826-2179-626c-8004-96dc43069e17"  # [!code highlight]
+    }
+}
+print(accumulate.get_state(config))  # [!code highlight]
+```
+
+```
+StateSnapshot(
+    values=3,
+    next=(),
+    config={'configurable': {'thread_id': 'my-thread', 'checkpoint_ns': '', 'checkpoint_id': '1f1c1826-2179-626c-8004-96dc43069e17'}},
+    metadata={'source': 'loop', 'step': 4, 'parents': {}},
+    created_at='2026-10-06T12:35:16.081724+00:00',
+    parent_config={'configurable': {'thread_id': 'my-thread', 'checkpoint_ns': '', 'checkpoint_id': '1f1c1826-2178-6682-8003-feda9f2ec8db'}},
+    tasks=(),
+    interrupts=()
+)
+```
+:::
+
+:::js
+```typescript
+const config = {
+  configurable: {
+    thread_id: "my-thread",  // [!code highlight]
+    // optionally provide an ID for a specific checkpoint,
+    // otherwise the latest checkpoint is shown
+    // checkpoint_id: "1f1c1826-2179-626c-8004-96dc43069e17" [!code highlight]
+  },
+};
+console.log(await accumulate.getState(config));  // [!code highlight]
+```
+
+```
+StateSnapshot {
+  values: 3,
+  next: [],
+  config: { configurable: { thread_id: 'my-thread', checkpoint_ns: '', checkpoint_id: '1f1c1826-2179-626c-8004-96dc43069e17' } },
+  metadata: { source: 'loop', step: 4, parents: {} },
+  createdAt: '2026-10-06T12:35:16.081724+00:00',
+  parentConfig: { configurable: { thread_id: 'my-thread', checkpoint_ns: '', checkpoint_id: '1f1c1826-2178-6682-8003-feda9f2ec8db' } },
+  tasks: [],
+  interrupts: []
+}
+```
+:::
+
+<a id="checkpoints"></a>
+### View thread history
+
+:::python
+```python
+config = {"configurable": {"thread_id": "my-thread"}}  # [!code highlight]
+history = list(accumulate.get_state_history(config))  # [!code highlight]
+print(history[0])
+```
+
+```
+StateSnapshot(
+    values=3,
+    next=(),
+    config={'configurable': {'thread_id': 'my-thread', 'checkpoint_ns': '', 'checkpoint_id': '1f1c1826-2179-626c-8004-96dc43069e17'}},
+    metadata={'source': 'loop', 'step': 4, 'parents': {}},
+    created_at='2026-10-06T12:35:16.081724+00:00',
+    parent_config={'configurable': {'thread_id': 'my-thread', 'checkpoint_ns': '', 'checkpoint_id': '1f1c1826-2178-6682-8003-feda9f2ec8db'}},
+    tasks=(),
+    interrupts=()
+)
+# ... earlier snapshots, including values=1, values=0, and values=None
+```
+:::
+
+:::js
+```typescript
+const config = {
+  configurable: {
+    thread_id: "my-thread",  // [!code highlight]
+  },
+};
+const history = [];  // [!code highlight]
+for await (const state of accumulate.getStateHistory(config)) {
+  history.push(state);
+}
+console.log(history[0]);
+```
+
+```
+StateSnapshot {
+  values: 3,
+  next: [],
+  config: { configurable: { thread_id: 'my-thread', checkpoint_ns: '', checkpoint_id: '1f1c1826-2179-626c-8004-96dc43069e17' } },
+  metadata: { source: 'loop', step: 4, parents: {} },
+  createdAt: '2026-10-06T12:35:16.081724+00:00',
+  parentConfig: { configurable: { thread_id: 'my-thread', checkpoint_ns: '', checkpoint_id: '1f1c1826-2178-6682-8003-feda9f2ec8db' } },
+  tasks: [],
+  interrupts: []
+}
+// ... earlier snapshots, including values 1, 0, and null
+```
+:::
+
+### Delete checkpoints for a thread
+
+:::python
+```python
+checkpointer.delete_thread("my-thread")
+print(accumulate.get_state(config))
+# StateSnapshot(values={}, next=(), config={'configurable': {'thread_id': 'my-thread'}}, ...)
+```
+:::
+
+:::js
+```typescript
+await checkpointer.deleteThread("my-thread");
+console.log(await accumulate.getState(config));
+// StateSnapshot { values: {}, next: [], config: { configurable: { thread_id: 'my-thread' } }, ... }
+```
+:::
+
+## Build a chatbot with checkpoints
+
+Keep the conversation on the thread. Return the model message to the caller, and save the full list for the next turn with `entrypoint.final`.
 
 :::python
 ```python
 from langchain.messages import BaseMessage
-from langgraph.graph import add_messages
-from langgraph.func import entrypoint, task
-from langgraph.checkpoint.memory import InMemorySaver
 from langchain_anthropic import ChatAnthropic
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.func import entrypoint, task
+from langgraph.graph import add_messages
 
 model = ChatAnthropic(model="claude-sonnet-4-6")
 
@@ -283,7 +267,7 @@ def call_model(messages: list[BaseMessage]):
 checkpointer = InMemorySaver()
 
 @entrypoint(checkpointer=checkpointer)
-def workflow(inputs: list[BaseMessage], *, previous: list[BaseMessage]):
+def workflow(inputs: list[BaseMessage], *, previous: list[BaseMessage] | None = None):
     if previous:
         inputs = add_messages(previous, inputs)
 
@@ -292,27 +276,26 @@ def workflow(inputs: list[BaseMessage], *, previous: list[BaseMessage]):
 
 config = {"configurable": {"thread_id": "1"}}
 input_message = {"role": "user", "content": "hi! I'm bob"}
-stream = workflow.stream_events([input_message], config, version="v3")
-for snapshot in stream.values:
-    print(snapshot)
+print(workflow.invoke([input_message], config))
+# -> AIMessage with a greeting that uses the name Bob
 
 input_message = {"role": "user", "content": "what's my name?"}
-stream = workflow.stream_events([input_message], config, version="v3")
-for snapshot in stream.values:
-    print(snapshot)
+print(workflow.invoke([input_message], config))
+# -> AIMessage that answers "Bob"
 ```
 :::
 
 :::js
 ```typescript
 import { BaseMessage } from "@langchain/core/messages";
+import { ChatAnthropic } from "@langchain/anthropic";
 import {
   addMessages,
   entrypoint,
+  getPreviousState,
   task,
   MemorySaver,
 } from "@langchain/langgraph";
-import { ChatAnthropic } from "@langchain/anthropic";
 
 const model = new ChatAnthropic({ model: "claude-sonnet-4-6" });
 
@@ -328,10 +311,8 @@ const checkpointer = new MemorySaver();
 
 const workflow = entrypoint(
   { checkpointer, name: "workflow" },
-  async (
-    inputs: BaseMessage[],
-    previous?: BaseMessage[]
-  ): Promise<BaseMessage> => {
+  async (inputs: BaseMessage[]): Promise<BaseMessage> => {
+    const previous = getPreviousState<BaseMessage[]>();
     let messages = inputs;
     if (previous) {
       messages = addMessages(previous, inputs);
@@ -347,20 +328,99 @@ const workflow = entrypoint(
 
 const config = { configurable: { thread_id: "1" } };
 const inputMessage = { role: "user", content: "hi! I'm bob" };
-
-const stream1 = await workflow.streamEvents([inputMessage], { ...config, version: "v3" });
-for await (const snapshot of stream1.values) {
-  console.log(snapshot);
-}
+console.log(await workflow.invoke([inputMessage], config));
+// -> AIMessage with a greeting that uses the name Bob
 
 const inputMessage2 = { role: "user", content: "what's my name?" };
-const stream2 = await workflow.streamEvents([inputMessage2], { ...config, version: "v3" });
-for await (const snapshot of stream2.values) {
-  console.log(snapshot);
-}
+console.log(await workflow.invoke([inputMessage2], config));
+// -> AIMessage that answers "Bob"
 ```
 :::
 
-## Long-term memory
+## Save facts across threads
 
-[long-term memory](/oss/concepts/memory#long-term-memory) allows storing information across different **thread ids**. This could be useful for learning information about a given user in one conversation and using it in another.
+[Long-term memory](/oss/concepts/memory#long-term-memory) lives in a [store](/oss/langgraph/stores), not in the checkpointer. Save a fact on one `thread_id` and read it on another.
+
+:::python
+Pass an @[`InMemoryStore`] when you decorate the entrypoint. LangGraph injects it as `store`.
+
+```python
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.func import entrypoint
+from langgraph.store.memory import InMemoryStore
+
+checkpointer = InMemorySaver()
+store = InMemoryStore()
+
+
+@entrypoint(checkpointer=checkpointer, store=store)
+def remember(inputs: dict, *, store: InMemoryStore):
+    namespace = (inputs["user_id"], "memories")
+    fact = inputs.get("fact")
+    if fact:
+        store.put(namespace, "profile", {"fact": fact})
+    items = store.search(namespace)
+    return [item.value for item in items]
+
+
+config_a = {"configurable": {"thread_id": "thread-a"}}
+config_b = {"configurable": {"thread_id": "thread-b"}}
+
+remember.invoke(
+    {"user_id": "user-1", "fact": "Prefers dark mode"},
+    config_a,
+)
+print(remember.invoke({"user_id": "user-1"}, config_b))
+# -> [{'fact': 'Prefers dark mode'}]
+```
+:::
+
+:::js
+Pass a `MemoryStore` when you create the entrypoint. Read and write it with `config.store`.
+
+```typescript
+import {
+  MemorySaver,
+  MemoryStore,
+  entrypoint,
+} from "@langchain/langgraph";
+import type { LangGraphRunnableConfig } from "@langchain/langgraph";
+
+const checkpointer = new MemorySaver();
+const store = new MemoryStore();
+
+const remember = entrypoint(
+  { checkpointer, store, name: "remember" },
+  async (
+    inputs: { user_id: string; fact?: string },
+    config: LangGraphRunnableConfig
+  ) => {
+    const namespace = [inputs.user_id, "memories"];
+    if (inputs.fact) {
+      await config.store!.put(namespace, "profile", { fact: inputs.fact });
+    }
+    const items = (await config.store!.search(namespace)) ?? [];
+    return items.map((item) => item.value);
+  }
+);
+
+const configA = { configurable: { thread_id: "thread-a" } };
+const configB = { configurable: { thread_id: "thread-b" } };
+
+await remember.invoke(
+  { user_id: "user-1", fact: "Prefers dark mode" },
+  configA
+);
+console.log(await remember.invoke({ user_id: "user-1" }, configB));
+// -> [{ fact: 'Prefers dark mode' }]
+```
+:::
+
+## See also
+
+- [Functional API overview](/oss/langgraph/functional-api)
+- [Build checklist for the Functional API](/oss/langgraph/use-functional-api)
+- [Memory](/oss/langgraph/add-memory)
+- [Persistence](/oss/langgraph/persistence)
+- [Stores](/oss/langgraph/stores)
+- [Add human-in-the-loop with the Functional API](/oss/langgraph/functional-api-human-in-the-loop)
