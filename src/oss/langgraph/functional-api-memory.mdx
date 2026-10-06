@@ -4,6 +4,21 @@ sidebarTitle: Memory
 description: Use short-term checkpoints and long-term store memory in Functional API workflows.
 ---
 
+import LanggraphFunctionalApiMemoryAccumulatePy from '/snippets/code-samples/langgraph-functional-api-memory-accumulate-py.mdx';
+import LanggraphFunctionalApiMemoryAccumulateJs from '/snippets/code-samples/langgraph-functional-api-memory-accumulate-js.mdx';
+import LanggraphFunctionalApiMemoryFinalPy from '/snippets/code-samples/langgraph-functional-api-memory-final-py.mdx';
+import LanggraphFunctionalApiMemoryFinalJs from '/snippets/code-samples/langgraph-functional-api-memory-final-js.mdx';
+import LanggraphFunctionalApiMemoryGetStatePy from '/snippets/code-samples/langgraph-functional-api-memory-get-state-py.mdx';
+import LanggraphFunctionalApiMemoryGetStateJs from '/snippets/code-samples/langgraph-functional-api-memory-get-state-js.mdx';
+import LanggraphFunctionalApiMemoryHistoryPy from '/snippets/code-samples/langgraph-functional-api-memory-history-py.mdx';
+import LanggraphFunctionalApiMemoryHistoryJs from '/snippets/code-samples/langgraph-functional-api-memory-history-js.mdx';
+import LanggraphFunctionalApiMemoryDeletePy from '/snippets/code-samples/langgraph-functional-api-memory-delete-py.mdx';
+import LanggraphFunctionalApiMemoryDeleteJs from '/snippets/code-samples/langgraph-functional-api-memory-delete-js.mdx';
+import LanggraphFunctionalApiMemoryStorePy from '/snippets/code-samples/langgraph-functional-api-memory-store-py.mdx';
+import LanggraphFunctionalApiMemoryStoreJs from '/snippets/code-samples/langgraph-functional-api-memory-store-js.mdx';
+import LanggraphFunctionalApiMemoryChatbotPy from '/snippets/code-samples/langgraph-functional-api-memory-chatbot-py.mdx';
+import LanggraphFunctionalApiMemoryChatbotJs from '/snippets/code-samples/langgraph-functional-api-memory-chatbot-js.mdx';
+
 Add memory to a Functional API [entrypoint](/oss/langgraph/functional-api#entrypoint) with a [checkpointer](/oss/langgraph/persistence) and, optionally, a [store](/oss/langgraph/stores). Checkpoints persist state across invocations of the same `thread_id`. A store persists facts across thread IDs.
 
 For concepts, see the [Functional API overview](/oss/langgraph/functional-api). For Graph API memory recipes, see [Memory](/oss/langgraph/add-memory).
@@ -15,101 +30,35 @@ Pass a checkpointer when you create the entrypoint. Identify each run with `thre
 :::python
 Add a keyword-only `previous` parameter. LangGraph sets it to the last value saved on this thread. On the first run it is `None`.
 
-```python
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.func import entrypoint
-
-checkpointer = InMemorySaver()
-
-
-@entrypoint(checkpointer=checkpointer)
-def accumulate(n: int, *, previous: int | None = None) -> int:
-    previous = previous or 0
-    return previous + n
-
-
-config = {"configurable": {"thread_id": "1"}}
-print(accumulate.invoke(1, config))  # 1
-print(accumulate.invoke(2, config))  # 3
-print(accumulate.invoke(3, config))  # 6
-```
+<LanggraphFunctionalApiMemoryAccumulatePy />
 :::
 
 :::js
 Call `getPreviousState` inside the entrypoint. On the first run it is `undefined`.
 
-```typescript
-import { entrypoint, getPreviousState, MemorySaver } from "@langchain/langgraph";
-
-const checkpointer = new MemorySaver();
-
-const accumulate = entrypoint(
-  { checkpointer, name: "accumulate" },
-  async (n: number) => {
-    const previous = getPreviousState<number>() ?? 0;
-    return previous + n;
-  }
-);
-
-const config = { configurable: { thread_id: "1" } };
-console.log(await accumulate.invoke(1, config)); // 1
-console.log(await accumulate.invoke(2, config)); // 3
-console.log(await accumulate.invoke(3, config)); // 6
-```
+<LanggraphFunctionalApiMemoryAccumulateJs />
 :::
 
 ## Return a different saved value
 
-Use @[`entrypoint.final`][entrypoint.final] when the caller should receive one value and the next run should read another. `value` is returned to the caller. `save` is what the next `previous` / `getPreviousState` read sees.
+Use @[`entrypoint.final`][entrypoint.final] when the caller should receive one value and the next run should read another. `value` is returned to the caller.
+
+:::python
+`save` is what the next `previous` read sees.
+:::
+
+:::js
+`save` is what the next `getPreviousState` read sees.
+:::
 
 For example, return a status or summary, and save the full internal state.
 
 :::python
-```python
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.func import entrypoint
-
-checkpointer = InMemorySaver()
-
-
-@entrypoint(checkpointer=checkpointer)
-def accumulate(n: int, *, previous: int | None = None) -> entrypoint.final[int, int]:
-    previous = previous or 0
-    total = previous + n
-    # Return the *previous* value to the caller but save the *new* total.
-    return entrypoint.final(value=previous, save=total)
-
-
-config = {"configurable": {"thread_id": "my-thread"}}
-
-print(accumulate.invoke(1, config=config))  # 0
-print(accumulate.invoke(2, config=config))  # 1
-print(accumulate.invoke(3, config=config))  # 3
-```
+<LanggraphFunctionalApiMemoryFinalPy />
 :::
 
 :::js
-```typescript
-import { entrypoint, getPreviousState, MemorySaver } from "@langchain/langgraph";
-
-const checkpointer = new MemorySaver();
-
-const accumulate = entrypoint(
-  { checkpointer, name: "accumulate" },
-  async (n: number) => {
-    const previous = getPreviousState<number>() ?? 0;
-    const total = previous + n;
-    // Return the *previous* value to the caller but save the *new* total.
-    return entrypoint.final({ value: previous, save: total });
-  }
-);
-
-const config = { configurable: { thread_id: "my-thread" } };
-
-console.log(await accumulate.invoke(1, config)); // 0
-console.log(await accumulate.invoke(2, config)); // 1
-console.log(await accumulate.invoke(3, config)); // 3
-```
+<LanggraphFunctionalApiMemoryFinalJs />
 :::
 
 ## Inspect checkpoints
@@ -120,17 +69,7 @@ View or delete checkpoints on the `accumulate` workflow from [Return a different
 ### View thread state
 
 :::python
-```python
-config = {
-    "configurable": {
-        "thread_id": "my-thread",  # [!code highlight]
-        # optionally provide an ID for a specific checkpoint,
-        # otherwise the latest checkpoint is shown
-        # "checkpoint_id": "1f1c1826-2179-626c-8004-96dc43069e17"  # [!code highlight]
-    }
-}
-print(accumulate.get_state(config))  # [!code highlight]
-```
+<LanggraphFunctionalApiMemoryGetStatePy />
 
 ```
 StateSnapshot(
@@ -147,17 +86,7 @@ StateSnapshot(
 :::
 
 :::js
-```typescript
-const config = {
-  configurable: {
-    thread_id: "my-thread",  // [!code highlight]
-    // optionally provide an ID for a specific checkpoint,
-    // otherwise the latest checkpoint is shown
-    // checkpoint_id: "1f1c1826-2179-626c-8004-96dc43069e17" [!code highlight]
-  },
-};
-console.log(await accumulate.getState(config));  // [!code highlight]
-```
+<LanggraphFunctionalApiMemoryGetStateJs />
 
 ```
 StateSnapshot {
@@ -177,11 +106,7 @@ StateSnapshot {
 ### View thread history
 
 :::python
-```python
-config = {"configurable": {"thread_id": "my-thread"}}  # [!code highlight]
-history = list(accumulate.get_state_history(config))  # [!code highlight]
-print(history[0])
-```
+<LanggraphFunctionalApiMemoryHistoryPy />
 
 ```
 StateSnapshot(
@@ -199,18 +124,7 @@ StateSnapshot(
 :::
 
 :::js
-```typescript
-const config = {
-  configurable: {
-    thread_id: "my-thread",  // [!code highlight]
-  },
-};
-const history = [];  // [!code highlight]
-for await (const state of accumulate.getStateHistory(config)) {
-  history.push(state);
-}
-console.log(history[0]);
-```
+<LanggraphFunctionalApiMemoryHistoryJs />
 
 ```
 StateSnapshot {
@@ -230,19 +144,11 @@ StateSnapshot {
 ### Delete checkpoints for a thread
 
 :::python
-```python
-checkpointer.delete_thread("my-thread")
-print(accumulate.get_state(config))
-# StateSnapshot(values={}, next=(), config={'configurable': {'thread_id': 'my-thread'}}, ...)
-```
+<LanggraphFunctionalApiMemoryDeletePy />
 :::
 
 :::js
-```typescript
-await checkpointer.deleteThread("my-thread");
-console.log(await accumulate.getState(config));
-// StateSnapshot { values: {}, next: [], config: { configurable: { thread_id: 'my-thread' } }, ... }
-```
+<LanggraphFunctionalApiMemoryDeleteJs />
 :::
 
 ## Build a chatbot with checkpoints
@@ -250,91 +156,11 @@ console.log(await accumulate.getState(config));
 Keep the conversation on the thread. Return the model message to the caller, and save the full list for the next turn with `entrypoint.final`.
 
 :::python
-```python
-from langchain.messages import BaseMessage
-from langchain_anthropic import ChatAnthropic
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.func import entrypoint, task
-from langgraph.graph import add_messages
-
-model = ChatAnthropic(model="claude-sonnet-4-6")
-
-@task
-def call_model(messages: list[BaseMessage]):
-    response = model.invoke(messages)
-    return response
-
-checkpointer = InMemorySaver()
-
-@entrypoint(checkpointer=checkpointer)
-def workflow(inputs: list[BaseMessage], *, previous: list[BaseMessage] | None = None):
-    if previous:
-        inputs = add_messages(previous, inputs)
-
-    response = call_model(inputs).result()
-    return entrypoint.final(value=response, save=add_messages(inputs, response))
-
-config = {"configurable": {"thread_id": "1"}}
-input_message = {"role": "user", "content": "hi! I'm bob"}
-print(workflow.invoke([input_message], config))
-# -> AIMessage with a greeting that uses the name Bob
-
-input_message = {"role": "user", "content": "what's my name?"}
-print(workflow.invoke([input_message], config))
-# -> AIMessage that answers "Bob"
-```
+<LanggraphFunctionalApiMemoryChatbotPy />
 :::
 
 :::js
-```typescript
-import { BaseMessage } from "@langchain/core/messages";
-import { ChatAnthropic } from "@langchain/anthropic";
-import {
-  addMessages,
-  entrypoint,
-  getPreviousState,
-  task,
-  MemorySaver,
-} from "@langchain/langgraph";
-
-const model = new ChatAnthropic({ model: "claude-sonnet-4-6" });
-
-const callModel = task(
-  "callModel",
-  async (messages: BaseMessage[]): Promise<BaseMessage> => {
-    const response = await model.invoke(messages);
-    return response;
-  }
-);
-
-const checkpointer = new MemorySaver();
-
-const workflow = entrypoint(
-  { checkpointer, name: "workflow" },
-  async (inputs: BaseMessage[]): Promise<BaseMessage> => {
-    const previous = getPreviousState<BaseMessage[]>();
-    let messages = inputs;
-    if (previous) {
-      messages = addMessages(previous, inputs);
-    }
-
-    const response = await callModel(messages);
-    return entrypoint.final({
-      value: response,
-      save: addMessages(messages, response),
-    });
-  }
-);
-
-const config = { configurable: { thread_id: "1" } };
-const inputMessage = { role: "user", content: "hi! I'm bob" };
-console.log(await workflow.invoke([inputMessage], config));
-// -> AIMessage with a greeting that uses the name Bob
-
-const inputMessage2 = { role: "user", content: "what's my name?" };
-console.log(await workflow.invoke([inputMessage2], config));
-// -> AIMessage that answers "Bob"
-```
+<LanggraphFunctionalApiMemoryChatbotJs />
 :::
 
 ## Save facts across threads
@@ -342,78 +168,15 @@ console.log(await workflow.invoke([inputMessage2], config));
 [Long-term memory](/oss/concepts/memory#long-term-memory) lives in a [store](/oss/langgraph/stores), not in the checkpointer. Save a fact on one `thread_id` and read it on another.
 
 :::python
-Pass an @[`InMemoryStore`] when you decorate the entrypoint. LangGraph injects it as `store`.
+Pass an @[`InMemoryStore`] when you decorate the entrypoint. Read it from `runtime.store`.
 
-```python
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.func import entrypoint
-from langgraph.store.memory import InMemoryStore
-
-checkpointer = InMemorySaver()
-store = InMemoryStore()
-
-
-@entrypoint(checkpointer=checkpointer, store=store)
-def remember(inputs: dict, *, store: InMemoryStore):
-    namespace = (inputs["user_id"], "memories")
-    fact = inputs.get("fact")
-    if fact:
-        store.put(namespace, "profile", {"fact": fact})
-    items = store.search(namespace)
-    return [item.value for item in items]
-
-
-config_a = {"configurable": {"thread_id": "thread-a"}}
-config_b = {"configurable": {"thread_id": "thread-b"}}
-
-remember.invoke(
-    {"user_id": "user-1", "fact": "Prefers dark mode"},
-    config_a,
-)
-print(remember.invoke({"user_id": "user-1"}, config_b))
-# -> [{'fact': 'Prefers dark mode'}]
-```
+<LanggraphFunctionalApiMemoryStorePy />
 :::
 
 :::js
-Pass a `MemoryStore` when you create the entrypoint. Read and write it with `config.store`.
+Pass an `InMemoryStore` when you create the entrypoint. Read and write it with `config.store`.
 
-```typescript
-import {
-  MemorySaver,
-  MemoryStore,
-  entrypoint,
-} from "@langchain/langgraph";
-import type { LangGraphRunnableConfig } from "@langchain/langgraph";
-
-const checkpointer = new MemorySaver();
-const store = new MemoryStore();
-
-const remember = entrypoint(
-  { checkpointer, store, name: "remember" },
-  async (
-    inputs: { user_id: string; fact?: string },
-    config: LangGraphRunnableConfig
-  ) => {
-    const namespace = [inputs.user_id, "memories"];
-    if (inputs.fact) {
-      await config.store!.put(namespace, "profile", { fact: inputs.fact });
-    }
-    const items = (await config.store!.search(namespace)) ?? [];
-    return items.map((item) => item.value);
-  }
-);
-
-const configA = { configurable: { thread_id: "thread-a" } };
-const configB = { configurable: { thread_id: "thread-b" } };
-
-await remember.invoke(
-  { user_id: "user-1", fact: "Prefers dark mode" },
-  configA
-);
-console.log(await remember.invoke({ user_id: "user-1" }, configB));
-// -> [{ fact: 'Prefers dark mode' }]
-```
+<LanggraphFunctionalApiMemoryStoreJs />
 :::
 
 ## See also

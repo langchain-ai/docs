@@ -1,0 +1,54 @@
+// :snippet-start: langgraph-functional-api-tasks-resume-js
+import { entrypoint, task, MemorySaver } from "@langchain/langgraph";
+
+// Used only to simulate a transient failure. Do not use a variable like this in production.
+let attempts = 0;
+
+const getInfo = task("getInfo", async () => {
+  attempts += 1;
+
+  if (attempts < 2) {
+    throw new Error("Failure");
+  }
+  return "OK";
+});
+
+const checkpointer = new MemorySaver();
+
+const slowTask = task("slowTask", async () => {
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  return "Ran slow task.";
+});
+
+const main = entrypoint(
+  { checkpointer, name: "main" },
+  async (inputs: Record<string, unknown>) => {
+    const slowTaskResult = await slowTask();
+    await getInfo(); // throws on the first run
+    return slowTaskResult;
+  }
+);
+
+const config = {
+  configurable: {
+    thread_id: "1",
+  },
+};
+
+try {
+  await main.invoke({ any_input: "foobar" }, config);
+} catch (err) {
+  // First run fails in getInfo.
+}
+
+console.log(await main.invoke(null, config));
+// 'Ran slow task.'
+// :snippet-end:
+
+// :remove-start:
+const resumed = await main.invoke(null, config);
+if (resumed !== "Ran slow task.") {
+  throw new Error(`expected restored slow task, got ${resumed}`);
+}
+console.log("✓ langgraph-functional-api-tasks-resume");
+// :remove-end:

@@ -4,6 +4,21 @@ sidebarTitle: Workflows
 description: Build entrypoints and tasks, run work in parallel, and call graphs or other entrypoints.
 ---
 
+import LanggraphFunctionalApiWorkflowsSimplePy from '/snippets/code-samples/langgraph-functional-api-workflows-simple-py.mdx';
+import LanggraphFunctionalApiWorkflowsSimpleJs from '/snippets/code-samples/langgraph-functional-api-workflows-simple-js.mdx';
+import LanggraphFunctionalApiWorkflowsDictPy from '/snippets/code-samples/langgraph-functional-api-workflows-dict-py.mdx';
+import LanggraphFunctionalApiWorkflowsDictJs from '/snippets/code-samples/langgraph-functional-api-workflows-dict-js.mdx';
+import LanggraphFunctionalApiWorkflowsParallelPy from '/snippets/code-samples/langgraph-functional-api-workflows-parallel-py.mdx';
+import LanggraphFunctionalApiWorkflowsParallelJs from '/snippets/code-samples/langgraph-functional-api-workflows-parallel-js.mdx';
+import LanggraphFunctionalApiWorkflowsGraphPy from '/snippets/code-samples/langgraph-functional-api-workflows-graph-py.mdx';
+import LanggraphFunctionalApiWorkflowsGraphJs from '/snippets/code-samples/langgraph-functional-api-workflows-graph-js.mdx';
+import LanggraphFunctionalApiWorkflowsNestedPy from '/snippets/code-samples/langgraph-functional-api-workflows-nested-py.mdx';
+import LanggraphFunctionalApiWorkflowsNestedJs from '/snippets/code-samples/langgraph-functional-api-workflows-nested-js.mdx';
+import LanggraphFunctionalApiWorkflowsNestedExtendedPy from '/snippets/code-samples/langgraph-functional-api-workflows-nested-extended-py.mdx';
+import LanggraphFunctionalApiWorkflowsNestedExtendedJs from '/snippets/code-samples/langgraph-functional-api-workflows-nested-extended-js.mdx';
+import LanggraphFunctionalApiWorkflowsParallelLlmPy from '/snippets/code-samples/langgraph-functional-api-workflows-parallel-llm-py.mdx';
+import LanggraphFunctionalApiWorkflowsParallelLlmJs from '/snippets/code-samples/langgraph-functional-api-workflows-parallel-llm-js.mdx';
+
 Use these recipes to compose Functional API workflows from @[entrypoint] and @[task] building blocks.
 
 For concepts, see the [Functional API overview](/oss/langgraph/functional-api). For an ordered build path, see the [Build checklist for the Functional API](/oss/langgraph/use-functional-api).
@@ -12,100 +27,24 @@ The examples use an in-memory [checkpointer](/oss/langgraph/persistence) so resu
 
 ## Create a simple workflow
 
-This workflow classifies a number with two tasks.
+This is the even/odd flow from [Choosing between Graph and Functional APIs](/oss/langgraph/choosing-apis). This version adds a checkpointer so the run has a thread.
 
 :::python
-```python
-from langchain_core.utils.uuid import uuid7
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.func import entrypoint, task
-
-@task
-def is_even(number: int) -> bool:
-    return number % 2 == 0
-
-@task
-def format_message(is_even: bool) -> str:
-    return "The number is even." if is_even else "The number is odd."
-
-checkpointer = InMemorySaver()
-
-@entrypoint(checkpointer=checkpointer)
-def workflow(inputs: dict) -> str:
-    even = is_even(inputs["number"]).result()
-    return format_message(even).result()
-
-config = {"configurable": {"thread_id": str(uuid7())}}
-result = workflow.invoke({"number": 7}, config=config)
-print(result)
-```
+<LanggraphFunctionalApiWorkflowsSimplePy />
 :::
 
 :::js
-```typescript
-import { v7 as uuid7 } from "uuid";
-import { entrypoint, task, MemorySaver } from "@langchain/langgraph";
-
-const isEven = task("isEven", async (number: number) => {
-  return number % 2 === 0;
-});
-
-const formatMessage = task("formatMessage", async (isEven: boolean) => {
-  return isEven ? "The number is even." : "The number is odd.";
-});
-
-const checkpointer = new MemorySaver();
-
-const workflow = entrypoint(
-  { checkpointer, name: "workflow" },
-  async (inputs: { number: number }) => {
-    const even = await isEven(inputs.number);
-    return await formatMessage(even);
-  }
-);
-
-const config = { configurable: { thread_id: uuid7() } };
-const result = await workflow.invoke({ number: 7 }, config);
-console.log(result);
-```
+<LanggraphFunctionalApiWorkflowsSimpleJs />
 :::
 
 An entrypoint takes one positional argument as input. To pass multiple fields, use a dictionary:
 
 :::python
-```python
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.func import entrypoint
-
-checkpointer = InMemorySaver()
-
-@entrypoint(checkpointer=checkpointer)
-def my_workflow(inputs: dict) -> dict:
-    value = inputs["value"]
-    another_value = inputs["another_value"]
-    return {"sum": value + another_value}
-
-my_workflow.invoke({"value": 1, "another_value": 2})
-```
+<LanggraphFunctionalApiWorkflowsDictPy />
 :::
 
 :::js
-```typescript
-import { entrypoint, MemorySaver } from "@langchain/langgraph";
-
-const checkpointer = new MemorySaver();
-
-const myWorkflow = entrypoint(
-  { checkpointer, name: "myWorkflow" },
-  async (inputs: { value: number; anotherValue: number }) => {
-    const value = inputs.value;
-    const anotherValue = inputs.anotherValue;
-    return { sum: value + anotherValue };
-  }
-);
-
-await myWorkflow.invoke({ value: 1, anotherValue: 2 });
-```
+<LanggraphFunctionalApiWorkflowsDictJs />
 :::
 
 ## Run tasks in parallel
@@ -121,106 +60,22 @@ A task starts as soon as you call it and returns a `Promise`. Collect those prom
 This pattern helps I/O-bound work, for example LLM API calls.
 
 :::python
-```python
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.func import entrypoint, task
-
-checkpointer = InMemorySaver()
-
-@task
-def add_one(number: int) -> int:
-    return number + 1
-
-@entrypoint(checkpointer=checkpointer)
-def workflow(numbers: list[int]) -> list[int]:
-    futures = [add_one(i) for i in numbers]
-    return [f.result() for f in futures]
-```
+<LanggraphFunctionalApiWorkflowsParallelPy />
 :::
 
 :::js
-```typescript
-import { entrypoint, MemorySaver, task } from "@langchain/langgraph";
-
-const checkpointer = new MemorySaver();
-
-const addOne = task("addOne", async (number: number) => {
-  return number + 1;
-});
-
-const workflow = entrypoint(
-  { checkpointer, name: "workflow" },
-  async (numbers: number[]) => {
-    return await Promise.all(numbers.map(addOne));
-  }
-);
-```
+<LanggraphFunctionalApiWorkflowsParallelJs />
 :::
 
 <Accordion title="Extended example: parallel LLM calls">
   Each task generates a paragraph on a different topic. Results join into one string.
 
   :::python
-  ```python
-  from langchain.chat_models import init_chat_model
-  from langchain_core.utils.uuid import uuid7
-  from langgraph.checkpoint.memory import InMemorySaver
-  from langgraph.func import entrypoint, task
-
-  model = init_chat_model("claude-sonnet-4-6")
-
-  @task
-  def generate_paragraph(topic: str) -> str:
-      response = model.invoke([
-          {"role": "system", "content": "You are a helpful assistant that writes educational paragraphs."},
-          {"role": "user", "content": f"Write a paragraph about {topic}."}
-      ])
-      return response.text
-
-  checkpointer = InMemorySaver()
-
-  @entrypoint(checkpointer=checkpointer)
-  def workflow(topics: list[str]) -> str:
-      futures = [generate_paragraph(topic) for topic in topics]
-      paragraphs = [f.result() for f in futures]
-      return "\n\n".join(paragraphs)
-
-  config = {"configurable": {"thread_id": str(uuid7())}}
-  result = workflow.invoke(["quantum computing", "climate change", "history of aviation"], config=config)
-  print(result)
-  ```
+  <LanggraphFunctionalApiWorkflowsParallelLlmPy />
   :::
 
   :::js
-  ```typescript
-  import { v7 as uuid7 } from "uuid";
-  import { ChatAnthropic } from "@langchain/anthropic";
-  import { entrypoint, task, MemorySaver } from "@langchain/langgraph";
-
-  const model = new ChatAnthropic({ model: "claude-sonnet-4-6" });
-
-  const generateParagraph = task("generateParagraph", async (topic: string) => {
-    const response = await model.invoke([
-      { role: "system", content: "You are a helpful assistant that writes educational paragraphs." },
-      { role: "user", content: `Write a paragraph about ${topic}.` }
-    ]);
-    return response.text;
-  });
-
-  const checkpointer = new MemorySaver();
-
-  const workflow = entrypoint(
-    { checkpointer, name: "workflow" },
-    async (topics: string[]) => {
-      const paragraphs = await Promise.all(topics.map(generateParagraph));
-      return paragraphs.join("\n\n");
-    }
-  );
-
-  const config = { configurable: { thread_id: uuid7() } };
-  const result = await workflow.invoke(["quantum computing", "climate change", "history of aviation"], config);
-  console.log(result);
-  ```
+  <LanggraphFunctionalApiWorkflowsParallelLlmJs />
   :::
 </Accordion>
 
@@ -231,68 +86,11 @@ The Functional API and the [Graph API](/oss/langgraph/graph-api) share the same 
 A nested graph does not share the outer thread unless you pass `config` into `invoke`. Request the injected `config` on the entrypoint and forward it.
 
 :::python
-```python
-from typing import TypedDict
-
-from langchain_core.runnables import RunnableConfig
-from langchain_core.utils.uuid import uuid7
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.func import entrypoint
-from langgraph.graph import START, StateGraph
-
-class State(TypedDict):
-    foo: int
-
-def double(state: State) -> State:
-    return {"foo": state["foo"] * 2}
-
-builder = StateGraph(State)
-builder.add_node("double", double)
-builder.add_edge(START, "double")
-graph = builder.compile()
-
-checkpointer = InMemorySaver()
-
-@entrypoint(checkpointer=checkpointer)
-def workflow(x: int, *, config: RunnableConfig) -> dict:
-    result = graph.invoke({"foo": x}, config)
-    return {"bar": result["foo"]}
-
-config = {"configurable": {"thread_id": str(uuid7())}}
-print(workflow.invoke(5, config=config))  # {'bar': 10}
-```
+<LanggraphFunctionalApiWorkflowsGraphPy />
 :::
 
 :::js
-```typescript
-import { v7 as uuid7 } from "uuid";
-import { entrypoint, MemorySaver, START, StateGraph, StateSchema } from "@langchain/langgraph";
-import * as z from "zod";
-
-const State = new StateSchema({
-  foo: z.number(),
-});
-
-const builder = new StateGraph(State)
-  .addNode("double", (state) => {
-    return { foo: state.foo * 2 };
-  })
-  .addEdge(START, "double");
-const graph = builder.compile();
-
-const checkpointer = new MemorySaver();
-
-const workflow = entrypoint(
-  { checkpointer, name: "workflow" },
-  async (x: number, config) => {
-    const result = await graph.invoke({ foo: x }, config);
-    return { bar: result.foo };
-  }
-);
-
-const config = { configurable: { thread_id: uuid7() } };
-console.log(await workflow.invoke(5, config)); // { bar: 10 }
-```
+<LanggraphFunctionalApiWorkflowsGraphJs />
 :::
 
 ## Call other entrypoints
@@ -302,95 +100,20 @@ You can call other entrypoints from within an entrypoint or a task.
 When the child is defined without a checkpointer, invoking it from a parent that has one uses the parent's checkpointer. Invoking the child on its own does not persist unless you pass a checkpointer.
 
 :::python
-```python
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.func import entrypoint
-
-checkpointer = InMemorySaver()
-
-@entrypoint()  # Inherits the checkpointer when invoked from my_workflow
-def some_other_workflow(inputs: dict) -> int:
-    return inputs["value"]
-
-@entrypoint(checkpointer=checkpointer)
-def my_workflow(inputs: dict) -> int:
-    value = some_other_workflow.invoke({"value": 1})
-    return value
-```
+<LanggraphFunctionalApiWorkflowsNestedPy />
 :::
 
 :::js
-```typescript
-import { entrypoint, MemorySaver } from "@langchain/langgraph";
-
-const checkpointer = new MemorySaver();
-
-// Inherits the checkpointer when invoked from myWorkflow
-const someOtherWorkflow = entrypoint(
-  { name: "someOtherWorkflow" },
-  async (inputs: { value: number }) => {
-    return inputs.value;
-  }
-);
-
-const myWorkflow = entrypoint(
-  { checkpointer, name: "myWorkflow" },
-  async (inputs: { value: number }) => {
-    const value = await someOtherWorkflow.invoke({ value: 1 });
-    return value;
-  }
-);
-```
+<LanggraphFunctionalApiWorkflowsNestedJs />
 :::
 
 <Accordion title="Extended example: calling another entrypoint">
   :::python
-  ```python
-  from langchain_core.utils.uuid import uuid7
-  from langgraph.checkpoint.memory import InMemorySaver
-  from langgraph.func import entrypoint
-
-  checkpointer = InMemorySaver()
-
-  @entrypoint()
-  def multiply(inputs: dict) -> int:
-      return inputs["a"] * inputs["b"]
-
-  @entrypoint(checkpointer=checkpointer)
-  def main(inputs: dict) -> dict:
-      result = multiply.invoke({"a": inputs["x"], "b": inputs["y"]})
-      return {"product": result}
-
-  config = {"configurable": {"thread_id": str(uuid7())}}
-  print(main.invoke({"x": 6, "y": 7}, config=config))  # {'product': 42}
-  ```
+  <LanggraphFunctionalApiWorkflowsNestedExtendedPy />
   :::
 
   :::js
-  ```typescript
-  import { v7 as uuid7 } from "uuid";
-  import { entrypoint, MemorySaver } from "@langchain/langgraph";
-
-  const checkpointer = new MemorySaver();
-
-  const multiply = entrypoint(
-    { name: "multiply" },
-    async (inputs: { a: number; b: number }) => {
-      return inputs.a * inputs.b;
-    }
-  );
-
-  const main = entrypoint(
-    { checkpointer, name: "main" },
-    async (inputs: { x: number; y: number }) => {
-      const result = await multiply.invoke({ a: inputs.x, b: inputs.y });
-      return { product: result };
-    }
-  );
-
-  const config = { configurable: { thread_id: uuid7() } };
-  console.log(await main.invoke({ x: 6, y: 7 }, config)); // { product: 42 }
-  ```
+  <LanggraphFunctionalApiWorkflowsNestedExtendedJs />
   :::
 </Accordion>
 

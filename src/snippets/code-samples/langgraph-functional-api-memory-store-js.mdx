@@ -1,0 +1,36 @@
+```ts
+import {
+  MemorySaver,
+  InMemoryStore,
+  entrypoint,
+} from "@langchain/langgraph";
+import type { LangGraphRunnableConfig } from "@langchain/langgraph";
+
+const checkpointer = new MemorySaver();
+const store = new InMemoryStore();
+
+const remember = entrypoint(
+  { checkpointer, store, name: "remember" },
+  async (
+    inputs: { user_id: string; fact?: string },
+    config: LangGraphRunnableConfig
+  ) => {
+    const namespace = [inputs.user_id, "memories"];
+    if (inputs.fact) {
+      await config.store!.put(namespace, "profile", { fact: inputs.fact });
+    }
+    const items = (await config.store!.search(namespace)) ?? [];
+    return items.map((item) => item.value);
+  }
+);
+
+const configA = { configurable: { thread_id: "thread-a" } };
+const configB = { configurable: { thread_id: "thread-b" } };
+
+await remember.invoke(
+  { user_id: "user-1", fact: "Prefers dark mode" },
+  configA
+);
+console.log(await remember.invoke({ user_id: "user-1" }, configB));
+// -> [{ fact: 'Prefers dark mode' }]
+```
