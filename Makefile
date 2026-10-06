@@ -198,7 +198,7 @@ code-snippets:
 #   make test-code-samples FILES="src/code-samples/langchain/return-a-string.py"
 test-code-samples:
 	@if [ -f src/code-samples/package.json ]; then (cd src/code-samples && npm install --silent); fi
-	@FILES="$(FILES)" PYTHONPATH=$(CURDIR) python scripts/test_code_samples.py
+	@FILES="$(FILES)" PYTHONPATH=$(CURDIR) uv run python scripts/test_code_samples.py
 
 # Run code samples with LangSmith tracing, update public share links in
 # src/code-samples/trace-links.json, then regenerate snippet MDX so docs show
@@ -211,7 +211,7 @@ update-code-sample-traces:
 	@CODE_SAMPLE_TRACING=1 \
 	LANGSMITH_PROJECT="$${LANGSMITH_PROJECT:-docs-code-samples}" \
 	FILES="$(FILES)" \
-	PYTHONPATH=$(CURDIR) python scripts/test_code_samples.py
+	PYTHONPATH=$(CURDIR) uv run python scripts/test_code_samples.py
 	@$(MAKE) code-snippets
 
 # Check that all @[ref] cross-references in source files resolve against link_map.py
