@@ -502,6 +502,7 @@ LINK_MAPS: list[LinkMap] = [
             # Functional API
             "task": "langgraph/func/task",
             "@task": "langgraph/func/task",
+            "entrypoint": "langgraph/func/entrypoint",
             "@entrypoint": "langgraph/func/entrypoint",
             "entrypoint.final": "langgraph/func/entrypoint/final",
             # Configuration
@@ -700,10 +701,19 @@ LINK_MAPS: list[LinkMap] = [
             "createReactAgent": "langchain-langgraph/prebuilt/createReactAgent",
             "createSupervisor": "langchain-langgraph-supervisor/createSupervisor",
             "entrypoint": "langchain-langgraph/index/entrypoint",
+<<<<<<< HEAD
             "entrypoint.final": "langchain-langgraph/index/entrypoint/final",
             "get_state_history": "langchain-langgraph/pregel/Pregel/getStateHistory",
             "get_state": "langchain-langgraph/pregel/Pregel/getState",
             "getStateHistory": "langchain-langgraph/pregel/Pregel/getStateHistory",
+=======
+            "@entrypoint": "langchain-langgraph/index/entrypoint",
+            "entrypoint.final": "functions/_langchain_langgraph.index.entrypoint.html#final",
+            "CachePolicy": "langchain-langgraph/index/CachePolicy",
+            "get_state_history": "classes/_langchain_langgraph.pregel.Pregel.html#getStateHistory",
+            "get_state": "classes/_langchain_langgraph.pregel.Pregel.html#getState",
+            "getStateHistory": "classes/_langchain_langgraph.pregel.Pregel.html#getStateHistory",
+>>>>>>> 9c70b236d (fix: add cross-scope entrypoint and CachePolicy link map aliases)
             "HumanInterrupt": "langchain-langgraph/prebuilt/HumanInterrupt",
             "interrupt": "langchain-langgraph/index/interrupt",
             "CompiledStateGraph.invoke": "langchain-langgraph/index/CompiledStateGraph/invoke",
