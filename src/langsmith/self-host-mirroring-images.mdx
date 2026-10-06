@@ -19,7 +19,11 @@ By default, LangSmith will pull images from our public Docker registry. However,
   If you are installing an **earlier** version, keep mirroring those images and setting those keys as before.
 </Note>
 
-For your convenience, we have provided a script that will mirror the images for you. You can find the script in the [LangSmith Helm Chart repository](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/scripts/mirror_langsmith_images.sh)
+The [LangSmith Helm chart repository](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/scripts/mirror_langsmith_images.sh) includes a script that mirrors the images.
+
+<Warning>
+The script does not yet reflect the image consolidation in LangSmith 0.16.21. It still pulls `langsmith-go-backend`, `langsmith-playground`, `hosted-langserve-backend`, `agent-builder-tool-server`, and `agent-builder-trigger-server`, which are not published for 0.16.21 and later, so it exits at the first missing image. It also defaults the operator image to `0.1.37`, while chart 0.17.0 uses `0.1.60`. For 0.16.21 and later, mirror the images manually as described below.
+</Warning>
 
 To use the script, you will need to run the script with the following command specifying your registry and platform:
 
@@ -88,7 +92,25 @@ images:
     repository: "(your-registry)/clickhouse/clickhouse-server"
     pullPolicy: Always
     tag: "25.12"
+  agentBuilderImage: # Fleet
+    repository: "(your-registry)/langchain/agent-builder-deep-agent"
+    pullPolicy: IfNotPresent
+    tag: "0.17.29"
+  pollyAgentImage: # Polly
+    repository: "(your-registry)/langchain/langsmith-polly"
+    pullPolicy: IfNotPresent
+    tag: "0.17.29"
+  smithdbImage: # SmithDB
+    repository: "(your-registry)/langchain/smithdb"
+    pullPolicy: IfNotPresent
+    tag: "0.17.29"
+  presidioAnalyzerImage: # Only when presidioAnalyzer.enabled is true
+    repository: "(your-registry)/presidio-analyzer"
+    pullPolicy: IfNotPresent
+    tag: "2.2.354"
 ```
+
+Mirror the Fleet, Polly, and SmithDB images only if you enable those features. The Presidio analyzer image comes from `mcr.microsoft.com/presidio-analyzer`.
 
 ## Additional images for Sandboxes
 
@@ -120,7 +142,7 @@ On chart 0.16, sandboxes use the JuiceFS CSI driver. If your cluster cannot pull
 
 - `docker.io/juicedata/juicefs-csi-driver:v0.31.4`
 - `registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.9.0`
-- `docker.io/juicedata/mount:ce-v1.3.1` for JuiceFS mount pods
+- `docker.io/juicedata/mount:ce-v1.3.0` for JuiceFS mount pods
 
 Then, configure the corresponding image overrides:
 
@@ -134,10 +156,10 @@ images:
     tag: "v2.9.0"
   juicefsMountImage:
     repository: "(your-registry)/juicedata/mount"
-    tag: "ce-v1.3.1"
+    tag: "ce-v1.3.0"
 ```
 
-The chart does not set `images.juicefsMountImage` by default. When it is unset, the JuiceFS CSI driver uses the `JUICEFS_CE_MOUNT_IMAGE` fallback baked into the CSI driver image. For the chart 0.16 `docker.io/juicedata/juicefs-csi-driver:v0.31.4` default, that fallback is `juicedata/mount:ce-v1.3.1`. In private-registry or air-gapped environments, set both `images.juicefsMountImage.repository` and `images.juicefsMountImage.tag` so mount pods pull from your mirrored registry instead of the public default.
+Chart 0.16 defaults `images.juicefsMountImage` to `docker.io/juicedata/mount:ce-v1.3.0` and passes it to the CSI driver as `JUICEFS_CE_MOUNT_IMAGE`. In private-registry or air-gapped environments, set both `images.juicefsMountImage.repository` and `images.juicefsMountImage.tag` so mount pods pull from your mirrored registry instead of the public default.
 
 ## Additional images for Engine
 
@@ -267,7 +289,7 @@ Once configured, you will need to update your LangSmith installation. You can fo
 Image signatures are available **starting with v15** (LangSmith app version `0.15.x` and later). Earlier releases on the `v14-stable` and older channels are not signed and cannot be verified with the steps below.
 </Note>
 
-Stable-channel LangSmith images on `docker.io/langchain/*` are signed at release time using keyless [Sigstore/Cosign](https://docs.sigstore.dev/cosign/overview/) from the release workflow. The signing identity is bound to a specific GitHub Actions workflow, run, and commit, so the signature attests not just that the image is authentic but that it was produced by the stable-branch release pipeline running in `langchain-ai/langchainplus`. You can verify a signature before pulling or mirroring an image, and again after mirroring to confirm the digest you mirrored matches what we signed.
+Stable-channel LangSmith images on `docker.io/langchain/*` are signed at release time using keyless [Sigstore/Cosign](https://docs.sigstore.dev/cosign/overview/) from the release workflow. The signing identity is bound to a specific GitHub Actions workflow, run, and commit, so the signature attests that the image is authentic and that the stable-branch release pipeline produced it running in `langchain-ai/langchainplus`. You can verify a signature before pulling or mirroring an image, and again after mirroring to confirm the digest you mirrored matches the signed one.
 
 Install `cosign` ([installation guide](https://docs.sigstore.dev/cosign/system_config/installation/)), then verify any tag:
 
@@ -288,7 +310,7 @@ The same command works against any of the released images by substituting the re
 
 ### Pinning to a specific release
 
-For stricter verification — for example, pinning to a single stable branch or a specific commit — drop the regex and supply the exact certificate identity. Each signature's certificate also carries the workflow run ID and commit SHA as Subject Alternative Name extensions, so you can constrain to a specific release:
+For stricter verification, such as pinning to a single stable branch or a specific commit, drop the regex and supply the exact certificate identity. Each signature's certificate also carries the workflow run ID and commit SHA as Subject Alternative Name extensions, so you can constrain to a specific release:
 
 ```bash
 cosign verify \
@@ -330,7 +352,7 @@ docker buildx imagetools inspect --raw docker.io/langchain/langsmith-backend:<ta
   | jq -r '.manifests[] | select(.platform.os == "linux") | .digest + "  " + .platform.architecture'
 ```
 
-Then verify that digest and save the decoded predicate — a standard CycloneDX document listing every package in the image — to a file:
+Then verify that digest and save the decoded predicate to a file. The predicate is a standard CycloneDX document that lists every package in the image:
 
 ```bash
 cosign verify-attestation \
