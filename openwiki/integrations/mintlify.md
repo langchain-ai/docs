@@ -3,9 +3,6 @@ type: integration
 title: Mintlify Integration
 description: Mintlify renders the generated documentation tree and deployment-time OpenAPI references for docs.langchain.com. This page defines repository ownership, route configuration, operational handoffs, and the limits of local validation.
 tags: [mintlify, documentation, navigation, openapi, deployment]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-01T08:23:32.263Z
 sources:
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
@@ -39,7 +36,10 @@ sources:
     resource: repo://src/docs.json
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-01T08:23:32.263Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-06T08:22:08.206Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-06T08:22:08.206Z
 ---
 
 # Mintlify Integration
@@ -87,7 +87,7 @@ make broken-links-with-anchors
 make check-openapi
 ```
 
-The Mint link-check targets build first, run from `build/` with redirect checking, filter deployment-time OpenAPI routes, standalone-snippet sections, and documented checker false positives, and fail only for remaining actionable indented link entries. The reusable link-check workflow uses Node 22 and runs the anchor check plus the Agent Server OpenAPI validation. The filter's unit tests verify that snippet-only sections and the known optional SmithDB anchor exclusions are removed while ordinary broken links and non-exempt anchors remain actionable.
+The Mint link-check targets build first, run from `build/` with redirect checking, filter deployment-time OpenAPI routes, standalone-snippet sections, and documented checker false positives, and fail only for remaining actionable indented link entries. The reusable link-check workflow uses Node 22 and runs the anchor check plus `make check-openapi`. That target currently runs `mint openapi-check langsmith/agent-server-openapi.json`, so it validates the Agent Server input only—not the remote Control Plane input or the committed LangSmith REST input. The filter's unit tests verify that snippet-only sections and the known optional SmithDB anchor exclusions are removed while ordinary broken links and non-exempt anchors remain actionable.
 
 These commands validate repository-generated content; they do **not** prove that deployment-generated reference pages were rendered. `make export` is a separate, deliberately limited operation: Mint export rebuilds the documentation and writes `build/export.zip` by default; it requires a Mint CLI with export support, Node 20 or 22 rather than Node 25 or later, and an Enterprise Mintlify plan. `htmltest` validates the exported archive with internal paths and hashes disabled because the export is not a complete page set, so it cannot establish internal navigation correctness.
 
@@ -133,4 +133,6 @@ The deployed `llms.txt` checker uses a dedicated user agent, a 30-second timeout
 - [Source map](/openwiki/architecture/source-map.md) — source-to-output route mapping.
 - [GitHub Actions](/openwiki/integrations/github-actions.md) — CI, preview, publishing, and refresh automation.
 - [Reference documentation](/openwiki/integrations/reference-docs.md) — external SDK references and the OpenAPI publication boundary.
+- [Adding and maintaining documentation pages](/openwiki/operations/adding-pages.md) — source ownership, navigation, redirects, and page-change validation.
+- [LangSmith Platform OpenAPI Refresh](/openwiki/workflows/langsmith-openapi-refresh.md) — curation and review lifecycle for the committed LangSmith REST input.
 - [Test overview](/openwiki/testing/test-overview.md) — validation layers and test entry points.
