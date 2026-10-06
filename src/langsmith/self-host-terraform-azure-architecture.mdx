@@ -10,7 +10,7 @@ Use this page as a reference while planning a rollout or troubleshooting an exis
 
 - Platform layers and deployment tiers (light versus production).
 - Networking, Workload Identity, and secret flow.
-- Add-ons: LangSmith Deployment, Fleet, Insights, and Polly.
+- Add-ons: LangSmith Deployment, Fleet, Insights, Polly, and the LLM Gateway.
 - Ingress controllers, resource sizing, and optional modules.
 
 If you are ready to install, start with the [deployment walkthrough](/langsmith/self-host-terraform-azure-deploy).
@@ -28,6 +28,7 @@ LangSmith on Azure deploys in stages. Each stage adds a capability layer on top 
 | LangSmith Deployment add-on | LangSmith Deployment | host-backend, listener, operator + per-deployment pods |
 | Fleet add-on | Fleet | fleet-tool-server, fleet-trigger-server, in-cluster Fleet Redis |
 | Insights + Polly add-on | Insights + Polly | Insights analytics (ClickHouse-backed), Polly eval agent (static `standalone-polly` pods) |
+| LLM Gateway add-on | LLM Gateway (beta) | agent-gateway, plus presidio-analyzer with PII redaction |
 
 Terraform provisions the infrastructure layer with `make apply`. The application and add-on layers deploy through Helm with `make init-values` and `make deploy`.
 
@@ -125,7 +126,7 @@ In-cluster ClickHouse is dev/POC only (single pod, no replication, no backups). 
 </Warning>
 
 <Note>
-[SmithDB](https://www.langchain.com/blog/introducing-smithdb?utm_source=docs) is LangSmith's purpose-built observability backend, available for Self-hosted starting with self-hosted version 0.16.0 (see [self-hosted support](/langsmith/smithdb-sdk-migration#about-self-hosted)). These Terraform modules provision ClickHouse by default, so the guidance in the previous sections applies to most deployments. Set `enable_smithdb = true` to add the SmithDB infrastructure: a dedicated PostgreSQL 18 metastore, a storage account and Blob container, Workload Identity, and Premium SSD v2 cache volumes. On Azure, SmithDB requires a stable release on the LangSmith Helm chart 0.17 line, which the `v0.17.*` module tags deploy. The `v0.16.*` tags cannot deploy it, because the 0.16 chart has no Azure SmithDB values.
+[SmithDB](https://www.langchain.com/blog/introducing-smithdb?utm_source=docs) is LangSmith's purpose-built observability backend, available for Self-hosted starting with self-hosted version 0.16.0 (see [self-hosted support](/langsmith/smithdb-sdk-migration#about-self-hosted)). These Terraform modules provision ClickHouse by default, so the guidance in the previous sections applies to most deployments. Set `enable_smithdb = true` to add the SmithDB infrastructure: a dedicated PostgreSQL 18 metastore, a storage account and Blob container, Workload Identity, and Premium SSD v2 cache volumes. On Azure, SmithDB requires a stable release on the LangSmith Helm chart 0.17 line, which the `v0.17.*` module tags deploy. On a `v0.16.*` tag, SmithDB needs v0.16.56 or later and `langsmith_helm_chart_version = "~0.17.0"`.
 </Note>
 
 ### One-time jobs
@@ -158,9 +159,9 @@ Fleet stores its data in a dedicated `langsmith_fleet` database on the Azure Pos
 
 ## Insights and Polly add-on
 
-**Insights:** Runs as static `standalone-insights` api-server and queue pods. Reads `insights_encryption_key` from `langsmith-config-secret`. Never rotate this key: it permanently breaks existing Insights data.
+**Insights**: Runs as static `standalone-insights` api-server and queue pods. Reads `insights_encryption_key` from `langsmith-config-secret`. Never rotate this key: it permanently breaks existing Insights data.
 
-**Polly:** Runs as static `standalone-polly` api-server and queue pods, and needs `enable_deployments = true`. Reads `polly_encryption_key` from `langsmith-config-secret`. Same rotation warning as Insights.
+**Polly**: Runs as static `standalone-polly` api-server and queue pods, and needs `enable_deployments = true`. Reads `polly_encryption_key` from `langsmith-config-secret`. Same rotation warning as Insights.
 
 ## Azure managed services
 

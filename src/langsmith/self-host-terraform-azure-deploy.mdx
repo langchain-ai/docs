@@ -14,7 +14,7 @@ The install runs in two stages:
 After the base install, enable optional add-ons (LangSmith Deployment, Fleet, Insights, Polly, SmithDB, and the LLM Gateway) and SSO by setting flags and redeploying.
 
 <Note>
-These pages follow the module's `v0.17.*` release tags, which deploy the LangSmith Helm chart 0.17 line. In a module tag, the first two numbers name the chart line and the last number is the module revision, so `v0.17.4` still deploys the newest 0.17 chart patch. To stay on chart 0.16, check out the newest `v0.16.*` tag instead. The `v0.16.*` tags have no LLM Gateway or SSO flags, cannot deploy SmithDB on Azure, and federate 8 Workload Identity ServiceAccounts instead of 10. A deployment that has run chart 0.17 cannot return to 0.16.
+These pages follow the module's `v0.17.*` release tags, which deploy the LangSmith Helm chart 0.17 line. In a module tag, the first two numbers name the chart line and the last number is the module revision, so `v0.17.4` still deploys the newest 0.17 chart patch. The `v0.16.*` tags deploy chart 0.16. They have no LLM Gateway or SSO flags and federate 8 Workload Identity ServiceAccounts instead of 10. From v0.16.56, they deploy SmithDB only with `langsmith_helm_chart_version` set to `~0.17.0`. A deployment that has run chart 0.17 cannot return to 0.16.
 </Note>
 
 ```mermaid actions={false}
@@ -250,8 +250,8 @@ make setup-env
 
 `setup-env.sh` writes `infra/secrets.auto.tfvars` (gitignored, `chmod 600`). Terraform picks this file up automatically; no shell exports needed.
 
-- **First run:** prompts for the PostgreSQL admin password (press Enter to generate one), the LangSmith license key, and the admin email.
-- **Subsequent runs:** each prompt offers the previous value as its default. To skip a prompt, set `LANGSMITH_PG_PASSWORD`, `LANGSMITH_LICENSE_KEY`, or `LANGSMITH_ADMIN_EMAIL` in the environment.
+- **First run**: Prompts for the PostgreSQL admin password (press Enter to generate one), the LangSmith license key, and the admin email.
+- **Subsequent runs**: Each prompt offers the previous value as its default. To skip a prompt, set `LANGSMITH_PG_PASSWORD`, `LANGSMITH_LICENSE_KEY`, or `LANGSMITH_ADMIN_EMAIL` in the environment.
 
 The admin password and the generated application secrets are not in this file. `make seed-secrets` writes them to Key Vault after `make apply`.
 
@@ -377,7 +377,7 @@ make deploy   # ~10 min
 12. Waits for core deployments to roll out.
 13. Annotates the `langsmith-ksa` ServiceAccount with the Workload Identity client ID.
 14. With `enable_llm_gateway = true` and `ingress_controller` set to `nginx` or `agic`, applies the `<release>-llm-gateway` Ingress for `/gateway/` with a 900-second timeout. With the gateway off, it removes a leftover one.
-14. Prints the access URL and login credentials location.
+15. Prints the access URL and login credentials location.
 
 <Info>
 Why `--timeout 20m`? The `langsmith-backend-auth-bootstrap` Job runs DB migrations and org initialization as a post-install hook. This takes up to 5 minutes on first install. Without a long timeout, Helm may report failure even though the install eventually succeeds.
@@ -456,7 +456,7 @@ All files in `helm/values/` are gitignored (generated or contain live secrets). 
 
 ```bash
 make status         # 9-section health check
-make status-quick   # skip Key Vault + K8s secret queries (faster)
+make status-quick   # skip the Key Vault, kubeconfig, Kubernetes, and Helm checks (faster)
 make deploy         # re-deploy after any Helm value changes
 make init-values    # re-generate values after Terraform changes
 make kubeconfig     # refresh cluster credentials
@@ -482,7 +482,11 @@ To move a deployment from chart 0.16 to 0.17:
 1. Run `make init-values` to regenerate the values files in the chart 0.17 shape.
 1. Run `make deploy`.
 
-On Azure, the upgrade otherwise only moves the chart pin. An installation still on chart 0.15 must first follow `MIGRATION-0.15-to-0.16.md`. For the full list of chart changes, see [`MIGRATION-0.16-to-0.17.md`](https://github.com/langchain-ai/terraform/blob/main/MIGRATION-0.16-to-0.17.md).
+<Warning>
+v0.17.0 removes variables that v0.16.106 and v0.16.107 added: `ingress_load_balancer`, `ingress_load_balancer_subnet_id`, `ingress_load_balancer_ip`, `ingress_load_balancer_manage_subnet_assignment`, `envoy_gateway_image_registry`, and `envoy_gateway_image_pull_secret_name`. Terraform only warns about an undeclared variable in `terraform.tfvars`, so a deployment that sets one loses that setting without an error. Check `terraform.tfvars` for these variables before you upgrade.
+</Warning>
+
+Otherwise, the upgrade on Azure only moves the chart pin. An installation still on chart 0.15 must first follow [`MIGRATION-0.15-to-0.16.md`](https://github.com/langchain-ai/terraform/blob/main/MIGRATION-0.15-to-0.16.md). For the full list of chart changes, see [`MIGRATION-0.16-to-0.17.md`](https://github.com/langchain-ai/terraform/blob/main/MIGRATION-0.16-to-0.17.md).
 
 ## Enable add-ons
 
@@ -615,8 +619,8 @@ make deploy
 
 Two features, independent of each other; enable either one without the other. Polly runs on LangSmith Deployment, so set `enable_deployments = true` with it. The deploy scripts do not check this.
 
-- **Insights:** AI-powered trace analytics. Surfaces patterns and anomalies in LangSmith traces. Runs as static `standalone-insights` api-server and queue pods. The overlay sets top-level `insights.enabled: true`.
-- **Polly:** AI-powered evaluation and monitoring agent. Runs as static `standalone-polly` api-server and queue pods. The overlay sets top-level `polly.enabled: true`.
+- **Insights**: AI-powered trace analytics. Surfaces patterns and anomalies in LangSmith traces. Runs as static `standalone-insights` api-server and queue pods. The overlay sets top-level `insights.enabled: true`.
+- **Polly**: AI-powered evaluation and monitoring agent. Runs as static `standalone-polly` api-server and queue pods. The overlay sets top-level `polly.enabled: true`.
 
 No `terraform apply` needed; run `make init-values && make deploy`.
 
@@ -672,14 +676,15 @@ kubectl rollout restart deployment langsmith-frontend -n langsmith
 ### SmithDB
 
 <Warning>
-SmithDB on Azure requires a stable release on the LangSmith Helm chart 0.17 line, which the `v0.17.*` module tags deploy by default. A 0.17 release candidate is not a supported configuration, and a `v0.16.*` tag cannot deploy SmithDB on Azure.
+SmithDB on Azure requires a stable release on the LangSmith Helm chart 0.17 line, which the `v0.17.*` module tags deploy by default. A 0.17 release candidate is not a supported configuration. On a `v0.16.*` tag, SmithDB needs v0.16.56 or later and `langsmith_helm_chart_version = "~0.17.0"`.
 </Warning>
 
-`enable_smithdb = true` provisions the Azure infrastructure SmithDB needs: a dedicated PostgreSQL 18 metastore, a Blob container, a Workload Identity, and Premium SSD v2 cache volumes:
+`enable_smithdb = true` provisions the Azure infrastructure SmithDB needs: a dedicated PostgreSQL 18 metastore, a Blob container, a Workload Identity, and Premium SSD v2 cache volumes. It also requires a non-empty `availability_zones`, because Premium SSD v2 attaches only to zonal VMs in most regions. AKS applies zones only at cluster creation.
 
 ```hcl
 # infra/terraform.tfvars
-enable_smithdb = true
+enable_smithdb     = true
+availability_zones = ["1", "2", "3"]
 ```
 
 ```bash
