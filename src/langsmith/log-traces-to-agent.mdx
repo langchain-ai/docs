@@ -122,6 +122,53 @@ const handleOrder = traceable(
   </Step>
 </Steps>
 
+## Use the agent's project with other endpoints
+
+An agent environment is backed by a [tracing project](/langsmith/observability-concepts#tracing-projects). Endpoints that read or manage that data identify the project by its ID, and with agent addressing you never choose or see a project name, so you cannot look the project up by name. Resolve the address to its project ID instead, then pass the ID wherever an endpoint takes a project (session) ID. For example:
+
+- Querying runs, threads, and traces with `project_ids`
+- Reading or updating the project, and its views, insights, and alerts
+
+The resolve endpoint takes one address and returns the ID of its project:
+
+<CodeGroup>
+
+```python Python
+import asyncio
+
+import langsmith as ls
+
+client = ls.Client()
+agent = ls.Agent("checkout", "production")
+
+
+async def main() -> None:
+    project = await client.sessions.resolve(address=agent.to_agent_address())
+
+    async for run in client.runs.query_v2(project_ids=[project.session_id]):
+        print(run.id)
+
+
+asyncio.run(main())
+```
+
+```bash cURL
+PROJECT_ID=$(curl -s -X POST "https://api.smith.langchain.com/api/v1/sessions/resolve" \
+  -H "x-api-key: $LANGSMITH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"address": {"kind": "AGENT", "id": "checkout", "environment": "production"}}' \
+  | jq -r '.session_id')
+
+curl -X POST "https://api.smith.langchain.com/api/v2/runs/query" \
+  -H "x-api-key: $LANGSMITH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n --arg pid "$PROJECT_ID" '{"project_ids": [$pid]}')"
+```
+
+</CodeGroup>
+
+LangSmith returns a `404` if the agent environment does not exist or if you cannot read its project. The agent environment exists once you have sent a trace to it.
+
 ## Addressing modes are mutually exclusive
 
 Agent addressing and project addressing do not combine. What happens depends on where each is set:
