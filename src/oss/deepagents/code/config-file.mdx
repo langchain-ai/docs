@@ -46,7 +46,7 @@ The summarization model resolves in this order:
 2. `[models].summarization_default`.
 3. The main agent model.
 
-In an interactive session, run `/summarization-model` to open the model picker, `/summarization-model <provider:model>` to switch directly, or `/summarization-model clear` to follow the main agent model again. Changing the summarization model does not change the main agent model.
+In an interactive session, run `/offload model` to open the model picker, `/offload model <provider:model>` to switch directly, or `/offload model clear` to follow the main agent model again. Changing the summarization model does not change the main agent model.
 
 ## Default and recent agent
 

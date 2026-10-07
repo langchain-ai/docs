@@ -8,6 +8,10 @@ By default runs all code samples. Pass FILES to test specific files only.
 
 Set ``CODE_SAMPLE_TRACING=1`` to enable LangSmith tracing, share public links for
 agent runs from single-snippet samples, and update ``src/code-samples/trace-links.json``.
+
+Set ``CODE_SAMPLE_JOBS`` to run samples concurrently (default: 4). Trace-link
+collection stays serialized under a lock so parallel samples do not clobber the
+shared manifest or claim each other's runs.
 """
 
 from __future__ import annotations
@@ -15,7 +19,10 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -31,6 +38,22 @@ TIMEOUT_SECONDS = int(os.environ.get("CODE_SAMPLE_TIMEOUT_SECONDS", "1200"))
 # is still rate-limited after retries are exhausted.
 RATE_LIMIT_MAX_ATTEMPTS = 3
 RATE_LIMIT_RETRY_DELAY_SECONDS = 15
+
+DEFAULT_JOBS = 4
+
+
+def worker_count() -> int:
+    """Return how many samples to run concurrently."""
+    raw = os.environ.get("CODE_SAMPLE_JOBS", "").strip()
+    if raw:
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            print(
+                f"Warning: invalid CODE_SAMPLE_JOBS={raw!r}; using {DEFAULT_JOBS}",
+                file=sys.stderr,
+            )
+    return DEFAULT_JOBS
 
 
 def is_rate_limited(stdout: str, stderr: str) -> bool:
@@ -287,6 +310,61 @@ def run_sample(
     return success, stdout, stderr
 
 
+@dataclass
+class SampleOutcome:
+    """Result of running one sample, including retry bookkeeping."""
+
+    rel_path: Path
+    file_path: Path
+    success: bool
+    stdout: str
+    stderr: str
+    started_at: datetime
+    finished_at: datetime
+    rate_limited: bool
+
+
+def run_sample_with_retries(
+    file_path: Path,
+    lang: str,
+    repo_root: Path,
+    code_samples_dir: Path,
+    print_lock: threading.Lock,
+) -> SampleOutcome:
+    """Run one sample with rate-limit retries and return a structured outcome."""
+    rel_path = file_path.relative_to(repo_root)
+    success = False
+    stdout = ""
+    stderr = ""
+    started_at = datetime.now(timezone.utc)
+
+    for attempt in range(1, RATE_LIMIT_MAX_ATTEMPTS + 1):
+        started_at = datetime.now(timezone.utc)
+        success, stdout, stderr = run_sample(
+            file_path, lang, repo_root, code_samples_dir
+        )
+        if success or not is_rate_limited(stdout, stderr):
+            break
+        if attempt < RATE_LIMIT_MAX_ATTEMPTS:
+            with print_lock:
+                print(
+                    f"  ... {rel_path} hit a 429, retrying "
+                    f"({attempt}/{RATE_LIMIT_MAX_ATTEMPTS})"
+                )
+            time.sleep(RATE_LIMIT_RETRY_DELAY_SECONDS)
+
+    return SampleOutcome(
+        rel_path=rel_path,
+        file_path=file_path,
+        success=success,
+        stdout=stdout,
+        stderr=stderr,
+        started_at=started_at,
+        finished_at=datetime.now(timezone.utc),
+        rate_limited=(not success) and is_rate_limited(stdout, stderr),
+    )
+
+
 def main() -> int:
     repo_root = Path(__file__).resolve().parent.parent
     code_samples_dir = repo_root / "src" / "code-samples"
@@ -309,68 +387,88 @@ def main() -> int:
 
     collect_traces = tracing_enabled()
     project_name = os.environ.get("LANGSMITH_PROJECT", DEFAULT_PROJECT)
+    jobs = min(worker_count(), total)
     if collect_traces:
         print(
             f"Running {total} code sample(s) with LangSmith tracing "
-            f"(project={project_name})...\n"
+            f"(project={project_name}, jobs={jobs})...\n"
         )
     else:
-        print(f"Running {total} code sample(s)...\n")
+        print(f"Running {total} code sample(s) (jobs={jobs})...\n")
 
     passed = 0
-    failed = []
-    rate_limited = []
+    failed: list[Path] = []
+    rate_limited: list[Path] = []
     traces_updated = 0
-    trace_failures = []
+    trace_failures: list[Path] = []
+    print_lock = threading.Lock()
+    trace_lock = threading.Lock()
+    claimed_run_ids: set[str] = set()
 
-    for file_path, lang in files_to_test:
-        rel_path = file_path.relative_to(repo_root)
-        success = False
-        stdout = ""
-        stderr = ""
-        started_at = datetime.now(timezone.utc)
-
-        for attempt in range(1, RATE_LIMIT_MAX_ATTEMPTS + 1):
-            started_at = datetime.now(timezone.utc)
-            success, stdout, stderr = run_sample(
-                file_path, lang, repo_root, code_samples_dir
-            )
-            if success or not is_rate_limited(stdout, stderr):
-                break
-            if attempt < RATE_LIMIT_MAX_ATTEMPTS:
-                print(
-                    f"  ... {rel_path} hit a 429, retrying "
-                    f"({attempt}/{RATE_LIMIT_MAX_ATTEMPTS})"
-                )
-                time.sleep(RATE_LIMIT_RETRY_DELAY_SECONDS)
-
-        if success:
+    def handle_outcome(outcome: SampleOutcome) -> None:
+        nonlocal passed, traces_updated
+        if outcome.success:
             passed += 1
-            print(f"  ✓ {rel_path}")
+            with print_lock:
+                print(f"  ✓ {outcome.rel_path}")
             if collect_traces:
                 try:
-                    entry = collect_trace_for_sample(
-                        repo_root=repo_root,
-                        source_path=file_path,
-                        start_time=started_at,
-                        project_name=project_name,
-                    )
-                    if entry is not None:
-                        traces_updated += 1
+                    with trace_lock:
+                        entry = collect_trace_for_sample(
+                            repo_root=repo_root,
+                            source_path=outcome.file_path,
+                            start_time=outcome.started_at,
+                            end_time=outcome.finished_at,
+                            exclude_ids=claimed_run_ids,
+                            project_name=project_name,
+                        )
+                        if entry is not None:
+                            traces_updated += 1
+                            run_id = str(entry.get("run_id") or "")
+                            if run_id:
+                                claimed_run_ids.add(run_id)
                 except Exception as exc:  # noqa: BLE001 - report and fail the run
-                    trace_failures.append(rel_path)
-                    print(
-                        f"  ✗ {rel_path}: trace collection failed: {exc}",
-                        file=sys.stderr,
-                    )
-        elif is_rate_limited(stdout, stderr):
+                    trace_failures.append(outcome.rel_path)
+                    with print_lock:
+                        print(
+                            f"  ✗ {outcome.rel_path}: trace collection failed: {exc}",
+                            file=sys.stderr,
+                        )
+        elif outcome.rate_limited:
             # The live LangSmith API rate-limited every attempt. This reflects CI
             # load, not a defect in the sample, so don't fail the build over it.
-            rate_limited.append(rel_path)
-            print_rate_limited(rel_path, stdout, stderr)
+            rate_limited.append(outcome.rel_path)
+            with print_lock:
+                print_rate_limited(
+                    outcome.rel_path, outcome.stdout, outcome.stderr
+                )
         else:
-            failed.append(rel_path)
-            print_failure(rel_path, stdout, stderr)
+            failed.append(outcome.rel_path)
+            with print_lock:
+                print_failure(outcome.rel_path, outcome.stdout, outcome.stderr)
+
+    if jobs == 1:
+        for file_path, lang in files_to_test:
+            handle_outcome(
+                run_sample_with_retries(
+                    file_path, lang, repo_root, code_samples_dir, print_lock
+                )
+            )
+    else:
+        with ThreadPoolExecutor(max_workers=jobs) as executor:
+            futures = [
+                executor.submit(
+                    run_sample_with_retries,
+                    file_path,
+                    lang,
+                    repo_root,
+                    code_samples_dir,
+                    print_lock,
+                )
+                for file_path, lang in files_to_test
+            ]
+            for future in as_completed(futures):
+                handle_outcome(future.result())
 
     # Summary
     print("-" * 40)
