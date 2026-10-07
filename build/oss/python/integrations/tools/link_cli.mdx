@@ -1,0 +1,256 @@
+---
+title: Link CLI with Managed Deep Agents
+sidebarTitle: Link CLI
+description: Integrate with Link CLI tools using Managed Deep Agents in Python.
+---
+
+[Link](https://link.com) is Stripe's consumer wallet. This integration runs
+[Link CLI](https://docs.stripe.com/agentic-commerce/link-cli) in a
+[Managed Deep Agents](/langsmith/python/managed-deep-agents-quickstart) (MDA) sandbox. Your agent
+can sign users in, list their saved payment methods, and request payment approval.
+Each user's saved session carries across conversations.
+
+Link CLI handles sign-in and session renewal. The included helper creates a user-owned
+[connection](/langsmith/python/managed-deep-agents-connections) and saves the session there.
+You do not need to register a Stripe OAuth app.
+
+<Note>
+  Approving a Link request does not place an order. Your application supplies merchant
+  checkout and order confirmation. This Python example starts with test payments enabled.
+</Note>
+
+## Overview
+
+The example exports four tools as `LINK_CLI_TOOLS`:
+
+| Tool | Purpose |
+| --- | --- |
+| `link_login` | Check the user's session or return a Link sign-in URL. |
+| `link_finish_login` | Complete sign-in and save the user's session. |
+| `link_cli` | Run supported CLI commands with the user's saved session. |
+| `link_logout` | Sign out and clear the saved session. |
+
+## Setup
+
+<Warning>
+  This is an experimental example. The session helper uses internal MDA APIs, so keep
+  `managed-deepagents==0.8.1` pinned. The sandbox installs `@stripe/link-cli@0.22.0`.
+</Warning>
+
+Before you start, you need:
+
+- A LangSmith Cloud workspace in the US region with Managed Deep Agents access (public beta). Complete the
+  [MDA quickstart](/langsmith/python/managed-deep-agents-quickstart) if this is your first deployment.
+- Python 3.11 through 3.14 and [uv](https://docs.astral.sh/uv/).
+- An OpenAI API key for the example's model.
+- A Link account with a saved payment method. Agent payments support US and Canadian consumers.
+
+### Install the example
+
+Download and extract the [Link CLI example ZIP](https://github.com/langchain-ai/docs/raw/ad41a94276c22fddb49bd4b554ad93c6c1b36c61/src/oss/python/integrations/tools/assets/link-cli-example.zip). It contains
+the agent, tools, sandbox setup, skill, instructions, and dependency files.
+From the folder containing the extracted `link-cli-example` directory, run:
+
+```bash
+cd link-cli-example
+uv sync --frozen
+cp .env.example .env
+```
+
+Set `OPENAI_API_KEY`, `LANGSMITH_API_KEY`, and `LANGSMITH_WORKSPACE_ID` in `.env`.
+Leave `LINK_TEST_MODE=1` to test approvals without issuing a payment credential or charging a payment method.
+
+### Configuration
+
+Set these optional variables in `.env` before deployment. After changing a value,
+run `uv run mda deploy` again to apply it to the hosted agent.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `LINK_CLIENT_NAME` | `Managed Deep Agent` | Name shown during Link sign-in. |
+| `LINK_SESSION_CONNECTION` | `link-session` | Connection that stores each user's saved session. |
+| `LINK_SESSION_BACKEND` | `connection` | Use `store` for local `mda dev` to save sessions in the LangGraph Store. |
+| `LINK_TEST_MODE` | `1` | Require `--test`. Before setting `0` for live requests, see [Before you go live](#before-you-go-live). |
+
+### Deploy
+
+Deploy from the example folder:
+
+```bash
+uv run mda deploy
+```
+
+When deployment finishes, the CLI prints the deployment dashboard URL.
+Open it and confirm the deployment is ready.
+
+The sandbox setup installs the CLI when MDA builds its snapshot. The default MDA
+image used to validate this example included Node.js and npm. Custom images must include both.
+Use the [`docker_image` setting](/langsmith/python/managed-deep-agents-sandboxes#choose-a-bake-base)
+to select an image with both installed.
+
+The sandbox permits `api.link.com`, `login.link.com`, and `registry.npmjs.org` over HTTPS.
+npm access is needed for installation. This example uses one allow list for setup and
+runtime, so registry access remains allowed after installation.
+
+If your organization restricts sandbox network access, this allow list cannot override it.
+See [organization-level restricted egress](/langsmith/sandbox-auth-proxy#organization-level-restricted-egress)
+and contact LangSmith support if the required hosts are blocked.
+
+## Try it in Studio
+
+Open the deployment in [LangSmith Studio](/langsmith/studio), then select Chat view.
+To verify sign-in and session persistence:
+
+1. Send **Sign me in to Link**. The agent returns a sign-in URL. Open it and complete
+   sign-in on the Link website or in its mobile app.
+2. Reply **Done**. The agent calls `link_finish_login` and confirms you are signed in.
+3. Send **What payment methods do I have?** The agent lists your saved payment methods.
+4. Start a new conversation and send **Am I signed in to Link?** The agent confirms
+   you are signed in without sending a new link.
+
+### Request a test approval
+
+In Studio, try this prompt with the fictional demo merchant:
+
+```text Studio prompt
+Request a $1.00 test payment approval for a demo coffee purchase at Demo Roasters (https://demo-roasters.example.com). Use test mode only and show me the approval link. Do not place an order.
+```
+
+After you agree to an amount and merchant, the agent runs this command through
+`link_cli`, using the purchase details for the placeholders. Amounts are in cents,
+and `--context` requires at least 100 characters:
+
+```text
+spend-request create --amount <cents> --context "<purchase description and reason>" --merchant-name "<merchant>" --merchant-url <https-url> --test
+```
+
+The agent shows you the returned `approval_url` and amount. After you approve on the
+Link website or in its mobile app, the agent checks the status through `link_cli`:
+
+```text
+spend-request retrieve <id>
+```
+
+Only a returned status of `approved` confirms approval. In test mode, the flow ends here:
+Link issues no payment credential and the example submits no merchant order.
+
+## Add Link to your own agent
+
+To add Link to an existing MDA project, copy these files from the example:
+
+| File | Purpose |
+| --- | --- |
+| `tools/link_cli.py` | Tools and per-user session storage. |
+| `sandbox/__init__.py` | Sandbox configuration and network allow list. |
+| `sandbox/setup.sh` | CLI installation in the sandbox snapshot. |
+| `skills/link-cli/SKILL.md` | CLI commands and user-approval instructions. |
+| `instructions.md` | Rules to merge into your agent's existing instructions. |
+
+Merge the example's `pyproject.toml` dependencies into your project, keeping the MDA
+version pinned. Register the tools in your agent definition:
+
+```python agent.py
+from langchain_openai import ChatOpenAI
+from managed_deepagents import define_deep_agent
+
+from tools.link_cli import LINK_CLI_TOOLS
+
+# The Link tools run `link-cli` in the sandbox with the user's own saved login.
+# Run one tool call per model turn to avoid overlapping Link session refreshes.
+agent = define_deep_agent(
+    name="link-cli-sandbox",
+    model=ChatOpenAI(
+        model="gpt-5.6-sol",
+        use_responses_api=True,
+        model_kwargs={"parallel_tool_calls": False},
+    ),
+    tools=LINK_CLI_TOOLS,
+)
+```
+
+To keep your existing tools, list them alongside the Link tools:
+
+```python
+# my_tool is a tool already defined in your project.
+tools=[*LINK_CLI_TOOLS, my_tool]
+```
+
+Route Link commands through `link_cli` so they use the caller's saved session.
+
+<Accordion title="Sandbox files">
+The declaration configures the sandbox and network access:
+
+```python sandbox/__init__.py
+from managed_deepagents import define_sandbox
+
+sandbox = define_sandbox(
+    idle_ttl_seconds=900,
+    default_timeout=300,
+    proxy_config={
+        # Allow Link commands and sign-in, plus npm for CLI installation.
+        # This allow list also applies at runtime.
+        "access_control": {
+            "allow_list": ["api.link.com:443", "login.link.com:443", "registry.npmjs.org:443"]
+        },
+    },
+)
+```
+
+The setup script installs the pinned CLI:
+
+```bash sandbox/setup.sh
+#!/usr/bin/env bash
+set -euo pipefail
+npm install -g @stripe/link-cli@0.22.0
+link-cli --version
+mkdir -p /workspace
+```
+</Accordion>
+
+### Sessions and identity
+
+Link commands can refresh and replace the saved session. The example disables parallel
+tool calls so the model requests one tool at a time. If you change model providers,
+use that provider's equivalent setting.
+
+The helper's per-user lock serializes Link commands within one server process,
+including calls from different conversations. Concurrent session refreshes across
+server processes can still require a new sign-in.
+
+<Warning>
+  Studio supplies the signed-in user's identity. For a custom interface, configure
+  [MDA identity](/langsmith/python/managed-deep-agents-identity) for each person.
+  The helper refuses requests that have no user identity. Reusing one authenticated
+  identity for multiple people gives them access to the same saved session.
+</Warning>
+
+## Before you go live
+
+<Warning>
+  This example runs the CLI's built-in sign-in client in a hosted sandbox.
+  Confirm this use with Stripe before relying on it for a public product.
+
+  Before setting `LINK_TEST_MODE=0`, add a checkout tool that verifies the order and
+  fresh Link approval. Depending on the merchant, it can use card details or a
+  supported payment token. Retrieve and use the credential privately within that tool
+  call, delete temporary credential files, and return only the order result.
+  The agent's file and shell tools can read sandbox files. A file alone does not keep
+  payment credentials private from those tools.
+</Warning>
+
+## See also
+
+- [Link CLI documentation](https://docs.stripe.com/agentic-commerce/link-cli)
+- [MDA sandboxes](/langsmith/python/managed-deep-agents-sandboxes)
+- [MDA connections](/langsmith/python/managed-deep-agents-connections)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/tools/link_cli.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
