@@ -128,3 +128,30 @@ await traceableCallOpenAI(messages);
 <Tip>
 **LangSmith Deployments**: To add metadata dynamically per invocation in Agent Server deployments, we recommend using `tracing_context` in a [factory function](/langsmith/graph-rebuild). See [Customize tracing in deployed agents](/langsmith/conditional-tracing#customize-tracing-in-deployed-agents) for examples.
 </Tip>
+
+## Record the code version on traces
+
+The Python and JavaScript SDKs can add a `revision_id` key to the metadata of every run. Use it to tie a trace to the commit that produced it.
+
+The SDK sets `revision_id` from the first of these that has a value, and omits it when none does:
+
+1. The `LANGSMITH_REVISION_ID` environment variable.
+2. The `LANGCHAIN_REVISION_ID` environment variable, the legacy name. Older SDK versions read only this name.
+3. Python only: the output of `git describe --tags --always --dirty`, run in the working directory of the process.
+
+A `revision_id` set explicitly in run metadata takes precedence over all three.
+
+Production images often exclude the `.git` directory, so the `git describe` fallback finds nothing. Set the environment variable at build time instead. For example, in a Dockerfile:
+
+```dockerfile
+ARG GIT_SHA
+ENV LANGSMITH_REVISION_ID=$GIT_SHA
+```
+
+Then pass the commit when building the image:
+
+```bash
+docker build --build-arg GIT_SHA=$(git rev-parse HEAD) .
+```
+
+To find the traces from a given commit, filter on the `revision_id` metadata key. See [Filter traces](/langsmith/filter-traces).
