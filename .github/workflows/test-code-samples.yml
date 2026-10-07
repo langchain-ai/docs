@@ -130,6 +130,9 @@ jobs:
 
       - name: Test code samples
         id: test
+        # Keep going so a small number of sample failures can still refresh
+        # trace links; the final step fails the job when samples failed.
+        continue-on-error: true
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
@@ -157,6 +160,8 @@ jobs:
             FILES="$MODIFIED_FILES"
             FILES=$(echo "$FILES" | tr -d '\n' | xargs)
             if [[ -z "$FILES" ]]; then
+              echo "sample_failures=0" >> "$GITHUB_OUTPUT"
+              echo "traces_updated=0" >> "$GITHUB_OUTPUT"
               echo "No code samples to test"
               exit 0
             fi
@@ -167,7 +172,9 @@ jobs:
         id: regen_snippets
         if: >-
           (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
-          steps.test.conclusion == 'success'
+          steps.test.outcome != 'cancelled' &&
+          fromJSON(steps.test.outputs.sample_failures || '999') < 20 &&
+          fromJSON(steps.test.outputs.traces_updated || '0') > 0
         run: make code-snippets
 
       - name: Open or update code sample traces PR
@@ -265,3 +272,10 @@ jobs:
             --head "$BRANCH_NAME"
 
           echo "Opened a new code sample traces PR" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail job when code samples failed
+        if: always() && steps.test.outcome == 'failure'
+        run: |
+          echo "Code sample failures: ${{ steps.test.outputs.sample_failures }}"
+          echo "Trace links updated: ${{ steps.test.outputs.traces_updated }}"
+          exit 1
