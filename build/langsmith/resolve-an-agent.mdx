@@ -1,0 +1,86 @@
+---
+title: Resolve an agent to its project ID
+sidebarTitle: Resolve an agent
+description: How to resolve an agent, experiment, or evaluator to its tracing project ID, so you can query its traces and use endpoints that take a project ID.
+tag: "Beta"
+---
+
+Agents, experiments, and evaluators each keep their traces in a [tracing project](/langsmith/observability-concepts#tracing-projects). Endpoints that read or manage that data identify the project by its ID. An agent has no project name to look up, so resolve the agent to its project ID first, then pass the ID wherever an endpoint takes a project (session) ID. For example:
+
+- Querying runs, threads, and traces with `project_ids`
+- Reading or updating the project, and its views, insights, and alerts
+
+<Note>
+Resolving an agent is in [beta](/langsmith/release-stages). It needs LangSmith `v0.18` or later, and is not supported on BYOC data planes yet.
+</Note>
+
+## What you can resolve
+
+The resolve endpoint takes one of the following as query parameters and returns the ID of its project. Send `kind` and `environment` in upper case, as shown. The agent `id` is case-sensitive.
+
+| What | Python | Query parameters |
+|------|--------|------------------|
+| An agent's environment | `ls.Agent("checkout", "production")` | `kind=AGENT&id=checkout&environment=PRODUCTION` |
+| An experiment | `ls.Experiment("<experiment-id>")` | `kind=EXPERIMENT&id=<experiment-id>` |
+| The workspace's evaluators | `ls.Evaluator()` | `kind=EVALUATOR` |
+
+## Resolve an agent and query its runs
+
+<CodeGroup>
+
+```python Python
+import asyncio
+
+import langsmith as ls
+
+client = ls.Client()
+agent = ls.Agent("checkout", "production")
+
+
+async def main() -> None:
+    project = await client.sessions.resolve(**agent.to_api_address())
+
+    async for run in client.runs.query_v2(project_ids=[project.session_id]):
+        print(run.id)
+
+
+asyncio.run(main())
+```
+
+```bash cURL
+PROJECT_ID=$(curl -s -G "https://api.smith.langchain.com/api/v1/sessions/resolutions" \
+  -H "x-api-key: $LANGSMITH_API_KEY" \
+  --data-urlencode "kind=AGENT" \
+  --data-urlencode "id=checkout" \
+  --data-urlencode "environment=PRODUCTION" \
+  | jq -r '.session_id')
+
+curl -X POST "https://api.smith.langchain.com/api/v2/runs/query" \
+  -H "x-api-key: $LANGSMITH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n --arg pid "$PROJECT_ID" '{"project_ids": [$pid]}')"
+```
+
+</CodeGroup>
+
+## Errors
+
+- LangSmith returns a `404` if nothing in the workspace matches, or if you cannot read its project. An agent environment exists once you have sent a trace to it.
+- On a BYOC data plane, the endpoint returns a `501`, because resolving is not supported there yet.
+
+## See also
+
+- [Log traces to an agent](/langsmith/log-traces-to-agent)
+- [Agents](/langsmith/agents)
+- [Agent environments](/langsmith/agent-environments)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/resolve-an-agent.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
