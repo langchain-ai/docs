@@ -108,71 +108,21 @@ On channel runs, the agent factory and tools receive `undefined` as context. Nat
 
 To tell a channel run from a direct run, check `runtime.channel`, not the shape of context.
 
-## Build the agent per run
+## Read the runtime in the agent factory
+
+An agent factory receives a `ManagedServerRuntime`: the native [`ServerRuntime`](/langsmith/graph-rebuild) that any LangGraph graph factory receives, plus `channel` and `backend`. To write a factory, see [Select configuration per run](/langsmith/managed-deep-agents-agent-definition#select-configuration-per-run).
 
 :::python
-To choose configuration for each run, export a sync or async function as `agent` instead of a definition. The function receives a `ManagedServerRuntime`: the native [`ServerRuntime`](/langsmith/graph-rebuild) that any LangGraph graph factory receives, plus `channel` and `backend`.
-
-```python agent.py
-from dataclasses import dataclass
-
-from managed_deepagents import ManagedServerRuntime, define_deep_agent
-
-
-@dataclass
-class AppContext:
-    tier: str = "standard"
-
-
-def agent(runtime: ManagedServerRuntime[AppContext]):
-    execution = runtime.execution_runtime
-    context = execution.context if execution is not None else None
-    fast = context is not None and context.tier == "fast"
-    return define_deep_agent(
-        name="support",
-        model="openai:gpt-5-mini" if fast else "openai:gpt-5.5",
-        context_schema=AppContext,
-    )
-```
-:::
-
-:::js
-To choose configuration for each run, export a sync or async function as `agent` instead of a definition. The function receives a `ManagedServerRuntime`: the native [`ServerRuntime`](/langsmith/graph-rebuild) that any LangGraph graph factory receives, plus `channel` and `backend`.
-
-```ts agent.ts
-import { defineDeepAgent, type ManagedServerRuntime } from "managed-deepagents";
-import { z } from "zod";
-
-const contextSchema = z.object({ tier: z.string().optional() });
-type AppContext = z.infer<typeof contextSchema>;
-
-export function agent(runtime: ManagedServerRuntime<AppContext>) {
-  const context = runtime.executionRuntime?.context;
-  const fast = context?.tier === "fast";
-  return defineDeepAgent({
-    name: "support",
-    model: fast ? "openai:gpt-5-mini" : "openai:gpt-5.5",
-    contextSchema,
-  });
-}
-```
-:::
-
-The factory can select the model, tools, middleware, instructions, skills, MCP definitions, and sandbox. Omitted selections use project resources.
-
-:::python
-Agent Server also calls the factory to read schemas, read state, and update state. `access_context` names the operation, and [`execution_runtime`](/langsmith/graph-rebuild#access-contexts) is `None` outside `threads.create_run`. Return the same graph structure and schemas from every call. During these calls, Managed Deep Agents skips managed resource reads and allocation.
+Agent Server calls the factory for runs and also to read schemas, read state, and update state. `access_context` names the operation, and [`execution_runtime`](/langsmith/graph-rebuild#access-contexts) is `None` outside `threads.create_run`. Read run context from `execution_runtime.context`. Return the same graph structure and schemas from every call. During calls outside a run, Managed Deep Agents skips managed resource reads and allocation.
 
 `channel` is available in the factory, so an agent can choose configuration per channel. `backend` is always `None` in the factory, because the factory itself selects the sandbox. The native `user`, `store`, and `ensure_user()` remain available.
 :::
 
 :::js
-Agent Server also calls the factory to read schemas, read state, and update state. `accessContext` names the operation, and [`executionRuntime`](/langsmith/graph-rebuild#access-contexts) is `null` outside `threads.create_run`. Return the same graph structure and schemas from every call. During these calls, Managed Deep Agents skips managed resource reads and allocation.
+Agent Server calls the factory for runs and also to read schemas, read state, and update state. `accessContext` names the operation, and [`executionRuntime`](/langsmith/graph-rebuild#access-contexts) is `null` outside `threads.create_run`. Read run context from `executionRuntime.context`. Return the same graph structure and schemas from every call. During calls outside a run, Managed Deep Agents skips managed resource reads and allocation.
 
 `channel` is available in the factory, so an agent can choose configuration per channel. `backend` is always `undefined` in the factory, because the factory itself selects the sandbox.
 :::
-
-`mda build` reads the agent `name` without calling the factory, so pass `name` as an inline string. Install the model integrations for every model the factory can return.
 
 ## Read the runtime in tools
 
