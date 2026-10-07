@@ -1,20 +1,33 @@
 # :remove-start:
-import fcntl
-import time as _time
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 
 from langsmith import Client
 
 _setup_client = Client()
 _DATASET_NAME = "docs-experiment-runs-query-fixture"
 _EXPERIMENT_NAME = "docs-experiment-runs-query-fixture-experiment"
-_LOCK_PATH = Path("/tmp/docs-experiment-runs-query-fixture.lock")
 
+if not _setup_client.has_dataset(dataset_name=_DATASET_NAME):
+    _dataset = _setup_client.create_dataset(dataset_name=_DATASET_NAME)
+    _setup_client.create_examples(
+        dataset_id=_dataset.id,
+        examples=[
+            {"inputs": {"question": "2 + 2"}, "outputs": {"answer": "4"}},
+            {"inputs": {"question": "3 + 3"}, "outputs": {"answer": "6"}},
+            {"inputs": {"question": "4 + 4"}, "outputs": {"answer": "9"}},
+        ],
+    )
+dataset_id = _setup_client.read_dataset(dataset_name=_DATASET_NAME).id
 
-def _populate_experiment_runs(_dataset_id: str) -> None:
-    for _example in _setup_client.list_examples(dataset_id=_dataset_id):
+# The experiment is shared across every experiment-runs-query sample (this
+# file and its siblings): created once, ever, and reused afterward so the
+# suite doesn't spend a real evaluation run per file.
+if not _setup_client.has_project(_EXPERIMENT_NAME):
+    _setup_client.create_project(
+        project_name=_EXPERIMENT_NAME, reference_dataset_id=dataset_id
+    )
+    for _example in _setup_client.list_examples(dataset_id=dataset_id):
         _a, _b = (int(x) for x in _example.inputs["question"].split(" + "))
         _answer = str(_a + _b)
         _run_id = str(uuid.uuid4())
@@ -35,49 +48,9 @@ def _populate_experiment_runs(_dataset_id: str) -> None:
     # Sorting queries derive their time window from the experiment's start
     # time, truncated to whole seconds server-side. A short buffer avoids a
     # same-second min/max window on whichever run performs this creation.
+    import time as _time
+
     _time.sleep(1)
-
-
-with _LOCK_PATH.open("w") as _lock_file:
-    fcntl.flock(_lock_file.fileno(), fcntl.LOCK_EX)
-    if not _setup_client.has_dataset(dataset_name=_DATASET_NAME):
-        _dataset = _setup_client.create_dataset(dataset_name=_DATASET_NAME)
-        _setup_client.create_examples(
-            dataset_id=_dataset.id,
-            examples=[
-                {"inputs": {"question": "2 + 2"}, "outputs": {"answer": "4"}},
-                {"inputs": {"question": "3 + 3"}, "outputs": {"answer": "6"}},
-                {"inputs": {"question": "4 + 4"}, "outputs": {"answer": "9"}},
-            ],
-        )
-    dataset_id = _setup_client.read_dataset(dataset_name=_DATASET_NAME).id
-
-    # The experiment is shared across every experiment-runs-query sample (this
-    # file and its siblings): created once, ever, and reused afterward so the
-    # suite doesn't spend a real evaluation run per file.
-    if not _setup_client.has_project(_EXPERIMENT_NAME):
-        _setup_client.create_project(
-            project_name=_EXPERIMENT_NAME, reference_dataset_id=dataset_id
-        )
-        _populate_experiment_runs(str(dataset_id))
-    else:
-        # Another worker may have created the project but not finished seeding
-        # runs yet. Wait until the fixture is queryable.
-        _experiment_id = _setup_client.read_project(
-            project_name=_EXPERIMENT_NAME
-        ).id
-        for _ in range(60):
-            _results = _setup_client.get_experiment_results(
-                project_id=_experiment_id,
-                limit=20,
-                preview=True,
-            )
-            if len(list(_results["examples_with_runs"])) >= 3:
-                break
-            _time.sleep(0.5)
-        else:
-            # Project exists but was never seeded (race). Populate now.
-            _populate_experiment_runs(str(dataset_id))
 
 experiment_name = _EXPERIMENT_NAME
 # :remove-end:

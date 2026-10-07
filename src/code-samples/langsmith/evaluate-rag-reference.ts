@@ -122,10 +122,12 @@ const outputs = [
   },
 ];
 
-let datasetName = "Lilian Weng Blogs Q&A";
+const datasetName = "Lilian Weng Blogs Q&A";
+
 // :remove-start:
-// Unique name so parallel CI jobs do not delete each other's dataset mid-run.
-datasetName = `docs-evaluate-rag-reference-${crypto.randomUUID().slice(0, 8)}`;
+for await (const existingDataset of client.listDatasets({ datasetName })) {
+  await client.deleteDataset({ datasetId: existingDataset.id });
+}
 // :remove-end:
 const dataset = await client.createDataset(datasetName);
 await client.createExamples({ inputs, outputs, datasetId: dataset.id });

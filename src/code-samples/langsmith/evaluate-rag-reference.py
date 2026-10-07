@@ -107,11 +107,9 @@ examples = [
 
 # Create the dataset and examples in LangSmith
 dataset_name = "Lilian Weng Blogs Q&A"
-# :remove-start:
-# Unique name so parallel CI jobs do not delete each other's dataset mid-run.
-import uuid
-
-dataset_name = f"docs-evaluate-rag-reference-{uuid.uuid4().hex[:8]}"
+#  :remove-start:
+if client.has_dataset(dataset_name=dataset_name):
+    client.delete_dataset(dataset_name=dataset_name)
 # :remove-end:
 if not client.has_dataset(dataset_name=dataset_name):
     dataset = client.create_dataset(dataset_name=dataset_name)
