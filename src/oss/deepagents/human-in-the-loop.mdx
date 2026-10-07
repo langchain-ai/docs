@@ -155,6 +155,33 @@ When the `when` predicate returns `False`, the call runs without interrupting. W
 See the [LangChain human-in-the-loop documentation](/oss/langchain/human-in-the-loop#conditional-interrupts) for additional configuration options and examples.
 :::
 
+:::python
+
+## Pause once per tool call
+
+By default, the agent raises one interrupt per model turn that lists every tool call needing review. Set `interrupt_mode="per_call"` to raise one interrupt per gated tool call instead, each answered by its own ID. The mode applies to the main agent and to subagents, unless a subagent sets its own `interrupt_mode` in its spec.
+
+<Note>Per-call interrupts require `deepagents>=X.Y.Z`.</Note>
+
+```python
+agent = create_deep_agent(
+    model="google_genai:gemini-3.6-flash",
+    tools=[remove_file, fetch_file, notify_email],
+    interrupt_on={
+        "remove_file": True,
+        "notify_email": {"allowed_decisions": ["approve", "reject"]},
+    },
+    interrupt_mode="per_call",  # [!code highlight]
+    checkpointer=checkpointer,
+)
+```
+
+In per-call mode, the approval happens while the tool call runs, inside any middleware you pass in `middleware`. A tool retry middleware there asks the reviewer again on each retry, and an invalid answer is retried or turned into a tool error instead of being raised.
+
+For the interrupt format, how answers are checked, and how to answer each interrupt by its ID, see [Pause once per tool call](/oss/langchain/human-in-the-loop#pause-once-per-tool-call) in the LangChain human-in-the-loop guide.
+
+:::
+
 ## Handle interrupts
 
 When an interrupt is triggered, the agent pauses execution and returns control. Check for interrupts in the result and handle them accordingly. If the user rejects an action, include a clear `message` that tells the agent the tool was not executed and what to do next.

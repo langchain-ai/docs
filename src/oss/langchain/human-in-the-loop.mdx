@@ -636,6 +636,74 @@ When multiple actions are under review, provide a decision for each action in th
 ```
 :::
 
+:::python
+
+## Pause once per tool call
+
+By default, the middleware raises one interrupt per model turn that lists every tool call needing review, and you answer them all at once, in order. To review each tool call separately, set `interrupt_mode="per_call"`. Each gated tool call then raises its own interrupt with its own ID, and you answer each one by that ID with a single decision.
+
+<Note>Per-call interrupts require `langchain>=X.Y.Z`.</Note>
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import HumanInTheLoopMiddleware
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import Command
+
+agent = create_agent(
+    model="gpt-5.5",
+    tools=[execute_sql, read_data],
+    middleware=[
+        HumanInTheLoopMiddleware(
+            interrupt_on={"execute_sql": {"allowed_decisions": ["approve", "edit", "reject"]}},
+            interrupt_mode="per_call",  # [!code highlight]
+        ),
+    ],
+    checkpointer=InMemorySaver(),
+)
+
+config = {"configurable": {"thread_id": "some_id"}}
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Delete old records from the database"}]},
+    config=config,
+    version="v2",
+)
+
+for interrupt in result.interrupts:
+    print(interrupt.value)
+# > {
+# >     'type': 'tool_approval',
+# >     'tool_call_id': 'call_1',
+# >     'name': 'execute_sql',
+# >     'args': {'query': 'DELETE FROM records'},
+# >     'description': "Tool execution requires approval\n\nTool: execute_sql\nArgs: {'query': 'DELETE FROM records'}",
+# > }
+
+# Answer each interrupt by its ID
+agent.invoke(
+    Command(resume={interrupt.id: {"type": "approve"} for interrupt in result.interrupts}),  # [!code highlight]
+    config=config,
+    version="v2",
+)
+```
+
+Each interrupt also carries a `response_schema`: a JSON schema with one branch per decision the tool allows, matched on the decision's `type`. Answers use the decision types above, for example `{"type": "edit", "edited_action": {"name": "execute_sql", "args": {"query": "..."}}}`.
+
+LangGraph checks each answer against that schema before saving it:
+
+- An edit can't switch to another tool, and its arguments must match the tool's argument schema. Unknown fields are rejected unless the tool's schema accepts extra arguments. Edits to a tool defined by a raw JSON schema are shown but not checked.
+- An invalid answer raises a `ValidationError` that points at the problem, and nothing is saved, so you can send a corrected answer to the same interrupt ID.
+- Interrupts you don't answer stay pending, so you can answer them one at a time. If one of several answers sent together is invalid, the tools for the others may already have run even though they still show as pending, and answering them again would run those tools twice. Check answers against `response_schema` before sending them together, or send them one at a time.
+
+<Warning>
+In per-call mode, the middleware pauses while the tool call runs, inside the tool-call middleware chain:
+
+- List it before tool retry or error-handling middleware, so it wraps them. Otherwise, a retried tool call asks the reviewer again, and an invalid answer is retried or turned into a tool error instead of being raised.
+- When the run resumes, middleware listed before it runs again up to the pause, so that middleware must not have side effects before calling its handler. The tool itself runs only after the answer.
+</Warning>
+
+:::
+
 ## Streaming with human-in-the-loop
 
 You can stream real-time updates while the agent runs and handles interrupts using `stream_events()`. Use `stream.messages` to stream LLM tokens and `stream.values` to check agent state snapshots for interrupts.
