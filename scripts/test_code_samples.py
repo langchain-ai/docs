@@ -12,6 +12,10 @@ agent runs from single-snippet samples, and update ``src/code-samples/trace-link
 Set ``CODE_SAMPLE_JOBS`` to run samples concurrently (default: 4). Trace-link
 collection stays serialized under a lock so parallel samples do not clobber the
 shared manifest or claim each other's runs.
+
+Samples that share a LangSmith dataset or experiment fixture are placed in a
+serial group (see ``SERIAL_GROUPS``): they never run concurrently with others
+in the same group, but still overlap with unrelated samples.
 """
 
 from __future__ import annotations
@@ -22,6 +26,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -40,6 +45,24 @@ RATE_LIMIT_MAX_ATTEMPTS = 3
 RATE_LIMIT_RETRY_DELAY_SECONDS = 15
 
 DEFAULT_JOBS = 4
+
+# Relative-path prefixes. Matching samples share a lock so they do not race on
+# the same LangSmith dataset or experiment fixture under CODE_SAMPLE_JOBS > 1.
+SERIAL_GROUPS: dict[str, tuple[str, ...]] = {
+    "evaluate-rag": ("src/code-samples/langsmith/evaluate-rag-",),
+    "experiment-runs-query": (
+        "src/code-samples/langsmith/smithdb-migration/experiment-runs-query-",
+    ),
+}
+
+
+def serial_group_for(rel_path: Path) -> str | None:
+    """Return the serial group name for a sample path, or None if unrestricted."""
+    path = rel_path.as_posix()
+    for group, prefixes in SERIAL_GROUPS.items():
+        if any(path.startswith(prefix) for prefix in prefixes):
+            return group
+    return None
 
 
 def worker_count() -> int:
@@ -330,6 +353,7 @@ def run_sample_with_retries(
     repo_root: Path,
     code_samples_dir: Path,
     print_lock: threading.Lock,
+    group_locks: dict[str, threading.Lock],
 ) -> SampleOutcome:
     """Run one sample with rate-limit retries and return a structured outcome."""
     rel_path = file_path.relative_to(repo_root)
@@ -337,21 +361,24 @@ def run_sample_with_retries(
     stdout = ""
     stderr = ""
     started_at = datetime.now(timezone.utc)
+    group = serial_group_for(rel_path)
+    group_lock = group_locks[group] if group is not None else nullcontext()
 
-    for attempt in range(1, RATE_LIMIT_MAX_ATTEMPTS + 1):
-        started_at = datetime.now(timezone.utc)
-        success, stdout, stderr = run_sample(
-            file_path, lang, repo_root, code_samples_dir
-        )
-        if success or not is_rate_limited(stdout, stderr):
-            break
-        if attempt < RATE_LIMIT_MAX_ATTEMPTS:
-            with print_lock:
-                print(
-                    f"  ... {rel_path} hit a 429, retrying "
-                    f"({attempt}/{RATE_LIMIT_MAX_ATTEMPTS})"
-                )
-            time.sleep(RATE_LIMIT_RETRY_DELAY_SECONDS)
+    with group_lock:
+        for attempt in range(1, RATE_LIMIT_MAX_ATTEMPTS + 1):
+            started_at = datetime.now(timezone.utc)
+            success, stdout, stderr = run_sample(
+                file_path, lang, repo_root, code_samples_dir
+            )
+            if success or not is_rate_limited(stdout, stderr):
+                break
+            if attempt < RATE_LIMIT_MAX_ATTEMPTS:
+                with print_lock:
+                    print(
+                        f"  ... {rel_path} hit a 429, retrying "
+                        f"({attempt}/{RATE_LIMIT_MAX_ATTEMPTS})"
+                    )
+                time.sleep(RATE_LIMIT_RETRY_DELAY_SECONDS)
 
     return SampleOutcome(
         rel_path=rel_path,
@@ -403,6 +430,7 @@ def main() -> int:
     trace_failures: list[Path] = []
     print_lock = threading.Lock()
     trace_lock = threading.Lock()
+    group_locks = {name: threading.Lock() for name in SERIAL_GROUPS}
     claimed_run_ids: set[str] = set()
 
     def handle_outcome(outcome: SampleOutcome) -> None:
@@ -451,7 +479,12 @@ def main() -> int:
         for file_path, lang in files_to_test:
             handle_outcome(
                 run_sample_with_retries(
-                    file_path, lang, repo_root, code_samples_dir, print_lock
+                    file_path,
+                    lang,
+                    repo_root,
+                    code_samples_dir,
+                    print_lock,
+                    group_locks,
                 )
             )
     else:
@@ -464,6 +497,7 @@ def main() -> int:
                     repo_root,
                     code_samples_dir,
                     print_lock,
+                    group_locks,
                 )
                 for file_path, lang in files_to_test
             ]
