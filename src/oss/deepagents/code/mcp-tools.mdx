@@ -138,6 +138,12 @@ Each key under `mcpServers` is a server name. The server's fields determine how 
 
 stdio servers are spawned as child processes. Deep Agents Code communicates with them over stdin/stdout.
 
+<Note>
+    Session working-directory defaults require Deep Agents Code 0.1.79 or later.
+</Note>
+
+Approved project servers and servers supplied through `--mcp-config` start in the session working directory. User-level and plugin servers inherit the backend process directory instead. Set a server's `cwd` field to override either default.
+
 ```json title="mcp-config.json"
 {
   "mcpServers": {
@@ -175,7 +181,7 @@ For remote MCP servers, set `type` to `"sse"` or `"http"` and provide a `url`:
 
 <AccordionGroup>
     <Accordion title="stdio (default)">
-        **Required:** `command`. **Optional:** `args`, `env`, plus the shared [tool-filter fields](#tool-filtering).
+        **Required:** `command`. **Optional:** `args`, `env`, `cwd`, plus the shared [tool-filter fields](#tool-filtering).
 
         <ResponseField name="command" type="string" required>
             The executable to run.
@@ -187,6 +193,10 @@ For remote MCP servers, set `type` to `"sse"` or `"http"` and provide a `url`:
 
         <ResponseField name="env" type="object">
             Environment variables set for the subprocess. Use this to pass API keys and other credentials without exposing them in shell history.
+        </ResponseField>
+
+        <ResponseField name="cwd" type="string">
+            Working directory for the subprocess. Overrides the default directory for this server's configuration source.
         </ResponseField>
     </Accordion>
 
@@ -279,6 +289,18 @@ You can configure as many servers as you need. Tools from all servers are merged
   }
 }
 ```
+
+## Set tool-call timeouts
+
+MCP tool calls return an error after 120 seconds by default, so a stalled server does not block the agent indefinitely.
+
+<Note>
+    Configurable MCP tool-call timeouts require Deep Agents Code 0.1.79 or later.
+</Note>
+
+Set `[mcp].tool_timeout` in `~/.deepagents/config.toml` to a number of seconds from `1` through `900`. Set `DEEPAGENTS_CODE_MCP_TOOL_TIMEOUT` to override the user config value. Invalid values fall through to the next configuration source rather than disabling the timeout.
+
+A timeout does not guarantee that the server canceled the operation. Check its state before retrying a tool that changes data: another call can duplicate work.
 
 ## Tool filtering
 
@@ -488,6 +510,12 @@ The legacy flat `[mcp].enabled_project_servers` list is ignored in `config.toml`
 ### Advanced allow and deny policy
 
 Use `[mcp].disabled_project_servers` in `~/.deepagents/config.toml`, or `DEEPAGENTS_CODE_DISABLED_PROJECT_MCP_SERVERS` in your shell or global `~/.deepagents/.env`, to always reject project MCP servers by name. Denies win over saved approvals and over the `--trust-project-mcp` flag.
+
+<Note>
+    Saving denials from the startup prompt requires Deep Agents Code 0.1.78 or later.
+</Note>
+
+The interactive startup prompt also offers session-only denial or permanent denial of selected server names. Permanent denials apply across all projects, unlike project-scoped approvals. To undo a saved denial, remove the name from `[mcp].disabled_project_servers` in `~/.deepagents/config.toml`.
 
 For automation that must pre-approve project MCP servers by name, set `DEEPAGENTS_CODE_DANGEROUSLY_ENABLE_PROJECT_MCP_SERVERS` in your shell or global `~/.deepagents/.env` to a comma-separated list of server names. This is a process-wide escape hatch: A different project, command change, or URL change under the same server name still matches. When this variable is set, Deep Agents Code ignores saved approvals for that process. Prefer saved approvals or `--trust-project-mcp` unless you need name-based approval across projects and server-definition changes.
 
