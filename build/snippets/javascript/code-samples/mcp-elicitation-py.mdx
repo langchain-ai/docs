@@ -1,0 +1,34 @@
+```python
+from typing import Any
+
+from langchain.agents import create_agent
+from langchain.mcp import MCPAdapter
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import Command
+
+
+async def book_with_elicitation(server) -> dict:
+    # Elicitation is handled automatically: when a server needs input mid-call,
+    # the adapter surfaces the question as a LangGraph `interrupt()`, so the
+    # person already reviewing the agent's work answers it and the run resumes.
+    async with MCPAdapter(server) as adapter:
+        tools = await adapter.list_tools()
+
+        # Resuming a paused run needs persistence, so the interrupted run has
+        # somewhere to wait.
+        agent = create_agent("claude-sonnet-5", tools, checkpointer=InMemorySaver())
+        config: Any = {"configurable": {"thread_id": "booking-1"}}
+
+        paused = await agent.ainvoke(
+            {"messages": [{"role": "user", "content": "Book a table for 4."}]}, config
+        )
+        [interrupt] = paused["__interrupt__"]
+        [question] = interrupt.value["requests"]
+
+        # Answers are keyed by the server's own request key, so nothing has to
+        # be tracked across the pause. `decline` or `cancel` would refuse.
+        answer = {"action": "accept", "content": {"date": "2026-09-14"}}
+        return await agent.ainvoke(
+            Command(resume={"responses": {question["key"]: answer}}), config
+        )
+```
