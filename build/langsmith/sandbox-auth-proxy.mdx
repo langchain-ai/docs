@@ -23,7 +23,7 @@ The same `proxy_config` that injects credentials also controls which destination
 
 ### Default egress posture
 
-With no `access_control`, **every hostname is reachable on every TCP port**, unless your organization is on [restricted egress](#organization-level-restricted-egress). The only exception is hosts that resolve to private, loopback, or cloud-metadata addresses, which the proxy always refuses to dial. Add an `access_control` to restrict this.
+With no `access_control`, **every hostname is reachable on every TCP port**, unless your organization is on [restricted egress](#organization-level-restricted-egress). The only exception is hosts that resolve to private, loopback, or cloud-metadata addresses, which the proxy refuses to dial. For a sandbox created with `access_delegation`, your LangSmith API host is exempt from the private-address check, so a self-hosted install whose hostname resolves to a private address, such as an internal load balancer, can still serve delegated requests. No other private destination is opened, and loopback and cloud-metadata addresses stay blocked. Add an `access_control` to restrict this.
 
 To allow HTTP and HTTPS to any host while blocking every other port, use a port-qualified allow list. `*` matches every hostname:
 
