@@ -77,37 +77,87 @@ playground:
 
 ### Using workload identity
 
-You can configure the playground service account to use GCP Workload Identity to assume a GCP service account role without storing credentials. This is the recommended approach for GKE clusters.
-
-#### GCP Workload Identity (GKE)
-
-For GKE clusters, use GCP Workload Identity:
-
-<CodeGroup>
-
-```yaml Helm
-playground:
-  deployment:
-    extraEnv:
-      # Optional: Set project/location if not in model config
-      - name: GOOGLE_CLOUD_PROJECT
-        value: "your-gcp-project-id"
-      - name: VERTEXAI_PROJECT_ID
-        value: "your-gcp-project-id"
-      - name: VERTEXAI_LOCATION
-        value: "us-central1"
-    # No credentials needed - pod assumes GCP SA role via annotation
-  serviceAccount:
-    create: true  # Enable if not exists
-    annotations:
-      iam.gke.io/gcp-service-account: "vertexai-sa@your-gcp-project.iam.gserviceaccount.com"
-```
-
-</CodeGroup>
+GKE Workload Identity Federation lets Playground, Polly, and Insights call Vertex AI without long-lived service account keys. Each calling Kubernetes service account (KSA) uses Application Default Credentials (ADC) to impersonate a Google service account (GSA).
 
 <Note>
-When using GCP Workload Identity, ensure the GCP service account has the required Gemini Enterprise Agent Platform permissions (e.g., `roles/aiplatform.user`).
+Keyless authentication for Polly and Insights requires Helm chart version 0.17.0 or later and LangSmith application version 0.17.29 or later.
 </Note>
+
+To configure keyless authentication:
+
+1. [Enable Workload Identity Federation for GKE](https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity) on the cluster and the node pools that run LangSmith.
+1. Create or select a GSA for Vertex AI access. Grant it only the required role in the project that hosts the models:
+
+   ```bash
+   gcloud projects add-iam-policy-binding "<vertex-project-id>" \
+     --member="serviceAccount:<gsa-name>@<gsa-project-id>.iam.gserviceaccount.com" \
+     --role="roles/aiplatform.user"
+   ```
+
+1. Grant each calling KSA `roles/iam.workloadIdentityUser` on the GSA. Use the actual KSA names rendered by your Helm release:
+
+   ```bash
+   for ksa in \
+     "<playground-ksa>" \
+     "<polly-api-ksa>" \
+     "<polly-queue-ksa>" \
+     "<insights-api-ksa>" \
+     "<insights-queue-ksa>"; do
+     gcloud iam service-accounts add-iam-policy-binding \
+       "<gsa-name>@<gsa-project-id>.iam.gserviceaccount.com" \
+       --role="roles/iam.workloadIdentityUser" \
+       --member="serviceAccount:<cluster-project-id>.svc.id.goog[<namespace>/${ksa}]"
+   done
+   ```
+
+   Bind only these specific KSA subjects. If the workloads use different namespaces, run the command separately with each KSA's namespace.
+
+1. Annotate every calling KSA through your Helm values. The Polly and Insights API and queue identities are separate callers, so both need annotations and IAM bindings:
+
+   ```yaml Helm
+   playground:
+     deployment:
+       extraEnv:
+         - name: GOOGLE_CLOUD_PROJECT
+           value: "<vertex-project-id>"
+     serviceAccount:
+       annotations:
+         iam.gke.io/gcp-service-account: "<gsa-name>@<gsa-project-id>.iam.gserviceaccount.com"
+
+   polly:
+     apiServer:
+       serviceAccount:
+         annotations:
+           iam.gke.io/gcp-service-account: "<gsa-name>@<gsa-project-id>.iam.gserviceaccount.com"
+     queue:
+       serviceAccount:
+         annotations:
+           iam.gke.io/gcp-service-account: "<gsa-name>@<gsa-project-id>.iam.gserviceaccount.com"
+
+   engineInsightsAgent:
+     apiServer:
+       serviceAccount:
+         annotations:
+           iam.gke.io/gcp-service-account: "<gsa-name>@<gsa-project-id>.iam.gserviceaccount.com"
+       deployment:
+         extraEnv:
+           - name: CLIO_VERTEX_AI_ADC_ENABLED
+             value: "true"
+           - name: GOOGLE_CLOUD_PROJECT
+             value: "<vertex-project-id>"
+     queue:
+       serviceAccount:
+         annotations:
+           iam.gke.io/gcp-service-account: "<gsa-name>@<gsa-project-id>.iam.gserviceaccount.com"
+       deployment:
+         extraEnv:
+           - name: CLIO_VERTEX_AI_ADC_ENABLED
+             value: "true"
+           - name: GOOGLE_CLOUD_PROJECT
+             value: "<vertex-project-id>"
+   ```
+
+1. In each Vertex AI or Gemini provider configuration, leave **Service Account JSON** empty. Keep `GOOGLE_VERTEX_AI_WEB_CREDENTIALS` and `GOOGLE_APPLICATION_CREDENTIALS` unset. Explicit JSON credentials take precedence over ADC and prevent the workload identity from being used.
 
 ## AWS IRSA (EKS)
 
