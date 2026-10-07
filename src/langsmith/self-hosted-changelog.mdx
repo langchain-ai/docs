@@ -10,6 +10,80 @@ rss: true
 
 [Self-hosted LangSmith](/langsmith/self-hosted) is an add-on to the Enterprise plan designed for our largest, most security-conscious customers. For more details, refer to [Pricing](https://www.langchain.com/pricing). [Contact our sales team](https://www.langchain.com/contact-sales) if you want to get a license key to trial LangSmith in your environment.
 
+<Update label="2026-10-07" tags={["Preview"]} rss={{ title: "2026-10-07 - self-hosted" }}>
+## langsmith-0.18.0-rc.14
+
+**LangSmith version:** `0.18.5rc1`
+
+- Disabled Google-auth regional access boundary lookup.
+- Self-hosted sandboxes on Azure could connect to the JuiceFS metadata Redis with Microsoft Entra ID through Azure Workload Identity, allowing Azure Managed Redis to run with access keys disabled. Added `?auth-provider=azure` to a `rediss://` `sandboxes.juicefs.redis.metaURL` with no username or password.
+- OAuth applications registered under Settings > OAuth applications could now use one access token for both the LangSmith API and the Remote MCP server, instead of authorizing each separately. BYOC data planes still accepted only tokens issued for their own MCP server.
+- Allowed downloading of all rows matching the current tab, search, and filters from Organization Members and API Keys. Exports preserved existing visibility restrictions and included only key metadata, never full API keys.
+- A deployment's details now appeared in a Details card below the trace chart on its Overview tab, so every other tab used the full page width. The card grouped them into Agent Server (its URL and version), Source, Runtime (deployment type, compute and database size), and Identifiers (copyable deployment and active revision IDs), with hints explaining the less obvious fields.
+- The Source section of a deployment's Details card now fit how the deployment was built: a GitHub deployment showed its repository with the branch or tag it tracked and whether pushes auto-deployed, a Docker deployment showed its image, and a CLI-uploaded deployment indicated it deployed with langgraph deploy. A nested LangGraph config file or Managed Deep Agent project directory linked straight to it.
+- Canceling or rolling back a resume run before its first checkpoint kept the thread interrupted instead of idle, and the canceled run recorded why it was canceled.
+- Creating an evaluator that used a TypeSafe Compatible Endpoint no longer failed with `Manifest type langchain.schema.runnable.RunnableSequence is not supported`.
+- Triggering a run rule by hand returned 422 when the deployment could not run it, for example, a rule that read ClickHouse while ClickHouse querying was disabled, or a trajectory rule on a data plane without a trajectory service. Previously the trigger was accepted and silently did nothing.
+- Thread details displayed newly ingested traces as soon as their runs were available, even when the thread listing had not caught up yet. When a turn number was unavailable, a refresh button allowed you to check again.
+- The deployment Monitoring tab now showed trace count, latency, and error rate alongside server metrics, all driven by one time range. The Overview tab dropped the trace count chart so deployment details appeared first.
+- Self-hosted installs using `authType: mixed` with OIDC SSO and basic auth disabled now authenticated every remote MCP tool, including dataset, workspace, and run tools that previously returned `401 Invalid token`.
+- The new LangSmith experience welcome modal appeared once on any authenticated page for users in migrated workspaces, rather than only on All Agents.
+- Workspace deletion now batched project cleanup to avoid request-size errors when a workspace had more than 100 Agent-owned tracing projects.
+- Raised EU smith-agents run latency page to 45m.
+- Allowed adding any agent/env to charts.
+- LangSmith restored the most recently used organization and workspace separately for each login identity, including separate SSO and regular logins. Saved preferences survived logout and session expiry.
+- The sandbox list now scrolled within the page so you could reach sandboxes below the visible rows.
+- Studio loaded child run inputs and outputs when converting a trace into thread state. Cloned threads retained the values recorded by each graph node.
+- Trace and thread trees kept expand arrows aligned and truncated long labels before adding horizontal scroll for deeply nested runs.
+- ClickHouse migration jobs now reported connection errors and HTTP status codes instead of only a readiness timeout. TLS readiness checks used the backend's CA directory alongside the configured CA bundle.
+- Traces sent to the OpenTelemetry endpoint were rejected with a 429 once the workspace reached its monthly trace limit, matching the other ingestion endpoints. Multipart and OpenTelemetry ingestion also counted toward the hourly ingested-events and payload-size limits.
+- Sandbox S3 mounts correctly signed requests for object keys containing spaces, punctuation, and non-ASCII characters, avoiding signature mismatch errors when reading these files.
+- Allowed delegated sandboxes to reach a private LangSmith API.
+- The self-hosted frontend image now used the same code-split build as LangSmith cloud, so the first page load downloaded about 1 MB of compressed JavaScript instead of about 9 MB, and other pages loaded their code on demand. Assets were precompressed at image build time and content-hashed assets got an immutable browser cache policy; HTML stayed uncached so runtime configuration stayed fresh. Browser tabs left open across an upgrade reloaded once when they opened a page whose code changed. Deployments that enabled `frontend.includeNonce` with a strict `style-src` policy now also applied the nonce to stylesheets loaded on demand.
+- Custom headers for a deployment were now edited under Custom headers in the Connect dialog instead of the Settings dialog. They were still stored only in the browser.
+- Set `sandboxes.juicefs.redis.iamAuthProvider: azure` to use Microsoft Entra ID for the JuiceFS metadata Redis, the same way `redis.external.iamAuthProvider` configured core LangSmith Redis. It also worked with a customer-managed metadata URL Secret.
+- The ingest queue now set its Go memory limit to 90% of its container memory limit by default, so garbage collection freed memory before a pod reached its limit and got OOM-killed. To change the ratio, set `AUTOMEMLIMIT` in `ingestQueue.deployment.extraEnv`, or set it to `off` to disable it; an explicit `GOMEMLIMIT` still took precedence.
+- Feedback comments and evaluator reasoning now rendered markdown, so headings, lists, bold text, and line breaks displayed formatted in trace, annotation queue, and experiment views.
+- Allowed GET /api/v2/runs/{run_id} to return the "run exceeds the response size limit" error.
+- Insights jobs using Fireworks now included the request-scoped LangSmith authentication header when the LLM auth proxy was enabled.
+- The expanded sidebar now used the same icon stroke weight as the collapsed sidebar for a more consistent navigation experience.
+- When a model's configuration included a parameter the provider didn't accept, the Playground now named that parameter instead of showing a generic "Failed to call model" error.
+- Trajectory evaluators showed supported filters from both tracing projects and the evaluator library, and preserved them when saved and reopened. Unsupported trace and tree filters required explicit removal before saving.
+- The default sandbox image now shipped apt's package indexes and caches, so `apt-get install` worked without a prior `apt-get update` and apt commands started faster. Running `apt-get update` first got the latest package versions.
+- The permissions UI now labeled built-in roles as Workspace Admin, Workspace Editor, and Workspace Viewer to distinguish them from organization roles.
+- Deleted deployments now began cleanup without an artificial delay, and their names became available for reuse once cleanup finished.
+- Allowed viewing of your workspace's Gateway traces directly from the LLM Gateway. Opened filtered traces from the Usage drilldown without selecting an agent.
+- Insights reports using Claude Sonnet 5.5 on Amazon Bedrock generated summaries without unsupported forced tool choice errors.
+- Run, trace, and thread query responses included query metadata with semantic match scores when a semantic filter was used. Trace query metadata appeared directly on each trace item.
+- Added a second LangSmith pod CIDR on GCP dev.
+- Bulk deleting prompts now skipped restricted-mode prompts the caller did not own and reported them as failed, matching single-prompt delete.
+- Studio chat now accepted TXT, CSV, TSV, Markdown, and JSON attachments, sent them to the agent, and previewed their text. Unsupported files showed an error instead of silently blocking Send.
+- When a model preset with a custom API key name was the Playground default, the Playground now used that key name on load instead of falling back to the provider's default key, such as OPENAI_API_KEY.
+- Disabled Istio Gateway API when Envoy Gateway was installed.
+- The Reviewer Notes section in annotation queues was now a single note per reviewer that saved automatically while typing, replacing the send button and the list of posted notes.
+- Experiment names in the comparison detail pane now used the available header width instead of truncating at a fixed width.
+- Files dropped onto the Studio chat composer now attached the same way as files picked with the upload button.
+- Fixed the tooltip to not hide agents on the agent dropdown.
+- Self-hosted deployments could run Engine with FIPS-validated cryptographic providers using the langsmith-insights-engine-fips image.
+- The evaluator overview now showed what each prompt variable was mapped to, and "unmapped variable" when it wasn't mapped, instead of auto-generated names like var1.
+- Re-imported re-granted CI AppRoleAssignment.ReadWrite.All.
+- Sandbox hosts could now route outbound TCP, HTTP, and HTTPS connections through an operator-configured HTTP or HTTPS forward proxy, set with `sandboxes.authProxy.httpProxy` in the self-hosted chart. `noProxy` listed hosts dialed directly, and an HTTPS proxy was trusted through `config.customCa`.
+- Dataset example details now refreshed nested output values when switching between examples.
+- Bedrock model configurations could now use automatic routing or explicitly select the Bedrock Runtime or Bedrock Mantle endpoint. This supported models available through both endpoints when AWS permissions allowed only one surface.
+- API requests now returned HTTP 429 instead of HTTP 503 when the query service reported exhausted resources, allowing clients to handle throttling correctly.
+- OAuth providers that used HTTP Basic client authentication now encoded the client ID and secret as the OAuth spec required, so secrets containing characters such as `:`, `%` or `+` no longer failed at the token endpoint.
+- Evaluated UI flag based on org id.
+- Renamed deployment Recent Traces link to Go to Tracing.
+- When reading a thread's or run's events failed, event streams now ended with an `error` frame instead of closing as if they had finished. This covered `POST /threads/{thread_id}/stream/events` (SSE and WebSocket) and the v1 thread and run streaming endpoints, and the `/wait` endpoints now failed instead of returning partial state as the final result.
+- The gear button on a deployment now opened settings in a side pane instead of a dialog, with General, Source, and LLM Gateway sections and one Save. Closing the pane with unsaved changes prompted before discarding them.
+- The Submit button on the new deployment form was disabled while the deployment was being created, so clicking it again no longer sent a second create request.
+- Showed evaluator traces in any agent context.
+- Claude Sonnet 5.5 and Opus 5.5, GPT-6.1 Sol, and Gemini 3.8 Flash were now available as directly selectable models in Fleet and Agent Builder. The new Claude models ran with adaptive thinking.
+
+**Download the Helm chart:** [`langsmith-0.18.0-rc.14.tgz`](https://github.com/langchain-ai/helm/releases/download/langsmith-0.18.0-rc.14/langsmith-0.18.0-rc.14.tgz)
+{/* langsmith-release-image: 0.18.0-rc.14 0.18.5-ea7406ab3d63ae2949bd1a4ff10e3cba2fabb99a */}
+</Update>
+
 <Update label="2026-10-07" tags={["Stable"]} rss={{ title: "2026-10-07 - self-hosted" }}>
 ## langsmith-0.17.3
 
