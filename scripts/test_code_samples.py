@@ -16,6 +16,11 @@ shared manifest or claim each other's runs.
 Samples that share a LangSmith dataset or experiment fixture are placed in a
 serial group (see ``SERIAL_GROUPS``): they never run concurrently with others
 in the same group, but still overlap with unrelated samples.
+
+Rate-limit tuning (optional env overrides):
+
+- ``CODE_SAMPLE_RATE_LIMIT_ATTEMPTS`` (default: 5)
+- ``CODE_SAMPLE_RATE_LIMIT_DELAY_SECONDS`` (default: 30; grows per attempt)
 """
 
 from __future__ import annotations
@@ -41,8 +46,15 @@ TIMEOUT_SECONDS = int(os.environ.get("CODE_SAMPLE_TIMEOUT_SECONDS", "1200"))
 # load, independent of whether the sample itself is correct. Retry a few
 # times with backoff before giving up, and don't fail the build if a sample
 # is still rate-limited after retries are exhausted.
-RATE_LIMIT_MAX_ATTEMPTS = 3
-RATE_LIMIT_RETRY_DELAY_SECONDS = 15
+RATE_LIMIT_MAX_ATTEMPTS = max(
+    1, int(os.environ.get("CODE_SAMPLE_RATE_LIMIT_ATTEMPTS", "5"))
+)
+RATE_LIMIT_RETRY_DELAY_SECONDS = max(
+    1, int(os.environ.get("CODE_SAMPLE_RATE_LIMIT_DELAY_SECONDS", "30"))
+)
+# Cap so a single sample cannot stall the suite for many minutes.
+RATE_LIMIT_RETRY_DELAY_CAP_SECONDS = 120
+TRACE_RATE_LIMIT_MAX_ATTEMPTS = RATE_LIMIT_MAX_ATTEMPTS
 
 DEFAULT_JOBS = 4
 
@@ -79,14 +91,38 @@ def worker_count() -> int:
     return DEFAULT_JOBS
 
 
-def is_rate_limited(stdout: str, stderr: str) -> bool:
+def is_rate_limited(stdout: str, stderr: str, *, lang: str | None = None) -> bool:
     """Best-effort detection of a 429/rate-limit response in sample output."""
     combined = f"{stdout}\n{stderr}".lower()
-    return "429" in combined and (
-        "too many requests" in combined
-        or "rate limit" in combined
+    if "too many requests" in combined or "rate limit exceeded" in combined:
+        return True
+    if "429" in combined and (
+        "rate limit" in combined
         or "ratelimit" in combined
-    )
+        or "<title>429</title>" in combined
+    ):
+        return True
+    # Shell samples often pipe curl into jq; HTML/error bodies from a 429 then
+    # surface only as a jq parse failure with no status text in the logs.
+    if lang == "bash" and "jq: parse error" in combined:
+        return True
+    return False
+
+
+def rate_limit_sleep_seconds(attempt: int) -> int:
+    """Return backoff delay after a rate-limited attempt (1-based)."""
+    delay = RATE_LIMIT_RETRY_DELAY_SECONDS * attempt
+    return min(RATE_LIMIT_RETRY_DELAY_CAP_SECONDS, delay)
+
+
+def write_github_output(**values: object) -> None:
+    """Append key=value lines to GITHUB_OUTPUT when running in Actions."""
+    path = os.environ.get("GITHUB_OUTPUT", "").strip()
+    if not path:
+        return
+    with open(path, "a", encoding="utf-8") as handle:
+        for key, value in values.items():
+            handle.write(f"{key}={value}\n")
 
 
 def print_failure(rel_path: Path, stdout: str, stderr: str) -> None:
@@ -370,15 +406,17 @@ def run_sample_with_retries(
             success, stdout, stderr = run_sample(
                 file_path, lang, repo_root, code_samples_dir
             )
-            if success or not is_rate_limited(stdout, stderr):
+            if success or not is_rate_limited(stdout, stderr, lang=lang):
                 break
             if attempt < RATE_LIMIT_MAX_ATTEMPTS:
+                delay = rate_limit_sleep_seconds(attempt)
                 with print_lock:
                     print(
                         f"  ... {rel_path} hit a 429, retrying "
-                        f"({attempt}/{RATE_LIMIT_MAX_ATTEMPTS})"
+                        f"({attempt}/{RATE_LIMIT_MAX_ATTEMPTS}) "
+                        f"after {delay}s"
                     )
-                time.sleep(RATE_LIMIT_RETRY_DELAY_SECONDS)
+                time.sleep(delay)
 
     return SampleOutcome(
         rel_path=rel_path,
@@ -388,7 +426,8 @@ def run_sample_with_retries(
         stderr=stderr,
         started_at=started_at,
         finished_at=datetime.now(timezone.utc),
-        rate_limited=(not success) and is_rate_limited(stdout, stderr),
+        rate_limited=(not success)
+        and is_rate_limited(stdout, stderr, lang=lang),
     )
 
 
@@ -398,6 +437,7 @@ def main() -> int:
 
     if not code_samples_dir.exists():
         print("src/code-samples/ not found")
+        write_github_output(sample_failures=1, traces_updated=0)
         return 1
 
     files_to_test = collect_files_to_test(repo_root, code_samples_dir)
@@ -410,6 +450,14 @@ def main() -> int:
             )
         else:
             print("No code samples found in src/code-samples/")
+        write_github_output(
+            sample_failures=0,
+            samples_passed=0,
+            samples_total=0,
+            samples_rate_limited=0,
+            traces_updated=0,
+            trace_failures=0,
+        )
         return 0
 
     collect_traces = tracing_enabled()
@@ -433,6 +481,44 @@ def main() -> int:
     group_locks = {name: threading.Lock() for name in SERIAL_GROUPS}
     claimed_run_ids: set[str] = set()
 
+    def collect_trace_with_retries(outcome: SampleOutcome) -> dict | None:
+        """Collect a public trace link, retrying LangSmith 429 responses."""
+        last_exc: Exception | None = None
+        for attempt in range(1, TRACE_RATE_LIMIT_MAX_ATTEMPTS + 1):
+            try:
+                with trace_lock:
+                    entry = collect_trace_for_sample(
+                        repo_root=repo_root,
+                        source_path=outcome.file_path,
+                        start_time=outcome.started_at,
+                        end_time=outcome.finished_at,
+                        exclude_ids=claimed_run_ids,
+                        project_name=project_name,
+                    )
+                    if entry is not None:
+                        run_id = str(entry.get("run_id") or "")
+                        if run_id:
+                            claimed_run_ids.add(run_id)
+                    return entry
+            except Exception as exc:  # noqa: BLE001 - retry or report
+                last_exc = exc
+                if (
+                    not is_rate_limited("", str(exc))
+                    or attempt >= TRACE_RATE_LIMIT_MAX_ATTEMPTS
+                ):
+                    raise
+                delay = rate_limit_sleep_seconds(attempt)
+                with print_lock:
+                    print(
+                        f"  ... {outcome.rel_path}: trace collection hit a "
+                        f"429, retrying ({attempt}/"
+                        f"{TRACE_RATE_LIMIT_MAX_ATTEMPTS}) after {delay}s"
+                    )
+                time.sleep(delay)
+        if last_exc is not None:
+            raise last_exc
+        return None
+
     def handle_outcome(outcome: SampleOutcome) -> None:
         nonlocal passed, traces_updated
         if outcome.success:
@@ -441,25 +527,17 @@ def main() -> int:
                 print(f"  ✓ {outcome.rel_path}")
             if collect_traces:
                 try:
-                    with trace_lock:
-                        entry = collect_trace_for_sample(
-                            repo_root=repo_root,
-                            source_path=outcome.file_path,
-                            start_time=outcome.started_at,
-                            end_time=outcome.finished_at,
-                            exclude_ids=claimed_run_ids,
-                            project_name=project_name,
-                        )
-                        if entry is not None:
-                            traces_updated += 1
-                            run_id = str(entry.get("run_id") or "")
-                            if run_id:
-                                claimed_run_ids.add(run_id)
-                except Exception as exc:  # noqa: BLE001 - report and fail the run
+                    entry = collect_trace_with_retries(outcome)
+                    if entry is not None:
+                        traces_updated += 1
+                except Exception as exc:  # noqa: BLE001 - warn; do not fail suite
+                    # Sample already passed. Trace-link refresh can still ship
+                    # with a few missing shares; do not fail the whole run.
                     trace_failures.append(outcome.rel_path)
                     with print_lock:
                         print(
-                            f"  ✗ {outcome.rel_path}: trace collection failed: {exc}",
+                            f"  ⚠ {outcome.rel_path}: trace collection "
+                            f"failed (continuing): {exc}",
                             file=sys.stderr,
                         )
         elif outcome.rate_limited:
@@ -513,14 +591,21 @@ def main() -> int:
         )
     if collect_traces:
         print(f"Trace links updated: {traces_updated}")
+        if trace_failures:
+            print(
+                f"WARNING: {len(trace_failures)}/{total} code sample(s) "
+                "passed but trace collection failed"
+            )
+    write_github_output(
+        sample_failures=len(failed),
+        samples_passed=passed,
+        samples_total=total,
+        samples_rate_limited=len(rate_limited),
+        traces_updated=traces_updated,
+        trace_failures=len(trace_failures),
+    )
     if failed:
         print(f"FAILED: {len(failed)}/{total} code sample(s) failed")
-        return 1
-    if trace_failures:
-        print(
-            f"FAILED: {len(trace_failures)}/{total} code sample(s) passed "
-            "but trace collection failed"
-        )
         return 1
     print(
         f"{passed}/{total} code sample(s) passed"
