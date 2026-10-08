@@ -1,0 +1,155 @@
+---
+title: Connect a Managed Deep Agent to GitHub
+sidebarTitle: GitHub
+description: Run Managed Deep Agents from GitHub issues, comments, pull requests, and workflow events.
+---
+
+import ManagedDeepAgentsPublicBetaNote from '/snippets/python/langsmith/managed-deep-agents-public-beta-note.mdx';
+
+A GitHub channel lets your managed deep agent respond to issues, pull requests, and workflow events. Choose which events start a run and give the agent instructions for handling them.
+
+Managed Deep Agents creates and configures the GitHub App that connects your repositories to the deployed agent. Add a channel declaration to your project, then deploy.
+
+<ManagedDeepAgentsPublicBetaNote />
+
+## Project structure
+
+```text
+my-agent/
+  agent.py
+  identity.py
+  channels/
+    github.py
+```
+
+
+
+
+Start with an [agent project](/langsmith/python/managed-deep-agents-quickstart) and keep its root [identity declaration](/langsmith/python/managed-deep-agents-identity). A deployment supports one GitHub channel.
+
+## Add a GitHub channel
+
+Register a handler for each event you want the agent to act on. A handler returns the text that starts an agent run.
+
+This example asks the agent to summarize each new issue:
+
+```python channels/github.py
+from managed_deepagents import channels
+
+
+def on_issue(event, runtime):
+    issue = event.payload["issue"]
+    return f"Summarize this GitHub issue: {issue['title']}\n\n{issue['body'] or ''}"
+
+
+channel = channels.github(on={"issues.opened": on_issue})
+```
+
+
+
+
+Managed Deep Agents verifies incoming webhooks before calling your handler. This example accepts new issues from any sender in repositories where the App is installed, except the App's own bot. You can [filter events](#choose-which-events-start-runs) as your workflow grows.
+
+The summary appears in the agent run. To post a comment or take another action, give the agent the appropriate [tools and GitHub access](#give-the-agent-github-access).
+
+## Deploy the agent
+
+Deploy from the project root:
+
+```bash
+uv run mda deploy
+```
+
+
+
+
+On the first deployment, follow the prompts to create a GitHub App and install it on the repositories you want to connect. Managed Deep Agents subscribes the App to your handlers' events and configures its webhook URL:
+
+```text
+https://<deployment-url>/channels/github/events
+```
+
+Open an issue in a connected repository, then view the resulting run in [LangSmith Studio](/langsmith/quick-start-studio). The agent summarizes the issue using the input from your handler.
+
+Redeploy after changing your channel configuration. If you skip App setup, run `mda deploy` again to complete it.
+
+## Choose which events start runs
+
+Handlers let you decide whether an event needs the agent before a run starts. Events without a matching handler start no run.
+
+Return a nonblank string to start a run, or `None` to skip the event. Handlers can be synchronous or asynchronous. Read the sender from `event.sender`, repository details from `event.repository`, and event data from `event.payload`.
+
+
+
+
+For example, to accept issues only from selected users, add this check at the start of your handler. Replace `your-github-login` with an allowed GitHub username:
+
+```python
+if event.sender.login.lower() not in {"your-github-login"}:
+    return None
+```
+
+
+
+
+This is an optional check in your code, not a channel setting. Webhook verification authenticates the delivery; your handler decides which senders may start work.
+
+<Accordion title="Supported events">
+Register keys under `on` using the event and action, such as `issues.opened`:
+
+| Event | Supported actions |
+| --- | --- |
+| `issues` | `opened`, `labeled` |
+| `issue_comment` | `created` |
+| `pull_request` | `opened`, `ready_for_review`, `synchronize`, `labeled`, `closed` |
+| `pull_request_review` | `submitted` |
+| `pull_request_review_comment` | `created` |
+| `workflow_run` | `completed` |
+
+`issue_comment.created` includes comments on both issues and pull requests. Inline review comments use `pull_request_review_comment.created`.
+</Accordion>
+
+Each accepted event starts a fresh thread. For follow-up work, instruct the agent to read the issue or pull request conversation before acting.
+
+## Give the agent GitHub access
+
+Your agent decides how to act through its [tools](/langsmith/python/managed-deep-agents-tools) and [instructions](/langsmith/python/managed-deep-agents-instructions). The channel does not automatically post the agent's final answer to GitHub.
+
+The GitHub App provides an agent-owned [connection](/langsmith/python/managed-deep-agents-connections), `mda/github-token`. Use it to authenticate GitHub requests from your tools or [sandbox proxy](/langsmith/python/managed-deep-agents-sandboxes#use-connections-in-proxy-headers):
+
+```python
+from managed_deepagents import connections
+
+github = connections.get("mda/github-token", {"type": "agent"})
+```
+
+
+
+
+These declarations create a connection reference for proxy configuration. Inside an authored tool, await `connections.get(...)` to resolve the token. Requests use the App's access, not the event sender's personal credentials.
+
+### Configure repositories and permissions
+
+Use the optional `app` configuration in your channel declaration to control GitHub access:
+
+- **`repositories`**: A list of repositories in `owner/name` form, all from the same owner. Limits both accepted events and the App token to those repositories. When omitted, the channel uses every repository in the App installation.
+- **`permissions`**: Additional permissions the agent needs, such as `contents: read` to inspect code or `contents: write` to push branches. Managed Deep Agents requests the permissions required by your handlers automatically.
+
+Redeploy after changing these options and complete any permission approvals requested by GitHub.
+
+## See also
+
+- [Channels overview](/langsmith/python/managed-deep-agents-channels): Add channels to an agent project.
+- [Tools](/langsmith/python/managed-deep-agents-tools): Give the agent actions it can perform.
+- [Manage connections](/langsmith/python/managed-deep-agents-connections): Access credentials from tools and sandbox configuration.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/managed-deep-agents-channels-github.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
