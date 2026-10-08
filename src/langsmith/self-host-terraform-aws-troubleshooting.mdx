@@ -7,7 +7,7 @@ description: Common issues, fixes, and diagnostic commands for LangSmith self-ho
 This page documents common issues, fixes, and diagnostic commands for LangSmith deployments provisioned with the [AWS Terraform modules](https://github.com/langchain-ai/terraform/tree/main/modules/aws).
 
 <Tip>
-Before upgrading, review the [LangSmith self-hosted changelog](/langsmith/self-hosted-changelog) for breaking changes and required variable updates. Run `aws eks update-kubeconfig --region <region> --name <cluster-name>` before running any `kubectl` commands.
+Before upgrading, review the [LangSmith self-hosted changelog](/langsmith/self-hosted-changelog) for breaking changes and required variable updates. Run `source infra/scripts/set-kubeconfig.sh` from `modules/aws/`, or `aws eks update-kubeconfig --region <region> --name <cluster-name>`, before running any `kubectl` commands.
 </Tip>
 
 For a copy-paste reference of the `kubectl`, `helm`, and `aws` calls used throughout this page, skip to [Diagnostic commands](#diagnostic-commands).
@@ -294,7 +294,18 @@ kubectl get externalsecret langsmith-config -n langsmith -o yaml | grep 'key:'
 ./infra/scripts/migrate-ssm.sh --old-prefix /langsmith/<old-name-prefix>-<old-environment> --dry-run
 ```
 
-If `migrate-ssm.sh` reports every parameter as failed, copy each one with `aws ssm put-parameter --type SecureString --overwrite` under the new prefix.
+In the `v0.17.0` and `v0.16.*` module releases, the live copy in `migrate-ssm.sh` fails: its `put-parameter` call passes `--output none`, which the AWS CLI rejects, so every parameter reports `FAILED`. On bash 4.1 or later, the script can also exit after the first parameter. Use `--dry-run` to list the keys, then copy each one with the AWS CLI:
+
+```bash
+OLD=/langsmith/<old-name-prefix>-<old-environment>
+NEW=/langsmith/<name_prefix>-<environment>
+for key in <key-1> <key-2>; do
+  aws ssm put-parameter --region <region> --type SecureString --overwrite \
+    --name "$NEW/$key" \
+    --value "$(aws ssm get-parameter --region <region> --name "$OLD/$key" \
+      --with-decryption --query Parameter.Value --output text)" >/dev/null
+done
+```
 
 <Warning>
 Never change `name_prefix` or `environment` on an existing deployment.
@@ -311,13 +322,17 @@ RDS master password must be 8-128 characters and must not contain '/', '@', '"',
 
 **Cause:** The password is shorter than 8 or longer than 128 characters, or contains characters RDS does not allow in the master password.
 
-**Fix:** Re-generate without restricted characters. `setup-env.sh` produces a compliant password automatically; to update manually:
+**Fix:** Generate a password without restricted characters. `setup-env.sh` produces a compliant password automatically. To replace an invalid value, unset the exported variable first, because `setup-env.sh` keeps a `TF_VAR_postgres_password` that is already set:
 
 ```bash
 ./infra/scripts/manage-ssm.sh set postgres-password "$(openssl rand -hex 32)"
+unset TF_VAR_postgres_password
 source ./infra/scripts/setup-env.sh
-make apply ARGS="-target=module.postgres"
+make apply
+kubectl rollout restart deployment -n langsmith
 ```
+
+Run a full `make apply`, not `-target=module.postgres`: the target skips the `langsmith-postgres` Secret, so RDS and LangSmith would hold different passwords. Skip the restart on a new deployment that has no running pods.
 
 ### Private EKS cluster unreachable (bastion required)
 
@@ -495,7 +510,7 @@ kubectl get targetgroupbinding -A
 # Classic ALB Ingress mode
 kubectl get ingress -n langsmith
 kubectl describe ingress -n langsmith
-aws elbv2 describe-load-balancers --query "LoadBalancers[?contains(LoadBalancerName, 'langsmith')]"
+aws elbv2 describe-load-balancers --query "LoadBalancers[?contains(LoadBalancerName, '<name_prefix>-<environment>')]"
 ```
 
 ### TLS and certificates

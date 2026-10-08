@@ -301,7 +301,7 @@ When `langsmith_domain` is set and `acm_certificate_arn` is empty, Terraform act
 
 - A Route 53 public hosted zone for the domain, or, with `dns_create_zone = false` and `dns_existing_zone_id`, records in an existing public zone (the exact zone or a parent zone; no NS delegation needed).
 - An ACM certificate with DNS validation records. Add a `*.<domain>` SAN with `dns_include_wildcard_san = true`.
-- A Route 53 alias record pointing the domain to the ALB.
+- A Route 53 alias record pointing the domain to the Terraform-managed ALB. In ALB Ingress mode that ALB goes unused, so point the domain at the Ingress hostname yourself (`kubectl get ingress -n langsmith`).
 
 **Staged deploy pattern:** Set `langsmith_domain` with `tls_certificate_source = "none"` first. Terraform creates the hosted zone and certificate without blocking on validation. Delegate the NS records at your registrar, then flip to `tls_certificate_source = "acm"` in a later apply. Terraform blocks until the certificate validates and wires it into the HTTPS listener.
 
@@ -366,7 +366,7 @@ These constraints were validated during the April 2026 gateway permutation test 
 | 4 | Istio port | Istio 1.23 or later ingressgateway listens on port 80 via `NET_BIND_SERVICE`, not port 8080. ALB TGB health check and security group rules must target port 80. |
 | 5 | NGINX TGB port | NGINX ingress-nginx controller pods listen on port 80. The TargetGroupBinding target type is `ip`. |
 | 6 | Envoy Gateway port | The Envoy proxy pods listen on port 10080 (the Gateway's port 80 plus Envoy's 10000 offset for non-root). The ALB target group and node security group rule use 10080; the TargetGroupBinding references the Envoy `ClusterIP` Service on port 80, with target type `ip`. |
-| 7 | Destroy order | Run `make uninstall`, then `make destroy`. Do not pre-delete namespaces: Helm cannot uninstall cleanly into a terminating namespace, so the `helm_release` resource times out. |
+| 7 | Destroy order | Run `make uninstall` before `make destroy`. For the full sequence, including the deletion protection apply and emptying the trace bucket, see [Teardown](/langsmith/self-host-terraform-aws-quick-reference#teardown). Do not pre-delete namespaces: Helm cannot uninstall cleanly into a terminating namespace, so the `helm_release` resource times out. |
 | 8 | Stuck terminating namespaces | KEDA's stale `external.metrics.k8s.io/v1beta1` API group causes `NamespaceDeletionDiscoveryFailure`. Fix: clear the namespace's `spec.finalizers` and submit the result to the finalize subresource with `kubectl replace --raw "/api/v1/namespaces/<ns>/finalize" -f -`, then re-run `make destroy`. |
 
 ## Verification commands
@@ -393,7 +393,10 @@ aws rds describe-db-instances \
 aws elasticache describe-replication-groups \
   --query "ReplicationGroups[?ReplicationGroupId=='<group-id>'].Status"
 
-# S3 access from a pod (via VPC endpoint)
-kubectl run s3-test --rm -it --image=amazon/aws-cli -n langsmith -- \
-  aws s3 ls s3://<bucket-name>
+# S3 access from a pod (via VPC endpoint). Run the pod as an annotated service
+# account; other service accounts have no AWS credentials. The image entrypoint
+# is already `aws`.
+kubectl run s3-test --rm -it --image=amazon/aws-cli -n langsmith \
+  --overrides='{"spec":{"serviceAccountName":"<annotated-service-account>"}}' -- \
+  s3 ls s3://<bucket-name>
 ```

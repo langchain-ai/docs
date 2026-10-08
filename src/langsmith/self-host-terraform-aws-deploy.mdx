@@ -246,8 +246,14 @@ redis_source    = "external"
 
 tls_certificate_source = "acm"
 langsmith_domain       = "langsmith.example.com"
+# dns_create_zone      = false                    # write records into a zone that already resolves
+# dns_existing_zone_id = "<hosted-zone-id>"
 # acm_certificate_arn  = "arn:aws:acm:us-west-2:<account-id>:certificate/<cert-id>"  # optional with a domain
 ```
+
+<Note>
+With a domain and no `acm_certificate_arn`, Terraform requests an ACM certificate, and `make apply` waits until DNS validation succeeds. With `dns_create_zone = true` (the default), Terraform creates a new hosted zone for `langsmith_domain`, and validation succeeds only after you delegate that zone's NS records from the parent domain. To validate in a zone that already resolves, set `dns_create_zone = false` and `dns_existing_zone_id`. To deploy before the delegation is in place, follow the staged deploy pattern in [Auto-provisioned DNS](/langsmith/self-host-terraform-aws-architecture#auto-provisioned-dns).
+</Note>
 
 See the [AWS variables reference](/langsmith/self-host-terraform-aws-variables) for every input variable.
 
@@ -355,13 +361,16 @@ Downgrading from chart v17 to v16 is not supported. Back up the database before 
 A deployment with `enable_sandboxes = false` and `enable_smithdb = false` only moves the chart pin. Sandboxes and SmithDB need the extra steps below. The module sets no Engine values, so if you enabled Engine in your own values overrides, also apply the Engine change in [Upgrade from v16 to v17](/langsmith/self-host-upgrades#upgrade-from-v16-to-v17).
 
 1. Check out a `v0.17.*` tag, or pull `main`.
-1. Run `make apply`. The v17 module changes no AWS resources, so Terraform reports no infrastructure changes.
+1. If `terraform.tfvars` pins `langsmith_helm_chart_version` to a `0.16.x` patch, clear it or set a `0.17.x` patch, and run `unset CHART_VERSION` if your shell sets it. Terraform validation rejects a `0.16.x` pin at plan time, and `deploy.sh` rejects a `0.16.x` value in `CHART_VERSION`.
+1. Run `make apply`. From module release `v0.16.83` or later, the v17 module changes no AWS resources, so Terraform reports no infrastructure changes. From an earlier `v0.16.*` release, review `make plan` before you apply.
 1. Run `make init-values`. It rewrites `langsmith-values-overrides.yaml` in the chart v17 sandbox schema.
 1. With `enable_smithdb = true`, update the SmithDB keys in the values files that `make init-values` does not overwrite. Chart v17 fails to render the old keys:
    - In `helm/values/langsmith-values-smithdb.yaml`, rename `smithdb.migration.deployment` to `smithdb.migration.job`.
    - In `helm/values/langsmith-values-sizing-*.yaml`, move `smithdb.query.autoscaling.*`, `smithdb.ingestion.autoscaling.*`, and `smithdb.compactionWorker.autoscaling.*` under `autoscaling.hpa.*`. In `langsmith-values-sizing-production-large.yaml`, rename the `local-ssd-storage` volume to `cache`.
 
    If you have not customized these files, delete them and re-run `make init-values` to copy the v17 versions instead. For the chart changes behind these keys, see [Cache storage](/langsmith/self-host-smithdb-infrastructure#cache-storage).
+
+   Only the `production-large` sizing file defines a `cache` volume. With the `dev`, `minimum`, or `production` profile, chart v17 gives each SmithDB cache a per-pod PVC from `smithdb.cache.storageClassName`, or from the cluster default StorageClass when that is unset. On chart v16, each cache was an `emptyDir`. To choose where the cache lives, set `smithdb.cache.storageClassName`, or define a volume named `cache` for each SmithDB component that uses a disk.
 1. Run `make deploy`. With sandboxes running on chart v16, the first run stops with `namespace langsmith still mounts sandbox volumes through the chart 0.16 JuiceFS CSI driver` and prints the commands that drain the old volumes. Run them, wait until only `juicefs-csi-*` pods remain, then run `make deploy` again. Running sandboxes stop during the drain. Their data stays in S3 and Redis, and chart v17 mounts the same JuiceFS volume.
 1. Verify the sandbox cutover:
 
@@ -492,6 +501,8 @@ The ALB is always the entry point. With `acm`, it terminates TLS. Behind it, [En
 
 Terraform rejects a configuration that turns on more than one of these.
 
+In ALB Ingress mode, the AWS Load Balancer Controller creates its own ALB, and the Terraform ALB goes unused. The Route 53 alias record that Terraform creates for `langsmith_domain` still points at the Terraform ALB, so point the domain at the Ingress hostname instead (`kubectl get ingress -n langsmith`).
+
 <Warning>
 Deployments created before Envoy Gateway became the default, with no gateway flag set, switch to Envoy Gateway on the next `make apply`. To keep ALB Ingress, set `enable_envoy_gateway = false` before applying.
 </Warning>
@@ -504,7 +515,11 @@ Deployments created before Envoy Gateway became the default, with no gateway fla
 
 For Let's Encrypt DNS-01 through Route 53, which Istio requires, set `create_cert_manager_irsa = true`, `cert_manager_hosted_zone_id`, and `letsencrypt_email`. Terraform creates the DNS-01 issuer when `langsmith_domain` is set. `create_cert_manager_irsa` and `tls_certificate_source = "letsencrypt"` are mutually exclusive.
 
-To add an ACM certificate and a Route 53 alias record after deployment, run `make tls`. It requires `langsmith_domain` in `terraform.tfvars`, requests and DNS-validates a certificate unless `acm_certificate_arn` is already set, and writes the certificate ARN to `terraform.tfvars`. Then run `make apply`, `make init-values`, and `make deploy`.
+With `langsmith_domain` set and `acm_certificate_arn` empty, `make apply` creates the ACM certificate and the Route 53 alias record. `make tls` does the same outside Terraform: it requests and DNS-validates a certificate, writes the alias record, and writes the certificate ARN to `terraform.tfvars`.
+
+<Warning>
+Do not run `make tls` after `make apply` has created the certificate and alias for `langsmith_domain`. The ARN that `make tls` writes turns off the Terraform DNS module, so the next `make apply` destroys the Terraform certificate, the alias record, and the hosted zone if Terraform created it (`dns_create_zone = true`).
+</Warning>
 
 ### Split dataplane namespace
 

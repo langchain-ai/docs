@@ -247,11 +247,11 @@ aws eks update-kubeconfig --region <region> --name <cluster-name>
 
 # RDS
 aws rds describe-db-instances \
-  --query "DBInstances[?contains(DBInstanceIdentifier,'langsmith')]"
+  --query "DBInstances[?contains(DBInstanceIdentifier,'<name_prefix>-<environment>')]"
 
 # ElastiCache
 aws elasticache describe-cache-clusters \
-  --query "CacheClusters[?contains(CacheClusterId,'langsmith')]"
+  --query "CacheClusters[?contains(CacheClusterId,'<name_prefix>-<environment>')]"
 
 # S3
 aws s3 ls s3://<bucket-name>
@@ -259,15 +259,16 @@ aws s3api get-bucket-location --bucket <bucket-name>
 
 # ALB
 aws elbv2 describe-load-balancers \
-  --query "LoadBalancers[?contains(LoadBalancerName,'langsmith')]"
+  --query "LoadBalancers[?contains(LoadBalancerName,'<name_prefix>-<environment>')]"
 
 # VPC endpoint
 aws ec2 describe-vpc-endpoints \
   --filters "Name=service-name,Values=com.amazonaws.<region>.s3" \
   --query "VpcEndpoints[].State"
 
-# SSM secrets
-aws ssm get-parameters-by-path --path "/langsmith/<base-name>/" --with-decryption
+# SSM secrets (names only, so no secret value is printed)
+aws ssm get-parameters-by-path --path "/langsmith/<name_prefix>-<environment>/" \
+  --query "Parameters[].Name"
 
 # IAM role
 aws iam get-role --role-name <irsa-role-name>
@@ -290,6 +291,10 @@ make tf ARGS="state list"
 ```
 
 ## Teardown
+
+<Warning>
+Teardown permanently deletes LangSmith data. Step 1 deletes the ClickHouse volume, step 4 deletes every trace object in S3, and step 6 deletes the SSM parameters. Those parameters include the API key salt, the JWT secret, and the encryption keys, which must never change. A database restored from the `-final` RDS snapshot needs them: without the original salt and keys, existing API keys stop working and encrypted data cannot be read. If you keep the snapshot, export the SSM parameters to a secure location before `make purge-secrets`.
+</Warning>
 
 ```bash
 cd terraform/modules/aws
