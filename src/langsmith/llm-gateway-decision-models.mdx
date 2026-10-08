@@ -1,17 +1,23 @@
 ---
 title: Decision models
-description: Use SemIf through the LangSmith LLM Gateway for structured classification and scoring with the System One API.
+description: Call SemIf, TypeSafe, and OpenAI decision models through the LangSmith LLM Gateway using the System One API or the OpenAI Decisions API.
 ---
 
-Decision models classify or score text and return structured answers instead of generated chat messages. Call them through the [LLM Gateway](/langsmith/llm-gateway) with the System One API.
+Decision models classify or score text and return structured answers instead of generated chat messages. Call them through the [LLM Gateway](/langsmith/llm-gateway) with one of two APIs:
 
-LangSmith provides an open source decision model, SemIf (`semif-qwen3.5-4b`), through the gateway for free through September 28, 2026.
+| Model | API | Endpoint | Credentials |
+|-------|-----|----------|-------------|
+| [SemIf](#semif) | System One | `/v1/systemone` | LangSmith API key only |
+| [TypeSafe (Jev)](#typesafe-jev) | System One | `/v1/systemone` | `TYPESAFE_API_KEY` provider secret |
+| [OpenAI decision models](#use-the-openai-decisions-api) | OpenAI Decisions | `/openai/v1/decisions` | `OPENAI_API_KEY` provider secret |
+
+## Quickstart
+
+This example calls [SemIf](#semif), which needs no provider secret.
 
 <Note>
 SemIf is enabled for US organizations on Free, Developer, and Plus plans.
 </Note>
-
-## Quickstart
 
 Set your [LangSmith API key](/langsmith/create-account-api-key):
 
@@ -99,9 +105,11 @@ curl https://gateway.smith.langchain.com/v1/systemone \
 </Tab>
 </Tabs>
 
-## Understand decision models
+## Use the System One API
 
-Pass the text to evaluate in `state` and between 1 and 32 named questions in `questions`. Decision models support three question types:
+SemIf and TypeSafe (Jev) both use the System One API. The `model` field selects which one handles the request.
+
+Pass the text to evaluate in `state` and between 1 and 32 named questions in `questions`. System One supports three question types:
 
 - **`noul`**: Returns the probability that the answer is true.
 - **`choice`**: Classifies the state into one of the supplied options.
@@ -109,15 +117,15 @@ Pass the text to evaluate in `state` and between 1 and 32 named questions in `qu
 
 The response contains `answers` keyed by question name rather than a chat message. Streaming is not supported.
 
-## SemIf
+### SemIf
 
-You can select SemIf from the hosted models on the gateway home page to get a request example. For regional base URLs, see [Regional gateways](/langsmith/llm-gateway-direct-model-access#use-a-regional-gateway).
+LangSmith hosts SemIf (`semif-qwen3.5-4b`), an open source decision model, on the gateway. You can select SemIf from the hosted models on the gateway home page to get a request example. For regional base URLs, see [Regional gateways](/langsmith/llm-gateway-direct-model-access#use-a-regional-gateway).
 
 SemIf calls do not consume Gateway Credits. Gateway [access](/langsmith/llm-gateway-model-access-policies), [rate-limit](/langsmith/llm-gateway-rate-limit-policies), and [budget policies](/langsmith/llm-gateway-spend-policies) still apply.
 
-## TypeSafe (Jev)
+### TypeSafe (Jev)
 
-The gateway also supports TypeSafe decision models with bring-your-own-key (BYOK). Configure `TYPESAFE_API_KEY` as a workspace [provider secret](/langsmith/llm-gateway-admin-setup#1-add-provider-secrets). See [TypeSafe setup](/oss/integrations/providers/typesafe#setup) to create a key and install the LangChain integration.
+The gateway supports TypeSafe decision models with bring-your-own-key (BYOK). Configure `TYPESAFE_API_KEY` as a workspace [provider secret](/langsmith/llm-gateway-admin-setup#1-add-provider-secrets). See [TypeSafe setup](/oss/integrations/providers/typesafe#setup) to create a key and install the LangChain integration.
 
 Set `LANGSMITH_API_KEY` to your workspace-scoped LangSmith API key. The `typesafe/` prefix routes the request through your workspace's TypeSafe provider secret, not the hosted SemIf model. Do not pass your TypeSafe API key as the SDK's `api_key` or `apiKey` when calling the gateway. Use the gateway base URL without `/v1` for the SDKs:
 
@@ -198,6 +206,58 @@ curl https://gateway.smith.langchain.com/v1/systemone \
 
 </Tab>
 </Tabs>
+
+## Use the OpenAI Decisions API
+
+The OpenAI Decisions API has its own request and response format, separate from System One. The gateway supports the OpenAI Decisions API through [direct model access](/langsmith/llm-gateway-direct-model-access). Configure `OPENAI_API_KEY` as a workspace [provider secret](/langsmith/llm-gateway-admin-setup#1-add-provider-secrets).
+
+Send requests to `POST /openai/v1/decisions` using your workspace-scoped LangSmith API key. Set `model` to the native OpenAI model name without the `openai/` prefix:
+
+```bash
+curl https://gateway.smith.langchain.com/openai/v1/decisions \
+    -H "Authorization: Bearer $LANGSMITH_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "gpt-6-luna",
+      "input": "The package arrived with a broken screen.",
+      "questions": [
+        {
+          "type": "predicate",
+          "name": "damaged",
+          "instructions": "Does the customer report a damaged item?"
+        }
+      ]
+    }'
+```
+
+The gateway preserves the native request and response format:
+
+```json
+{
+  "model": "gpt-6-luna",
+  "answers": [
+    {
+      "type": "predicate",
+      "name": "damaged",
+      "probability": 1.0
+    }
+  ],
+  "usage": {
+    "input_tokens": 164,
+    "input_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0
+    },
+    "output_tokens": 0,
+    "output_tokens_details": {
+      "reasoning_tokens": 0
+    },
+    "total_tokens": 164
+  }
+}
+```
+
+Gateway [access](/langsmith/llm-gateway-model-access-policies), [rate-limit](/langsmith/llm-gateway-rate-limit-policies), and [budget policies](/langsmith/llm-gateway-spend-policies) apply to Decisions requests, and token usage counts toward spend caps. The gateway traces each request to LangSmith with the request as input and the answers and token usage as output.
 
 ## See also
 

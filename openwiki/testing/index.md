@@ -1,5 +1,5 @@
 # Files
 
-- [Builder Tests](builder-tests.md) - Focused offline pytest guidance for documentation-builder route classes, ordered Markdown transforms, source containment, OpenAPI-derived indexes, and LLM corpus invariants.
+- [Builder Tests](builder-tests.md) - Focused, offline tests for DocumentationBuilder routing, Markdown preprocessing, shared inputs, snippets, source containment, and generated build-output invariants. Covers when an output assertion is sufficient and when to add a built-site check.
 - [Conditional Rendering Tests](conditional-rendering.md) - Test guidance for the build-time `:::python` and `:::js` renderer, including its regex fence semantics, scoped autolinks, code-fence boundary, and language-specific artifacts.
-- [Testing overview](test-overview.md) - Change-oriented guidance for selecting deterministic unit tests, rendered-document checks, network-backed registry and upstream checks, or credentialed live samples. It also explains what CI failures and skipped live samples mean.
+- [Testing Overview](test-overview.md) - Change-oriented guidance for deterministic tests, rendered documentation, credentialed code samples, remote checks, and CI boundaries. Explains sample-runner concurrency, rate-limit outcomes, and optional trace publication.

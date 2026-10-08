@@ -596,6 +596,9 @@ LINK_MAPS: list[LinkMap] = [
             "on_llm_new_token": "interfaces/_langchain_core.callbacks_base.BaseCallbackHandlerMethods.html#onLlmNewToken",
             "langchain.messages": "modules/_langchain_core.messages.html",
             "BaseMessage(content)": "langchain-core/messages/BaseMessage",
+            # @langchain/mcp-adapters
+            "MCPAdapter": "langchain-mcp-adapters/MCPAdapter",
+            "MCPAdapter.listTools": "langchain-mcp-adapters/MCPAdapter/listTools",
             # Text splitters
             "RecursiveCharacterTextSplitter": "langchain-textsplitters/RecursiveCharacterTextSplitter",
             "TokenTextSplitter": "langchain-textsplitters/TokenTextSplitter",
@@ -683,6 +686,7 @@ LINK_MAPS: list[LinkMap] = [
             "HumanInTheLoopMiddleware": "langchain/middleware/humanInTheLoopMiddleware",
             "humanInTheLoopMiddleware": "langchain/middleware/humanInTheLoopMiddleware",
             "HITLRequest": "langchain/index/HITLRequest",
+            "ToolCallRequest": "langchain/index/ToolCallRequest",
             "AnthropicPromptCachingMiddleware": "langchain/index/anthropicPromptCachingMiddleware",
             "BedrockPromptCachingMiddleware": "langchain/index/bedrockPromptCachingMiddleware",
             "SummarizationMiddleware": "langchain/index/summarizationMiddleware",
