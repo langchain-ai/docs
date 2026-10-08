@@ -60,7 +60,7 @@ graph TB
 |---|---|---|
 | Azure CLI (`az`) | 2.50 or later | Authenticate, query Azure resources, manage AKS credentials |
 | Terraform | 1.11.0 or later | Run the infrastructure modules |
-| `kubectl` | latest | Inspect the AKS cluster |
+| `kubectl` | 1.33 or later | Inspect the AKS cluster |
 | Helm | 3.12 or later | Install and manage the LangSmith chart |
 | `kubelogin` | latest | Sign in to a cluster with Entra ID integration (`aks_entra_only`, or an attached cluster with Entra ID). Not needed otherwise |
 
@@ -101,7 +101,7 @@ az account set --subscription <your-subscription-id>
 az account show
 ```
 
-You also need a LangSmith license key ([contact our sales team](https://www.langchain.com/contact-sales)) and either a `dns_label` (Azure subdomain, no DNS setup needed) or a custom `langsmith_domain`.
+You also need a LangSmith license key ([contact the LangChain sales team](https://www.langchain.com/contact-sales)) and either a `dns_label` (Azure subdomain, no DNS setup needed) or a custom `langsmith_domain`.
 
 ## Quickstart
 
@@ -140,7 +140,7 @@ make init-values
 make deploy
 ```
 
-Or run steps 5 through 7 in one shot:
+Or, after `make init`, run the rest of steps 5 through 7 in one shot:
 
 ```bash
 make deploy-all   # apply → seed-secrets → kubeconfig → k8s-secrets → init-values → deploy
@@ -353,7 +353,7 @@ make init-values
 
 With `clickhouse_source = "external"`, `make init-values` also prompts for the ClickHouse connection details and creates the `langsmith-clickhouse` secret.
 
-Also copies the sizing overlay and any enabled add-on overlays from `helm/values/examples/` into `helm/values/`.
+`make init-values` also copies the sizing overlay and any enabled add-on overlays from `helm/values/examples/` into `helm/values/`.
 
 <Info>
 The admin email is read from the `langsmith_admin_email` Terraform output (set during `make setup-env`) and written into `values-overrides.yaml` automatically. No manual editing needed.
@@ -482,15 +482,18 @@ To move a deployment from chart 0.16 to 0.17:
    git checkout "$(git tag -l 'v0.17.*' --sort=-v:refname | head -1)"
    ```
 
+1. Run `make init ARGS=-upgrade` to update the providers and modules for the new tag.
+1. Check that `infra/variables.tf` on the new tag declares every variable that your `terraform.tfvars` sets.
+
+   <Warning>
+   Variables added on the `v0.16.*` line reach the `v0.17.*` line in a later tag. v0.17.0 does not declare `ingress_load_balancer`, `ingress_load_balancer_subnet_id`, `ingress_load_balancer_ip`, `ingress_load_balancer_manage_subnet_assignment`, `envoy_gateway_image_registry`, `envoy_gateway_image_pull_secret_name`, or `aks_network_owner_checks`, which later `v0.17.*` tags add. Terraform only warns about an undeclared variable in `terraform.tfvars`, so a deployment that sets one on a tag that lacks it loses that setting without an error.
+   </Warning>
+
 1. Run `make apply`. It adds the two LLM Gateway federated credentials.
 1. Run `make init-values` to regenerate the values files in the chart 0.17 shape.
 1. Run `make deploy`.
 
-<Warning>
-Variables added on the `v0.16.*` line reach the `v0.17.*` line in a later tag. v0.17.0 does not declare `ingress_load_balancer`, `ingress_load_balancer_subnet_id`, `ingress_load_balancer_ip`, `ingress_load_balancer_manage_subnet_assignment`, `envoy_gateway_image_registry`, `envoy_gateway_image_pull_secret_name`, or `aks_network_owner_checks`, which later `v0.17.*` tags add. Terraform only warns about an undeclared variable in `terraform.tfvars`, so a deployment that sets one on a tag that lacks it loses that setting without an error. Before you run `make apply`, check that `infra/variables.tf` on the new tag declares every variable that your `terraform.tfvars` sets.
-</Warning>
-
-Otherwise, the upgrade on Azure only moves the chart pin. An installation still on chart 0.15 must first follow [`MIGRATION-0.15-to-0.16.md`](https://github.com/langchain-ai/terraform/blob/main/MIGRATION-0.15-to-0.16.md). For the full list of chart changes, see [`MIGRATION-0.16-to-0.17.md`](https://github.com/langchain-ai/terraform/blob/main/MIGRATION-0.16-to-0.17.md).
+Beyond the two federated credentials, the upgrade on Azure only moves the chart pin. An installation still on chart 0.15 must first follow [`MIGRATION-0.15-to-0.16.md`](https://github.com/langchain-ai/terraform/blob/main/MIGRATION-0.15-to-0.16.md). For the full list of chart changes, see [`MIGRATION-0.16-to-0.17.md`](https://github.com/langchain-ai/terraform/blob/main/MIGRATION-0.16-to-0.17.md).
 
 ## Enable add-ons
 
@@ -666,7 +669,7 @@ helm get values langsmith -n langsmith | grep -A3 insights
 ```
 
 <Warning>
-**Encryption keys must never change after first enable.** `insights_encryption_key` and `polly_encryption_key` must never change after first enable. Changing either permanently corrupts all existing encrypted data. There is no recovery path. These keys live in Key Vault and never rotate automatically.
+**Encryption keys must never change after first enable.** Changing `insights_encryption_key` or `polly_encryption_key` permanently corrupts all existing encrypted data. There is no recovery path. These keys live in Key Vault and never rotate automatically.
 </Warning>
 
 <Warning>
@@ -779,7 +782,7 @@ Set `ingress_controller` in `terraform.tfvars` before `make apply`. For the full
 | `nginx` | `ingress-nginx` Helm chart with Azure LB | Legacy Ingress compatibility. |
 | `istio-addon` | AKS Service Mesh add-on (Azure-managed Istio) | Azure-managed Istio mesh, multi-dataplane, mTLS. |
 | `istio` | `istio-base` + `istiod` + `istio-ingressgateway` | Self-managed Istio. Full mesh and sidecar injection. |
-| `agic` | Azure Application Gateway v2 + AKS-managed `ingress_application_gateway` add-on | Enterprise Azure, native L7 WAF, HTTP-only or dns01 + custom domain. |
+| `agic` | Azure Application Gateway v2 + AKS-managed `ingress_application_gateway` add-on | Enterprise Azure, native L7 WAF, HTTP-only, `dns01` with a custom domain, or `existing` with your own certificate. |
 | `none` | No ingress controller | Clusters that already run their own controller. |
 
 <Warning>

@@ -72,8 +72,7 @@ clickhouse_source = "in-cluster"
 ```txt
 AKS Cluster
 ├── langsmith namespace
-│   ├── frontend, backend, platform-backend, playground, queue, ingest-queue, ace-backend
-│   └── clickhouse (in-cluster; use LangChain Managed for production scale)
+│   └── frontend, backend, platform-backend, playground, queue, ingest-queue, ace-backend
 └── Envoy Gateway + cert-manager
 
 Azure Managed Services
@@ -81,6 +80,9 @@ Azure Managed Services
 ├── Azure Managed Redis (private VNet)
 ├── Azure Blob Storage (Workload Identity, no static keys)
 └── Azure Key Vault
+
+External ClickHouse
+└── LangChain Managed ClickHouse or a self-managed cluster
 ```
 
 ## Networking
@@ -141,7 +143,7 @@ In-cluster ClickHouse is dev/POC only (single pod, no replication, no backups). 
 
 | Service | Purpose | Workload Identity |
 |---|---|---|
-| `langsmith-host-backend` | LangGraph control plane API. Manages deployment lifecycle, serves deployment metadata. | Yes |
+| `langsmith-host-backend` | LangSmith Deployment control plane API. Manages deployment lifecycle, serves deployment metadata. | Yes |
 | `langsmith-listener` | Watches host-backend for state changes, creates and updates `LangGraphPlatform` CRDs. | Yes |
 | `langsmith-operator` | Kubernetes operator. Azure-specific: injects `azure.workload.identity/use: "true"` + `langsmith-ksa` so every agent pod accesses Blob Storage via Workload Identity. | No |
 
@@ -186,7 +188,7 @@ When `postgres_source = "external"` and `redis_source = "external"` (the recomme
 ### Azure Blob Storage
 
 - Trace payloads: large inputs and outputs, attachments.
-- Workload Identity (no static keys) via the `<cluster_name>-app-identity` Managed Identity, which `workload_identity_name` overrides.
+- Workload Identity (no static keys) via the `k8s-app-identity` Managed Identity.
 - Always required. Disabling blob storage breaks the cluster on large payloads.
 - Prefixes: `ttl_s/` (14-day TTL), `ttl_l/` (400-day TTL).
 
@@ -198,16 +200,16 @@ When `postgres_source = "external"` and `redis_source = "external"` (the recomme
 
 ## Workload Identity
 
-Azure AD token exchange happens via the AKS OIDC issuer. Pods access Blob Storage without static keys.
+Microsoft Entra ID token exchange happens via the AKS OIDC issuer. Pods access Blob Storage without static keys.
 
 ```mermaid actions={false}
 %%{init: {'flowchart': {'nodeSpacing': 25, 'rankSpacing': 30}}}%%
 graph TB
     OIDC["AKS OIDC issuer"]
-    Fed["Federated credential<br/>#lt;cluster_name#gt;-app-identity<br/>(one per ServiceAccount)"]
+    Fed["Federated credential<br/>k8s-app-identity<br/>(one per ServiceAccount)"]
     SA["ServiceAccount<br/>azure.workload.identity/client-id"]
     Pod["Pod<br/>azure.workload.identity/use: true"]
-    Token["Short-lived Azure AD token<br/>no storage keys"]
+    Token["Short-lived Entra ID token<br/>no storage keys"]
     OIDC --> Fed --> SA --> Pod --> Token
 
     classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
@@ -247,9 +249,9 @@ Every pod that reads blob storage env vars must have:
 | `langsmith-clickhouse` | Application | No |
 | `langsmith-operator` | LangSmith Deployment add-on | No |
 
-All federated credentials are registered in `infra/modules/k8s-cluster/main.tf` under `service_accounts_for_workload_identity`. Each name is `<release>-<component>`, where `<release>` is the chart fullname (`langsmith` by default). Terraform registers the two LLM Gateway credentials whether or not `enable_llm_gateway` is set. The `v0.16.*` module tags register only the first eight. SmithDB uses its own ServiceAccount and identity. Adding a new pod that accesses blob storage requires adding its ServiceAccount name to that list and running `make apply`.
+All federated credentials are registered in `infra/modules/k8s-cluster/main.tf` under `service_accounts_for_workload_identity`. Each name is `<release>-<component>`, where `<release>` is the chart fullname (`langsmith` by default). Terraform registers the two LLM Gateway credentials whether or not `enable_llm_gateway` is set. The `v0.16.*` module tags register all except the two LLM Gateway credentials. SmithDB uses its own ServiceAccount and identity. Adding a new pod that accesses blob storage requires adding its ServiceAccount name to that list and running `make apply`.
 
-If a pod's ServiceAccount has no registered federated credential, Azure AD rejects the token exchange and the pod panics on startup:
+If a pod's ServiceAccount has no registered federated credential, Microsoft Entra ID rejects the token exchange and the pod panics on startup:
 
 ```txt
 panic: blob-storage health-check failed: get container properties failed:
@@ -312,7 +314,7 @@ The secrets flow runs in this order. `make deploy-all` runs steps 2 through 5, a
 | `nginx` | `ingress_controller = "nginx"` | Yes | NGINX via Helm, standard Kubernetes Ingress. |
 | `istio-addon` | `ingress_controller = "istio-addon"` | Yes | AKS managed Istio service mesh. Use `istio_addon_revision` to pin revision. |
 | `istio` | `ingress_controller = "istio"` | Yes | Self-managed Istio via Helm. Full control over revision and config. |
-| `agic` | `ingress_controller = "agic"` | Yes | Azure Application Gateway v2 + AKS-managed `ingress_application_gateway` add-on. The gateway runs `Standard_v2`; `create_waf = true` moves it to `WAF_v2` and attaches the WAF policy. HTTP-only or dns01 + custom domain. |
+| `agic` | `ingress_controller = "agic"` | Yes | Azure Application Gateway v2 + AKS-managed `ingress_application_gateway` add-on. The gateway runs `Standard_v2`; `create_waf = true` moves it to `WAF_v2` and attaches the WAF policy. HTTP-only, `dns01` with a custom domain, or `existing` with your own certificate. |
 | `envoy-gateway` _(default)_ | `ingress_controller = "envoy-gateway"` | Yes | Gateway API native. Uses `envoyproxy/gateway-helm`. |
 | `none` | `ingress_controller = "none"` | No | Bring your own ingress. |
 
@@ -336,10 +338,10 @@ Four sizing profiles are available.
 | Pool | VM Size | vCPU | RAM | Min | Max | Purpose |
 |---|---|---|---|---|---|---|
 | default | `Standard_D8s_v5` | 8 | 32 GB | 1 | 10 | Core LangSmith, system pods (set min 3 for production) |
-| large | `Standard_D16s_v5` | 16 | 64 GB | 0 | 2 | ClickHouse (in-cluster), LGP agent pods |
+| large | `Standard_D16s_v5` | 16 | 64 GB | 0 | 2 | ClickHouse (in-cluster), LangSmith Deployment agent pods |
 
 <Note>
-ClickHouse (when in-cluster) requests 1 to 4 CPU and 2 to 16 GB RAM depending on profile. With [LangChain Managed ClickHouse](/langsmith/langsmith-managed-clickhouse), the `large` pool is only needed for LGP operator-spawned agent pods.
+ClickHouse (when in-cluster) requests 1 to 4 CPU and 2 to 16 GB RAM depending on profile. With [LangChain Managed ClickHouse](/langsmith/langsmith-managed-clickhouse), the `large` pool is only needed for agent pods that the LangSmith Deployment operator spawns.
 </Note>
 
 ## Optional modules

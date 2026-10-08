@@ -5,12 +5,12 @@ description: Provision LangSmith self-hosted on AWS, Azure, or GCP using LangCha
 ---
 
 <Info>
-Self-hosted LangSmith is an add-on to the Enterprise plan designed for LangChain's largest, most security-conscious customers. See [pricing](https://www.langchain.com/pricing) for details, or [contact our sales team](https://www.langchain.com/contact-sales) to request a license key for trial.
+Self-hosted LangSmith is an add-on to the Enterprise plan designed for LangChain's largest, most security-conscious customers. See [pricing](https://www.langchain.com/pricing) for details, or [contact the LangChain sales team](https://www.langchain.com/contact-sales) to request a license key for trial.
 </Info>
 
 LangChain publishes production-ready Terraform modules for [LangSmith self-hosted](/langsmith/self-hosted) at [github.com/langchain-ai/terraform](https://github.com/langchain-ai/terraform). The modules provision the cloud foundation (network, cluster, database, cache, object storage, secrets, DNS) and install the LangSmith Helm chart with sensible defaults.
 
-Use this path when you want infrastructure as code from day one. If you already manage cloud infrastructure with your own tooling and need just the application install, follow the [Helm installation guide](/langsmith/kubernetes) instead.
+Use this path when you want infrastructure as code from day one. If you already manage cloud infrastructure with your own tooling and need only the application install, follow the [Helm installation guide](/langsmith/kubernetes) instead.
 
 Each module release tag deploys one Helm chart line: the `v0.17.*` tags deploy chart 0.17, and the `v0.16.*` tags deploy chart 0.16. Check out the tag for the chart line you want before you configure the module.
 
@@ -45,7 +45,7 @@ Install the following tools before running the modules:
 
 You also need:
 
-- A LangSmith license key. [Contact our sales team](https://www.langchain.com/contact-sales) to request one.
+- A LangSmith license key. [Contact the LangChain sales team](https://www.langchain.com/contact-sales) to request one.
 - Permissions in the target cloud account to create VPC or VNet networking, a managed Kubernetes cluster, managed databases, object storage, secrets, and IAM roles.
 - A registered domain (or subdomain) for the LangSmith UI endpoint. GCP needs one, set as `langsmith_domain`. It is optional on AWS, which can serve LangSmith on the load balancer hostname, and on Azure, which can serve it on a `dns_label` hostname with any ingress controller except `none`. With AGIC, a `dns_label` hostname serves HTTP only.
 
@@ -59,7 +59,7 @@ Each tier is a combination of settings in `terraform.tfvars`: `postgres_source`,
 | `production` | Cloud-managed (RDS, Cloud SQL, Azure Database for PostgreSQL) | Cloud-managed (ElastiCache, Memorystore, Azure Managed Redis) | [LangChain Managed ClickHouse](/langsmith/langsmith-managed-clickhouse) | Persistent, scalable production |
 | `production-large` | Cloud-managed, larger instance class | Cloud-managed, larger instance class | LangChain Managed ClickHouse | High-throughput production |
 
-On AWS and Azure, start from the `terraform.tfvars.minimum`, `terraform.tfvars.dev`, or `terraform.tfvars.production` template. On GCP, start from `terraform.tfvars.example` or `terraform.tfvars.minimum`. The templates do not map one-to-one to these tiers: every template keeps ClickHouse in-cluster, and the dev templates use managed PostgreSQL and Redis. After copying one, set the three `*_source` values and `sizing_profile` to match the tier you want.
+On AWS and Azure, start from the `terraform.tfvars.example`, `terraform.tfvars.minimum`, `terraform.tfvars.dev`, or `terraform.tfvars.production` template. On GCP, start from `terraform.tfvars.example` or `terraform.tfvars.minimum`. The templates do not map one-to-one to these tiers: every template keeps ClickHouse in-cluster, and the dev templates use managed PostgreSQL and Redis. After copying one, set the three `*_source` values and `sizing_profile` to match the tier you want.
 
 <Warning>
 Use in-cluster ClickHouse for development and POC, not production. Production deployments must use [LangChain Managed ClickHouse](/langsmith/langsmith-managed-clickhouse) or a self-managed external ClickHouse cluster. Blob storage is always required because trace payloads must not live in ClickHouse.
@@ -69,10 +69,10 @@ Use in-cluster ClickHouse for development and POC, not production. Production de
 
 - **Networking:** VPC or VNet with public and private subnets, NAT, and security groups.
 - **Compute:** Managed Kubernetes (EKS, AKS, or GKE) with autoscaling node pools sized per tier.
-- **Data plane:** Managed PostgreSQL, managed Redis or cache, and a blob storage bucket for trace payloads.
+- **Data plane:** Managed or in-cluster PostgreSQL and Redis, and a blob storage bucket for trace payloads.
 - **Secrets:** Each module keeps application secrets in the cloud's secret store, then writes them into Kubernetes its own way. On AWS, [External Secrets Operator](https://external-secrets.io/) syncs them from SSM Parameter Store. On GCP, `setup-env.sh` stores them in Secret Manager, Terraform writes the Kubernetes Secrets, and `make deploy` builds the `langsmith-config` Secret. On Azure, `secrets.auto.tfvars` holds the Terraform inputs, Key Vault holds the application secrets, and `make k8s-secrets` copies them into the `langsmith-config-secret` Kubernetes Secret.
-- **Ingress:** Envoy Gateway (Gateway API) is the default on every provider. On AWS, an ALB forwards to it, and NGINX, Istio, or ALB Ingress alone are options. On Azure, NGINX, self-managed Istio, the AKS Istio add-on, and Application Gateway Ingress Controller (AGIC) are options.
-- **Optional hardening:** On AWS, AWS Network Firewall with FQDN egress allowlists, WAFv2, CloudTrail, and a private EKS API endpoint with SSM bastion access. On Azure, a WAF policy (OWASP 3.2 plus bot protection, attached to Application Gateway with AGIC), Azure Monitor diagnostic settings, a jump VM, a private AKS API server with Entra-only access, and private endpoints for Blob Storage and Key Vault.
+- **Ingress:** Envoy Gateway (Gateway API) is the default on every provider. On AWS, an ALB forwards to it, and NGINX, Istio, or ALB Ingress alone are options. On Azure, NGINX, self-managed Istio, the AKS Istio add-on, and Application Gateway Ingress Controller (AGIC) are options. On GCP, Envoy Gateway is the only implemented option.
+- **Optional hardening:** On AWS, AWS Network Firewall with FQDN egress allowlists, WAFv2, CloudTrail, and a private EKS API endpoint with SSM bastion access. On Azure, a WAF policy (OWASP 3.2 plus bot protection, attached to Application Gateway with AGIC), Azure Monitor diagnostic settings, a jump VM, a private AKS API server with Entra-only access, and private endpoints for Blob Storage and Key Vault. On GCP, `gke_master_authorized_cidrs` limits which CIDRs can reach the GKE control plane.
 
 ## Enterprise feature toggles
 
