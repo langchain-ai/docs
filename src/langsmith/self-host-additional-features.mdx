@@ -1,0 +1,71 @@
+---
+title: Configure additional self-hosted features
+sidebarTitle: Additional features
+description: Choose optional self-hosted LangSmith features and configure or disable Insights and Chat.
+---
+
+Self-hosted LangSmith supports optional features beyond observability and evaluation. Complete the [Kubernetes installation](/langsmith/kubernetes) first, then follow only the guides your use case requires.
+
+## Choose optional features
+
+These features require an [Enterprise](https://langchain.com/pricing) plan. They are not required for a base observability and evaluation installation.
+
+- **[LangSmith Deployment](/langsmith/deploy-self-hosted-full-platform)**: Deploy and manage Agent Servers through the LangSmith UI. Its guide covers KEDA, ingress, the control plane, and the data plane.
+- **[Fleet](/langsmith/enable-self-hosted-fleet)**: Create and manage no-code agents. Its guide covers Fleet services and optional tools and triggers.
+- **[Sandboxes](/langsmith/enable-self-hosted-sandboxes)**: Run isolated code workloads. Its guide covers KVM-capable nodes, JuiceFS storage, and optional service URLs.
+- **[Engine](/langsmith/engine-self-hosted)**: Diagnose recurring issues and propose fixes. Engine is disabled by default, requires Sandboxes, and needs a separate license entitlement and model configuration.
+
+## Configure Insights and Chat
+
+[Insights](/langsmith/insights) analyzes traces, and [Chat](/langsmith/chat), formerly Polly, helps you work with LangSmith data. Both are enabled by default in Helm chart version 0.15.1 or later. They do not require LangSmith Deployment, Fleet, or Sandboxes for these workflows.
+
+Enabled by default does not mean configuration-free. Each feature requires its own Fernet encryption key. Model access also requires [provider credentials and model configurations](/langsmith/model-configurations). For keyless Vertex AI on GKE, see [Configure GKE workload identity](/langsmith/self-host-gke-vertex-ai-workload-identity).
+
+To configure the encryption keys:
+
+1. Generate one key per feature:
+
+   ```bash
+   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+   ```
+
+2. Add `insights_encryption_key` and `polly_encryption_key` to your [existing LangSmith app Secret](/langsmith/self-host-using-an-existing-secret#parameters). Reference it through `config.existingSecretName`. Alternatively, set `insights.encryptionKey` and `polly.encryptionKey` inline. Do not commit encryption keys to version control.
+3. Apply your Helm configuration:
+
+   ```bash
+   helm upgrade -i langsmith langchain/langsmith --values langsmith_config.yaml --version <version> -n <namespace> --wait --debug
+   ```
+
+<Note>
+For charts before 0.15.1, Insights and Chat are not enabled by default. Use the configuration supported by your pinned chart, or upgrade before following this guide.
+</Note>
+
+### Upgrade existing configurations
+
+Current charts reject the legacy `config.insights`, `config.polly`, and `backend.agentBootstrap` settings. Remove these settings rather than setting them to `false`. Contact technical support through the [Support Portal](https://support.langchain.com) for legacy deployment migration guidance.
+
+Starting with chart 0.16.0, Insights and Engine share the `langsmith-insights-engine` image and deployment. This does not enable Engine. Move legacy `insights.apiServer`, `insights.queue`, `insights.postgres`, `insights.redis`, and `insights.namePrefix` values to `engineInsightsAgent`. Keep `insights.enabled` and `insights.encryptionKey` under `insights`.
+
+If you pin the retired `langsmith-clio` image, remove or update that pin before upgrading. For private registries, mirror `langsmith-insights-engine`. See [Mirroring images](/langsmith/self-host-mirroring-images#additional-images-for-engine).
+
+## Disable Insights and Chat
+
+Disable either feature when your installation does not need it. Set the corresponding top-level flag to `false` in your [`langsmith_config.yaml`](/langsmith/kubernetes#configure-your-helm-charts):
+
+```yaml
+insights:
+  enabled: false
+
+polly:
+  enabled: false
+```
+
+Apply the Helm upgrade shown above. You do not need an encryption key for a disabled feature.
+
+Disabling Insights does not disable Engine or remove their shared deployment when `engine.enabled` is `true`.
+
+## See also
+
+- [Self-hosted installation overview](/langsmith/self-hosted)
+- [Engine on Self-hosted](/langsmith/engine-self-hosted)
+- [Configure model access](/langsmith/model-configurations)
