@@ -1,0 +1,134 @@
+---
+title: Connect to Stripe Link
+sidebarTitle: Stripe Link
+description: Use Link CLI in a Python Managed Deep Agent with connections and the sandbox proxy to request payment approval.
+---
+
+import ManagedDeepAgentsPublicBetaNote from '/snippets/python/langsmith/managed-deep-agents-public-beta-note.mdx';
+
+[Link](https://link.com) is Stripe's consumer wallet. Run
+[Link CLI](https://docs.stripe.com/agentic-commerce/link-cli) in a Managed Deep Agents
+[sandbox](/langsmith/python/managed-deep-agents-sandboxes) to check payment methods and request payment approval.
+A [connection](/langsmith/python/managed-deep-agents-connections) stores each user's session.
+The example's helpers manage sign-in, session renewal, and permitted wallet operations.
+The [sandbox auth proxy](/langsmith/sandbox-auth-proxy) supplies authorization headers for those operations.
+
+<ManagedDeepAgentsPublicBetaNote />
+
+
+
+## Set up the integration
+
+This example uses Python helpers. Each user needs a Link account with a saved payment method.
+Link agent payments support US and Canadian consumers. This example has been tested with US accounts.
+Restock's US-only delivery restriction is separate from Link's country support.
+
+<Note>
+  The example uses internal MDA APIs. Keep its `managed-deepagents==0.8.1` and
+  `@stripe/link-cli@0.22.0` pins when reusing the source.
+</Note>
+
+To add the integration to your agent:
+
+1. Copy the session and proxy helpers with their dependencies.
+2. Register `link_login`, `link_finish_login`, and `link_logout`, plus wallet tools that use `ProxyRunner`.
+3. Add the sandbox declaration and `sandbox/setup.sh` to install Link CLI in an image with Node.js and npm.
+4. Deploy the callback, configure its public HTTPS origin, and redeploy to activate the settings.
+
+Follow the [Link CLI integration guide](https://github.com/langchain-samples/restock-agent/blob/main/docs/link-cli.md#reuse-the-pattern-in-another-agent)
+and [callback setup guide](https://github.com/langchain-samples/restock-agent/blob/main/docs/sandbox-proxy.md#configure-a-deployed-app) for the files and commands.
+For a complete application, follow the [Restock quickstart](https://github.com/langchain-samples/restock-agent#quickstart).
+
+## Connect a wallet
+
+The login helper creates the `link-session` connection if needed and saves the
+caller's CLI session as a user-owned credential. No manual `mda connections create`
+command is needed. Later conversations reuse the saved session.
+
+To sign in from Studio or a connected channel:
+
+1. Ask the agent: **Sign me in to Link.**
+2. Open the returned URL and complete sign-in with Link.
+3. Reply **Done**. The agent completes sign-in and confirms the connection to your wallet.
+
+<Warning>
+  For a custom interface, configure [identity](/langsmith/python/managed-deep-agents-identity)
+  for each person. A shared caller identity means a shared wallet session.
+</Warning>
+
+## Authorize sandbox requests
+
+For ordinary wallet commands, the example's `ProxyRunner` runs Link CLI with a placeholder credential.
+The proxy calls your application's callback, which verifies LangSmith's signature
+and the permitted operation for that caller, sandbox, and session. It reads the saved
+access token and returns the authorization header directly to the proxy.
+
+After adding the example's callback and helpers, its sandbox uses these proxy settings.
+Replace `your-app.example.com` with your application's public HTTPS deployment host:
+
+```python
+from managed_deepagents import define_sandbox
+
+sandbox = define_sandbox(
+    proxy_config={
+        "access_control": {
+            "allow_list": [
+                "api.link.com:443",
+                "login.link.com:443",
+                "registry.npmjs.org:443",
+            ]
+        },
+        "callbacks": [{
+            "match_hosts": ["api.link.com"],
+            "url": (
+                "https://your-app.example.com"
+                "/channels/link_proxy/events"
+            ),
+            "ttl_seconds": 60,
+            "full_request": True,
+        }],
+    },
+)
+```
+
+With `full_request=True`, every matching request invokes the callback without caching credentials.
+Do not add a static header rule for `api.link.com`; it takes precedence over the callback.
+The npm registry installs the CLI and remains allowed by this configuration.
+See the [proxy setup guide](https://github.com/langchain-samples/restock-agent/blob/main/docs/sandbox-proxy.md)
+for callback configuration and deployment. The sandbox declaration alone does not complete setup.
+
+Link CLI still handles sign-in and renewal using a temporary auth file. The helper
+saves session updates and attempts file deletion even if saving fails; cleanup failures surface as errors.
+Ordinary proxy wallet commands do not receive the saved session file.
+
+## Request payment approval
+
+Start with test requests using the CLI's `--test` flag. Restock sets this flag when
+`RESTOCK_MODE=link-test`; an application using `ProxyRunner` must enforce its own test policy.
+Require user review in application code before creating a spend request for the agreed amount and merchant.
+The agent shows the approval URL. After the user approves in Link, the tool checks for `approved`.
+Link test requests can return test credentials. Restock stops after approval in this mode,
+without retrieving payment credentials or submitting a merchant order.
+See the [example test flow](https://github.com/langchain-samples/restock-agent#5-try-it-in-slack).
+
+<Warning>
+  Link approval does not place an order. Your checkout tool must verify approval,
+  handle payment credentials privately, and confirm the merchant's result.
+  Review the example's hosted-use and concurrency limits before production use.
+</Warning>
+
+## See also
+
+- [Reuse Link CLI in your own agent](https://github.com/langchain-samples/restock-agent/blob/main/docs/link-cli.md#reuse-the-pattern-in-another-agent)
+- [Sandbox callback contract](/langsmith/sandbox-auth-proxy#callback-contract)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/managed-deep-agents-connections-link.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
