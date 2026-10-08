@@ -146,17 +146,41 @@ def select_agent_root_run(client: Any, runs: list[Any]) -> Any | None:
     return None
 
 
+def _run_start_time(run: Any) -> datetime | None:
+    """Normalize a run's start_time to an aware UTC datetime, if present."""
+    value = getattr(run, "start_time", None)
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+    return None
+
+
 def wait_for_agent_root_run(
     *,
     client: Any,
     project_name: str,
     start_time: datetime,
+    end_time: datetime | None = None,
+    exclude_ids: set[str] | None = None,
     max_attempts: int = 6,
     delay_seconds: float = 2.0,
 ) -> Any | None:
-    """Poll LangSmith for an agent-like root run started at or after start_time."""
+    """Poll LangSmith for an agent-like root run started at or after start_time.
+
+    When ``end_time`` is set, ignore roots that started after the sample finished
+    (plus a small upload buffer). When ``exclude_ids`` is set, ignore runs already
+    claimed by another sample—needed when samples run in parallel against one
+    project.
+    """
     # Small buffer so clock skew / upload delay does not miss the run.
     window_start = start_time - timedelta(seconds=2)
+    window_end = (
+        end_time + timedelta(seconds=15) if end_time is not None else None
+    )
+    excluded = exclude_ids or set()
     last_runs: list[Any] = []
     for attempt in range(1, max_attempts + 1):
         client.flush()
@@ -167,7 +191,20 @@ def wait_for_agent_root_run(
                 is_root=True,
             )
         )
-        selected = select_agent_root_run(client, last_runs)
+        candidates: list[Any] = []
+        for run in last_runs:
+            run_id = str(getattr(run, "id", "") or "")
+            if run_id and run_id in excluded:
+                continue
+            run_started = _run_start_time(run)
+            if (
+                window_end is not None
+                and run_started is not None
+                and run_started > window_end
+            ):
+                continue
+            candidates.append(run)
+        selected = select_agent_root_run(client, candidates)
         if selected is not None:
             return selected
         if attempt < max_attempts:
@@ -187,6 +224,8 @@ def collect_trace_for_sample(
     repo_root: Path,
     source_path: Path,
     start_time: datetime,
+    end_time: datetime | None = None,
+    exclude_ids: set[str] | None = None,
     project_name: str = DEFAULT_PROJECT,
     client: Any | None = None,
 ) -> dict[str, Any] | None:
@@ -226,6 +265,8 @@ def collect_trace_for_sample(
         client=client,
         project_name=project_name,
         start_time=start_time,
+        end_time=end_time,
+        exclude_ids=exclude_ids,
     )
     if run is None:
         print(f"  … {rel_source}: no agent root run found; skip trace link")

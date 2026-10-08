@@ -524,7 +524,7 @@ To build and run a valid application, the LangGraph CLI requires a JSON configur
     | `--host TEXT`                 | `127.0.0.1`      | Host to bind the server to                                                          |
     | `--port INTEGER`              | `2024`           | Port to bind the server to                                                          |
     | `--no-reload`                 |                  | Disable auto-reload                                                                 |
-    | `--n-jobs-per-worker INTEGER` |                  | Number of jobs per worker. Default is 10                                            |
+    | `--n-jobs-per-worker INTEGER` | `1`              | Maximum number of concurrent jobs per worker                                        |
     | `--debug-port INTEGER`        |                  | Port for debugger to listen on                                                      |
     | `--wait-for-client`           | `False`          | Wait for a debugger client to connect to the debug port before starting the server   |
     | `--no-browser`                |                  | Skip automatically opening the browser when the server starts                       |
@@ -642,9 +642,10 @@ To build and run a valid application, the LangGraph CLI requires a JSON configur
     | `--agent-environment TEXT` |                    | Environment the deployment reports into: `development`, `staging`, or `production`. Requires `--agent-id`. Can also be set via `LANGSMITH_AGENT_ENVIRONMENT`. Available in `langgraph-cli>=0.4.32`. |
     | `--deployment-type TEXT` | `serverless`         | Deployment type when creating a new deployment on Cloud: `serverless` or `dedicated` on the new usage-based pricing; `dev` or `prod` for organizations still on previous pricing. |
     | `--remote / --no-remote` |                      | Force remote or local build. By default, builds remotely if Docker is not available locally. |
-    | `--push-to TEXT`         |                      | Push the image to this repository in a registry you manage (for example `123456789.dkr.ecr.us-east-1.amazonaws.com/agents/my-agent`), then deploy from it. Required for self-hosted LangSmith and for workspaces that deploy through a listener. Uses your existing Docker credentials. Give the tag in the value or with `-t`. Cannot be combined with `--remote`. |
+    | `--push-to TEXT`         |                      | Push the image to this repository in a registry you manage (for example `123456789.dkr.ecr.us-east-1.amazonaws.com/agents/my-agent`), then deploy from it. Required for self-hosted LangSmith and for workspaces that deploy through a listener, unless you use `--image-uri` instead. Uses your existing Docker credentials. Give the tag in the value or with `-t`. Cannot be combined with `--remote` or `--image-uri`. |
     | `--image TEXT`           |                      | Use an existing local image (for example `my-agent:dev`) instead of building. The image must target `linux/amd64`. With `--push-to`, the image is retagged and pushed. |
     | `-t, --tag TEXT`         | `latest`             | Tag for the pushed image. |
+    | `--image-uri TEXT`       |                      | Deploy an image that's already in a registry you manage (for example `123456789.dkr.ecr.us-east-1.amazonaws.com/agents/my-agent@sha256:<digest>`), with no build, retag, or push. For self-hosted LangSmith and for workspaces that deploy through a listener. Must include a digest; a mutable tag is rejected, since Kubernetes can cache images by tag and would silently keep running the previous one. Cannot be combined with `--push-to`, `--image`, `-t`, or `--remote`. |
     | `--listener-id TEXT`     |                      | Listener that will run the deployment, for workspaces that deploy through a listener in your own cluster. Used only when creating a deployment with `--push-to`. On LangSmith Cloud, defaults to the workspace's only listener. |
     | `--k8s-namespace TEXT`   |                      | Kubernetes namespace the listener deploys into. Used only when creating a deployment with `--push-to`. Defaults to the listener's only namespace. |
     | `--no-wait`              | `False`              | Skip waiting for deployment status after pushing.                                                                                                                |
@@ -697,6 +698,18 @@ To build and run a valid application, the LangGraph CLI requires a JSON configur
 
     The control plane URL is derived from `LANGSMITH_ENDPOINT`, read from the project `.env` file or the environment: `https://<host>/api-host` for a self-hosted instance, and the matching LangSmith Cloud control plane for cloud endpoints. To override it, set the `LANGGRAPH_HOST_URL` environment variable to the full control plane URL, including `/api-host` on a self-hosted instance (for example `https://langsmith.example.com/api-host`).
 
+    #### Deploy an image you've already pushed
+
+    If your CI/CD pipeline builds and pushes the image in a separate job from the one that deploys, `--push-to` does not work: it always builds (or retags a local `--image`) and pushes, and `--image` requires the image to be present in the local Docker daemon. Use `--image-uri` instead to deploy an image that's already in a registry, with no build, retag, or push at all:
+
+    ```bash
+    langgraph deploy --image-uri 123456789.dkr.ecr.us-east-1.amazonaws.com/agents/my-agent@sha256:1a2b3c4d...
+    ```
+
+    `--image-uri` must include a digest (`@sha256:<digest>`), not a mutable tag. Kubernetes can cache images by tag, so redeploying the same tag could silently keep running the previous image. If your pipeline already captures the digest from its push step, pass it straight through; otherwise resolve it first, for example with `docker buildx imagetools inspect <repository>:<tag> --format '{{json .Manifest.Digest}}'` or your registry's own CLI.
+
+    Deployments created with `--image-uri` use the same `external_docker` source as `--push-to`, so either option can update a deployment the other one created.
+
     #### Choose a listener and namespace
 
     When a workspace deploys through a listener, the control plane needs to know which listener runs a new deployment and which Kubernetes namespace it deploys into.
@@ -714,7 +727,7 @@ To build and run a valid application, the LangGraph CLI requires a JSON configur
       --listener-id 2b1f0e9c-2d4a-4f1e-9a3b-2c7d8e5f4a10 --k8s-namespace agents
     ```
 
-    On a self-hosted instance, the CLI looks up listeners only when you pass `--listener-id` or `--k8s-namespace`.
+    On a self-hosted instance, the CLI looks up listeners only when you pass `--listener-id` or `--k8s-namespace`. To find a listener's id and namespaces ahead of time, for example to pass `--listener-id` from a script without hardcoding it, use [`deploy listeners list`](#deploy-listeners-list).
 
     The listener and the namespace are fixed when the deployment is created and cannot be changed afterward, so both options are refused on an existing deployment. Later revisions need only `--push-to`.
 
@@ -735,6 +748,47 @@ To build and run a valid application, the LangGraph CLI requires a JSON configur
     | Option | Default | Description |
     | --- | --- | --- |
     | `--name-contains TEXT` |  | Only show deployments whose names contain this value. |
+    | `--api-key TEXT` |  | API key. Can also be set via `LANGGRAPH_HOST_API_KEY`, `LANGSMITH_API_KEY`, or `LANGCHAIN_API_KEY` environment variable or `.env` file. |
+    | `--help` |  | Show this message and exit. |
+
+    #### `deploy listeners`
+
+    [Beta] Inspect listeners available to this workspace.
+
+    **Usage**
+
+    ```bash
+    langgraph deploy listeners [OPTIONS] COMMAND [ARGS]...
+    ```
+
+    **Options**
+
+    | Option | Default | Description |
+    | --- | --- | --- |
+    | `--help` |  | Show this message and exit. |
+
+    **Commands**
+
+    | Command | Description |
+    | --- | --- |
+    | `list` | [Beta] List listeners available to this workspace. |
+
+    #### `deploy listeners list`
+
+    [Beta] List listeners available to this workspace, with their cluster (`compute_id`) and Kubernetes namespaces.
+
+    Pass a listener's id to `langgraph deploy --listener-id` to deploy through it. See [Choose a listener and namespace](#choose-a-listener-and-namespace).
+
+    **Usage**
+
+    ```bash
+    langgraph deploy listeners list [OPTIONS]
+    ```
+
+    **Options**
+
+    | Option | Default | Description |
+    | --- | --- | --- |
     | `--api-key TEXT` |  | API key. Can also be set via `LANGGRAPH_HOST_API_KEY`, `LANGSMITH_API_KEY`, or `LANGCHAIN_API_KEY` environment variable or `.env` file. |
     | `--help` |  | Show this message and exit. |
 

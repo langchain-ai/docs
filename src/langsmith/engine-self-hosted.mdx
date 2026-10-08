@@ -12,14 +12,18 @@ Running Engine on [your own model providers](#your-own-model-providers) and [air
 
 LangSmith Engine is an agent within LangSmith that monitors your production traces, clusters them into issues, diagnoses each issue against your source code, proposes a fix as a PR, and identifies ground truth evals to add to your datasets. For a product overview, see [Engine](/langsmith/engine-overview).
 
-In self-hosted LangSmith, Engine's orchestration, including its detect, fix, and verify loop, runs inside your VPC as part of LangSmith. An Organization Admin chooses where Engine's model calls run:
+In self-hosted LangSmith, Engine's analysis and fix workflow runs in your environment. An Organization Admin chooses where Engine's model calls run:
 
 - **LangSmith Intelligence (LSI):** a LangChain-managed zero data retention (ZDR) service that runs Engine's models for you.
 - **Your own model providers:** Anthropic, OpenAI, Amazon Bedrock, Google Vertex AI, or Azure AI Foundry, with credentials or cloud identity you control.
 
 Engine reports usage metadata to LangSmith Intelligence for billing, unless your installation is [air-gapped](#air-gapped-installations).
 
-This page covers what Engine depends on outside your environment, how to [choose how Engine runs its models](#choose-how-engine-runs-its-models), and how to [install Engine](#install-engine) on your instance. To connect Engine to your source code, create and configure your own GitHub App as described in [Connect Engine to GitHub](/langsmith/engine-github).
+This page covers model providers, data handling, and installation. To give Engine access to source code, also [configure a GitHub App](/langsmith/engine-github#self-hosted-configuration). GitHub is optional for trace analysis.
+
+<Note>
+Red teaming and automatic issue validation are unavailable on self-hosted LangSmith. You can investigate issues, generate fixes, and open PRs without those features.
+</Note>
 
 Engine works with two kinds of data:
 
@@ -72,6 +76,8 @@ If the connection to LSI is unavailable, Engine stops and returns an error. The 
 
 Engine calls your providers directly from your cluster. Prompts and responses go only to your provider, under your agreement with that provider. LangChain doesn't receive them.
 
+Sandbox usage by Engine is included in Engine's LSU billing. The sandboxes Engine uses to diagnose issues, generate fixes, and write evaluators do not incur additional Sandboxes product charges.
+
 Engine supports Anthropic, OpenAI, Amazon Bedrock, Google Vertex AI, and Azure AI Foundry. It uses a mix of models from the providers you select, so for the best results, add credentials for every provider you have access to.
 
 Enable access to Anthropic's Claude models and OpenAI's GPT models in your provider accounts, where your provider offers them. On Azure, use an Azure AI Foundry resource. To confirm that Engine can reach the models it uses, run [**Test connection**](#test-a-provider).
@@ -95,7 +101,7 @@ LSI does not persist the content of prompts or model responses. It retains the f
 
 When Engine runs on your own model providers, this metadata is all LSI receives. Your self-hosted LangSmith records Engine's usage and reports it to the endpoint in [`engine.intelligenceBaseUrl`](#allow-egress-to-langsmith-intelligence) every hour, authenticated with your license.
 
-Engine's deployment-independent data handling, including zero data retention with every model provider LangChain uses and no use of customer data to train or fine-tune models, is described in [Engine security](/langsmith/engine-security).
+For LangChain-managed inference, the model-provider retention and training commitments are described in [Engine security](/langsmith/engine-security#model-subprocessors). When you use your own providers, their retention and training policies depend on your agreements with them.
 
 ## Install Engine
 
@@ -158,7 +164,9 @@ Engine also adds configuration to `platform-backend` and `ingest-queue`, which d
   <Step title="Verify your hostname is externally reachable" id="verify-your-hostname-is-externally-reachable">
     Engine's sandboxes call your LangSmith install using the `langsmith` CLI, so `config.hostname` must be reachable from the sandbox network. Helm validation rejects `localhost` and in-cluster `*.svc` addresses.
 
-    Serve that hostname through your ingress with TLS, as described in [Set up an ingress](/langsmith/self-host-ingress). Engine does not require you to expose anything beyond the address your own users already reach. Sandbox egress is allowlisted to your LangSmith hostname, `github.com`, `api.github.com`, and the Python package registries. Per-run credentials are injected by a proxy outside the sandbox rather than being readable inside it.
+    Serve that hostname through your ingress with TLS, as described in [Set up an ingress](/langsmith/self-host-ingress). Engine's sandbox network policy permits access to your LangSmith hostname, the configured GitHub hosts, and the Python package registries. Per-run credentials are injected by a proxy outside the sandbox rather than being readable inside it.
+
+    For GitHub connections, also allow the [outbound requests and inbound webhooks](/langsmith/engine-github#allow-network-access) required by your GitHub environment. Browser access to LangSmith alone does not establish webhook connectivity from GitHub.
   </Step>
 
   <Step title="Generate Engine's keys" id="generate-engines-keys">
@@ -387,6 +395,8 @@ Enabling Engine in Helm makes the feature available; it does not start any scans
 1. An Organization Admin [chooses how Engine runs its models](#choose-model-providers) under **Settings > Engine > Model providers**. Engine doesn't start any runs until this is saved.
 1. A user whose [role](/langsmith/rbac) can update tracing projects turns on Engine for a tracing project from its **Engine** tab. For more information, see [Set up Engine](/langsmith/engine#set-up-engine).
 
+To read source code and open pull requests, Engine also needs a GitHub connection. An operator [configures the GitHub App](/langsmith/engine-github#self-hosted-configuration), then workspace users [connect repositories](/langsmith/engine-github#connect-repositories).
+
 ### Choose model providers
 
 Under **Settings > Engine > Model providers**, an Organization Admin selects LangSmith Intelligence, one or more of your own providers, or both. Credentials are saved as organization secrets and apply to every workspace in the organization.
@@ -395,15 +405,7 @@ LangSmith Intelligence appears only when your installation's `engine.intelligenc
 
 When LangSmith Intelligence is available and selected, it takes priority over your selected providers. Leave it unselected to keep inference on your own providers.
 
-Engine selects models from the providers you enable. Model requirements follow the Engine image tag in `images.engineInsightsAgentImage.tag`, not the Helm chart version. For these images, grant access to the following models in each selected provider:
-
-| **Provider** | **Engine `0.17.29rc7`** | **Engine `0.17.29rc11`** |
-| --- | --- | --- |
-| Anthropic | `claude-opus-5` | `claude-opus-5-5` |
-| Amazon Bedrock | `anthropic.claude-opus-5` | `anthropic.claude-opus-5-5` |
-| Google Vertex AI | `claude-opus-5` | `claude-opus-5-5` |
-| Azure AI Foundry | `claude-opus-5`, `gpt-5.6-sol` | `claude-opus-5-5`, `gpt-5.6-sol` |
-| OpenAI | `gpt-5.6-sol` | `gpt-5.6-sol` |
+Engine selects models from the providers you enable. Enable access to Claude 5.5-class models or GPT 5.6-class models in your provider accounts, depending on which models each provider offers. Model requirements follow the Engine image tag in `images.engineInsightsAgentImage.tag`, not the Helm chart version. Run [**Test connection**](#test-a-provider) to identify the required models and confirm access for your installed Engine image.
 
 To use your own providers:
 
@@ -418,7 +420,7 @@ To use your own providers:
       <Tab title="Amazon Bedrock">
         An AWS access key ID and secret access key, with an optional session token, or a Bedrock API key (bearer token). Optionally, an AWS region.
 
-        Engine uses the Bedrock Mantle API. Enable access to the listed Claude model in the selected AWS account and region. Grant the calling identity Mantle inference and model-subscription permissions; see [AmazonBedrockMantleInferenceAccess](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AmazonBedrockMantleInferenceAccess.html) for the required actions.
+        Engine uses the Bedrock Mantle API. Enable access to the required models in the selected AWS account and region. Grant the calling identity Mantle inference and model-subscription permissions; see [AmazonBedrockMantleInferenceAccess](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AmazonBedrockMantleInferenceAccess.html) for the required actions.
 
         If no region is saved, Engine uses `us-east-1`, including with workload identity. It does not inherit the EKS cluster's region.
 
@@ -427,14 +429,14 @@ To use your own providers:
       <Tab title="Google Vertex AI">
         A service account key in JSON format. Engine uses the JSON's `project_id` as the inference project and calls the `global` location.
 
-        Enable the required Claude model through [Model Garden](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/partner-models/use-partner-models) in that project. Grant the service account `roles/aiplatform.user` in the same project.
+        Enable the required models through [Model Garden](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/partner-models/use-partner-models) in that project. Grant the service account `roles/aiplatform.user` in the same project.
 
         To use the cloud identity of Engine's pods instead, see [Use cloud identity for your model providers](#use-cloud-identity-for-your-model-providers).
       </Tab>
       <Tab title="Azure AI Foundry">
-        Confirm that your resource region has access and quota for both models listed for your Engine image. To configure Azure:
+        Confirm that your resource region has access and quota for the models required by your installed Engine image. To configure Azure:
 
-        1. Create both model deployments in the same Azure AI Foundry resource. Use the model IDs in the table as the exact deployment names. Engine uses Claude as its primary model and GPT as its fallback. Custom deployment aliases are not supported for either model family.
+        1. Create the required model deployments in the same Azure AI Foundry resource. Deployment names must exactly match the model names (model IDs). Engine uses Claude as its primary model and GPT as its fallback. Custom deployment aliases are not supported for either model family.
 
            Follow the [Claude deployment instructions](https://platform.claude.com/docs/en/build-with-claude/claude-in-microsoft-foundry) and check [Azure OpenAI model availability](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/responses). Accept the Azure Marketplace terms when creating your first Claude deployment.
         1. Enter an API key and the resource name, not its full URL. To use the cloud identity of Engine's pods instead of an API key, see [Use cloud identity for your model providers](#use-cloud-identity-for-your-model-providers).
@@ -460,8 +462,6 @@ If Engine runs fail after you save:
 - **No provider selected:** Engine doesn't start runs until at least one provider is selected and saved.
 - **Rejected credentials:** **Test connection** reports which provider rejected them. Update the credentials and test again.
 - **Model not available:** enable the model in your provider account, then test again.
-
-Connecting a GitHub repository is optional and improves Engine's diagnosis and fixes. Without one, Engine cannot read your source code or open pull requests. To create the GitHub App and configure `host-backend`, see [Connect Engine to GitHub](/langsmith/engine-github#self-hosted).
 
 ### Disable Engine
 
