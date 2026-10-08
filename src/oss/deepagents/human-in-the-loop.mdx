@@ -155,33 +155,6 @@ When the `when` predicate returns `False`, the call runs without interrupting. W
 See the [LangChain human-in-the-loop documentation](/oss/langchain/human-in-the-loop#conditional-interrupts) for additional configuration options and examples.
 :::
 
-:::python
-
-## Pause once per tool call
-
-By default, the agent raises one interrupt per model turn that lists every tool call needing review. Set `interrupt_mode="per_call"` to raise one interrupt per gated tool call instead, each answered with one decision keyed by its interrupt ID. Use per-call mode for new agents. The mode applies to the main agent and to subagents, unless a subagent sets its own `interrupt_mode` in its spec.
-
-<Note>Per-call interrupts require `deepagents>=X.Y.Z`.</Note>
-
-```python
-agent = create_deep_agent(
-    model="google_genai:gemini-3.6-flash",
-    tools=[remove_file, fetch_file, notify_email],
-    interrupt_on={
-        "remove_file": True,
-        "notify_email": {"allowed_decisions": ["approve", "reject"]},
-    },
-    interrupt_mode="per_call",  # [!code highlight]
-    checkpointer=checkpointer,
-)
-```
-
-In per-call mode, the review happens as each tool call starts. Deep Agents places the review ahead of the middleware you pass in `middleware`, including the @[ToolRetryMiddleware] and @[ToolErrorMiddleware] recommended in [fault tolerance](/oss/deepagents/fault-tolerance#error-handling-strategies). A retry repeats the tool without asking the reviewer again, and an invalid answer is raised instead of being returned to the model as a tool error.
-
-For the interrupt format, the response schema for each decision type, and how to answer each interrupt by its ID, see [Pause once per tool call](/oss/langchain/human-in-the-loop#pause-once-per-tool-call) in the LangChain guide. For how the two modes compare, see the [human-in-the-loop overview](/oss/concepts/human-in-the-loop).
-
-:::
-
 ## Handle interrupts
 
 When an interrupt is triggered, the agent pauses execution and returns control. Check for interrupts in the result and handle them accordingly. If the user rejects an action, include a clear `message` that tells the agent the tool was not executed and what to do next.
@@ -414,10 +387,6 @@ Combine `"messages"` and `"updates"` stream modes to show real-time LLM tokens t
 ## Multiple tool calls
 
 When the agent calls multiple tools that require approval, all interrupts are batched together in a single interrupt. You must provide decisions for each one in order.
-
-:::python
-This is the default batched mode. In [per-call mode](#pause-once-per-tool-call), each call raises its own interrupt and takes one decision keyed by its ID.
-:::
 
 :::python
 ```python
@@ -980,7 +949,7 @@ result = agent.invoke(Command(resume={...}), config=config)
 
 ### Match decision order to actions
 
-In the default batched mode, the decisions list must match the order of `action_requests`. In [per-call mode](#pause-once-per-tool-call), answer each interrupt by its ID instead.
+The decisions list must match the order of `action_requests`:
 
 ```python
 if result.get("__interrupt__"):  # [!code highlight]
