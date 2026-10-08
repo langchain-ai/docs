@@ -1,5 +1,4 @@
-import uuid
-
+from langsmith import uuid7
 # :snippet-start: runs-retrieve-not-found-before-py
 # :codegroup-tab: Before
 from langsmith import Client
@@ -8,7 +7,7 @@ from langsmith.utils import LangSmithNotFoundError
 client = Client()
 run_id = "<run-id>"
 # :remove-start:
-run_id = str(uuid.uuid4())
+run_id = str(uuid7())
 # :remove-end:
 
 try:
@@ -31,7 +30,7 @@ async def main():
     run_id = "<run-id>"
     start_time = "2026-06-01T12:00:00Z"
     # :remove-start:
-    run_id = str(uuid.uuid4())
+    run_id = str(uuid7())
     # :remove-end:
 
     try:
