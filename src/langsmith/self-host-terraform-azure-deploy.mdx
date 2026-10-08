@@ -60,7 +60,7 @@ graph TB
 |---|---|---|
 | Azure CLI (`az`) | 2.50 or later | Authenticate, query Azure resources, manage AKS credentials |
 | Terraform | 1.11.0 or later | Run the infrastructure modules |
-| `kubectl` | 1.33 or later | Inspect the AKS cluster |
+| `kubectl` | 1.34 or later | Inspect the AKS cluster |
 | Helm | 3.12 or later | Install and manage the LangSmith chart |
 | `kubelogin` | latest | Sign in to a cluster with Entra ID integration (`aks_entra_only`, or an attached cluster with Entra ID). Not needed otherwise |
 
@@ -353,7 +353,7 @@ make init-values
 
 With `clickhouse_source = "external"`, `make init-values` also prompts for the ClickHouse connection details and creates the `langsmith-clickhouse` secret.
 
-`make init-values` also copies the sizing overlay and any enabled add-on overlays from `helm/values/examples/` into `helm/values/`.
+`make init-values` also writes the sizing overlay and any enabled add-on overlays into `helm/values/`. It copies most of them from `helm/values/examples/` and generates the Insights, LLM Gateway, and PII overlays.
 
 <Info>
 The admin email is read from the `langsmith_admin_email` Terraform output (set during `make setup-env`) and written into `values-overrides.yaml` automatically. No manual editing needed.
@@ -369,14 +369,14 @@ make deploy   # ~10 min
 
 1. Validates `values-overrides.yaml` exists and was generated from the current `terraform.tfvars`.
 2. Refreshes kubeconfig via `az aks get-credentials`.
-3. Applies `dns_label` to the public IP. It annotates the LoadBalancer service with `service.beta.kubernetes.io/azure-dns-label-name`, or sets the label through the `EnvoyProxy` for `envoy-gateway`.
+3. Applies `dns_label` to the public IP for `nginx`, `istio`, and `istio-addon` by annotating the LoadBalancer service with `service.beta.kubernetes.io/azure-dns-label-name`.
 4. Creates the `letsencrypt-prod` cert-manager `ClusterIssuer` if `tls_certificate_source` is `letsencrypt` or `dns01` (idempotent). For `existing`, checks that the `langsmith-tls` Secret exists with type `kubernetes.io/tls`.
 5. Runs preflight checks (tools, cluster connectivity, Helm repo).
 6. Verifies `langsmith-config-secret` exists; auto-creates from Key Vault if it is missing. With external ClickHouse, checks the `langsmith-clickhouse` secret.
 7. Validates the add-on flags. Agent Builder and Fleet need `enable_deployments = true`, Fleet needs external PostgreSQL, and the two cannot run together.
 8. Builds and logs the values chain, and rejects values files still on the chart 0.15 schema.
 9. Auto-recovers any stuck `pending-upgrade` Helm release before proceeding.
-10. For `envoy-gateway`, creates the `EnvoyProxy`, `GatewayClass`, and `langsmith-gateway` Gateway.
+10. For `envoy-gateway`, creates the `EnvoyProxy` (which carries the `dns_label`), `GatewayClass`, and `langsmith-gateway` Gateway.
 11. Runs `helm upgrade --install langsmith langchain/langsmith --timeout 20m`. The chart version is `~0.17.0`, the newest 0.17 patch, unless `langsmith_helm_chart_version` or the `CHART_VERSION` environment variable names a 0.17 patch. The script rejects any other chart line.
 12. Waits for core deployments to roll out.
 13. Annotates the `langsmith-ksa` ServiceAccount with the Workload Identity client ID.
@@ -447,14 +447,14 @@ az keyvault secret show \
 `make deploy` applies Helm values files in this order (last file wins on conflicts):
 
 ```txt
-1. helm/values/values.yaml                              ← base values (chart defaults)
+1. helm/values/values.yaml                              ← Azure base values (committed)
 2. helm/values/values-overrides.yaml                    ← hostname, WI client-id, auth, postgres/redis
 3. (add-on files when enable_* flags are set)           ← agent-deploys, agent-builder, fleet, insights, polly, llm-gateway, gateway-pii
 4. helm/values/langsmith-values-sizing-<profile>.yaml   ← resource requests + HPA settings
 5. helm/values/langsmith-values-smithdb*.yaml           ← when enable_smithdb = true
 ```
 
-All files in `helm/values/` are gitignored (generated or contain live secrets). Source templates live in `helm/values/examples/` and are copied by `make init-values`.
+The generated files in `helm/values/`, `values-overrides.yaml` and the `langsmith-values-*.yaml` overlays, are gitignored because they contain live secrets. `make init-values` writes them, copying most overlays from `helm/values/examples/`.
 
 ### Day-2 operations
 
@@ -486,7 +486,7 @@ To move a deployment from chart 0.16 to 0.17:
 1. Check that `infra/variables.tf` on the new tag declares every variable that your `terraform.tfvars` sets.
 
    <Warning>
-   Variables added on the `v0.16.*` line reach the `v0.17.*` line in a later tag. v0.17.0 does not declare `ingress_load_balancer`, `ingress_load_balancer_subnet_id`, `ingress_load_balancer_ip`, `ingress_load_balancer_manage_subnet_assignment`, `envoy_gateway_image_registry`, `envoy_gateway_image_pull_secret_name`, or `aks_network_owner_checks`, which later `v0.17.*` tags add. Terraform only warns about an undeclared variable in `terraform.tfvars`, so a deployment that sets one on a tag that lacks it loses that setting without an error.
+   Variables added on the `v0.16.*` line reach the `v0.17.*` line in a later tag. v0.17.0 does not declare `ingress_load_balancer`, `ingress_load_balancer_subnet_id`, `ingress_load_balancer_ip`, `ingress_load_balancer_manage_subnet_assignment`, `envoy_gateway_image_registry`, or `envoy_gateway_image_pull_secret_name`, which v0.17.1 adds. `aks_network_owner_checks` reaches the `v0.17.*` line in a later tag. Terraform only warns about an undeclared variable in `terraform.tfvars`, so a deployment that sets one on a tag that lacks it loses that setting without an error.
    </Warning>
 
 1. Run `make apply`. It adds the two LLM Gateway federated credentials.

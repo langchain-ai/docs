@@ -39,7 +39,7 @@ Error: creating Kubernetes Cluster ... unexpected status 400
 If you intend to onboard to LTS, please ensure the cluster is in Premium tier ..."
 ```
 
-**Cause:** Azure periodically retires minor versions from Standard tier support and moves them to LTS-only. As of April 2026, 1.32 and below are LTS-only in `eastus`. Standard tier clusters must use 1.33+.
+**Cause:** Azure periodically retires minor versions from Standard tier support and moves them to LTS-only. As of April 2026, 1.32 and below are LTS-only in `eastus`. Standard tier clusters must use 1.33 or later.
 
 **Fix:** Set `aks_kubernetes_version` to a version with `KubernetesOfficial` support. The module defaults to `1.35`.
 
@@ -128,7 +128,7 @@ az vm list-usage -l eastus --only-show-errors --query "[?limit=='0'].name.value"
 **Fix:**
 
 - Grant `Role Based Access Control Administrator` at subscription scope, or `Owner` in place of both roles. Run `make preflight` to check the deploying identity's roles before the apply.
-- For a `principalType` condition, set `terraform_principal_type = "User"` for an interactive `az login`, or `"ServicePrincipal"` in CI. If the condition permits only service principals, set `keyvault_manage_terraform_admin_assignment = false` and `keyvault_manage_secrets = false`, then write the secrets with `make seed-secrets`.
+- For a `principalType` condition, set `terraform_principal_type = "User"` for an interactive `az login`, or `"ServicePrincipal"` in CI. If the condition permits only service principals, set `keyvault_manage_terraform_admin_assignment = false` and `keyvault_manage_secrets = false`. Have a tenant admin grant you Key Vault Secrets Officer on the vault, then write the secrets with `make seed-secrets`.
 
 See [PERMISSIONS.md](https://github.com/langchain-ai/terraform/blob/main/modules/azure/PERMISSIONS.md) for the full permission inventory.
 
@@ -234,7 +234,7 @@ az role assignment list --assignee "$(az ad signed-in-user show --query id -o ts
 az keyvault secret list --vault-name <vault> --query "length(@)"
 ```
 
-For causes 2 and 3, setting `keyvault_manage_secrets = false` takes Terraform out of the vault's data plane. `make seed-secrets` then writes the secrets under your own credentials.
+For cause 2, have the vault owner grant the deploying identity Key Vault Secrets Officer. For cause 3, wait a few minutes and re-run `make apply`. Setting `keyvault_manage_secrets = false` takes Terraform out of the vault's data plane, and `make seed-secrets` then writes the secrets under your own credentials, which also need Key Vault Secrets Officer.
 
 ### `make plan` or `make apply` stops: `ingress_controller is not set`
 
@@ -306,7 +306,7 @@ kubectl delete certificate langsmith-tls -n langsmith
 
 **Symptom:** `kubectl describe certificate langsmith-tls -n langsmith` shows `clusterissuers.cert-manager.io "letsencrypt-prod" not found`.
 
-**Cause:** `deploy.sh` applies the `letsencrypt-prod` ClusterIssuer when `tls_certificate_source` is `letsencrypt` or `dns01`. Terraform never creates it. You hit this when `make deploy` has not run, when you ran `helm upgrade` directly, or when the `dns01` branch skipped the issuer because `langsmith_domain` was empty (`make deploy` prints a warning in that case).
+**Cause:** `deploy.sh` applies the `letsencrypt-prod` ClusterIssuer when `tls_certificate_source` is `letsencrypt` or `dns01`. Terraform never creates it. You hit this when `make deploy` has not run, when you ran `helm upgrade` directly, or when the `dns01` branch skipped the issuer because `langsmith_domain` was empty or the `cert_manager_identity_client_id` output was missing (`make deploy` prints a warning in both cases).
 
 **Manual fix:** With `ingress_controller = "envoy-gateway"`, replace the `ingress:` solver in this command with the `gatewayHTTPRoute` solver that follows it.
 
@@ -680,7 +680,7 @@ make apply
 ### Cluster access
 
 ```bash
-az aks get-credentials --name <cluster> --resource-group <rg>
+make kubeconfig
 kubectl config current-context
 kubectl get nodes -o wide
 ```
