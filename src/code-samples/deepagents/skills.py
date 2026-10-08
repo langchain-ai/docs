@@ -352,6 +352,33 @@ result = agent.invoke(
 )
 # :snippet-end:
 
+# :snippet-start: skills-pin-invoke-py
+result = agent.invoke(
+    {
+        "messages": [{"role": "user", "content": "What is LangGraph?"}],
+        "pinned_skills": ["langgraph-docs"],
+    },
+    config={"configurable": {"thread_id": "1"}},
+)
+# :snippet-end:
+
+# :snippet-start: skills-pin-parse-py
+import re
+
+SKILL_REFERENCE = re.compile(r"(?<!\S)/([a-z0-9-]+)")
+
+message = "/langgraph-docs How do I add a checkpointer to my graph?"
+pinned_skills = SKILL_REFERENCE.findall(message)  # ["langgraph-docs"]
+
+result = agent.invoke(
+    {
+        "messages": [{"role": "user", "content": message}],
+        "pinned_skills": pinned_skills,
+    },
+    config={"configurable": {"thread_id": "1"}},
+)
+# :snippet-end:
+
 # :snippet-start: skills-reload-invoke-py
 config = {"configurable": {"thread_id": "1"}}
 

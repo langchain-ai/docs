@@ -3,9 +3,6 @@ type: documentation route model
 title: Versioned Documentation and Routes
 description: Explains how the documentation builder selects source families and emits Python, JavaScript, and language-agnostic routes. Covers build-time rendering, link and snippet rewriting, MCP authoring ownership, Mintlify navigation, and compatibility redirects.
 tags: [documentation-pipeline, routes, language-versioning, redirects]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-07T08:23:22.147Z
 sources:
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
@@ -37,7 +34,10 @@ sources:
     resource: repo://src/oss/python/migrate/langchain-mcp-adapters.mdx
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-07T08:23:22.147Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-08T08:23:51.982Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-08T08:23:51.982Z
 ---
 
 # Versioned Documentation and Routes
@@ -125,6 +125,8 @@ Deep Agents Code and OpenWiki are explicit exceptions to ordinary OSS duplicatio
 
 `docs.json` lists the same unprefixed OpenWiki routes in the OpenWiki tab of both the Python and TypeScript Build dropdowns. The language-toggle script hides the switcher on `/oss/openwiki` because no alternate language route exists. Deep Agents Code is likewise unversioned regardless of where Mintlify navigation places it.
 
+Deep Agents Code also has compatibility redirects from the former `/oss/python/deepagents/code` and `/oss/javascript/deepagents/code` roots, including `:path*` descendants, to `/oss/deepagents/code/...`. These redirects support old versioned inbound URLs; they do not make versioned Code artifacts or change its source ownership.
+
 ## Managed Deep Agents variants
 
 Managed Deep Agents is the LangSmith exception. A direct child of `src/langsmith/` named `managed-deep-agents*` with a `.md` or `.mdx` extension is classified as a variant page for an individual build. It produces Python and JavaScript artifacts, each with target-specific conditional content, snippets, and rewritten OSS and Managed Deep Agents links; it does not produce an unversioned artifact.
@@ -135,9 +137,9 @@ The dedicated full-build discovery pass only selects direct `managed-deep-agents
 
 ### Navigation and compatibility
 
-The Python and TypeScript Build dropdowns each contain a **Managed Deep Agents** tab. Both enumerate corresponding language-prefixed suffixes in **Get started**, **Agent capabilities** with a nested **Channels** group, and **Build and deploy**; the latter includes the MCP endpoint. When adding a new variant, add matching entries to both tabs only after confirming both emitted routes exist.
+The Python and TypeScript Build dropdowns each contain a **Managed Deep Agents** tab. Both enumerate matching language-prefixed route suffixes in **Get started**, **Agent capabilities** with a nested **Channels** group, and **Build and deploy**; the latter includes local development, deployment, the MCP endpoint, Context Hub, CLI, and changelog. When adding a new variant, add matching entries to both tabs only after confirming both emitted routes exist.
 
-Unversioned `/langsmith/managed-deep-agents...` URLs are compatibility inputs, not generated pages. `docs.json` redirects current unversioned routes—including overview, quickstart, channels, deployment, CLI, identity, MCP connectors, and other family pages—to Python. It also maps historical aliases such as `managed-deep-agents-invoke`, `-sdk`, `-api`, older channel paths, and connector paths to Python destinations. These redirects preserve inbound links and establish Python as the legacy default; they do not replace JavaScript artifacts or navigation.
+Unversioned `/langsmith/managed-deep-agents...` URLs are compatibility inputs, not generated pages. `docs.json` redirects the overview and legacy root plus selected current pages—agent definition, channels and its Slack and HTTP pages, CLI, connections, deployment, evals, identity, instructions, local development, MCP connectors, memory, Context Hub, middleware, runtime, project structure, migration, quickstart, sandboxes, schedules, skills, tools, and tutorial—to Python destinations. It also maps historical aliases such as `managed-deep-agents-invoke`, `-sdk`, `-api`, older channel paths, and connector paths to Python destinations. Redirect coverage is deliberately not a navigation inventory: add a redirect only for a public compatibility URL that needs to survive. These redirects preserve inbound links and establish Python as the legacy default; they do not replace JavaScript artifacts or navigation.
 
 When adding or moving a Managed Deep Agents page:
 

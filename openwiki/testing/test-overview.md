@@ -1,11 +1,11 @@
 ---
 type: validation guide
 title: Testing Overview
-description: Change-oriented guidance for deterministic tests, generated documentation, credentialed code samples, rendering checks, and CI boundaries.
+description: Change-oriented guidance for deterministic tests, rendered documentation, credentialed code samples, remote checks, and CI boundaries. Explains sample-runner concurrency, rate-limit outcomes, and optional trace publication.
 tags: [testing, pytest, ci, documentation, code-samples, openapi]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-07T08:23:22.147Z
+    at: 2026-10-08T08:23:51.982Z
 sources:
   - id: openwiki-source-97746d8f3662d803e625550e
     resource: repo://.github/workflows/test-code-samples.yml
@@ -19,7 +19,7 @@ sources:
     resource: repo://scripts/generate_code_snippet_mdx.py
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-07T08:23:22.147Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-08T08:23:51.982Z" }
 ---
 
 ## Choose the validation boundary
@@ -139,7 +139,7 @@ make test-code-samples
 make test-code-samples FILES="src/code-samples/langchain/return-a-string.py"
 ```
 
-The runner discovers Python, TypeScript, Java, Kotlin, Go, and shell samples under `src/code-samples`; `FILES` selects a space-separated subset and an unset value runs all eligible files except `__pycache__` and `node_modules`. The default timeout is 1,200 seconds and `CODE_SAMPLE_TIMEOUT_SECONDS` overrides it. `CODE_SAMPLE_JOBS` controls concurrent execution (default 4; invalid or smaller-than-one values fall back or clamp to a usable count). Python runs through `uv`, TypeScript through `npx tsx`, Go through `go run`, shell through `bash`, and Java/Kotlin through JBang pinned to Java 21. Python and JBang use the repository root; TypeScript, Go, and shell use `src/code-samples` to resolve their shared environments.
+The runner discovers Python, TypeScript, Java, Kotlin, Go, and shell samples under `src/code-samples`; `FILES` selects a space-separated subset and an unset value runs all eligible files except `__pycache__` and `node_modules`. The default timeout is 1,200 seconds and `CODE_SAMPLE_TIMEOUT_SECONDS` overrides it. `CODE_SAMPLE_JOBS` controls concurrent execution (default 4; invalid values fall back and values below one clamp to one). Samples in the `evaluate-rag` and `experiment-runs-query` serial groups take a group lock, so they do not overlap with another sample in their own group while unrelated samples can still use the other workers. Python runs through `uv`, TypeScript through `npx tsx`, Go through `go run`, shell through `bash`, and Java/Kotlin through JBang pinned to Java 21. Python and JBang use the repository root; TypeScript, Go, and shell use `src/code-samples` to resolve their shared environments.
 
 ```mermaid
 flowchart TD
@@ -151,17 +151,20 @@ flowchart TD
   Trace -->|"yes"| Collect["Serialize trace collection"]
   Collect --> TraceResult{"Collection succeeded"}
   TraceResult -->|"yes"| Pass
-  TraceResult -->|"no"| Fail["Runner fails"]
-  Result -->|"rate limited"| Retry["Retry up to three attempts"]
-  Retry --> Skip["Record skipped after retries"]
-  Result -->|"other failure"| Fail
+  TraceResult -->|"no"| Warn["Record trace warning"]
+  Warn --> Pass
+  Result -->|"rate limited"| Retry["Retry with configured backoff"]
+  Retry --> Skip["Record skipped after exhausted retries"]
+  Result -->|"other failure"| Fail["Runner fails"]
 ```
 
-This is live integration evidence, not a deterministic unit test. In particular, a rate-limit skip is not a successful execution.
+This is live integration evidence, not a deterministic unit test. A rate-limit skip is not a successful execution, and a trace-collection warning is not a sample failure: the sample process already passed.
 
 The workflow does not run on fork pull requests because examples can require provider secrets. Internal PRs run only changed eligible samples; monthly scheduled and manual runs test all samples, enable tracing, and allow 150 minutes rather than the PR job's 60. CI installs Node 20, Java 21/JBang, and Go from `src/code-samples/go.mod`, and supplies provider credentials plus a pgvector PostgreSQL service through `POSTGRES_URI`. The PostgreSQL helper prefers that URI before attempting a testcontainer, Docker, or a default local connection, and clears shared store and migration tables before setup.
 
-A detected LangSmith 429 gets at most three attempts with 15-second delays; a persistent rate limit is recorded as skipped without a nonzero exit, while other failures fail the runner. This keeps CI available under provider load, but it is **not successful sample validation**: rerun the skipped path later. With tracing enabled, a passed sample is followed by trace collection, and collection failure fails the runner. Although samples can run in parallel, collection is serialized: it updates a shared manifest and excludes already claimed run IDs so one trace is not attributed to multiple samples. Only a one-snippet source with a qualifying recent agent root run receives a public manifest URL; generated snippet MDX adds a trace card only when that URL exists. Successful full runs can regenerate snippets and update a standing trace-refresh PR. See [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md).
+A detected LangSmith 429 gets up to five total attempts by default, including the initial attempt. `CODE_SAMPLE_RATE_LIMIT_ATTEMPTS` sets that budget, and `CODE_SAMPLE_RATE_LIMIT_DELAY_SECONDS` sets the base delay; each retry waits base delay times its one-based attempt number, capped at 120 seconds. The same policy retries 429s raised while collecting traces. A sample that remains rate-limited is recorded as skipped without a nonzero exit, whereas a normal nonzero exit, timeout, or missing executable fails the runner. This keeps CI available under provider load, but a skip is **not successful sample validation**: rerun the skipped path later.
+
+With tracing enabled, only a sample process that passed is followed by trace collection. A trace-collection exception—including one that remains rate-limited after its retry budget—is recorded as a warning and does not fail the runner. Although samples can run in parallel, collection is serialized: the lock protects the shared manifest and claimed-run set so one trace is not attributed to multiple samples. Only a one-snippet source with a qualifying recent agent root run receives a public manifest URL; generated snippet MDX adds a trace card only when that URL exists. On scheduled or manual full runs, CI regenerates snippets when the sample step was not cancelled, fewer than 20 samples failed, and at least one trace entry was updated; it can therefore prepare a trace-refresh PR despite some sample failures, but the final workflow step still fails the job when the runner reported sample failures. See [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md).
 
 ## Generated snippets: extraction is not execution
 
