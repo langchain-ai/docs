@@ -71,14 +71,16 @@ make secrets
 # Update kubeconfig for the GKE cluster
 make kubeconfig
 
-# SmithDB: change size or cache, move between rollout stages, check progress
-make smithdb-configure SIZING=medium CACHE=local-ssd
-make smithdb-phase PHASE=dual-write   # off | dual-write | backfill | cutover
-make smithdb-status
-make deploy-all          # apply the change: apply, init-values, deploy
+# SmithDB: run only the commands you need, with your own values
+make smithdb-status                                  # read-only: gates, sizing, pods, backfill progress
+make smithdb-configure SIZING=<size> CACHE=<cache>  # minimal | small | medium | large; local-ssd | network-disk
+make smithdb-phase PHASE=<phase>                     # off | dual-write | backfill | cutover
+make deploy-all                                      # apply the change: apply, init-values, deploy
 ```
 
 `make kubeconfig` wraps `helm/scripts/get-kubeconfig.sh`. To call the script directly, pass the cluster name, region, and project as arguments, or omit them to read the Terraform outputs.
+
+`make smithdb-configure` and `make smithdb-phase` only edit `terraform.tfvars`, and `make deploy-all` applies the change. A size change can replace the SmithDB node pools. Leaving the `backfill` phase removes the backfill Job and its task database; `make smithdb-phase PHASE=cutover` refuses until every backfill row is promoted, but an earlier phase has no such check.
 
 For the SmithDB rollout stages, see [SmithDB](/langsmith/self-host-terraform-gcp-deploy#smithdb) in the deployment guide.
 
@@ -237,6 +239,24 @@ terraform refresh
 
 ## Teardown
 
+<Warning>
+Teardown permanently deletes the Cloud SQL instances. Cloud SQL takes no final snapshot on delete: its automated backups, on-demand backups, and point-in-time recovery logs are deleted with the instance. To keep the data, export it to a bucket outside this deployment before step 1. Skip the export for a disposable test stack.
+</Warning>
+
+```bash
+# Export the LangSmith database. Repeat for the SmithDB metastore with
+# smithdb_metastore_instance_name and --database=smithdb.
+PROJECT_ID=<project-id>
+BACKUP_BUCKET=gs://<export-bucket>
+PG=$(terraform -chdir=infra output -raw postgres_instance_name)
+SA=$(gcloud sql instances describe "$PG" --project "$PROJECT_ID" \
+  --format="value(serviceAccountEmailAddress)")
+gcloud storage buckets add-iam-policy-binding "$BACKUP_BUCKET" \
+  --member="serviceAccount:$SA" --role=roles/storage.objectAdmin
+gcloud sql export sql "$PG" "$BACKUP_BUCKET/${PG}-final.sql.gz" \
+  --database=langsmith --project "$PROJECT_ID"
+```
+
 ```bash
 # 1. Remove LangSmith Deployment resources (if the add-on was enabled)
 kubectl delete lgp --all -n langsmith 2>/dev/null || true
@@ -263,7 +283,11 @@ postgres_deletion_protection = false
 
 # Only when enable_smithdb = true and smithdb_metastore_source = "create"
 smithdb_metastore_deletion_protection = false
-smithdb_bucket_force_destroy          = true
+
+# Optional, any SmithDB install: lets make destroy delete the SmithDB bucket and
+# its trace segments. With the default (false), make destroy stops at a
+# non-empty SmithDB bucket.
+smithdb_bucket_force_destroy = true
 ```
 
 Deletion protection also applies at the Cloud SQL API level, so the targeted apply in step 4 must run before `make destroy`, even when protection is already off. Drop the `module.smithdb` target if you never enabled SmithDB. To also delete the persistent disks of in-cluster databases, run `DELETE_DATA_PVCS=true make uninstall` in step 2.
