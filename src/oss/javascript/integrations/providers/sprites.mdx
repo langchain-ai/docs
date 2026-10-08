@@ -1,0 +1,203 @@
+---
+title: "Sprites"
+sidebarTitle: "Sprites"
+description: "Use Fly.io Sprites sandbox backends with deepagents for persistent sandboxes with checkpoint and restore"
+---
+
+[Fly.io Sprites](https://fly.io/sprites) provides persistent, named Linux VMs that start in 1-2 seconds, suspend automatically when idle, and support fast checkpoint and restore of the full machine state.
+
+## Setup
+
+<CodeGroup>
+    ```bash npm
+    npm install @langchain/sprites
+    ```
+
+    ```bash yarn
+    yarn add @langchain/sprites
+    ```
+
+    ```bash pnpm
+    pnpm add @langchain/sprites
+    ```
+</CodeGroup>
+
+### Authentication
+
+Create an API token with the [Sprites CLI](https://docs.sprites.dev).
+
+```bash
+export SPRITES_TOKEN=your_token
+```
+
+Or pass credentials directly:
+
+```typescript
+const sandbox = await SpritesSandbox.create({
+  auth: { token: "your-token-here" },
+});
+```
+
+## Usage with deepagents
+
+:::js
+```typescript
+import { createDeepAgent } from "deepagents";
+import { ChatAnthropic } from "@langchain/anthropic";
+import { SpritesSandbox } from "@langchain/sprites";
+
+const sandbox = await SpritesSandbox.create({
+  timeout: 300,
+});
+
+try {
+  const agent = createDeepAgent({
+    model: new ChatAnthropic({ model: "claude-sonnet-4-5" }),
+    systemPrompt: "You are a coding assistant with sandbox access.",
+    backend: sandbox,
+  });
+
+  const result = await agent.invoke({
+    messages: [{ role: "user", content: "Create a hello world script and run it" }],
+  });
+} finally {
+  await sandbox.close();
+}
+```
+:::
+
+## Standalone usage
+
+:::js
+```typescript
+import { SpritesSandbox } from "@langchain/sprites";
+
+const sandbox = await SpritesSandbox.create();
+
+const result = await sandbox.execute("echo hello");
+console.log(result.output);
+
+await sandbox.close();
+```
+:::
+
+## Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `name` | `string` | generated | Sprite name, the sandbox's persistent identity |
+| `config` | `object` | - | Machine sizing: `ramMB`, `cpus`, `region`, `storageGB` |
+| `environment` | `Record<string, string>` | - | Environment variables set in the Sprite |
+| `labels` | `string[]` | - | Labels for organizing sandboxes |
+| `runtime` | `string` | `"default"` | Runtime image variant. Options: `"default" \| "dev"` |
+| `waitForCapacity` | `boolean` | - | Wait instead of failing at the concurrency limit |
+| `timeout` | `number` | `300` | Command timeout in seconds |
+| `workdir` | `string` | `"/home/sprite"` | Working directory for commands and relative paths |
+| `initialFiles` | `Record<string, string>` | - | Files to create on startup |
+| `auth` | `object` | env vars | `{ token, baseURL }` overrides |
+
+## Persistent sandboxes
+
+Sprites are named and persistent. If you do not call `close()`, the Sprite suspends when idle at no cost and resumes with all files and installed packages intact:
+
+:::js
+```typescript
+// Day 1
+const sandbox = await SpritesSandbox.create({ name: "my-agent-env" });
+await sandbox.execute("npm install express");
+
+// Day 2: resumes in about 1 second
+const sameSandbox = await SpritesSandbox.fromName("my-agent-env");
+await sameSandbox.execute("node server.js");
+```
+:::
+
+## Checkpoint and restore
+
+Snapshot the full machine state before an agent run, and roll back if needed:
+
+:::js
+```typescript
+const checkpoint = await sandbox.checkpoint("before agent run");
+
+// ... let the agent make changes ...
+
+// Roll the filesystem and process state back
+await sandbox.restore(checkpoint.id);
+```
+:::
+
+## Accessing the Sprites SDK
+
+For advanced features such as services and network policy, access the underlying [Sprites SDK](https://github.com/superfly/sprites-js):
+
+:::js
+```typescript
+const sandbox = await SpritesSandbox.create();
+const sprite = sandbox.instance;
+
+// Use any Sprites SDK feature directly
+const checkpoints = await sprite.listCheckpoints();
+const services = await sprite.listServices();
+```
+:::
+
+## Factory functions
+
+:::js
+```typescript
+import { createSpritesSandboxFactory, createSpritesSandboxFactoryFromSandbox } from "@langchain/sprites";
+
+// Create a new sandbox per invocation
+const factory = createSpritesSandboxFactory({ timeout: 300 });
+
+// Or reuse an existing sandbox across invocations
+const sandbox = await SpritesSandbox.create();
+const reuseFactory = createSpritesSandboxFactoryFromSandbox(sandbox);
+```
+:::
+
+## Error handling
+
+```typescript
+import { SpritesSandboxError } from "@langchain/sprites";
+
+try {
+  await sandbox.execute("some command");
+} catch (error) {
+  if (SpritesSandboxError.isInstance(error)) {
+    switch (error.code) {
+      case "NOT_INITIALIZED":
+        await sandbox.initialize();
+        break;
+      case "COMMAND_TIMEOUT":
+        console.error("Command took too long");
+        break;
+      case "AUTHENTICATION_FAILED":
+        console.error("Check your Sprites token");
+        break;
+    }
+  }
+}
+```
+
+### Error codes
+
+| Code | Description |
+|------|-------------|
+| `NOT_INITIALIZED` | Sandbox not initialized, call `initialize()` |
+| `ALREADY_INITIALIZED` | Cannot initialize twice |
+| `AUTHENTICATION_FAILED` | Invalid or missing Sprites token |
+| `SANDBOX_CREATION_FAILED` | Failed to create the Sprite |
+| `SANDBOX_NOT_FOUND` | Sprite name not found or deleted |
+| `COMMAND_TIMEOUT` | Command execution timed out |
+| `COMMAND_FAILED` | Command execution failed |
+| `FILE_OPERATION_FAILED` | File read or write failed |
+| `CHECKPOINT_FAILED` | Checkpoint or restore failed |
+
+## Environment variables
+
+| Variable | Description |
+|----------|-------------|
+| `SPRITES_TOKEN` | Sprites API token (required) |
+| `SPRITES_API_URL` | Custom Sprites API URL |
