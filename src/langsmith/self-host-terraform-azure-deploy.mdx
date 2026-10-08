@@ -265,7 +265,9 @@ Never commit `secrets.auto.tfvars`. It is gitignored. Regenerate on any machine 
 make preflight
 ```
 
-Validates Azure CLI auth, the active subscription, 11 required resource providers, and permission to create role assignments. It also checks the subscription offer type, regional vCPU quota, and whether the region offers your PostgreSQL version and SKU. It confirms that globally unique names are free, that `terraform.tfvars` and `secrets.auto.tfvars` exist, and that `terraform`, `kubectl`, and `helm` are on PATH.
+Validates Azure CLI auth, the active subscription, the required resource providers, and permission to create role assignments. It also checks the subscription offer type, regional vCPU quota, and whether the region offers your PostgreSQL version and SKU. It confirms that globally unique names are free, that `terraform.tfvars` and `secrets.auto.tfvars` exist, and that `terraform`, `kubectl`, and `helm` are on PATH.
+
+The subscription must register 11 resource providers: `Microsoft.ContainerService`, `Microsoft.DBforPostgreSQL`, `Microsoft.Cache`, `Microsoft.KeyVault`, `Microsoft.Storage`, `Microsoft.Network`, `Microsoft.Compute`, `Microsoft.Authorization`, `Microsoft.ManagedIdentity`, `Microsoft.OperationalInsights`, and `Microsoft.Insights`.
 
 ### Apply
 
@@ -277,6 +279,8 @@ Provisioning the Azure cloud foundation takes 15 to 20 minutes on a clean subscr
 make init
 make apply   # ~15 to 20 min on first run
 ```
+
+`make init` runs `terraform init` in `infra/`, which downloads the providers, including AzureRM, and initializes the backend. Run it once per clone. After you check out a new module tag, run `make init ARGS=-upgrade`.
 
 <Note>
 `make apply` runs in three stages: Azure infrastructure including AKS → Kubernetes bootstrap (namespace, secrets, cert-manager, KEDA) → remaining resources such as the DNS zone and WAF. Each stage prompts for confirmation. To skip all three prompts, run `make apply ARGS="-auto-approve"`.
@@ -483,7 +487,7 @@ To move a deployment from chart 0.16 to 0.17:
 1. Run `make deploy`.
 
 <Warning>
-v0.17.0 removes variables that v0.16.106 and v0.16.107 added: `ingress_load_balancer`, `ingress_load_balancer_subnet_id`, `ingress_load_balancer_ip`, `ingress_load_balancer_manage_subnet_assignment`, `envoy_gateway_image_registry`, and `envoy_gateway_image_pull_secret_name`. Terraform only warns about an undeclared variable in `terraform.tfvars`, so a deployment that sets one loses that setting without an error. Check `terraform.tfvars` for these variables before you upgrade.
+Variables added on the `v0.16.*` line reach the `v0.17.*` line in a later tag. v0.17.0 does not declare `ingress_load_balancer`, `ingress_load_balancer_subnet_id`, `ingress_load_balancer_ip`, `ingress_load_balancer_manage_subnet_assignment`, `envoy_gateway_image_registry`, `envoy_gateway_image_pull_secret_name`, or `aks_network_owner_checks`, which later `v0.17.*` tags add. Terraform only warns about an undeclared variable in `terraform.tfvars`, so a deployment that sets one on a tag that lacks it loses that setting without an error. Before you run `make apply`, check that `infra/variables.tf` on the new tag declares every variable that your `terraform.tfvars` sets.
 </Warning>
 
 Otherwise, the upgrade on Azure only moves the chart pin. An installation still on chart 0.15 must first follow [`MIGRATION-0.15-to-0.16.md`](https://github.com/langchain-ai/terraform/blob/main/MIGRATION-0.15-to-0.16.md). For the full list of chart changes, see [`MIGRATION-0.16-to-0.17.md`](https://github.com/langchain-ai/terraform/blob/main/MIGRATION-0.16-to-0.17.md).
