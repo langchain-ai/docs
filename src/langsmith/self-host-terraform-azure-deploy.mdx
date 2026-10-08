@@ -454,7 +454,7 @@ az keyvault secret show \
 5. helm/values/langsmith-values-smithdb*.yaml           ← when enable_smithdb = true
 ```
 
-The generated files in `helm/values/`, `values-overrides.yaml` and the `langsmith-values-*.yaml` overlays, are gitignored because they contain live secrets. `make init-values` writes them, copying most overlays from `helm/values/examples/`.
+The generated files in `helm/values/`, `values-overrides.yaml` and the `langsmith-values-*.yaml` overlays, are gitignored because they contain live secrets. `make init-values` writes them, copying most overlays from `helm/values/examples/`. `make clean` also deletes the committed `values.yaml`, and `git checkout -- helm/values/values.yaml` restores it.
 
 ### Day-2 operations
 
@@ -489,9 +489,12 @@ To move a deployment from chart 0.16 to 0.17:
    Variables added on the `v0.16.*` line reach the `v0.17.*` line in a later tag. v0.17.0 does not declare `ingress_load_balancer`, `ingress_load_balancer_subnet_id`, `ingress_load_balancer_ip`, `ingress_load_balancer_manage_subnet_assignment`, `envoy_gateway_image_registry`, or `envoy_gateway_image_pull_secret_name`, which v0.17.1 adds. `aks_network_owner_checks` reaches the `v0.17.*` line in a later tag. Terraform only warns about an undeclared variable in `terraform.tfvars`, so a deployment that sets one on a tag that lacks it loses that setting without an error.
    </Warning>
 
+1. If `terraform.tfvars` sets `langsmith_helm_chart_version` to a 0.16 version, clear it or set a 0.17 version, and run `unset CHART_VERSION` if your shell sets it. On a 0.16 value, `deploy.sh` exits with `does not resolve to the chart 0.17 line`.
 1. Run `make apply`. It adds the two LLM Gateway federated credentials.
 1. Run `make init-values` to regenerate the values files in the chart 0.17 shape.
 1. Run `make deploy`.
+
+If you enabled Engine in your own values, chart 0.17 also requires `engine.usageSigningSecret` (at least 32 characters), or an `engine_usage_signing_secret` key in the Secret that `config.existingSecretName` names.
 
 Beyond the two federated credentials, the upgrade on Azure only moves the chart pin. An installation still on chart 0.15 must first follow [`MIGRATION-0.15-to-0.16.md`](https://github.com/langchain-ai/terraform/blob/main/MIGRATION-0.15-to-0.16.md). For the full list of chart changes, see [`MIGRATION-0.16-to-0.17.md`](https://github.com/langchain-ai/terraform/blob/main/MIGRATION-0.16-to-0.17.md).
 
@@ -686,7 +689,7 @@ kubectl rollout restart deployment langsmith-frontend -n langsmith
 SmithDB on Azure requires a stable release on the LangSmith Helm chart 0.17 line, which the `v0.17.*` module tags deploy by default. A 0.17 release candidate is not a supported configuration. On a `v0.16.*` tag, SmithDB needs v0.16.56 or later and `langsmith_helm_chart_version = "~0.17.0"`.
 </Warning>
 
-`enable_smithdb = true` provisions the Azure infrastructure SmithDB needs: a dedicated PostgreSQL 18 metastore, a Blob container, a Workload Identity, and Premium SSD v2 cache volumes. It also requires a non-empty `availability_zones`, because Premium SSD v2 attaches only to zonal VMs in most regions. AKS applies zones only at cluster creation.
+`enable_smithdb = true` provisions the Azure infrastructure SmithDB needs: a dedicated PostgreSQL 18 metastore, a Blob container, a Workload Identity, and Premium SSD v2 cache volumes. It also requires a non-empty `availability_zones`, because Premium SSD v2 attaches only to zonal VMs in most regions. AKS applies zones only at cluster creation, so set `availability_zones` in the first `make apply` if you plan to use SmithDB. On a cluster created without zones, adding them later passes the plan, but the module ignores zone changes on the existing node pool: the nodes stay non-zonal, and every plan prints a zone drift warning.
 
 ```hcl
 # infra/terraform.tfvars
@@ -746,9 +749,11 @@ To enable SSO:
 
    ```bash
    ./infra/scripts/manage-keyvault.sh set langsmith-oauth-client-id '<client-id>'
-   ./infra/scripts/manage-keyvault.sh set langsmith-oauth-client-secret '<client-secret>'
    ./infra/scripts/manage-keyvault.sh set langsmith-oauth-issuer-url '<issuer-url>'
+   make keyvault   # set langsmith-oauth-client-secret; the prompt hides the value
    ```
+
+   Set the client secret through `make keyvault`, which reads the value without echoing it. Passed on the command line, the secret shows in the process list and in your shell history.
 
    For Entra ID, the issuer URL is `https://login.microsoftonline.com/<tenant-id>/v2.0`. The `/v2.0` suffix is required.
 1. Set `enable_sso_oidc = true` in `infra/terraform.tfvars`.

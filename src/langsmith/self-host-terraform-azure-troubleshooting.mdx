@@ -194,7 +194,7 @@ Error: a resource with the ID "https://<vault>.vault.azure.net/secrets/langsmith
 already exists - to be managed via Terraform this resource needs to be imported into the State.
 ```
 
-**Cause:** Something wrote the secret to Key Vault outside Terraform, or the state file lost the resource. Terraform manages only two secrets, `postgres-admin-password` and `langsmith-license-key`. `make seed-secrets` also writes both, so running it before the first `make apply` causes this collision. The LangSmith app secrets have no Terraform resource and never produce this error.
+**Cause:** Something wrote the secret to Key Vault outside Terraform, or the state file lost the resource. Terraform manages only two secrets, `postgres-admin-password` and `langsmith-license-key`. With `keyvault_manage_secrets = false`, `make seed-secrets` writes both instead, so setting the flag back to `true` afterward causes this collision. An existing vault attached with `create_keyvault = false` that already holds either secret causes it too. The LangSmith app secrets have no Terraform resource and never produce this error.
 
 **Fix:** Import the conflicting secret, then re-apply. Get `<vault>` from `make tf ARGS="output keyvault_name"`.
 
@@ -273,7 +273,7 @@ kubectl get svc -n envoy-gateway-system \
   -o jsonpath='{.items[0].metadata.annotations.service\.beta\.kubernetes\.io/azure-dns-label-name}'
 ```
 
-If either is missing, set `dns_label` in `terraform.tfvars` and run `make deploy`, which re-applies the EnvoyProxy. Once DNS resolves, delete the stuck certificate as in the NGINX fix.
+If either is missing, set `dns_label` in `terraform.tfvars`, then run `make init-values` and `make deploy`, which re-applies the EnvoyProxy. `make deploy` stops while `terraform.tfvars` and the generated values disagree on `dns_label`. Once DNS resolves, delete the stuck certificate as in the NGINX fix.
 
 **Fix with `ingress_controller = "nginx"`:**
 
@@ -375,12 +375,14 @@ make deploy
 
 ```bash
 ./infra/scripts/manage-keyvault.sh set langsmith-oauth-client-id '<client-id>'
-./infra/scripts/manage-keyvault.sh set langsmith-oauth-client-secret '<client-secret>'
 ./infra/scripts/manage-keyvault.sh set langsmith-oauth-issuer-url '<issuer-url>'
+make keyvault   # set langsmith-oauth-client-secret; the prompt hides the value
 make k8s-secrets
 make init-values
 make deploy
 ```
+
+Set the client secret through `make keyvault` rather than on the command line, where it shows in the process list and in your shell history.
 
 ### Helm install times out
 
@@ -466,7 +468,7 @@ Changing `deployments_encryption_key`, `agent_builder_encryption_key`, `insights
 - Do not rotate these keys.
 - Do not set `config.agentBuilder.encryptionKey`, `fleet.encryptionKey`, `insights.encryptionKey`, or `polly.encryptionKey` inline in `values-overrides.yaml`. The chart reads them from `langsmith-config-secret` via `existingSecretName`. Setting inline overrides the secret reference.
 
-### `agent-builder-tool-server` or `polly` in CrashLoopBackOff
+### `fleet-tool-server` or `polly` in CrashLoopBackOff
 
 **Symptom:** Pod restarts indefinitely. No traceback. Logs show "Child process died" repeatedly.
 
@@ -522,7 +524,7 @@ See the [architecture page](/langsmith/self-host-terraform-azure-architecture#wo
 
 **Symptom:** `make destroy` after `make clean` fails with `No state file was found!`. Azure resources still run but Terraform has lost tracking.
 
-**Cause:** `make clean` removes `terraform.tfvars`, `secrets.auto.tfvars`, and the local `terraform.tfstate` and its backups. It warns when state still tracks resources, but continues once you confirm.
+**Cause:** `make clean` removes `terraform.tfvars`, `secrets.auto.tfvars`, and the local `terraform.tfstate` and its backups. It warns when state still tracks resources, but continues once you confirm. `make clean-force` gives that confirmation for you.
 
 **Correct teardown order**
 
