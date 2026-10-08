@@ -1,0 +1,291 @@
+---
+title: "OpenAI Decisions integration"
+sidebarTitle: "OpenAI Decisions"
+description: "Integrate with the OpenAIDecisions decision model using LangChain Python."
+---
+
+The [OpenAI Decisions API](https://developers.openai.com/api/docs/guides/decisions) reads natural language and images, and returns typed answers and calibrated probabilities instead of generated text.
+
+`OpenAIDecisions` exposes these decisions as a LangChain `Runnable`, so you can invoke, batch, or compose them with other runnables. It accepts strings, structured JSON, and [LangChain message objects](/oss/python/langchain/messages), and records traces and token usage in LangSmith. Use it for focused decisions such as routing a request, choosing a model, or checking whether a tool call is safe to run.
+
+Use OpenAI decisions in LangChain middleware to control `create_agent` behavior at specific lifecycle points, including with custom middleware that classifies agent state. See [Agent middleware](#agent-middleware) for examples.
+
+<Note>
+`OpenAIDecisions` and its middleware are in beta and require `langchain-openai>=1.7.0`. Their APIs may change without notice.
+</Note>
+
+## Setup
+
+<CodeGroup>
+```bash uv
+uv add "langchain-openai>=1.7.0"
+```
+
+```bash pip
+pip install "langchain-openai>=1.7.0"
+```
+</CodeGroup>
+
+Create an API key in the [OpenAI dashboard](https://platform.openai.com/api-keys) and export it:
+
+```bash
+export OPENAI_API_KEY=...
+```
+
+<Note>
+Optional: Set `OPENAI_BASE_URL` to use a compatible gateway or test server. The default is the OpenAI API endpoint.
+
+```bash
+export OPENAI_BASE_URL=https://gateway.example.com/v1
+```
+
+To route requests through the [LangSmith LLM gateway](/langsmith/llm-gateway-decision-models#use-the-openai-decisions-api), set `LANGSMITH_GATEWAY=true`. Gateway requests authenticate with `LANGSMITH_GATEWAY_API_KEY` or `LANGSMITH_API_KEY`:
+
+```bash
+export LANGSMITH_GATEWAY=true
+export LANGSMITH_API_KEY=...
+```
+</Note>
+
+## Quickstart
+
+Create an `OpenAIDecisions` instance with a decisions model, then pass the input and named questions together in each invocation. Questions that share input are answered in one request:
+
+```python
+from langchain_openai.decisions import (
+    Choice,
+    Level,
+    OpenAIDecisions,
+    Predicate,
+    Score,
+)
+
+decisions = OpenAIDecisions(model="gpt-6-luna")
+
+response = decisions.invoke(
+    {
+        "input": (
+            "The deploy failed twice and customers are seeing 500s. "
+            "Can someone look now?"
+        ),
+        "questions": {
+            "urgent": Predicate(instructions="Does this need attention right now?"),
+            "team": Choice(
+                instructions="Which team should pick this up?",
+                choices={
+                    "infra": "Deploys, availability, and on-call incidents.",
+                    "billing": "Payments, invoices, and subscriptions.",
+                },
+            ),
+            "severity": Score(
+                instructions="How severe is the impact?",
+                levels=[
+                    "Cosmetic",
+                    Level(label="Degraded", description="Degraded for some users."),
+                    Level(label="Outage", description="Full outage."),
+                ],
+            ),
+        },
+    }
+)
+
+print(response.predicates["urgent"].probability)
+print(response.choices["team"].choice, response.choices["team"].confidence)
+print(response.scores["severity"].score)
+```
+
+Answers are keyed by the question names you supplied, and grouped by type on `predicates`, `choices`, `scores`, and `refusals`. The response also carries the `model` that answered, token `usage`, and the OpenAI `request_id`.
+
+The request `input` can be a string, a JSON object or array, or LangChain messages. Strings and `HumanMessage` objects, including text and base64 image content, are sent natively. Other input, such as conversations with system, AI, or tool messages, or JSON objects, is sent as JSON text in a single user message, with base64 images kept in place as image parts.
+
+## Decision types
+
+Each question is one of three types:
+
+| Type | Asks | Returns | Reach for it when |
+|---|---|---|---|
+| `Predicate` | Is this true? | `probability`, the probability of yes | Your code branches on an `if` |
+| `Choice` | Which of these options? | `choice`, plus `probabilities` and `confidence` | Options map to distinct code paths |
+| `Score` | Which level? | `score`, plus `legend`, `probabilities`, and `confidence` | The answer is a spectrum you compare to a threshold |
+
+`Predicate` is the only one without a `confidence`, since the probability is the answer. Use `Score` rather than a `Predicate` for a spectrum: a probability of `0.5` means an even split between yes and no, not "medium".
+
+`Score` levels are ordered from lowest to highest and indexed from `0`. Pass a plain string for a label-only level, or a `Level` with a `label` and `description`. The returned `score` is the probability-weighted average of the level indices, so it may fall between levels, and `legend` maps each index to its label.
+
+When the model declines to answer a question, the answer is a `RefusalAnswer` on `refusals` instead of a typed answer. Check for a missing key before reading a typed answer when refusals are possible.
+
+## Agent middleware
+
+The package includes two beta [middleware](/oss/python/langchain/middleware/overview) that put OpenAI decisions on an agent's decision points. Import them from `langchain_openai.middleware`. Install `langchain` alongside the OpenAI integration before using them:
+
+<CodeGroup>
+```bash uv
+uv add langchain "langchain-openai>=1.7.0"
+```
+
+```bash pip
+pip install langchain "langchain-openai>=1.7.0"
+```
+</CodeGroup>
+
+| Middleware | Hook | Decision |
+|---|---|---|
+| [`OpenAIModelRouterMiddleware`](#model-routing) | `before_agent`, `wrap_model_call` | Which model handles the run |
+| [`OpenAIAutoModeMiddleware`](#tool-risk-gating) | `wrap_tool_call` | Whether a tool call is too risky to run |
+
+Both middleware require a `model`: a decisions model name, or a configured `OpenAIDecisions` instance.
+
+### Model routing
+
+Classifies the latest human message across your named models and uses the selected one for every model call in the run. Each `ModelChoice` pairs a model with the criterion for picking it:
+
+```python
+from langchain.agents import create_agent
+from langchain_openai.middleware import ModelChoice, OpenAIModelRouterMiddleware
+
+router = OpenAIModelRouterMiddleware(
+    choices={
+        "fast": ModelChoice(
+            model="openai:gpt-6-luna",
+            criteria="Direct lookups, extraction, and localized changes with explicit targets.",
+        ),
+        "powerful": ModelChoice(
+            model="openai:gpt-6-sol",
+            criteria="Architecture, novel root-cause reasoning, and high-stakes decisions.",
+        ),
+    },
+    instructions="Choose the least costly model that can complete the task safely.",
+    model="gpt-6-luna",
+)
+
+agent = create_agent("openai:gpt-6-luna", middleware=[router])
+
+result = agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": (
+                    "Design a Byzantine fault tolerant consensus protocol and "
+                    "prove its safety and liveness properties."
+                ),
+            }
+        ]
+    }
+)
+print(result["model_route"]["choice"])
+```
+
+The answer is stored in agent state under `model_route` as a mapping with `choice`, `probabilities`, and `confidence`. When the model refuses, or the state has no human message, `model_route` is `None` and model calls use the agent's own model.
+
+### Tool-risk gating
+
+Asks for the probability that a tool call is risky or insufficiently authorized. Calls with a probability of `0.5` or higher return an error `ToolMessage` instead of running the tool. Only the tools you list are classified. Pass their names or tool objects:
+
+```python
+from langchain.agents import create_agent
+from langchain.tools import tool
+from langchain_openai.middleware import OpenAIAutoModeMiddleware
+
+
+@tool
+def delete_all_backups() -> str:
+    """Delete every backup. This action cannot be undone."""
+    return "Backups deleted."
+
+
+agent = create_agent(
+    "openai:gpt-6-sol",
+    tools=[delete_all_backups],
+    middleware=[
+        OpenAIAutoModeMiddleware(tools=[delete_all_backups], model="gpt-6-luna")
+    ],
+)
+
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Delete all backups."}]}
+)
+print(result["messages"][-1].text)
+```
+
+Override `instructions` to describe risk for your own tools. The middleware fails closed: refusals block the call, and API errors propagate without running the tool.
+
+<Warning>
+Do not put secrets in tool arguments or conversation state unless sending them to OpenAI is acceptable. This middleware refuses risky calls. It does not request approval. Pair it with [human-in-the-loop middleware](/oss/python/langchain/middleware/built-in) when you want a person to approve them.
+</Warning>
+
+### Custom middleware
+
+`OpenAIDecisions` accepts LangChain message objects directly, so a custom middleware hook can classify an agent's conversation state without converting it first. This example classifies the conversation once at the start of each run and stores the complete `ChoiceAnswer` in agent state:
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import AgentMiddleware, AgentState, Runtime
+from langchain_openai.decisions import Choice, ChoiceAnswer, OpenAIDecisions
+from typing_extensions import NotRequired
+
+
+class TriageState(AgentState):
+    triage: NotRequired[ChoiceAnswer]
+
+
+class TriageMiddleware(AgentMiddleware[TriageState]):
+    state_schema = TriageState
+
+    def __init__(self) -> None:
+        self.decisions = OpenAIDecisions(model="gpt-6-luna")
+
+    def before_agent(
+        self, state: TriageState, runtime: Runtime
+    ) -> dict[str, ChoiceAnswer]:
+        response = self.decisions.invoke(
+            {
+                "input": state["messages"],
+                "questions": {
+                    "triage": Choice(
+                        instructions="Which team should handle this conversation?",
+                        choices={
+                            "billing": "Payments, invoices, and subscriptions.",
+                            "infra": "Deploys, availability, and incidents.",
+                            "other": "Requests that belong to another team.",
+                        },
+                    )
+                },
+            }
+        )
+        return {"triage": response.choices["triage"]}
+
+
+agent = create_agent(
+    "openai:gpt-6-luna",
+    middleware=[TriageMiddleware()],
+)
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Customers are seeing 500 errors."}]}
+)
+print(result["triage"].choice, result["triage"].confidence)
+```
+
+Use any lifecycle hook that matches your decision point. For example, use `before_model` to reclassify after each tool result, or `wrap_tool_call` to classify a proposed action. See [Custom middleware](/oss/python/langchain/middleware/custom) for all hooks and state patterns.
+
+## Tracing
+
+OpenAI decisions are traced in [LangSmith](/langsmith/home), so you can inspect decisions and token usage alongside the rest of your agent.
+
+## See also
+
+- [OpenAI Decisions guide](https://developers.openai.com/api/docs/guides/decisions)
+- [OpenAI middleware](/oss/python/integrations/middleware/openai)
+- [OpenAI provider overview](/oss/python/integrations/providers/openai)
+- [LangChain OpenAI API reference](https://reference.langchain.com/python/langchain-openai)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/decision_models/openai.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
