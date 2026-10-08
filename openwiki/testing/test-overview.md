@@ -1,63 +1,25 @@
 ---
 type: validation guide
 title: Testing Overview
-description: Change-oriented guidance for routing documentation, changelog, generated-output, credentialed sample, remote, and hosted-site changes to the validation boundary that can establish the relevant guarantee.
-tags: [testing, pytest, ci, documentation, changelog, code-samples, openapi]
+description: Change-oriented guidance for deterministic tests, rendered documentation, credentialed code samples, remote checks, and CI boundaries. Explains sample-runner concurrency, rate-limit outcomes, and optional trace publication.
+tags: [testing, pytest, ci, documentation, code-samples, openapi]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-06T08:22:08.206Z
+    at: 2026-10-08T08:23:51.982Z
 sources:
-  - id: openwiki-source-5c124605ed6e394bffee862c
-    resource: repo://.github/workflows/_check-links.yml
-  - id: openwiki-source-f35e7c44cc1805709393a581
-    resource: repo://.github/workflows/_lint.yml
-  - id: openwiki-source-4d9cccca7700db7220ec055e
-    resource: repo://.github/workflows/_test.yml
-  - id: openwiki-source-164e2da859b5277df81c7d94
-    resource: repo://.github/workflows/ci.yml
-  - id: openwiki-source-5153f86e64d6ee0b305f72b3
-    resource: repo://.github/workflows/refresh-langsmith-openapi.yml
   - id: openwiki-source-97746d8f3662d803e625550e
     resource: repo://.github/workflows/test-code-samples.yml
-  - id: openwiki-source-71ee7a4afbd2d6aa7b29f3d1
-    resource: repo://htmltest-mint-export.yml
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
-  - id: openwiki-source-d0cdf44431684bdedf34705a
-    resource: repo://pipeline/core/builder.py
-  - id: openwiki-source-17f3856bce97f37118963062
-    resource: repo://pipeline/preprocessors/handle_auto_links.py
-  - id: openwiki-source-05ccef8d4cf1698187f20464
-    resource: repo://pyproject.toml
-  - id: openwiki-source-eb7a028ac20098c574b90426
-    resource: repo://scripts/assemble_changelog.py
-  - id: openwiki-source-0a0a6c8d7a88288e6b6b9b5b
-    resource: repo://scripts/check_cross_refs.py
   - id: openwiki-source-2654e40275744504b4ca7e2b
     resource: repo://scripts/code_sample_tracing.py
+  - id: openwiki-source-fd0cb9d6fca56bf4963559e9
+    resource: repo://scripts/extract_code_snippets.py
   - id: openwiki-source-560bf24db9566b97ee19e383
     resource: repo://scripts/generate_code_snippet_mdx.py
-  - id: openwiki-source-697851c98229599f97376bfb
-    resource: repo://scripts/process_langsmith_openapi.py
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
-  - id: openwiki-source-4150c2e25aef90010ad7b03d
-    resource: repo://src/changelog-navigation.js
-  - id: openwiki-source-6a4f3df816b7f7f45b6ac5b1
-    resource: repo://src/code-samples/conftest.py
-  - id: openwiki-source-e0401fc6d5f2a13d30455bd9
-    resource: repo://src/code-samples/package.json
-  - id: openwiki-source-5d310b0d0e3f7a2baf5a473a
-    resource: repo://tests/changelog-navigation.test.js
-  - id: openwiki-source-2c73e322d3e9ba3868329a78
-    resource: repo://tests/unit_tests/test_assemble_changelog.py
-  - id: openwiki-source-24e5f74f0f40e9bfd381871f
-    resource: repo://tests/unit_tests/test_builder.py
-  - id: openwiki-source-b68d7bad2afd9a38e8c331d5
-    resource: repo://tests/unit_tests/test_generate_code_snippet_mdx.py
-  - id: openwiki-source-2ecfcd33b729fccd843ab705
-    resource: repo://tests/unit_tests/test_handle_auto_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-06T08:22:08.206Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-08T08:23:51.982Z" }
 ---
 
 ## Choose the validation boundary
@@ -177,28 +139,40 @@ make test-code-samples
 make test-code-samples FILES="src/code-samples/langchain/return-a-string.py"
 ```
 
-The runner discovers Python, TypeScript, Java, Kotlin, Go, and shell samples under `src/code-samples`; `FILES` selects a space-separated subset and an unset value runs all eligible files except `__pycache__` and `node_modules`. The default timeout is 1,200 seconds and `CODE_SAMPLE_TIMEOUT_SECONDS` overrides it. Python runs through `uv`, TypeScript through `npx tsx`, Go through `go run`, shell through `bash`, and Java/Kotlin through JBang pinned to Java 21. Python and JBang use the repository root; TypeScript, Go, and shell use `src/code-samples` to resolve their shared environments.
+The runner discovers Python, TypeScript, Java, Kotlin, Go, and shell samples under `src/code-samples`; `FILES` selects a space-separated subset and an unset value runs all eligible files except `__pycache__` and `node_modules`. The default timeout is 1,200 seconds and `CODE_SAMPLE_TIMEOUT_SECONDS` overrides it. `CODE_SAMPLE_JOBS` controls concurrent execution (default 4; invalid values fall back and values below one clamp to one). Samples in the `evaluate-rag` and `experiment-runs-query` serial groups take a group lock, so they do not overlap with another sample in their own group while unrelated samples can still use the other workers. Python runs through `uv`, TypeScript through `npx tsx`, Go through `go run`, shell through `bash`, and Java/Kotlin through JBang pinned to Java 21. Python and JBang use the repository root; TypeScript, Go, and shell use `src/code-samples` to resolve their shared environments.
 
 ```mermaid
 flowchart TD
-  Select["Select eligible samples"] --> Run["Run language command"]
+  Select["Select eligible samples"] --> Workers["Run up to configured workers"]
+  Workers --> Run["Run language command"]
   Run --> Result{"Process result"}
   Result -->|"passed"| Trace{"Tracing enabled"}
   Trace -->|"no"| Pass["Passed"]
-  Trace -->|"yes"| Collect["Collect LangSmith trace"]
+  Trace -->|"yes"| Collect["Serialize trace collection"]
   Collect --> TraceResult{"Collection succeeded"}
   TraceResult -->|"yes"| Pass
-  TraceResult -->|"no"| Fail["Runner fails"]
-  Result -->|"rate limited"| Retry["Retry up to three attempts"]
-  Retry --> Skip["Record skipped after retries"]
-  Result -->|"other failure"| Fail
+  TraceResult -->|"no"| Warn["Record trace warning"]
+  Warn --> Pass
+  Result -->|"rate limited"| Retry["Retry with configured backoff"]
+  Retry --> Skip["Record skipped after exhausted retries"]
+  Result -->|"other failure"| Fail["Runner fails"]
 ```
 
-This is live integration evidence, not a deterministic unit test. In particular, a rate-limit skip is not a successful execution.
+This is live integration evidence, not a deterministic unit test. A rate-limit skip is not a successful execution, and a trace-collection warning is not a sample failure: the sample process already passed.
 
-The workflow does not run on fork pull requests because examples can require provider secrets. Internal PRs run only changed eligible samples; monthly scheduled and manual runs test all samples, enable tracing, and have 90 minutes rather than the PR job's 60. CI supplies provider credentials, toolchains, and a pgvector PostgreSQL service through `POSTGRES_URI`. The PostgreSQL helper prefers that URI before attempting a testcontainer, Docker, or a default local connection, and clears shared store and migration tables before setup.
+The workflow does not run on fork pull requests because examples can require provider secrets. Internal PRs run only changed eligible samples; monthly scheduled and manual runs test all samples, enable tracing, and allow 150 minutes rather than the PR job's 60. CI installs Node 20, Java 21/JBang, and Go from `src/code-samples/go.mod`, and supplies provider credentials plus a pgvector PostgreSQL service through `POSTGRES_URI`. The PostgreSQL helper prefers that URI before attempting a testcontainer, Docker, or a default local connection, and clears shared store and migration tables before setup.
 
-A detected LangSmith 429 gets at most three attempts with 15-second delays; a persistent rate limit is recorded as skipped without a nonzero exit, while other failures fail the runner. With tracing enabled, a passed sample is followed by trace collection, and collection failure fails the runner. Only a one-snippet source with a qualifying recent agent root run receives a public manifest URL; generated snippet MDX adds a trace card only when that URL exists. Successful full runs can regenerate snippets and update a standing trace-refresh PR. See [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md).
+A detected LangSmith 429 gets up to five total attempts by default, including the initial attempt. `CODE_SAMPLE_RATE_LIMIT_ATTEMPTS` sets that budget, and `CODE_SAMPLE_RATE_LIMIT_DELAY_SECONDS` sets the base delay; each retry waits base delay times its one-based attempt number, capped at 120 seconds. The same policy retries 429s raised while collecting traces. A sample that remains rate-limited is recorded as skipped without a nonzero exit, whereas a normal nonzero exit, timeout, or missing executable fails the runner. This keeps CI available under provider load, but a skip is **not successful sample validation**: rerun the skipped path later.
+
+With tracing enabled, only a sample process that passed is followed by trace collection. A trace-collection exception—including one that remains rate-limited after its retry budget—is recorded as a warning and does not fail the runner. Although samples can run in parallel, collection is serialized: the lock protects the shared manifest and claimed-run set so one trace is not attributed to multiple samples. Only a one-snippet source with a qualifying recent agent root run receives a public manifest URL; generated snippet MDX adds a trace card only when that URL exists. On scheduled or manual full runs, CI regenerates snippets when the sample step was not cancelled, fewer than 20 samples failed, and at least one trace entry was updated; it can therefore prepare a trace-refresh PR despite some sample failures, but the final workflow step still fails the job when the runner reported sample failures. See [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md).
+
+## Generated snippets: extraction is not execution
+
+`make code-snippets` is the generated-document boundary for sample changes. It first runs `scripts/extract_code_snippets.py`, then `scripts/generate_code_snippet_mdx.py`; it does **not** run samples. The extractor reads line-based `:snippet-start:`/`:snippet-end:` markers in Python, TypeScript, Java, Kotlin, Go, and shell sources, removes marked `:remove-start:` regions, normalizes output, and writes Bluehawk-compatible files under `src/code-samples-generated/`. With no `CODE_SNIPPET_SOURCES`, it clears generated files of those languages before scanning the tree; a space-separated `CODE_SNIPPET_SOURCES` list restricts replacement to validated source files under `src/code-samples`.
+
+The MDX generator reads those extracted files and emits language-suffixed snippet MDX under `src/snippets/code-samples/`. Prefix markers can set a CodeGroup tab title or fence modifiers without appearing in emitted code. For eligible Python and TypeScript agent model strings it creates the seven-provider CodeGroup, but deliberately leaves embeddings and provider-specific chat model IDs unchanged; `KEEP MODEL` prevents expansion of the following model line. It reads `trace-links.json` and replaces or removes a trailing trace card, so a trace URL is presentation metadata layered on generated code rather than proof that the snippet itself executed.
+
+Run `make test TEST_FILE=tests/unit_tests/test_generate_code_snippet_mdx.py` after changing these rules or shared TypeScript dependencies. The test guards the language-specific Google provider keys and tool spelling as well as the declared and lockfile-resolved `@langchain/google` floor. Then run `make code-snippets` and review the generated MDX diff. For a change to runnable behavior, add the credentialed sample command; generation and execution prove different properties.
 
 ## Remote and hosted checks
 

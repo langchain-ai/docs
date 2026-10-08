@@ -1,14 +1,16 @@
 ---
-type: CI and automation trust model
+type: CI/CD trust model
 title: GitHub Actions and CI/CD
-description: Explains the repository's pull-request checks, metadata-only fork-facing automation, and trusted scheduled writers. Covers reusable CI gates, integration-listing intake, package-download maintenance, and the reviewed LangSmith OpenAPI refresh lifecycle.
+description: Maps repository validation, metadata-only pull-request automation, and trusted maintenance writers. Covers CI gates, code-sample tracing and refresh behavior, generated documentation, and scheduled maintenance.
 tags: [github-actions, ci-cd, automation, security, testing]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-06T08:22:08.206Z
+    at: 2026-10-08T08:23:51.982Z
 sources:
   - id: openwiki-source-c4f328e2e1685f1c7e2bc076
     resource: repo://.github/OWNERS
+  - id: openwiki-source-1e075575622e1a77a3dc46e6
+    resource: repo://.github/pull_request_template.md
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
   - id: openwiki-source-f35e7c44cc1805709393a581
@@ -19,81 +21,89 @@ sources:
     resource: repo://.github/workflows/ci.yml
   - id: openwiki-source-1ca506cf29eca9b87a087220
     resource: repo://.github/workflows/external-integration-pr-comment.yml
+  - id: openwiki-source-d11cee5031c401f0c9a33c44
+    resource: repo://.github/workflows/htmltest-linear.yml
+  - id: openwiki-source-61ff424071398cdd00f5a60d
+    resource: repo://.github/workflows/htmltest.yml
   - id: openwiki-source-1db901655f02af312133801d
     resource: repo://.github/workflows/integration-submission.yml
   - id: openwiki-source-4c203a05e0a78b2d5fd991b4
     resource: repo://.github/workflows/pr-welcome-comment.yml
   - id: openwiki-source-5153f86e64d6ee0b305f72b3
     resource: repo://.github/workflows/refresh-langsmith-openapi.yml
+  - id: openwiki-source-751a704f6f25787856371177
+    resource: repo://.github/workflows/test-code-samples-linear.yml
   - id: openwiki-source-97746d8f3662d803e625550e
     resource: repo://.github/workflows/test-code-samples.yml
   - id: openwiki-source-4de47c60d7e3210385c34d35
     resource: repo://.github/workflows/update-package-downloads.yml
+  - id: openwiki-source-012f2c78e3b1446dfc35803f
+    resource: repo://Makefile
   - id: openwiki-source-2654e40275744504b4ca7e2b
     resource: repo://scripts/code_sample_tracing.py
+  - id: openwiki-source-250d64a0be85992104c0f95b
+    resource: repo://scripts/flag_hosted_docs_candidates.py
   - id: openwiki-source-697851c98229599f97376bfb
     resource: repo://scripts/process_langsmith_openapi.py
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-06T08:22:08.206Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-08T08:23:51.982Z" }
 ---
 
-## Trust model and entrypoints
+## Trust model
 
-The repository uses three deliberately different execution contexts:
+The workflows use three deliberately separate contexts. Keep their boundaries intact.
 
-| Context | Entrypoints | What it may do | Boundary |
+| Context | Entrypoints | Permitted role | Safety boundary |
 | --- | --- | --- | --- |
-| **Untrusted revision validation** | `pull_request` | Check out and test the proposed revision with read-only validation. | Do not expose secrets or use a repository-writing token for fork code. |
-| **Fork-facing metadata automation** | `pull_request_target` | Read base-branch policy and pull-request data through GitHub APIs; label, comment, request review, or close a PR. | **Never check out, source, or execute fork-head code.** Treat PR content as data, not commands. |
-| **Trusted maintenance writers** | Schedule or `workflow_dispatch` in the repository | Use explicitly granted secrets or write permissions to generate a candidate branch and PR. | Preserve narrow artifact paths, no-diff exits, and human review (except the explicitly auto-merged package-download PR). |
+| Untrusted revision validation | `pull_request` | Check out and validate the proposed revision. | Do not depend on repository secrets or writes while handling fork code. |
+| Metadata-only PR automation | `pull_request_target` | Read base-branch policy and GitHub API metadata; label, comment, request review, or close. | Never check out, source, or execute fork-head code. Treat PR values and head-file bytes as data. |
+| Trusted maintenance writer | Schedule or `workflow_dispatch` in the repository | Use narrowly granted credentials to generate a branch and review PR. | Preserve no-diff exits, limited paths, and review; package-download PRs are the explicit squash-auto-merge exception. |
 
 ```mermaid
 flowchart TD
   Pull["Pull request"] --> Validate["pull_request validation"]
-  Pull --> Target["pull_request_target metadata policy"]
-  Validate --> Check["Checkout proposed revision"]
-  Target --> API["GitHub API and base policy"]
+  Pull --> Metadata["pull_request_target metadata policy"]
+  Validate --> Checkout["Checkout proposed revision"]
+  Metadata --> API["Base policy and GitHub API"]
   API --> Mutate["Label comment review or close"]
-  Schedule["Schedule or manual dispatch"] --> Writer["Trusted generator"]
+  Trigger["Schedule or manual dispatch"] --> Writer["Trusted generator"]
   Writer --> Diff{"Candidate differs"}
   Diff -->|"yes"| Review["Automation review PR"]
 ```
 
-This shows why validation and privileged PR mutation are separate: only ordinary validation handles the proposed checkout, while target workflows operate on metadata and GitHub API responses.
+This separates execution of a proposed revision from privileged PR mutation. Do not convert `pull_request_target` into a fork-testing workaround: do not add a head checkout, run a PR file, or construct shell commands from untrusted title, body, branch, or issue-form values.
 
-Do not turn `pull_request_target` into a workaround for testing forks. In particular, do not add `actions/checkout` at the PR head, run a file from the PR, or interpolate untrusted title, body, branch, or issue-form values into a shell command. Put executable checks on `pull_request`; put secret-backed work and repository writes on trusted triggers.
+## PR expectations and core CI
 
-## Core CI: reusable checks and generated outputs
+The PR template asks authors to describe the change and related work and, where applicable, confirm local documentation validation, tested examples, root-relative internal links, and navigation updates. Preview deployment is an optional internal-team action.
 
-`ci.yml` runs reusable test, lint, and documentation-link workflows plus merge-conflict, cross-reference, external documentation URL, and generated-file checks on pull requests and pushes to main. It also supports manual dispatch. Its concurrency group combines workflow and ref and cancels an earlier in-progress run when a newer push arrives, so feedback follows the current branch or PR head rather than consuming runners on obsolete commits.
+`ci.yml` runs on PRs, pushes to `main`, and manual dispatch. It fans out to reusable test, lint, and documentation-link checks, plus merge-conflict-marker, cross-reference, external `docs_url`, and generated-file checks. Its concurrency group combines workflow and ref and cancels obsolete runs after a newer push.
 
 ```mermaid
 flowchart TD
-  CI["ci.yml pull request push main or manual"] --> Test["Reusable test"]
+  CI["ci.yml trigger"] --> Test["Reusable test"]
   CI --> Lint["Reusable lint"]
-  CI --> Links["Reusable link and OpenAPI checks"]
+  CI --> Links["Link and OpenAPI validation"]
   CI --> Static["Merge markers cross refs and docs URL checks"]
   CI --> Generated["Regenerate provider overview"]
-  Generated --> Match{"Committed output matches"}
+  Generated --> Match{"Committed result matches"}
   Match -->|"no"| Fail["Fail CI"]
 ```
 
-This is the CI fan-out; a regenerated output mismatch is a failure rather than a signal to manually patch generated documentation.
+This is the CI fan-out; generated-output drift fails rather than being silently repaired in CI.
 
-The reusable test and lint workflows accept a Python version and working directory, take shallow checkouts, synchronize the `test` dependency group, and run `make test` or `make lint`. The link workflow accepts the Python version, has read-only `contents` permission and a 20-minute limit, installs Python dependencies and Node 22/Mintlify, then runs `make broken-links-with-anchors` and `make check-openapi`. These caller interfaces do not declare secret inputs.
+The reusable test and lint workflows take caller-supplied Python and working-directory inputs, perform shallow checkouts, synchronize the `test` dependency group, and run `make test` or `make lint`. The reusable link workflow instead has read-only `contents` permission and a 20-minute limit, Python and Node setup, and runs Mintlify link and OpenAPI checks.
 
-`check-generated-files` regenerates `src/oss/python/integrations/providers/overview.mdx` with `pipeline/tools/partner_pkg_table.py` and fails if the committed result differs. Update `packages.yml` or the generator, regenerate, and commit the result; do not hand-edit the generated overview. The check can be bypassed by the `bypass-auto-check` label and skips the expected `github-actions[bot]` package-download update PR.
+`check-generated-files` runs `pipeline/tools/partner_pkg_table.py` and fails when `src/oss/python/integrations/providers/overview.mdx` differs. Change `packages.yml` or the generator, regenerate, and commit the output rather than hand-editing the overview. The job bypasses this check for the `bypass-auto-check` label and the expected `github-actions[bot]` package-download PR.
 
-The independent external-listing gate runs:
+The external-listing gate runs:
 
 ```bash
 uv run python scripts/refresh_integration_downloads.py --check-docs-urls
 ```
 
-It validates `docs_url` values before documentation generation: `http(s)` URLs and site-relative paths beginning with one `/` are allowed, while blank, protocol-relative, and unsafe-scheme values are rejected. This check validates the link-target syntax, not remote reachability. See [Integration Listing Automation](/openwiki/workflows/integration-listing-automation.md) for the metadata and generated-table lifecycle.
-
-Useful local equivalents are:
+Useful local counterparts are:
 
 ```bash
 make test
@@ -104,90 +114,86 @@ uv run python scripts/refresh_integration_downloads.py --check-docs-urls
 uv run python pipeline/tools/partner_pkg_table.py
 ```
 
+## HTML export testing and Linear escalation
+
+`htmltest.yml` is a read-only weekly or manual check. It checks out without persisted credentials, prepares Python, Node 22, Mintlify, and htmltest, and runs `make export-htmltest`. That target builds, exports, unpacks, and checks only external URLs.
+
+`htmltest-linear.yml` does not run the export or inspect its checkout. It reacts to completion of **Htmltest Mint Export** and creates a Linear issue only when the upstream run was scheduled and failed or was cancelled. Manual failures do not create tickets. The issue includes the upstream run URL.
+
+Similarly, `test-code-samples-linear.yml` reacts to **Test Code Samples** only for scheduled failures or cancellations and files a Linear issue with the upstream run URL. It deliberately does not ticket manual or PR runs.
+
 ## Metadata-only pull-request automation
 
 ### Ownership summary
 
-`pr-welcome-comment.yml` runs for non-draft PRs when opened or marked ready for review. It fetches `.github/OWNERS` at `pr.base.ref`, lists changed-file metadata through the GitHub API, and applies CODEOWNERS-style **last matching rule wins** matching. `.github/OWNERS` is intentionally not named `CODEOWNERS`, so GitHub itself does not automatically request reviewers.
+`pr-welcome-comment.yml` is a `pull_request_target` workflow that reads `.github/OWNERS` from `pr.base.ref` and changed-file metadata through GitHub APIs. It applies last-match ownership rules and can request only opted-in owners other than the PR author, without checking out PR code.
 
-A rule may opt into review requests with `# auto-request` or a scoped `# auto-request: @user` suffix. The workflow requests only opted-in owners and never requests the PR author; it posts a grouped ownership summary and falls back to the configured general reviewer only when appropriate. This policy is base-controlled even when the PR comes from a fork.
+### External integration PRs
 
-### External integration pull requests
+`external-integration-pr-comment.yml` is a `pull_request_target` workflow that does not check out or execute PR code. It uses API file metadata and an organization-membership App token to label qualifying external integration PRs, reads added MDX only as bytes to detect featured frontmatter, and otherwise posts an idempotent listing-form redirect before closing the PR.
 
-`external-integration-pr-comment.yml` uses `pull_request_target` for non-draft opened, ready, reopened, and synchronized PRs. It has only `contents: read` and `pull-requests: write`, obtains an organization-membership GitHub App token, and uses `actions/github-script` plus GitHub APIs—there is no checkout step.
+## Maintainer-approved integration listings
 
-The workflow examines changed-file metadata for newly added Python or JavaScript integration files (excluding `TEMPLATE.mdx`) or a change to `scripts/data/integration_external_docs.yaml`. Bot authors are ignored. `open-swe[bot]` is treated as internal; organization membership failures, including non-404 failures, are conservatively treated as external. A qualifying external PR receives the `integration` label if absent.
+`integration-submission.yml` begins only from manual dispatch or the `integration-run` label, verifies the triggering actor has write-level repository permission before checkout, and prevents duplicate processing with the `integration-automation` label.
 
-For a newly added MDX integration page, it may read the file bytes at the PR head through `repos.getContent` solely to recognize frontmatter `featured: true`. That is inspection of untrusted content as data, **not** permission to execute or check it out. If any added integration is featured, the workflow leaves the PR open after labeling. Otherwise it posts at most one marker-tagged comment pointing authors to the integration-listing issue form, then closes an open PR. The marker makes repeated synchronize events idempotent.
+After maintainer authorization, it parses issue-form data as untrusted metadata and directs the agent to leave local edits only. Parse, blocker, agent, and no-diff outcomes are reported on the issue, while a real diff alone lets the workflow create and link a review PR.
 
-## Maintainer-approved integration listing generation
+## Code-sample validation and trace refresh
 
-`integration-submission.yml` is a trusted writer with contents, pull-request, and issue write permissions. Opening an issue does not invoke it: it starts only on manual dispatch or when `integration-run` is applied. Before checkout, the workflow verifies that the triggering actor has `admin`, `maintain`, or `write` repository permission. An unauthorized label event removes `integration-run`, comments on the issue, and stops; an existing `integration-automation` label also prevents duplicate processing.
+`test-code-samples.yml` is triggered by changes under `src/code-samples/**` or to its workflow file on a PR, as well as by manual dispatch and the monthly schedule. The test job is explicitly skipped for fork PRs because supported samples need provider secrets. Thus, a fork does not use this workflow as a secret-backed validation path.
 
-After authorization it checks out the base repository, parses the issue form to JSON, and marks automation in progress. The prompt explicitly classifies submitted fields as untrusted listing metadata, requires local uncommitted edits, and forbids the agent from pushing, opening a PR, or commenting. The workflow—not the agent—owns GitHub mutation. Parse errors, a blocker file, agent failure, and an empty diff are each reported to the issue; only a real diff creates `integration/issue-<number>`, opens a labeled review PR, and links it back to the issue.
+A scheduled or manual run sets `run_all=true` and tests every supported sample. For an internal PR, the workflow fetches the PR base, finds the merge base, and selects only changed `src/code-samples/` files with `.py`, `.ts`, `.java`, `.kt`, `.go`, or `.sh` extensions. A workflow-only PR can therefore trigger the workflow but have no selected sample files, in which case the test step reports zero failures and exits successfully. Full runs have a 150-minute limit; PR runs have a 60-minute limit. The job supplies PostgreSQL plus Python, Node, Java/JBang, and Go before invoking `make test-code-samples`.
+
+Monthly and manual full runs set `CODE_SAMPLE_TRACING=1` and use four sample workers. The runner writes its counts to `GITHUB_OUTPUT`: a normal sample failure increments `sample_failures` and makes the runner return nonzero, whereas a sample still rate-limited after retries is reported as skipped. The retry budget defaults to five attempts (including the initial attempt), has increasing delays capped at 120 seconds, and can be tuned through `CODE_SAMPLE_RATE_LIMIT_ATTEMPTS` and `CODE_SAMPLE_RATE_LIMIT_DELAY_SECONDS`.
+
+Trace collection is separate from sample correctness. The runner serializes trace collection and claimed-run tracking while samples execute concurrently. A trace-collection exception is recorded as a warning rather than a sample failure, so it does not itself make the runner fail. For a single-snippet source, collection looks for an unclaimed agent-like root run in the sample time window, makes its trace public, and stores its URL and run metadata in `src/code-samples/trace-links.json`. Multi-snippet sources are recorded as skipped and have stale single-snippet manifest entries removed.
+
+The test step uses `continue-on-error` so the workflow can decide whether a partially failing full run has enough useful trace output to regenerate links. On scheduled or manual runs, it runs `make code-snippets` when the test was not cancelled, fewer than 20 samples failed, and at least one trace entry was updated. It does **not** require a completely successful sample run. The last step still fails the job when the test step failed, so regeneration can produce a reviewable partial refresh without turning a real sample failure into a green workflow.
 
 ```mermaid
 flowchart TD
-  Event["Manual dispatch or integration-run label"] --> Permit{"Actor can write"}
-  Permit -->|"no"| Reject["Remove label and comment"]
-  Permit -->|"yes"| Parse["Parse issue form"]
-  Parse --> Parsed{"Parse succeeds"}
-  Parsed -->|"no"| ParseNote["Comment parse failure"]
-  Parsed -->|"yes"| Agent["Agent edits trusted checkout"]
-  Agent --> Changed{"Real diff"}
-  Changed -->|"no"| NoChange["Comment blocker failure or no change"]
-  Changed -->|"yes"| PR["Workflow creates review PR"]
+  Full["Monthly or manual full run"] --> Samples["Run all samples with tracing"]
+  Samples --> Result{"Cancelled or 20 failures"}
+  Result -->|"yes"| Skip["Skip snippet regeneration"]
+  Result -->|"no"| Traces{"At least one trace updated"}
+  Traces -->|"no"| NoTrace["Skip snippet regeneration"]
+  Traces -->|"yes"| Snippets["Regenerate snippet MDX"]
+  Snippets --> Refresh{"Regeneration succeeded and artifacts differ"}
+  Refresh -->|"yes"| TracePR["Append to or open standing PR"]
+  Refresh -->|"no"| Noop["No trace PR change"]
+  Samples --> Final{"Any ordinary sample failures"}
+  Final -->|"yes"| Fail["Fail job after refresh attempt"]
 ```
 
-This lifecycle requires maintainer authorization before either checkout or agent execution and preserves review as the acceptance boundary.
+This full-run flow shows the partial-failure threshold and the independent final job result.
 
-## Secret-backed sample validation and trace refresh
-
-`test-code-samples.yml` is a `pull_request` workflow limited to changes under `src/code-samples/**` or to its own workflow file, with manual and monthly entrypoints. Although full runs can write a refresh PR, its credential-dependent job explicitly skips fork PRs. Internal PRs select changed supported sample files from the merge base; manual and scheduled runs set `RUN_ALL` and test all samples. The latter have a 90-minute limit rather than the PR job's 60 minutes.
-
-Only monthly and manual full runs set `CODE_SAMPLE_TRACING`. After a successful sample test, they regenerate snippet MDX and compare `src/code-samples/trace-links.json` plus `src/snippets/code-samples` before maintaining the standing `chore/refresh-code-sample-traces` PR. The runner treats a persistent LangSmith HTTP 429 as a skipped sample after up to three attempts; ordinary sample and trace-collection failures fail the run. Public trace publication applies to eligible single-snippet sources: multi-snippet files are recorded as skipped rather than assigned an ambiguous trace.
+After successful snippet regeneration, the writer restores a clean tree, then either checks out the open `chore/refresh-code-sample-traces` branch or starts that branch from the current checkout. It compares only `src/code-samples/trace-links.json` and `src/snippets/code-samples` against that branch. With a diff it commits those paths and appends to the open PR; with no open PR it force-pushes the standing branch and opens a review PR. A no-diff refresh exits successfully. The local traced equivalent is `make update-code-sample-traces` and requires `LANGSMITH_API_KEY`.
 
 ## Trusted scheduled writers
 
-### Package downloads
+### Package downloads and hosted-doc candidates
 
-`update-package-downloads.yml` runs Sunday at 23:59 UTC or manually. Its read-only `generate-downloads` job updates eligible package counts, regenerates the provider overview and integration table snippets, detects hosted-documentation candidates, and uploads the candidate surfaces as a one-day artifact. Download collection respects the package timestamp: packages updated within the preceding 24 hours are not refreshed again.
+The scheduled package-download workflow keeps generation read-only until a second job consumes its short-lived artifact; when generated package and integration surfaces differ, that job creates a timestamped PR and enables squash auto-merge.
 
-Hosted-documentation candidate creation is conditional: the workflow invokes `flag_hosted_docs_candidates.py --create` only when both `LINEAR_API_KEY` and `LINEAR_TEAM_KEY` are configured; otherwise detection is a dry run. The subsequent `commit-downloads` job is the only write-capable job. It consumes the artifact, exits successfully when `packages.yml`, the overview, and snippets have no diff, or creates a timestamped `chore/update-package-downloads-*` PR and requests squash auto-merge.
+The package-download generator refreshes package counts only when their download timestamp is older than 24 hours, then regenerates the provider overview and integration download tables before artifact handoff. Package-download maintenance creates Linear hosted-documentation candidate tickets only when both the Linear API-key secret and team-key variable are configured; without either value it runs candidate detection in dry-run mode. Hosted-documentation candidate creation checks current external integration download counts against a default 50,000-per-month threshold and skips a duplicate when a matching Linear issue is still open.
 
 ### LangSmith OpenAPI refresh
 
-`refresh-langsmith-openapi.yml` is a daily 10:00 UTC or manual trusted writer with a 15-minute limit and only contents/pull-request write permissions. It runs `scripts/process_langsmith_openapi.py --write`, which accepts network input only from `api.smith.langchain.com`. The processor marks configured Fleet, internal, and health operations hidden, normalizes operation summaries (including stable Beta/v2 labeling), adds and orders public tag groups, and writes deterministic formatted JSON to `src/langsmith/langsmith-platform-openapi.json`.
-
-The workflow preserves the generated file while resetting the checkout, then uses `chore/refresh-langsmith-openapi` as a standing review branch. If an open PR already uses that head, it restores the candidate on that branch and appends a commit only for a changed specification. Otherwise it exits for no diff or force-pushes the standing branch and opens a new PR. A fetch allowlist, narrow staging of only the generated specification, no-diff success, and the review PR are the safeguards around a changing remote input. See [LangSmith Platform OpenAPI Refresh](/openwiki/workflows/langsmith-openapi-refresh.md) for the public-reference policy.
-
-```mermaid
-flowchart TD
-  Trigger["Daily or manual refresh"] --> Fetch["Fetch allowlisted OpenAPI input"]
-  Fetch --> Process["Apply public documentation policy"]
-  Process --> Candidate["Generated platform specification"]
-  Candidate --> Existing{"Standing PR open"}
-  Existing --> Apply["Restore candidate onto review branch"]
-  Apply --> Diff{"Specification differs"}
-  Diff -->|"no"| Stop["Successful no-op"]
-  Diff -->|"yes"| Update["Append commit or open PR"]
-```
-
-This flow maintains one reviewable OpenAPI refresh rather than accumulating daily pull requests.
+The daily LangSmith OpenAPI refresh reuses its standing branch and appends to an existing open refresh PR, creating a new PR only when no such PR exists and the processed specification changed. The OpenAPI refresh processor fetches only from the allowlisted LangSmith API host and deterministically hides configured internal operations, normalizes visible titles, and groups and orders tags before writing the generated specification.
 
 ## Safe-change checklist
 
-1. Keep `pull_request_target` workflows metadata-only: no fork-head checkout, no execution of fork files, and no shell construction from untrusted PR data.
-2. Keep secret-backed sample execution off fork PRs; validate fork code through ordinary read-only `pull_request` checks instead.
-3. When changing generated documentation, update its source metadata or generator, regenerate it, and retain the CI mismatch check.
-4. Preserve the integration-submission ordering: authorization before checkout and agent invocation, agent-local edits only, workflow-owned PR creation only after a real diff.
-5. Preserve writer no-op behavior and scope: the package writer transfers a short-lived artifact to its sole write job, while the OpenAPI writer stages only its generated JSON and reuses its standing branch.
-6. Review generated writer PRs as changes to public documentation; a successful generator run is not itself publication approval.
+1. Keep `pull_request_target` metadata-only: never execute or check out fork-head code.
+2. Keep secret-backed code-sample execution off fork PRs; use ordinary validation for fork revisions.
+3. Preserve changed-path selection for internal sample PRs and full-run-only tracing; do not accidentally trace or write from untrusted PR execution.
+4. Preserve the fewer-than-20-failures and at-least-one-trace conditions before snippet regeneration, while retaining the final failure for ordinary sample failures.
+5. Preserve writer no-op behavior and narrow writes: trace and OpenAPI refreshes reuse standing review PRs, while package downloads cross a short-lived artifact boundary.
+6. Treat writer PRs as reviewable public-documentation changes even when generation succeeds.
 
 ## Related pages
 
+- [CLI Tools](/openwiki/operations/cli-tools.md)
+- [Quickstart](/openwiki/quickstart.md)
 - [Testing Overview](/openwiki/testing/test-overview.md)
 - [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md)
-- [Integration Listing Automation](/openwiki/workflows/integration-listing-automation.md)
 - [LangSmith Platform OpenAPI Refresh](/openwiki/workflows/langsmith-openapi-refresh.md)
-- [Changelog Publication](/openwiki/workflows/changelog-publication.md)
