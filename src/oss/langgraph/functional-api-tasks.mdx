@@ -1,0 +1,90 @@
+---
+title: Configure Functional API tasks
+sidebarTitle: Tasks
+description: Add retries, timeouts, caching, and error recovery to Functional API tasks and entrypoints.
+---
+
+import LanggraphFunctionalApiTasksRetryPy from '/snippets/code-samples/langgraph-functional-api-tasks-retry-py.mdx';
+import LanggraphFunctionalApiTasksRetryJs from '/snippets/code-samples/langgraph-functional-api-tasks-retry-js.mdx';
+import LanggraphFunctionalApiTasksTimeoutPy from '/snippets/code-samples/langgraph-functional-api-tasks-timeout-py.mdx';
+import LanggraphFunctionalApiTasksTimeoutJs from '/snippets/code-samples/langgraph-functional-api-tasks-timeout-js.mdx';
+import LanggraphFunctionalApiTasksCachePy from '/snippets/code-samples/langgraph-functional-api-tasks-cache-py.mdx';
+import LanggraphFunctionalApiTasksCacheJs from '/snippets/code-samples/langgraph-functional-api-tasks-cache-js.mdx';
+import LanggraphFunctionalApiTasksResumePy from '/snippets/code-samples/langgraph-functional-api-tasks-resume-py.mdx';
+import LanggraphFunctionalApiTasksResumeJs from '/snippets/code-samples/langgraph-functional-api-tasks-resume-js.mdx';
+
+Attach retries, timeouts, caching, and error recovery to Functional API [tasks](/oss/langgraph/functional-api#task). Completed task results are [checkpointed](/oss/langgraph/persistence), so resume can restore them instead of running the work again.
+
+For concepts, see the [Functional API overview](/oss/langgraph/functional-api). For an ordered build path, see the [Build checklist for the Functional API](/oss/langgraph/use-functional-api). For Graph API nodes and the shared retry/timeout lifecycle, see [Fault tolerance](/oss/langgraph/fault-tolerance).
+
+## Add a retry policy
+
+:::python
+Pass `retry_policy` on `@task`. The default `RetryPolicy` retries selected network and HTTP 5xx errors. It does not retry `ValueError`. This example retries `ValueError`.
+
+<LanggraphFunctionalApiTasksRetryPy />
+:::
+
+:::js
+Pass `retry` on `task` (not `retryPolicy`). The default policy retries most errors except `TypeError`, `SyntaxError`, and `ReferenceError`. This example retries any `Error`.
+
+<LanggraphFunctionalApiTasksRetryJs />
+:::
+
+## Set a timeout
+
+Cap how long a single async attempt can run. If a retry policy retries the timeout error, the timer resets on the next attempt.
+
+:::python
+Pass `timeout` on `@task` or `@entrypoint` in seconds or as a `datetime.timedelta`. Timeouts apply only to async tasks and entrypoints. Setting `timeout` on a sync function raises an error at declaration.
+
+The first attempt sleeps past the timeout and raises @[`NodeTimeoutError`], which subclasses `TimeoutError`. The retry policy retries that error. The second attempt returns immediately.
+
+<LanggraphFunctionalApiTasksTimeoutPy />
+:::
+
+:::js
+Pass `timeout` on `task` or `entrypoint` in milliseconds, or as `{ idleTimeout: 30_000 }`. Use `isNodeTimeoutError` to narrow timeout errors. `NodeTimeoutError` is retryable when a retry policy is set.
+
+The first attempt sleeps past the timeout. The retry policy retries. The second attempt returns immediately.
+
+<LanggraphFunctionalApiTasksTimeoutJs />
+:::
+
+## Cache a task
+
+Cache a task result by input. Pass a cache on the [entrypoint](/oss/langgraph/functional-api#entrypoint) and a policy on the task. `ttl` is in seconds. The second call is a cache hit, so this run takes about 1 second, not 2.
+
+:::python
+<LanggraphFunctionalApiTasksCachePy />
+:::
+
+:::js
+<LanggraphFunctionalApiTasksCacheJs />
+:::
+
+## Resume after an error
+
+A [checkpointer](/oss/langgraph/persistence) is required so completed task results survive the failed run.
+
+`slow_task` is restored from the checkpoint. `get_info` runs again and returns `"OK"`. The entrypoint still returns the `slow_task` result.
+
+:::python
+Resume the same `thread_id` with `None`.
+
+<LanggraphFunctionalApiTasksResumePy />
+:::
+
+:::js
+Resume the same `thread_id` with `null`.
+
+<LanggraphFunctionalApiTasksResumeJs />
+:::
+
+## See also
+
+- [Functional API overview](/oss/langgraph/functional-api)
+- [Build checklist for the Functional API](/oss/langgraph/use-functional-api)
+- [Fault tolerance](/oss/langgraph/fault-tolerance)
+- [Stream with the Functional API](/oss/langgraph/functional-api-streaming)
+- [Add memory with the Functional API](/oss/langgraph/functional-api-memory)
