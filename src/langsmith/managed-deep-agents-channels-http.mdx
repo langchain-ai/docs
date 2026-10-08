@@ -16,6 +16,19 @@ You supply two callbacks: one that authenticates the request, and one that conve
 HTTP channels require `managed-deepagents>=0.8.0`.
 </Note>
 
+`verify`, `parse`, and the optional `post` sit between the external service and the agent run:
+
+<img
+    className="block dark:hidden"
+    src="/langsmith/images/http-channel-flow-light.png"
+    alt="Three-row flow diagram. In the external service row, an inbound event arrives as a provider webhook, and a reply is delivered to the user by the provider. In your code row, verify checks the signature, parse extracts content and a thread ID and returns a message, and post sends the reply to the target. In the Managed Deep Agents row, the agent run executes on the thread and hands its response to post."
+/>
+<img
+    className="hidden dark:block"
+    src="/langsmith/images/http-channel-flow-dark.png"
+    alt="Three-row flow diagram. In the external service row, an inbound event arrives as a provider webhook, and a reply is delivered to the user by the provider. In your code row, verify checks the signature, parse extracts content and a thread ID and returns a message, and post sends the reply to the target. In the Managed Deep Agents row, the agent run executes on the thread and hands its response to post."
+/>
+
 ## Project structure
 
 An HTTP channel declaration lives under `channels/`, like any other channel:
@@ -414,35 +427,17 @@ A `202` means the run was accepted, not that it finished. The agent's answer arr
 
 ## Read the event in the agent
 
-Each run carries channel data in [run context](/langsmith/managed-deep-agents-middleware#use-runtime-context). The parser examples explicitly include the provider event. These fields appear inside the channel context:
+Tools and middleware read the delivery from [`runtime.channel`](/langsmith/managed-deep-agents-runtime#channel). For the parser examples, `runtime.channel.provider` is `"orders"`.
 
 :::python
-```json
-{
-  "channel": {
-    "provider": "orders",
-    "target": "A-1024",
-    "raw_event": { "type": "order.comment", "order": { "id": "A-1024" } }
-  }
-}
-```
-
-Return `raw_event` from `parse` to expose JSON provider data at `runtime.channel.raw_event` and `runtime.context.channel["raw_event"]`. If omitted, the context has no `raw_event` key and `runtime.channel.raw_event` is `None`.
+Return `raw_event` from `parse` to expose JSON provider data at `runtime.channel.raw_event`. If omitted, `runtime.channel.raw_event` is `None`.
 :::
 
 :::js
-```json
-{
-  "channel": {
-    "provider": "orders",
-    "target": "A-1024",
-    "rawEvent": { "type": "order.comment", "order": { "id": "A-1024" } }
-  }
-}
-```
-
-Return `rawEvent` from `parse` to expose JSON provider data at `runtime.channel.rawEvent` and `runtime.context.channel.rawEvent`. If omitted, this field stays absent.
+Return `rawEvent` from `parse` to expose JSON provider data at `runtime.channel.rawEvent`. If omitted, `runtime.channel.rawEvent` is `undefined`.
 :::
+
+The reply `target` stays private. Code cannot read it from `runtime.channel`.
 
 Managed Deep Agents builds `runtime.channel.event` from the parsed message. It does not decode the body again or preserve the provider event automatically.
 

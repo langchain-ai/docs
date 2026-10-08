@@ -9,6 +9,10 @@ import McpSharedPoolPy from '/snippets/code-samples/mcp-shared-pool-py.mdx';
 import McpMultiServerPy from '/snippets/code-samples/mcp-multi-server-py.mdx';
 import McpClientGroupPy from '/snippets/code-samples/mcp-client-group-py.mdx';
 import McpProtocolErasPy from '/snippets/code-samples/mcp-protocol-eras-py.mdx';
+import McpLifecycleShortJs from '/snippets/code-samples/mcp-lifecycle-short-js.mdx';
+import McpMultiServerJs from '/snippets/code-samples/mcp-multi-server-js.mdx';
+import McpSharedAdapterJs from '/snippets/code-samples/mcp-shared-adapter-js.mdx';
+import McpProtocolErasJs from '/snippets/code-samples/mcp-protocol-eras-js.mdx';
 
 :::python
 <Note>
@@ -18,7 +22,22 @@ The `langchain.mcp` namespace requires `langchain[mcp]>=1.4.0` and is in beta. T
 @[`MCPAdapter`] opens an MCP connection, discovers tools, and returns LangChain tools your agent can call. How you pass servers in, and how long you keep the adapter open, depends on the shape of your app. The connection itself is FastMCP's; this page covers the LangChain patterns and links out to FastMCP for transport and client details.
 
 Prefer the [default lifecycle](#connection-lifecycle) unless you are connecting to several servers or deploying many concurrent runs. For what a single target can be (URL, script path, in-process server), see [Transports](/oss/langchain/mcp#transports).
+:::
 
+:::js
+@[`MCPAdapter`] discovers MCP tools and keeps their connections open so your agent can reuse them across calls. Discover tools with `listTools()` or `listToolsets()`, and close the adapter when your application finishes using them.
+
+Choose how long to keep the adapter open:
+
+| Situation | Pattern | Go to |
+| --- | --- | --- |
+| Script or agent invocation | Create the adapter, run the agent, then close in `finally` | [Connection lifecycle](#connection-lifecycle) |
+| Long-lived worker | Reuse one adapter and close it during shutdown | [Scale a deployment](#scale-a-deployment) |
+
+See [Transports](/oss/langchain/mcp#transports) for each server's connection options.
+:::
+
+:::python
 ## Choose a pattern
 
 Pick one row from each table. Server shape and connection lifetime are independent; any shape works with any lifetime.
@@ -38,9 +57,11 @@ Pick one row from each table. Server shape and connection lifetime are independe
 | Script, notebook, or most agents | Discover inside `async with`, then exit | [Connection lifecycle](#connection-lifecycle) |
 | Hold one session across several tool calls in a run | Keep the adapter open around the agent call | [One session per invocation](#one-session-per-invocation) |
 | Many concurrent runs in a deployment | Discover per run; reuse a [shared pool](#shared-connection-pool) and [cache](#caching) | [Scale a deployment](#scale-a-deployment) |
+:::
 
 ## Connection lifecycle
 
+:::python
 @[`MCPAdapter`] is an async context manager. Entering it connects the underlying client; exiting it releases the connection. Discovery happens inside the context, but the tools it returns hold the client, so they stay callable after the context exits.
 
 To discover tools and build an agent (the default pattern):
@@ -54,9 +75,21 @@ You do not need to keep the adapter open for the life of the agent. Prefer this 
 The tools @[`MCPAdapter`] returns are reentrant: each time a tool is invoked, it opens the client, runs the MCP call, and releases it, whether or not a connection is already held elsewhere. A single agent run therefore opens one session per tool call and closes it when the call returns, rather than holding a session open across the whole run. This keeps a long-running agent from pinning an idle connection between tool calls, and it is why the tools stay callable after the discovery context exits.
 
 If you want a session held open across several calls, keep the adapter's context open when you call the agent. The reentrant client reuses the existing connection rather than opening a second one.
+:::
+
+:::js
+Constructing an adapter validates its configuration without opening connections. `listTools()`, `listToolsets()`, `getClient()`, and the resource methods connect when they run discovery. Keep the adapter open while your agent uses those tools.
+
+To discover tools, run an agent, and release the connections, pass your MCP server's HTTP URL to `runAgent`:
+
+<McpLifecycleShortJs />
+
+`close()` aborts in-flight adapter work, closes its connections, and clears its caches. You can call `listTools()` again to open fresh connections, but use the newly returned tools. Previously returned tools retain their closed clients.
+:::
 
 ## Multiple servers
 
+:::python
 To give one agent tools from several servers, choose `MCPConfig` when a single aggregate connection is enough, or `ClientGroup` when each server needs its own connection (different [protocol eras](#protocol-eras), [per-server authentication](/oss/langchain/mcp/auth#per-server-authentication), or a [shared pool](#shared-connection-pool) configured per client).
 
 ### One aggregate connection with `MCPConfig`
@@ -72,9 +105,27 @@ Each backend is addressed independently, so a fleet can mix transports: one serv
 To keep each server on its own connection, pass a [`ClientGroup`](https://gofastmcp.com/clients/client-groups). Each member keeps its own negotiated protocol era, authentication, and handlers, and the group routes each call back to the client that advertised the tool. This is what lets a legacy and a modern server run side by side, and it namespaces tools the same way so identical tool names across servers never collide:
 
 <McpClientGroupPy />
+:::
+
+:::js
+Each named entry in `servers` gets its own connection, authentication, and [protocol mode](#protocol-eras). One adapter can connect to both HTTP and stdio servers.
+
+To discover tools from both transports, pass a calendar server's HTTP URL and a files server's script path to `listServerTools`:
+
+<McpMultiServerJs />
+
+`listToolsets()` groups tools by server name. `listTools()` returns one array; pass a server name or an array of names to select which tools it returns. Selection filters the result, but discovery still contacts every configured server. A failure on an unselected server can fail the call.
+
+The adapter prefixes tool names with their server name by default, such as `calendar_search` and `files_search`. Set `prefixToolNameWithServerName: false` to keep raw names. `listTools()` throws if its selected tools contain duplicate names.
+
+OpenAI and Anthropic accept only letters, digits, `_`, and `-` in tool names (`^[a-zA-Z0-9_-]+$`), up to 64 characters for OpenAI and 128 for Anthropic. The adapter does not rename a prefixed name that breaks these limits, so keep server names short and free of dots and spaces.
+
+Set `defaultToolTimeout` (in milliseconds) at the top level to apply it to every server's tools; it wins over a server's own `defaultToolTimeout`.
+:::
 
 ## Scale a deployment
 
+:::python
 A deployment that serves many runs should discover per run but reuse its connections underneath, rather than reconnecting on every request. Build the agent inside a [`langgraph dev`](/oss/langgraph/local-server) graph factory so each run picks up the current tool catalog, and let a [shared connection pool](#shared-connection-pool) and [response cache](#caching) absorb the cost:
 
 <McpGraphFactoryPy />
@@ -92,9 +143,25 @@ By default each FastMCP client manages its own HTTP connections. Across a fleet 
 <McpSharedPoolPy />
 
 Because every client borrows from `_POOL`, the deployment opens one set of HTTP connections for the whole fleet rather than one per server.
+:::
 
-### Caching
+:::js
+Create the adapter at module scope, outside the graph factory. Each factory call can discover the current tool catalog and build an agent using the shared connections:
 
+<McpSharedAdapterJs />
+
+Keep the adapter open across runs. Close it during application shutdown, after active runs finish. For runs with different user credentials, see [Per-user authentication](/oss/langchain/mcp/auth#per-user-authentication).
+
+Discovery throws on connection failures by default. Set `onConnectionError: "ignore"`, or provide a callback that returns normally, to continue with the remaining servers. Non-authentication failures keep that connection skipped on later discoveries, even with `cacheMode: "refresh"`. Close the adapter to clear skipped connections before discovering again. Authentication failures are retried on the next discovery.
+
+Stdio servers support `restart` settings, and HTTP and SSE servers support `reconnect` settings when configured with `mode: "legacy"`. After a restart, call `listTools()` again and use the returned tools; tools returned before the restart keep the closed connection.
+
+Modern MCP servers keep no session, so their replicas can run behind any load balancer. A sessionful legacy server still needs sticky routing to one replica. A modern server that runs several replicas must share one `requestState` signing key across them, or an elicitation answer that reaches a different replica is rejected. See [Protect `requestState` with the codec](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/servers/input-required.md#protect-requeststate-with-the-codec) in the MCP TypeScript SDK documentation.
+:::
+
+## Caching
+
+:::python
 FastMCP can cache the result of `list_tools` so repeated discovery avoids a network round trip. Caching is opt-in and honors the server's own cache hints, so it only takes effect against modern-era servers that advertise them.
 
 `list_tools()` accepts a `cache_mode` that selects how discovery reads a configured cache:
@@ -108,9 +175,29 @@ tools = await adapter.list_tools(cache_mode="refresh")
 ```
 
 The cache and its per-principal isolation are configured on the client itself, with `Client(cache=...)`. For a shared store across a fleet of replicas, or partitioning cached responses per user, see [Response caching](https://gofastmcp.com/clients/client#response-caching) in the FastMCP documentation.
+:::
+
+:::js
+The MCP SDK provides an in-memory cache for tool lists. Repeated discovery avoids a network request while the server's `ttlMs` hint remains valid. Without a positive `ttlMs`, discovery fetches the list again.
+
+Use `cacheMode` to control how `listTools()` and `listToolsets()` read the response cache:
+
+- **`"use"`** (the default): Serve a valid cached tool list when one is available, otherwise fetch and store it.
+- **`"refresh"`**: Fetch a fresh tool list and update the cache.
+- **`"bypass"`**: Fetch a fresh tool list without reading or updating the response cache.
+
+To refresh tools from all configured servers, pass an empty server-selection array and the discovery options:
+
+```typescript
+const tools = await adapter.listTools([], { cacheMode: "refresh" });
+```
+
+The adapter also reuses converted LangChain tool wrappers when the server descriptors have not changed. Rediscovery returns the current tools; it does not update an existing agent's tool list. Build the next agent with the returned tools.
+:::
 
 ## Protocol eras
 
+:::python
 MCP changed how a client and server agree on what each supports. The **legacy** era begins every connection with an `initialize` handshake; the **modern** era (protocol version `2026-07-28` and later) discovers support by probing the server's `server/discover` endpoint. FastMCP negotiates the era per connection, so nothing on the LangChain side has to know which a given server speaks.
 
 To hold tools from servers on different eras in one agent, give each its own connection so it keeps the best era its server supports, either through a [`ClientGroup`](#independent-connections-with-clientgroup) or one adapter per server. A prebuilt `fastmcp.Client` selects the era with its `mode` parameter:
@@ -120,11 +207,37 @@ To hold tools from servers on different eras in one agent, give each its own con
 Passing both servers as a single `MCPConfig` fleet instead would negotiate one era for everything the fleet holds, dropping every server to the oldest era any member requires.
 
 For the full negotiation rules, see [Protocol negotiation](https://gofastmcp.com/clients/client#protocol-negotiation) in the FastMCP documentation.
+:::
+
+:::js
+The adapter negotiates the MCP protocol separately for each server. The default `mode: "auto"` supports modern and legacy servers in the same adapter.
+
+The legacy era starts with an `initialize` handshake. The modern era uses `server/discover` to discover server capabilities. Override `mode` when you need to require a specific era:
+
+<McpProtocolErasJs />
+
+Each server's `mode` controls its negotiation independently:
+
+- **`"auto"`** (the default): Try the current protocol and fall back for a legacy-only server.
+- **`"modern"`**: Require protocol version `2026-07-28` and fail instead of using legacy MCP.
+- **`"legacy"`**: Skip modern probing and use the legacy client interface.
+
+In `"auto"` mode, a URL server that answers the Streamable HTTP request with 404 or 405 is retried over SSE, at the same URL and then with a trailing `/mcp` replaced by `/sse`. In `"legacy"` mode, any 4xx falls back unless `automaticSSEFallback: false`.
+
+`setLoggingLevel()` is legacy-only and throws when a connected server negotiated the modern protocol; set `logLevel` on each modern server instead.
+:::
 
 ## See also
 
-- [Authentication](/oss/langchain/mcp/auth) — bearer, OAuth, and per-user credentials
-- [Deploy a LangGraph server](/oss/langgraph/local-server) — graph factories for long-lived deployments
+- [Authentication](/oss/langchain/mcp/auth): Bearer, OAuth, and per-user credentials.
+
+:::python
+- [Deploy a LangGraph server](/oss/langgraph/local-server): Graph factories for long-lived deployments.
 - [FastMCP connection lifecycle](https://gofastmcp.com/clients/client#connection-lifecycle)
 - [MCP configuration format](https://gofastmcp.com/integrations/mcp-json-configuration)
+:::
+
+:::js
+- [Human-in-the-loop](/oss/langchain/human-in-the-loop): Pause and resume tool calls.
+- [MCP specification](https://modelcontextprotocol.io/specification/latest)
 :::

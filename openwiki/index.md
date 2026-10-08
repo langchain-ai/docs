@@ -4,7 +4,7 @@ okf_version: "0.2"
 
 # Files
 
-- [Quickstart](quickstart.md) - Set up a local Mintlify documentation preview, identify the durable input for a change, and run focused repository or deployed-site validation.
+- [Repository Wiki Quickstart](quickstart.md) - Route a documentation or tooling change to its durable owner, local command, focused validation, and detailed repository wiki procedure. Use this page to avoid editing generated output or treating navigation as route generation.
 
 # Directories
 
