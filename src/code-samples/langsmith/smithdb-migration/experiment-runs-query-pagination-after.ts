@@ -1,5 +1,6 @@
 // :snippet-start: experiment-runs-query-pagination-after-js
 // :codegroup-tab: After
+import { uuid7 } from "langsmith";
 import { Client } from "langsmith";
 
 const client = new Client();
@@ -29,7 +30,7 @@ if (!(await client.hasProject({ projectName: EXPERIMENT_NAME }))) {
   for await (const example of client.listExamples({ datasetId })) {
     const [a, b] = (example.inputs.question as string).split(" + ").map(Number);
     const answer = String(a + b);
-    const runId = crypto.randomUUID();
+    const runId = uuid7();
     const now = new Date().toISOString();
     await client.createRun({
       id: runId,

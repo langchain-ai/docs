@@ -20,7 +20,7 @@ The standard LLM Gateway API supports three request and response formats. Choose
 
 All formats authenticate with a workspace-scoped LangSmith API key. Pass it as the provider API key or as an `Authorization: Bearer` token.
 
-These base URLs are for the US gateway on LangSmith Cloud. For other regions and for BYOC data planes, see [Check availability](/langsmith/llm-gateway-how-it-works#check-availability).
+These base URLs are for the US gateway on LangSmith Cloud. For other regions, BYOC data planes, and self-hosted installations, see [Check availability](/langsmith/llm-gateway-how-it-works#check-availability).
 
 For bring-your-own-key models, set `model` to `<provider>/<model>`, such as `openai/gpt-5.4-mini`, `anthropic/claude-opus-5`, or `azure/<deployment-name>`. For Gateway Credits models, pass a supported model name, such as `moonshotai/kimi-k3`.
 
