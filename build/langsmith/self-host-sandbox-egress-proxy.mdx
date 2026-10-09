@@ -1,0 +1,109 @@
+---
+title: Route self-hosted Sandbox egress through a forward proxy
+sidebarTitle: Egress through a forward proxy
+description: Send outbound connections from self-hosted LangSmith Sandboxes through a corporate HTTP or HTTPS forward proxy, with a bypass list and custom CA trust.
+---
+
+A self-hosted `sandbox-host` can send every outbound connection from Sandboxes through your corporate forward proxy instead of dialing destinations directly. Use this when your network allows outbound traffic only through a proxy, or when your security team needs all Sandbox traffic to pass a proxy's access policy and logging.
+
+For how Sandbox traffic leaves a microVM, see [Sandbox architecture](/langsmith/self-host-sandbox-architecture). For installation, see [Enable Sandboxes](/langsmith/deploy-self-hosted-full-platform#enable-sandboxes).
+
+## Understand how proxied egress works
+
+Each outbound TCP connection from a Sandbox reaches the [Sandbox auth proxy](/langsmith/sandbox-auth-proxy) on its host first. The host applies the Sandbox's allow and deny lists and auth proxy rules, then sends the traffic to your forward proxy the way a client configured with `HTTP_PROXY` and `HTTPS_PROXY` does:
+
+- **Plain HTTP**: Sent as standard proxy requests, such as `GET http://example.com/path`.
+- **HTTPS and other TCP**: Sent through `CONNECT` tunnels to the destination host and port, such as `CONNECT example.com:443` or `CONNECT github.com:22`.
+
+The host also applies these rules:
+
+- **No direct fallback**: When the forward proxy rejects a request or cannot open a tunnel, the request or connection fails. The host never retries it directly.
+- **Bypass list**: The host dials destinations in `noProxy` directly, with the same Sandbox access checks.
+- **LangSmith API**: The host dials HTTPS requests from a Sandbox to your LangSmith installation's API directly, not through the forward proxy.
+
+Proxying happens on the host, outside the Sandbox. Code inside a Sandbox does not see the forward proxy address and does not need `HTTP_PROXY` or `HTTPS_PROXY` set.
+
+## Check the requirements
+
+Proxied egress requires:
+
+- LangSmith 0.17.32 or later on the 0.17 release line, or 0.18.5rc1 or later on the 0.18 line, for the `sandbox-host` image.
+- A LangSmith Helm chart release that includes `sandboxes.authProxy.httpProxy` in its `values.yaml`.
+- A forward proxy that accepts standard HTTP proxy requests and `CONNECT` to port 443. To reach other TCP services, such as Git over SSH on port 22, the proxy must also accept `CONNECT` to those ports.
+- Network reachability from the Sandbox node pool to the proxy. The proxy address can be a private IP address.
+
+The forward proxy cannot require authentication: `sandbox-host` does not support proxy credentials in the URL, Basic or NTLM authentication, or client certificates (mTLS). An HTTPS proxy works when the host only needs to trust its server certificate.
+
+## Configure the proxy
+
+To route Sandbox egress through a forward proxy:
+
+<Steps>
+  <Step title="Add the proxy settings to your values">
+    Set `sandboxes.authProxy.httpProxy` in your LangSmith Helm values:
+
+    ```yaml
+    sandboxes:
+      authProxy:
+        httpProxy:
+          enabled: true
+          scheme: http
+          host: proxy.corp.internal
+          port: 3128
+          noProxy:
+            - .corp.internal
+    ```
+
+    - **`enabled`**: Routes Sandbox egress through the proxy. Defaults to `false`.
+    - **`scheme`**: `http`, or `https` when the connection to the proxy itself uses TLS. Defaults to `http`.
+    - **`host`**: The proxy hostname or IP address, without a scheme, credentials, or path. Required when `enabled` is `true`.
+    - **`port`**: The proxy port. Defaults to `3128`.
+    - **`noProxy`**: Destinations that the host dials directly instead of through the proxy, with the same matching as the `NO_PROXY` environment variable. An entry such as `corp.internal` matches that host and its subdomains, an entry with a leading dot such as `.corp.internal` matches only subdomains, and `*` matches every host. Entries can also be IP addresses, CIDR ranges such as `10.0.0.0/8`, or `host:port` pairs.
+
+    The chart fails the render when `host` is missing, when `host` contains a scheme, credentials, or a path, or when `scheme` or `port` is invalid.
+  </Step>
+  <Step title="(Optional) Trust a private CA for an HTTPS proxy">
+    When `scheme` is `https` and a private CA issues the proxy's certificate, add that CA to the bundle in `config.customCa`. The `sandbox-host` pods trust the same bundle as other LangSmith services, in addition to the system roots. See [Mount internal CAs for TLS](/langsmith/self-host-custom-tls-certificates#mount-internal-cas-for-tls).
+  </Step>
+  <Step title="Apply the change">
+    Upgrade the Helm release. Changing these settings rolls the `sandbox-host` Deployment, so each host drains its running Sandboxes before it restarts. See [Understand a rolling upgrade](/langsmith/self-host-sandbox-operations#understand-a-rolling-upgrade).
+  </Step>
+  <Step title="Verify egress">
+    Create a Sandbox and request a public URL from inside it:
+
+    ```bash
+    curl -sS -o /dev/null -w '%{http_code}\n' https://www.langchain.com/
+    ```
+
+    The command prints `200`, and your forward proxy logs a `CONNECT www.langchain.com:443` request from a Sandbox node. A request to an `http://` URL appears in the proxy log as a `GET http://...` request instead.
+  </Step>
+</Steps>
+
+## Secure the proxy
+
+The forward proxy, not the host, resolves the destination hostname. The host checks hostnames against the Sandbox access lists and, by default, blocks literal private, loopback, and cloud metadata IP addresses, but it cannot see the address the proxy resolves a hostname to. A Sandbox that requests a hostname resolving to an internal address reaches that address if the proxy allows it.
+
+Configure the proxy's access policy to block the destinations Sandboxes must not reach, such as internal networks and cloud metadata endpoints.
+
+## Understand the limitations
+
+- **Private services need connectivity**: A forward proxy reaches only the destinations the proxy itself can reach. It does not provide VPN or network peering to private services.
+- **TLS-inspecting proxies**: When the proxy decrypts and re-encrypts HTTPS inside the tunnel, the client sees a certificate from your inspection CA. For hosts that auth proxy rules match, `sandbox-host` is that client, so add the CA to `config.customCa`. For other hosts, programs in the Sandbox are the client, so add the CA to the Sandbox image's trust store. Alternatively, exempt Sandbox traffic from inspection.
+
+## See also
+
+- [Sandbox auth proxy](/langsmith/sandbox-auth-proxy)
+- [Sandbox architecture](/langsmith/self-host-sandbox-architecture)
+- [Upgrades and operations](/langsmith/self-host-sandbox-operations)
+- [Configure custom TLS certificates](/langsmith/self-host-custom-tls-certificates)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/self-host-sandbox-egress-proxy.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
