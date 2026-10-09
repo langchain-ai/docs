@@ -41,7 +41,7 @@ For more information on accessing embedding models through this API, refer to th
 ## Install the package
 
 ```bash
-pip install -qU langchain-nvidia-ai-endpoints
+pip install -qU langchain-nvidia-ai-endpoints langchain
 ```
 
 ## Access the NVIDIA API Catalog
@@ -142,6 +142,103 @@ response = model.invoke("Solve this step by step: 17 * 23", thinking_mode=True)
 thinking_model = model.with_thinking_mode(enabled=True)
 response = thinking_model.invoke("Solve this step by step: 17 * 23")
 ```
+
+## Use Nemotron 3.5 Super VL
+
+Nemotron 3.5 Super VL accepts text and image input through `ChatNVIDIA`. Use it for chat, structured output, or as the model in a deep agent.
+
+<Note>
+    Super 3.5 is in early access. These examples require the connector changes in [langchain-nvidia PR #370](https://github.com/langchain-ai/langchain-nvidia/pull/370) and access to the model on your NVIDIA endpoint. Confirm that your endpoint serves the model ID below before running the examples. Early-access endpoint instructions can specify a different model ID and credentials.
+</Note>
+
+The following examples use the connector's registered model ID, an 8,192-token completion limit, and explicitly enabled thinking:
+
+```python
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
+
+super_model = ChatNVIDIA(
+    model="nvidia/nemotron-3.5-super-vl-120b-a12b",
+    max_completion_tokens=8192,
+    chat_template_kwargs={"enable_thinking": True},
+)
+response = super_model.invoke("Plan a three-step research workflow for competitive analysis.")
+print(response.content_blocks)
+```
+
+### Return structured output
+
+Pass a JSON schema to `with_structured_output` to parse the response into a dictionary:
+
+```python
+schema = {
+    "type": "object",
+    "properties": {"city": {"type": "string"}},
+    "required": ["city"],
+    "additionalProperties": False,
+}
+structured_model = super_model.with_structured_output(schema)
+response = structured_model.invoke("Return Denver as the city.")
+print(response["city"])
+```
+
+To disable thinking for this structured-output runnable, bind the request parameter after calling `with_structured_output`:
+
+```python
+non_thinking_model = structured_model.bind(
+    chat_template_kwargs={"enable_thinking": False}
+)
+response = non_thinking_model.invoke("Return Denver as the city.")
+print(response["city"])
+```
+
+### Describe an image
+
+Encode a local PNG and include it in a [standard image content block](/oss/langchain/messages#multimodal). Replace `photo.png` with the path to your image:
+
+```python
+import base64
+from pathlib import Path
+
+from langchain.messages import HumanMessage
+
+image = base64.b64encode(Path("photo.png").read_bytes()).decode("ascii")
+message = HumanMessage(content=[
+    {"type": "text", "text": "Describe this image."},
+    {"type": "image", "base64": image, "mime_type": "image/png"},
+])
+response = super_model.invoke([message])
+print(response.content_blocks)
+```
+
+### Use with Deep Agents
+
+[Deep Agents](/oss/deepagents/overview) provides a built-in agent loop and tools. Install `deepagents`, then pass `super_model` to `create_deep_agent`:
+
+```bash
+pip install deepagents
+```
+
+```python
+from deepagents import create_deep_agent
+
+agent = create_deep_agent(model=super_model)
+result = agent.invoke({
+    "messages": [{
+        "role": "user",
+        "content": "Plan a three-step research workflow for competitive analysis.",
+    }]
+})
+print(result["messages"][-1].content_blocks)
+```
+
+This example uses the default Deep Agents harness without a model-specific profile. To ask the agent about the image, reuse `message` from the image example:
+
+```python
+result = agent.invoke({"messages": [message]})
+print(result["messages"][-1].content_blocks)
+```
+
+For the terminal coding agent, follow the [Deep Agents Code NVIDIA Build setup](/oss/deepagents/code/providers#use-nemotron-3-5-super-vl-on-nvidia-build).
 
 ## Self-host with NVIDIA NIM Microservices
 
