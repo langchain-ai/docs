@@ -1,7 +1,12 @@
 ---
 title: Fault tolerance
-description: Configure per-node timeouts, retries, and error handlers in LangGraph.
+description: Configure per-node timeouts, retries, error handlers, and recovery strategies in LangGraph.
 ---
+
+import LanggraphFaultToleranceLlmRecoverableJs from '/snippets/code-samples/langgraph-fault-tolerance-llm-recoverable-js.mdx';
+import LanggraphFaultToleranceLlmRecoverablePy from '/snippets/code-samples/langgraph-fault-tolerance-llm-recoverable-py.mdx';
+import LanggraphFaultToleranceUnexpectedJs from '/snippets/code-samples/langgraph-fault-tolerance-unexpected-js.mdx';
+import LanggraphFaultToleranceUnexpectedPy from '/snippets/code-samples/langgraph-fault-tolerance-unexpected-py.mdx';
 
 When a node fails—from a slow external API, a transient network error, or an unhandled exception—LangGraph gives you three composable mechanisms to respond:
 
@@ -858,6 +863,44 @@ Failure provenance is checkpointed. If the graph is interrupted or the process c
 ### Subgraph failures
 
 If a node wraps a subgraph and the subgraph raises an unhandled exception, that exception surfaces to the parent node. If the parent node has an error handler, the handler fires with the subgraph's exception in `error.error`.
+
+## Recovery strategies
+
+Retries and error handlers cover automatic re-attempts and compensation after exhaustion. Two other common patterns live in your node logic:
+
+| Strategy | Who fixes it | Mechanism |
+|----------|--------------|-----------|
+| Transient errors | System | [Retry policy](#retries) on the node |
+| Recoverable failure after retries | Developer | [`error_handler` / `errorHandler`](#error-handling) (Saga / compensation) |
+| LLM-recoverable errors | LLM | Store the error in state and route back with @[`Command`] |
+| User-fixable errors | Human | Pause with [`interrupt()`](/oss/langgraph/interrupts) |
+| Unexpected errors | Developer | Let the exception bubble up and fail the run |
+
+### LLM-recoverable errors
+
+When a tool call or parse fails in a way the model can correct, catch that error in the node, write it into state, and route back to the agent so the LLM can adjust:
+
+:::python
+<LanggraphFaultToleranceLlmRecoverablePy />
+:::
+
+:::js
+<LanggraphFaultToleranceLlmRecoverableJs />
+:::
+
+This is application-level control flow, not an `error_handler`. The node handles a known failure mode and keeps the run alive.
+
+### Unexpected errors
+
+Do not catch failures you cannot handle. Without a matching retry policy or error handler, the exception bubbles up and fails the run so you can fix the bug:
+
+:::python
+<LanggraphFaultToleranceUnexpectedPy />
+:::
+
+:::js
+<LanggraphFaultToleranceUnexpectedJs />
+:::
 
 :::python
 

@@ -1,0 +1,125 @@
+```python
+from typing import Literal
+
+from langgraph.graph import END
+from langgraph.types import Command, interrupt
+
+
+def read_email(state: EmailAgentState) -> dict:
+    """Parse and normalize the incoming email."""
+    return {}
+
+
+def classify_intent(
+    state: EmailAgentState,
+) -> Command[Literal["search_documentation", "bug_tracking", "draft_response"]]:
+    """Classify intent and urgency, then route to gather context or draft."""
+    # Placeholder: replace with a real LLM call.
+    # This heuristic matches the try-out sample so interrupt() runs.
+    lowered = state["email_content"].lower()
+    if "charged" in lowered or "billing" in lowered:
+        classification: EmailClassification = {
+            "intent": "billing",
+            "urgency": "high",
+            "topic": "billing",
+            "summary": "Customer reports a billing problem",
+        }
+    elif "crash" in lowered or "bug" in lowered:
+        classification = {
+            "intent": "bug",
+            "urgency": "medium",
+            "topic": "product bug",
+            "summary": "Customer reports a bug",
+        }
+    else:
+        classification = {
+            "intent": "question",
+            "urgency": "low",
+            "topic": "general",
+            "summary": "Customer question",
+        }
+
+    if classification["intent"] in ("question", "feature"):
+        goto = "search_documentation"
+    elif classification["intent"] == "bug":
+        goto = "bug_tracking"
+    else:
+        goto = "draft_response"
+
+    return Command(update={"classification": classification}, goto=goto)
+
+
+def search_documentation(
+    state: EmailAgentState,
+) -> Command[Literal["draft_response"]]:
+    """Search knowledge base for relevant information."""
+    classification = state.get("classification") or {}
+    topic = classification.get("topic", "general")
+    return Command(
+        update={"search_results": [f"Docs related to {topic}"]},
+        goto="draft_response",
+    )
+
+
+def bug_tracking(state: EmailAgentState) -> Command[Literal["draft_response"]]:
+    """Create or update a bug tracking ticket."""
+    ticket_id = "BUG-12345"
+    return Command(
+        update={"search_results": [f"Bug ticket {ticket_id} created"]},
+        goto="draft_response",
+    )
+
+
+def draft_response(
+    state: EmailAgentState,
+) -> Command[Literal["human_review", "send_reply"]]:
+    """Draft a reply, then route to review or send."""
+    classification = state.get("classification") or {}
+    context = state.get("search_results") or []
+    draft = f"Thanks for your email about {classification.get('topic', 'your request')}."
+    if context:
+        draft += f" Context: {context[0]}"
+
+    needs_review = (
+        classification.get("intent") in ("billing", "complex")
+        or classification.get("urgency") in ("high", "critical")
+    )
+    goto = "human_review" if needs_review else "send_reply"
+    return Command(update={"draft_response": draft}, goto=goto)
+
+
+def human_review(
+    state: EmailAgentState,
+) -> Command[Literal["send_reply", END]]:
+    """Pause for human review, then send or end."""
+    classification = state.get("classification") or {}
+
+    # Nodes re-run from the start on resume. Keep work before interrupt() idempotent.
+    human_decision = interrupt(
+        {
+            "email_id": state.get("email_id", ""),
+            "original_email": state.get("email_content", ""),
+            "draft_response": state.get("draft_response", ""),
+            "urgency": classification.get("urgency"),
+            "intent": classification.get("intent"),
+            "action": "Please review and approve/edit this response",
+        }
+    )
+
+    if human_decision.get("approved"):
+        return Command(
+            update={
+                "draft_response": human_decision.get(
+                    "edited_response", state.get("draft_response", "")
+                )
+            },
+            goto="send_reply",
+        )
+    # Rejection: human handles the email outside the graph
+    return Command(update={}, goto=END)
+
+
+def send_reply(state: EmailAgentState) -> dict:
+    """Send the email response."""
+    return {}
+```

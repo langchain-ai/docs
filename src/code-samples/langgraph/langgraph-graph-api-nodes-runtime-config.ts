@@ -1,0 +1,43 @@
+// :snippet-start: langgraph-graph-api-nodes-runtime-config-js
+import { StateGraph, StateSchema, GraphNode, END, START } from "@langchain/langgraph";
+import * as z from "zod";
+
+// 1. Specify config schema
+const ContextSchema = z.object({
+  myRuntimeValue: z.string(),
+});
+
+// 2. Define a graph that accesses the config in a node
+const State = new StateSchema({
+  myStateValue: z.number(),
+});
+
+const node: GraphNode<typeof State> = (state, config) => {
+  if (config?.context?.myRuntimeValue === "a") {  // [!code highlight]
+    return { myStateValue: 1 };
+  } else if (config?.context?.myRuntimeValue === "b") {  // [!code highlight]
+    return { myStateValue: 2 };
+  } else {
+    throw new Error("Unknown values.");
+  }
+};
+
+const graph = new StateGraph(State, ContextSchema)
+  .addNode("node", node)
+  .addEdge(START, "node")
+  .addEdge("node", END)
+  .compile();
+
+// 3. Pass in configuration at runtime:
+console.log(await graph.invoke({}, { context: { myRuntimeValue: "a" } }));  // [!code highlight]
+console.log(await graph.invoke({}, { context: { myRuntimeValue: "b" } }));  // [!code highlight]
+// :snippet-end:
+
+// :remove-start:
+const a = await graph.invoke({}, { context: { myRuntimeValue: "a" } });
+const b = await graph.invoke({}, { context: { myRuntimeValue: "b" } });
+if (a.myStateValue !== 1 || b.myStateValue !== 2) {
+  throw new Error(`Unexpected results: ${JSON.stringify([a, b])}`);
+}
+console.log("✓ langgraph-graph-api-nodes-runtime-config-js validated");
+// :remove-end:

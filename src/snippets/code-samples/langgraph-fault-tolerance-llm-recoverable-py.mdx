@@ -1,0 +1,33 @@
+```python
+from typing import Literal
+
+from langgraph.types import Command
+from typing_extensions import TypedDict
+
+
+class ToolError(Exception):
+    """Raised when a tool call fails in a way the model can correct."""
+
+
+class State(TypedDict):
+    tool_call: str
+    tool_result: str | None
+
+
+def run_tool(tool_call: str) -> str:
+    if tool_call == "bad":
+        raise ToolError("invalid args")
+    return f"ok:{tool_call}"
+
+
+def execute_tool(state: State) -> Command[Literal["agent", "execute_tool"]]:
+    try:
+        result = run_tool(state["tool_call"])
+        return Command(update={"tool_result": result}, goto="agent")
+    except ToolError as e:
+        # Let the LLM see what went wrong and try again
+        return Command(
+            update={"tool_result": f"Tool error: {e}"},
+            goto="agent",
+        )
+```

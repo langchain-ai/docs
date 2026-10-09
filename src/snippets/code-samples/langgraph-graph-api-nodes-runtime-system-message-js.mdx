@@ -1,0 +1,58 @@
+```ts
+import { ChatOpenAI } from "@langchain/openai";
+import { ChatAnthropic } from "@langchain/anthropic";
+import { SystemMessage } from "@langchain/core/messages";
+import { StateGraph, StateSchema, MessagesValue, GraphNode, START, END } from "@langchain/langgraph";
+import * as z from "zod";
+
+const ContextSchema = z.object({
+  modelProvider: z.string().default("anthropic"),
+  systemMessage: z.string().optional(),
+});
+
+const State = new StateSchema({
+  messages: MessagesValue,
+});
+
+const MODELS = {
+  anthropic: new ChatAnthropic({ model: "claude-haiku-4-5-20251001" }),
+  openai: new ChatOpenAI({ model: "gpt-5.4-mini" }),
+};
+
+const callModel: GraphNode<typeof State> = async (state, config) => {
+  const modelProvider = config?.context?.modelProvider || "anthropic";
+  const systemMessage = config?.context?.systemMessage;
+
+  const model = MODELS[modelProvider as keyof typeof MODELS];
+  let messages = state.messages;
+
+  if (systemMessage) {
+    messages = [new SystemMessage(systemMessage), ...messages];
+  }
+
+  const response = await model.invoke(messages);
+  return { messages: [response] };
+};
+
+const graph = new StateGraph(State, ContextSchema)
+  .addNode("model", callModel)
+  .addEdge(START, "model")
+  .addEdge("model", END)
+  .compile();
+
+// Usage
+const inputMessage = { role: "user", content: "hi" };
+const response = await graph.invoke(
+  { messages: [inputMessage] },
+  {
+    context: {
+      modelProvider: "openai",
+      systemMessage: "Respond in Italian.",
+    },
+  }
+);
+
+for (const message of response.messages) {
+  console.log(`${message.getType()}: ${message.content}`);
+}
+```
