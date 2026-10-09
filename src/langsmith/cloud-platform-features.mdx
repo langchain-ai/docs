@@ -64,8 +64,8 @@ Deployments created under previous pricing can still show the **Development** or
 
 | **Deployment type** | **Scaling** | **Database** | **Best for** |
 |---|---|---|---|
-| Serverless | Scales to zero after inactivity, wakes on the next request | Shared, multi-tenant | Background or latency-tolerant agents, and development/testing deployments |
-| Dedicated | Always-on, autoscales across replicas | Dedicated, with automatic backups and high availability | Production workloads in the critical path |
+| Serverless | Scales to zero after inactivity, wakes on the next request | Shared, multi-tenant | Development, testing, preview branches, and background agents |
+| Dedicated | Always-on, autoscales across replicas | Dedicated, with automatic backups and high availability | Production workloads, including customer-facing agents |
 
 <Warning>
 **Immutable deployment type**
@@ -74,13 +74,20 @@ Once a deployment is created, the deployment type cannot be changed. You can sti
 
 ### Serverless
 
-Serverless deployments are cost-optimized for background and latency-tolerant agents, as well as development, testing, and preview branches. A Serverless deployment scales to zero after a period of inactivity and wakes on the next request. Compute is billed while resources are provisioned, including during idle time before the deployment scales down. This makes it a good fit for agents that run intermittently or can tolerate a brief startup delay, because the first request after scale-down takes longer to respond while the deployment starts.
+Serverless deployments are for development, testing, preview branches, and background agents that can tolerate a startup delay. A Serverless deployment scales to zero after a period of inactivity and wakes on the next request. Compute is billed while resources are provisioned, including during idle time before the deployment scales down.
 
 The **Scale down after** setting controls how long a Serverless deployment stays idle before it scales to zero. Choose `1 hour`, `1 day`, or `1 week` when you create the deployment, or change it later from the **Scaling** dialog. The default is `1 week`. The idle timer resets on any request and while the deployment has work to do: a run in progress, a pending run due to start within 10 minutes, or an enabled [cron job](/langsmith/cron-jobs) due to fire within 10 minutes. A deployment that receives traffic or runs work at least once per window never scales down and never cold-starts. A shorter window lowers idle compute charges. A longer window avoids cold starts for agents with infrequent traffic.
 
-A scaled-down deployment wakes on the next request, or up to 10 minutes before a scheduled run or cron job is due, so scheduled work does not wait for a cold start. A request that arrives while the deployment is waking waits up to 60 seconds for it to become ready, then fails with a `502` error.
+A scaled-down deployment wakes on the next request, or up to 10 minutes before a scheduled run or cron job is due, so scheduled work does not wait for a cold start. Starting from zero can take 10 to 20 seconds. A request that arrives while the deployment is waking waits up to 60 seconds for it to become ready, then fails with a `502` error.
 
-Serverless can serve customer-facing agents with light, steady traffic, as long as the scale-down window keeps the deployment warm. A Serverless deployment runs a single replica at every size, so a larger size adds compute to that replica but does not scale out. The API server and the queue worker run as separate containers in the same replica. Use Dedicated when you expect sustained concurrent traffic, need consistently low latency under load, or need an isolated database with high availability. Dedicated scales horizontally across [replicas](#scaling), and Serverless deployments run on shared, multi-tenant infrastructure.
+#### Choose Dedicated for production
+
+Use Dedicated for production workloads, including customer-facing agents. Serverless is not built for production traffic:
+
+- **Single replica**: A Serverless deployment runs one replica at every size and does not scale out. A larger size adds compute to that replica. If the replica restarts, the requests it was serving fail and new requests wait until it is ready. Dedicated runs at least two API server replicas and autoscales across [replicas](#scaling).
+- **Limited concurrency**: The queue worker runs up to 10 runs at a time by default, set by [`N_JOBS_PER_WORKER`](/langsmith/env-var-cloud#n_jobs_per_worker). Additional runs wait in the queue.
+- **Cold starts**: After the deployment scales down, the first request waits while it starts. Dedicated deployments are always on.
+- **Shared database**: Serverless deployments use a shared, multi-tenant database. Each Dedicated deployment has its own database with automatic backups, point-in-time recovery, and high availability.
 
 <Note>
 Scale to zero is in [beta](/langsmith/release-stages) and is initially available only for deployments on the new usage-based pricing. See [Manage billing](/langsmith/billing#langsmith-deployment-billing) for pricing and the transition timeline.
