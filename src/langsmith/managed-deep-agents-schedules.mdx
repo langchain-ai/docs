@@ -258,6 +258,16 @@ Runtime schedules require `managed-deepagents` 0.9.0 or later.
 
 Declarations in `schedules/` are fixed when you deploy. `runtime.schedules` creates schedules while the agent runs, so the agent can set up recurring or one-time work in response to a conversation. It is available on the runtime that tools and [middleware](/langsmith/managed-deep-agents-middleware) receive, and it acts for the caller of the current run. Each schedule belongs to the current user or to the agent.
 
+<Note>
+:::python
+`from managed_deepagents import schedules` still works inside a run, but it is deprecated and emits a `FutureWarning`. Use `runtime.schedules` instead.
+:::
+
+:::js
+`import { schedules } from "managed-deepagents"` still works inside a run, but it is deprecated and emits a `DeprecationWarning`. Use `runtime.schedules` instead.
+:::
+</Note>
+
 The agent reaches this API only through tools that you write. Expose the calls the agent needs, and leave out the ones it should not reach.
 
 When a tool creates a schedule during a [channel](/langsmith/managed-deep-agents-channels) run, such as a Slack conversation, the schedule inherits that channel. Each run posts its final answer back to it. A new thread posts a new Slack message, and the current thread replies in the existing Slack thread.
@@ -269,7 +279,7 @@ When a tool creates a schedule during a [channel](/langsmith/managed-deep-agents
 :::js
 `newThread` decides which of the two a schedule uses.
 
-Managed Deep Agents sets `runtime.schedules` on every tool and middleware runtime. Its TypeScript type is optional because annotated tools must still match LangChain's native runtime type. Check that it is set before you use it.
+Managed Deep Agents sets `runtime.schedules` on every tool and middleware runtime. Its TypeScript type is optional only because annotated tools must still match LangChain's native runtime type, so the examples use `runtime.schedules!`.
 :::
 
 ### Create a recurring schedule
@@ -305,10 +315,7 @@ import type { ManagedDeepAgentRuntime } from "managed-deepagents";
 
 export const remindMe = tool(
   async ({ prompt, cron, timezone }, runtime: ManagedDeepAgentRuntime) => {
-    if (!runtime.schedules) {
-      throw new Error("remind_me requires runtime schedules");
-    }
-    const item = await runtime.schedules.create({
+    const item = await runtime.schedules!.create({
       owner: { type: "user" },
       cron,
       timezone,
@@ -363,10 +370,7 @@ import type { ManagedDeepAgentRuntime } from "managed-deepagents";
 
 export const followUpLater = tool(
   async ({ prompt, hours }, runtime: ManagedDeepAgentRuntime) => {
-    if (!runtime.schedules) {
-      throw new Error("follow_up_later requires runtime schedules");
-    }
-    const item = await runtime.schedules.create({
+    const item = await runtime.schedules!.create({
       owner: { type: "user" },
       at: new Date(Date.now() + hours * 60 * 60_000),
       prompt,
@@ -460,8 +464,7 @@ await schedules.delete(item["id"], owner=owner)
 :::js
 ```ts
 const owner = { type: "user" } as const;
-const schedules = runtime.schedules;
-if (!schedules) throw new Error("Runtime schedules are unavailable");
+const schedules = runtime.schedules!;
 
 const page = await schedules.list({ owner, limit: 20 });
 const item = await schedules.get(page.items[0].id, { owner });
