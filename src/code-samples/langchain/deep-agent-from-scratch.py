@@ -16,12 +16,11 @@ client = SandboxClient()
 # :remove-start:
 import atexit
 import time
-import uuid
-
+from langchain_core.utils.uuid import uuid7
 from langsmith.sandbox._exceptions import SandboxAuthenticationError
 
 # Per-run name so Python/TS CI jobs do not collide on "langchain-docs".
-SANDBOX_NAME = f"langchain-docs-{uuid.uuid4().hex[:8]}"
+SANDBOX_NAME = f"langchain-docs-{uuid7().hex[:8]}"
 
 # Multi-workspace service keys need an explicit tenant header. SandboxClient
 # does not read LANGSMITH_WORKSPACE_ID on its own. Kept in :remove-start so
