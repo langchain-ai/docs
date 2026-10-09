@@ -10,10 +10,15 @@ For how Sandbox traffic leaves a microVM, see [Sandbox architecture](/langsmith/
 
 ## Understand how proxied egress works
 
-Each outbound TCP connection from a Sandbox reaches the [Sandbox auth proxy](/langsmith/sandbox-auth-proxy) on its host first. The host applies the Sandbox's allow and deny lists and auth proxy rules, then opens an HTTP `CONNECT` tunnel to your forward proxy for the destination host and port. This covers HTTP on port 80, HTTPS on port 443, and raw TCP on any other port.
+Each outbound TCP connection from a Sandbox reaches the [Sandbox auth proxy](/langsmith/sandbox-auth-proxy) on its host first. The host applies the Sandbox's allow and deny lists and auth proxy rules, then sends the traffic to your forward proxy the way a client configured with `HTTP_PROXY` and `HTTPS_PROXY` does:
 
-- **No direct fallback**: When the forward proxy rejects or cannot open a tunnel, the connection fails. The host never retries it directly.
-- **Bypass list**: The host dials hostnames in `noProxy` directly, with the same Sandbox access checks.
+- **Plain HTTP**: Sent as standard proxy requests, such as `GET http://example.com/path`.
+- **HTTPS and other TCP**: Sent through `CONNECT` tunnels to the destination host and port, such as `CONNECT example.com:443` or `CONNECT github.com:22`.
+
+The host also applies these rules:
+
+- **No direct fallback**: When the forward proxy rejects a request or cannot open a tunnel, the request or connection fails. The host never retries it directly.
+- **Bypass list**: The host dials destinations in `noProxy` directly, with the same Sandbox access checks.
 - **LangSmith API**: The host dials HTTPS requests from a Sandbox to your LangSmith installation's API directly, not through the forward proxy.
 
 Proxying happens on the host, outside the Sandbox. Code inside a Sandbox does not see the forward proxy address and does not need `HTTP_PROXY` or `HTTPS_PROXY` set.
@@ -24,7 +29,7 @@ Proxied egress requires:
 
 - LangSmith 0.17.32 or later on the 0.17 release line, or 0.18.5rc1 or later on the 0.18 line, for the `sandbox-host` image.
 - A LangSmith Helm chart release that includes `sandboxes.authProxy.httpProxy` in its `values.yaml`.
-- A forward proxy that accepts `CONNECT` for every destination port your Sandboxes use, including port 80 for plain HTTP.
+- A forward proxy that accepts standard HTTP proxy requests and `CONNECT` to port 443. To reach other TCP services, such as Git over SSH on port 22, the proxy must also accept `CONNECT` to those ports.
 - Network reachability from the Sandbox node pool to the proxy. The proxy address can be a private IP address.
 
 The forward proxy cannot require authentication: `sandbox-host` does not support proxy credentials in the URL, Basic or NTLM authentication, or client certificates (mTLS). An HTTPS proxy works when the host only needs to trust its server certificate.
@@ -53,7 +58,7 @@ To route Sandbox egress through a forward proxy:
     - **`scheme`**: `http`, or `https` when the connection to the proxy itself uses TLS. Defaults to `http`.
     - **`host`**: The proxy hostname or IP address, without a scheme, credentials, or path. Required when `enabled` is `true`.
     - **`port`**: The proxy port. Defaults to `3128`.
-    - **`noProxy`**: Hostnames that the host dials directly instead of through the proxy. An entry such as `git.corp.internal` matches that host exactly, an entry with a leading dot such as `.corp.internal` matches its subdomains, and `*` matches every host. Entries match hostnames only, not IP addresses.
+    - **`noProxy`**: Destinations that the host dials directly instead of through the proxy, with the same matching as the `NO_PROXY` environment variable. An entry such as `corp.internal` matches that host and its subdomains, an entry with a leading dot such as `.corp.internal` matches only subdomains, and `*` matches every host. Entries can also be IP addresses, CIDR ranges such as `10.0.0.0/8`, or `host:port` pairs.
 
     The chart fails the render when `host` is missing, when `host` contains a scheme, credentials, or a path, or when `scheme` or `port` is invalid.
   </Step>
@@ -70,7 +75,7 @@ To route Sandbox egress through a forward proxy:
     curl -sS -o /dev/null -w '%{http_code}\n' https://www.langchain.com/
     ```
 
-    The command prints `200`, and your forward proxy logs a `CONNECT www.langchain.com:443` request from a Sandbox node.
+    The command prints `200`, and your forward proxy logs a `CONNECT www.langchain.com:443` request from a Sandbox node. A request to an `http://` URL appears in the proxy log as a `GET http://...` request instead.
   </Step>
 </Steps>
 
