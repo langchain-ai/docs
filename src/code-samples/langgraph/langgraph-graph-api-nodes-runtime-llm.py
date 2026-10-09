@@ -1,0 +1,54 @@
+# :remove-start:
+import os
+
+# Constructing chat models needs a credential even though no request is sent.
+os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
+os.environ.setdefault("OPENAI_API_KEY", "test-key")
+# :remove-end:
+
+# :snippet-start: langgraph-graph-api-nodes-runtime-llm-py
+from dataclasses import dataclass
+
+from langchain.chat_models import init_chat_model
+from langgraph.graph import MessagesState, END, StateGraph, START
+from langgraph.runtime import Runtime
+
+@dataclass
+class ContextSchema:
+    model_provider: str = "anthropic"
+
+MODELS = {
+    "anthropic": init_chat_model("claude-haiku-4-5-20251001"),
+    "openai": init_chat_model("gpt-5.4-mini"),
+}
+
+def call_model(state: MessagesState, runtime: Runtime[ContextSchema]):
+    model = MODELS[runtime.context.model_provider]
+    response = model.invoke(state["messages"])
+    return {"messages": [response]}
+
+builder = StateGraph(MessagesState, context_schema=ContextSchema)
+builder.add_node("model", call_model)
+builder.add_edge(START, "model")
+builder.add_edge("model", END)
+
+graph = builder.compile()
+# :remove-start:
+# Construction only: stop before the invocations below, which call live models.
+assert "model" in graph.nodes
+assert set(MODELS) == {"anthropic", "openai"}
+assert ContextSchema().model_provider == "anthropic"
+print("✓ langgraph-graph-api-nodes-runtime-llm-py validated (construction only)")
+raise SystemExit(0)
+# :remove-end:
+
+# Usage
+input_message = {"role": "user", "content": "hi"}
+# With no configuration, uses default (Anthropic)
+response_1 = graph.invoke({"messages": [input_message]}, context=ContextSchema())["messages"][-1]
+# Or, can set OpenAI
+response_2 = graph.invoke({"messages": [input_message]}, context={"model_provider": "openai"})["messages"][-1]
+
+print(response_1.response_metadata["model_name"])
+print(response_2.response_metadata["model_name"])
+# :snippet-end:

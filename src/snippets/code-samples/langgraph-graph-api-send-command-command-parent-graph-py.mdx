@@ -1,0 +1,48 @@
+```python
+import operator
+import random
+from typing_extensions import Annotated, TypedDict
+
+from langgraph.graph import START, StateGraph
+from langgraph.types import Command
+
+
+class State(TypedDict):
+    foo: Annotated[str, operator.add]  # [!code highlight]
+
+
+def node_a(state: State) -> Command:
+    print("Called A")
+    value = random.choice(["a", "b"])
+    goto = "node_b" if value == "a" else "node_c"
+
+    return Command(
+        update={"foo": value},
+        goto=goto,
+        # Closest parent graph relative to this subgraph
+        graph=Command.PARENT,  # [!code highlight]
+    )
+
+
+subgraph = StateGraph(State).add_node(node_a).add_edge(START, "node_a").compile()
+
+
+def node_b(state: State):
+    print("Called B")
+    # Reducer appends; do not manually concatenate onto state["foo"]
+    return {"foo": "b"}  # [!code highlight]
+
+
+def node_c(state: State):
+    print("Called C")
+    return {"foo": "c"}  # [!code highlight]
+
+
+builder = StateGraph(State)
+builder.add_edge(START, "subgraph")
+builder.add_node("subgraph", subgraph)
+builder.add_node(node_b)
+builder.add_node(node_c)
+
+graph = builder.compile()
+```

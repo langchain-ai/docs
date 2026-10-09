@@ -1,0 +1,34 @@
+```ts
+import { Command, GraphNode, StateSchema } from "@langchain/langgraph";
+import * as z from "zod";
+
+class ToolError extends Error {}
+
+const State = new StateSchema({
+  toolCall: z.string(),
+  toolResult: z.string().optional(),
+});
+
+async function runTool(toolCall: string): Promise<string> {
+  if (toolCall === "bad") {
+    throw new ToolError("invalid args");
+  }
+  return `ok:${toolCall}`;
+}
+
+const executeTool: GraphNode<typeof State> = async (state) => {
+  try {
+    const result = await runTool(state.toolCall);
+    return new Command({
+      update: { toolResult: result },
+      goto: "agent",
+    });
+  } catch (error) {
+    // Let the LLM see what went wrong and try again
+    return new Command({
+      update: { toolResult: `Tool error: ${error}` },
+      goto: "agent",
+    });
+  }
+};
+```
