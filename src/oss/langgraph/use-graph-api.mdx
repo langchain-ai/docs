@@ -4,6 +4,17 @@ sidebarTitle: Build checklist
 description: Decide state, control flow, Send, Command, and node options as you build with the Graph API.
 ---
 
+import LanggraphUseGraphApiStatePy from '/snippets/code-samples/langgraph-use-graph-api-state-py.mdx';
+import LanggraphUseGraphApiStateJs from '/snippets/code-samples/langgraph-use-graph-api-state-js.mdx';
+import LanggraphUseGraphApiControlFlowPy from '/snippets/code-samples/langgraph-use-graph-api-control-flow-py.mdx';
+import LanggraphUseGraphApiControlFlowJs from '/snippets/code-samples/langgraph-use-graph-api-control-flow-js.mdx';
+import LanggraphUseGraphApiSendCommandPy from '/snippets/code-samples/langgraph-use-graph-api-send-command-py.mdx';
+import LanggraphUseGraphApiSendCommandJs from '/snippets/code-samples/langgraph-use-graph-api-send-command-js.mdx';
+import LanggraphUseGraphApiNodeConfigPy from '/snippets/code-samples/langgraph-use-graph-api-node-config-py.mdx';
+import LanggraphUseGraphApiNodeConfigJs from '/snippets/code-samples/langgraph-use-graph-api-node-config-js.mdx';
+import LanggraphUseGraphApiVisualizePy from '/snippets/code-samples/langgraph-use-graph-api-visualize-py.mdx';
+import LanggraphUseGraphApiVisualizeJs from '/snippets/code-samples/langgraph-use-graph-api-visualize-js.mdx';
+
 This guide walks through the decisions you make when building a graph. For install and an end-to-end agent example, see the [LangGraph quickstart](/oss/langgraph/quickstart). For a design walkthrough, see [Thinking in the Graph API](/oss/langgraph/thinking-in-graph-api). For concepts, see the [Graph API overview](/oss/langgraph/graph-api). To choose between the Graph API and the Functional API, see [Choosing between Graph and Functional APIs](/oss/langgraph/choosing-apis).
 
 ## Build your graph
@@ -19,34 +30,15 @@ Decide what data nodes share and how updates merge.
 - Use private or input/output schemas when the graph should hide internal channels from callers.
 
 :::python
-```python
-import operator
-from typing import Annotated
 
-from typing_extensions import TypedDict
-
-
-class State(TypedDict):
-    foo: int
-    bar: Annotated[list[str], operator.add]
-```
+<LanggraphUseGraphApiStatePy />
 
 Here `foo` overwrites. `bar` appends with `operator.add`.
 :::
 
 :::js
-```typescript
-import { StateSchema, ReducedValue } from "@langchain/langgraph";
-import { z } from "zod/v4";
 
-const State = new StateSchema({
-  foo: z.number(),
-  bar: new ReducedValue(
-    z.array(z.string()).default(() => []),
-    { reducer: (left, right) => left.concat(right) }
-  ),
-});
-```
+<LanggraphUseGraphApiStateJs />
 
 Here `foo` overwrites. `bar` concatenates.
 :::
@@ -65,135 +57,39 @@ Decide how work moves between nodes.
 This sequence checks whether a number is even, then formats a message:
 
 :::python
-```python
-from typing_extensions import TypedDict
 
-from langgraph.graph import END, START, StateGraph
+<LanggraphUseGraphApiControlFlowPy />
 
-
-class State(TypedDict):
-    number: int
-    is_even: bool
-    message: str
-
-
-def check_even(state: State):
-    return {"is_even": state["number"] % 2 == 0}
-
-
-def format_message(state: State):
-    return {
-        "message": (
-            "The number is even." if state["is_even"] else "The number is odd."
-        )
-    }
-
-
-workflow = StateGraph(State)
-workflow.add_node("check_even", check_even)
-workflow.add_node("format_message", format_message)
-workflow.add_edge(START, "check_even")
-workflow.add_edge("check_even", "format_message")
-workflow.add_edge("format_message", END)
-graph = workflow.compile()
-
-graph.invoke({"number": 7})
-```
 :::
 
 :::js
-```typescript
-import {
-  END,
-  START,
-  StateGraph,
-  StateSchema,
-  type GraphNode,
-} from "@langchain/langgraph";
-import * as z from "zod";
 
-const State = new StateSchema({
-  number: z.number(),
-  isEven: z.boolean().optional(),
-  message: z.string().optional(),
-});
+<LanggraphUseGraphApiControlFlowJs />
 
-const checkEven: GraphNode<typeof State> = (state) => ({
-  isEven: state.number % 2 === 0,
-});
-
-const formatMessage: GraphNode<typeof State> = (state) => ({
-  message: state.isEven ? "The number is even." : "The number is odd.",
-});
-
-const graph = new StateGraph(State)
-  .addNode("checkEven", checkEven)
-  .addNode("formatMessage", formatMessage)
-  .addEdge(START, "checkEven")
-  .addEdge("checkEven", "formatMessage")
-  .addEdge("formatMessage", END)
-  .compile();
-
-await graph.invoke({ number: 7 });
-```
 :::
 
 For branches, parallel paths, and loops, see [Build sequences, branches, and loops](/oss/langgraph/graph-api-control-flow).
 </Step>
 
 <Step title="Decide if you need Send or Command">
-Most graphs only need nodes, edges, and conditional edges. Reach for the extras when the default model is not enough:
+Most graphs only need nodes, edges, and conditional edges. Keep routing in edges unless you hit one of the cases below. For patterns and examples, see [Use Send and Command](/oss/langgraph/graph-api-send-command).
+
+Reach for the extras when the default model is not enough:
 
 - Use @[`Send`] when you must run the same node once per item, each with its own input, and the item count is only known at runtime (map-reduce / orchestrator-worker).
 - Use @[`Command`] when one step must both update state and choose the next node, resume after an [interrupt](/oss/langgraph/interrupts), or update state from a tool.
 
 :::python
-```python
-from typing import Literal
 
-from langgraph.types import Command, Send
+<LanggraphUseGraphApiSendCommandPy />
 
-
-# Send: fan out one worker per item
-def continue_to_jokes(state: OverallState):
-    return [Send("generate_joke", {"subject": s}) for s in state["subjects"]]
-
-
-# Command: update state and route in one return
-def my_node(state: State) -> Command[Literal["my_other_node"]]:
-    return Command(
-        update={"foo": "bar"},
-        goto="my_other_node",
-    )
-```
 :::
 
 :::js
-```typescript
-import { Command, Send } from "@langchain/langgraph";
 
-// Send: fan out one worker per item
-graph.addConditionalEdges("nodeA", (state) => {
-  return state.subjects.map(
-    (subject) => new Send("generateJoke", { subject })
-  );
-});
+<LanggraphUseGraphApiSendCommandJs />
 
-// Command: update state and route in one return
-graph.addNode(
-  "myNode",
-  (state) => {
-    return new Command({
-      update: { foo: "bar" },
-      goto: "myOtherNode",
-    });
-  },
-  { ends: ["myOtherNode"] }
-);
-```
 :::
-
-Otherwise keep routing in edges. For patterns and examples, see [Use Send and Command](/oss/langgraph/graph-api-send-command).
 </Step>
 
 <Step title="Configure nodes as needed">
@@ -205,23 +101,15 @@ Add runtime options when reliability or cost matters:
 - Runtime context or config for dependencies that do not belong in state
 
 :::python
-```python
-from langgraph.types import RetryPolicy
 
-builder.add_node(
-    "node_name",
-    node_function,
-    retry_policy=RetryPolicy(),
-)
-```
+<LanggraphUseGraphApiNodeConfigPy />
+
 :::
 
 :::js
-```typescript
-const graph = new StateGraph(State)
-  .addNode("nodeName", nodeFunction, { retryPolicy: {} })
-  .compile();
-```
+
+<LanggraphUseGraphApiNodeConfigJs />
+
 :::
 
 See [Configure nodes](/oss/langgraph/graph-api-nodes).
@@ -231,16 +119,15 @@ See [Configure nodes](/oss/langgraph/graph-api-nodes).
 Render a Mermaid or PNG diagram to review topology and debug routing.
 
 :::python
-```python
-print(graph.get_graph().draw_mermaid())
-```
+
+<LanggraphUseGraphApiVisualizePy />
+
 :::
 
 :::js
-```typescript
-const drawableGraph = await graph.getGraphAsync();
-console.log(drawableGraph.drawMermaid());
-```
+
+<LanggraphUseGraphApiVisualizeJs />
+
 :::
 
 See [Visualize your graph](/oss/langgraph/graph-api-visualize).
