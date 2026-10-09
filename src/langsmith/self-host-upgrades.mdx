@@ -107,3 +107,29 @@ langsmith-queue-d58cb64f7-87d68          1/1     Running     0          15h
 1. Visit the external IP for the `langsmith-frontend` service on your browser. The LangSmith UI should be visible and operational.
 
    ![LangSmith UI](/langsmith/images/langsmith-ui.png)
+
+## Upgrade from v16 to v17
+
+Chart v17 changes the values for SmithDB, sandboxes, and Engine. Update your values file before you run `helm upgrade`. Chart v17 fails to render the SmithDB, sandbox, and Engine values below until you change them. If you deploy with the Terraform modules, follow the upgrade steps in the [AWS](/langsmith/self-host-terraform-aws-deploy#upgrade-from-chart-v16-to-v17), [GCP](/langsmith/self-host-terraform-gcp-deploy), or [Azure](/langsmith/self-host-terraform-azure-deploy) deploy guide, which apply these changes to the module's values files.
+
+<Warning>
+Downgrading from chart v17 to v16 is not supported. Back up the database before you upgrade.
+</Warning>
+
+- **SmithDB**: Move `smithdb.migration.deployment` to `smithdb.migration.job`. With `smithdb.enabled: true`, move the flat autoscaling keys (`enabled`, `minReplicas`, `maxReplicas`, and the rest) on `query`, `ingestion`, `mutations`, `runRules`, `statsQuery`, and `compactionWorker` under `autoscaling.hpa.*`. For `compactionWorker`, you can use `autoscaling.keda.*` instead, but enable only one scaler. For the cache volume changes, see [Cache storage](/langsmith/self-host-smithdb-infrastructure#cache-storage).
+- **Sandboxes**: Chart v17 removes the bundled JuiceFS CSI driver, and `sandbox-host` mounts JuiceFS itself. Chart v17 ignores a leftover `sandboxes.juicefs.csi` block, and its validation then fails with `sandboxes.juicefs.redis.metaURL is required when sandboxes.enabled is true and sandboxes.juicefs.existingSecretName is not set.` Move the settings:
+  - `sandboxes.juicefs.csi.existingSecretName` becomes `sandboxes.juicefs.existingSecretName`. The Secret keeps its keys.
+  - The cache options in `sandboxes.juicefs.csi.mountPodPatch` move to `sandboxes.juicefs.hostMount`. `cacheDirs` sets the host paths for the JuiceFS cache and defaults to `/var/cache/juicefs`. If you override it, list at least one absolute path. Set other JuiceFS options in `mountOptions` in the `--flag=value` form, and do not set `--cache-dir` there. The default cache size drops from 300 GiB (`cache-size=307200`) to 50 GiB (`--cache-size=51200`).
+  - Move the IRSA or Workload Identity annotation from `sandboxes.juicefs.csi.node.serviceAccount.annotations` to `sandboxes.sandboxHost.serviceAccount.annotations`. On GKE, `sandbox-host` runs on the host network, and GKE does not give Workload Identity to host-network pods, so the annotation serves only the `juicefs-format` Job. Also grant the sandbox node pool's service account `roles/storage.objectAdmin` on the bucket, limited by an IAM condition to the JuiceFS prefix. Without that grant, the mount gets 403 from Cloud Storage.
+
+  Before the upgrade, drain the JuiceFS volumes while the CSI driver still runs. Otherwise the old `sandbox-host` pods stay in `Terminating`. With the default release name:
+
+  ```bash
+  kubectl delete -n langsmith deployment.apps/langsmith-sandbox-host
+  kubectl delete -n langsmith persistentvolumeclaim/smithbox-juicefs-csi
+  kubectl delete -n langsmith persistentvolumeclaim/smithbox-juicefs-csi-host
+  kubectl get pods -n langsmith | grep juicefs   # wait until only juicefs-csi-* pods remain
+  ```
+
+  Running sandboxes stop. Their data stays in object storage and Redis, because both chart v16 PersistentVolumes use the `Retain` reclaim policy.
+- **Engine**: With Engine enabled, set `engine.usageSigningSecret` to a value of at least 32 characters (generate one with `openssl rand -hex 32`), or, when you use `config.existingSecretName`, add an `engine_usage_signing_secret` key to that Secret instead. The default `engine.intelligenceBaseUrl` changes to `https://beacon.langchain.com/intelligence`, which records usage only. To keep running Engine on LangSmith Intelligence models, as on chart v16, keep `https://beacon.aws.langchain.com/intelligence` and select LangSmith Intelligence under **Settings** > **Engine** > **Model providers**. For details, see [LangSmith Engine on Self-hosted](/langsmith/engine-self-hosted).
