@@ -1,5 +1,5 @@
 # :remove-start:
-import uuid
+from langsmith import uuid7
 # :remove-end:
 
 
@@ -11,7 +11,7 @@ client = Client()
 queue_id = "<queue-id>"
 runs = list(client.list_runs(project_name="default", limit=5))
 # :remove-start:
-queue = client.create_annotation_queue(name=f"docs-smithdb-migration-{uuid.uuid4()}")
+queue = client.create_annotation_queue(name=f"docs-smithdb-migration-{uuid7()}")
 queue_id = str(queue.id)
 assert len(runs) > 0, "expected at least one run in the 'default' project"
 # :remove-end:
@@ -31,7 +31,7 @@ client = Client()
 queue_id = "<queue-id>"
 runs = list(client.list_runs(project_name="default", limit=5))
 # :remove-start:
-queue = client.create_annotation_queue(name=f"docs-smithdb-migration-{uuid.uuid4()}")
+queue = client.create_annotation_queue(name=f"docs-smithdb-migration-{uuid7()}")
 queue_id = str(queue.id)
 assert len(runs) > 0, "expected at least one run in the 'default' project"
 # :remove-end:

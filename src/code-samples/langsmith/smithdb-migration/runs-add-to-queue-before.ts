@@ -1,5 +1,6 @@
 // :snippet-start: runs-add-to-queue-before-js
 // :codegroup-tab: Before
+import { uuid7 } from "langsmith";
 import { Client } from "langsmith";
 
 const client = new Client();
@@ -10,7 +11,7 @@ for await (const run of client.listRuns({ projectName: "default", limit: 5 })) {
 }
 // :remove-start:
 const queue = await client.createAnnotationQueue({
-  name: `docs-smithdb-migration-${crypto.randomUUID()}`,
+  name: `docs-smithdb-migration-${uuid7()}`,
 });
 queueId = queue.id;
 if (runs.length === 0) {
