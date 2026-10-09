@@ -4,7 +4,7 @@ sidebarTitle: Quick reference
 description: Make targets, Terraform, kubectl, gcloud, and Helm commands for LangSmith self-hosted on GKE.
 ---
 
-Command cheat sheet for day-to-day operations against a GCP LangSmith deployment provisioned with the [GCP Terraform modules](https://github.com/langchain-ai/terraform/tree/main/modules/gcp). All `make` targets run from `modules/gcp/`. Run `make help` for an inline summary.
+Command cheat sheet for day-to-day operations against a GCP LangSmith deployment provisioned with the [GCP Terraform modules](https://github.com/langchain-ai/terraform/tree/main/modules/gcp). All `make` targets run from `modules/gcp/`. Run `make help` for an inline summary. Commands reflect the `main` branch and `v0.17.x` tags, which deploy Helm chart 0.17. The `smithdb-*` targets do not exist on `v0.16.x` tags.
 
 ## Deployment overview
 
@@ -14,9 +14,11 @@ Command cheat sheet for day-to-day operations against a GCP LangSmith deployment
 | Cluster credentials | Kubeconfig wired to the new GKE cluster | `make kubeconfig` |
 | LangSmith base | Frontend, backend, ingest, queue, ClickHouse | `make init-values && make deploy` |
 | Fleet add-on (standalone) | standalone-fleet-* API server, tool server, trigger server, queue | `make apply && make init-values && make deploy` |
-| LangSmith Deployment add-on | host-backend, listener, operator | `make apply && make init-values && make deploy` |
-| Agent Builder add-on (deprecated) | tool-server, trigger-server + agent-builder LGP | `make init-values && make deploy` |
-| Insights + Polly add-on | Clio analytics, Polly eval agent | `make init-values && make deploy` |
+| LangSmith Deployment add-on | host-backend, listener, operator | `make init-values && make deploy` |
+| Agent Builder add-on (deprecated) | tool-server, trigger-server | `make init-values && make deploy` |
+| Insights + Polly add-on | Insights analytics, Polly eval agent | `make init-values && make deploy` |
+| SmithDB add-on | Metastore, object-store bucket, node pools, SmithDB services | `make apply && make init-values && make deploy` |
+| Sandboxes add-on | sandbox-host node pool, JuiceFS metadata Redis | `make apply && make init-values && make deploy` |
 
 Each stage builds on the previous. Verify pods are healthy before enabling the next.
 
@@ -25,15 +27,16 @@ Each stage builds on the previous. Verify pods are healthy before enabling the n
 ```bash
 cd terraform/modules/gcp
 
-# Interactive wizard — generates terraform.tfvars
+# Interactive wizard: generates terraform.tfvars
 make quickstart
 
-# Set up secrets in Secret Manager (auto-generates passwords + Fernet keys)
+# Set up secrets in Secret Manager (auto-generates salts + Fernet keys)
 # Must be sourced so it can export TF_VAR_* into your shell
 source infra/scripts/setup-env.sh
+export LANGSMITH_ADMIN_EMAIL="admin@example.com"
 
-# Verify secrets are stored correctly
-make secrets
+# Validate credentials, APIs, permissions, and quotas
+make preflight
 
 # Deploy infrastructure
 make init
@@ -47,17 +50,7 @@ make init-values
 make deploy
 ```
 
-`make deploy-all` chains `apply`, `init-values`, and `deploy` in one command.
-
-To keep the Helm release under Terraform instead of the deploy script, use the `app` layer:
-
-```bash
-make init-values  # generate the layered values files
-make init-app     # pull infra outputs into app/infra.auto.tfvars.json
-make apply-app    # terraform apply the Helm release (make destroy-app to remove)
-```
-
-The `app` layer uses its own variable names: `sizing` (not `sizing_profile`) and `enable_agent_deploys` (not `enable_deployments`).
+`make deploy-all` chains `apply`, `init-values`, and `deploy` in one command. Run `make init-values` and `make deploy` from the shell where you sourced `setup-env.sh`; the deploy script reads the `TF_VAR_*` secrets and `LANGSMITH_ADMIN_EMAIL` from it.
 
 ## Day-2 operations
 
@@ -77,7 +70,19 @@ make secrets
 
 # Update kubeconfig for the GKE cluster
 make kubeconfig
+
+# SmithDB: run only the commands you need, with your own values
+make smithdb-status                                  # read-only: gates, sizing, pods, backfill progress
+make smithdb-configure SIZING=<size> CACHE=<cache>  # minimal | small | medium | large; local-ssd | network-disk
+make smithdb-phase PHASE=<phase>                     # off | dual-write | backfill | cutover
+make deploy-all                                      # apply the change: apply, init-values, deploy
 ```
+
+`make kubeconfig` wraps `helm/scripts/get-kubeconfig.sh`. To call the script directly, pass the cluster name, region, and project as arguments, or omit them to read the Terraform outputs.
+
+`make smithdb-configure` and `make smithdb-phase` only edit `terraform.tfvars`, and `make deploy-all` applies the change. A size change can replace the SmithDB node pools. Leaving the `backfill` phase removes the backfill Job and its task database; `make smithdb-phase PHASE=cutover` refuses until every backfill row is promoted, but an earlier phase has no such check.
+
+For the SmithDB rollout stages, see [SmithDB](/langsmith/self-host-terraform-gcp-deploy#smithdb) in the deployment guide.
 
 ## Add-ons
 
@@ -86,7 +91,7 @@ Set flags in `terraform.tfvars`, then `make init-values && make deploy`. `init-v
 ```hcl
 # terraform.tfvars
 enable_deployments   = true
-enable_fleet         = true   # Fleet (formerly Agent Builder), standalone (chart v0.15+); no enable_deployments required
+enable_fleet         = true   # Fleet (formerly Agent Builder), standalone; no enable_deployments required
 enable_agent_builder = false  # deprecated, superseded by enable_fleet; mutually exclusive with it
 enable_insights      = true
 enable_polly         = true   # requires enable_deployments = true + Polly license
@@ -114,7 +119,7 @@ sizing_profile = "production"   # default | minimum | dev | production | product
 
 | Profile | When to use |
 |---|---|
-| `default` | Chart defaults — quick tests, no overlay applied |
+| `default` | Chart defaults: quick tests, no overlay applied |
 | `minimum` | Absolute floor; fits `e2-standard-4`; use for cost parking or CI smoke tests |
 | `dev` | Single replica, minimal resources |
 | `production` | Multi-replica with HPA; recommended for real workloads |
@@ -134,7 +139,7 @@ kubectl logs <pod-name> -n langsmith --previous --tail=50
 kubectl logs -n langsmith deploy/langsmith-backend --tail=100 -f
 
 # Gateway and HTTPRoute
-kubectl get gateway -n langsmith
+kubectl get gateway -n envoy-gateway-system
 kubectl get httproute -n langsmith
 kubectl get svc -n envoy-gateway-system
 
@@ -205,11 +210,11 @@ gcloud secrets versions access latest --secret=<secret-id> --project <project-id
 cd modules/gcp/infra
 
 terraform init
-terraform plan -var-file=terraform.tfvars
-terraform apply -var-file=terraform.tfvars
+terraform plan
+terraform apply
 
 # Target a specific module
-terraform apply -var-file=terraform.tfvars -target=module.networking
+terraform apply -target=module.networking
 
 # Outputs
 terraform output
@@ -219,7 +224,7 @@ terraform output -raw storage_bucket_name
 # State
 terraform state list
 terraform state show module.gke_cluster
-terraform refresh -var-file=terraform.tfvars
+terraform refresh
 ```
 
 ## Key constraints
@@ -227,12 +232,30 @@ terraform refresh -var-file=terraform.tfvars
 - Uninstall Helm before `terraform destroy`. The Envoy Gateway load balancer references the VPC; leaving it blocks network deletion. Always run `make uninstall` first.
 - `config.deployment.url` must include `https://`. Without the protocol, operator-spawned agents stay stuck in `DEPLOYING`.
 - `config.deployment.enabled: true` is required for the LangSmith Deployment add-on. Setting only the URL without `enabled: true` silently skips `listener` and `operator`.
-- Encryption keys must never change after first enable. Rotating `insights_encryption_key` or `polly_encryption_key` permanently breaks existing encrypted data.
-- Roll the frontend after first Polly enable. `agentBootstrap` creates the `langsmith-polly-config` ConfigMap after registering; frontend pods started earlier do not pick it up.
+- Encryption keys must never change after first enable. Rotating `langsmith_insights_encryption_key` or `langsmith_polly_encryption_key` permanently breaks existing encrypted data.
 - Envoy Gateway IP changes on teardown. GCP releases the external IP when the Gateway is deleted. After `terraform destroy` and re-apply, update your DNS A record.
-- `langsmith-ksa` annotation is not permanent. The operator creates the ServiceAccount at runtime and it does not survive namespace deletion. `deploy.sh` re-annotates it idempotently.
+- Upgrading from chart 0.16 has gates. `deploy.sh` refuses the upgrade while `values-overrides.yaml` still has a `sandboxes.juicefs.csi` block, while JuiceFS CSI volumes or mount pods remain, or while `helm/values/` still has the chart 0.16 SmithDB overlay. Each refusal prints the commands that clear it. For the full procedure, see [Upgrade from chart 0.16](/langsmith/self-host-terraform-gcp-deploy#upgrade-from-chart-0-16).
+- `langsmith-ksa` annotation is not permanent. Terraform creates the ServiceAccount in the `k8s-bootstrap` module, outside the Helm release, so it does not survive namespace deletion. `deploy.sh` re-creates and re-annotates it idempotently.
 
 ## Teardown
+
+<Warning>
+Teardown permanently deletes the Cloud SQL instances. Cloud SQL takes no final snapshot on delete: its automated backups, on-demand backups, and point-in-time recovery logs are deleted with the instance. To keep the data, export it to a bucket outside this deployment before step 1. Skip the export for a disposable test stack.
+</Warning>
+
+```bash
+# Export the LangSmith database. Repeat for the SmithDB metastore with
+# smithdb_metastore_instance_name and --database=smithdb.
+PROJECT_ID=<project-id>
+BACKUP_BUCKET=gs://<export-bucket>
+PG=$(terraform -chdir=infra output -raw postgres_instance_name)
+SA=$(gcloud sql instances describe "$PG" --project "$PROJECT_ID" \
+  --format="value(serviceAccountEmailAddress)")
+gcloud storage buckets add-iam-policy-binding "$BACKUP_BUCKET" \
+  --member="serviceAccount:$SA" --role=roles/storage.objectAdmin
+gcloud sql export sql "$PG" "$BACKUP_BUCKET/${PG}-final.sql.gz" \
+  --database=langsmith --project "$PROJECT_ID"
+```
 
 ```bash
 # 1. Remove LangSmith Deployment resources (if the add-on was enabled)
@@ -241,7 +264,15 @@ kubectl delete lgp --all -n langsmith 2>/dev/null || true
 # 2. Uninstall LangSmith
 make uninstall
 
-# 3. Set deletion protection = false in terraform.tfvars, then:
+# 3. Load the TF_VAR_* secrets
+source infra/scripts/setup-env.sh
+
+# 4. Set the teardown flags below in terraform.tfvars, then apply them
+terraform -chdir=infra apply \
+  -target=module.gke_cluster -target=module.cloudsql \
+  -target=module.smithdb -target=module.networking
+
+# 5. Destroy
 make destroy
 ```
 
@@ -249,4 +280,14 @@ make destroy
 # terraform.tfvars
 gke_deletion_protection      = false
 postgres_deletion_protection = false
+
+# Only when enable_smithdb = true and smithdb_metastore_source = "create"
+smithdb_metastore_deletion_protection = false
+
+# Optional, any SmithDB install: lets make destroy delete the SmithDB bucket and
+# its trace segments. With the default (false), make destroy stops at a
+# non-empty SmithDB bucket.
+smithdb_bucket_force_destroy = true
 ```
+
+Deletion protection also applies at the Cloud SQL API level, so the targeted apply in step 4 must run before `make destroy`, even when protection is already off. Drop the `module.smithdb` target if you never enabled SmithDB. To also delete the persistent disks of in-cluster databases, run `DELETE_DATA_PVCS=true make uninstall` in step 2.

@@ -953,6 +953,16 @@ Enabling Sandboxes provisions the following resources:
 
 Add the following values to your `langsmith_config.yaml`, along with the sandbox secret values described in the [Prerequisites](#prerequisites-2). Replace placeholders with your deployment-specific values.
 
+<Note>
+These values target chart 0.17. On chart 0.16, sandboxes mount JuiceFS through a bundled JuiceFS CSI driver, so the values differ:
+
+- Set the workload identity annotation on `sandboxes.juicefs.csi.node.serviceAccount.annotations` instead of `sandboxes.sandboxHost.serviceAccount.annotations`.
+- Set an existing config Secret with `sandboxes.juicefs.csi.existingSecretName` instead of `sandboxes.juicefs.existingSecretName`.
+- Omit `juicefsFormatJob`. Chart 0.16 does not support Azure Blob Storage for sandboxes.
+
+When you upgrade from chart 0.16 to 0.17, drain the JuiceFS volumes first, then remove the `sandboxes.juicefs.csi` block from your values. For the steps, see [Upgrade an installation](/langsmith/self-host-upgrades).
+</Note>
+
 <Tabs>
   <Tab title="AWS">
 
@@ -1004,6 +1014,8 @@ sandboxes:
       annotations:
         iam.gke.io/gcp-service-account: "<gsa_name>@<project_id>.iam.gserviceaccount.com"
 ```
+
+On GKE, `sandbox-host` runs on the host network, and GKE does not give Workload Identity to host-network pods, so the annotation serves only the `juicefs-format` Job. Also grant the sandbox node pool's service account `roles/storage.objectAdmin` on the bucket, with an IAM condition limited to the JuiceFS prefix: objects under `sandbox-juicefs/` and list calls with that prefix. Without that grant, the JuiceFS mount gets 403 from Cloud Storage.
 
   </Tab>
   <Tab title="Azure">
