@@ -1,0 +1,121 @@
+---
+title: Long-term memory with ppl
+sidebarTitle: ppl long-term memory
+description: Persist agent long-term memory with PplStore, backed by the ppl personal CRM.
+---
+
+[Long-term memory](/oss/langchain/long-term-memory) lets your agent store and recall information across different conversations and sessions. This guide shows how to use [ppl](https://withppl.com) as the persistent store backend.
+
+ppl is a personal CRM for humans with AI agents. `PplStore` implements LangGraph's `BaseStore`: each stored memory becomes a note on a contact's timeline, so agent memories live alongside the human's relationships, notes, journal, and tasks. `search` runs ppl's ranked retrieval over everything ppl knows, so it understands natural-language queries.
+
+<Tip>
+For a deeper dive into memory types and strategies for writing memories, see the [Memory conceptual guide](/oss/concepts/memory#long-term-memory).
+</Tip>
+
+## Setup
+
+### Installation
+
+Install the `ppl-memory` package with the `langchain` extra:
+
+<CodeGroup>
+```bash pip
+pip install -U ppl-memory[langchain]
+```
+
+```bash uv
+uv add ppl-memory[langchain]
+```
+</CodeGroup>
+
+### Credentials
+
+Create an API token at [withppl.com/settings/agents/setup](https://withppl.com/settings/agents/setup), then export it:
+
+```python
+import getpass
+import os
+
+if not os.environ.get("PPL_API_TOKEN"):
+    os.environ["PPL_API_TOKEN"] = getpass.getpass("Enter your ppl API token: ")
+```
+
+If you want automated tracing of your model calls, set your [LangSmith](/langsmith/home) API key:
+
+```python
+if not os.environ.get("LANGSMITH_API_KEY"):
+    os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+## Usage
+
+Create a `PplStore` and pass it to `create_agent`. Memories are namespaced per contact: the namespace `("memories", <contact id or name>)` scopes memories to one person, and a bare `("memories",)` namespace uses the `default_contact` passed to the store.
+
+```python
+from langchain.agents import create_agent
+from ppl_memory.langchain import PplStore
+
+store = PplStore(default_contact="Jane Smith")
+
+agent = create_agent(
+    "anthropic:claude-sonnet-4-6",
+    tools=[],
+    store=store,
+)
+```
+
+## Memory storage
+
+`put` stores a fact as a note on the contact's timeline; `get` retrieves it back by key; `search` runs ppl's ranked retrieval with a natural-language query.
+
+```python
+from ppl_memory.langchain import PplStore
+
+store = PplStore(default_contact="Jane Smith")
+
+# remember
+store.put(("memories", "Jane Smith"), "coffee", {"fact": "Jane drinks oat milk lattes."})
+
+# recall in a later session
+item = store.get(("memories", "Jane Smith"), "coffee")
+print(item.value["fact"])
+
+# natural-language search across the whole CRM
+for hit in store.search(("memories",), query="What does Jane like to drink?"):
+    print(hit.value["fact"], hit.score)
+```
+
+For more information about store operations, see the [Stores](/oss/langgraph/stores) guide.
+
+## Read long-term memory in tools
+
+Tools can read from the store using the `runtime` parameter, which LangGraph injects automatically:
+
+```python
+from dataclasses import dataclass
+
+from langchain.agents import create_agent
+from langchain.tools import ToolRuntime, tool
+from ppl_memory.langchain import PplStore
+
+@dataclass
+class Context:
+    user_id: str
+
+store = PplStore(default_contact="Jane Smith")
+store.put(("memories", "Jane Smith"), "coffee", {"fact": "Jane drinks oat milk lattes."})
+
+@tool
+def get_coffee_preference(runtime: ToolRuntime[Context]) -> str:
+    """Look up Jane's coffee preference."""
+    assert runtime.store is not None
+    item = runtime.store.get(("memories", "Jane Smith"), "coffee")
+    return item.value["fact"] if item else "Unknown"
+
+agent = create_agent(
+    "anthropic:claude-sonnet-4-6",
+    tools=[get_coffee_preference],
+    store=store,
+)
+```
