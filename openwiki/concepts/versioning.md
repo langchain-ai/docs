@@ -6,6 +6,8 @@ tags: [documentation-pipeline, routes, language-versioning, redirects]
 sources:
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
+  - id: openwiki-source-17f3856bce97f37118963062
+    resource: repo://pipeline/preprocessors/handle_auto_links.py
   - id: openwiki-source-06a4c757b1153b7de4f47a0e
     resource: repo://pipeline/preprocessors/markdown_preprocessor.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
@@ -24,15 +26,17 @@ sources:
     resource: repo://src/oss/langgraph/use-functional-api.mdx
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
+generated: { by: "openwiki/0.4.3", at: "2026-10-10T08:20:12.163Z" }
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-09T08:24:05.435Z
-generated: { by: "openwiki/0.4.3", at: "2026-10-09T08:24:05.435Z" }
+    at: 2026-10-10T08:20:12.163Z
 ---
 
 # Versioned Documentation and Routes
 
 `DocumentationBuilder` derives artifacts and route families from paths below `src/`. `src/docs.json` is a separate public configuration for navigation and redirects. A navigation entry must refer to a route that the builder emits, but it neither creates that route nor establishes its source owner. Treat **source ownership**, **emitted artifacts**, **navigation**, and **redirects** as distinct contracts.
+
+The `build/` tree is regenerated and cleared by a full build. Use it to validate the route and transform contract, but never make it the source of truth or patch it to repair routing. Change the source path or content to change emitted routes, change `docs.json` to expose a valid route or preserve a legacy URL, and keep those changes independently reviewable.
 
 ## Route families
 

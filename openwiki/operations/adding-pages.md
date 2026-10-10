@@ -5,7 +5,7 @@ description: Safely add, move, retire, or regenerate documentation pages by sele
 tags: [documentation, operations, navigation, redirects, build-system]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-08T08:23:51.982Z
+    at: 2026-10-10T08:20:12.163Z
 sources:
   - id: openwiki-source-18732c72f962c06354cb62db
     resource: repo://.agents/skills/add-docs-page/SKILL.md
@@ -41,7 +41,7 @@ sources:
     resource: repo://src/oss/langchain/mcp/index.mdx
   - id: openwiki-source-a39cb5ba9006abfe6280b6f8
     resource: repo://src/oss/openwiki/cli-reference.mdx
-generated: { by: "openwiki/0.4.3", at: "2026-10-08T08:23:51.982Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-10T08:20:12.163Z" }
 ---
 
 # Adding and Maintaining Documentation Pages
@@ -93,7 +93,7 @@ Managed Deep Agents is the opposite exception. Direct matching source files are 
 
 ## Add an authored page and its menu route
 
-`src/docs.json` is the authoritative site configuration for navigation, route declarations, and redirects. Its current navigation hierarchy is `navigation.products[]` → `menu[]`. A menu item may hold direct `pages`, `tabs`, or, under Build, `dropdowns[]` containing `tabs[]`. A `pages` array can mix route strings with nested `{ "group": ..., "pages": [...] }` objects. Find the neighboring route in its actual branch; do not assume that a directory scan or similarly named menu provides discovery.
+`src/docs.json` is the authoritative site configuration for navigation, route declarations, and redirects. Its current navigation hierarchy is `navigation.products[]` → `menu[]`. A menu item may hold direct `pages`, `tabs`, or, under Build, `dropdowns[]` containing `tabs[]`. A `pages` array can mix route strings with nested `{ "group": ..., "pages": [...] }` objects. Find the neighboring route in its actual branch; do not infer placement from a directory scan or similarly named menu.
 
 1. Inspect a nearby source page, then create the `.md` or `.mdx` file under the selected source owner. Include required frontmatter and keep `description` plain text: no Markdown, links, or backticks.
 2. Add the extensionless path relative to `src` to the relevant `pages` array. For example, `src/langsmith/sandboxes.mdx` is `langsmith/sandboxes`.
@@ -119,7 +119,7 @@ uv run docs mv src/langsmith/evaluation.mdx src/langsmith/deploy/evaluation.mdx 
 
 The installed `docs` console script dispatches to `pipeline.cli:main`. Its mover scans `src/` Markdown, MDX, and notebook Markdown cells for links resolving to the moved file. If a directory changes, it recalculates relative links within the moved document. Dry-run reports prospective changes without moving or writing; a real invocation appends a move record to `link_changes.jsonl`, relocates the file, then updates its internal links.
 
-The mover does not update public navigation or redirects. After a move or retirement:
+A source move is not navigation or redirect maintenance. The mover does not update public navigation, root-relative public URLs, headings, or redirects. After a move or retirement:
 
 1. Update or remove route strings in their actual `docs.json` menu arrays.
 2. Search root-relative and fragment references to the old public route or heading.
@@ -139,7 +139,7 @@ python3 scripts/check_removed_pages_redirects.py --base-ref origin/main src/docs
 
 ### Snippets and testable samples
 
-Reusable MDX blocks belong in `src/snippets/` and are imported with `from '/snippets/...'`; the builder rewrites that import form to language-specific snippet copies. Do not substitute Mintlify's `<Snippet file="..." />` form when a language-aware import is needed.
+Reusable MDX blocks belong in `src/snippets/` and are imported with `from '/snippets/...'`; the builder rewrites that import form to language-specific snippet copies. Do not substitute Mintlify's `<Snippet file="..." />` form when a language-aware import is needed. When the same block appears on three or more pages, extract it to a reusable snippet and confirm its built language-specific targets exist.
 
 Runnable examples belong in `src/code-samples/`. The code-sample pipeline derives display artifacts below `src/code-samples-generated/` and `src/snippets/code-samples/`; edit and test the runnable source, then regenerate rather than hand-editing derivatives. The MCP overview is an example of the consumption boundary: it imports generated `McpQuickstartPy`, `McpQuickstartJs`, and transport snippets from `/snippets/code-samples/...` rather than embedding a second copy of the programs.
 
@@ -154,7 +154,7 @@ The extraction stage recognizes language-specific `:snippet-start:` and `:snippe
 
 Integration component tables are generated from hosted integration-guide `integration:` frontmatter and external discovery records. External rows use their `docs_url`; the refresh script rejects unsafe URL schemes before rendering. Change the input and run its owning refresh procedure.
 
-`docs.json` `openapi` groups configure Mintlify endpoint generation. Agent Server and LangSmith REST use committed specifications with explicit directories; Control Plane points to a remote specification fetched at deployment. The generated endpoint pages are absent from local build output. Do not create authored MDX endpoints or edit deployment-generated pages to change them.
+`docs.json` `openapi` groups configure Mintlify endpoint generation. Agent Server and LangSmith REST use committed specifications with explicit directories; Control Plane points to a remote specification fetched at deployment. The generated endpoint pages are absent from local build output. Do not create authored MDX endpoints or edit deployment-generated endpoint pages to change them.
 
 The LangSmith OpenAPI processor accepts its default remote input only from allow-listed `api.smith.langchain.com`, hides selected operations, normalizes titles, assigns and orders tag groups, and writes a file only with `--write`.
 
@@ -167,13 +167,21 @@ make check-openapi
 
 ## Validate the changed contract
 
-Select checks according to the change rather than treating a successful source edit as a route test. For an added, moved, renamed, or retired page, the repository procedure calls for the focused prose lint, a clean build, and an anchor-aware link check:
+Select checks according to the change rather than treating a successful source edit as a route test. For an added, moved, renamed, or retired page, the repository procedure calls for focused prose lint, a clean build, and an anchor-aware link check:
 
 ```bash
 make lint_prose FILES="src/path/to/page.mdx"
 make build
 make broken-links-with-anchors
 ```
+
+If the local `uv` version does not meet the repository requirement and `make build` fails before building, use the checked-out virtual environment to run the pipeline rather than changing content or patching output:
+
+```bash
+PYTHONPATH="$(pwd)" .venv/bin/python -m pipeline build
+```
+
+`make broken-links-with-anchors` depends on the same build path. After a successful build, its Mint invocation can be run separately, then filtered with `scripts/filter_mint_broken_links.py`, when isolating a local toolchain failure from link output.
 
 Add the checks that correspond to the input you changed:
 
@@ -184,6 +192,8 @@ Add the checks that correspond to the input you changed:
 5. When changing mover, builder, or checker behavior itself, run its focused suite through the Makefile, for example `make test TEST_FILE=tests/unit_tests/tools/test_move_files.py`, `make test TEST_FILE=tests/unit_tests/test_builder.py`, or `make test TEST_FILE=tests/unit_tests/test_check_removed_pages_redirects.py`, as well as the relevant end-to-end command.
 6. Review authored source, `src/docs.json`, generator inputs, regenerated artifacts, and rendered routes. A `build/` diff is validation evidence, never the durable change.
 
+For a completed prose change, invoke the `docs-review` skill after writing and validating it. It reviews style-guide concerns beyond Vale. Skip it only for a change with no prose, such as a redirect-only adjustment or navigation reorder.
+
 ## Completion checklist
 
 - [ ] The change is in authored source or a generator input, never `build/` or deployment-generated output.
@@ -193,11 +203,13 @@ Add the checks that correspond to the input you changed:
 - [ ] Snippets, samples, listings, and specifications were regenerated by their owners.
 - [ ] Focused checks, a clean build, and appropriate link checks ran.
 - [ ] Source configuration and rendered output were reviewed, including manual review of menu navigation.
+- [ ] Prose changes received a completed-pass `docs-review` review.
 
 ## See also
 
 - [Source directory map](/openwiki/architecture/source-map.md)
 - [Versioning](/openwiki/concepts/versioning.md)
-- [CLI tools](/openwiki/operations/cli-tools.md)
+- [Agent skills](/openwiki/operations/agent-skills.md)
+- [Quickstart](/openwiki/quickstart.md)
 - [Testing overview](/openwiki/testing/test-overview.md)
 - [Code sample lifecycle](/openwiki/workflows/code-sample-lifecycle.md)
