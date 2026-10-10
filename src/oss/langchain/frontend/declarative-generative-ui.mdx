@@ -22,7 +22,9 @@ tools, and dashboards where showing something useful matters more than exact
 control. This page covers declarative generative UI with
 [json-render](https://json-render.dev), a generative UI framework
 that defines component catalogs, generates specs with AI, and renders them safely
-across React, Vue, Svelte, and Angular. For Google's A2UI specification (integrated
+across React, Vue, and Svelte. In Angular, the community-maintained
+[ngx-json-render](https://github.com/shteynu/ngx-json-render) package renders the
+same specs. For Google's A2UI specification (integrated
 via CopilotKit), see [A2UI](#a2ui-an-alternative-declarative-spec) below.
 
 import { PatternEmbed } from "/snippets/pattern-embed.jsx"
@@ -97,6 +99,9 @@ const catalog = defineCatalog(schema, {
 });
 ```
 
+In Angular, import `schema` from `ngx-json-render/schema` instead of
+`@json-render/react/schema`. The rest of the catalog stays the same.
+
 <Tip>
 Keep catalogs focused. Include only components the AI needs for the use case.
 A smaller catalog produces better results than a kitchen-sink approach.
@@ -165,6 +170,68 @@ const { registry } = defineRegistry(catalog, {
   },
 });
 </script>
+```
+
+```ts Angular
+import { Component } from "@angular/core";
+import {
+  defineRegistry,
+  injectRenderContext,
+  JrChildren,
+  type InferComponentProps,
+} from "ngx-json-render";
+
+@Component({
+  selector: "app-card",
+  imports: [JrChildren],
+  template: `
+    <div class="card">
+      @if (ctx.props().title) { <h2>{{ ctx.props().title }}</h2> }
+      <jr-children />
+    </div>
+  `,
+})
+class Card {
+  readonly ctx = injectRenderContext<InferComponentProps<typeof catalog, "Card">>();
+}
+
+@Component({
+  selector: "app-stack",
+  imports: [JrChildren],
+  template: `
+    <div [class]="'stack stack-' + (ctx.props().direction ?? 'vertical') + ' gap-' + (ctx.props().gap ?? 'md')">
+      <jr-children />
+    </div>
+  `,
+})
+class Stack {
+  readonly ctx = injectRenderContext<InferComponentProps<typeof catalog, "Stack">>();
+}
+
+@Component({
+  selector: "app-text-input",
+  template: `
+    <div>
+      @if (ctx.props().label) { <label>{{ ctx.props().label }}</label> }
+      <input [type]="ctx.props().type ?? 'text'" [placeholder]="ctx.props().placeholder ?? ''" />
+    </div>
+  `,
+})
+class TextInput {
+  readonly ctx = injectRenderContext<InferComponentProps<typeof catalog, "TextInput">>();
+}
+
+@Component({
+  selector: "app-button",
+  template: `<button [class]="ctx.props().variant ?? 'primary'">{{ ctx.props().label }}</button>`,
+})
+class Button {
+  readonly ctx = injectRenderContext<InferComponentProps<typeof catalog, "Button">>();
+}
+
+const { registry } = defineRegistry(catalog, {
+  components: { Card, Stack, TextInput, Button },
+});
 ```
 
 </CodeGroup>
@@ -253,10 +320,13 @@ export class GenerativeUIComponent {
 
 During streaming, the spec is built up incrementally. Elements arrive one at a
 time and may initially lack `type` or `props`. Filter to only complete elements
-and pass `loading={true}` to the `Renderer`, which tells it to silently skip
-children that haven't arrived yet. The UI builds up component by component:
+and pass `loading={true}` to the `Renderer` (in Angular, bind `[loading]` on
+`<json-render>`), which tells it to silently skip children that haven't arrived
+yet. The UI builds up component by component:
 
-```tsx
+<CodeGroup>
+
+```tsx React
 /*
  * Filter the streamed spec to only include elements with valid type/props,
  * enabling progressive rendering as the AI response builds up. Passing
@@ -287,10 +357,63 @@ return (
 );
 ```
 
+```ts Angular
+import { Component, computed } from "@angular/core";
+import { injectStream } from "@langchain/angular";
+import { AIMessage } from "langchain";
+import { JsonRenderer, type Spec } from "ngx-json-render";
+
+@Component({
+  selector: "app-generative-ui",
+  imports: [JsonRenderer],
+  template: `
+    @if (spec(); as spec) {
+      <json-render [spec]="spec" [registry]="registry" [loading]="stream.isLoading()" />
+    }
+  `,
+})
+export class GenerativeUIComponent {
+  stream = injectStream<typeof myAgent>({
+    apiUrl: "http://localhost:2024",
+    assistantId: "generative_ui",
+  });
+
+  registry = registry;
+
+  get rawSpec() {
+    const ai = this.stream.messages().find(AIMessage.isInstance);
+    return ai?.tool_calls?.[0]?.args;
+  }
+
+  /*
+   * Filter the streamed spec to only include elements with valid type/props,
+   * enabling progressive rendering as the AI response builds up. Binding
+   * [loading] tells json-render to skip missing children silently.
+   */
+  spec = computed<Spec | null>(() => {
+    const rawSpec = this.rawSpec as Partial<Spec> | undefined;
+    if (!rawSpec?.root || !rawSpec?.elements) return null;
+    const rootEl = rawSpec.elements[rawSpec.root];
+    if (!rootEl?.type || rootEl?.props == null) return null;
+
+    const safeElements: Spec["elements"] = {};
+    for (const [key, el] of Object.entries(rawSpec.elements)) {
+      if (el?.type && el?.props != null) {
+        safeElements[key] = el;
+      }
+    }
+    return { root: rawSpec.root, elements: safeElements };
+  });
+}
+```
+
+</CodeGroup>
+
 <Note>
 The `JSONUIProvider` is required to set up json-render's internal context
 providers (state, visibility, validation, actions). The `Renderer` component
-must be rendered inside it.
+must be rendered inside it. In Angular, the `<json-render>` component sets up
+these contexts itself, so there is no provider to add.
 </Note>
 
 ## The spec format
@@ -365,6 +488,7 @@ wire CopilotKit to a LangGraph deployment, see [CopilotKit](/oss/langchain/front
   adapt to light and dark themes automatically.
 - **Wrap with JSONUIProvider**: the `Renderer` must be inside a `JSONUIProvider`
   to access json-render's internal context for state, visibility, and actions.
+  In Angular, `<json-render>` sets up this context itself.
 
 ## See also
 
