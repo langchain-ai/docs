@@ -3,6 +3,9 @@ type: integration listing workflow
 title: Integration Listing Automation
 description: Explains how hosted-guide metadata, external listing metadata, and package records produce public integration tables and the Python provider overview. Covers eligibility, URL validation, generated-output ownership, scheduled refreshes, and the issue-based intake policy.
 tags: [integrations, automation, documentation, metadata, ci]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-10T08:20:12.163Z
 sources:
   - id: openwiki-source-8bdd8b6031ea08044f515d8c
     resource: repo://.agents/skills/submit-integration/SKILL.md
@@ -28,6 +31,8 @@ sources:
     resource: repo://scripts/refresh_integration_downloads.py
   - id: openwiki-source-1f06ff54a6b42441ba3f34c3
     resource: repo://src/oss/contributing/publish-langchain.mdx
+  - id: openwiki-source-c46a33c721836d31dc4c2745
+    resource: repo://src/oss/javascript/integrations/tools/index.mdx
   - id: openwiki-source-4d9644891221cf29cff85bfb
     resource: repo://src/oss/python/integrations/chat/index.mdx
   - id: openwiki-source-40800c01aa5ea143782c9738
@@ -36,10 +41,7 @@ sources:
     resource: repo://src/oss/python/integrations/providers/all_providers.mdx
   - id: openwiki-source-7be0fdefc402d868b9f2fdca
     resource: repo://tests/unit_tests/test_refresh_integration_downloads.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-07T08:23:22.147Z" }
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-07T08:23:22.147Z
+generated: { by: "openwiki/0.4.3", at: "2026-10-10T08:20:12.163Z" }
 ---
 
 # Integration Listing Automation
@@ -179,6 +181,7 @@ A blocker file, failed agent, or no diff yields an issue comment rather than a P
 
 ## Related pages
 
+- [Quickstart](/openwiki/quickstart.md)
 - [Source Directory Map](/openwiki/architecture/source-map.md)
 - [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md)
 - [Adding Pages](/openwiki/operations/adding-pages.md)

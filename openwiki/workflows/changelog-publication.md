@@ -1,11 +1,11 @@
 ---
 type: publication workflow
 title: LangSmith Changelog Publication
-description: Assemble reviewable weekly LangSmith Cloud and Fleet changelog updates from sibling-repository fragments while using rollout and publication-state safeguards. Also describes the independent self-hosted release changelog structure and navigation enhancement.
+description: Review and publish the separate LangSmith Cloud, Fleet, and self-hosted changelog streams. Explains fragment assembly safeguards, same-PR ledger handling, rollout gating, release-note navigation, and focused validation.
 tags: [langsmith, changelog, publication, documentation, release-management]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-08T08:23:51.982Z
+    at: 2026-10-10T08:20:12.163Z
 sources:
   - id: openwiki-source-14b8a828704ca0a8d2ae4067
     resource: repo://scripts/.changelog_published.txt
@@ -17,132 +17,143 @@ sources:
     resource: repo://src/changelog-navigation.js
   - id: openwiki-source-d5e03d3b71d4904429831f94
     resource: repo://src/langsmith/changelog.mdx
+  - id: openwiki-source-29ed569b5f72fcd9fc4c8022
+    resource: repo://src/langsmith/fleet/changelog.mdx
   - id: openwiki-source-29fbe7359daff35ebb1492a3
     resource: repo://src/langsmith/self-hosted-changelog.mdx
+  - id: openwiki-source-1984497c709f6c418d98cebb
+    resource: repo://src/snippets/langsmith/fleet-changelog.mdx
   - id: openwiki-source-554339f52225d7d8edff3ed0
     resource: repo://src/style.css
   - id: openwiki-source-5d310b0d0e3f7a2baf5a473a
     resource: repo://tests/changelog-navigation.test.js
   - id: openwiki-source-2c73e322d3e9ba3868329a78
     resource: repo://tests/unit_tests/test_assemble_changelog.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-08T08:23:51.982Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-10T08:20:12.163Z" }
 ---
 
 # LangSmith Changelog Publication
 
-LangSmith has two intentionally separate changelog paths:
+LangSmith uses three independently maintained public entrypoints:
 
-- `src/langsmith/changelog.mdx` is the weekly Cloud and Fleet stream. `scripts/assemble_changelog.py` turns per-PR YAML fragments from the sibling `langchainplus` checkout into a paste-ready `<Update>` block.
-- `src/langsmith/self-hosted-changelog.mdx` is an independently authored release-note stream for self-hosted Helm charts. Its browser enhancement builds navigation only; it neither assembles nor changes release-note content.
+<!-- openwiki: broken internal link [/langsmith/fleet/changelog] file "/langsmith/fleet/changelog" does not exist. Fix the href or restore the target, then delete this comment. -->
+<!-- openwiki: broken internal link [/langsmith/self-hosted-changelog] file "/langsmith/self-hosted-changelog" does not exist. Fix the href or restore the target, then delete this comment. -->
+- The weekly **Cloud** stream is `src/langsmith/changelog.mdx`. It links readers to the [Fleet changelog](/langsmith/fleet/changelog) and the [self-hosted changelog](/langsmith/self-hosted-changelog).
+- The weekly **Fleet** route is `src/langsmith/fleet/changelog.mdx`, which imports the authored update stream from `src/snippets/langsmith/fleet-changelog.mdx`.
+- **Self-hosted** release notes are authored in `src/langsmith/self-hosted-changelog.mdx`; they follow chart releases rather than the Cloud fragment workflow.
 
-The assembler is a **curation aid, not an autonomous publisher**. It prints MDX on standard output and reports on standard error. The weekly changelog agent runs it on Fleet, reviews the candidate, and opens a documentation PR for human approval. The agent, the sibling checkout, and the Eppo credential are outside this repository's publication authority.
+`scripts/assemble_changelog.py` is a **curation and review aid, not an autonomous publisher**. It prepares a candidate Cloud `<Update>` block on standard output. A weekly agent running on Fleet reviews that candidate and opens a documentation PR for human approval. Pasting it into MDX, reviewing the PR, and merging remain human actions.
 
-## Cloud and Fleet weekly assembly
+## Cloud assembly: inputs, state, and control flow
 
-### Inputs, ownership, and durable state
+The assembler reads top-level YAML fragments and the category map from the sibling checkout at `../langchainplus/.changelog`. Fragment schema and category ownership are upstream inputs; do not recreate or modify them in this repository. It skips `_`- and `TEMPLATE`-prefixed names, resolves candidates inside the fragment root, and rejects files that escape through traversal or a symlink.
 
-By default, the assembler reads top-level `*.yaml` fragments from the sibling checkout at `../langchainplus/.changelog` and the component category map in that directory. It ignores names beginning with `_` or `TEMPLATE`, and resolves each candidate before accepting it so a symlink or traversal cannot escape the fragment root. The fragment schema and category map are upstream inputs; do not recreate or alter them from this repository.
-
-The repository-owned duplicate-prevention state is `scripts/.changelog_published.txt`. The ledger contains fragment **filenames**, ignoring comments and blank lines. A fragment's presence in a sibling `published/` directory does not establish that it shipped. Its header requires the ledger to be committed in the same PR as the corresponding changelog entry and not edited manually.
+The repository-owned publication state is `scripts/.changelog_published.txt`. It records fragment **filenames**, ignoring comments and blank lines. This ledger—not a fragment's position in an upstream `published/` directory—is the duplicate-prevention record. Its header requires that it be committed with the corresponding changelog entry and not manually edited.
 
 ```mermaid
 flowchart TD
-  Fragments["Sibling fragment YAML"] --> Load["Load and validate fragments"]
-  Ledger["Published filename ledger"] --> Skip["Remove recorded fragments"]
-  Load --> Skip
+  Fragments["Sibling fragment YAML"] --> Load["Load and validate"]
+  Ledger["Published filename ledger"] --> Filter["Skip recorded names"]
+  Load --> Filter
   Category["Sibling category map"] --> Render["Group ready entries"]
-  Skip --> Gate{"Eligible to publish"}
+  Filter --> Gate{"Eligible entry"}
   Gate -->|"ready"| Render
   Gate -->|"held"| Eppo["Check Eppo rollout"]
   Eppo -->|"fully rolled out"| Render
-  Eppo -->|"otherwise"| Held["Report and exclude"]
-  Render --> Block["Print Update block"]
-  Block --> Review["Review and paste into Cloud changelog"]
+  Eppo -->|"otherwise"| Exclude["Report and exclude"]
+  Render --> Block["Print Cloud Update block"]
+  Block --> Review["Human reviews and edits Cloud MDX"]
   Review --> Record{"Run with --record"}
-  Record --> Commit["Write sorted ledger and commit together"]
+  Record --> Commit["Commit ledger in the same PR"]
 ```
 
-This is the Cloud/Fleet publication lifecycle. Printing a block, pasting it, opening a PR, and merging remain human-controlled steps; `--record` only advances the local duplicate-prevention record for fragments rendered in that invocation.
+This is the review-oriented Cloud publication path. `--record` advances only the local duplicate-prevention state for entries rendered in that invocation; it does not edit MDX, open a PR, merge a PR, or publish anything.
 
-A valid fragment has a nonempty `title`, `body`, and `components`, plus `status: ready` or `status: held`; held entries also require `flag`. Invalid fragments are reported and excluded. After ledger filtering, the first fragment component that appears in the category map selects its section and optional group. Unmapped entries go in `Other`; sections preserve map order and ungrouped bullets precede named groups.
+### Fragment validity and rendering
 
-### Eligibility and the Eppo boundary
+A valid fragment has a nonempty `title`, `body`, and `components`, plus `status: ready` or `status: held`. A held item also needs `flag`. Invalid fragments are reported and excluded.
 
-`ready` fragments render immediately. A `held` fragment remains excluded unless its named Eppo flag is fully rolled out. With no `EPPO_API_KEY`, it is reported as held rather than promoted.
+After ledger filtering, the first component found in the category map selects an entry's section and optional group. Unmapped entries appear under `Other`. Section order follows the category map; ungrouped bullets come before named groups. When `docs_link` is set, the renderer adds a `Learn more` Markdown link only if the body does not already contain a Markdown link.
 
-When the environment variable is present, the script makes read-only GET requests to the fixed HTTPS `https://eppo.cloud/api/v1` host. A flag qualifies only when all of these conditions hold:
+The output is one Mintlify `<Update>` block. Its default label spans the current Monday-through-Friday week. `--week-label` and `--rss-date` independently override the visible label and RSS date; the RSS title is `<date> - LangSmith Cloud update`. Reports (`READY`, `HELD`, `ERROR`, `INVALID`, and already-published entries) go to stderr so stdout remains paste-ready MDX.
 
-1. A production environment is active.
-2. Its first non-targeted, non-archived catch-all allocation has full exposure (`1` or `100`).
-3. That allocation has exactly one variation with nonzero weight.
-4. For a Boolean flag, that variation is the `true` variation.
+## Held entries and the Eppo boundary
 
-Targeted allocations do not establish general availability because unmatched users fall through to the catch-all allocation. A missing flag is an error, not a publish. Lookup failures warn and keep held fragments out. The flag index reads one API page; if an envelope reports more flags than it returns, the script warns that a later-page flag can be reported as missing rather than silently qualifying it.
+`ready` fragments render directly. A `held` fragment stays excluded without `EPPO_API_KEY`. With that environment variable, the script makes read-only GET requests only to the fixed HTTPS `https://eppo.cloud/api/v1` endpoint.
 
-> **Credential boundary:** Provide `EPPO_API_KEY` only through the process environment. Do not put it in a fragment, committed file, or command-line argument. The CLI has no token option and sends the environment value only as `X-Eppo-Token` to the fixed Eppo host. Possession of this credential determines only whether held entries can be evaluated; it does not publish a changelog.
+A held flag qualifies only when its production environment is active and its first non-targeted, non-archived catch-all allocation has full exposure (`1` or `100`) with exactly one nonzero-weight variation. For Boolean flags, that variation must be the `true` variation. Targeted allocations do not establish a general rollout because users who do not match them continue to the catch-all allocation.
 
-### Render and record procedure
+Lookup failures warn and leave the item out. The flag index reads one API page; when an envelope says more flags exist than were returned, the assembler warns rather than silently treating a potentially omitted flag as eligible. A missing named flag is an error, not a publish decision.
 
-The renderer emits one Mintlify `<Update>` block. Its default label covers the current Monday-through-Friday week, while `--week-label` and `--rss-date` override the label and RSS date independently. The RSS title is `<date> - LangSmith Cloud update`. Each eligible fragment becomes a bullet; if `docs_link` is present and the body has no Markdown link, the renderer appends `Learn more`.
+> **Credential boundary:** Supply `EPPO_API_KEY` through the process environment only. The CLI has no token argument, and the value is sent as `X-Eppo-Token` only to the fixed Eppo host. The token permits rollout evaluation; it does not grant publication authority.
 
-Run from the repository root. A normal invocation is a dry run: it writes a paste candidate to stdout and does not change the ledger.
+## Human review and same-PR ledger procedure
+
+Run the normal invocation from the documentation repository root. It is a dry run: it prints a candidate block and does not modify the ledger.
 
 ```bash
 uv run python scripts/assemble_changelog.py
 uv run python scripts/assemble_changelog.py --week-label "June 15-19, 2026"
 ```
 
-Review rendered wording, grouping, and links, together with `HELD`, `ERROR`, `INVALID`, and already-published reports on stderr. Paste the reviewed block into the Cloud tab in `src/langsmith/changelog.mdx`; no assembler mode performs that edit.
+Review both the candidate and stderr reports. Correct or defer invalid upstream fragments, and do not bypass held items simply because they reference a flag. Paste the reviewed output into `src/langsmith/changelog.mdx`; the assembler has no mode that performs that edit.
 
-Only after the exact block is ready for the documentation PR, record the rendered filenames and commit the ledger edit in the **same** PR:
+Only after the exact Cloud update is ready for its documentation PR, run the matching record command and inspect its diff:
 
 ```bash
 uv run python scripts/assemble_changelog.py --week-label "June 15-19, 2026" --record
 ```
 
-`--record` unions rendered filenames with the ledger, keeps comment lines, and rewrites names sorted and unique. It does not record held, invalid, errored, or already-recorded fragments. An overridden `--ledger` is resolved inside the repository root; a symlink or traversal outside the checkout is refused.
+`--record` unions only rendered ready filenames with the ledger, preserving comment lines and writing names sorted and unique. It does not record held, invalid, errored, or already-recorded items. Commit the resulting ledger change in the **same PR** as the pasted Cloud changelog block; never pre-record entries in a separate PR. An overridden `--ledger` must resolve inside this repository, so traversal and symlink targets outside the checkout are refused.
 
-Two non-default modes have distinct effects:
+Two modes intentionally serve different purposes:
 
 ```bash
 uv run python scripts/assemble_changelog.py --check-flag my-eppo-flag-key
 uv run python scripts/assemble_changelog.py --promote
 ```
 
-`--check-flag` requires the environment token, prints the selected flag JSON and rollout verdict, and exits without assembling a weekly block. `--promote` rewrites each qualifying held fragment to `status: ready` in the **sibling** fragment checkout. Use it only when that upstream state change is intended and review it separately. Neither command edits or publishes the Cloud changelog.
+`--check-flag` requires `EPPO_API_KEY`, prints the selected flag JSON and rollout verdict, then exits before normal assembly. `--promote` rewrites qualifying held fragments in the sibling fragment checkout to `status: ready`; use it only when that upstream state transition is intended and can be separately reviewed. Neither mode edits the Cloud changelog MDX.
 
-### Coverage audit
+## Coverage audit
 
-`scripts/audit_changelog_coverage.py` is a separate reconciliation backstop, not part of assembly. It queries merged PRs in `langchain-ai/langchainplus` through authenticated, read-only `gh` commands over a contiguous date window (14 days by default), narrowing searches to seven-day subwindows to avoid GitHub's result cap. It reports candidate user-facing `feat` and `fix` PRs that lack either a fragment in the PR diff or a matching `pr:` field; a human dispositions borderline items through an ignore file. It deliberately over-reports rather than silently dropping potential user-facing changes.
+`scripts/audit_changelog_coverage.py` is a reconciliation backstop, not an assembly or publication step. It queries merged `langchain-ai/langchainplus` PRs through authenticated read-only `gh` commands. Its default window is 14 days and is split into contiguous seven-day subwindows to reduce the chance of GitHub search-cap truncation.
 
-## Self-hosted changelog release notes and navigation
+The audit considers candidate user-facing `feat` and `fix` PRs, excluding explicit internal, BYOC, data-plane, and provisioning signals. A candidate is covered when its own diff includes a `.changelog/*.yaml` fragment or a fragment's `pr:` field matches it; an ignore file holds human dispositions. It deliberately over-reports remaining candidates for review instead of silently omitting borderline user-facing changes.
 
-Self-hosted notes are authored directly as `<Update>` blocks in `src/langsmith/self-hosted-changelog.mdx`. The current structure includes tagged stable and preview releases, version details, release-specific changes, and Helm-chart download links. For example, the stable `langsmith-0.17.0` release is presented alongside stable patch releases and preview release candidates. This is a different release cadence and source of truth from the weekly Cloud/Fleet fragment workflow.
+## Fleet and self-hosted streams
 
-`src/changelog-navigation.js` enhances only `/langsmith/self-hosted-changelog`. On that route, it selects visible `h2` elements whose rendered IDs match exactly `langsmith-<major>-<minor>-0`: stable minor-release chapters. Patches, release candidates, categories, and hidden headings are intentionally excluded. It marks selected headings and builds a **Minor releases** link index at the start of `#content`; when `#content-side-layout` exists, it also builds a sidebar index. Without that layout, the inline index is explicitly a fallback.
+Fleet is not generated by the Cloud assembler. The Fleet route imports its own weekly `<Update>` blocks from `src/snippets/langsmith/fleet-changelog.mdx`, with Fleet-specific RSS titles. Make Fleet release-note edits in that snippet and retain the route-level import.
 
-A `MutationObserver` watches path and DOM changes, while `requestAnimationFrame` coalesces bursts into one enhancement pass. A heading-ID signature avoids rebuilding unchanged indexes. When there are no eligible visible headings, generated indexes are removed. Leaving the self-hosted route also removes generated heading classes. The stylesheet supplies the chapter hierarchy, responsive inline/sidebar behavior, keyboard focus styling, and dark-mode colors; on wide layouts, it hides the non-fallback inline duplicate when a sidebar is available.
+Self-hosted notes are direct, versioned `<Update>` blocks tagged, for example, `Stable` or `Preview`. They describe the release, include the LangSmith application version, and link to the corresponding Helm chart archive. This release-driven source of truth is separate from both weekly Cloud fragment assembly and the Fleet snippet.
 
-## Validation and safe change guidance
+### Self-hosted minor-release navigation
 
-Run the focused test for the boundary changed:
+`src/changelog-navigation.js` enhances only `/langsmith/self-hosted-changelog`. It selects visible `h2` elements whose rendered IDs exactly match `langsmith-<major>-<minor>-0`, which limits the index to stable minor-release chapters. Patches, release candidates, non-release categories, and hidden headings are excluded.
+
+For eligible headings, the script adds a **Minor releases** index at the start of `#content` and, when `#content-side-layout` is present, a sidebar index. The inline index is marked as the fallback without a sidebar. A `MutationObserver` watches route and DOM changes; `requestAnimationFrame` coalesces bursts, and a heading-ID signature prevents unnecessary rebuilding. Leaving the route removes generated indexes and heading classes; indexes are also removed if no eligible visible headings remain. CSS styles the hierarchy and links, including focus and dark-mode states, and hides the non-fallback inline duplicate on wide sidebar layouts.
+
+## Focused validation
+
+Use the narrow test boundary for the changed behavior:
 
 ```bash
 make test TEST_FILE=tests/unit_tests/test_assemble_changelog.py
 node --test tests/changelog-navigation.test.js
 ```
 
-The Python test uses temporary fragment and ledger files. It covers comment/blank-line parsing, a missing ledger, sorted de-duplicated recording, skipping recorded fragments, no recording without `--record`, and refusal of an out-of-repository ledger path. It does not prove the sibling fragment set, live Eppo state, or a manually pasted MDX block.
+The Python test uses temporary fragments and a ledger. It covers ledger comment and blank-line parsing, missing-ledger behavior, sorted de-duplicated recording, skipping recorded fragments, no write without `--record`, and rejection of an out-of-repository ledger. It does not prove the real sibling fragment set, live Eppo state, or a manually pasted MDX block.
 
-The Node test runs the navigation script in a minimal DOM. It covers exact stable-minor and visible-heading selection, sidebar and inline fallback mounting, animation-frame coalescing, no-op updates for unchanged headings, route cleanup, and filter-driven removal/recreation. It does not prove Mintlify's production DOM or rendered CSS.
+The Node test evaluates the navigation script in a minimal DOM. It covers stable-minor and visible-heading selection, sidebar and inline fallback mounting, animation-frame coalescing, unchanged-index avoidance, route cleanup, and filter-driven removal and recreation. It does not prove Mintlify's production DOM, CSS, or deployment behavior.
 
-For a change to public MDX, headings, navigation styling, anchors, or the generated documentation tree, also run the rendered-site check in [Testing Overview](/openwiki/testing/test-overview.md), such as `make broken-links-with-anchors`. See [CLI Tools](/openwiki/operations/cli-tools.md) for build and preview behavior, [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md) for general CI boundaries, and [Quickstart](/openwiki/quickstart.md) for local setup.
+For public MDX, heading, navigation-style, anchor, or generated-tree changes, also run `make broken-links-with-anchors` as described in [Testing Overview](/openwiki/testing/test-overview.md). See [CLI Tools](/openwiki/operations/cli-tools.md) for build and preview behavior, [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md) for CI boundaries, and [Quickstart](/openwiki/quickstart.md) for local setup.
 
 ## Safe publication checklist
 
-1. Ensure the sibling `langchainplus` checkout is available; run the assembler without `--record`.
-2. Fix or defer invalid fragments upstream. Do not bypass a held entry merely because it names a flag.
-3. If eligibility is uncertain, use `--check-flag` with an environment-provided token; never disclose the token.
-4. Review the candidate and stderr reports, then paste the reviewed block into `src/langsmith/changelog.mdx`.
-5. Run the matching `--record` command, inspect the sorted ledger diff, and commit it with the MDX update in one PR.
-6. Run the focused Python test for assembler or ledger changes, the Node test for self-hosted navigation changes, and a rendered-site check for public MDX, heading, or CSS changes.
+1. Make the sibling `langchainplus` checkout available and dry-run the Cloud assembler.
+2. Review invalid, held, error, and already-published reports; resolve source issues upstream rather than bypassing safeguards.
+3. When rollout status needs inspection, use `--check-flag` with an environment-provided token and do not disclose it.
+4. Review the rendered Cloud block and paste it into `src/langsmith/changelog.mdx`.
+5. Run the matching `--record` command, inspect the ledger diff, and commit the ledger and Cloud MDX update in one PR for human review.
+6. Edit Fleet updates in `src/snippets/langsmith/fleet-changelog.mdx` and self-hosted releases in `src/langsmith/self-hosted-changelog.mdx`; neither is a target of the Cloud assembler.
+7. Run the focused Python test for assembler or ledger changes, the Node test for self-hosted navigation changes, and the rendered-site check for public MDX, headings, or CSS.

@@ -3,9 +3,6 @@ type: contributor guide
 title: Repository Wiki Quickstart
 description: Route a documentation change to its durable input, configuration, generator, or external owner before choosing local commands and validation. Use this map to avoid editing generated output or confusing navigation with route generation.
 tags: [quickstart, documentation, mintlify, validation, repository]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-09T08:24:05.435Z
 sources:
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
@@ -41,7 +38,10 @@ sources:
     resource: repo://scripts/test_code_samples.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
-generated: { by: "openwiki/0.4.3", at: "2026-10-09T08:24:05.435Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-10T08:20:12.163Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-10T08:20:12.163Z
 ---
 
 # Repository Wiki Quickstart
@@ -50,7 +50,7 @@ This repository builds the Mintlify site at [docs.langchain.com](https://docs.la
 
 ## Start here
 
-Read `AGENTS.md` before changing content. It defines repository-wide authoring rules and directs task-specific work to `.agents/skills/`. Run `make skills` to link those skills into `.claude/skills/` for Claude Code.
+Read `AGENTS.md` before changing content. It defines repository-wide authoring rules and directs task-specific work to `.agents/skills/`. Run `make skills` to link those skills into `.claude/skills/` for Claude Code. Ask for clarification rather than assume missing requirements, and ground examples, policy details, and use-case claims in supplied or existing source. When changing a script, workflow, Makefile target, PR check, scheduled job, or skill, invoke `docs-tooling-notion` before handoff.
 
 The project requires Python 3.13 or later, Node.js, and `uv`:
 
