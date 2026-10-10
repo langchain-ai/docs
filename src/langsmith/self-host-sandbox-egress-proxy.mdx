@@ -59,9 +59,8 @@ To route Sandbox egress through a forward proxy:
     - **`host`**: The proxy hostname or IP address, without a scheme, credentials, or path. Required when `enabled` is `true`.
     - **`port`**: The proxy port. Defaults to `3128`.
     - **`noProxy`**: Destinations that the host dials directly instead of through the proxy, with the same matching as the `NO_PROXY` environment variable. An entry such as `corp.internal` matches that host and its subdomains, an entry with a leading dot such as `.corp.internal` matches only subdomains, and `*` matches every host. Entries can also be IP addresses, CIDR ranges such as `10.0.0.0/8`, or `host:port` pairs.
-    - **`directDenyCidrs`**: Private ranges that a `noProxy` destination never reaches directly. See [Reach private services directly](#reach-private-services-directly).
 
-    The chart fails the render when `host` is missing, when `host` contains a scheme, credentials, or a path, when `scheme` or `port` is invalid, or when a `directDenyCidrs` entry is not a CIDR range.
+    The chart fails the render when `host` is missing, when `host` contains a scheme, credentials, or a path, or when `scheme` or `port` is invalid.
   </Step>
   <Step title="(Optional) Trust a private CA for an HTTPS proxy">
     When `scheme` is `https` and a private CA issues the proxy's certificate, add that CA to the bundle in `config.customCa`. The `sandbox-host` pods trust the same bundle as other LangSmith services, in addition to the system roots. See [Mount internal CAs for TLS](/langsmith/self-host-custom-tls-certificates#mount-internal-cas-for-tls).
@@ -82,43 +81,29 @@ To route Sandbox egress through a forward proxy:
 
 ## Reach private services directly
 
-By default, `sandbox-host` refuses to connect to private addresses, so a Sandbox cannot reach an internal service even when `noProxy` sends the connection direct. A Sandbox reaches a private address directly when both of the following are true:
-
-- **The operator opts the destination in**: An entry in `noProxy` other than `*` matches it.
-- **The Sandbox opts the destination in**: The Sandbox's `allow_list` names it with a hostname, a glob such as `*.corp.internal`, an IP address, or a CIDR range. The `*` glob and regular expressions do not count. See [Allow and deny lists](/langsmith/sandbox-auth-proxy#allow-and-deny-lists).
-
-Even then, the host refuses loopback addresses, cloud metadata addresses, and any range in `directDenyCidrs`. It checks the address it connects to after resolving the hostname. Every other Sandbox keeps the default block, so you do not need to allow private egress for the whole host.
-
-For example, with an internal network on `10.0.0.0/8` and a k3s cluster that uses the default pod and Service ranges:
+By default, `sandbox-host` refuses to connect to private addresses, so a Sandbox cannot reach an internal service even when `noProxy` sends the connection direct. To open specific internal services, list their private IPs or CIDR ranges in `sandboxes.egress.allowedPrivateCidrs`:
 
 ```yaml
 sandboxes:
+  egress:
+    allowedPrivateCidrs:
+      - 10.20.30.40/32
+      - 10.50.0.0/24
   authProxy:
     httpProxy:
       enabled: true
       host: 10.1.1.1
       noProxy:
-        - 10.0.0.0/8
         - .corp.internal
-      directDenyCidrs:
-        - 10.42.0.0/16
-        - 10.43.0.0/16
+        - 10.0.0.0/8
 ```
 
-A Sandbox that needs Git and a database on the internal network lists them in its `proxy_config`:
+Every Sandbox can then reach the listed addresses. The host checks the address it connects to after resolving a hostname, so a hostname such as `git.corp.internal` that resolves into a listed range works the same as its IP address. A Sandbox that connects to a literal IP address still needs that IP in its `allow_list`, as for any IP address. See [Allow and deny lists](/langsmith/sandbox-auth-proxy#allow-and-deny-lists).
 
-```json
-{
-  "access_control": {
-    "allow_list": ["*:80", "*:443", "git.corp.internal", "db.corp.internal:5432"]
-  }
-}
-```
-
-The `*:80` and `*:443` entries keep public HTTP and HTTPS available through the forward proxy. They do not open private addresses.
+Other private addresses stay blocked, and loopback and cloud metadata addresses stay blocked even when listed. The chart fails the render when an entry is not an IP address or CIDR range. The setting works with or without a forward proxy.
 
 <Warning>
-When `noProxy` covers your cluster's pod, Service, or node ranges, list those ranges in `directDenyCidrs`. Otherwise a Sandbox owner could allow-list an address inside the cluster.
+List specific internal services, not ranges that cover your cluster's pod, Service, or node addresses. Every Sandbox can reach a listed address.
 </Warning>
 
 ## Secure the proxy
