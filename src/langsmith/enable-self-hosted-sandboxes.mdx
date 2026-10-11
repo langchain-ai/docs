@@ -22,6 +22,7 @@ Self-hosted Sandboxes are supported on:
 - Google Kubernetes Engine (GKE)
 - Azure Kubernetes Service (AKS)
 - Red Hat OpenShift, with the additional steps in [Configure OpenShift](#configure-openshift)
+- Bare-metal and on-premises Kubernetes clusters that meet the [node requirements for bare-metal and on-premises clusters](#node-requirements-for-bare-metal-and-on-premises-clusters)
 
 <Note>
 Self-hosted Sandboxes on Azure require LangSmith Helm chart v17 (`0.17.x`).
@@ -86,6 +87,7 @@ Enabling Sandboxes provisions the following resources:
     | AWS | `s3` | Region-explicit HTTPS S3 endpoint, such as `https://bucket-name.s3.us-west-2.amazonaws.com` |
     | GCP | `gs` | GCS URL, such as `gs://bucket-name` |
     | Azure | `wasb` | Azure Blob Storage URL, such as `https://container-name.core.windows.net` |
+    | S3-compatible, such as MinIO | `s3` | Endpoint URL with the bucket as the path, such as `http://minio.example.com:9000/bucket-name`. Requires static keys; see [Use S3-compatible object storage](#use-s3-compatible-object-storage). |
 
     Do not use object-store subpaths in `sandboxes.juicefs.name`. Use a flat name, such as `sandbox-juicefs`. JuiceFS stores objects under that name inside the configured bucket.
 
@@ -170,6 +172,57 @@ To prepare an OpenShift cluster, complete these steps before you [enable Sandbox
     The JuiceFS formatter Job runs as the same service account, so it needs no separate grant. If you set `sandboxes.sandboxHost.serviceAccount.name`, grant the SCC to that name instead.
   </Step>
 </Steps>
+
+## Node requirements for bare-metal and on-premises clusters
+
+On a managed cloud cluster, the KVM-capable node pool covers these requirements. On bare-metal and on-premises Kubernetes clusters, confirm that each sandbox node and the cluster meet them before you [enable Sandboxes with Helm](#enable-with-helm).
+
+Each sandbox node needs:
+
+- **CPU architecture**: x86-64 (`amd64`). The sandbox runtime does not run on Arm nodes.
+- **Hardware virtualization**: Virtualization extensions enabled in the firmware, the KVM kernel module loaded, and `/dev/kvm` present.
+- **cgroup v2**: The unified cgroup hierarchy with the `cpu` controller available. The sandbox runtime uses it to enforce per-sandbox CPU limits.
+- **TUN/TAP and FUSE**: `/dev/net/tun` for sandbox network interfaces and `/dev/fuse` for the JuiceFS mount.
+- **nftables**: Kernel support for `iptables` with the nftables backend. The sandbox runtime applies its egress rules inside a network namespace for each sandbox.
+- **Local disk for the JuiceFS cache**: A node-local path for `sandboxes.juicefs.hostMount.cacheDirs`, which defaults to `/var/cache/juicefs` with a 50 GiB cache size.
+
+The cluster needs:
+
+- **Privileged pods**: The sandbox runtime pods run privileged, with host networking and `hostPath` volumes. If your cluster enforces Pod Security Admission, label the LangSmith namespace to allow privileged pods, for example `pod-security.kubernetes.io/enforce=privileged`.
+- **Node port reachability**: The LangSmith platform backend connects to each sandbox node on TCP port `19190`. Allow this traffic from the LangSmith pods to the sandbox nodes, and keep the port on private networks.
+- **Outbound access**: Sandbox nodes need network access to the JuiceFS Redis metadata store, the object storage backend, and the destinations that sandboxes call. To send sandbox egress through a corporate HTTP proxy, set `sandboxes.authProxy.httpProxy`.
+
+If your cluster cannot pull from public registries, mirror the sandbox runtime image. For more information, see [Additional images for Sandboxes](/langsmith/self-host-mirroring-images#additional-images-for-sandboxes).
+
+### Use S3-compatible object storage
+
+On clusters without cloud workload identity, JuiceFS can store sandbox data in an S3-compatible object store, such as MinIO, using static access keys.
+
+<Note>
+S3-compatible object storage with static keys requires LangSmith Helm chart 0.17.7 or later.
+</Note>
+
+Create a JuiceFS configuration Secret that includes the access keys, and set `sandboxes.juicefs.existingSecretName` to its name:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: langsmith-sandbox-juicefs
+  namespace: <namespace>
+type: Opaque
+stringData:
+  name: sandbox-juicefs
+  metaurl: redis://<redis-host>:6379/1
+  storage: s3
+  bucket: http://<s3-endpoint>:9000/<bucket-name>
+  access-key: <access-key>
+  secret-key: <secret-key>
+```
+
+The JuiceFS formatter uses the keys only when the Secret contains both `access-key` and `secret-key`. JuiceFS stores the keys in its Redis metadata store, so restrict access to that Redis instance.
+
+The object store must sustain the sandbox runtime's write throughput. When object storage writes stall, the JuiceFS mount health check fails and the sandbox runtime pod restarts, which interrupts the Sandboxes on that node.
 
 ## Enable with Helm
 
