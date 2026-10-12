@@ -1,5 +1,6 @@
 // :snippet-start: tool-runtime-context-thread-js
 import * as z from "zod";
+import { uuid7 } from "langsmith";
 import { ChatOpenAI } from "@langchain/openai";
 import { MemorySaver } from "@langchain/langgraph";
 import { createAgent, tool } from "langchain";
@@ -26,7 +27,7 @@ const agent = createAgent({
   contextSchema,
 });
 
-const threadId = crypto.randomUUID();
+const threadId = uuid7();
 const threadConfig = {
   configurable: { thread_id: threadId },
   context: { user_name: "John Smith" },

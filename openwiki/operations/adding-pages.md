@@ -5,7 +5,7 @@ description: Safely add, move, retire, or regenerate documentation pages by sele
 tags: [documentation, operations, navigation, redirects, build-system]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-07T08:23:22.147Z
+    at: 2026-10-08T08:23:51.982Z
 sources:
   - id: openwiki-source-18732c72f962c06354cb62db
     resource: repo://.agents/skills/add-docs-page/SKILL.md
@@ -41,12 +41,12 @@ sources:
     resource: repo://src/oss/langchain/mcp/index.mdx
   - id: openwiki-source-a39cb5ba9006abfe6280b6f8
     resource: repo://src/oss/openwiki/cli-reference.mdx
-generated: { by: "openwiki/0.4.3", at: "2026-10-07T08:23:22.147Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-08T08:23:51.982Z" }
 ---
 
 # Adding and Maintaining Documentation Pages
 
-A page change is complete only when its source owner, emitted public route, `src/docs.json` navigation, redirects, and rendered output agree. Manual content belongs under `src/`; never edit `build/`, because a full build removes and recreates it. Change generator inputs—not generated snippets, integration listings, transformed specifications, or deployment-generated endpoints.
+A page change is complete only when its source owner, emitted public route, `src/docs.json` navigation, redirects, and rendered output agree. Manual content belongs under `src/`; never edit `build/`, because a full build removes and recreates it. Change generator inputs, not generated snippets, integration listings, transformed specifications, or deployment-generated endpoints.
 
 ```mermaid
 flowchart TD
@@ -93,7 +93,7 @@ Managed Deep Agents is the opposite exception. Direct matching source files are 
 
 ## Add an authored page and its menu route
 
-`src/docs.json` is the authoritative site configuration for navigation, route declarations, and redirects. Its current navigation hierarchy is `navigation.products[]` → `menu[]`. A menu item may hold direct `pages`, `tabs`, or—under Build—`dropdowns[]` containing `tabs[]`. A `pages` array can mix route strings with nested `{ "group": ..., "pages": [...] }` objects. Find the neighboring route in its actual branch; do not assume that a directory scan or similarly named menu provides discovery.
+`src/docs.json` is the authoritative site configuration for navigation, route declarations, and redirects. Its current navigation hierarchy is `navigation.products[]` → `menu[]`. A menu item may hold direct `pages`, `tabs`, or, under Build, `dropdowns[]` containing `tabs[]`. A `pages` array can mix route strings with nested `{ "group": ..., "pages": [...] }` objects. Find the neighboring route in its actual branch; do not assume that a directory scan or similarly named menu provides discovery.
 
 1. Inspect a nearby source page, then create the `.md` or `.mdx` file under the selected source owner. Include required frontmatter and keep `description` plain text: no Markdown, links, or backticks.
 2. Add the extensionless path relative to `src` to the relevant `pages` array. For example, `src/langsmith/sandboxes.mdx` is `langsmith/sandboxes`.
@@ -167,15 +167,22 @@ make check-openapi
 
 ## Validate the changed contract
 
-Select checks according to the change rather than treating a successful source edit as a route test.
+Select checks according to the change rather than treating a successful source edit as a route test. For an added, moved, renamed, or retired page, the repository procedure calls for the focused prose lint, a clean build, and an anchor-aware link check:
 
-1. Run `make lint_prose FILES="src/path/to/page.mdx"`; omit `FILES` to lint all `src/` prose.
-2. Run `make check-cross-refs` after modifying `@[...]` references.
-3. Run the affected sample, generator, integration refresh, or OpenAPI command after changing its input.
-4. Run `make build` for a clean generated tree. Use `make dev` to inspect the rendered result; it performs an initial build before watching `src` and running `mint dev` from `build/`. Inspect both outputs for shared OSS and Managed Deep Agents.
-5. For route or link changes, run `make broken-links`; for fragment changes, run `make broken-links-with-anchors`. Both build first, ask Mint to validate redirects and links, and filter known deployment-time OpenAPI and standalone-snippet reports before failing on remaining broken-link output.
-6. When changing mover, builder, or checker behavior itself, run the corresponding focused unit tests in `tests/unit_tests/tools/test_move_files.py`, `tests/unit_tests/test_builder.py`, or `tests/unit_tests/test_check_removed_pages_redirects.py` as well as the relevant end-to-end command.
-7. Review authored source, `src/docs.json`, generator inputs, regenerated artifacts, and rendered routes. A `build/` diff is validation evidence, never the durable change.
+```bash
+make lint_prose FILES="src/path/to/page.mdx"
+make build
+make broken-links-with-anchors
+```
+
+Add the checks that correspond to the input you changed:
+
+1. Run `make check-cross-refs` after modifying `@[...]` references.
+2. Run the affected sample, generator, integration refresh, or OpenAPI command after changing its input.
+3. Use `make dev` to inspect the rendered result. It performs an initial build before watching `src` and running `mint dev` from `build/`. Inspect both outputs for shared OSS and Managed Deep Agents.
+4. For route or non-fragment link changes, `make broken-links` builds, asks Mint to validate redirects and links, and filters known deployment-time OpenAPI and standalone-snippet reports before failing on remaining broken-link output. Use `make broken-links-with-anchors` when anchors changed; it adds anchor validation and also checks redirects.
+5. When changing mover, builder, or checker behavior itself, run its focused suite through the Makefile, for example `make test TEST_FILE=tests/unit_tests/tools/test_move_files.py`, `make test TEST_FILE=tests/unit_tests/test_builder.py`, or `make test TEST_FILE=tests/unit_tests/test_check_removed_pages_redirects.py`, as well as the relevant end-to-end command.
+6. Review authored source, `src/docs.json`, generator inputs, regenerated artifacts, and rendered routes. A `build/` diff is validation evidence, never the durable change.
 
 ## Completion checklist
 
