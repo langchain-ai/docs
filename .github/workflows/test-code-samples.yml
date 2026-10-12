@@ -26,7 +26,8 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false)
     runs-on: ubuntu-latest
     # Scheduled and manual runs test all samples; PR runs may touch many files in large refactors.
-    timeout-minutes: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 90 || 60 }}
+    # Full runs (~600 samples + optional trace/snippet regen) exceeded 90m in practice.
+    timeout-minutes: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 150 || 60 }}
     services:
       postgres:
         image: pgvector/pgvector:pg17
@@ -129,6 +130,9 @@ jobs:
 
       - name: Test code samples
         id: test
+        # Keep going so a small number of sample failures can still refresh
+        # trace links; the final step fails the job when samples failed.
+        continue-on-error: true
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
@@ -138,6 +142,8 @@ jobs:
           LANGSMITH_PROJECT: docs-code-samples
           # Enable tracing + public share collection on monthly/manual full runs only.
           CODE_SAMPLE_TRACING: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '1' || '' }}
+          # Concurrent sample processes. Trace-link writes stay serialized in the runner.
+          CODE_SAMPLE_JOBS: "4"
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           POSTGRES_URI: postgresql://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
@@ -154,6 +160,8 @@ jobs:
             FILES="$MODIFIED_FILES"
             FILES=$(echo "$FILES" | tr -d '\n' | xargs)
             if [[ -z "$FILES" ]]; then
+              echo "sample_failures=0" >> "$GITHUB_OUTPUT"
+              echo "traces_updated=0" >> "$GITHUB_OUTPUT"
               echo "No code samples to test"
               exit 0
             fi
@@ -164,7 +172,9 @@ jobs:
         id: regen_snippets
         if: >-
           (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
-          steps.test.conclusion == 'success'
+          steps.test.outcome != 'cancelled' &&
+          fromJSON(steps.test.outputs.sample_failures || '999') < 20 &&
+          fromJSON(steps.test.outputs.traces_updated || '0') > 0
         run: make code-snippets
 
       - name: Open or update code sample traces PR
@@ -262,3 +272,10 @@ jobs:
             --head "$BRANCH_NAME"
 
           echo "Opened a new code sample traces PR" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail job when code samples failed
+        if: always() && steps.test.outcome == 'failure'
+        run: |
+          echo "Code sample failures: ${{ steps.test.outputs.sample_failures }}"
+          echo "Trace links updated: ${{ steps.test.outputs.traces_updated }}"
+          exit 1

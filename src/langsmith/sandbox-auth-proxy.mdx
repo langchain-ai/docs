@@ -10,6 +10,19 @@ The auth proxy lets sandbox code call external APIs (OpenAI, Anthropic, GitHub, 
 You must configure your secrets (e.g., `OPENAI_API_KEY`) in your LangSmith [workspace](/langsmith/administration-overview#workspaces) settings before creating a sandbox that references them.
 </Warning>
 
+## Delegate LangSmith access
+
+Access delegation lets sandbox code call the LangSmith API without an API key inside the sandbox. The auth proxy injects credentials for requests to your LangSmith API host.
+
+Set `access_delegation` in the top-level request body when creating a sandbox with `POST /v2/sandboxes/boxes`:
+
+- **`INHERIT`**: Set `{"mode": "INHERIT"}` to inherit the caller's current delegatable permissions. Do not include `permissions`.
+- **`EXPLICIT`**: Set `{"mode": "EXPLICIT", "permissions": ["sandboxes:read"]}` to restrict access to specific permissions you hold. The list must be nonempty.
+
+Both modes remain capped by the caller's current permissions on every request. Workspace and organization administration permissions cannot be delegated. A workspace service key can also delegate access; narrowing its role narrows the sandbox's access, and deleting the key revokes it.
+
+Inside the sandbox, call the HTTPS LangSmith API endpoint without supplying your own credentials. A sandbox acting under a delegation grant cannot grant access to another sandbox.
+
 ## Egress and network access control
 
 The same `proxy_config` that injects credentials also controls which destinations a sandbox can reach. Access control is enforced per connection on the sandbox host, so changes to `access_control` take effect immediately.
@@ -23,7 +36,7 @@ The same `proxy_config` that injects credentials also controls which destination
 
 ### Default egress posture
 
-With no `access_control`, **every hostname is reachable on every TCP port**, unless your organization is on [restricted egress](#organization-level-restricted-egress). The only exception is hosts that resolve to private, loopback, or cloud-metadata addresses, which the proxy always refuses to dial. Add an `access_control` to restrict this.
+With no `access_control`, **every hostname is reachable on every TCP port**, unless your organization is on [restricted egress](#organization-level-restricted-egress). The only exception is hosts that resolve to private, loopback, or cloud-metadata addresses, which the proxy refuses to dial. For a sandbox created with `access_delegation`, your LangSmith API host is exempt from the private-address check, so a self-hosted install whose hostname resolves to a private address, such as an internal load balancer, can still serve delegated requests. No other private destination is opened, and loopback and cloud-metadata addresses stay blocked. Add an `access_control` to restrict this.
 
 To allow HTTP and HTTPS to any host while blocking every other port, use a port-qualified allow list. `*` matches every hostname:
 

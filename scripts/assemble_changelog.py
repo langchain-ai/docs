@@ -16,11 +16,19 @@ Readiness:
                                     rolled out (requires ``EPPO_API_KEY``).
   - ``status: held`` + no token  -> excluded, and reported so a human can flip it.
 
+Already published:
+  Fragments named in the ledger (``scripts/.changelog_published.txt``) are
+  skipped. ``--record`` appends this run's rendered fragments to the ledger, so
+  committing the ledger in the same docs PR as the changelog keeps the next run
+  from publishing them again. The ledger, not the fragment's location in
+  langchainplus, is the record of what has shipped.
+
 Usage:
   uv run python scripts/assemble_changelog.py                  # dry-run, print block
   uv run python scripts/assemble_changelog.py --week-label "June 15-19, 2026"
   uv run python scripts/assemble_changelog.py --check-flag my-eppo-flag-key   # debug Eppo
   uv run python scripts/assemble_changelog.py --promote       # flip rolled-out held -> ready
+  uv run python scripts/assemble_changelog.py --record        # append rendered names to the ledger
 
 Eppo access: set ``EPPO_API_KEY`` in the environment (never pass it on the CLI or
 commit it). The script only ever issues read (GET) requests to eppo.cloud.
@@ -45,6 +53,7 @@ import yaml
 # docs and langchainplus are sibling checkouts (~/gh/docs, ~/gh/langchainplus).
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_FRAGMENTS_DIR = _REPO_ROOT.parent / "langchainplus" / ".changelog"
+DEFAULT_LEDGER = _REPO_ROOT / "scripts" / ".changelog_published.txt"
 
 # Eppo REST API. Domain is hardcoded (allowlist of one) and HTTPS-only per
 # our SSRF guidance; never read the base URL from user input.
@@ -136,6 +145,33 @@ def _build_fragment(path: Path, data: dict) -> Fragment:
     if frag.status == "held" and not frag.flag:
         frag.errors.append("status is held but no flag set")
     return frag
+
+
+# --- Published ledger ------------------------------------------------------
+
+
+def load_ledger(ledger: Path) -> set[str]:
+    """Return the fragment filenames already published, one per ledger line.
+
+    Blank lines and ``#`` comments are ignored. A missing ledger means nothing
+    has been published yet.
+    """
+    if not ledger.is_file():
+        return set()
+    names = set()
+    for line in ledger.read_text().splitlines():
+        name = line.strip()
+        if name and not name.startswith("#"):
+            names.add(name)
+    return names
+
+
+def record_published(ledger: Path, fragments: list[Fragment]) -> None:
+    """Append the fragments' filenames to the ledger, keeping it sorted and unique."""
+    lines = ledger.read_text().splitlines() if ledger.is_file() else []
+    header = [line for line in lines if line.startswith("#")]
+    names = load_ledger(ledger) | {f.path.name for f in fragments}
+    ledger.write_text("\n".join([*header, *sorted(names)]) + "\n")
 
 
 # --- Category map ----------------------------------------------------------
@@ -342,6 +378,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--rss-date", default=None, help="ISO date for the rss title, e.g. 2026-06-15")
     parser.add_argument("--check-flag", default=None, help="debug: print Eppo JSON + rollout verdict for a flag key")
     parser.add_argument("--promote", action="store_true", help="flip rolled-out held fragments to status: ready in place")
+    parser.add_argument("--ledger", type=Path, default=DEFAULT_LEDGER, help="file listing already-published fragment names")
+    parser.add_argument("--record", action="store_true", help="append the rendered fragments to the ledger")
     args = parser.parse_args(argv)
 
     token = os.environ.get("EPPO_API_KEY")
@@ -362,7 +400,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\nis_fully_rolled_out -> {is_fully_rolled_out(flag)}", file=sys.stderr)
         return 0
 
+    ledger = _require_within(_REPO_ROOT, args.ledger)
+    published = load_ledger(ledger)
     fragments = load_fragments(args.fragments_dir)
+    skipped = [f for f in fragments if f.path.name in published]
+    fragments = [f for f in fragments if f.path.name not in published]
     category_map = load_category_map(args.fragments_dir)
 
     invalid = [f for f in fragments if f.errors]
@@ -409,11 +451,16 @@ def main(argv: list[str] | None = None) -> int:
     report("HELD (flag not fully rolled out)", held)
     report("ERROR (Eppo lookup failed)", errored)
     report("INVALID fragments (skipped)", invalid)
+    if skipped:
+        print(f"\n# ALREADY PUBLISHED per {ledger.name} (skipped): {len(skipped)}", file=sys.stderr)
     if promoted:
         print(f"\n# PROMOTED held -> ready in place ({len(promoted)})", file=sys.stderr)
 
     if ready:
         print(render_update_block(ready, category_map, week_label, rss_date))
+        if args.record:
+            record_published(ledger, ready)
+            print(f"\n# RECORDED {len(ready)} fragments in {ledger.name}", file=sys.stderr)
     else:
         print("# No ready fragments to render.", file=sys.stderr)
     return 0

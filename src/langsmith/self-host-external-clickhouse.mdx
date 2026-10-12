@@ -149,6 +149,8 @@ To enable TLS for ClickHouse connections:
 
 <Warning>
 Mount a custom CA only when your ClickHouse server uses an internal or private CA. Publicly trusted CAs do not require this configuration.
+
+If you do set `config.customCa`, that bundle becomes the only trust store for the ClickHouse migrations job. The job checks ClickHouse with `curl`, which reads `SSL_CERT_FILE` and ignores the system CA store. The backend pods use Python, which trusts both. So a bundle missing a root can leave the application working while every upgrade fails with `Timeout reached. ClickHouse is not ready.` and no further detail. Include every root your ClickHouse server chains to, not only your internal ones. For LangSmith-managed ClickHouse, that means ISRG Root X1 (see [TLS certificates](/langsmith/langsmith-managed-clickhouse#tls-certificates)).
 </Warning>
 
 <CodeGroup>
@@ -232,21 +234,13 @@ stringData:
 
 </CodeGroup>
 
-#### Non-TLS native port for migrations
+#### Migrations with TLS
+
+The migration job uses the same TLS and client certificate configuration as the application and connects over the native protocol on `clickhouse.external.nativePort`. When TLS is enabled, set `nativePort` to your ClickHouse native TLS port (`9440` by default). A separate non-TLS native port is not required.
 
 <Warning>
-When using mTLS with ClickHouse, you must **keep a non-TLS native (TCP) port** open for our migrations job, which runs on helm install and upgrade. The application itself will not communicate through this port, it is **only used by the migration job**.
+  Leaving `nativePort` at `9000` with `tls: true` causes the migration job to fail, because it attempts a TLS handshake against the plaintext port.
 </Warning>
-
-By default, the migration job connects to port `9000` for migrations. If your ClickHouse instance uses a different non-TLS native port, you can configure it using the `CLICKHOUSE_MIGRATE_NATIVE_PORT` environment variable:
-
-```yaml
-backend:
-  clickhouseMigrations:
-    extraEnv:
-      - name: CLICKHOUSE_MIGRATE_NATIVE_PORT
-        value: "9000"  # Change to your non-TLS native port
-```
 
 #### Pod security context for certificate volumes
 

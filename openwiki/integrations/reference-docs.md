@@ -1,7 +1,7 @@
 ---
-type: integration
-title: Reference Documentation Integration
-description: Defines the boundary between externally operated SDK reference sites, scoped semantic links, and OpenAPI inputs that Mintlify turns into LangSmith endpoint documentation. Covers refresh ownership and validation limits for generated routes.
+type: integration boundary
+title: Reference Documentation Boundaries
+description: Distinguishes the externally operated SDK reference site from the three LangSmith OpenAPI inputs that Mintlify generates at deployment. Explains navigation, spec ownership, refresh automation, and validation boundaries.
 tags: [api-reference, openapi, cross-references, mintlify, langsmith]
 sources:
   - id: openwiki-source-759309714d08144a07e1b2e0
@@ -30,17 +30,23 @@ sources:
     resource: repo://scripts/process_langsmith_openapi.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
+  - id: openwiki-source-442324215d9c8d8250c31dd9
+    resource: repo://src/langsmith/api-ref-control-plane.mdx
+  - id: openwiki-source-e4b6d36053d63f016f9dd93d
+    resource: repo://src/langsmith/server-api-ref.mdx
+  - id: openwiki-source-11cb186ad15806b001231824
+    resource: repo://src/langsmith/smith-api-ref.mdx
   - id: openwiki-source-c2764a7369c8fbf3e49da6f8
     resource: repo://tests/unit_tests/test_check_cross_refs.py
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-21T08:24:04.334Z
-generated: { by: "openwiki/0.4.3", at: "2026-09-21T08:24:04.334Z" }
+    at: 2026-10-06T08:22:08.206Z
+generated: { by: "openwiki/0.4.3", at: "2026-10-06T08:22:08.206Z" }
 ---
 
-# Reference Documentation Integration
+# Reference Documentation Boundaries
 
 ## Boundary and ownership
 
@@ -98,6 +104,12 @@ This source-level check is separate from Mintlify's rendered-site link check: su
 | Agent Server API | Committed `src/langsmith/agent-server-openapi.json`; updates arrive in `langgraph-api` PRs titled `Update Agent ServerOpenAPI spec for API version X.Y.Z`. | `langsmith/agent-server-api` |
 | Control Plane API | Service-owned `https://api.host.langchain.com/openapi.json`, fetched at deployment; there is no local specification. | Mintlify default route directory (`/api-reference/`) |
 | LangSmith REST API | Committed `src/langsmith/langsmith-platform-openapi.json`, produced by scheduled refresh automation. | `langsmith/smith-api` |
+
+### Navigation and authored entrypoints
+
+The OpenAPI declaration is nested with its authored overview page, not a replacement for it. In the LangSmith deployment **Reference** group, `langsmith/server-api-ref` precedes the Agent Server API declaration and `langsmith/api-ref-control-plane` precedes the Control Plane declaration. The overview pages give readers durable context and direct them into the generated sidebar: the Agent Server overview points to each deployment's `/docs` endpoint, while the Control Plane overview describes deployment-management use and links to generated `/api-reference/` endpoint groups.
+
+The LangSmith product **Reference** tab likewise keeps `langsmith/smith-api-ref` as the overview in the **LangSmith REST API** group alongside the committed-spec declaration. That overview establishes the REST API's platform scope and `X-Api-Key` authentication; it is authored content, whereas the individual endpoint pages beneath `langsmith/smith-api` are Mintlify output. When adding or moving a reference section, update its group, overview page, and OpenAPI declaration together so navigation remains coherent.
 
 ```mermaid
 flowchart TD
