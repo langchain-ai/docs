@@ -168,7 +168,12 @@ const branchTypes = (name: string) =>
     approvals.find((interrupt) => interrupt.value.name === name)!
       .response_schema as { oneOf: { properties: { type: { const: string } } }[] }
   ).oneOf.map((branch) => branch.properties.type.const);
-assert.deepEqual(branchTypes("write_file"), ["approve", "edit", "reject"]);
+assert.deepEqual(branchTypes("write_file"), [
+  "approve",
+  "edit",
+  "reject",
+  "respond",
+]);
 assert.deepEqual(branchTypes("execute_sql"), ["approve", "reject"]);
 // :remove-end:
 
