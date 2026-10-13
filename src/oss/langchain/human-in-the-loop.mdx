@@ -157,11 +157,11 @@ const agent = createAgent({
 </ParamField>
 
 <ParamField body="interrupt_mode" type="string" default="batched">
-    How the agent pauses for review. `'batched'` raises one interrupt per model turn, answered with an ordered list. `'per_call'` raises one interrupt per gated call, answered by interrupt ID. See [Set the interrupt mode](#set-the-interrupt-mode). `'per_call'` requires `langchain>=X.Y.Z`.
+    How the agent pauses for review. `"batched"` raises one interrupt per model turn, answered with an ordered list. `"per_call"` raises one interrupt per gated call, answered by interrupt ID. `"per_call"` requires `langchain>=X.Y.Z`. See [Set the interrupt mode](#set-the-interrupt-mode).
 </ParamField>
 
 <ParamField body="edit_notice" type="string | None">
-    Text added before the result of a tool call that a reviewer replaced with an `edit` decision, so the model knows the call changed. Pass `None` to add nothing.
+    Text added before the result of a call that a reviewer replaced with an `edit` decision, so the model knows the call changed. Defaults to a note that a human reviewer replaced the call. Pass `None` to add nothing.
 </ParamField>
 
 **`InterruptOnConfig` options:**
@@ -255,7 +255,7 @@ agent = create_agent(
 
 When the `when` predicate returns `False`, the call runs without interrupting. When it returns `True`, or when you omit `when`, the call pauses as usual. Calls that evaluate to `False` never pause, so a reviewer only sees the actions that need a decision.
 
-The predicate runs again when the agent resumes, so it must return the same result for the same call. If it returns `False` on resume, the tool runs and the reviewer's answer is ignored, even a `reject`. In batched mode, a flip for only some of the calls raises a `ValueError`.
+The predicate runs again when the agent resumes, so it must return the same result for the same call. If it returns `False` on resume, the tool runs and the reviewer's answer is ignored, even a `reject`. In batched mode, if the result changes for only some of the calls, the middleware raises a `ValueError`.
 :::
 
 :::js
@@ -309,7 +309,7 @@ When the `when` predicate returns `false`, the call runs without interrupting. W
 
 The middleware pauses in one of two modes, set with `interrupt_mode`:
 
-- **`"per_call"`**: Each tool call that needs review raises its own interrupt as it starts. Each interrupt carries a [`response_schema`](/oss/langgraph/interrupts#define-an-interrupt-response-schema) of the answers it accepts, and takes one decision keyed by the interrupt ID.
+- **`"per_call"`**: Each tool call that needs review raises its own interrupt as it starts. Each interrupt carries a [`response_schema`](/oss/langgraph/interrupts#define-an-interrupt-response-schema) of the answers it accepts. You answer it with one decision, keyed by the interrupt ID.
 - **`"batched"`** (default): One interrupt per model turn lists every call that needs review. You answer with a list of decisions in the same order.
 
 Use per-call mode for new agents. LangChain plans to make it the default in the next major release. For a side-by-side comparison and the problems per-call mode solves, see the [human-in-the-loop overview](/oss/concepts/human-in-the-loop).
@@ -330,16 +330,16 @@ When the model calls all three tools in one turn, `read_data` runs right away. T
 
 <HitlPerCallInvokePy />
 
-Each interrupt value has `type: "tool_approval"`, so a client can tell it apart from other interrupts. `tool_call_id`, `name`, and `args` identify the call under review.
+Each interrupt value has `type: "tool_approval"`, so a client can tell it apart from other interrupts. The `tool_call_id`, `name`, and `args` fields identify the call under review.
 
 ### Read the response schema
 
 Each interrupt also carries a `response_schema`: a JSON schema with one branch per decision the tool allows, matched on the decision's `type`. The `execute_sql` schema has `approve` and `reject` branches. The `write_file` schema has all four. For a tool that allows one decision, `response_schema` is that decision's schema alone, with no `oneOf`.
 
-Each tab shows one `write_file` branch, an answer that matches it, and the @[ToolMessage] the model receives. The branches below inline `$ref` definitions and omit `title` and `description` fields.
+Each tab shows one `write_file` branch, an answer that matches it, and the @[ToolMessage] the model receives. For readability, the branches below expand `$ref` definitions in place and omit the `title` and `description` fields.
 
 <Tabs>
-<Tab title="✅ approve">
+<Tab title="approve">
 Run the call as proposed.
 
 ```json Schema branch
@@ -355,7 +355,7 @@ Wrote 14 characters to orders_archive.csv
 ```
 
 </Tab>
-<Tab title="✏️ edit">
+<Tab title="edit">
 Run the call with new arguments. `edited_action.name` must stay `write_file`, and `edited_action.args` must match `write_file`'s argument schema. Arguments the tool does not declare are ignored, as they are when the model sends them.
 
 ```json Schema branch
@@ -403,7 +403,7 @@ Wrote 14 characters to archive/orders_2024.csv
 ```
 
 </Tab>
-<Tab title="❌ reject">
+<Tab title="reject">
 Skip the call. The `message` is optional and tells the model why.
 
 ```json Schema branch
@@ -419,7 +419,7 @@ User rejected the tool call for `write_file` with reason: Write to the archive/ 
 ```
 
 </Tab>
-<Tab title="💬 respond">
+<Tab title="respond">
 Skip the call and answer in place of the tool. The `message` is required. The model receives it as a successful tool result, so use `reject` to deny a call.
 
 ```json Schema branch
@@ -585,7 +585,7 @@ await agent.invoke(
 ### Decision types
 
 <Tabs>
-<Tab title="✅ approve">
+<Tab title="approve">
 Use `approve` to approve the tool call as-is and execute it without changes.
 
 :::python
@@ -629,7 +629,7 @@ await agent.invoke(
 ```
 :::
 </Tab>
-<Tab title="✏️ edit">
+<Tab title="edit">
     Use `edit` to modify the tool call before execution.
     Provide the edited action with the new tool name and arguments.
 
@@ -696,7 +696,7 @@ await agent.invoke(
 
 </Tab>
 
-<Tab title="❌ reject">
+<Tab title="reject">
     Use `reject` to deny the tool call and provide feedback instead of execution. The tool is not executed.
 
     :::python
@@ -751,7 +751,7 @@ The `message` is added to the conversation as feedback to help the agent underst
 </Tab>
 
 :::python
-<Tab title="💬 respond">
+<Tab title="respond">
     Use `respond` for "ask user" style tools where the tool's real implementation is the human's reply. The `message` content is returned directly as the tool result; the tool itself is not executed.
 
     ```python
