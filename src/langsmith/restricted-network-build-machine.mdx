@@ -120,7 +120,7 @@ With `manual`, `uv python install` downloads from the mirror, and every other co
 
 ## Build the Agent Server image
 
-The image build runs inside Docker, so the pip and uv settings on the build machine do not apply to it. Set the base image and the package index in `langgraph.json` instead.
+The image build runs inside Docker, so the pip and uv settings and the OS trust store on the build machine do not apply to it. Set the base image, the package index, and the internal CA in `langgraph.json` instead.
 
 <Warning>
 Do not rely on `pip_config_file` alone. The CLI installs dependencies with `uv pip install` by default (`pip_installer` set to `auto`), and uv does not read the pip configuration file. The build then resolves against pypi.org and fails. Setting `pip_installer` to `pip` does not fix it either: the step that installs the server package still reads the default index. Set the `UV_DEFAULT_INDEX` build argument in `dockerfile_lines` instead.
@@ -140,6 +140,12 @@ To build the image:
     docker login <DOCKER_REGISTRY>
     ```
 
+1. Copy the CA bundle into the project directory, next to `langgraph.json`. The build can copy files only from the project directory:
+
+    ```bash
+    cp <CA_BUNDLE_PATH> internal-ca.pem
+    ```
+
 1. Set `base_image` and `dockerfile_lines` in `langgraph.json`:
 
     ```json
@@ -151,13 +157,17 @@ To build the image:
       "python_version": "3.12",
       "base_image": "<DOCKER_REGISTRY>/langchain/langgraph-api",
       "dockerfile_lines": [
+        "COPY internal-ca.pem /etc/ssl/certs/internal-ca.pem",
+        "ARG SSL_CERT_FILE=/etc/ssl/certs/internal-ca.pem",
         "ARG UV_DEFAULT_INDEX=<PYPI_INDEX_URL>"
       ]
     }
     ```
 
     - **`base_image`**: The mirrored Agent Server image, without a tag. The CLI appends a tag built from `python_version`, plus `api_version` or `image_distro` when you set them. With the configuration above, the build pulls `<DOCKER_REGISTRY>/langchain/langgraph-api:3.12`, so that tag must exist in the registry.
-    - **`dockerfile_lines`**: Lines the CLI inserts after `FROM`. The `ARG` sets `UV_DEFAULT_INDEX` for every install step in the build, including installs from a `uv.lock` file. The `ARG` value is visible in `docker history`, so do not put credentials in `<PYPI_INDEX_URL>`.
+    - **`dockerfile_lines`**: Lines the CLI inserts after `FROM`. The `COPY` adds the internal CA to the image. The two `ARG` lines apply to every install step in the build, including installs from a `uv.lock` file. `SSL_CERT_FILE` makes uv trust only the internal CA, and `UV_DEFAULT_INDEX` points uv at the internal index. `ARG` values are visible in `docker history`, so do not put credentials in `<PYPI_INDEX_URL>`.
+
+    If the index uses a certificate from a public CA, leave out the `COPY` and `SSL_CERT_FILE` lines.
 
 1. Build the image:
 
@@ -246,15 +256,17 @@ error: No interpreter found for Python 3.99 in managed installations or search p
 
 ```bash
 langgraph dockerfile Dockerfile
-grep -E '^(FROM|ARG)' Dockerfile
+grep -E '^(FROM|COPY|ARG)' Dockerfile
 ```
 
 ```text
 FROM <DOCKER_REGISTRY>/langchain/langgraph-api:3.12
+COPY internal-ca.pem /etc/ssl/certs/internal-ca.pem
+ARG SSL_CERT_FILE=/etc/ssl/certs/internal-ca.pem
 ARG UV_DEFAULT_INDEX=<PYPI_INDEX_URL>
 ```
 
-`FROM` must name the internal registry, and the `ARG` line must be present.
+`FROM` must name the internal registry, and the `COPY` and both `ARG` lines must be present.
 
 ## See also
 
