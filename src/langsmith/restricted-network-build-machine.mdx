@@ -1,0 +1,264 @@
+---
+title: Set up a build machine on a restricted network
+sidebarTitle: Build on a restricted network
+icon: "world-off"
+description: Configure pip, uv, Python, and the LangGraph CLI to pull every package, interpreter, and image from an internal registry, then build an Agent Server image with no public internet access.
+---
+
+A build machine on a restricted network has no route to pypi.org, GitHub, or Docker Hub. Every Python package, tool, interpreter, and container image comes from an internal registry, such as Nexus, Artifactory, or Harbor. Configure each tool on that machine to use the internal registry, then build an [Agent Server](/langsmith/agent-server) image with the [LangGraph CLI](/langsmith/cli).
+
+pip, uv, uv's Python downloads, and the image build each read their own setting. Configuring one leaves the others pointed at the public internet. Work through the sections in order, then run the checks in [Verify the setup](#verify-the-setup).
+
+This page covers the build machine. To run the image you build, see [Self-host standalone servers](/langsmith/deploy-standalone-server). For the egress a running deployment needs, see [Egress for billing and operational telemetry](/langsmith/self-host-egress).
+
+## Prerequisites
+
+Collect the following from your platform team before you start:
+
+- **PyPI repository URL**: The internal index that proxies or hosts Python packages, written as `<PYPI_INDEX_URL>` on this page. For example, `https://nexus.example.internal/repository/pypi/simple`.
+- **Container registry**: The registry host, plus the port if it has one, written as `<DOCKER_REGISTRY>`. It must hold a mirror of the Agent Server base image. See [Mirror images for your LangSmith installation](/langsmith/self-host-mirroring-images).
+- **Python build mirror (optional)**: A mirror of the `python-build-standalone` GitHub releases, written as `<PYTHON_MIRROR_URL>`. You need it only if the OS repositories do not provide the Python version your project requires.
+- **CA bundle**: The path to the PEM file for the internal certificate authority, written as `<CA_BUNDLE_PATH>`.
+- **Root access**: Whether you have `sudo` on the build machine. Without sudo, use the per-user file locations on this page. Ask the platform team to install OS packages and the CA.
+- **Python versions**: Which versions the OS package repositories provide.
+
+## Trust the internal CA
+
+Every later step connects to the internal registry over HTTPS, so install the CA first:
+
+1. Add `<CA_BUNDLE_PATH>` to the operating system trust store. The command depends on the OS. For example, on Debian and Ubuntu, copy the file to `/usr/local/share/ca-certificates/` with a `.crt` extension. Then run `sudo update-ca-certificates`.
+1. On Linux, copy the CA to `/etc/docker/certs.d/<DOCKER_REGISTRY>/ca.crt` so Docker trusts the internal registry. For details, see Docker's [Verify repository client with certificates](https://docs.docker.com/engine/security/certificates/).
+
+pip and uv each need their own CA setting, covered in [Configure pip](#configure-pip) and [Configure uv](#configure-uv).
+
+## Configure pip
+
+Set the index once in a pip configuration file. A long URL passed as `--index-url` on each command is easy to get wrong, and a missing space between two flags produces a misleading `404`.
+
+Create `~/.config/pip/pip.conf`. To apply the setting to every user on the machine, create `/etc/pip.conf` instead:
+
+```ini
+[global]
+index-url = <PYPI_INDEX_URL>
+cert = <CA_BUNDLE_PATH>
+```
+
+- **`index-url`**: Replaces pypi.org as the package index.
+- **`cert`**: The CA bundle pip uses to verify the index. Older pip releases do not read the OS trust store, so set it explicitly.
+
+If the index uses plain HTTP, add `trusted-host = <host>` with the index host name. For the full list of file locations and keys, see pip's [Configuration](https://pip.pypa.io/en/stable/topics/configuration/) docs.
+
+## Install uv from the internal index
+
+Install uv as a Python package from the internal index. The uv install script (`curl ... | sh`) does not work on a restricted network, because it downloads the uv binary from `releases.astral.sh` or GitHub.
+
+PyPI hosts uv as a wheel that contains the binary. On some distributions, `venv` ships as a separate OS package, such as `python3-venv` on Debian and Ubuntu.
+
+Install uv into its own virtual environment so it does not touch the system Python. Then link the binaries onto your `PATH`:
+
+```bash
+python3 -m venv ~/.local/share/uv-bootstrap
+~/.local/share/uv-bootstrap/bin/pip install uv
+mkdir -p ~/.local/bin
+ln -s ~/.local/share/uv-bootstrap/bin/uv ~/.local/bin/uv
+ln -s ~/.local/share/uv-bootstrap/bin/uvx ~/.local/bin/uvx
+```
+
+The `pip install` reads the `pip.conf` from the previous section, so it resolves against `<PYPI_INDEX_URL>`.
+
+`uv self update` works only for a uv installed by the install script. To upgrade this uv, run `~/.local/share/uv-bootstrap/bin/pip install --upgrade uv`.
+
+## Configure uv
+
+uv does not read `pip.conf` or `PIP_INDEX_URL`. Without its own setting, uv resolves against pypi.org.
+
+Set the following once in your shell profile, such as `~/.bashrc`:
+
+```bash
+export UV_DEFAULT_INDEX="<PYPI_INDEX_URL>"
+export UV_SYSTEM_CERTS=true
+export UV_PYTHON_DOWNLOADS=never
+```
+
+- **`UV_DEFAULT_INDEX`**: Replaces pypi.org as the default index.
+- **`UV_SYSTEM_CERTS`**: Loads certificates from the OS trust store, which holds the internal CA. By default, uv trusts only its bundled roots.
+- **`UV_PYTHON_DOWNLOADS`**: Stops uv from downloading Python. [Provide the Python interpreter](#provide-the-python-interpreter) explains why.
+
+<Note>
+`UV_SYSTEM_CERTS` requires uv 0.11.0 or later. Earlier versions use `UV_NATIVE_TLS=true`, which later versions still accept with a deprecation warning.
+</Note>
+
+To trust only the internal CA, set `SSL_CERT_FILE=<CA_BUNDLE_PATH>` in place of `UV_SYSTEM_CERTS`. `SSL_CERT_FILE` replaces both uv's bundled roots and the OS trust store. For every setting, see uv's [environment variable reference](https://docs.astral.sh/uv/reference/environment/).
+
+## Provide the Python interpreter
+
+When a project requires a Python version that is not on the machine, uv downloads one from the `python-build-standalone` releases on GitHub. On a restricted network, that download retries with no clear error. `UV_PYTHON_DOWNLOADS=never` from [Configure uv](#configure-uv) makes a missing interpreter fail immediately instead.
+
+Install the interpreter from the OS repositories. If they do not provide the version you need, install it from an internal mirror instead.
+
+### Install Python from the OS repositories
+
+Install the version your project requires with the OS package manager. For example, on RHEL-family distributions:
+
+```bash
+sudo dnf install python3.12
+```
+
+uv finds the interpreter on `PATH`. Keep `UV_PYTHON_DOWNLOADS=never`.
+
+### Install Python from an internal mirror
+
+The mirror must keep the GitHub release layout, `<release-tag>/<archive-name>`. Allow explicit installs only, so uv still never downloads on its own:
+
+```bash
+export UV_PYTHON_INSTALL_MIRROR="<PYTHON_MIRROR_URL>"
+export UV_PYTHON_DOWNLOADS=manual
+uv python install 3.12
+```
+
+With `manual`, `uv python install` downloads from the mirror, and every other command fails immediately when the interpreter is missing. Put both `export` lines in your shell profile in place of `UV_PYTHON_DOWNLOADS=never`. For details, see uv's [Installing Python](https://docs.astral.sh/uv/guides/install-python/) guide.
+
+## Build the Agent Server image
+
+The image build runs inside Docker, so the pip and uv settings on the build machine do not apply to it. Set the base image and the package index in `langgraph.json` instead.
+
+<Warning>
+Do not rely on `pip_config_file` alone. The CLI installs dependencies with `uv pip install` by default (`pip_installer` set to `auto`), and uv does not read the pip configuration file. The build then resolves against pypi.org and fails. Setting `pip_installer` to `pip` does not fix it either: the step that installs the server package still reads the default index. Set the `UV_DEFAULT_INDEX` build argument in `dockerfile_lines` instead.
+</Warning>
+
+To build the image:
+
+1. Install the LangGraph CLI. It resolves against `UV_DEFAULT_INDEX`:
+
+    ```bash
+    uv tool install langgraph-cli
+    ```
+
+1. Log in to the internal registry:
+
+    ```bash
+    docker login <DOCKER_REGISTRY>
+    ```
+
+1. Set `base_image` and `dockerfile_lines` in `langgraph.json`:
+
+    ```json
+    {
+      "dependencies": ["."],
+      "graphs": {
+        "agent": "./agent.py:graph"
+      },
+      "python_version": "3.12",
+      "base_image": "<DOCKER_REGISTRY>/langchain/langgraph-api",
+      "dockerfile_lines": [
+        "ARG UV_DEFAULT_INDEX=<PYPI_INDEX_URL>"
+      ]
+    }
+    ```
+
+    - **`base_image`**: The mirrored Agent Server image, without a tag. The CLI appends a tag built from `python_version`, plus `api_version` or `image_distro` when you set them. With the configuration above, the build pulls `<DOCKER_REGISTRY>/langchain/langgraph-api:3.12`, so that tag must exist in the registry.
+    - **`dockerfile_lines`**: Lines the CLI inserts after `FROM`. The `ARG` sets `UV_DEFAULT_INDEX` for every install step in the build, including installs from a `uv.lock` file. The `ARG` value is visible in `docker history`, so do not put credentials in `<PYPI_INDEX_URL>`.
+
+1. Build the image:
+
+    ```bash
+    langgraph build -t my-agent
+    ```
+
+For every `langgraph.json` key, see the [LangGraph CLI configuration file](/langsmith/cli#configuration-file) reference.
+
+## Verify the setup
+
+Run these checks after setup and at the start of each working session. Each check confirms one section and shows the expected output.
+
+### Check CA trust
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' <PYPI_INDEX_URL>/
+```
+
+```text
+200
+```
+
+A certificate error here means the CA is not in the OS trust store.
+
+### Check pip
+
+```bash
+python3 -m pip download --no-deps -d /tmp/pip-check idna
+```
+
+```text
+Looking in indexes: <PYPI_INDEX_URL>
+Collecting idna
+...
+Successfully downloaded idna
+```
+
+The first line must show `<PYPI_INDEX_URL>`. If it is missing, pip is using pypi.org.
+
+### Check the uv installation
+
+```bash
+uv --version
+```
+
+```text
+uv 0.13.0
+```
+
+The output shows the installed version. A `command not found` error means `~/.local/bin` is not on your `PATH`.
+
+### Check the uv configuration
+
+```bash
+echo idna | uv pip compile - --emit-index-url
+```
+
+```text
+# This file was autogenerated by uv via the following command:
+#    uv pip compile - --emit-index-url
+--index-url <PYPI_INDEX_URL>
+
+idna==3.20
+```
+
+The `--index-url` line must show `<PYPI_INDEX_URL>`, and a resolved version confirms TLS works.
+
+### Check the Python interpreter
+
+```bash
+uv python find 3.12
+```
+
+The output is the path to the interpreter, such as `/usr/bin/python3.12`. To confirm that a missing version fails immediately:
+
+```bash
+uv venv --python 3.99 /tmp/uv-check
+```
+
+```text
+error: No interpreter found for Python 3.99 in managed installations or search path
+```
+
+### Check the image build
+
+```bash
+langgraph dockerfile Dockerfile
+grep -E '^(FROM|ARG)' Dockerfile
+```
+
+```text
+FROM <DOCKER_REGISTRY>/langchain/langgraph-api:3.12
+ARG UV_DEFAULT_INDEX=<PYPI_INDEX_URL>
+```
+
+`FROM` must name the internal registry, and the `ARG` line must be present.
+
+## See also
+
+- [Mirror images for your LangSmith installation](/langsmith/self-host-mirroring-images)
+- [Self-host standalone servers](/langsmith/deploy-standalone-server)
+- [Egress for billing and operational telemetry](/langsmith/self-host-egress)
+- [LangGraph CLI](/langsmith/cli)
