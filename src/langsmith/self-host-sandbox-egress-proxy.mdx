@@ -6,7 +6,7 @@ description: Send outbound connections from self-hosted LangSmith Sandboxes thro
 
 A self-hosted `sandbox-host` can send every outbound connection from Sandboxes through your corporate forward proxy instead of dialing destinations directly. Use this when your network allows outbound traffic only through a proxy, or when your security team needs all Sandbox traffic to pass a proxy's access policy and logging.
 
-For how Sandbox traffic leaves a microVM, see [Sandbox architecture](/langsmith/self-host-sandbox-architecture). For installation, see [Enable Sandboxes](/langsmith/deploy-self-hosted-full-platform#enable-sandboxes).
+For how Sandbox traffic leaves a microVM, see [Sandbox architecture](/langsmith/self-host-sandbox-architecture). For installation, see [Enable Sandboxes](/langsmith/enable-self-hosted-sandboxes).
 
 ## Understand how proxied egress works
 
@@ -30,7 +30,7 @@ Proxied egress requires:
 - LangSmith 0.17.32 or later on the 0.17 release line, or 0.18.5rc1 or later on the 0.18 line, for the `sandbox-host` image.
 - A LangSmith Helm chart release that includes `sandboxes.authProxy.httpProxy` in its `values.yaml`.
 - A forward proxy that accepts standard HTTP proxy requests and `CONNECT` to port 443. To reach other TCP services, such as Git over SSH on port 22, or HTTP on an allow-listed IP address, the proxy must also accept `CONNECT` to those ports.
-- Network reachability from the Sandbox node pool to the proxy. The proxy address can be a private IP address.
+- Network reachability from the Sandbox node pool to the proxy. The proxy address can be a private IP address or, on LangSmith 0.17.36 or later, an in-cluster Kubernetes Service name such as `squid.proxy.svc.cluster.local`.
 
 The forward proxy cannot require authentication: `sandbox-host` does not support proxy credentials in the URL, Basic or NTLM authentication, or client certificates (mTLS). An HTTPS proxy works when the host only needs to trust its server certificate.
 
@@ -56,11 +56,11 @@ To route Sandbox egress through a forward proxy:
 
     - **`enabled`**: Routes Sandbox egress through the proxy. Defaults to `false`.
     - **`scheme`**: `http`, or `https` when the connection to the proxy itself uses TLS. Defaults to `http`.
-    - **`host`**: The proxy hostname or IP address, without a scheme, credentials, or path. Required when `enabled` is `true`.
+    - **`host`**: The proxy hostname, IP address, or in-cluster Service name, without a scheme, credentials, or path. Required when `enabled` is `true`.
     - **`port`**: The proxy port. Defaults to `3128`.
     - **`noProxy`**: Destinations that the host dials directly instead of through the proxy, with the same matching as the `NO_PROXY` environment variable. An entry such as `corp.internal` matches that host and its subdomains, an entry with a leading dot such as `.corp.internal` matches only subdomains, and `*` matches every host. Entries can also be IP addresses, CIDR ranges such as `10.0.0.0/8`, or `host:port` pairs.
 
-    The chart fails the render when `host` is missing, when `host` contains a scheme, credentials, or a path, or when `scheme` or `port` is invalid.
+    The chart fails the render when `host` is missing, when `host` contains a scheme, credentials, or a path, or when `scheme` or `port` is invalid. On LangSmith 0.17.36 or later, `sandbox-host` also checks the proxy address when it starts: a loopback or cloud metadata address stops the pod with `sandbox host config invalid` instead of failing each Sandbox creation.
   </Step>
   <Step title="(Optional) Trust a private CA for an HTTPS proxy">
     When `scheme` is `https` and a private CA issues the proxy's certificate, add that CA to the bundle in `config.customCa`. The `sandbox-host` pods trust the same bundle as other LangSmith services, in addition to the system roots. See [Mount internal CAs for TLS](/langsmith/self-host-custom-tls-certificates#mount-internal-cas-for-tls).
