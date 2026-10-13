@@ -47,6 +47,13 @@ def test_strict_closes_nested_objects() -> None:
     assert "additionalProperties" not in schema  # the input is not mutated
 
 
+def test_strict_turns_type_lists_into_any_of() -> None:
+    """A nullable field uses anyOf, which structured outputs support."""
+    schema = {"type": "object", "properties": {"flag": {"type": ["string", "null"]}}}
+    flag = cp._strict(schema)["properties"]["flag"]
+    assert flag == {"anyOf": [{"type": "string"}, {"type": "null"}]}
+
+
 @pytest.mark.parametrize(
     ("body", "want"),
     [

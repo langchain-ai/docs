@@ -461,15 +461,22 @@ API_MAX_TOKENS = 16_000
 
 
 def _strict(schema: dict) -> dict:
-    """Close every object in a JSON schema, as structured outputs require."""
-    if isinstance(schema, dict):
-        out = {k: _strict(v) for k, v in schema.items()}
-        if out.get("type") == "object":
-            out["additionalProperties"] = False
-        return out
+    """Shape a JSON schema for structured outputs.
+
+    Every object is closed, as the API requires. A list of types, such as
+    ``["string", "null"]``, becomes ``anyOf``, which the API documents as supported.
+    """
     if isinstance(schema, list):
         return [_strict(v) for v in schema]
-    return schema
+    if not isinstance(schema, dict):
+        return schema
+    out = {k: _strict(v) for k, v in schema.items()}
+    if isinstance(out.get("type"), list):
+        types = out.pop("type")
+        out = {"anyOf": [{"type": t} for t in types], **out}
+    if out.get("type") == "object":
+        out["additionalProperties"] = False
+    return out
 
 
 def _claude(
