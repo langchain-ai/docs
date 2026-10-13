@@ -117,49 +117,79 @@ def test_ticket_re_skips_model_names() -> None:
     assert not cp.TICKET_RE.search("now uses gpt-6.1-sol")
 
 
+class _FakeStream:
+    """Stands in for the SDK's message stream context manager."""
+
+    def __init__(self, message: SimpleNamespace) -> None:
+        self._message = message
+
+    def __enter__(self) -> _FakeStream:  # noqa: PYI034 - test double
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        return None
+
+    def get_final_message(self) -> SimpleNamespace:
+        return self._message
+
+
 def test_claude_api_parses_structured_output_and_prices_cache(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The API path sends a closed schema, caches the prompt, and prices usage."""
+    """The API path streams, sends a closed schema, caches, and prices usage."""
     calls = {}
 
     class FakeMessages:
-        def create(self, **kwargs: object) -> SimpleNamespace:
+        def stream(self, **kwargs: object) -> _FakeStream:
             calls.update(kwargs)
-            return SimpleNamespace(
-                stop_reason="end_turn",
-                content=[
-                    SimpleNamespace(type="text", text=json.dumps({"tier": "announce"}))
-                ],
-                usage=SimpleNamespace(
-                    input_tokens=1_000_000,
-                    output_tokens=1_000_000,
-                    cache_creation_input_tokens=0,
-                    cache_read_input_tokens=1_000_000,
-                ),
+            return _FakeStream(
+                SimpleNamespace(
+                    stop_reason="end_turn",
+                    content=[
+                        SimpleNamespace(type="thinking", thinking=""),
+                        SimpleNamespace(
+                            type="text", text=json.dumps({"tier": "announce"})
+                        ),
+                    ],
+                    usage=SimpleNamespace(
+                        input_tokens=1_000_000,
+                        output_tokens=1_000_000,
+                        cache_creation_input_tokens=0,
+                        cache_read_input_tokens=1_000_000,
+                    ),
+                )
             )
 
     monkeypatch.setattr(cp, "_api_client", SimpleNamespace(messages=FakeMessages()))
-    out, meta = cp._claude_api(
-        "system", {"type": "object", "properties": {}}, "prompt", "haiku"
-    )
+    schema = {"type": "object", "properties": {"flag": {"type": ["string", "null"]}}}
+    out, meta = cp._claude_api("system", schema, "prompt", "haiku")
     assert out == {"tier": "announce"}
     assert calls["model"] == "claude-haiku-5-5"
-    assert calls["output_config"]["format"]["schema"]["additionalProperties"] is False
+    assert calls["max_tokens"] == cp.API_MAX_TOKENS
+    sent = calls["output_config"]["format"]["schema"]
+    assert sent["additionalProperties"] is False
+    assert sent["properties"]["flag"] == {
+        "anyOf": [{"type": "string"}, {"type": "null"}]
+    }
     assert calls["system"][0]["cache_control"] == {"type": "ephemeral"}
     # $0.10 input + $0.50 output + 1M cache reads at a tenth of the input price.
     assert meta["cost_usd"] == pytest.approx(0.10 + 0.50 + 0.01)
 
 
-def test_claude_api_raises_on_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A refusal is an error, not an empty result."""
+@pytest.mark.parametrize("stop_reason", ["refusal", "max_tokens"])
+def test_claude_api_raises_unless_the_turn_ended(
+    monkeypatch: pytest.MonkeyPatch, stop_reason: str
+) -> None:
+    """A refusal or a truncated response is an error, not a partial result."""
 
     class FakeMessages:
-        def create(self, **_: object) -> SimpleNamespace:
-            return SimpleNamespace(stop_reason="refusal", content=[], usage=None)
+        def stream(self, **_: object) -> _FakeStream:
+            return _FakeStream(
+                SimpleNamespace(stop_reason=stop_reason, content=[], usage=None)
+            )
 
     monkeypatch.setattr(cp, "_api_client", SimpleNamespace(messages=FakeMessages()))
-    with pytest.raises(RuntimeError, match="refusal"):
+    with pytest.raises(RuntimeError, match=stop_reason):
         cp._claude_api("system", {"type": "object"}, "prompt", "sonnet")
 
 
@@ -196,7 +226,7 @@ def test_write_held_orders_by_pr_number(tmp_path: Path) -> None:
 def test_list_feat_fix_filters_by_merge_date_and_stops_paging(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Merged feat/fix PRs in the window are kept; paging stops past the window."""
+    """Merged feat/fix PRs in the window are kept; the end date is exclusive."""
 
     def pr(number: int, title: str, merged: str | None, updated: str) -> dict:
         return {
@@ -214,7 +244,9 @@ def test_list_feat_fix_filters_by_merge_date_and_stops_paging(
     first += [
         pr(4, "fix: after window", "2026-10-14T00:00:00Z", "2026-10-14T00:00:00Z")
     ]
-    first += [pr(100 + i, "docs: x", None, "2026-10-10T00:00:00Z") for i in range(96)]
+    # Merged on the window's end Monday: belongs to the next week.
+    first += [pr(7, "fix: end Monday", "2026-10-12T09:00:00Z", "2026-10-12T09:00:00Z")]
+    first += [pr(100 + i, "docs: x", None, "2026-10-10T00:00:00Z") for i in range(95)]
     second = [pr(5, "fix: old", "2026-09-30T00:00:00Z", "2026-10-01T00:00:00Z")] * 100
     pages = [first, second, [pr(6, "feat: never read", "2026-10-06T00:00:00Z", "x")]]
     calls = []

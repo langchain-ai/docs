@@ -315,7 +315,10 @@ def _child(root: Path, name: str) -> Path:
 
 
 def _list_feat_fix(since: dt.date, until: dt.date) -> list[int]:
-    """Merged feat/fix PRs whose merge date falls in [since, until], inclusive.
+    """Merged feat/fix PRs merged on or after ``since`` and before ``until`` (UTC).
+
+    Weeks run Monday to Monday, so the end date is exclusive: a PR merged on the
+    boundary Monday belongs to the next week, never to both.
 
     Pages through closed PRs, most recently updated first, through the pulls API.
     The search API is avoided on purpose: a fine-grained token with read access
@@ -343,7 +346,7 @@ def _list_feat_fix(since: dt.date, until: dt.date) -> list[int]:
             merged = (pr.get("merged_at") or "")[:10]
             if (
                 merged
-                and since.isoformat() <= merged <= until.isoformat()
+                and since.isoformat() <= merged < until.isoformat()
                 and TYPE_RE.match(pr.get("title") or "")
             ):
                 numbers.add(pr["number"])
@@ -457,7 +460,9 @@ API_MODELS = {
     "haiku": ("claude-haiku-5-5", 0.10, 0.50),
     "sonnet": ("claude-sonnet-5-5", 2.00, 10.00),
 }
-API_MAX_TOKENS = 16_000
+# Grouping a busy week has used 17,000 output tokens, thinking included, so calls
+# stream with a cap well above that.
+API_MAX_TOKENS = 64_000
 
 
 def _strict(schema: dict) -> dict:
@@ -500,7 +505,7 @@ def _claude_api(
     if _api_client is None:
         _api_client = anthropic.Anthropic(max_retries=5)
     model_id, in_price, out_price = API_MODELS[model]
-    response = _api_client.messages.create(
+    with _api_client.messages.stream(
         model=model_id,
         max_tokens=API_MAX_TOKENS,
         # The system prompt is identical across a run, so cache it.
@@ -509,7 +514,8 @@ def _claude_api(
         ],
         messages=[{"role": "user", "content": prompt}],
         output_config={"format": {"type": "json_schema", "schema": _strict(schema)}},
-    )
+    ) as stream:
+        response = stream.get_final_message()
     if response.stop_reason != "end_turn":
         raise RuntimeError(f"{model_id} stopped with {response.stop_reason}")
     text = next(b.text for b in response.content if b.type == "text")
@@ -1265,9 +1271,9 @@ def cmd_mock(args: argparse.Namespace) -> None:
     for n, pr in prs.items():
         if str(n) in ledger:
             continue
-        if not (
-            since <= (pr["merged_at"] or "")[:10] <= until
-        ) or CHERRY_PICK_RE.search(pr["title"]):
+        if not (since <= (pr["merged_at"] or "")[:10] < until) or CHERRY_PICK_RE.search(
+            pr["title"]
+        ):
             continue
         if n not in results or results[n]["pass1"]["tier"] != "announce":
             continue
@@ -1325,8 +1331,10 @@ def cmd_mock(args: argparse.Namespace) -> None:
                 f"grouping: {len(missing)} PRs missing, {len(unknown)} unknown",
                 file=sys.stderr,
             )
+        # Keep only this week's PRs; a number the model invents or borrows is dropped.
+        week_set = set(week)
         for g in groups:
-            g["prs"] = [n for n in g["prs"] if n in prs]
+            g["prs"] = [n for n in g["prs"] if n in week_set]
         dropped = [g for g in groups if g["layer"] == "drop"]
         groups = [g for g in groups if g["prs"] and g["layer"] != "drop"]
         print(
@@ -1417,6 +1425,10 @@ def cmd_mock(args: argparse.Namespace) -> None:
             ]
             or ["None."]
         ),
+        "",
+        "## Not grouped: the grouping step left these out",
+        "",
+        *([f"- #{n} {prs[n]['title']}" for n in missing] or ["None."]),
         "",
         "## Not published: check before adding",
         "",
@@ -2060,6 +2072,10 @@ def cmd_selfhosted(args: argparse.Namespace) -> None:
 # weekly: the scheduled job
 
 
+# A run stops when fewer PRs than this share were classified: the classifier is
+# failing, and a changelog from the remainder would silently miss most of the week.
+MIN_CLASSIFIED_SHARE = 0.9
+
 CHANGELOG_TARGETS = {
     "cloud": _REPO_ROOT / "src" / "langsmith" / "changelog.mdx",
     "fleet": _REPO_ROOT / "src" / "snippets" / "langsmith" / "fleet-changelog.mdx",
@@ -2122,6 +2138,13 @@ def cmd_weekly(args: argparse.Namespace) -> None:
             only=None,
         )
     )
+    classified = sum(1 for _ in _child(out, args.results).glob("*.json"))
+    listed = sum(1 for _ in _child(out, "prs").glob("*.json"))
+    if listed and classified < listed * MIN_CLASSIFIED_SHARE:
+        raise SystemExit(
+            f"Only {classified} of {listed} PRs were classified; check the API key and "
+            "the errors above before rerunning"
+        )
     flags = _load_flags(out, None)  # rollout state for the hold rule, from EPPO_API_KEY
 
     # PRs held in earlier weeks whose flag has since shipped are written this week.
@@ -2157,6 +2180,7 @@ def cmd_weekly(args: argparse.Namespace) -> None:
     )
 
     cache = _child(out, f"mock-{since.isoformat()}")
+    _child(cache, "label.txt").write_text(label + "\n")
     if args.write:
         _write_held(ledger, json.loads(_child(cache, "held.json").read_text()))
         for product, path in CHANGELOG_TARGETS.items():
