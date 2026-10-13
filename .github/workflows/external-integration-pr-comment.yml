@@ -179,16 +179,30 @@ jobs:
               per_page: 100,
             });
 
-            if (comments.some((comment) => comment.body.includes(marker))) {
-              console.log('Comment already posted; skipping comment');
-            } else {
-              const body = [
-                marker,
-                `Thanks for contributing a new integration docs page, @${author}!`,
-                '',
-                'New integration listings should be filed as an [Integration listing issue](https://github.com/langchain-ai/docs/issues/new?template=06-integration-submission.yml) rather than a manual PR. This pull request is being closed.',
-              ].join('\n');
+            const body = [
+              marker,
+              `Thanks for contributing integration documentation, @${author}!`,
+              '',
+              'This PR is being automatically closed by the External Integration PR Comment workflow, not because CI failed. It adds integration documentation or changes an external listing, its author is treated as an external contributor, and no newly added MDX page has `featured: true` in its frontmatter.',
+              '',
+              'Submit new listings through the [Integration listing issue form](https://github.com/langchain-ai/docs/issues/new?template=06-integration-submission.yml) instead of a manual PR. See the [integration documentation policy](https://docs.langchain.com/oss/python/contributing/integrations-langchain) for the contribution process.',
+              '',
+              'Reopening or pushing to this PR reruns the same check and can close it again, even when a maintainer reopens it. For a maintainer-approved hosted guide, a maintainer must confirm that the page should be featured and add `featured: true` to its frontmatter before reopening. The `integration` label and PR comments do not override this check.',
+            ].join('\n');
+            const existingComment = comments.find(
+              (comment) => comment.user?.type === 'Bot' && comment.body.includes(marker)
+            );
 
+            if (existingComment) {
+              if (existingComment.body !== body) {
+                await github.rest.issues.updateComment({
+                  owner,
+                  repo,
+                  comment_id: existingComment.id,
+                  body,
+                });
+              }
+            } else {
               await github.rest.issues.createComment({
                 owner,
                 repo,
