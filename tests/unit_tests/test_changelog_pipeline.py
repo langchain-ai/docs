@@ -154,3 +154,33 @@ def test_claude_api_raises_on_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cp, "_api_client", SimpleNamespace(messages=FakeMessages()))
     with pytest.raises(RuntimeError, match="refusal"):
         cp._claude_api("system", {"type": "object"}, "prompt", "sonnet")
+
+
+def test_release_held_by_flag_state() -> None:
+    """Rolled-out and archived flags release; pending, missing, and conflicts stay."""
+    held = {
+        "1": {"flag": "shipped", "title": "a"},
+        "2": {"flag": "cleaned_up", "title": "b"},
+        "3": {"flag": "pending", "title": "c"},
+        "4": {"flag": "gone", "title": "d"},
+        "5": {"flag": cp.CONFLICTING_FLAGS, "title": "e"},
+    }
+    flags = {
+        "shipped": {"rolled_out": True, "archived": False},
+        "cleaned_up": {"rolled_out": False, "archived": True},
+        "pending": {"rolled_out": False, "archived": False},
+    }
+    released, kept = cp._release_held(held, flags)
+    assert sorted(released) == ["1", "2"]
+    assert "confirm it shipped" in released["2"]
+    assert sorted(kept) == ["3", "4", "5"]
+    assert "not found in Eppo" in kept["4"]
+
+
+def test_write_held_orders_by_pr_number(tmp_path: Path) -> None:
+    """The held list is written in PR order, so weekly diffs stay small."""
+    path = tmp_path / "held.json"
+    cp._write_held(path, {"100": {"flag": "a"}, "9": {"flag": "b"}})
+    assert list(json.loads(path.read_text())) == ["9", "100"]
+    assert cp._load_held(path) == {"9": {"flag": "b"}, "100": {"flag": "a"}}
+    assert cp._load_held(tmp_path / "missing.json") == {}

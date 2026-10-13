@@ -7,8 +7,9 @@ Each PR merged in a window goes through these steps:
    question: if this were the only thing that shipped this week, would a customer
    want to be told about it?
 2. Hold: an ``announce`` PR whose description declares ``Flag: <key>`` (or, for
-   older PRs, whose fragment names a flag) waits until Eppo shows that flag fully
-   rolled out.
+   older PRs, whose fragment names a flag) goes on the held list,
+   ``scripts/.changelog_held.json``. Each weekly run checks the list against Eppo
+   and writes a held PR into that week's entry once its flag is fully rolled out.
 3. Group and write: Sonnet groups PRs that ship the same change and picks the
    highlights; Sonnet writes highlights and Haiku writes the rest.
 4. Review: entries that leak internal names, or that may be gated (the classifier
@@ -16,7 +17,8 @@ Each PR merged in a window goes through these steps:
    reviewer list instead of the page.
 
 ``weekly`` runs every step for one Monday-to-Monday week and, with ``--write``,
-inserts the Cloud and Fleet entries into the changelog files:
+inserts the Cloud and Fleet entries into the changelog files and updates the held
+list. ``seed-held`` imported the fragment pipeline's held backlog once:
 
   uv run python scripts/changelog_pipeline.py weekly --out DIR [--since 2026-10-05 --until 2026-10-12] --write
 
@@ -45,6 +47,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections import Counter
 from pathlib import Path
 
 import yaml
@@ -180,7 +183,53 @@ PASS2_SCHEMA = {
 }
 
 STOPWORDS = set(
-    ["the", "a", "an", "and", "or", "of", "to", "in", "on", "for", "with", "now", "no", "not", "is", "are", "be", "by", "from", "as", "at", "that", "this", "it", "its", "can", "when", "your", "you", "into", "than", "so", "instead", "about", "after", "before", "only", "also", "which", "their", "they", "them", "more", "new", "now"]
+    [
+        "the",
+        "a",
+        "an",
+        "and",
+        "or",
+        "of",
+        "to",
+        "in",
+        "on",
+        "for",
+        "with",
+        "now",
+        "no",
+        "not",
+        "is",
+        "are",
+        "be",
+        "by",
+        "from",
+        "as",
+        "at",
+        "that",
+        "this",
+        "it",
+        "its",
+        "can",
+        "when",
+        "your",
+        "you",
+        "into",
+        "than",
+        "so",
+        "instead",
+        "about",
+        "after",
+        "before",
+        "only",
+        "also",
+        "which",
+        "their",
+        "they",
+        "them",
+        "more",
+        "new",
+        "now",
+    ]
 )
 TITLE_PREFIX_RE = re.compile(r"^(feat|fix)(\([^)]*\))?!?:\s*", re.IGNORECASE)
 TITLE_TAG_RE = re.compile(r"\[[^\]]*\]|\(#\d+\)|\b[A-Z]{2,}-\d+\b")
@@ -1115,6 +1164,49 @@ def _declared_flag(pr: dict) -> str | None:
     return None
 
 
+HELD_LEDGER = _REPO_ROOT / "scripts" / ".changelog_held.json"
+
+
+def _load_held(path: Path | None) -> dict[str, dict]:
+    """Load the held list: PR number -> {flag, title, merged_at, held_since}."""
+    if path is None or not path.exists():
+        return {}
+    return json.loads(path.read_text())
+
+
+def _write_held(path: Path, held: dict[str, dict]) -> None:
+    """Write the held list with stable ordering, so weekly diffs stay small."""
+    ordered = {k: dict(sorted(held[k].items())) for k in sorted(held, key=int)}
+    path.write_text(json.dumps(ordered, indent=2) + "\n")
+
+
+def _release_held(
+    held: dict[str, dict], flags: dict[str, dict]
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Split the held list into released PRs and PRs that stay held, each with a reason.
+
+    A flag that Eppo shows fully rolled out releases its PRs. So does an archived
+    flag, since flags are usually archived once a feature ships; the reviewer sees
+    which reason applied. A flag missing from Eppo, or conflicting declarations,
+    stays held for a human to resolve.
+    """
+    released, kept = {}, {}
+    for number, entry in held.items():
+        flag = entry.get("flag", "")
+        state = flags.get(flag)
+        if flag == CONFLICTING_FLAGS:
+            kept[number] = "conflicting Flag: lines; set one and remove this entry"
+        elif state is None:
+            kept[number] = f"flag {flag} not found in Eppo"
+        elif state.get("rolled_out"):
+            released[number] = f"flag {flag} fully rolled out"
+        elif state.get("archived"):
+            released[number] = f"flag {flag} archived; confirm it shipped"
+        else:
+            kept[number] = f"flag {flag} not fully rolled out"
+    return released, kept
+
+
 def cmd_mock(args: argparse.Namespace) -> None:
     out = _out_dir(args.out)
     prs = {
@@ -1137,9 +1229,28 @@ def cmd_mock(args: argparse.Namespace) -> None:
         )
     flags = json.loads(flag_state.read_text())
 
+    ledger_path = (
+        Path(args.held_ledger).resolve() if getattr(args, "held_ledger", None) else None
+    )
+    ledger = _load_held(ledger_path)
+    released, kept = _release_held(ledger, flags)
+
     week = []
     held: list[tuple[int, str]] = []
+    for number in released:
+        n = int(number)
+        if n in prs and n in results:
+            week.append(n)
+        else:
+            print(
+                f"#{n}: released from the held list but not collected; keeping it held",
+                file=sys.stderr,
+            )
+            kept[number] = "released, but the PR could not be collected; rerun"
+            released = {k: v for k, v in released.items() if k != number}
     for n, pr in prs.items():
+        if str(n) in ledger:
+            continue
         if not (
             since <= (pr["merged_at"] or "")[:10] <= until
         ) or CHERRY_PICK_RE.search(pr["title"]):
@@ -1154,9 +1265,18 @@ def cmd_mock(args: argparse.Namespace) -> None:
             continue
         week.append(n)
     print(
-        f"{len(week)} announce-tier PRs, {len(held)} held behind flags not rolled out",
+        f"{len(week)} PRs to write ({len(released)} released from the held list), "
+        f"{len(held)} newly held behind flags not rolled out",
         file=sys.stderr,
     )
+    new_ledger = {k: ledger[k] for k in kept}
+    for n, flag in held:
+        new_ledger[str(n)] = {
+            "flag": flag,
+            "title": prs[n]["title"],
+            "merged_at": (prs[n]["merged_at"] or "")[:10],
+            "held_since": since,
+        }
 
     cache = _child(out, f"mock-{since}")
     cache.mkdir(exist_ok=True)
@@ -1248,15 +1368,41 @@ def cmd_mock(args: argparse.Namespace) -> None:
         _child(cache, f"{product}.mdx").write_text(block + "\n" if block else "")
     target = _child(cache, "mock.mdx")
     target.write_text("\n\n".join(b for b in blocks.values() if b) + "\n")
+    _child(cache, "held.json").write_text(
+        json.dumps(new_ledger, indent=2, sort_keys=True) + "\n"
+    )
     review_lines = [
         "# For the reviewer",
         "",
-        "## Held: declared flag not rolled out",
+        "## Released from the held list",
         "",
-        *[
-            f"- #{n} [{flag}] {prs[n]['title']} (classifier hint: {results[n]['pass1']['feature_flag']})"
-            for n, flag in sorted(held)
-        ],
+        *(
+            [
+                f"- #{n} {ledger[n]['title']} ({why})"
+                for n, why in sorted(released.items(), key=lambda kv: int(kv[0]))
+            ]
+            or ["None this week."]
+        ),
+        "",
+        "## Newly held: declared flag not rolled out",
+        "",
+        *(
+            [
+                f"- #{n} [{flag}] {prs[n]['title']} (classifier hint: {results[n]['pass1']['feature_flag']})"
+                for n, flag in sorted(held)
+            ]
+            or ["None this week."]
+        ),
+        "",
+        f"## Still held ({len(kept)})",
+        "",
+        *(
+            [
+                f"- #{n} {ledger[n]['title']} ({why})"
+                for n, why in sorted(kept.items(), key=lambda kv: int(kv[0]))
+            ]
+            or ["None."]
+        ),
         "",
         "## Not published: check before adding",
         "",
@@ -1935,6 +2081,16 @@ def cmd_weekly(args: argparse.Namespace) -> None:
         since, until = _validate_date(args.since), _validate_date(args.until)
     else:
         since, until = _default_window(dt.datetime.now(dt.UTC).date())
+    label = _week_label(since, until)
+    if args.write:
+        for path in CHANGELOG_TARGETS.values():
+            if f'<Update label="{label}"' in path.read_text():
+                # A rerun after the week merged is a no-op, not a failure.
+                print(
+                    f"{path.relative_to(_REPO_ROOT)} already has {label}; nothing to do",
+                    file=sys.stderr,
+                )
+                return
     out = _out_dir(args.out)
     common = {"out": str(out), "since": since.isoformat(), "until": until.isoformat()}
     print(f"Window {since}..{until}", file=sys.stderr)
@@ -1952,15 +2108,43 @@ def cmd_weekly(args: argparse.Namespace) -> None:
             only=None,
         )
     )
-    _load_flags(out, None)  # rollout state for the hold rule, from EPPO_API_KEY
+    flags = _load_flags(out, None)  # rollout state for the hold rule, from EPPO_API_KEY
+
+    # PRs held in earlier weeks whose flag has since shipped are written this week.
+    ledger = Path(args.held_ledger).resolve()
+    released, _ = _release_held(_load_held(ledger), flags)
+    if released:
+        prs_dir = _child(out, "prs")
+        for number in released:
+            try:
+                _collect_one(int(number), prs_dir)
+            except Exception as exc:  # noqa: BLE001 - report and keep going
+                print(f"#{number}: {exc}", file=sys.stderr)
+        cmd_classify(
+            argparse.Namespace(
+                out=str(out),
+                results=args.results,
+                pass1_model=PASS1_MODEL,
+                pass2_model=PASS2_MODEL,
+                write=False,
+                workers=args.workers,
+                limit=0,
+                only=[int(n) for n in released],
+            )
+        )
     cmd_mock(
         argparse.Namespace(
-            **common, results=args.results, label=None, workers=args.workers
+            **common,
+            results=args.results,
+            label=None,
+            workers=args.workers,
+            held_ledger=str(ledger),
         )
     )
 
     cache = _child(out, f"mock-{since.isoformat()}")
     if args.write:
+        _write_held(ledger, json.loads(_child(cache, "held.json").read_text()))
         for product, path in CHANGELOG_TARGETS.items():
             block = _child(cache, f"{product}.mdx").read_text()
             if block.strip():
@@ -1970,6 +2154,95 @@ def cmd_weekly(args: argparse.Namespace) -> None:
                     file=sys.stderr,
                 )
     print(_child(cache, "review.md"))
+
+
+# ---------------------------------------------------------------------------
+# seed-held: carry the fragment pipeline's held backlog into the held list
+
+
+def cmd_seed_held(args: argparse.Namespace) -> None:
+    """Add every held .changelog fragment in langchainplus to the held list, once."""
+    repo = Path(args.repo).expanduser().resolve()
+    root = (repo / ".changelog").resolve()
+    published_ledger = _REPO_ROOT / "scripts" / ".changelog_published.txt"
+    published = (
+        {
+            line.strip()
+            for line in published_ledger.read_text().splitlines()
+            if line.strip() and not line.startswith("#")
+        }
+        if published_ledger.exists()
+        else set()
+    )
+    ledger_path = Path(args.held_ledger).resolve()
+    held = _load_held(ledger_path)
+    # Only flags still waiting to ship carry over. A held fragment whose flag already
+    # rolled out was usually covered by its feature's launch entry, and releasing it
+    # now would republish it; a flag missing from Eppo cannot be resolved by the job.
+    snapshot = json.loads(Path(args.flags_snapshot).read_text())
+    added = skipped = 0
+    not_pending: Counter = Counter()
+    for path in sorted(root.glob("*.yaml")):
+        if path.name.startswith(("_", "TEMPLATE")) or path.name in published:
+            continue
+        try:
+            data = yaml.safe_load(path.read_text()) or {}
+        except yaml.YAMLError:
+            continue
+        flag = data.get("flag")
+        if not flag or str(data.get("status", "")).strip().lower() == "ready":
+            continue
+        state = snapshot.get(str(flag))
+        if state is None or state.get("rolled_out") or state.get("archived"):
+            not_pending[
+                "missing from Eppo"
+                if state is None
+                else "already rolled out or archived"
+            ] += 1
+            continue
+        number, merged = None, path.name[:10]
+        m = re.search(r"#(\d+)\s*$", str(data.get("pr") or ""))
+        if m:
+            number = m.group(1)
+        else:
+            subject = _run(
+                [
+                    "git",
+                    "log",
+                    "-1",
+                    "--diff-filter=A",
+                    "--format=%s%x00%cs",
+                    "origin/main",
+                    "--",
+                    str(path.relative_to(repo)),
+                ],
+                timeout=GH_TIMEOUT_SECONDS,
+                cwd=repo,
+            ).strip()
+            subject, _, commit_date = subject.partition("\x00")
+            merged = commit_date or merged
+            m = re.search(r"\(#(\d+)\)", subject)
+            if m:
+                number = m.group(1)
+        if not number:
+            print(f"{path.name}: could not find its PR; skipping", file=sys.stderr)
+            skipped += 1
+            continue
+        if number in held:
+            continue
+        held[number] = {
+            "flag": str(flag),
+            "title": str(data.get("title") or path.stem),
+            "merged_at": merged,
+            "held_since": "fragment",
+        }
+        added += 1
+    _write_held(ledger_path, held)
+    print(
+        f"Added {added} held fragments ({skipped} without a PR); {len(held)} PRs held. "
+        f"Not carried over: {dict(not_pending)}",
+        file=sys.stderr,
+    )
 
 
 def main() -> None:
@@ -2104,8 +2377,27 @@ def main() -> None:
         action="store_true",
         help="Insert the entries into the changelog files",
     )
+    p.add_argument(
+        "--held-ledger",
+        default=str(HELD_LEDGER),
+        help="Held list to read and, with --write, update",
+    )
     p.add_argument("--workers", type=int, default=8)
     p.set_defaults(func=cmd_weekly)
+
+    p = sub.add_parser(
+        "seed-held", help="Import held .changelog fragments into the held list, once"
+    )
+    p.add_argument(
+        "--repo", required=True, help="Local langchainplus checkout at current main"
+    )
+    p.add_argument("--held-ledger", default=str(HELD_LEDGER))
+    p.add_argument(
+        "--flags-snapshot",
+        required=True,
+        help="eppo-flags.json from a flags or weekly run; only flags still pending carry over",
+    )
+    p.set_defaults(func=cmd_seed_held)
 
     args = parser.parse_args()
     args.func(args)
