@@ -59,8 +59,6 @@ FLEET_CHANGELOG = _REPO_ROOT / "src" / "snippets" / "langsmith" / "fleet-changel
 
 GH_TIMEOUT_SECONDS = 90
 CLAUDE_TIMEOUT_SECONDS = 600
-GH_PAGE_LIMIT = 1000
-SUBWINDOW_DAYS = 3
 RATE_LIMIT_RETRIES = 5
 RATE_LIMIT_WAIT_SECONDS = 65
 DIFF_CHAR_BUDGET = 30_000  # about 8k tokens
@@ -317,35 +315,44 @@ def _child(root: Path, name: str) -> Path:
 
 
 def _list_feat_fix(since: dt.date, until: dt.date) -> list[int]:
+    """Merged feat/fix PRs whose merge date falls in [since, until], inclusive.
+
+    Pages through closed PRs, most recently updated first, through the pulls API.
+    The search API is avoided on purpose: a fine-grained token with read access
+    to pull requests can be refused search on a private repo, and search allows
+    only 30 requests a minute. A PR's update time is never earlier than its
+    merge time, so paging stops once a page's PRs were last updated before the
+    window opened.
+    """
     numbers: set[int] = set()
-    start = since
-    while start <= until:
-        end = min(start + dt.timedelta(days=SUBWINDOW_DAYS - 1), until)
-        out = _run(
-            [
-                "gh",
-                "search",
-                "prs",
-                "--repo",
-                REPO,
-                "--merged",
-                "--merged-at",
-                f"{start.isoformat()}..{end.isoformat()}",
-                "--limit",
-                str(GH_PAGE_LIMIT),
-                "--json",
-                "number,title",
-            ],
-            timeout=GH_TIMEOUT_SECONDS,
-        )
-        batch = json.loads(out or "[]")
-        if len(batch) >= GH_PAGE_LIMIT:
-            print(
-                f"WARNING: {start}..{end} hit the result cap; lower SUBWINDOW_DAYS",
-                file=sys.stderr,
+    page = 1
+    while True:
+        batch = json.loads(
+            _run(
+                [
+                    "gh",
+                    "api",
+                    f"repos/{REPO}/pulls?state=closed&sort=updated&direction=desc"
+                    f"&per_page=100&page={page}",
+                ],
+                timeout=GH_TIMEOUT_SECONDS,
             )
-        numbers.update(pr["number"] for pr in batch if TYPE_RE.match(pr["title"]))
-        start = end + dt.timedelta(days=1)
+            or "[]"
+        )
+        for pr in batch:
+            merged = (pr.get("merged_at") or "")[:10]
+            if (
+                merged
+                and since.isoformat() <= merged <= until.isoformat()
+                and TYPE_RE.match(pr.get("title") or "")
+            ):
+                numbers.add(pr["number"])
+        if (
+            len(batch) < 100
+            or (batch[-1].get("updated_at") or "")[:10] < since.isoformat()
+        ):
+            break
+        page += 1
     return sorted(numbers)
 
 

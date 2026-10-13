@@ -184,3 +184,39 @@ def test_write_held_orders_by_pr_number(tmp_path: Path) -> None:
     assert list(json.loads(path.read_text())) == ["9", "100"]
     assert cp._load_held(path) == {"9": {"flag": "b"}, "100": {"flag": "a"}}
     assert cp._load_held(tmp_path / "missing.json") == {}
+
+
+def test_list_feat_fix_filters_by_merge_date_and_stops_paging(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Merged feat/fix PRs in the window are kept; paging stops past the window."""
+
+    def pr(number: int, title: str, merged: str | None, updated: str) -> dict:
+        return {
+            "number": number,
+            "title": title,
+            "merged_at": merged,
+            "updated_at": updated,
+        }
+
+    first = [pr(1, "feat: in window", "2026-10-06T10:00:00Z", "2026-10-13T00:00:00Z")]
+    first += [
+        pr(2, "chore: wrong type", "2026-10-06T10:00:00Z", "2026-10-12T00:00:00Z")
+    ]
+    first += [pr(3, "fix: closed unmerged", None, "2026-10-11T00:00:00Z")]
+    first += [
+        pr(4, "fix: after window", "2026-10-14T00:00:00Z", "2026-10-14T00:00:00Z")
+    ]
+    first += [pr(100 + i, "docs: x", None, "2026-10-10T00:00:00Z") for i in range(96)]
+    second = [pr(5, "fix: old", "2026-09-30T00:00:00Z", "2026-10-01T00:00:00Z")] * 100
+    pages = [first, second, [pr(6, "feat: never read", "2026-10-06T00:00:00Z", "x")]]
+    calls = []
+
+    def fake_run(argv: list[str], **_: object) -> str:
+        calls.append(argv)
+        return json.dumps(pages[len(calls) - 1])
+
+    monkeypatch.setattr(cp, "_run", fake_run)
+    got = cp._list_feat_fix(dt.date(2026, 10, 5), dt.date(2026, 10, 12))
+    assert got == [1]
+    assert len(calls) == 2  # the second page ends before the window, so paging stops
