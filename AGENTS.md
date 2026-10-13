@@ -195,7 +195,7 @@ Six tabs, all files flat in `src/langsmith/`:
 | Account | Billing & usage |
 | Cloud | Reference |
 | BYOC | No groups |
-| Self-hosted | Get started by cloud provider, Deploy with Terraform (AWS, GCP, Azure), Setup guides (Manage an installation), Configuration, Connect external services, Platform auth & access control, SmithDB, Self-hosted observability, Hybrid, Scripts, Reference |
+| Self-hosted | Get started by cloud provider, Deploy with Terraform (AWS, GCP, Azure), Install an instance (Additional features → Enable Sandboxes), Configure an instance, Connect external services, Platform auth & access control, SmithDB, Manage an instance, Self-hosted observability, Hybrid, Scripts, Reference |
 | Govern | Organization (Workspace setup), Users & access control, Tools, Auditing, Data & compliance, Additional resources (FAQ) |
 
 #### Other menu items
@@ -302,6 +302,8 @@ Use `@[ClassName]` to auto-link to API docs. Defined in `pipeline/preprocessors/
 ## Assets
 
 **Images:** Store in `src/images/`. Use descriptive filenames and alt text.
+
+**SVG text:** Keep labels as native `<text>` when sharpness at reading size matters. Mintlify CLI 4.2.671 strips `<text>` and `<use>` from plain MDX; use a named-export JSX snippet for native SVG rendering, as in `src/snippets/sandbox-diagram.jsx`. Reference only trusted local assets, and compare the result at the actual docs column width rather than only in an enlarged viewer.
 
 **Icons:** Use Tabler names only (`icon="home"`, `icon="brand-github"`). For missing icons, use SVG path: `icon="/images/providers/name.svg"`
 

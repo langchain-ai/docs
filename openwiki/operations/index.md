@@ -2,5 +2,5 @@
 
 - [Adding and Maintaining Documentation Pages](adding-pages.md) - Safely add, move, retire, or regenerate documentation pages by selecting the source owner, maintaining navigation and redirects, and validating emitted routes.
 - [Agent authoring skills](agent-skills.md) - Use the repository's task-specific skill catalog without duplicating global rules, distribute the canonical tree to supported agents, and validate skill and tooling changes.
-- [CLI Tools and Make Targets](cli-tools.md)
+- [CLI Tools and Make Targets](cli-tools.md) - Operational reference for the documentation CLI, Make targets, local preview, generated snippets, sample execution, and trace-link refreshes.
 - [Cross-References](cross-references.md) - Author, resolve, and validate scoped semantic @[ref] API-reference links. Covers Python and JavaScript lookup, MCP aliases, link-map ownership, and the separate source and rendered-link checks.

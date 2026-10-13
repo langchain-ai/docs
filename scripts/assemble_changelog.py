@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Assemble weekly LangSmith Cloud + Fleet changelog entries from fragment files.
 
+Deprecated: ``scripts/changelog_pipeline.py weekly`` (run by
+``.github/workflows/changelog-weekly.yml``) writes the weekly changelog from merged
+PRs instead, and fragments stop with langchainplus#48226. This script stays only
+because ``changelog_pipeline.py`` imports its Eppo helpers (``eppo_flag_index``,
+``is_fully_rolled_out``); move those before deleting it.
+
 Reads per-PR changelog fragments from ``langchainplus/.changelog/`` (see that
 directory's ``README.md`` for the schema), keeps the ones ready to publish,
 groups them by the category map (which also routes each component to Cloud or

@@ -1,10 +1,11 @@
 ---
-type: "Reference"
-title: "CLI Tools and Make Targets"
-openwiki_generated: true
+type: reference
+title: CLI Tools and Make Targets
+description: Operational reference for the documentation CLI, Make targets, local preview, generated snippets, sample execution, and trace-link refreshes.
+tags: [cli, make, documentation, code-samples, operations]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-07T08:23:22.147Z
+    at: 2026-10-08T08:23:51.982Z
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
@@ -22,19 +23,20 @@ sources:
     resource: repo://pyproject.toml
   - id: openwiki-source-7c3064080adf2cb0048e51fc
     resource: repo://scripts/check_llms_urls.py
+  - id: openwiki-source-2654e40275744504b4ca7e2b
+    resource: repo://scripts/code_sample_tracing.py
   - id: openwiki-source-fd0cb9d6fca56bf4963559e9
     resource: repo://scripts/extract_code_snippets.py
   - id: openwiki-source-560bf24db9566b97ee19e383
     resource: repo://scripts/generate_code_snippet_mdx.py
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-07T08:23:22.147Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-08T08:23:51.982Z" }
 ---
-
 
 # CLI Tools and Make Targets
 
-The Python `docs` CLI owns documentation transformation and local preview. The `Makefile` supplies checkout-oriented setup, validation, export, sample, and generated-content workflows. Author in `src/`; `build/` is disposable Mintlify input, not an authoring surface. A full build deletes and recreates it, so never hand-edit build artifacts.
+The Python `docs` CLI transforms documentation and runs the local preview. The `Makefile` provides checkout-oriented setup, validation, export, sample, and generated-content workflows. Author in `src/`; `build/` is disposable Mintlify input, not an authoring surface. A full build deletes and recreates it, so never hand-edit build artifacts.
 
 ## Entry points and setup
 
@@ -98,7 +100,7 @@ flowchart TD
   Touch --> Reload["Mint detects update"]
 ```
 
-This is the development control flow: an initial full build establishes the generated tree, then supported changes are rebuilt incrementally.
+*Preview flow: `docs dev` establishes or reuses a build tree, then batches supported source-file events into incremental builds and touches their generated outputs for Mint reload detection.*
 
 The watcher ignores directories, backup files ending in `~`, `.bak`, or `.orig`, and hidden temporary files ending in `.tmp`, `.temp`, or `.swp`. It deduplicates queued paths, builds the pending batch asynchronously, then touches output for Mint. Deleting a source file removes its corresponding source-relative output path. This incremental loop does not replace a full build for whole-tree changes.
 
@@ -153,9 +155,13 @@ src/code-samples/ -- extraction --> src/code-samples-generated/ -- MDX generatio
 
 Extraction processes marked Python, TypeScript, Java, Kotlin, Go, and shell samples. A full run removes prior generated supported intermediate outputs. `CODE_SNIPPET_SOURCES` can restrict extraction to space-separated eligible files beneath `src/code-samples/`, replacing only those files’ prior generated outputs; missing, out-of-root, or unsupported selections fail. Generation scans the intermediate files and writes importable MDX. Edit the sample source, never the intermediate or generated MDX as an authoring shortcut. See [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md) for marker and dependency rules.
 
-`make test-code-samples` executes all eligible samples or a focused `FILES="path ..."` set. It preserves the caller environment, including service and credential variables, and dispatches each supported language through its toolchain. Ordinary failures fail the command. A persistent LangSmith rate limit is retried three times and then reported as skipped rather than failed, so successful completion with skips is not proof every sample ran.
+`make test-code-samples` executes all eligible samples or a focused `FILES="path ..."` set. It preserves the caller environment, including service and credential variables, and dispatches each supported language through its toolchain. It runs up to four samples concurrently by default (`CODE_SAMPLE_JOBS` overrides this); samples in the same configured dataset/experiment group are serialized. Invalid, missing, unsupported, or out-of-tree paths in a focused `FILES` list are warned about and skipped, and a focused selection with no valid samples exits successfully.
 
-`make update-code-sample-traces` sets `CODE_SAMPLE_TRACING=1`, defaults `LANGSMITH_PROJECT` to `docs-code-samples`, executes the chosen samples, and regenerates snippet MDX. It requires `LANGSMITH_API_KEY`: tracing creates or reuses public LangSmith share URLs. For a successful single-snippet sample, collection selects an agent-like root run and records its public URL in `src/code-samples/trace-links.json`; no-marker and multi-marker sources receive no trace link. Trace collection errors fail the sample run. Use intentional credentials and review the manifest and generated-MDX diffs because this workflow publishes links.
+Each sample has a 1,200-second default timeout, configurable with `CODE_SAMPLE_TIMEOUT_SECONDS`. Ordinary failures fail the command. Only detected LangSmith rate-limit failures are retried: the default is five attempts with increasing delays of 30, 60, 90, and 120 seconds, capped at 120 seconds; `CODE_SAMPLE_RATE_LIMIT_ATTEMPTS` and `CODE_SAMPLE_RATE_LIMIT_DELAY_SECONDS` tune those values. A sample still rate-limited after the final attempt is reported as skipped rather than failed, so successful completion with skips is not proof every selected sample ran.
+
+`make update-code-sample-traces` sets `CODE_SAMPLE_TRACING=1`, defaults `LANGSMITH_PROJECT` to `docs-code-samples`, executes the chosen samples, and regenerates snippet MDX. It requires `LANGSMITH_API_KEY` to publish trace links. Successful samples enable tracing; collection is serialized so parallel workers do not overwrite the shared `src/code-samples/trace-links.json` manifest or claim the same run. For a single-snippet sample, collection searches the sample time window for an agent-like root run, creates or reuses a public share URL, records it by snippet ID in the manifest, and the MDX generator adds the `View example trace` card.
+
+No-marker sources and sources with multiple `:snippet-start:` markers get no trace link; a multi-snippet source is recorded as skipped and any stale single-snippet entries are removed. Trace collection retries rate limits with the same attempt settings, but errors after a sample has passed are reported as warnings and do **not** fail the sample run. Review the manifest and generated-MDX diffs because the workflow can publish public share URLs and may complete with missing trace links.
 
 ## Served LLM-index validation
 
