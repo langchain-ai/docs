@@ -15,7 +15,7 @@ experimentId = seededExperiment.id;
 // :remove-end:
 const experiment = new ExperimentAddress(experimentId);
 
-const project = await client.sessions.resolve(experiment.toApiAddress());
+const project = await client.sessions.resolve(experiment);
 
 for await (const run of client.runs.query({
   project_ids: [project.session_id],
