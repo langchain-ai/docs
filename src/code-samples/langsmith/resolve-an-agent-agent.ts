@@ -23,7 +23,7 @@ async function seedAgent(
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     try {
-      await seedClient.sessions.resolve(address.toApiAddress());
+      await seedClient.sessions.resolve(address);
       return;
     } catch (error) {
       const status = (error as { status?: number }).status;
@@ -45,7 +45,7 @@ const agent = new AgentAddress("checkout", "production");
 await seedAgent(client, agent);
 // :remove-end:
 
-const project = await client.sessions.resolve(agent.toApiAddress());
+const project = await client.sessions.resolve(agent);
 
 for await (const run of client.runs.query({
   project_ids: [project.session_id],

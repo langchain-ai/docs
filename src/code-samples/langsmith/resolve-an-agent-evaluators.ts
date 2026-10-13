@@ -8,7 +8,7 @@ const evaluators = new EvaluatorAddress();
 await client.createProject({ projectName: "evaluators", upsert: true });
 // :remove-end:
 
-const project = await client.sessions.resolve(evaluators.toApiAddress());
+const project = await client.sessions.resolve(evaluators);
 
 for await (const run of client.runs.query({
   project_ids: [project.session_id],
