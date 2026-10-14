@@ -98,7 +98,7 @@ import { Agent } from "@mastra/core/agent";
 export const echoAgent = new Agent({
   name: "echoAgent",
   instructions: "You are a helpful assistant.",
-  model: "openai/gpt-4o-mini",
+  model: "openai/gpt-5.4-mini",
 });
 ```
 
