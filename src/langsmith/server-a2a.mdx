@@ -80,7 +80,8 @@ returns.
 - **`returnImmediately`**: The v1.0 flag. Takes precedence when both flags are sent.
 - **`blocking`**: The v0.3 flag. `"blocking": false` behaves like `"returnImmediately": true`.
 
-Both flags must be booleans. Any other value returns `-32602` before a run is created.
+Each flag must be a boolean or `null`, and `null` counts as unset. Any other value returns `-32602`
+before a run is created.
 
 ### Task history in responses
 
@@ -184,8 +185,11 @@ artifact named `Interrupt`. The artifact holds one `DataPart` per pending interr
 
 To resume, send a message with the interrupted task's `taskId` and `contextId`. Put the resume
 value in a `DataPart` under a `resume` key, such as `{"data": {"resume": true}}`, or send a text
-part, which is used as the resume value as is. A `resume` `DataPart` sent to a task that is not
-waiting on input returns `-32602`.
+part, which is used as the resume value as is. Send at most one `resume` `DataPart`. More than one
+returns `-32602`.
+
+If the task is not waiting on input, a `resume` `DataPart` returns `-32602`, but a text part is
+treated as an ordinary message rather than a resume value.
 
 ## Agent card discovery
 
@@ -292,6 +296,9 @@ A2UI parts are preserved in `SendMessage`, `GetTask`, and the final `SendStreami
 The server publishes A2UI output only when the assistant has A2UI enabled and the client sent the
 extension header. Otherwise, it drops A2UI blocks from the agent's output and returns the rest of
 the reply, rather than failing the request.
+
+Client input is stricter. An A2UI `DataPart` sent to an assistant without A2UI enabled, or sent
+without the extension header, returns `-32602`.
 
 To publish a tool's result as A2UI, list the tool names on the deployment. The tool's result must
 be A2UI JSON:
@@ -770,6 +777,7 @@ Read this before you build against a capability:
 | `A2A-Version` request header | Not read, so an unsupported version is processed instead of returning `-32009` |
 | Agent card caching | No `Cache-Control`, `ETag` or `Last-Modified` headers |
 | `GetExtendedAgentCard` | Served, but never advertised via `capabilities.extendedAgentCard` |
+
 ## Disable A2A
 
 To disable the A2A endpoint, set `disable_a2a` to `true` in your `langgraph.json` configuration file:
