@@ -11,7 +11,7 @@ def get_weather(city: str) -> str:
 
 model = ChatAnthropic(
     # KEEP MODEL
-    model_name="claude-sonnet-4-6",
+    model_name="claude-sonnet-4-6",  # claude-sonnet-5-5 rejects budget_tokens thinking
     timeout=None,
     stop=None,
     thinking={"type": "enabled", "budget_tokens": 5000},

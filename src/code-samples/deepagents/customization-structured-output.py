@@ -25,7 +25,7 @@ def internet_search(
     )
 
 
-model = "anthropic:claude-sonnet-4-6"
+model = "anthropic:claude-sonnet-5-5"
 # :remove-end:
 
 # :snippet-start: customization-structured-output-py
