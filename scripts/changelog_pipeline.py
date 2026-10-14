@@ -20,8 +20,7 @@ Each PR merged in a window goes through these steps:
 ``weekly`` runs every step for one Monday-to-Monday week and, with ``--write``,
 inserts the Cloud and Fleet entries into the changelog files and updates the held
 list. The held list is committed encrypted (``CHANGELOG_STATE_KEY``), because this
-repository is public. ``seed-held`` imported the fragment pipeline's held backlog
-once:
+repository is public:
 
   uv run python scripts/changelog_pipeline.py weekly --out DIR [--since 2026-10-05 --until 2026-10-12] --write
 
@@ -50,7 +49,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections import Counter
+import urllib.request
 from pathlib import Path
 
 import yaml
@@ -1838,14 +1837,113 @@ def _eppo_token(key_file: str | None) -> str:
     return token
 
 
+# Eppo REST API. Domain is hardcoded (allowlist of one) and HTTPS-only per
+# our SSRF guidance; never read the base URL from user input.
+EPPO_API_BASE = "https://eppo.cloud/api/v1"
+EPPO_TIMEOUT_SECONDS = 15
+
+
+def _eppo_get(path: str, token: str) -> dict | list:
+    """GET a path under the Eppo REST API base (HTTPS + allowlisted domain)."""
+    url = f"{EPPO_API_BASE}/{path.lstrip('/')}"
+    if not url.startswith("https://eppo.cloud/"):  # belt-and-suspenders SSRF guard
+        raise ValueError("Eppo URL failed allowlist check")
+    req = urllib.request.Request(url, headers={"X-Eppo-Token": token})
+    with urllib.request.urlopen(req, timeout=EPPO_TIMEOUT_SECONDS) as resp:
+        return json.loads(resp.read().decode())
+
+
+def eppo_flag_index(token: str) -> dict[str, dict]:
+    """Fetch feature flags (with allocations) indexed by their flag key.
+
+    Eppo's flag-detail endpoint is keyed by numeric id, not the flag key, so we
+    list flags and index by ``key``. Accepts a bare list or an envelope.
+
+    NOTE: this reads a single page. If the API paginates and a held fragment's
+    flag is on a later page, it surfaces as "Eppo flag not found" (a loud error,
+    never a silent wrong publish). The truncation check below warns when the
+    envelope reports more flags than were returned.
+    """
+    payload = _eppo_get("feature-flags?include_detailed_allocations=true", token)
+    if isinstance(payload, list):
+        items = payload
+    else:
+        items = (
+            payload.get("flags")
+            or payload.get("data")
+            or payload.get("results")
+            or payload.get("items")
+            or []
+        )
+        total = (
+            payload.get("total_count") or payload.get("total") or payload.get("count")
+        )
+        if isinstance(total, int) and total > len(items):
+            print(
+                f"WARNING: Eppo returned {len(items)} of {total} flags (paginated); "
+                f"some held fragments may falsely report 'flag not found'.",
+                file=sys.stderr,
+            )
+    return {f["key"]: f for f in items if isinstance(f, dict) and f.get("key")}
+
+
+def is_fully_rolled_out(flag_json: dict) -> bool:
+    """Return True when the flag serves one variant to the whole production audience.
+
+    Eppo models each environment as a waterfall of allocations (top-level
+    ``allocations``, tagged by ``environment_id``). Allocations with
+    ``targeting_rules`` only cover the tenants they match; users who match none
+    fall through to the first allocation with no targeting rules (the catch-all,
+    usually ``is_default``). That catch-all decides what the general population
+    gets, so it is the signal for "shipped to everyone".
+
+    Fully rolled out := the production environment is active AND its first
+    no-targeting allocation has full traffic exposure and assigns 100% weight to
+    a single variation. For BOOLEAN flags that variation must be ``"true"`` (a
+    catch-all serving ``"false"`` means the feature is off for everyone).
+    """
+    prod = next(
+        (e for e in flag_json.get("environments", []) if e.get("is_production")), None
+    )
+    if prod is None or not prod.get("active"):
+        return False
+    prod_id = prod.get("id")
+
+    is_boolean = flag_json.get("variation_type") == "BOOLEAN"
+    on_variation_ids = {
+        v["id"]
+        for v in flag_json.get("variations", [])
+        if v.get("variant_key") == "true"
+    }
+
+    prod_allocations = [
+        a
+        for a in flag_json.get("allocations", [])
+        if a.get("environment_id") == prod_id and not a.get("archived_at")
+    ]
+    for alloc in prod_allocations:
+        if alloc.get("targeting_rules"):
+            continue  # only covers targeted tenants; not the general population
+        # First catch-all allocation reached: it decides what everyone else gets.
+        # Eppo expresses full exposure as the fraction 1; tolerate 100 (percent).
+        if alloc.get("percent_exposure", 1) not in (1, 100):
+            return False  # partial traffic exposure
+        served = [
+            w for w in alloc.get("variation_weight", []) if w.get("weight", 0) > 0
+        ]
+        if len(served) != 1:
+            return False  # split across variants (experiment), not a uniform rollout
+        if is_boolean and served[0].get("variation_id") not in on_variation_ids:
+            return False  # catch-all serves "false" -> off for everyone
+        return True
+    return False  # no catch-all -> only targeted tenants get the feature
+
+
 def _load_flags(out: Path, key_file: str | None) -> dict[str, dict]:
     """Fetch every Eppo flag once and cache keys, names, and rollout state (no token)."""
     cache = _child(out, "eppo-flags.json")
     if cache.exists():
         return json.loads(cache.read_text())
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from assemble_changelog import eppo_flag_index, is_fully_rolled_out  # noqa: PLC0415
-
     index = eppo_flag_index(_eppo_token(key_file))
     flags = {
         key: {
@@ -2526,95 +2624,6 @@ def cmd_weekly(args: argparse.Namespace) -> None:
     print(_child(cache, "report.md"))
 
 
-# ---------------------------------------------------------------------------
-# seed-held: carry the fragment pipeline's held backlog into the held list
-
-
-def cmd_seed_held(args: argparse.Namespace) -> None:
-    """Add every held .changelog fragment in langchainplus to the held list, once."""
-    repo = Path(args.repo).expanduser().resolve()
-    root = (repo / ".changelog").resolve()
-    published_ledger = _REPO_ROOT / "scripts" / ".changelog_published.txt"
-    published = (
-        {
-            line.strip()
-            for line in published_ledger.read_text().splitlines()
-            if line.strip() and not line.startswith("#")
-        }
-        if published_ledger.exists()
-        else set()
-    )
-    ledger_path = Path(args.held_ledger).resolve()
-    held = _load_held(ledger_path)
-    # Only flags still waiting to ship carry over. A held fragment whose flag already
-    # rolled out was usually covered by its feature's launch entry, and releasing it
-    # now would republish it; a flag missing from Eppo cannot be resolved by the job.
-    snapshot = json.loads(Path(args.flags_snapshot).read_text())
-    added = skipped = 0
-    not_pending: Counter = Counter()
-    for path in sorted(root.glob("*.yaml")):
-        if path.name.startswith(("_", "TEMPLATE")) or path.name in published:
-            continue
-        try:
-            data = yaml.safe_load(path.read_text()) or {}
-        except yaml.YAMLError:
-            continue
-        flag = data.get("flag")
-        if not flag or str(data.get("status", "")).strip().lower() == "ready":
-            continue
-        state = snapshot.get(str(flag))
-        if state is None or state.get("rolled_out") or state.get("archived"):
-            not_pending[
-                "missing from Eppo"
-                if state is None
-                else "already rolled out or archived"
-            ] += 1
-            continue
-        number, merged = None, path.name[:10]
-        m = re.search(r"#(\d+)\s*$", str(data.get("pr") or ""))
-        if m:
-            number = m.group(1)
-        else:
-            subject = _run(
-                [
-                    "git",
-                    "log",
-                    "-1",
-                    "--diff-filter=A",
-                    "--format=%s%x00%cs",
-                    "origin/main",
-                    "--",
-                    str(path.relative_to(repo)),
-                ],
-                timeout=GH_TIMEOUT_SECONDS,
-                cwd=repo,
-            ).strip()
-            subject, _, commit_date = subject.partition("\x00")
-            merged = commit_date or merged
-            m = re.search(r"\(#(\d+)\)", subject)
-            if m:
-                number = m.group(1)
-        if not number:
-            print(f"{path.name}: could not find its PR; skipping", file=sys.stderr)
-            skipped += 1
-            continue
-        if number in held:
-            continue
-        held[number] = {
-            "flag": str(flag),
-            "title": str(data.get("title") or path.stem),
-            "merged_at": merged,
-            "held_since": "fragment",
-        }
-        added += 1
-    _write_held(ledger_path, held)
-    print(
-        f"Added {added} held fragments ({skipped} without a PR); {len(held)} PRs held. "
-        f"Not carried over: {dict(not_pending)}",
-        file=sys.stderr,
-    )
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -2754,20 +2763,6 @@ def main() -> None:
     )
     p.add_argument("--workers", type=int, default=8)
     p.set_defaults(func=cmd_weekly)
-
-    p = sub.add_parser(
-        "seed-held", help="Import held .changelog fragments into the held list, once"
-    )
-    p.add_argument(
-        "--repo", required=True, help="Local langchainplus checkout at current main"
-    )
-    p.add_argument("--held-ledger", default=str(HELD_LEDGER))
-    p.add_argument(
-        "--flags-snapshot",
-        required=True,
-        help="eppo-flags.json from a flags or weekly run; only flags still pending carry over",
-    )
-    p.set_defaults(func=cmd_seed_held)
 
     args = parser.parse_args()
     args.func(args)

@@ -410,3 +410,48 @@ def test_held_list_folds_in_and_retires_the_plaintext_copy(
     cp._write_held(path, {**held, "10": {"flag": "new"}})
     assert not legacy.exists()
     assert cp._load_held(path) == {"9": {"flag": "old"}, "10": {"flag": "new"}}
+
+
+def _eppo_flag(*allocations: dict, active: bool = True, boolean: bool = True) -> dict:
+    """An Eppo flag with one production environment and the given allocations."""
+    return {
+        "variation_type": "BOOLEAN" if boolean else "STRING",
+        "environments": [{"id": 1, "is_production": True, "active": active}],
+        "variations": [
+            {"id": 10, "variant_key": "true"},
+            {"id": 11, "variant_key": "false"},
+        ],
+        "allocations": [{"environment_id": 1, **a} for a in allocations],
+    }
+
+
+def _serve(variation_id: int, exposure: float = 1) -> dict:
+    return {
+        "percent_exposure": exposure,
+        "variation_weight": [{"variation_id": variation_id, "weight": 100}],
+    }
+
+
+@pytest.mark.parametrize(
+    ("flag", "expected"),
+    [
+        (_eppo_flag(_serve(10)), True),
+        (_eppo_flag(_serve(10, exposure=100)), True),  # exposure as a percent
+        (_eppo_flag(_serve(11)), False),  # catch-all serves "false"
+        (_eppo_flag(_serve(10, exposure=0.5)), False),  # partial exposure
+        (_eppo_flag(_serve(10), active=False), False),  # production inactive
+        (_eppo_flag({"targeting_rules": [{}], **_serve(10)}), False),  # targeted only
+        (_eppo_flag({"targeting_rules": [{}], **_serve(11)}, _serve(10)), True),
+        (_eppo_flag(), False),  # no allocations
+    ],
+)
+def test_is_fully_rolled_out(flag: dict, expected: bool) -> None:
+    """Only a production catch-all serving one "on" variant to everyone counts."""
+    assert cp.is_fully_rolled_out(flag) is expected
+
+
+def test_eppo_get_refuses_other_hosts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The Eppo client only ever requests the hardcoded HTTPS host."""
+    monkeypatch.setattr(cp, "EPPO_API_BASE", "https://example.com/api")
+    with pytest.raises(ValueError, match="allowlist"):
+        cp._eppo_get("feature-flags", "token")
