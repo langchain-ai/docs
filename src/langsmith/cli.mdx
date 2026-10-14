@@ -687,6 +687,7 @@ To build and run a valid application, the LangGraph CLI requires a JSON configur
     | `--image-uri TEXT`       |                      | Deploy an image that's already in a registry you manage (for example `123456789.dkr.ecr.us-east-1.amazonaws.com/agents/my-agent@sha256:<digest>`), with no build, retag, or push. For self-hosted LangSmith and for workspaces that deploy through a listener. Must include a digest; a mutable tag is rejected, since Kubernetes can cache images by tag and would silently keep running the previous one. Cannot be combined with `--push-to`, `--image`, `-t`, or `--remote`. |
     | `--listener-id TEXT`     |                      | Listener that will run the deployment, for workspaces that deploy through a listener in your own cluster. Used only when creating a deployment with `--push-to`. On LangSmith Cloud, defaults to the workspace's only listener. |
     | `--k8s-namespace TEXT`   |                      | Kubernetes namespace the listener deploys into. Used only when creating a deployment with `--push-to`. Defaults to the listener's only namespace. |
+    | `--image-pull-secret TEXT` |                    | Name of a Kubernetes secret (type `kubernetes.io/dockerconfigjson`) in the deployment's namespace to use for pulling the image from a private registry. Repeat to give more than one. Only used when creating a deployment with `--push-to` or `--image-uri`. |
     | `--no-wait`              | `False`              | Skip waiting for deployment status after pushing.                                                                                                                |
     | `--verbose`              | `False`              | Show detailed output including Docker build and push logs.                                                                                                       |
     | `--help`                 |                      | Display command documentation.                                                                                                                                   |
@@ -777,6 +778,17 @@ To build and run a valid application, the LangGraph CLI requires a JSON configur
     The listener and the namespace are fixed when the deployment is created and cannot be changed afterward, so both options are refused on an existing deployment. Later revisions need only `--push-to`.
 
     Deployments created with `--push-to` use the `external_docker` source. A deployment created without `--push-to` cannot be switched to it; use a new `--name` instead.
+
+    #### Authenticate to a private registry
+
+    If the registry you push to with `--push-to` or deploy from with `--image-uri` requires authentication to pull the image, the cluster needs a Kubernetes secret of type `kubernetes.io/dockerconfigjson` in the deployment's namespace. Create it ahead of time (for example with `kubectl create secret docker-registry`), then pass its name with `--image-pull-secret`:
+
+    ```bash
+    langgraph deploy --push-to 123456789.dkr.ecr.us-east-1.amazonaws.com/agents/my-agent \
+      --image-pull-secret regcred
+    ```
+
+    Repeat `--image-pull-secret` to attach more than one secret. Like the listener and namespace, image pull secrets are fixed when the deployment is created; the CLI doesn't support changing them on an existing deployment, but you can update the deployment's `resource_spec` through the API or the LangSmith UI.
 
     #### `deploy list`
 
