@@ -3,12 +3,11 @@ type: operations guide
 title: Adding and Maintaining Documentation Pages
 description: Safely add, move, retire, or regenerate documentation pages by selecting the source owner, maintaining navigation and redirects, and validating emitted routes.
 tags: [documentation, operations, navigation, redirects, build-system]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-08T08:23:51.982Z
 sources:
   - id: openwiki-source-18732c72f962c06354cb62db
     resource: repo://.agents/skills/add-docs-page/SKILL.md
+  - id: openwiki-source-b48b39ee604e5154ddb6fbad
+    resource: repo://.agents/skills/docs-edit/SKILL.md
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
   - id: openwiki-source-012f2c78e3b1446dfc35803f
@@ -41,12 +40,15 @@ sources:
     resource: repo://src/oss/langchain/mcp/index.mdx
   - id: openwiki-source-a39cb5ba9006abfe6280b6f8
     resource: repo://src/oss/openwiki/cli-reference.mdx
-generated: { by: "openwiki/0.4.3", at: "2026-10-08T08:23:51.982Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-14T08:21:39.311Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-14T08:21:39.311Z
 ---
 
 # Adding and Maintaining Documentation Pages
 
-A page change is complete only when its source owner, emitted public route, `src/docs.json` navigation, redirects, and rendered output agree. Manual content belongs under `src/`; never edit `build/`, because a full build removes and recreates it. Change generator inputs, not generated snippets, integration listings, transformed specifications, or deployment-generated endpoints.
+A page change is complete only when its source owner, emitted public route, `src/docs.json` navigation, redirects, and rendered output agree. Manual content belongs under `src/`; never edit `build/`, because a full build removes and recreates it. Change generator inputs, not generated changelogs, snippets, integration listings, transformed specifications, or deployment-generated endpoints.
 
 ```mermaid
 flowchart TD
@@ -99,7 +101,7 @@ Managed Deep Agents is the opposite exception. Direct matching source files are 
 2. Add the extensionless path relative to `src` to the relevant `pages` array. For example, `src/langsmith/sandboxes.mdx` is `langsmith/sandboxes`.
 3. Add every navigation entry required by the emitted family: two for shared OSS and Managed Deep Agents, one for language-owned or unversioned content, except where the same unversioned route is deliberately projected in more than one menu location.
 4. Put an index route first in a new group. For a page within an existing integration component, update that component's `index.mdx`; change `docs.json` only for a new component group.
-5. Before rewording a heading, search for inbound fragment links. The heading slug is a public landing target even when the page route is unchanged.
+5. Before rewording a heading, search for inbound fragment links. The heading slug is a public landing target even when the page route is unchanged. Changing only capitalization retains the lowercased slug; a wording change requires updated inbound links or a compatible target such as an explicit component `id`.
 
 Navigation can intentionally expose a route through more than one discovery path. For example, `bind-evaluator-to-dataset-link.mdx` is a navigation wrapper whose `url` targets the canonical `bind-evaluator-to-dataset` route. Keep a wrapper and canonical page coherent rather than deleting one merely because their titles overlap.
 
@@ -137,9 +139,11 @@ python3 scripts/check_removed_pages_redirects.py --base-ref origin/main src/docs
 
 ## Regenerate surfaces owned by tooling
 
+Do not hand-edit workflow-generated outputs. The weekly changelog workflow owns `src/langsmith/changelog.mdx` and `src/snippets/langsmith/fleet-changelog.mdx`; the Helm changelog bot owns `src/langsmith/self-hosted-changelog.mdx`. The LangSmith platform OpenAPI specification is refreshed by its workflow, Agent Server OpenAPI changes arrive from the `langgraph-api` repository, and `build/` is build output. Fix the upstream input or owning workflow instead.
+
 ### Snippets and testable samples
 
-Reusable MDX blocks belong in `src/snippets/` and are imported with `from '/snippets/...'`; the builder rewrites that import form to language-specific snippet copies. Do not substitute Mintlify's `<Snippet file="..." />` form when a language-aware import is needed.
+Reusable MDX blocks belong in `src/snippets/` and are imported with `from '/snippets/...'`; the builder rewrites that import form to language-specific snippet copies. Do not substitute Mintlify's `<Snippet file="..." />` form when a language-aware import is needed. When a block appears on three or more pages, extract it into a reusable snippet to keep future changes centralized.
 
 Runnable examples belong in `src/code-samples/`. The code-sample pipeline derives display artifacts below `src/code-samples-generated/` and `src/snippets/code-samples/`; edit and test the runnable source, then regenerate rather than hand-editing derivatives. The MCP overview is an example of the consumption boundary: it imports generated `McpQuickstartPy`, `McpQuickstartJs`, and transport snippets from `/snippets/code-samples/...` rather than embedding a second copy of the programs.
 
@@ -190,7 +194,7 @@ Add the checks that correspond to the input you changed:
 - [ ] The page has frontmatter with a plain-text description and the required `src/docs.json` navigation update.
 - [ ] Navigation lists every required emitted route in the correct current `menu` branch.
 - [ ] Moved and retired public URLs, including Managed Deep Agents aliases, redirect to maintained destinations.
-- [ ] Snippets, samples, listings, and specifications were regenerated by their owners.
+- [ ] Snippets, samples, listings, changelogs, and specifications were regenerated or updated by their owners.
 - [ ] Focused checks, a clean build, and appropriate link checks ran.
 - [ ] Source configuration and rendered output were reviewed, including manual review of menu navigation.
 
@@ -198,6 +202,8 @@ Add the checks that correspond to the input you changed:
 
 - [Source directory map](/openwiki/architecture/source-map.md)
 - [Versioning](/openwiki/concepts/versioning.md)
+- [Agent skills](/openwiki/operations/agent-skills.md)
 - [CLI tools](/openwiki/operations/cli-tools.md)
+- [Documentation quickstart](/openwiki/quickstart.md)
 - [Testing overview](/openwiki/testing/test-overview.md)
 - [Code sample lifecycle](/openwiki/workflows/code-sample-lifecycle.md)
