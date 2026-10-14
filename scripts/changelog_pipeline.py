@@ -1139,7 +1139,10 @@ def _write_group(
     return record
 
 
-FIXES_OPEN = '<Accordion title="Fixes and improvements">'
+# Fixes get their own heading, so the collapsed list does not read as part of the
+# section above it.
+FIXES_HEADING = "## Fixes and improvements"
+FIXES_OPEN = '<Accordion title="Show all fixes">'
 
 
 def _update_open(product: str, label: str, since: str) -> str:
@@ -1180,7 +1183,7 @@ def _render(
     ):
         lines += [f"## {section}", ""] + [f"- {g['entry']}" for g in groups] + [""]
     if fixes:
-        lines += [FIXES_OPEN, ""]
+        lines += [FIXES_HEADING, "", FIXES_OPEN, ""]
         lines += [f"- {g['entry']}" for g in fixes]
         lines += ["", "</Accordion>", ""]
     lines.append("</Update>")
@@ -2135,7 +2138,7 @@ def cmd_selfhosted(args: argparse.Namespace) -> None:
     if changes := layer("change"):
         lines += ["### Changes", "", *changes, ""]
     if fixes := layer("fix", MAX_FIXES):
-        lines += ['<Accordion title="Fixes">', "", *fixes, "", "</Accordion>", ""]
+        lines += [FIXES_HEADING, "", FIXES_OPEN, "", *fixes, "", "</Accordion>", ""]
     target = _child(cache, "release.mdx")
     target.write_text("\n".join(lines))
     cost = grouping.get("meta", {}).get("cost_usd", 0) + sum(
@@ -2578,16 +2581,19 @@ def _insert_entry(text: str, label: str, since: str, item: dict) -> str:
     elif item["layer"] == "fix":
         new = _append_in_section(body, f"\n{FIXES_OPEN}\n", line)
         if new is None:
-            new = body.rstrip("\n") + f"\n\n{FIXES_OPEN}\n\n{line}\n\n</Accordion>\n\n"
+            new = (
+                body.rstrip("\n")
+                + f"\n\n{FIXES_HEADING}\n\n{FIXES_OPEN}\n\n{line}\n\n</Accordion>\n\n"
+            )
     else:
         section = item["section"] or "Other changes"
         new = _append_in_section(body, f"\n## {section}\n", line)
         if new is None:
-            accordion = body.find(FIXES_OPEN)
+            fixes = body.find(f"{FIXES_HEADING}\n")
             heading = f"## {section}\n\n{line}\n\n"
             new = (
-                body[:accordion] + heading + body[accordion:]
-                if accordion != -1
+                body[:fixes] + heading + body[fixes:]
+                if fixes != -1
                 else body.rstrip("\n") + "\n\n" + heading
             )
     return text[:start] + new + text[end:]

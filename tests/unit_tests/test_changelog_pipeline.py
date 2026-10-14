@@ -275,7 +275,8 @@ PAGE = (
     'rss={{ title: "2026-10-05 - LangSmith Cloud update" }}>\n\n'
     "## Highlights\n\n- **A**: a.\n\n"
     "## Tracing\n\n- t1\n\n"
-    '<Accordion title="Fixes and improvements">\n\n- f1\n\n</Accordion>\n\n'
+    "## Fixes and improvements\n\n"
+    '<Accordion title="Show all fixes">\n\n- f1\n\n</Accordion>\n\n'
     "</Update>\n\n"
     '<Update label="older">\n\n- old\n\n</Update>\n'
 )
@@ -302,7 +303,7 @@ def test_insert_entry_appends_to_matching_sections() -> None:
     )
     text = cp._insert_entry(text, WEEK, "2026-10-05", _item("fix", "- f2"))
     assert "## Highlights\n\n- **A**: a.\n- **B**: b.\n\n## Tracing" in text
-    assert "## Tracing\n\n- t1\n- t2\n\n<Accordion" in text
+    assert "## Tracing\n\n- t1\n- t2\n\n## Fixes and improvements" in text
     assert "- f1\n- f2\n\n</Accordion>" in text
     assert text.endswith('<Update label="older">\n\n- old\n\n</Update>\n')
 
@@ -312,7 +313,7 @@ def test_insert_entry_adds_missing_sections() -> None:
     text = cp._insert_entry(
         PAGE, WEEK, "2026-10-05", _item("change", "- d1", "Deployment")
     )
-    assert "- t1\n\n## Deployment\n\n- d1\n\n<Accordion" in text
+    assert "- t1\n\n## Deployment\n\n- d1\n\n## Fixes and improvements" in text
     bare = PAGE.replace("## Highlights\n\n- **A**: a.\n\n", "")
     text = cp._insert_entry(bare, WEEK, "2026-10-05", _item("highlight", "- **B**: b."))
     assert (
@@ -328,7 +329,10 @@ def test_insert_entry_starts_a_block_and_is_idempotent() -> None:
     text = cp._insert_entry(page, WEEK, "2026-10-05", item)
     assert text.index(f'label="{WEEK}"') < text.index('label="older"')
     assert "Fleet product update" in text
-    assert f"{cp.FIXES_OPEN}\n\n- f1\n\n</Accordion>\n\n</Update>" in text
+    assert (
+        f"{cp.FIXES_HEADING}\n\n{cp.FIXES_OPEN}\n\n- f1\n\n</Accordion>\n\n</Update>"
+        in text
+    )
     assert cp._insert_entry(text, WEEK, "2026-10-05", item) == text
 
 
