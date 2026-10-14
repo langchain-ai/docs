@@ -117,6 +117,13 @@ def test_ticket_re_skips_model_names() -> None:
     assert not cp.TICKET_RE.search("now uses gpt-6.1-sol")
 
 
+def test_custom_headers_parses_name_value_lines() -> None:
+    """Gateway headers come one per line; blank and malformed lines are skipped."""
+    raw = "X-Gateway-Key: abc:123\n\nnot a header\n  X-Team : docs  "
+    assert cp._custom_headers(raw) == {"X-Gateway-Key": "abc:123", "X-Team": "docs"}
+    assert cp._custom_headers(None) == {}
+
+
 class _FakeStream:
     """Stands in for the SDK's message stream context manager."""
 
