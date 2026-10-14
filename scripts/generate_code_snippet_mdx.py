@@ -66,7 +66,7 @@ DEEPAGENTS_TS_MODEL_KWARG_RE = re.compile(r'\bmodel\s*(?::|=)\s*"([^"]+)"')
 # JS uses @langchain/google, whose provider key is "google"; Python has no
 # equivalent key and stays on "google_genai" (langchain-google-genai).
 DEEPAGENTS_QUICKSTART_PY_MODEL_TABS: list[tuple[str, str]] = [
-    ("Google", "google_genai:gemini-3.6-flash"),
+    ("Google", "google_genai:gemini-3.8-flash"),
     ("OpenAI", "openai:gpt-5.5"),
     ("Anthropic", "anthropic:claude-sonnet-5-5"),
     ("OpenRouter", "openrouter:z-ai/glm-5.2"),
@@ -76,7 +76,7 @@ DEEPAGENTS_QUICKSTART_PY_MODEL_TABS: list[tuple[str, str]] = [
 ]
 
 DEEPAGENTS_QUICKSTART_TS_MODEL_TABS: list[tuple[str, str]] = [
-    ("Google", "google:gemini-3.6-flash"),
+    ("Google", "google:gemini-3.8-flash"),
     ("OpenAI", "openai:gpt-5.5"),
     ("Anthropic", "anthropic:claude-sonnet-5-5"),
     ("OpenRouter", "openrouter:z-ai/glm-5.2"),
@@ -99,13 +99,33 @@ KEEP_MODEL_MARKER_TS = "// KEEP MODEL"
 # its agent, so the embeddings model is the first match in the file and becomes
 # the ID every tab rewrites, which leaves the agent model, the one the tabs
 # exist to vary, identical in all seven.
-PROVIDER_SPECIFIC_CALL_RE = re.compile(r"\b(?:\w*Embeddings|Chat\w+)\s*\(")
+PROVIDER_SPECIFIC_CALLEE_RE = re.compile(r"\b(?:\w*Embeddings|Chat\w+)\s*$")
 EMBEDDING_MODEL_ID_RE = re.compile(r"embedding", re.IGNORECASE)
 
 
-def _takes_a_provider_specific_model(line: str, model_id: str) -> bool:
-    """Report whether this `model` occurrence holds a provider-specific ID."""
-    return bool(PROVIDER_SPECIFIC_CALL_RE.search(line)) or bool(
+def _enclosing_callee(text: str, pos: int) -> str:
+    """Return the text before the call whose parentheses enclose `pos`.
+
+    Walks back past any unclosed `{` or `[`, so the `model:` property in
+    `new ChatOpenAI({\\n  model: "..."})` resolves to `new ChatOpenAI`.
+    """
+    depth = 0
+    for i in range(pos - 1, -1, -1):
+        char = text[i]
+        if char in ")]}":
+            depth += 1
+        elif char in "([{":
+            if depth:
+                depth -= 1
+            elif char == "(":
+                return text[:i]
+    return ""
+
+
+def _takes_a_provider_specific_model(text: str, pos: int, model_id: str) -> bool:
+    """Report whether the `model` occurrence at `pos` holds a provider-specific ID."""
+    callee = _enclosing_callee(text, pos)
+    return bool(PROVIDER_SPECIFIC_CALLEE_RE.search(callee)) or bool(
         EMBEDDING_MODEL_ID_RE.search(model_id)
     )
 
@@ -217,7 +237,9 @@ def maybe_expand_deepagents_quickstart_codegroup(
                 continue
             model_id = m.group(1)
             # Checked after the keep marker so its semantics do not change.
-            if _takes_a_provider_specific_model(line, model_id):
+            if _takes_a_provider_specific_model(
+                "".join(out_lines) + line, out_offset + m.start(), model_id
+            ):
                 continue
             if canonical_model_id is None:
                 canonical_model_id = model_id
