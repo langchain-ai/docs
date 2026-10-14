@@ -1,0 +1,75 @@
+---
+title: Custom model configurations
+description: Use saved model configurations with the LLM Gateway to call custom endpoints, set fixed parameters, and build fallback chains.
+---
+
+import LLMGatewayBetaNote from '/snippets/langsmith/llm-gateway-beta-note.mdx';
+
+<LLMGatewayBetaNote />
+
+[Model configurations](/langsmith/model-configurations) are named, reusable definitions that pair a provider, model, and parameter set. Most LangSmith features share one configuration library, and the LLM Gateway is no exception. You can create a configuration once and route gateway calls through it with the `custom/<name>` model ID.
+
+## What custom configurations add
+
+A bring-your-own-key gateway call normally targets a model with a provider-prefixed ID such as `openai/gpt-5.4-mini`. A custom configuration lets you:
+
+- **Call a custom or OpenAI-compatible endpoint.** Set the base URL in the configuration, then reference it by name through the gateway.
+- **Pin parameters at the server side.** Temperature, top P, max tokens, and other sampling settings stored in the configuration apply to every call without the client specifying them.
+- **Attach a fallback chain.** Fallback chains are anchored to model configurations, so a configuration-backed model ID can have automatic failover across providers. See [Model fallbacks](/langsmith/llm-gateway-fallbacks).
+- **Scope to an organization.** An organization admin can create an [org-scoped configuration](/langsmith/model-configurations#organization-scoped-model-configurations) that is available across every workspace in the organization, so a single configuration serves all teams routing through the gateway.
+
+## Create a configuration
+
+Workspace admins can create configurations. Non-admin members can view them but cannot modify them.
+
+1. In [LangSmith](https://smith.langchain.com), navigate to **Settings** > **Model configurations**.
+1. Under **Configurations**, click **+ Create**.
+1. Select a **Provider** and **Model**.
+1. Enter the **API Key Name**—the name of the secret in your workspace that holds the provider API key.
+1. Adjust any parameters you want to pin, such as `temperature` or `max_output_tokens`.
+1. Click **Save**.
+
+For the full set of available parameters and OAuth client credential configuration, see [Manage model configurations](/langsmith/model-configurations).
+
+## Call a configuration through the gateway
+
+Use `custom/<name>` as the model ID in any standard gateway request, replacing `<name>` with the configuration's exact name:
+
+```bash
+curl https://gateway.smith.langchain.com/v1/chat/completions \
+    -H "Authorization: Bearer $LANGSMITH_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"model":"custom/my-openai-config","messages":[{"role":"user","content":"Hello!"}]}'
+```
+
+The gateway resolves the configuration by name in the API key's workspace, applies its parameters, routes to the configured endpoint, and returns a response in the format the client expects.
+
+<Note>
+The configuration name is case-sensitive. Use the exact name shown in **Settings** > **Model configurations**.
+</Note>
+
+## Use a configuration with a prompt
+
+To give a Playground prompt its own model and parameter set:
+
+1. Open the prompt in the [Playground](/langsmith/prompt-engineering-concepts).
+1. Under **Model Configuration**, select **LangSmith Gateway** as the **Provider**.
+1. Enter `custom/<my_config_name>` in the **Model** field. You can type the value even if it is not listed. Click **Apply**.
+1. Save the prompt.
+
+When you [pull the prompt with its model](/langsmith/manage-prompts-programmatically#pull-a-prompt), set `include_model=True` in Python so the saved model configuration is included. Invoke the pulled prompt with its saved model to route calls through the gateway using the configuration's parameters and any attached fallback chain.
+
+## Add a fallback chain to a configuration
+
+Fallback chains are attached to a model configuration, not a provider-model pair. To add automatic failover:
+
+1. [Create the configuration](#create-a-configuration) and note its name.
+1. Follow [Model fallbacks](/langsmith/llm-gateway-fallbacks#create-a-fallback-chain) to create a fallback chain, selecting your saved configuration as the primary model.
+
+All gateway requests that use `custom/<name>` automatically use the fallback chain. See [Model fallbacks](/langsmith/llm-gateway-fallbacks) for details on triggers, fallback candidates, and per-request tracing.
+
+## See also
+
+- [Manage model configurations](/langsmith/model-configurations): create, edit, and delete configurations; configure OAuth client credentials; manage organization-scoped configurations.
+- [Model fallbacks](/langsmith/llm-gateway-fallbacks): attach fallback chains to a model configuration.
+- [API formats](/langsmith/llm-gateway-api-formats): supported request and response formats, model ID syntax, and translation behavior.
