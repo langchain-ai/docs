@@ -12,17 +12,16 @@ Each PR merged in a window goes through these steps:
    and writes a held PR into that week's entry once its flag is fully rolled out.
 3. Group and write: Sonnet groups PRs that ship the same change and picks the
    highlights; Sonnet writes highlights and Haiku writes the rest.
-4. Check: an entry that may be gated (the classifier saw a flag Eppo shows is not
-   rolled out, or it shares code and topic with a held PR) joins the held list
-   under that flag. An entry that names something internal goes to a reviewer
-   list instead of the page.
+4. Check, with no human review: an entry that may be gated (the classifier saw a
+   flag Eppo shows is not rolled out, or it shares code and topic with a held PR)
+   joins the held list under that flag. An entry that names something internal is
+   rewritten and checked again. Anything still uncertain is left out.
 
 ``weekly`` runs every step for one Monday-to-Monday week and, with ``--write``,
 inserts the Cloud and Fleet entries into the changelog files and updates the held
-list. ``review-notion`` turns the reviewer list into a page in the "Weekly changelog
-reviews" Notion database, and ``review-sync`` adds the entries ticked there to the
-week's PR (``NOTION_TOKEN``). ``seed-held`` imported the fragment pipeline's held
-backlog once:
+list. The held list is committed encrypted (``CHANGELOG_STATE_KEY``), because this
+repository is public. ``seed-held`` imported the fragment pipeline's held backlog
+once:
 
   uv run python scripts/changelog_pipeline.py weekly --out DIR [--since 2026-10-05 --until 2026-10-12] --write
 
@@ -51,9 +50,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from collections import Counter
 from pathlib import Path
 
@@ -1413,29 +1409,29 @@ def _write_held(path: Path, held: dict[str, dict]) -> None:
 
 def _release_held(
     held: dict[str, dict], flags: dict[str, dict]
-) -> tuple[dict[str, str], dict[str, str]]:
-    """Split the held list into released PRs and PRs that stay held, each with a reason.
+) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    """Split the held list into released, still held, and dropped PRs, with reasons.
 
-    A flag that Eppo shows fully rolled out releases its PRs. So does an archived
-    flag, since flags are usually archived once a feature ships; the reviewer sees
-    which reason applied. A flag missing from Eppo, or conflicting declarations,
-    stays held for a human to resolve.
+    A flag that Eppo shows fully rolled out releases its PRs. One that is not yet
+    rolled out keeps them held. Anything uncertain is dropped without publishing:
+    an archived flag (the feature may or may not have shipped), a flag missing from
+    Eppo, or conflicting declarations.
     """
-    released, kept = {}, {}
+    released, kept, dropped = {}, {}, {}
     for number, entry in held.items():
         flag = entry.get("flag", "")
         state = flags.get(flag)
         if flag == CONFLICTING_FLAGS:
-            kept[number] = "conflicting Flag: lines; set one and remove this entry"
+            dropped[number] = "conflicting Flag: lines"
         elif state is None:
-            kept[number] = f"flag {flag} not found in Eppo"
+            dropped[number] = f"flag {flag} not found in Eppo"
         elif state.get("rolled_out"):
             released[number] = f"flag {flag} fully rolled out"
         elif state.get("archived"):
-            released[number] = f"flag {flag} archived; confirm it shipped"
+            dropped[number] = f"flag {flag} archived before a full rollout"
         else:
             kept[number] = f"flag {flag} not fully rolled out"
-    return released, kept
+    return released, kept, dropped
 
 
 def cmd_mock(args: argparse.Namespace) -> None:
@@ -1464,10 +1460,11 @@ def cmd_mock(args: argparse.Namespace) -> None:
         Path(args.held_ledger).resolve() if getattr(args, "held_ledger", None) else None
     )
     ledger = _load_held(ledger_path)
-    released, kept = _release_held(ledger, flags)
+    released, kept, dropped_held = _release_held(ledger, flags)
 
     week = []
     held: list[tuple[int, str]] = []
+    skipped_declared: list[tuple[int, str]] = []
     for number in released:
         n = int(number)
         if n in prs and n in results:
@@ -1491,7 +1488,11 @@ def cmd_mock(args: argparse.Namespace) -> None:
         # Hold only on the author's declaration: the PR's Flag: line, or its fragment's flag
         # for PRs merged before the line existed. The classifier's guess is a reviewer hint.
         flag = _declared_flag(pr)
-        if flag and not flags.get(flag, {}).get("rolled_out"):
+        if flag and flag not in flags:
+            # A conflicting declaration or a flag Eppo does not know: left out.
+            skipped_declared.append((n, f"declared flag {flag} cannot be checked"))
+            continue
+        if flag and not flags[flag]["rolled_out"]:
             held.append((n, flag))
             continue
         week.append(n)
@@ -1605,13 +1606,11 @@ def cmd_mock(args: argparse.Namespace) -> None:
                 except Exception as exc:  # noqa: BLE001 - report and keep going
                     print(f"group {futures[fut]}: {exc}", file=sys.stderr)
 
-    # Fix renamed products and MDX-unsafe text, then route anything a human must check
-    # to the review list.
-    # An entry that looks gated by a flag Eppo knows goes on the held list, like a
-    # declared flag, and publishes when that flag rolls out; a later run rewrites and
-    # rechecks it then. Only what a script cannot settle reaches a human.
-    # Text that names something internal is rewritten and checked again.
-    publish, review, auto_held, to_fix = [], [], [], []
+    # Fix renamed products and MDX-unsafe text, then sort each entry. One that looks
+    # gated by a flag Eppo knows joins the held list and publishes when the flag rolls
+    # out. One that names something internal is rewritten and checked again. Anything
+    # else uncertain is left out: no person reviews the list.
+    publish, excluded, auto_held, to_fix = [], [], [], []
     for g in written:
         for field in ("title", "entry"):
             if g.get(field):
@@ -1624,16 +1623,18 @@ def cmd_mock(args: argparse.Namespace) -> None:
         text = _text_reasons(g, flags)
         # A flag missing from Eppo or a conflicting declaration cannot be checked.
         if unknown := [why for _, why in gates]:
-            review.append((g, text + unknown))
+            excluded.append((g, text + unknown))
         elif text:
             to_fix.append((g, text))
         else:
-            publish.append((g, []))
+            publish.append(g)
     fixed, still, rewrite_dropped, fix_cost = _fix_text(
         to_fix, prs, flags, cache, args.workers
     )
-    publish += [(new, []) for _, new in fixed]
-    review += still
+    publish += [new for _, new in fixed]
+    excluded += still + [
+        (g, [f"rewrite dropped it: {why}"]) for g, why in rewrite_dropped
+    ]
     for g, known in auto_held:
         for n in g["prs"]:
             new_ledger.setdefault(
@@ -1651,7 +1652,7 @@ def cmd_mock(args: argparse.Namespace) -> None:
         _validate_date(args.since), _validate_date(args.until)
     )
     blocks = {
-        product: _render(product, label, [g for g, _ in publish], set(pages), since)
+        product: _render(product, label, publish, set(pages), since)
         for product in ("cloud", "fleet")
     }
     for product, block in blocks.items():
@@ -1661,139 +1662,92 @@ def cmd_mock(args: argparse.Namespace) -> None:
     _child(cache, "held.json").write_text(
         json.dumps(new_ledger, indent=2, sort_keys=True) + "\n"
     )
-    review_lines = [
-        "# For the reviewer",
+
+    def listed(rows: list[str]) -> list[str]:
+        return rows or ["None."]
+
+    def by_number(d: dict[str, str]) -> list[tuple[str, str]]:
+        return sorted(d.items(), key=lambda kv: int(kv[0]))
+
+    # For debugging a run locally. It names private PRs and unreleased work, so it
+    # stays in the output directory and is never published.
+    report = [
+        "# Run report",
         "",
         "## Released from the held list",
         "",
-        *(
+        *listed(
+            [f"- #{n} {ledger[n]['title']} ({why})" for n, why in by_number(released)]
+        ),
+        "",
+        "## Removed from the held list without publishing",
+        "",
+        *listed(
             [
                 f"- #{n} {ledger[n]['title']} ({why})"
-                for n, why in sorted(released.items(), key=lambda kv: int(kv[0]))
+                for n, why in by_number(dropped_held)
             ]
-            or ["None this week."]
         ),
         "",
         "## Newly held: declared flag not rolled out",
         "",
-        *(
-            [
-                f"- #{n} [{flag}] {prs[n]['title']} (classifier hint: {results[n]['pass1']['feature_flag']})"
-                for n, flag in sorted(held)
-            ]
-            or ["None this week."]
-        ),
+        *listed([f"- #{n} [{flag}] {prs[n]['title']}" for n, flag in sorted(held)]),
         "",
         "## Held automatically: may be behind a flag not rolled out",
         "",
-        *(
+        *listed(
             [
-                f"- [{known[0][0]}] {g.get('title') or ''} {g['entry']}\n  - "
+                f"- [{known[0][0]}] {_entry_line(g, set(pages))}\n  - "
                 + "\n  - ".join(why for _, why in known)
                 for g, known in auto_held
             ]
-            or ["None this week."]
         ),
         "",
-        "## Rewritten automatically: named something internal",
+        "## Rewritten: named something internal",
         "",
-        *(
+        *listed(
             [
                 f"- Now: {_entry_line(new, set(pages))}\n  - Was: {_entry_line(g, set(pages))}"
                 for g, new in fixed
             ]
-            or ["None this week."]
         ),
         "",
-        "## Dropped by the rewrite",
+        "## Left out: could not be checked",
         "",
-        *(
-            [f"- {_entry_line(g, set(pages))}\n  - {why}" for g, why in rewrite_dropped]
-            or ["None this week."]
+        *listed(
+            [
+                f"- {_entry_line(g, set(pages))}\n  - " + "\n  - ".join(reasons)
+                for g, reasons in excluded
+            ]
+            + [
+                f"- #{n} {prs[n]['title']} ({why})"
+                for n, why in sorted(skipped_declared)
+            ]
         ),
+        "",
+        "## Left out: no group in either grouping call",
+        "",
+        *listed([f"- #{n} {prs[n]['title']}" for n in missing]),
         "",
         f"## Still held ({len(kept)})",
         "",
-        *(
-            [
-                f"- #{n} {ledger[n]['title']} ({why})"
-                for n, why in sorted(kept.items(), key=lambda kv: int(kv[0]))
-            ]
-            or ["None."]
-        ),
-        "",
-        "## Not grouped: the grouping step left these out",
-        "",
-        *([f"- #{n} {prs[n]['title']}" for n in missing] or ["None."]),
-        "",
-        "## Not published: check before adding",
-        "",
-        *[
-            f"- [{g['layer']}] {g.get('title') or ''} {g['entry']}\n  - "
-            + "\n  - ".join(reasons)
-            for g, reasons in review
-        ],
+        *listed([f"- #{n} {ledger[n]['title']} ({why})" for n, why in by_number(kept)]),
     ]
-    _child(cache, "review.md").write_text("\n".join(review_lines) + "\n")
-    # The same list as data: the Notion review page is built from it, and
-    # `review-sync` inserts the entries a reviewer ticks from these exact lines.
-    layer_order = {"highlight": 0, "change": 1, "fix": 2}
-    review.sort(key=lambda gr: (layer_order[gr[0]["layer"]], gr[0]["rank"]))
-    review_data = {
-        "label": label,
-        "since": since,
-        "items": [
-            {
-                "id": f"R{i}",
-                "product": g["product"],
-                "layer": g["layer"],
-                "section": g.get("section") or "",
-                "line": _entry_line(g, set(pages)),
-                "reasons": reasons,
-                "prs": g["prs"],
-                "added": False,
-            }
-            for i, (g, reasons) in enumerate(review, 1)
-        ],
-        "ungrouped": [{"pr": n, "title": prs[n]["title"]} for n in missing],
-        "released": [
-            {"pr": int(n), "title": ledger[n]["title"], "why": why}
-            for n, why in sorted(released.items(), key=lambda kv: int(kv[0]))
-        ],
-        "newly_held": [
-            {"pr": n, "flag": flag, "title": prs[n]["title"]}
-            for n, flag in sorted(held)
-        ],
-        "rewritten": [
-            {
-                "now": _entry_line(new, set(pages)),
-                "was": _entry_line(g, set(pages)),
-                "prs": g["prs"],
-            }
-            for g, new in fixed
-        ],
-        "dropped": [
-            {"line": _entry_line(g, set(pages)), "why": why, "prs": g["prs"]}
-            for g, why in rewrite_dropped
-        ],
-        "auto_held": [
-            {
-                "flag": known[0][0],
-                "line": _entry_line(g, set(pages)),
-                "prs": g["prs"],
-                "evidence": [why for _, why in known],
-            }
-            for g, known in auto_held
-        ],
-        "still_held": [
-            {"pr": int(n), "title": ledger[n]["title"], "why": why}
-            for n, why in sorted(kept.items(), key=lambda kv: int(kv[0]))
-        ],
+    _child(cache, "report.md").write_text("\n".join(report) + "\n")
+    # Counts only, for the public PR description.
+    counts = {
+        "Entries published": len(publish),
+        "Rewritten to remove internal names": len(fixed),
+        "Released from the held list": len(released),
+        "Newly held behind a flag": len(held) + len(auto_held),
+        "Left out as uncertain": len(excluded) + len(skipped_declared) + len(missing),
     }
-    _child(cache, "review.json").write_text(json.dumps(review_data, indent=2) + "\n")
+    _child(cache, "summary.md").write_text(
+        "| | |\n|---|---|\n" + "".join(f"| {k} | {v} |\n" for k, v in counts.items())
+    )
     print(
         f"{len(publish)} entries published, {len(auto_held)} held behind flags, "
-        f"{len(review)} sent to review",
+        f"{len(excluded)} left out",
         file=sys.stderr,
     )
     cost = (
@@ -2436,8 +2390,6 @@ CHANGELOG_TARGETS = {
     "cloud": _REPO_ROOT / "src" / "langsmith" / "changelog.mdx",
     "fleet": _REPO_ROOT / "src" / "snippets" / "langsmith" / "fleet-changelog.mdx",
 }
-# The week's reviewer list as data, committed with the week's PR for `review-sync`.
-REVIEW_FILE = _REPO_ROOT / "scripts" / ".changelog_review.json.enc"
 
 
 def _week_label(since: dt.date, until: dt.date) -> str:
@@ -2507,7 +2459,7 @@ def cmd_weekly(args: argparse.Namespace) -> None:
 
     # PRs held in earlier weeks whose flag has since shipped are written this week.
     ledger = Path(args.held_ledger).resolve()
-    released, _ = _release_held(_load_held(ledger), flags)
+    released, _, _ = _release_held(_load_held(ledger), flags)
     if released:
         prs_dir = _child(out, "prs")
         for number in released:
@@ -2541,7 +2493,6 @@ def cmd_weekly(args: argparse.Namespace) -> None:
     _child(cache, "label.txt").write_text(label + "\n")
     if args.write:
         _write_held(ledger, json.loads(_child(cache, "held.json").read_text()))
-        _write_state(REVIEW_FILE, json.loads(_child(cache, "review.json").read_text()))
         for product, path in CHANGELOG_TARGETS.items():
             block = _child(cache, f"{product}.mdx").read_text()
             if block.strip():
@@ -2550,436 +2501,7 @@ def cmd_weekly(args: argparse.Namespace) -> None:
                     f"Inserted the {product} entry into {path.relative_to(_REPO_ROOT)}",
                     file=sys.stderr,
                 )
-    print(_child(cache, "review.md"))
-
-
-# ---------------------------------------------------------------------------
-# review-notion, review-sync: review held-back entries in Notion, then add the
-# ticked ones to the week's PR
-
-NOTION_API = "https://api.notion.com/v1"
-NOTION_VERSION = "2025-09-03"
-NOTION_TIMEOUT_SECONDS = 30
-# "Weekly changelog reviews", under LangSmith release notes. The integration that
-# owns NOTION_TOKEN must be connected to that page.
-NOTION_REVIEW_DATA_SOURCE = "a6e2a532-c5c3-4063-a32e-ae573695e5d4"
-NOTION_ID_RE = re.compile(r"^[0-9a-f]{8}-?(?:[0-9a-f]{4}-?){3}[0-9a-f]{12}$")
-NOTION_TEXT_LIMIT = 2000
-NOTION_BATCH = 100
-REVIEW_ID_RE = re.compile(r"^(R\d+)\b")
-SYNC_COMMAND = "/changelog sync"
-
-
-def _notion(method: str, path: str, body: dict | None = None) -> dict:
-    """Call the Notion API. The host is fixed; only validated IDs reach the path."""
-    token = os.environ.get("NOTION_TOKEN", "").strip()
-    if not token:
-        raise SystemExit("Set NOTION_TOKEN")
-    req = urllib.request.Request(  # noqa: S310 - fixed https host
-        f"{NOTION_API}{path}",
-        data=None if body is None else json.dumps(body).encode(),
-        method=method,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Notion-Version": NOTION_VERSION,
-            "Content-Type": "application/json",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=NOTION_TIMEOUT_SECONDS) as resp:  # noqa: S310
-            return json.loads(resp.read().decode())
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode(errors="replace")[:300]
-        raise RuntimeError(
-            f"Notion {method} {path} failed: {exc.code} {detail}"
-        ) from None
-
-
-def _notion_id(value: str) -> str:
-    if not NOTION_ID_RE.match(value):
-        raise RuntimeError(f"Not a Notion ID: {value!r}")
-    return value
-
-
-def _rich(text: str, link: str | None = None) -> list[dict]:
-    """Rich text in chunks under Notion's per-item limit."""
-    chunks = [
-        text[i : i + NOTION_TEXT_LIMIT] for i in range(0, len(text), NOTION_TEXT_LIMIT)
-    ] or [""]
-    out = []
-    for chunk in chunks:
-        item: dict = {"type": "text", "text": {"content": chunk}}
-        if link:
-            item["text"]["link"] = {"url": link}
-        out.append(item)
-    return out
-
-
-def _block(kind: str, text: str = "", **extra: object) -> dict:
-    return {"type": kind, kind: {"rich_text": _rich(text), **extra}}
-
-
-def _pr_link(n: int) -> str:
-    return f"https://github.com/{REPO}/pull/{n}"
-
-
-def _pr_bullet(n: int, text: str) -> dict:
-    return {
-        "type": "bulleted_list_item",
-        "bulleted_list_item": {
-            "rich_text": _rich(f"#{n}", _pr_link(n)) + _rich(f" {text}")
-        },
-    }
-
-
-def _review_blocks(data: dict, pr_url: str) -> list[dict]:
-    """The review page: what needs a decision first, reference material after."""
-    items, ungrouped, released = data["items"], data["ungrouped"], data["released"]
-    auto_held = data.get("auto_held", [])
-    rewritten, dropped = data.get("rewritten", []), data.get("dropped", [])
-    pr_number = pr_url.rstrip("/").rsplit("/", 1)[-1]
-    blocks = [
-        {
-            "type": "callout",
-            "callout": {
-                "rich_text": _rich(
-                    f"Needs human review before PR #{pr_number} merges. "
-                    "Work through Needs review: tick each held-back entry that should "
-                    f"publish, then comment {SYNC_COMMAND} on the PR to add the ticked "
-                    "entries to it. Unticking later does not remove an entry; "
-                    "edit the PR instead."
-                ),
-                "icon": {"type": "emoji", "emoji": "⚠️"},
-                "color": "red_background",
-            },
-        },
-        {
-            "type": "paragraph",
-            "paragraph": {"rich_text": _rich("Open the PR", pr_url)},
-        },
-        _block("heading_1", "Needs review"),
-        _block("heading_2", f"Entries held back ({len(items)})"),
-        _block(
-            "paragraph",
-            "These entries were written but kept off the changelog: they may describe "
-            "something behind a flag that is not rolled out, or name an internal "
-            "system. Tick one only if customers can use it today and the text is fit "
-            "to publish.",
-        ),
-    ]
-    for item in items:
-        where = item["section"] or item["layer"]
-        prs = item["prs"]
-        pr_text: list[dict] = _rich("PRs: ")
-        for i, n in enumerate(prs):
-            pr_text += _rich(("" if i == 0 else ", ") + f"#{n}", _pr_link(n))
-        blocks.append(
-            {
-                "type": "to_do",
-                "to_do": {
-                    "rich_text": _rich(
-                        f"{item['id']} · {item['product']} · {where}: "
-                        f"{item['line'].removeprefix('- ')}"
-                    ),
-                    "checked": item["added"],
-                    "children": [
-                        _block("bulleted_list_item", f"Why held back: {reason}")
-                        for reason in item["reasons"]
-                    ]
-                    + [{"type": "paragraph", "paragraph": {"rich_text": pr_text}}],
-                },
-            }
-        )
-    if not items:
-        blocks.append(_block("paragraph", "None this week."))
-    blocks += [
-        _block("heading_2", f"Left out by grouping ({len(ungrouped)})"),
-        _block(
-            "paragraph",
-            "No entry was written for these PRs. If customers should hear about one, "
-            "write its entry in the PR by hand.",
-        ),
-        *[_pr_bullet(u["pr"], u["title"]) for u in ungrouped],
-        _block("heading_2", f"Released from the held list ({len(released)})"),
-        _block(
-            "paragraph",
-            "These are already in the PR because their flag is fully rolled out or "
-            "archived. Confirm each feature is live, and delete its entry from the PR "
-            "if not.",
-        ),
-        *[_pr_bullet(r["pr"], f"{r['title']} ({r['why']})") for r in released],
-        _block("heading_1", "Reference"),
-        _block("paragraph", "Context for the decisions above. Read as needed."),
-        _block("heading_2", f"Newly held ({len(data['newly_held'])})"),
-        _block(
-            "paragraph",
-            "Held because the PR declares a flag that is not fully rolled out. A "
-            "weekly run publishes each one once its flag reaches everyone.",
-        ),
-        *[
-            _pr_bullet(h["pr"], f"[{h['flag']}] {h['title']}")
-            for h in data["newly_held"]
-        ],
-        _block("heading_2", f"Held automatically ({len(auto_held)})"),
-        _block(
-            "paragraph",
-            "These entries look gated: the classifier found a flag in the code, or "
-            "they share code and topic with a held PR, and Eppo shows the flag is not "
-            "rolled out. They are on the held list and publish once it is. Nothing to "
-            "do unless one is already live.",
-        ),
-        *[
-            _block(
-                "bulleted_list_item",
-                f"[{a['flag']}] {a['line'].removeprefix('- ')} "
-                f"({'; '.join(a['evidence'])})",
-            )
-            for a in auto_held
-        ],
-        _block("heading_2", f"Rewritten automatically ({len(rewritten)})"),
-        _block(
-            "paragraph",
-            "These entries named something internal. The model rewrote each one and "
-            "the rewrite passed the same check, so it is published in the PR.",
-        ),
-        *[
-            {
-                "type": "bulleted_list_item",
-                "bulleted_list_item": {
-                    "rich_text": _rich(r["now"].removeprefix("- ")),
-                    "children": [
-                        _block("paragraph", f"Was: {r['was'].removeprefix('- ')}")
-                    ],
-                },
-            }
-            for r in rewritten
-        ],
-        _block("heading_2", f"Dropped ({len(dropped)})"),
-        _block(
-            "paragraph",
-            "The model judged these meaningless without the internal term, or not "
-            "for Cloud and Fleet customers, so they are not in the PR.",
-        ),
-        *[
-            _block("bulleted_list_item", f"{d['line'].removeprefix('- ')} ({d['why']})")
-            for d in dropped
-        ],
-    ]
-    # The held list is encrypted in the repository, so this page is where people read
-    # it. A toggle takes one request's worth of children, so long lists are split.
-    still = data["still_held"]
-    shown = [_pr_bullet(s["pr"], f"{s['title']} ({s['why']})") for s in still]
-    for i in range(0, max(1, len(shown)), NOTION_BATCH):
-        part = shown[i : i + NOTION_BATCH]
-        span = (
-            f" ({i + 1}-{i + len(part)} of {len(still)})"
-            if len(shown) > NOTION_BATCH
-            else f" ({len(still)})"
-        )
-        blocks.append(
-            _block("heading_2", f"Still held{span}", is_toggleable=True, children=part)
-        )
-    return blocks
-
-
-def _review_body(data: dict, page_url: str) -> str:
-    """The PR description: point at the review page instead of inlining the list."""
-    items, ungrouped, released = data["items"], data["ungrouped"], data["released"]
-    lines = [
-        f"Weekly LangSmith Cloud and Fleet changelog for **{data['label']}**, generated "
-        "by `scripts/changelog_pipeline.py weekly` from merged langchainplus PRs.",
-        "",
-        "> [!IMPORTANT]",
-        f"> **Needs human review before merging.** {len(items)} entries were held back "
-        f"and {len(ungrouped)} PRs have no entry. Review them on the "
-        f"[Notion review page]({page_url}): tick the entries that should publish, "
-        f"then comment `{SYNC_COMMAND}` on this PR to add them here.",
-    ]
-    if released:
-        lines += [
-            ">",
-            f"> This PR also publishes {len(released)} entries released from the held "
-            "list. The review page lists them so you can confirm each feature is live.",
-        ]
-    lines += [
-        "",
-        "Edit the changelog files directly to change wording. The PR also updates "
-        "two encrypted files: the held list of PRs waiting for their flag, and the "
-        f"entries `{SYNC_COMMAND}` reads. The review page shows both.",
-    ]
-    return "\n".join(lines) + "\n"
-
-
-def cmd_review_notion(args: argparse.Namespace) -> None:
-    """Create the week's row in the review database and write the short PR body."""
-    data = _read_state(Path(args.review))
-    blocks = _review_blocks(data, args.pr_url)
-    page = _notion(
-        "POST",
-        "/pages",
-        {
-            "parent": {
-                "type": "data_source_id",
-                "data_source_id": NOTION_REVIEW_DATA_SOURCE,
-            },
-            "icon": {"type": "emoji", "emoji": "⚠️"},
-            "properties": {
-                "Week": {"title": _rich(data["label"])},
-                "Status": {"select": {"name": "Needs review"}},
-                "PR": {"url": args.pr_url},
-                "Items to review": {
-                    "number": len(data["items"]) + len(data["ungrouped"])
-                },
-                "Generated": {
-                    "date": {"start": dt.datetime.now(dt.UTC).date().isoformat()}
-                },
-            },
-            "children": blocks[:NOTION_BATCH],
-        },
-    )
-    page_id = _notion_id(page["id"])
-    for i in range(NOTION_BATCH, len(blocks), NOTION_BATCH):
-        _notion(
-            "PATCH",
-            f"/blocks/{page_id}/children",
-            {"children": blocks[i : i + NOTION_BATCH]},
-        )
-    Path(args.body_out).write_text(_review_body(data, page["url"]))
-    print(page["url"])
-
-
-def _ticked_ids(blocks: list[dict]) -> set[str]:
-    """IDs of the ticked to-dos. Only the ID is read; the entry text comes from the PR."""
-    ticked = set()
-    for block in blocks:
-        todo = block.get("to_do") if block.get("type") == "to_do" else None
-        if not todo or not todo.get("checked"):
-            continue
-        text = "".join(t.get("plain_text", "") for t in todo.get("rich_text", []))
-        if m := REVIEW_ID_RE.match(text):
-            ticked.add(m.group(1))
-    return ticked
-
-
-def _append_in_section(body: str, anchor: str, line: str) -> str | None:
-    """Add a bullet at the end of the section that starts at `anchor`, if present."""
-    at = body.find(anchor)
-    if at == -1:
-        return None
-    stop = len(body)
-    for marker in ("\n## ", "\n<Accordion", "\n</Accordion>"):
-        i = body.find(marker, at + len(anchor))
-        if i != -1:
-            stop = min(stop, i)
-    tail = body[stop:] if stop < len(body) else "\n"
-    return body[:stop].rstrip("\n") + "\n" + line + "\n" + tail
-
-
-def _insert_entry(text: str, label: str, since: str, item: dict) -> str:
-    """Insert one reviewed entry into the week's Update block, where _render puts it."""
-    line = item["line"]
-    start = text.find(f'<Update label="{label}"')
-    if start == -1:
-        # Nothing published for this product this week: start its block on top.
-        start = text.find("<Update ")
-        if start == -1:
-            raise SystemExit("No <Update> block to insert before")
-        empty = f"{_update_open(item['product'], label, since)}\n\n</Update>\n\n"
-        text = text[:start] + empty + text[start:]
-    end = text.index("</Update>", start)
-    body = text[start:end]
-    if line in body:
-        return text
-    if item["layer"] == "highlight":
-        new = _append_in_section(body, "\n## Highlights\n", line)
-        if new is None:
-            first = body.index("\n") + 1
-            new = body[:first] + f"\n## Highlights\n\n{line}\n" + body[first:]
-    elif item["layer"] == "fix":
-        new = _append_in_section(body, f"\n{FIXES_OPEN}\n", line)
-        if new is None:
-            new = (
-                body.rstrip("\n")
-                + f"\n\n{FIXES_HEADING}\n\n{FIXES_OPEN}\n\n{line}\n\n</Accordion>\n\n"
-            )
-    else:
-        section = item["section"] or "Other changes"
-        new = _append_in_section(body, f"\n## {section}\n", line)
-        if new is None:
-            fixes = body.find(f"{FIXES_HEADING}\n")
-            heading = f"## {section}\n\n{line}\n\n"
-            new = (
-                body[:fixes] + heading + body[fixes:]
-                if fixes != -1
-                else body.rstrip("\n") + "\n\n" + heading
-            )
-    return text[:start] + new + text[end:]
-
-
-def _notion_children(block_id: str) -> list[dict]:
-    blocks, cursor = [], None
-    while True:
-        query = f"?page_size={NOTION_BATCH}" + (
-            f"&start_cursor={cursor}" if cursor else ""
-        )
-        page = _notion("GET", f"/blocks/{_notion_id(block_id)}/children{query}")
-        blocks += page["results"]
-        if not page.get("has_more"):
-            return blocks
-        cursor = urllib.parse.quote(page["next_cursor"], safe="")
-
-
-def cmd_review_sync(args: argparse.Namespace) -> None:
-    """Add the entries ticked on the PR's review page to the PR's changelog files."""
-    root = Path(args.root).resolve()
-    review_path = root / REVIEW_FILE.relative_to(_REPO_ROOT)
-    data = _read_state(review_path)
-    rows = _notion(
-        "POST",
-        f"/data_sources/{NOTION_REVIEW_DATA_SOURCE}/query",
-        {"filter": {"property": "PR", "url": {"equals": args.pr_url}}},
-    )["results"]
-    if not rows:
-        print(
-            f"No review page for {args.pr_url} in the Weekly changelog reviews database."
-        )
-        raise SystemExit(1)
-    page_id = _notion_id(rows[0]["id"])
-    ticked = _ticked_ids(_notion_children(page_id))
-    added = []
-    for item in data["items"]:
-        if item["id"] not in ticked or item["added"]:
-            continue
-        path = root / CHANGELOG_TARGETS[item["product"]].relative_to(_REPO_ROOT)
-        path.write_text(
-            _insert_entry(path.read_text(), data["label"], data["since"], item)
-        )
-        item["added"] = True
-        added.append(item)
-    _write_state(review_path, data)
-    if added:
-        _notion(
-            "PATCH",
-            f"/pages/{page_id}",
-            {"properties": {"Status": {"select": {"name": "Synced"}}}},
-        )
-    already = sorted(
-        (i["id"] for i in data["items"] if i["added"] and i not in added),
-        key=lambda x: int(x[1:]),
-    )
-    lines = [f"Synced from the [review page]({rows[0]['url']})."]
-    lines += (
-        [f"Added {len(added)} entries:", ""]
-        + [
-            f"- **{i['id']}** ({i['product']}, {i['section'] or i['layer']})"
-            for i in added
-        ]
-        if added
-        else ["No newly ticked entries."]
-    )
-    if already:
-        lines += ["", "Added by an earlier sync: " + ", ".join(already) + "."]
-    print("\n".join(lines))
+    print(_child(cache, "report.md"))
 
 
 # ---------------------------------------------------------------------------
@@ -3184,25 +2706,6 @@ def main() -> None:
     p.add_argument("--pass2-model", default=PASS2_MODEL)
     p.add_argument("--workers", type=int, default=10)
     p.set_defaults(func=cmd_selfhosted)
-
-    p = sub.add_parser(
-        "review-notion",
-        help="Create the week's Notion review page and write the PR body that links it",
-    )
-    p.add_argument("--review", default=str(REVIEW_FILE), help="The week's review JSON")
-    p.add_argument("--pr-url", required=True)
-    p.add_argument("--body-out", required=True, help="Where to write the PR body")
-    p.set_defaults(func=cmd_review_notion)
-
-    p = sub.add_parser(
-        "review-sync",
-        help="Add the entries ticked on the Notion review page to the week's PR",
-    )
-    p.add_argument("--pr-url", required=True)
-    p.add_argument(
-        "--root", default=str(_REPO_ROOT), help="Checkout of the week's PR branch"
-    )
-    p.set_defaults(func=cmd_review_sync)
 
     p = sub.add_parser(
         "weekly",

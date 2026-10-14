@@ -203,7 +203,7 @@ def test_claude_api_raises_unless_the_turn_ended(
 
 
 def test_release_held_by_flag_state() -> None:
-    """Rolled-out and archived flags release; pending, missing, and conflicts stay."""
+    """Rolled-out flags release; pending flags stay; anything uncertain is dropped."""
     held = {
         "1": {"flag": "shipped", "title": "a"},
         "2": {"flag": "cleaned_up", "title": "b"},
@@ -216,11 +216,11 @@ def test_release_held_by_flag_state() -> None:
         "cleaned_up": {"rolled_out": False, "archived": True},
         "pending": {"rolled_out": False, "archived": False},
     }
-    released, kept = cp._release_held(held, flags)
-    assert sorted(released) == ["1", "2"]
-    assert "confirm it shipped" in released["2"]
-    assert sorted(kept) == ["3", "4", "5"]
-    assert "not found in Eppo" in kept["4"]
+    released, kept, dropped = cp._release_held(held, flags)
+    assert sorted(released) == ["1"]
+    assert sorted(kept) == ["3"]
+    assert sorted(dropped) == ["2", "4", "5"]
+    assert "not found in Eppo" in dropped["4"]
 
 
 def test_write_held_orders_by_pr_number(tmp_path: Path) -> None:
@@ -270,200 +270,23 @@ def test_list_feat_fix_filters_by_merge_date_and_stops_paging(
     assert len(calls) == 2  # the second page ends before the window, so paging stops
 
 
-WEEK = "October 5-12, 2026"
-PAGE = (
-    "---\ntitle: X\n---\n\n"
-    f'<Update label="{WEEK}" '
-    'rss={{ title: "2026-10-05 - LangSmith Cloud update" }}>\n\n'
-    "## Highlights\n\n- **A**: a.\n\n"
-    "## Tracing\n\n- t1\n\n"
-    "## Fixes and improvements\n\n"
-    '<Accordion title="Show all fixes">\n\n- f1\n\n</Accordion>\n\n'
-    "</Update>\n\n"
-    '<Update label="older">\n\n- old\n\n</Update>\n'
-)
-
-
-def _item(layer: str, line: str, section: str = "", product: str = "cloud") -> dict:
-    return {
-        "id": "R1",
-        "product": product,
-        "layer": layer,
-        "section": section,
-        "line": line,
-        "reasons": ["why"],
-        "prs": [1],
-        "added": False,
-    }
-
-
-def test_insert_entry_appends_to_matching_sections() -> None:
-    """Each layer lands at the end of the section the renderer would put it in."""
-    text = cp._insert_entry(PAGE, WEEK, "2026-10-05", _item("highlight", "- **B**: b."))
-    text = cp._insert_entry(
-        text, WEEK, "2026-10-05", _item("change", "- t2", "Tracing")
-    )
-    text = cp._insert_entry(text, WEEK, "2026-10-05", _item("fix", "- f2"))
-    assert "## Highlights\n\n- **A**: a.\n- **B**: b.\n\n## Tracing" in text
-    assert "## Tracing\n\n- t1\n- t2\n\n## Fixes and improvements" in text
-    assert "- f1\n- f2\n\n</Accordion>" in text
-    assert text.endswith('<Update label="older">\n\n- old\n\n</Update>\n')
-
-
-def test_insert_entry_adds_missing_sections() -> None:
-    """A new section goes before the fixes; a new highlight section goes first."""
-    text = cp._insert_entry(
-        PAGE, WEEK, "2026-10-05", _item("change", "- d1", "Deployment")
-    )
-    assert "- t1\n\n## Deployment\n\n- d1\n\n## Fixes and improvements" in text
-    bare = PAGE.replace("## Highlights\n\n- **A**: a.\n\n", "")
-    text = cp._insert_entry(bare, WEEK, "2026-10-05", _item("highlight", "- **B**: b."))
-    assert (
-        'LangSmith Cloud update" }}>\n\n## Highlights\n\n- **B**: b.\n\n## Tracing'
-        in text
-    )
-
-
-def test_insert_entry_starts_a_block_and_is_idempotent() -> None:
-    """A product with no block this week gets one on top; a repeat insert is a no-op."""
-    page = '---\ntitle: X\n---\n\n<Update label="older">\n\n- old\n\n</Update>\n'
-    item = _item("fix", "- f1", product="fleet")
-    text = cp._insert_entry(page, WEEK, "2026-10-05", item)
-    assert text.index(f'label="{WEEK}"') < text.index('label="older"')
-    assert "Fleet product update" in text
-    assert (
-        f"{cp.FIXES_HEADING}\n\n{cp.FIXES_OPEN}\n\n- f1\n\n</Accordion>\n\n</Update>"
-        in text
-    )
-    assert cp._insert_entry(text, WEEK, "2026-10-05", item) == text
-
-
-def test_ticked_ids_reads_only_checked_todo_ids() -> None:
-    """Only a ticked to-do's leading ID counts; its text is never used."""
-
-    def todo(text: str, *, checked: bool) -> dict:
-        return {
-            "type": "to_do",
-            "to_do": {"checked": checked, "rich_text": [{"plain_text": text}]},
-        }
-
-    blocks = [
-        todo("R1 · cloud · Tracing: x", checked=True),
-        todo("R2 · cloud · fix: y", checked=False),
-        todo("Rx not an id", checked=True),
-        {"type": "paragraph", "paragraph": {"rich_text": [{"plain_text": "R3"}]}},
+def test_render_puts_fixes_under_their_own_heading() -> None:
+    """Fixes get a heading, so the collapsed list does not read as the section above."""
+    groups = [
+        {
+            "product": "cloud",
+            "layer": "change",
+            "section": "Tracing",
+            "entry": "c.",
+            "rank": 1,
+        },
+        {"product": "cloud", "layer": "fix", "section": "", "entry": "f.", "rank": 2},
     ]
-    assert cp._ticked_ids(blocks) == {"R1"}
-
-
-def _review_data(still: int = 2) -> dict:
-    return {
-        "label": WEEK,
-        "since": "2026-10-05",
-        "items": [_item("change", "- t2", "Tracing")],
-        "ungrouped": [{"pr": 5, "title": "fix: x"}],
-        "released": [{"pr": 6, "title": "Y", "why": "flag z fully rolled out"}],
-        "newly_held": [{"pr": 7, "flag": "f", "title": "feat: z"}],
-        "still_held": [{"pr": n, "title": "s", "why": "w"} for n in range(still)],
-    }
-
-
-def test_review_blocks_put_the_decision_first() -> None:
-    """The callout and the to-dos come before the reference sections."""
-    blocks = cp._review_blocks(_review_data(), "https://github.com/o/r/pull/42")
-    assert blocks[0]["type"] == "callout"
-    assert "PR #42" in blocks[0]["callout"]["rich_text"][0]["text"]["content"]
-    kinds = [b["type"] for b in blocks]
-    assert kinds.index("to_do") < kinds.index("heading_1", kinds.index("to_do"))
-    todo = blocks[kinds.index("to_do")]["to_do"]
-    assert todo["rich_text"][0]["text"]["content"].startswith(
-        "R1 · cloud · Tracing: t2"
-    )
-    # Notion takes two levels of nesting in one request.
-    assert all("children" not in c.get(c["type"], {}) for c in todo["children"])
-
-
-def test_review_blocks_split_the_still_held_list() -> None:
-    """A toggle holds one request's worth of children, so a long list is split."""
-    blocks = cp._review_blocks(_review_data(still=150), "https://x/pull/1")
-    first, second = blocks[-2]["heading_2"], blocks[-1]["heading_2"]
-    assert first["is_toggleable"] is True
-    assert len(first["children"]) == cp.NOTION_BATCH
-    assert len(second["children"]) == 50
-    assert second["rich_text"][0]["text"]["content"] == "Still held (101-150 of 150)"
-
-
-def test_rich_splits_long_text() -> None:
-    """Notion rejects a text item over 2,000 characters."""
-    chunks = cp._rich("x" * 4500)
-    assert [len(c["text"]["content"]) for c in chunks] == [2000, 2000, 500]
-
-
-def test_review_sync_inserts_ticked_entries(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Ticked entries go into the PR checkout once and the row is marked Synced."""
-    for target in cp.CHANGELOG_TARGETS.values():
-        path = tmp_path / target.relative_to(cp._REPO_ROOT)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(PAGE)
-    monkeypatch.setenv(cp.STATE_KEY_ENV, Fernet.generate_key().decode())
-    review = tmp_path / cp.REVIEW_FILE.relative_to(cp._REPO_ROOT)
-    review.parent.mkdir(parents=True, exist_ok=True)
-    data = _review_data()
-    data["items"].append(dict(_item("fix", "- f9"), id="R2"))
-    cp._write_state(review, data)
-    page_id = "0" * 32
-    calls = []
-
-    def fake_notion(method: str, path: str, body: dict | None = None) -> dict:
-        calls.append((method, path, body))
-        if path.endswith("/query"):
-            return {"results": [{"id": page_id, "url": "https://notion/x"}]}
-        if path.startswith("/blocks/"):
-            return {
-                "results": [
-                    {
-                        "type": "to_do",
-                        "to_do": {
-                            "checked": True,
-                            "rich_text": [{"plain_text": "R1 · x"}],
-                        },
-                    }
-                ],
-                "has_more": False,
-            }
-        return {}
-
-    monkeypatch.setattr(cp, "_notion", fake_notion)
-    args = SimpleNamespace(pr_url="https://github.com/o/r/pull/1", root=str(tmp_path))
-    cp.cmd_review_sync(args)
-    cloud = (
-        tmp_path / cp.CHANGELOG_TARGETS["cloud"].relative_to(cp._REPO_ROOT)
-    ).read_text()
-    assert "- t1\n- t2\n" in cloud
-    assert "- f9" not in cloud
-    saved = cp._read_state(review)
-    assert [i["added"] for i in saved["items"]] == [True, False]
-    assert calls[-1] == (
-        "PATCH",
-        f"/pages/{page_id}",
-        {"properties": {"Status": {"select": {"name": "Synced"}}}},
-    )
-    cp.cmd_review_sync(args)  # a second sync adds nothing
+    block = cp._render("cloud", "October 5-12, 2026", groups, set(), "2026-10-05")
     assert (
-        cloud
-        == (
-            tmp_path / cp.CHANGELOG_TARGETS["cloud"].relative_to(cp._REPO_ROOT)
-        ).read_text()
-    )
-
-
-def test_notion_id_rejects_paths() -> None:
-    """Only a Notion ID reaches an API path."""
-    assert cp._notion_id("0" * 32) == "0" * 32
-    with pytest.raises(RuntimeError):
-        cp._notion_id("../users")
+        "## Tracing\n\n- c.\n\n## Fixes and improvements\n\n"
+        '<Accordion title="Show all fixes">\n\n- f.\n\n</Accordion>'
+    ) in block
 
 
 @pytest.mark.parametrize(
