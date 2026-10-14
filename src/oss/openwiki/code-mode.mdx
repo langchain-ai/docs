@@ -4,7 +4,7 @@ sidebarTitle: Code mode
 description: Generate and maintain repository documentation for coding agents with OpenWiki
 ---
 
-Code mode builds a repository wiki in `openwiki/` with durable details such as architecture, integrations, and workflows. Coding agents use that wiki as context so they can work in the package more efficiently, with less rediscovery and fewer tokens. Humans can read the same Markdown, but agents are the primary audience. Agents discover the wiki through pointers OpenWiki adds to `AGENTS.md` and `CLAUDE.md`.
+Code mode builds a repository wiki in `openwiki/` with durable details such as architecture, integrations, and workflows. Coding agents use that wiki as context so they can work in the package more efficiently, with less rediscovery and fewer tokens. Humans can read the same Markdown, but agents are the primary audience. Agents discover the wiki through the pointer OpenWiki maintains in `AGENTS.md`, and through an `@AGENTS.md` import in `CLAUDE.md` when that file already exists.
 
 `openwiki`, `openwiki --init`, and `openwiki --update` run in code mode. You can also pass the mode explicitly:
 
@@ -22,7 +22,7 @@ To generate wiki pages in another language, pass a BCP-47 locale such as `ko`, `
 openwiki --init --language ko
 ```
 
-You can also run OpenWiki inside Codex, Claude Code, OpenCode, or Cursor. See [Coding-agent integrations](/oss/openwiki/integrations).
+You can also run OpenWiki inside Codex, Claude Code, OpenCode, Cursor, IBM Bob, or Kiro. See [Coding-agent integrations](/oss/openwiki/integrations).
 
 ## What code mode produces
 
@@ -33,7 +33,8 @@ After a successful init or update, the repository typically includes:
 - **`openwiki/.claims/`**: Structured Claim sidecars that ground factual pages in versioned repository evidence
 - **`openwiki/.page-manifest.json`**: Per-page progress and source checkpoints for resumable generation
 - **`openwiki/.last-update.json`**: Metadata for the last successful documentation check (including no-op updates)
-- **`AGENTS.md` / `CLAUDE.md`**: OpenWiki inserts or refreshes an `<!-- OPENWIKI:START -->` … `<!-- OPENWIKI:END -->` block that tells coding agents when to consult the wiki. Existing content outside that block is left untouched
+- **`AGENTS.md`**: Created when missing, then refreshed inside an `<!-- OPENWIKI:START -->` … `<!-- OPENWIKI:END -->` block that tells coding agents when to consult the wiki
+- **`CLAUDE.md`**: Refreshed only when the file already exists. The managed block imports `@AGENTS.md` so Claude Code still loads the same instructions. OpenWiki does not create `CLAUDE.md` when it is absent
 
 During an active run, `openwiki/.run.json` checkpoints the ordered page queue. OpenWiki deletes that file after a successful finish.
 
@@ -42,6 +43,8 @@ During an active run, `openwiki/.run.json` checkpoints the ordered page queue. O
 OpenWiki makes code wikis self-correcting by tracking the material propositions behind factual pages, not only when a Markdown file was last generated. Claims cover truths future agents rely on: behavior, responsibilities, architecture, data flow, invariants, failure semantics, configuration, and security boundaries. Each Claim points to exact repository evidence such as `repo://src/server.ts#L40-L82`, with the evidence version OpenWiki observed when the Claim was established.
 
 The Markdown stays clean. Structured Claim state lives under `openwiki/.claims/`. Page completion persists reconciled Claims, projects verification into OKF front matter, and proves the complete result before marking that page job complete. Grounded Claims apply to repository code wikis and repository evidence. Connector-derived facts, including LangSmith-only observations, are not included as Claims.
+
+Updates reconcile Claims sparsely. The page worker submits decisions for Claims that need attention (confirm, revise, add, or retract). Unaffected Claims keep their stable identifiers and do not round-trip their statements and evidence through the model. Host-driven runs expose the complete Claims set for the current page through the optional `openwiki_inspect_page_claims` MCP tool.
 
 ## Markdown output
 
