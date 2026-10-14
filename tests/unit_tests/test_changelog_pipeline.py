@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
@@ -512,3 +513,32 @@ def test_text_reasons_catch_internal_names_and_flag_keys() -> None:
     group = {"title": "", "entry": "Set it on the host-backend deployment."}
     assert cp._text_reasons(group, flags) == ["internal name: host-backend"]
     assert cp._text_reasons({"title": "T", "entry": "Plain text."}, flags) == []
+
+
+def test_fix_text_publishes_clean_rewrites_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A clean rewrite publishes; a leaky one goes to a human; a drop is recorded."""
+    replies = {
+        1: {"action": "rewrite", "title": "", "entry": "Set the token age limit."},
+        2: {"action": "rewrite", "title": "", "entry": "Set it on host-backend."},
+        3: {"action": "drop", "title": "", "entry": "", "reason": "self-hosted only"},
+    }
+
+    def fake_claude(
+        _system: str, _schema: dict, prompt: str, _model: str, _workdir: Path
+    ) -> tuple[dict, dict]:
+        number = int(re.search(r'number="?(\d+)', prompt).group(1))
+        return replies[number], {"cost_usd": 0.01}
+
+    monkeypatch.setattr(cp, "_claude", fake_claude)
+    monkeypatch.setattr(cp, "_group_prompt", lambda g, _prs: f'number="{g["prs"][0]}"')
+    groups = [
+        ({"prs": [n], "layer": "change", "title": "", "entry": "x"}, ["internal"])
+        for n in (1, 2, 3)
+    ]
+    fixed, still, dropped, cost = cp._fix_text(groups, {}, {}, tmp_path, 2)
+    assert [new["entry"] for _, new in fixed] == ["Set the token age limit."]
+    assert still[0][1][-1] == "rewrite still has internal name: host-backend"
+    assert dropped[0][1] == "self-hosted only"
+    assert cost == pytest.approx(0.03)

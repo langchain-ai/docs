@@ -1011,6 +1011,32 @@ ENTRY_SCHEMA = {
     "required": ["entry"],
 }
 
+REWRITE_MODEL = "haiku"
+REWRITE_SYSTEM = f"""You fix one line of the weekly LangSmith Cloud and Fleet changelog.
+
+A check found that the line names something customers never see. You get the line,
+what the check flagged, and the pull requests behind the line. Choose one action:
+- "rewrite": return the line with every flagged term removed or replaced by what a
+  customer sees, keeping the meaning. For a highlight, also return its title;
+  otherwise return an empty title.
+- "drop": the line means nothing without the internal term, or it describes
+  something Cloud and Fleet customers cannot use, such as configuration only
+  self-hosted operators set. Say why in reason.
+
+{ENTRY_RULES}"""
+REWRITE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "action": {"type": "string", "enum": ["rewrite", "drop"]},
+        "title": {"type": "string"},
+        "entry": {"type": "string"},
+        "reason": {"type": "string"},
+    },
+    "required": ["action", "title", "entry", "reason"],
+}
+# Groups from the retry pass sort after the first pass's within each section.
+RETRY_RANK_OFFSET = 1000
+
 
 def _docs_pages() -> dict[str, str]:
     """Map each LangSmith docs route to its page title."""
@@ -1124,6 +1150,90 @@ def _group_prompt(group: dict, prs: dict[int, dict]) -> str:
         parts.append(_pr_prompt(pr))
     parts.append("</change>")
     return "\n".join(parts)
+
+
+def _group_notes(numbers: list[int], prs: dict, results: dict) -> str:
+    """One line per PR for the grouping call: title, verdict, and evidence."""
+    return "\n".join(
+        f"#{n} | {prs[n]['title']} | {results[n]['pass1']['reason'][:300]} | "
+        + "; ".join(results[n]["pass1"]["evidence"][:3])[:300]
+        for n in sorted(numbers)
+    )
+
+
+def _rewrite_one(
+    key: str, group: dict, reasons: list[str], prs: dict, cache: Path, workdir: Path
+) -> dict:
+    target = _child(cache, f"{key}.json")
+    if target.exists():
+        return json.loads(target.read_text())
+    line = (
+        f"{group['title']}: {group['entry']}"
+        if group["layer"] == "highlight"
+        else group["entry"]
+    )
+    prompt = (
+        f'<line layer="{group["layer"]}">\n{line}\n</line>\n'
+        f"<flagged>\n" + "\n".join(reasons) + "\n</flagged>\n"
+        f"{_group_prompt(group, prs)}"
+    )
+    out, meta = _claude(REWRITE_SYSTEM, REWRITE_SCHEMA, prompt, REWRITE_MODEL, workdir)
+    record = {**out, "meta": meta}
+    target.write_text(json.dumps(record, indent=1))
+    return record
+
+
+def _fix_text(
+    to_fix: list[tuple[dict, list[str]]],
+    prs: dict,
+    flags: dict,
+    cache: Path,
+    workers: int,
+) -> tuple[list, list, list, float]:
+    """Rewrite entries that name something internal, and check each rewrite again.
+
+    Returns (fixed, still, dropped, cost): (original, rewritten) pairs that pass,
+    (entry, reasons) pairs a human must see, (entry, why) pairs the model dropped,
+    and the model cost.
+    """
+    fixed, still, dropped, cost = [], [], [], 0.0
+    if not to_fix:
+        return fixed, still, dropped, cost
+    with (
+        tempfile.TemporaryDirectory() as tmp,
+        cf.ThreadPoolExecutor(max_workers=workers) as pool,
+    ):
+        futures = {
+            pool.submit(
+                _rewrite_one,
+                "fix-" + "-".join(str(n) for n in sorted(g["prs"])[:3]),
+                g,
+                reasons,
+                prs,
+                cache,
+                Path(tmp),
+            ): (g, reasons)
+            for g, reasons in to_fix
+        }
+        for fut in cf.as_completed(futures):
+            g, reasons = futures[fut]
+            try:
+                out = fut.result()
+            except Exception as exc:  # noqa: BLE001 - the entry goes to a human
+                still.append((g, [*reasons, f"rewrite failed: {str(exc)[:200]}"]))
+                continue
+            cost += out.get("meta", {}).get("cost_usd", 0)
+            if out["action"] == "drop":
+                dropped.append((g, out["reason"]))
+                continue
+            new = dict(g, entry=_mdx_escape(_apply_renames(out["entry"])))
+            if g["layer"] == "highlight" and out["title"]:
+                new["title"] = _mdx_escape(_apply_renames(out["title"]))
+            if again := _text_reasons(new, flags):
+                still.append((g, reasons + [f"rewrite still has {r}" for r in again]))
+                continue
+            fixed.append((g, new))
+    return fixed, still, dropped, cost
 
 
 def _write_group(
@@ -1361,11 +1471,7 @@ def cmd_mock(args: argparse.Namespace) -> None:
         if grouping_path.exists():
             grouping = json.loads(grouping_path.read_text())
         else:
-            notes = "\n".join(
-                f"#{n} | {prs[n]['title']} | {results[n]['pass1']['reason'][:300]} | "
-                + "; ".join(results[n]["pass1"]["evidence"][:3])[:300]
-                for n in sorted(week)
-            )
+            notes = _group_notes(week, prs, results)
             beta = "\n".join(f"- {name}" for name in _beta_features())
             grouping, meta = _claude(
                 GROUP_SYSTEM,
@@ -1386,6 +1492,36 @@ def cmd_mock(args: argparse.Namespace) -> None:
                 f"grouping: {len(missing)} PRs missing, {len(unknown)} unknown",
                 file=sys.stderr,
             )
+        # A second, smaller call places the PRs the first one left out. The week's
+        # highlights are already picked, so its highlights become changes.
+        retry_cost = 0.0
+        if missing:
+            retry_path = _child(cache, "groups-missing.json")
+            if retry_path.exists():
+                retry = json.loads(retry_path.read_text())
+            else:
+                notes = _group_notes(missing, prs, results)
+                beta = "\n".join(f"- {name}" for name in _beta_features())
+                retry, meta = _claude(
+                    GROUP_SYSTEM,
+                    GROUP_SCHEMA,
+                    f"<beta_features>\n{beta}\n</beta_features>\n<prs>\n{notes}\n</prs>",
+                    GROUP_MODEL,
+                    workdir,
+                )
+                retry["meta"] = meta
+                retry_path.write_text(json.dumps(retry, indent=1))
+            retry_cost = retry.get("meta", {}).get("cost_usd", 0)
+            for g in retry["groups"]:
+                g["prs"] = [n for n in g["prs"] if n in set(missing)]
+                g["rank"] += RETRY_RANK_OFFSET
+                if g["layer"] == "highlight":
+                    g["layer"] = "change"
+            groups = groups + retry["groups"]
+            missing = sorted(
+                set(missing) - {n for g in retry["groups"] for n in g["prs"]}
+            )
+            print(f"grouping retry: {len(missing)} PRs still missing", file=sys.stderr)
         # Keep only this week's PRs; a number the model invents or borrows is dropped.
         week_set = set(week)
         for g in groups:
@@ -1430,7 +1566,8 @@ def cmd_mock(args: argparse.Namespace) -> None:
     # An entry that looks gated by a flag Eppo knows goes on the held list, like a
     # declared flag, and publishes when that flag rolls out; a later run rewrites and
     # rechecks it then. Only what a script cannot settle reaches a human.
-    publish, review, auto_held = [], [], []
+    # Text that names something internal is rewritten and checked again.
+    publish, review, auto_held, to_fix = [], [], [], []
     for g in written:
         for field in ("title", "entry"):
             if g.get(field):
@@ -1440,9 +1577,19 @@ def cmd_mock(args: argparse.Namespace) -> None:
         if known:
             auto_held.append((g, known))
             continue
+        text = _text_reasons(g, flags)
         # A flag missing from Eppo or a conflicting declaration cannot be checked.
-        reasons = _text_reasons(g, flags) + [why for _, why in gates]
-        (review if reasons else publish).append((g, reasons))
+        if unknown := [why for _, why in gates]:
+            review.append((g, text + unknown))
+        elif text:
+            to_fix.append((g, text))
+        else:
+            publish.append((g, []))
+    fixed, still, rewrite_dropped, fix_cost = _fix_text(
+        to_fix, prs, flags, cache, args.workers
+    )
+    publish += [(new, []) for _, new in fixed]
+    review += still
     for g, known in auto_held:
         for n in g["prs"]:
             new_ledger.setdefault(
@@ -1504,6 +1651,23 @@ def cmd_mock(args: argparse.Namespace) -> None:
             or ["None this week."]
         ),
         "",
+        "## Rewritten automatically: named something internal",
+        "",
+        *(
+            [
+                f"- Now: {_entry_line(new, set(pages))}\n  - Was: {_entry_line(g, set(pages))}"
+                for g, new in fixed
+            ]
+            or ["None this week."]
+        ),
+        "",
+        "## Dropped by the rewrite",
+        "",
+        *(
+            [f"- {_entry_line(g, set(pages))}\n  - {why}" for g, why in rewrite_dropped]
+            or ["None this week."]
+        ),
+        "",
         f"## Still held ({len(kept)})",
         "",
         *(
@@ -1556,6 +1720,18 @@ def cmd_mock(args: argparse.Namespace) -> None:
             {"pr": n, "flag": flag, "title": prs[n]["title"]}
             for n, flag in sorted(held)
         ],
+        "rewritten": [
+            {
+                "now": _entry_line(new, set(pages)),
+                "was": _entry_line(g, set(pages)),
+                "prs": g["prs"],
+            }
+            for g, new in fixed
+        ],
+        "dropped": [
+            {"line": _entry_line(g, set(pages)), "why": why, "prs": g["prs"]}
+            for g, why in rewrite_dropped
+        ],
         "auto_held": [
             {
                 "flag": known[0][0],
@@ -1576,8 +1752,11 @@ def cmd_mock(args: argparse.Namespace) -> None:
         f"{len(review)} sent to review",
         file=sys.stderr,
     )
-    cost = grouping.get("meta", {}).get("cost_usd", 0) + sum(
-        g["meta"]["cost_usd"] for g in written
+    cost = (
+        grouping.get("meta", {}).get("cost_usd", 0)
+        + retry_cost
+        + fix_cost
+        + sum(g["meta"]["cost_usd"] for g in written)
     )
     layers = {
         layer: sum(g["layer"] == layer for g in written)
@@ -2413,6 +2592,7 @@ def _review_blocks(data: dict, pr_url: str) -> list[dict]:
     """The review page: what needs a decision first, reference material after."""
     items, ungrouped, released = data["items"], data["ungrouped"], data["released"]
     auto_held = data.get("auto_held", [])
+    rewritten, dropped = data.get("rewritten", []), data.get("dropped", [])
     pr_number = pr_url.rstrip("/").rsplit("/", 1)[-1]
     blocks = [
         {
@@ -2511,6 +2691,34 @@ def _review_blocks(data: dict, pr_url: str) -> list[dict]:
                 f"({'; '.join(a['evidence'])})",
             )
             for a in auto_held
+        ],
+        _block("heading_2", f"Rewritten automatically ({len(rewritten)})"),
+        _block(
+            "paragraph",
+            "These entries named something internal. The model rewrote each one and "
+            "the rewrite passed the same check, so it is published in the PR.",
+        ),
+        *[
+            {
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                    "rich_text": _rich(r["now"].removeprefix("- ")),
+                    "children": [
+                        _block("paragraph", f"Was: {r['was'].removeprefix('- ')}")
+                    ],
+                },
+            }
+            for r in rewritten
+        ],
+        _block("heading_2", f"Dropped ({len(dropped)})"),
+        _block(
+            "paragraph",
+            "The model judged these meaningless without the internal term, or not "
+            "for Cloud and Fleet customers, so they are not in the PR.",
+        ),
+        *[
+            _block("bulleted_list_item", f"{d['line'].removeprefix('- ')} ({d['why']})")
+            for d in dropped
         ],
     ]
     still = data["still_held"]
