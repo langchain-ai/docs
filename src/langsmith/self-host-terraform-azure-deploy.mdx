@@ -105,10 +105,6 @@ You also need a LangSmith license key ([contact the LangChain sales team](https:
 
 ## Quickstart
 
-<Tip>
-For a condensed cheat sheet of `make` targets, required variables, and common constraints, see the [Azure quick reference](/langsmith/self-host-terraform-azure-quick-reference).
-</Tip>
-
 For the fastest path from zero to a running LangSmith instance:
 
 ```bash
@@ -148,8 +144,6 @@ make deploy-all   # apply → seed-secrets → kubeconfig → k8s-secrets → in
 
 `make deploy-all` stops at each `make apply` stage prompt. To skip the prompts, run `make deploy-all ARGS="-auto-approve"`. The `make seed-secrets` step also prompts for the initial admin password, so export `LANGSMITH_ADMIN_PASSWORD` for an unattended run.
 
-The following sections cover each phase in detail.
-
 ## Provision infrastructure
 
 Terraform provisions the following Azure resources:
@@ -188,7 +182,7 @@ Generate `terraform.tfvars` with the interactive wizard:
 make quickstart
 ```
 
-The wizard runs a 10-section questionnaire covering profile, subscription and naming, networking, AKS sizing, ingress controller, DNS/TLS, backend services, Key Vault, sizing profile, and security add-ons. Each section includes explanatory context, cost estimates, and trade-offs. Re-running is safe; existing values are preselected at each prompt. Press Enter to keep them.
+The wizard runs a 10-section questionnaire covering profile, subscription and naming, networking, AKS sizing, ingress controller, DNS/TLS, backend services, Key Vault, sizing profile, and security add-ons. Re-running is safe: each prompt preselects the existing value, and Enter keeps it.
 
 Prefer manual editing:
 
@@ -236,10 +230,6 @@ Leave `unique_resource_names` unset on an existing deployment. Turning it on ren
 In-cluster ClickHouse runs as a single pod with no replication or backups, dev/POC only. For production, use [LangChain Managed ClickHouse](/langsmith/langsmith-managed-clickhouse).
 </Warning>
 
-<Info>
-Blob Storage is always required, regardless of tier. Trace payloads must go to Azure Blob, never to ClickHouse.
-</Info>
-
 For all variables, see the [Azure variables reference](/langsmith/self-host-terraform-azure-variables).
 
 ### Bootstrap secrets
@@ -255,10 +245,6 @@ make setup-env
 
 The admin password and the generated application secrets are not in this file. `make seed-secrets` writes them to Key Vault after `make apply`.
 
-<Warning>
-Never commit `secrets.auto.tfvars`. It is gitignored. Regenerate on any machine by running `make setup-env`.
-</Warning>
-
 ### Preflight
 
 ```bash
@@ -271,13 +257,9 @@ The subscription must register 11 resource providers: `Microsoft.ContainerServic
 
 ### Apply
 
-<Note>
-Provisioning the Azure cloud foundation takes 15 to 20 minutes on a clean subscription. Do not interrupt the apply.
-</Note>
-
 ```bash
 make init
-make apply   # ~15 to 20 min on first run
+make apply   # ~15 to 20 min on first run; do not interrupt it
 ```
 
 `make init` runs `terraform init` in `infra/`, which downloads the providers, including AzureRM, and initializes the backend. Run it once per clone. After you check out a new module tag, run `make init ARGS=-upgrade`.
@@ -298,7 +280,7 @@ make k8s-secrets   # Key Vault → langsmith-config-secret in the langsmith name
 
 `make seed-secrets` prompts for the LangSmith admin password, or reads `LANGSMITH_ADMIN_PASSWORD`. It generates the API key salt, the JWT secret, and four Fernet encryption keys. It writes only the secrets that are missing, so it is safe to re-run.
 
-`make k8s-secrets` reads 8 secrets from Key Vault, plus the three `langsmith-oauth-*` secrets when they exist, and creates or updates `langsmith-config-secret`. Safe to re-run; uses `--dry-run=client | kubectl apply` to update in place.
+`make k8s-secrets` reads 8 secrets from Key Vault, plus the three `langsmith-oauth-*` secrets when they exist, and creates or updates `langsmith-config-secret`. It is safe to re-run.
 
 On a cluster with Entra ID integration, `make kubeconfig` converts the context to sign in through `kubelogin` as your `az` identity.
 
@@ -317,14 +299,8 @@ kubectl get pods -n envoy-gateway-system   # Envoy Gateway controller (default i
 kubectl get sa langsmith-ksa -n langsmith \
   -o jsonpath='{.metadata.annotations}'
 
-# Terraform outputs
+# Terraform outputs that the Helm scripts read
 terraform -chdir=infra output
-
-# Key outputs consumed by Helm scripts
-terraform -chdir=infra output -raw keyvault_name
-terraform -chdir=infra output -raw storage_account_name
-terraform -chdir=infra output -raw storage_container_name
-terraform -chdir=infra output -raw storage_account_k8s_managed_identity_client_id
 ```
 
 ## Deploy LangSmith
@@ -336,7 +312,6 @@ terraform -chdir=infra output -raw storage_account_k8s_managed_identity_client_i
 #### Generate Helm values
 
 ```bash
-cd terraform/modules/azure
 make init-values
 ```
 
@@ -355,10 +330,6 @@ With `clickhouse_source = "external"`, `make init-values` also prompts for the C
 
 `make init-values` also writes the sizing overlay and any enabled add-on overlays into `helm/values/`. It copies most of them from `helm/values/examples/` and generates the Insights, LLM Gateway, and PII overlays.
 
-<Info>
-The admin email is read from the `langsmith_admin_email` Terraform output (set during `make setup-env`) and written into `values-overrides.yaml` automatically. No manual editing needed.
-</Info>
-
 #### Deploy
 
 ```bash
@@ -368,37 +339,18 @@ make deploy   # ~10 min
 `make deploy` does the following:
 
 1. Validates `values-overrides.yaml` exists and was generated from the current `terraform.tfvars`.
-2. Refreshes kubeconfig via `az aks get-credentials`.
-3. Applies `dns_label` to the public IP for `nginx`, `istio`, and `istio-addon` by annotating the LoadBalancer service with `service.beta.kubernetes.io/azure-dns-label-name`.
-4. Creates the `letsencrypt-prod` cert-manager `ClusterIssuer` if `tls_certificate_source` is `letsencrypt` or `dns01` (idempotent). For `existing`, checks that the `langsmith-tls` Secret exists with type `kubernetes.io/tls`.
-5. Runs preflight checks (tools, cluster connectivity, Helm repo).
-6. Verifies `langsmith-config-secret` exists; auto-creates from Key Vault if it is missing. With external ClickHouse, checks the `langsmith-clickhouse` secret.
-7. Validates the add-on flags. Agent Builder and Fleet need `enable_deployments = true`, Fleet needs external PostgreSQL, and the two cannot run together.
-8. Builds and logs the values chain, and rejects values files still on the chart 0.15 schema.
-9. Auto-recovers any stuck `pending-upgrade` Helm release before proceeding.
-10. For `envoy-gateway`, creates the `EnvoyProxy` (which carries the `dns_label`), `GatewayClass`, and `langsmith-gateway` Gateway.
-11. Runs `helm upgrade --install langsmith langchain/langsmith --timeout 20m`. The chart version is `~0.17.0`, the newest 0.17 patch, unless `langsmith_helm_chart_version` or the `CHART_VERSION` environment variable names a 0.17 patch. The script rejects any other chart line.
-12. Waits for core deployments to roll out.
-13. Annotates the `langsmith-ksa` ServiceAccount with the Workload Identity client ID.
-14. With `enable_llm_gateway = true` and `ingress_controller` set to `nginx` or `agic`, applies the `<release>-llm-gateway` Ingress for `/gateway/`, where `<release>` is the chart fullname (`langsmith` by default), with a 900-second timeout. With the gateway off, it removes a leftover one.
-15. Prints the access URL and login credentials location.
+1. Applies `dns_label` to the public IP for `nginx`, `istio`, and `istio-addon` by annotating the LoadBalancer service with `service.beta.kubernetes.io/azure-dns-label-name`.
+1. Creates the `letsencrypt-prod` cert-manager `ClusterIssuer` if `tls_certificate_source` is `letsencrypt` or `dns01` (idempotent). For `existing`, checks that the `langsmith-tls` Secret exists with type `kubernetes.io/tls`.
+1. Verifies `langsmith-config-secret` exists; auto-creates from Key Vault if it is missing. With external ClickHouse, checks the `langsmith-clickhouse` secret.
+1. Validates the add-on flags. Agent Builder and Fleet need `enable_deployments = true`, Fleet needs external PostgreSQL, and the two cannot run together.
+1. Builds and logs the values chain, and rejects values files still on the chart 0.15 schema.
+1. Auto-recovers any stuck `pending-upgrade` Helm release before proceeding.
+1. For `envoy-gateway`, creates the `EnvoyProxy` (which carries the `dns_label`), `GatewayClass`, and `langsmith-gateway` Gateway.
+1. Runs `helm upgrade --install langsmith langchain/langsmith --timeout 20m`. The long timeout covers the post-install migration Job, which takes up to 5 minutes on first install. The chart version is `~0.17.0`, the newest 0.17 patch, unless `langsmith_helm_chart_version` or the `CHART_VERSION` environment variable names a 0.17 patch. The script rejects any other chart line.
+1. Annotates the `langsmith-ksa` ServiceAccount with the Workload Identity client ID.
+1. With `enable_llm_gateway = true` and `ingress_controller` set to `nginx` or `agic`, applies the `<release>-llm-gateway` Ingress for `/gateway/`, where `<release>` is the chart fullname (`langsmith` by default), with a 900-second timeout. With the gateway off, it removes a leftover one.
 
-<Info>
-Why `--timeout 20m`? The `langsmith-backend-auth-bootstrap` Job runs DB migrations and org initialization as a post-install hook. This takes up to 5 minutes on first install. Without a long timeout, Helm may report failure even though the install eventually succeeds.
-</Info>
-
-<Tip>
-**Watch pods in a second terminal:**
-
-```bash
-# macOS
-brew install watch
-watch kubectl get pods -n langsmith
-
-# Without watch
-while true; do clear; kubectl get pods -n langsmith; sleep 3; done
-```
-</Tip>
+To watch the pods come up, run `kubectl get pods -n langsmith -w` in a second terminal.
 
 ### Verify the deployment
 
@@ -522,14 +474,11 @@ default_node_pool_min_count = 5      # operator pods need headroom
 enable_deployments          = true
 ```
 
-<Warning>
-Without sufficient node capacity, operator-spawned agent pods stay in `Pending` state indefinitely. Scale the node pool first, then enable.
-</Warning>
+Without that headroom, operator-spawned agent pods stay in `Pending` indefinitely.
 
 #### Apply, regenerate values, deploy
 
 ```bash
-cd terraform/modules/azure
 make apply          # scale up node pool (~5 min)
 make init-values    # picks up enable_deployments = true → generates add-on overlay
 make deploy         # rolls out host-backend + listener + operator
@@ -545,13 +494,7 @@ config:
     tlsEnabled: true                       # set based on tls_certificate_source
 ```
 
-<Warning>
-**`config.deployment.url` must include `https://`.** Missing the protocol causes operator-deployed agents to stay stuck in `DEPLOYING` state indefinitely. The URL is injected automatically by `make init-values`. Do not set it manually in the overlay file; it is overwritten on the next run.
-</Warning>
-
-<Warning>
-**`config.deployment.enabled: true` is required.** Setting only `config.deployment.url` without `enabled: true` causes the chart to silently skip creating `listener` and `operator`. No error, they never appear.
-</Warning>
+Without the `https://` protocol in `url`, operator-deployed agents stay stuck in `DEPLOYING`. `make init-values` overwrites these values on every run, so do not edit them in the overlay file.
 
 #### Verify
 
@@ -587,7 +530,6 @@ enable_fleet       = true
 ```
 
 ```bash
-cd terraform/modules/azure
 make apply          # creates the langsmith_fleet database and secret
 make init-values    # appends langsmith-values-fleet.yaml to the values chain
 make deploy
@@ -605,9 +547,7 @@ kubectl get pods -n langsmith | grep fleet
 
 ### Agent Builder
 
-`enable_agent_builder` is the legacy path. On chart 0.16 and later, it adds the Agent Builder UI navigation item and the Fleet tool and trigger servers, but no agent runtime. Use [Fleet](#fleet) instead. The two flags are mutually exclusive, and `make deploy` stops with an error when both are set.
-
-**Prerequisite:** LangSmith Deployment enabled (`enable_deployments = true`). Without it, `make deploy` stops with an error.
+`enable_agent_builder` is the legacy path. On chart 0.16 and later, it adds the Agent Builder UI navigation item and the Fleet tool and trigger servers, but no agent runtime. Use [Fleet](#fleet) instead. The two flags are mutually exclusive, and `make deploy` stops with an error when both are set, or when `enable_deployments` is off.
 
 ```hcl
 # infra/terraform.tfvars
@@ -616,13 +556,12 @@ enable_agent_builder = true
 ```
 
 ```bash
-cd terraform/modules/azure
 make init-values    # appends langsmith-values-agent-builder.yaml to values chain
 make deploy
 ```
 
 <Warning>
-**Encryption key is read from `langsmith-config-secret`.** Do not set `config.agentBuilder.encryptionKey` inline in `values-overrides.yaml`. The chart reads it from `langsmith-config-secret` via `existingSecretName`. Setting it inline overrides the secret reference and creates a mismatch.
+Do not set `config.agentBuilder.encryptionKey` inline in `values-overrides.yaml`. An inline value overrides the key in `langsmith-config-secret` and creates a mismatch.
 </Warning>
 
 ### Insights and Polly
@@ -641,16 +580,7 @@ enable_insights    = true    # Insights analytics
 enable_polly       = true    # Polly AI evaluation agent
 ```
 
-Enable one:
-
-```hcl
-enable_insights = true    # Insights only
-# or
-enable_polly    = true    # Polly only
-```
-
 ```bash
-cd terraform/modules/azure
 make init-values    # appends insights + polly add-on overlays to the values chain
 make deploy         # rolling update, ~5 min
 ```
@@ -663,9 +593,6 @@ Verify:
 # Static Insights and Polly pods
 kubectl get pods -n langsmith | grep -E "clickhouse|standalone-insights|standalone-polly"
 
-# Watch the pods come up
-kubectl get pods -n langsmith -w
-
 # Confirm Insights is enabled in Helm values
 helm get values langsmith -n langsmith | grep -A3 insights
 # Expected: enabled: true
@@ -675,13 +602,7 @@ helm get values langsmith -n langsmith | grep -A3 insights
 **Encryption keys must never change after first enable.** Changing `insights_encryption_key` or `polly_encryption_key` permanently corrupts all existing encrypted data. There is no recovery path. These keys live in Key Vault and never rotate automatically.
 </Warning>
 
-<Warning>
-**Roll the frontend after first Polly enable.** If the Polly UI shows "Unable to connect to LangGraph server" after enabling, the frontend started before the `langsmith-polly-config` ConfigMap was ready. Fix:
-
-```bash
-kubectl rollout restart deployment langsmith-frontend -n langsmith
-```
-</Warning>
+If the Polly UI shows "Unable to connect to LangGraph server" after the first enable, the frontend started before the `langsmith-polly-config` ConfigMap existed. Run `kubectl rollout restart deployment langsmith-frontend -n langsmith`.
 
 ### SmithDB
 
@@ -698,7 +619,6 @@ availability_zones = ["1", "2", "3"]
 ```
 
 ```bash
-cd terraform/modules/azure
 make apply          # creates the SmithDB infrastructure
 make init-values    # generates langsmith-values-smithdb.yaml and langsmith-values-smithdb-overrides.yaml
 make deploy
@@ -717,7 +637,6 @@ enable_gateway_pii_redaction = false   # true adds the Presidio analyzer for PII
 ```
 
 ```bash
-cd terraform/modules/azure
 make init-values    # generates langsmith-values-llm-gateway.yaml
 make deploy
 ```
@@ -852,15 +771,11 @@ kubectl -n langsmith create secret generic <secret-name> --from-file=ca.crt=ca-b
 **dns01 flow:**
 
 1. `make apply` creates the Azure DNS zone and outputs 4 nameservers.
-2. At your registrar, add NS records for the subdomain pointing to those 4 nameservers.
+2. At your registrar, add NS records for the subdomain pointing to those 4 nameservers. Use NS delegation, not a CNAME: cert-manager writes the DNS-01 TXT record to the zone, so Azure DNS must be authoritative for the subdomain.
 3. Verify: `dig NS langsmith.mycompany.com @8.8.8.8`.
 4. `make deploy` issues the cert via DNS-01 automatically (Workload Identity writes the TXT record to Azure DNS).
 5. Get the LB IP, add `ingress_ip = "<ip>"` to `terraform.tfvars`, then `make apply` (creates the A record). For `envoy-gateway`, run `kubectl get svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-name=langsmith-gateway`. For `nginx`, run `kubectl get svc -n ingress-nginx`.
 6. `make status` shows exactly what NS and A records to add at each stage.
-
-<Note>
-**Why NS records, not CNAME:** cert-manager must write TXT records to the zone to prove ownership. That requires Azure DNS to be authoritative for the subdomain, and NS delegation grants that authority. A CNAME only aliases traffic and does not transfer DNS authority; the DNS-01 challenge fails.
-</Note>
 
 ## Next steps
 
