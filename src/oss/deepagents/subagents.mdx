@@ -250,7 +250,23 @@ Set `mode: "fork"` on a @[`SubAgent`] (the default is `mode: "isolated"`). You c
 
 Forks inherit the custom middleware passed to the parent's `create_deep_agent`. Middleware in the subagent's `middleware` list replaces an inherited instance with the same `.name`. Other instances are added to the subagent's default middleware stack.
 
-`skills` is rejected if provided. `system_prompt` is appended to the parent's inherited prompt as an addendum. Leave it unset unless you need fork-only instructions. Prompt and tool changes can affect cache reuse, as described below.
+`skills` is rejected if provided. `system_prompt` is appended to the parent's inherited prompt as an addendum. Leave it unset unless you need fork-only instructions.
+
+A `wrap_model_call` hook receives the fork's inherited prompt through `request.system_message`. It can rewrite the fork's outgoing request with `request.override(system_message=...)` without changing the parent's prompt. This differs from `system_prompt`, which appends instructions.
+
+Avoid rewriting the shared inherited prefix or changing tool definitions unless you accept reduced cache reuse and potentially higher model costs. For example, this hook fragment prepends text before the inherited prefix, preventing reuse of that prefix:
+
+```python
+from langchain_core.messages import SystemMessage
+
+rewritten = SystemMessage(content=[
+    {"type": "text", "text": "You are a security auditor.\n"},
+    *request.system_message.content_blocks,
+])
+return handler(request.override(system_message=rewritten))
+```
+
+Additional middleware or appended instructions do not necessarily prevent reuse of an unchanged prefix.
 
 <ForkedSubagentsBasicPy />
 :::
