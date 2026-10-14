@@ -18,7 +18,10 @@ Each PR merged in a window goes through these steps:
 
 ``weekly`` runs every step for one Monday-to-Monday week and, with ``--write``,
 inserts the Cloud and Fleet entries into the changelog files and updates the held
-list. ``seed-held`` imported the fragment pipeline's held backlog once:
+list. ``review-notion`` turns the reviewer list into a page in the "Weekly changelog
+reviews" Notion database, and ``review-sync`` adds the entries ticked there to the
+week's PR (``NOTION_TOKEN``). ``seed-held`` imported the fragment pipeline's held
+backlog once:
 
   uv run python scripts/changelog_pipeline.py weekly --out DIR [--since 2026-10-05 --until 2026-10-12] --write
 
@@ -47,6 +50,9 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from collections import Counter
 from pathlib import Path
 
@@ -1124,6 +1130,23 @@ def _write_group(
     return record
 
 
+FIXES_OPEN = '<Accordion title="Fixes and improvements">'
+
+
+def _update_open(product: str, label: str, since: str) -> str:
+    rss = "LangSmith Cloud update" if product == "cloud" else "Fleet product update"
+    return f'<Update label="{label}" rss={{{{ title: "{since} - {rss}" }}}}>'
+
+
+def _entry_line(g: dict, valid_links: set[str]) -> str:
+    """One changelog bullet: highlights lead with a bold title and may link the docs."""
+    if g["layer"] != "highlight":
+        return f"- {g['entry']}"
+    link = g.get("docs_link", "")
+    more = f" [Learn more]({link})." if link in valid_links else ""
+    return f"- **{g['title']}**: {g['entry']}{more}"
+
+
 def _render(
     product: str, label: str, written: list[dict], valid_links: set[str], since: str
 ) -> str:
@@ -1133,16 +1156,12 @@ def _render(
     highlights = [g for g in rows if g["layer"] == "highlight"]
     changes = [g for g in rows if g["layer"] == "change"]
     fixes = [g for g in rows if g["layer"] == "fix"][:MAX_FIXES]
-    rss = "LangSmith Cloud update" if product == "cloud" else "Fleet product update"
     if not rows:
         return ""
-    lines = [f'<Update label="{label}" rss={{{{ title: "{since} - {rss}" }}}}>', ""]
+    lines = [_update_open(product, label, since), ""]
     if highlights:
         lines += ["## Highlights", ""]
-        for g in highlights:
-            link = g.get("docs_link", "")
-            more = f" [Learn more]({link})." if link in valid_links else ""
-            lines.append(f"- **{g['title']}**: {g['entry']}{more}")
+        lines += [_entry_line(g, valid_links) for g in highlights]
         lines.append("")
     sections: dict[str, list[dict]] = {}
     for g in changes:
@@ -1152,7 +1171,7 @@ def _render(
     ):
         lines += [f"## {section}", ""] + [f"- {g['entry']}" for g in groups] + [""]
     if fixes:
-        lines += ['<Accordion title="Fixes and improvements">', ""]
+        lines += [FIXES_OPEN, ""]
         lines += [f"- {g['entry']}" for g in fixes]
         lines += ["", "</Accordion>", ""]
     lines.append("</Update>")
@@ -1454,6 +1473,41 @@ def cmd_mock(args: argparse.Namespace) -> None:
         ],
     ]
     _child(cache, "review.md").write_text("\n".join(review_lines) + "\n")
+    # The same list as data: the Notion review page is built from it, and
+    # `review-sync` inserts the entries a reviewer ticks from these exact lines.
+    layer_order = {"highlight": 0, "change": 1, "fix": 2}
+    review.sort(key=lambda gr: (layer_order[gr[0]["layer"]], gr[0]["rank"]))
+    review_data = {
+        "label": label,
+        "since": since,
+        "items": [
+            {
+                "id": f"R{i}",
+                "product": g["product"],
+                "layer": g["layer"],
+                "section": g.get("section") or "",
+                "line": _entry_line(g, set(pages)),
+                "reasons": reasons,
+                "prs": g["prs"],
+                "added": False,
+            }
+            for i, (g, reasons) in enumerate(review, 1)
+        ],
+        "ungrouped": [{"pr": n, "title": prs[n]["title"]} for n in missing],
+        "released": [
+            {"pr": int(n), "title": ledger[n]["title"], "why": why}
+            for n, why in sorted(released.items(), key=lambda kv: int(kv[0]))
+        ],
+        "newly_held": [
+            {"pr": n, "flag": flag, "title": prs[n]["title"]}
+            for n, flag in sorted(held)
+        ],
+        "still_held": [
+            {"pr": int(n), "title": ledger[n]["title"], "why": why}
+            for n, why in sorted(kept.items(), key=lambda kv: int(kv[0]))
+        ],
+    }
+    _child(cache, "review.json").write_text(json.dumps(review_data, indent=2) + "\n")
     print(
         f"{len(publish)} entries published, {len(review)} sent to review",
         file=sys.stderr,
@@ -2095,6 +2149,8 @@ CHANGELOG_TARGETS = {
     "cloud": _REPO_ROOT / "src" / "langsmith" / "changelog.mdx",
     "fleet": _REPO_ROOT / "src" / "snippets" / "langsmith" / "fleet-changelog.mdx",
 }
+# The week's reviewer list as data, committed with the week's PR for `review-sync`.
+REVIEW_FILE = _REPO_ROOT / "scripts" / ".changelog_review.json"
 
 
 def _week_label(since: dt.date, until: dt.date) -> str:
@@ -2198,6 +2254,7 @@ def cmd_weekly(args: argparse.Namespace) -> None:
     _child(cache, "label.txt").write_text(label + "\n")
     if args.write:
         _write_held(ledger, json.loads(_child(cache, "held.json").read_text()))
+        REVIEW_FILE.write_text(_child(cache, "review.json").read_text())
         for product, path in CHANGELOG_TARGETS.items():
             block = _child(cache, f"{product}.mdx").read_text()
             if block.strip():
@@ -2207,6 +2264,389 @@ def cmd_weekly(args: argparse.Namespace) -> None:
                     file=sys.stderr,
                 )
     print(_child(cache, "review.md"))
+
+
+# ---------------------------------------------------------------------------
+# review-notion, review-sync: review held-back entries in Notion, then add the
+# ticked ones to the week's PR
+
+NOTION_API = "https://api.notion.com/v1"
+NOTION_VERSION = "2025-09-03"
+NOTION_TIMEOUT_SECONDS = 30
+# "Weekly changelog reviews", under LangSmith release notes. The integration that
+# owns NOTION_TOKEN must be connected to that page.
+NOTION_REVIEW_DATA_SOURCE = "a6e2a532-c5c3-4063-a32e-ae573695e5d4"
+NOTION_ID_RE = re.compile(r"^[0-9a-f]{8}-?(?:[0-9a-f]{4}-?){3}[0-9a-f]{12}$")
+NOTION_TEXT_LIMIT = 2000
+NOTION_BATCH = 100
+REVIEW_ID_RE = re.compile(r"^(R\d+)\b")
+SYNC_COMMAND = "/changelog sync"
+
+
+def _notion(method: str, path: str, body: dict | None = None) -> dict:
+    """Call the Notion API. The host is fixed; only validated IDs reach the path."""
+    token = os.environ.get("NOTION_TOKEN", "").strip()
+    if not token:
+        raise SystemExit("Set NOTION_TOKEN")
+    req = urllib.request.Request(  # noqa: S310 - fixed https host
+        f"{NOTION_API}{path}",
+        data=None if body is None else json.dumps(body).encode(),
+        method=method,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Notion-Version": NOTION_VERSION,
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=NOTION_TIMEOUT_SECONDS) as resp:  # noqa: S310
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode(errors="replace")[:300]
+        raise RuntimeError(
+            f"Notion {method} {path} failed: {exc.code} {detail}"
+        ) from None
+
+
+def _notion_id(value: str) -> str:
+    if not NOTION_ID_RE.match(value):
+        raise RuntimeError(f"Not a Notion ID: {value!r}")
+    return value
+
+
+def _rich(text: str, link: str | None = None) -> list[dict]:
+    """Rich text in chunks under Notion's per-item limit."""
+    chunks = [
+        text[i : i + NOTION_TEXT_LIMIT] for i in range(0, len(text), NOTION_TEXT_LIMIT)
+    ] or [""]
+    out = []
+    for chunk in chunks:
+        item: dict = {"type": "text", "text": {"content": chunk}}
+        if link:
+            item["text"]["link"] = {"url": link}
+        out.append(item)
+    return out
+
+
+def _block(kind: str, text: str = "", **extra: object) -> dict:
+    return {"type": kind, kind: {"rich_text": _rich(text), **extra}}
+
+
+def _pr_link(n: int) -> str:
+    return f"https://github.com/{REPO}/pull/{n}"
+
+
+def _pr_bullet(n: int, text: str) -> dict:
+    return {
+        "type": "bulleted_list_item",
+        "bulleted_list_item": {
+            "rich_text": _rich(f"#{n}", _pr_link(n)) + _rich(f" {text}")
+        },
+    }
+
+
+def _review_blocks(data: dict, pr_url: str) -> list[dict]:
+    """The review page: what needs a decision first, reference material after."""
+    items, ungrouped, released = data["items"], data["ungrouped"], data["released"]
+    pr_number = pr_url.rstrip("/").rsplit("/", 1)[-1]
+    blocks = [
+        {
+            "type": "callout",
+            "callout": {
+                "rich_text": _rich(
+                    f"Needs human review before PR #{pr_number} merges. "
+                    "Work through Needs review: tick each held-back entry that should "
+                    f"publish, then comment {SYNC_COMMAND} on the PR to add the ticked "
+                    "entries to it. Unticking later does not remove an entry; "
+                    "edit the PR instead."
+                ),
+                "icon": {"type": "emoji", "emoji": "⚠️"},
+                "color": "red_background",
+            },
+        },
+        {
+            "type": "paragraph",
+            "paragraph": {"rich_text": _rich("Open the PR", pr_url)},
+        },
+        _block("heading_1", "Needs review"),
+        _block("heading_2", f"Entries held back ({len(items)})"),
+        _block(
+            "paragraph",
+            "These entries were written but kept off the changelog: they may describe "
+            "something behind a flag that is not rolled out, or name an internal "
+            "system. Tick one only if customers can use it today and the text is fit "
+            "to publish.",
+        ),
+    ]
+    for item in items:
+        where = item["section"] or item["layer"]
+        prs = item["prs"]
+        pr_text: list[dict] = _rich("PRs: ")
+        for i, n in enumerate(prs):
+            pr_text += _rich(("" if i == 0 else ", ") + f"#{n}", _pr_link(n))
+        blocks.append(
+            {
+                "type": "to_do",
+                "to_do": {
+                    "rich_text": _rich(
+                        f"{item['id']} · {item['product']} · {where}: "
+                        f"{item['line'].removeprefix('- ')}"
+                    ),
+                    "checked": item["added"],
+                    "children": [
+                        _block("bulleted_list_item", f"Why held back: {reason}")
+                        for reason in item["reasons"]
+                    ]
+                    + [{"type": "paragraph", "paragraph": {"rich_text": pr_text}}],
+                },
+            }
+        )
+    if not items:
+        blocks.append(_block("paragraph", "None this week."))
+    blocks += [
+        _block("heading_2", f"Left out by grouping ({len(ungrouped)})"),
+        _block(
+            "paragraph",
+            "No entry was written for these PRs. If customers should hear about one, "
+            "write its entry in the PR by hand.",
+        ),
+        *[_pr_bullet(u["pr"], u["title"]) for u in ungrouped],
+        _block("heading_2", f"Released from the held list ({len(released)})"),
+        _block(
+            "paragraph",
+            "These are already in the PR because their flag is fully rolled out or "
+            "archived. Confirm each feature is live, and delete its entry from the PR "
+            "if not.",
+        ),
+        *[_pr_bullet(r["pr"], f"{r['title']} ({r['why']})") for r in released],
+        _block("heading_1", "Reference"),
+        _block("paragraph", "Context for the decisions above. Read as needed."),
+        _block("heading_2", f"Newly held ({len(data['newly_held'])})"),
+        _block(
+            "paragraph",
+            "Held because the PR declares a flag that is not fully rolled out. A "
+            "weekly run publishes each one once its flag reaches everyone.",
+        ),
+        *[
+            _pr_bullet(h["pr"], f"[{h['flag']}] {h['title']}")
+            for h in data["newly_held"]
+        ],
+    ]
+    still = data["still_held"]
+    shown = [_pr_bullet(s["pr"], f"{s['title']} ({s['why']})") for s in still]
+    if len(shown) > NOTION_BATCH:
+        shown = shown[: NOTION_BATCH - 1] + [
+            _block(
+                "bulleted_list_item",
+                f"And {len(still) - NOTION_BATCH + 1} more in scripts/.changelog_held.json.",
+            )
+        ]
+    blocks.append(
+        _block(
+            "heading_2",
+            f"Still held ({len(still)})",
+            is_toggleable=True,
+            children=shown,
+        )
+    )
+    return blocks
+
+
+def _review_body(data: dict, page_url: str) -> str:
+    """The PR description: point at the review page instead of inlining the list."""
+    items, ungrouped, released = data["items"], data["ungrouped"], data["released"]
+    lines = [
+        f"Weekly LangSmith Cloud and Fleet changelog for **{data['label']}**, generated "
+        "by `scripts/changelog_pipeline.py weekly` from merged langchainplus PRs.",
+        "",
+        "> [!IMPORTANT]",
+        f"> **Needs human review before merging.** {len(items)} entries were held back "
+        f"and {len(ungrouped)} PRs have no entry. Review them on the "
+        f"[Notion review page]({page_url}): tick the entries that should publish, "
+        f"then comment `{SYNC_COMMAND}` on this PR to add them here.",
+    ]
+    if released:
+        lines += [
+            ">",
+            f"> This PR also publishes {len(released)} entries released from the held "
+            "list. The review page lists them so you can confirm each feature is live.",
+        ]
+    lines += [
+        "",
+        "Edit the changelog files directly to change wording. The PR also updates "
+        "`scripts/.changelog_held.json`, the PRs waiting for their flag, and "
+        f"`scripts/.changelog_review.json`, the entries `{SYNC_COMMAND}` reads.",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def cmd_review_notion(args: argparse.Namespace) -> None:
+    """Create the week's row in the review database and write the short PR body."""
+    data = json.loads(Path(args.review).read_text())
+    blocks = _review_blocks(data, args.pr_url)
+    page = _notion(
+        "POST",
+        "/pages",
+        {
+            "parent": {
+                "type": "data_source_id",
+                "data_source_id": NOTION_REVIEW_DATA_SOURCE,
+            },
+            "icon": {"type": "emoji", "emoji": "⚠️"},
+            "properties": {
+                "Week": {"title": _rich(data["label"])},
+                "Status": {"select": {"name": "Needs review"}},
+                "PR": {"url": args.pr_url},
+                "Items to review": {
+                    "number": len(data["items"]) + len(data["ungrouped"])
+                },
+                "Generated": {
+                    "date": {"start": dt.datetime.now(dt.UTC).date().isoformat()}
+                },
+            },
+            "children": blocks[:NOTION_BATCH],
+        },
+    )
+    page_id = _notion_id(page["id"])
+    for i in range(NOTION_BATCH, len(blocks), NOTION_BATCH):
+        _notion(
+            "PATCH",
+            f"/blocks/{page_id}/children",
+            {"children": blocks[i : i + NOTION_BATCH]},
+        )
+    Path(args.body_out).write_text(_review_body(data, page["url"]))
+    print(page["url"])
+
+
+def _ticked_ids(blocks: list[dict]) -> set[str]:
+    """IDs of the ticked to-dos. Only the ID is read; the entry text comes from the PR."""
+    ticked = set()
+    for block in blocks:
+        todo = block.get("to_do") if block.get("type") == "to_do" else None
+        if not todo or not todo.get("checked"):
+            continue
+        text = "".join(t.get("plain_text", "") for t in todo.get("rich_text", []))
+        if m := REVIEW_ID_RE.match(text):
+            ticked.add(m.group(1))
+    return ticked
+
+
+def _append_in_section(body: str, anchor: str, line: str) -> str | None:
+    """Add a bullet at the end of the section that starts at `anchor`, if present."""
+    at = body.find(anchor)
+    if at == -1:
+        return None
+    stop = len(body)
+    for marker in ("\n## ", "\n<Accordion", "\n</Accordion>"):
+        i = body.find(marker, at + len(anchor))
+        if i != -1:
+            stop = min(stop, i)
+    tail = body[stop:] if stop < len(body) else "\n"
+    return body[:stop].rstrip("\n") + "\n" + line + "\n" + tail
+
+
+def _insert_entry(text: str, label: str, since: str, item: dict) -> str:
+    """Insert one reviewed entry into the week's Update block, where _render puts it."""
+    line = item["line"]
+    start = text.find(f'<Update label="{label}"')
+    if start == -1:
+        # Nothing published for this product this week: start its block on top.
+        start = text.find("<Update ")
+        if start == -1:
+            raise SystemExit("No <Update> block to insert before")
+        empty = f"{_update_open(item['product'], label, since)}\n\n</Update>\n\n"
+        text = text[:start] + empty + text[start:]
+    end = text.index("</Update>", start)
+    body = text[start:end]
+    if line in body:
+        return text
+    if item["layer"] == "highlight":
+        new = _append_in_section(body, "\n## Highlights\n", line)
+        if new is None:
+            first = body.index("\n") + 1
+            new = body[:first] + f"\n## Highlights\n\n{line}\n" + body[first:]
+    elif item["layer"] == "fix":
+        new = _append_in_section(body, f"\n{FIXES_OPEN}\n", line)
+        if new is None:
+            new = body.rstrip("\n") + f"\n\n{FIXES_OPEN}\n\n{line}\n\n</Accordion>\n\n"
+    else:
+        section = item["section"] or "Other changes"
+        new = _append_in_section(body, f"\n## {section}\n", line)
+        if new is None:
+            accordion = body.find(FIXES_OPEN)
+            heading = f"## {section}\n\n{line}\n\n"
+            new = (
+                body[:accordion] + heading + body[accordion:]
+                if accordion != -1
+                else body.rstrip("\n") + "\n\n" + heading
+            )
+    return text[:start] + new + text[end:]
+
+
+def _notion_children(block_id: str) -> list[dict]:
+    blocks, cursor = [], None
+    while True:
+        query = f"?page_size={NOTION_BATCH}" + (
+            f"&start_cursor={cursor}" if cursor else ""
+        )
+        page = _notion("GET", f"/blocks/{_notion_id(block_id)}/children{query}")
+        blocks += page["results"]
+        if not page.get("has_more"):
+            return blocks
+        cursor = urllib.parse.quote(page["next_cursor"], safe="")
+
+
+def cmd_review_sync(args: argparse.Namespace) -> None:
+    """Add the entries ticked on the PR's review page to the PR's changelog files."""
+    root = Path(args.root).resolve()
+    review_path = root / REVIEW_FILE.relative_to(_REPO_ROOT)
+    data = json.loads(review_path.read_text())
+    rows = _notion(
+        "POST",
+        f"/data_sources/{NOTION_REVIEW_DATA_SOURCE}/query",
+        {"filter": {"property": "PR", "url": {"equals": args.pr_url}}},
+    )["results"]
+    if not rows:
+        print(
+            f"No review page for {args.pr_url} in the Weekly changelog reviews database."
+        )
+        raise SystemExit(1)
+    page_id = _notion_id(rows[0]["id"])
+    ticked = _ticked_ids(_notion_children(page_id))
+    added = []
+    for item in data["items"]:
+        if item["id"] not in ticked or item["added"]:
+            continue
+        path = root / CHANGELOG_TARGETS[item["product"]].relative_to(_REPO_ROOT)
+        path.write_text(
+            _insert_entry(path.read_text(), data["label"], data["since"], item)
+        )
+        item["added"] = True
+        added.append(item)
+    review_path.write_text(json.dumps(data, indent=2) + "\n")
+    if added:
+        _notion(
+            "PATCH",
+            f"/pages/{page_id}",
+            {"properties": {"Status": {"select": {"name": "Synced"}}}},
+        )
+    already = sorted(
+        (i["id"] for i in data["items"] if i["added"] and i not in added),
+        key=lambda x: int(x[1:]),
+    )
+    lines = [f"Synced from the [review page]({rows[0]['url']})."]
+    lines += (
+        [f"Added {len(added)} entries:", ""]
+        + [
+            f"- **{i['id']}** ({i['product']}, {i['section'] or i['layer']})"
+            for i in added
+        ]
+        if added
+        else ["No newly ticked entries."]
+    )
+    if already:
+        lines += ["", "Added by an earlier sync: " + ", ".join(already) + "."]
+    print("\n".join(lines))
 
 
 # ---------------------------------------------------------------------------
@@ -2411,6 +2851,25 @@ def main() -> None:
     p.add_argument("--pass2-model", default=PASS2_MODEL)
     p.add_argument("--workers", type=int, default=10)
     p.set_defaults(func=cmd_selfhosted)
+
+    p = sub.add_parser(
+        "review-notion",
+        help="Create the week's Notion review page and write the PR body that links it",
+    )
+    p.add_argument("--review", default=str(REVIEW_FILE), help="The week's review JSON")
+    p.add_argument("--pr-url", required=True)
+    p.add_argument("--body-out", required=True, help="Where to write the PR body")
+    p.set_defaults(func=cmd_review_notion)
+
+    p = sub.add_parser(
+        "review-sync",
+        help="Add the entries ticked on the Notion review page to the week's PR",
+    )
+    p.add_argument("--pr-url", required=True)
+    p.add_argument(
+        "--root", default=str(_REPO_ROOT), help="Checkout of the week's PR branch"
+    )
+    p.set_defaults(func=cmd_review_sync)
 
     p = sub.add_parser(
         "weekly",

@@ -103,6 +103,7 @@ jobs:
 
       - name: Open the PR
         if: ${{ inputs.dry_run != true }}
+        id: pr
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -134,9 +135,34 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -B "$BRANCH"
-          git add src/langsmith/changelog.mdx src/snippets/langsmith/fleet-changelog.mdx scripts/.changelog_held.json
+          git add src/langsmith/changelog.mdx src/snippets/langsmith/fleet-changelog.mdx \
+            scripts/.changelog_held.json scripts/.changelog_review.json
           git commit -m "docs(langsmith): weekly changelog for ${WEEK}"
           git push --force origin "$BRANCH"
-          gh pr create --base main --head "$BRANCH" \
+          PR_URL="$(gh pr create --base main --head "$BRANCH" \
             --title "docs(langsmith): weekly changelog for ${WEEK}" \
-            --body-file "$RUNNER_TEMP/pr-body.md"
+            --body-file "$RUNNER_TEMP/pr-body.md")"
+          echo "url=$PR_URL" >> "$GITHUB_OUTPUT"
+
+      # The full reviewer list stays in the PR body unless the Notion page is created.
+      - name: Move the reviewer list to Notion
+        if: ${{ inputs.dry_run != true && steps.pr.outputs.url != '' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          PR_URL: ${{ steps.pr.outputs.url }}
+        run: |
+          set -euo pipefail
+          uv run python scripts/changelog_pipeline.py review-notion \
+            --pr-url "$PR_URL" --body-out "$RUNNER_TEMP/pr-body-notion.md"
+          {
+            echo
+            echo "## Vale"
+            echo
+            echo '```text'
+            tail -n 40 "$RUNNER_TEMP/vale.txt" || true
+            echo '```'
+          } >> "$RUNNER_TEMP/pr-body-notion.md"
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/pulls/${PR_URL##*/}" \
+            -F "body=@$RUNNER_TEMP/pr-body-notion.md" > /dev/null

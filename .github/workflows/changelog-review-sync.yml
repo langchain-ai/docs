@@ -1,0 +1,94 @@
+---
+name: Changelog review sync
+
+# Adds the entries ticked on a weekly changelog's Notion review page to its PR.
+# A maintainer triggers it by commenting "/changelog sync" on the PR.
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+jobs:
+  sync:
+    name: Add ticked entries to the PR
+    if: >-
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/changelog sync') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: changelog-review-sync-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    steps:
+      - name: Check the PR is a weekly changelog PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          IFS=$'\t' read -r branch repo state < <(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}" \
+            --jq '[.head.ref, .head.repo.full_name, .state] | @tsv')
+          if [ "$repo" != "$GITHUB_REPOSITORY" ] || [ "$state" != "open" ] || [[ "$branch" != changelog/weekly-* ]]; then
+            echo "::error::/changelog sync only runs on open weekly changelog PRs from this repository"
+            exit 1
+          fi
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+      # The script runs from main; the PR branch is checked out as data only.
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.pr.outputs.branch }}
+          path: pr-branch
+          fetch-depth: 1
+
+      - name: Set up Python 3.13 + uv
+        uses: "./.github/actions/uv_setup"
+        with:
+          python-version: "3.13"
+
+      - name: Add ticked entries
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          PR_URL: ${{ github.event.issue.html_url }}
+        run: |
+          set -euo pipefail
+          uv run python scripts/changelog_pipeline.py review-sync \
+            --pr-url "$PR_URL" --root pr-branch > "$RUNNER_TEMP/summary.md"
+
+      - name: Push and reply
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.issue.number }}
+          BRANCH: ${{ steps.pr.outputs.branch }}
+        run: |
+          set -euo pipefail
+          cd pr-branch
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add src/langsmith/changelog.mdx src/snippets/langsmith/fleet-changelog.mdx \
+              scripts/.changelog_review.json
+            git commit -m "docs(langsmith): add reviewed changelog entries"
+            git push origin "HEAD:${BRANCH}"
+          fi
+          gh pr comment "$PR" --body-file "$RUNNER_TEMP/summary.md"
+
+      - name: Report a failed sync
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.issue.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: gh pr comment "$PR" --body "The changelog review sync failed. See [the run]($RUN_URL)."
