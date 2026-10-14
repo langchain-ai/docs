@@ -461,3 +461,17 @@ def test_notion_id_rejects_paths() -> None:
     assert cp._notion_id("0" * 32) == "0" * 32
     with pytest.raises(RuntimeError):
         cp._notion_id("../users")
+
+
+@pytest.mark.parametrize(
+    ("text", "want"),
+    [
+        ("saves to /downloads/<filename>", "saves to /downloads/\\<filename>"),
+        ("returns {id}", "returns \\{id\\}"),
+        ("keeps `<x>` and `{y}` as code", "keeps `<x>` and `{y}` as code"),
+        ("already \\<escaped", "already \\<escaped"),
+    ],
+)
+def test_mdx_escape_outside_code_spans(text: str, want: str) -> None:
+    """A bare <tag> or {expr} would make MDX fail to parse the changelog."""
+    assert cp._mdx_escape(text) == want

@@ -1060,6 +1060,15 @@ def _apply_renames(text: str) -> str:
     return text
 
 
+def _mdx_escape(text: str) -> str:
+    """Escape <, {, and } outside code spans; MDX parses them as JSX and fails."""
+    parts = re.split(r"(`[^`\n]+`)", text)
+    return "".join(
+        part if i % 2 else re.sub(r"(?<!\\)([<{}])", r"\\\1", part)
+        for i, part in enumerate(parts)
+    )
+
+
 def _dirs(pr: dict) -> set[str]:
     return {
         "/".join(f.split("/")[:REVIEW_DIR_DEPTH])
@@ -1404,12 +1413,13 @@ def cmd_mock(args: argparse.Namespace) -> None:
                 except Exception as exc:  # noqa: BLE001 - report and keep going
                     print(f"group {futures[fut]}: {exc}", file=sys.stderr)
 
-    # Fix renamed products, then route anything a human must check to the review list.
+    # Fix renamed products and MDX-unsafe text, then route anything a human must check
+    # to the review list.
     publish, review = [], []
     for g in written:
         for field in ("title", "entry"):
             if g.get(field):
-                g[field] = _apply_renames(g[field])
+                g[field] = _mdx_escape(_apply_renames(g[field]))
         reasons = _review_reasons(g, prs, results, held, flags)
         (review if reasons else publish).append((g, reasons))
 
