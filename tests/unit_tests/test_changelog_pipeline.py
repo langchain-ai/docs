@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import pytest
+from cryptography.fernet import Fernet
 
 from scripts import changelog_pipeline as cp
 
@@ -382,18 +383,14 @@ def test_review_blocks_put_the_decision_first() -> None:
     assert all("children" not in c.get(c["type"], {}) for c in todo["children"])
 
 
-def test_review_blocks_cap_the_still_held_toggle() -> None:
-    """A toggle holds at most one request's worth of children."""
+def test_review_blocks_split_the_still_held_list() -> None:
+    """A toggle holds one request's worth of children, so a long list is split."""
     blocks = cp._review_blocks(_review_data(still=150), "https://x/pull/1")
-    toggle = blocks[-1]["heading_2"]
-    assert toggle["is_toggleable"] is True
-    assert len(toggle["children"]) == cp.NOTION_BATCH
-    assert (
-        "And 51 more"
-        in toggle["children"][-1]["bulleted_list_item"]["rich_text"][0]["text"][
-            "content"
-        ]
-    )
+    first, second = blocks[-2]["heading_2"], blocks[-1]["heading_2"]
+    assert first["is_toggleable"] is True
+    assert len(first["children"]) == cp.NOTION_BATCH
+    assert len(second["children"]) == 50
+    assert second["rich_text"][0]["text"]["content"] == "Still held (101-150 of 150)"
 
 
 def test_rich_splits_long_text() -> None:
@@ -410,11 +407,12 @@ def test_review_sync_inserts_ticked_entries(
         path = tmp_path / target.relative_to(cp._REPO_ROOT)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(PAGE)
+    monkeypatch.setenv(cp.STATE_KEY_ENV, Fernet.generate_key().decode())
     review = tmp_path / cp.REVIEW_FILE.relative_to(cp._REPO_ROOT)
     review.parent.mkdir(parents=True, exist_ok=True)
     data = _review_data()
     data["items"].append(dict(_item("fix", "- f9"), id="R2"))
-    review.write_text(json.dumps(data))
+    cp._write_state(review, data)
     page_id = "0" * 32
     calls = []
 
@@ -445,7 +443,7 @@ def test_review_sync_inserts_ticked_entries(
     ).read_text()
     assert "- t1\n- t2\n" in cloud
     assert "- f9" not in cloud
-    saved = json.loads(review.read_text())
+    saved = cp._read_state(review)
     assert [i["added"] for i in saved["items"]] == [True, False]
     assert calls[-1] == (
         "PATCH",
@@ -542,3 +540,36 @@ def test_fix_text_publishes_clean_rewrites_only(
     assert still[0][1][-1] == "rewrite still has internal name: host-backend"
     assert dropped[0][1] == "self-hosted only"
     assert cost == pytest.approx(0.03)
+
+
+def test_state_files_are_encrypted_and_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A .enc file never holds plaintext, and needs the right key to read."""
+    path = tmp_path / "held.json.enc"
+    monkeypatch.delenv(cp.STATE_KEY_ENV, raising=False)
+    with pytest.raises(SystemExit, match=cp.STATE_KEY_ENV):
+        cp._write_state(path, {"1": {"flag": "secret_flag"}})
+    assert not path.exists()
+    monkeypatch.setenv(cp.STATE_KEY_ENV, Fernet.generate_key().decode())
+    cp._write_state(path, {"1": {"flag": "secret_flag"}})
+    assert b"secret_flag" not in path.read_bytes()
+    assert cp._read_state(path) == {"1": {"flag": "secret_flag"}}
+    monkeypatch.setenv(cp.STATE_KEY_ENV, Fernet.generate_key().decode())
+    with pytest.raises(SystemExit, match="Cannot decrypt"):
+        cp._read_state(path)
+
+
+def test_held_list_folds_in_and_retires_the_plaintext_copy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The first encrypted write absorbs the old plaintext list and deletes it."""
+    monkeypatch.setenv(cp.STATE_KEY_ENV, Fernet.generate_key().decode())
+    legacy = tmp_path / ".changelog_held.json"
+    legacy.write_text(json.dumps({"9": {"flag": "old"}}))
+    path = tmp_path / ".changelog_held.json.enc"
+    held = cp._load_held(path)
+    assert held == {"9": {"flag": "old"}}
+    cp._write_held(path, {**held, "10": {"flag": "new"}})
+    assert not legacy.exists()
+    assert cp._load_held(path) == {"9": {"flag": "old"}, "10": {"flag": "new"}}

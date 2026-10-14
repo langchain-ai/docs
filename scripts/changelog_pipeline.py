@@ -8,7 +8,7 @@ Each PR merged in a window goes through these steps:
    want to be told about it?
 2. Hold: an ``announce`` PR whose description declares ``Flag: <key>`` (or, for
    older PRs, whose fragment names a flag) goes on the held list,
-   ``scripts/.changelog_held.json``. Each weekly run checks the list against Eppo
+   ``scripts/.changelog_held.json.enc``. Each weekly run checks the list against Eppo
    and writes a held PR into that week's entry once its flag is fully rolled out.
 3. Group and write: Sonnet groups PRs that ship the same change and picks the
    highlights; Sonnet writes highlights and Haiku writes the rest.
@@ -58,6 +58,7 @@ from collections import Counter
 from pathlib import Path
 
 import yaml
+from cryptography.fernet import Fernet, InvalidToken
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 REPO = "langchain-ai/langchainplus"
@@ -1349,20 +1350,65 @@ def _declared_flag(pr: dict) -> str | None:
     return None
 
 
-HELD_LEDGER = _REPO_ROOT / "scripts" / ".changelog_held.json"
+# State files name private PRs and unreleased work, and this repository is public, so
+# they are committed encrypted (Fernet: AES with an HMAC). The key is the
+# CHANGELOG_STATE_KEY secret; locally, the `changelog-state-key` Keychain item.
+STATE_KEY_ENV = "CHANGELOG_STATE_KEY"
+HELD_LEDGER = _REPO_ROOT / "scripts" / ".changelog_held.json.enc"
+
+
+def _fernet() -> Fernet:
+    key = os.environ.get(STATE_KEY_ENV, "").strip()
+    if not key:
+        raise SystemExit(f"Set {STATE_KEY_ENV} to read or write the encrypted state")
+    try:
+        return Fernet(key.encode())
+    except ValueError:
+        raise SystemExit(f"{STATE_KEY_ENV} is not a valid key") from None
+
+
+def _read_state(path: Path) -> dict:
+    """Read a state file; a `.enc` file is decrypted, anything else is plain JSON."""
+    raw = path.read_bytes()
+    if path.suffix != ".enc":
+        return json.loads(raw)
+    try:
+        return json.loads(_fernet().decrypt(raw.strip()))
+    except InvalidToken:
+        raise SystemExit(f"Cannot decrypt {path.name}: check {STATE_KEY_ENV}") from None
+
+
+def _write_state(path: Path, data: dict) -> None:
+    """Write a state file; a `.enc` file is encrypted and never written in the clear."""
+    text = json.dumps(data, indent=2) + "\n"
+    if path.suffix == ".enc":
+        path.write_bytes(_fernet().encrypt(text.encode()) + b"\n")
+    else:
+        path.write_text(text)
+
+
+def _legacy_sibling(path: Path) -> Path | None:
+    return path.with_suffix("") if path.suffix == ".enc" else None
 
 
 def _load_held(path: Path | None) -> dict[str, dict]:
     """Load the held list: PR number -> {flag, title, merged_at, held_since}."""
-    if path is None or not path.exists():
+    if path is None:
         return {}
-    return json.loads(path.read_text())
+    held = _read_state(path) if path.exists() else {}
+    legacy = _legacy_sibling(path)
+    if legacy and legacy.exists():
+        held = {**json.loads(legacy.read_text()), **held}
+    return held
 
 
 def _write_held(path: Path, held: dict[str, dict]) -> None:
-    """Write the held list with stable ordering, so weekly diffs stay small."""
+    """Write the held list in PR order, and retire a plaintext copy beside it."""
     ordered = {k: dict(sorted(held[k].items())) for k in sorted(held, key=int)}
-    path.write_text(json.dumps(ordered, indent=2) + "\n")
+    _write_state(path, ordered)
+    legacy = _legacy_sibling(path)
+    if legacy and legacy.exists():
+        legacy.unlink()
 
 
 def _release_held(
@@ -2391,7 +2437,7 @@ CHANGELOG_TARGETS = {
     "fleet": _REPO_ROOT / "src" / "snippets" / "langsmith" / "fleet-changelog.mdx",
 }
 # The week's reviewer list as data, committed with the week's PR for `review-sync`.
-REVIEW_FILE = _REPO_ROOT / "scripts" / ".changelog_review.json"
+REVIEW_FILE = _REPO_ROOT / "scripts" / ".changelog_review.json.enc"
 
 
 def _week_label(since: dt.date, until: dt.date) -> str:
@@ -2495,7 +2541,7 @@ def cmd_weekly(args: argparse.Namespace) -> None:
     _child(cache, "label.txt").write_text(label + "\n")
     if args.write:
         _write_held(ledger, json.loads(_child(cache, "held.json").read_text()))
-        REVIEW_FILE.write_text(_child(cache, "review.json").read_text())
+        _write_state(REVIEW_FILE, json.loads(_child(cache, "review.json").read_text()))
         for product, path in CHANGELOG_TARGETS.items():
             block = _child(cache, f"{product}.mdx").read_text()
             if block.strip():
@@ -2719,23 +2765,20 @@ def _review_blocks(data: dict, pr_url: str) -> list[dict]:
             for d in dropped
         ],
     ]
+    # The held list is encrypted in the repository, so this page is where people read
+    # it. A toggle takes one request's worth of children, so long lists are split.
     still = data["still_held"]
     shown = [_pr_bullet(s["pr"], f"{s['title']} ({s['why']})") for s in still]
-    if len(shown) > NOTION_BATCH:
-        shown = shown[: NOTION_BATCH - 1] + [
-            _block(
-                "bulleted_list_item",
-                f"And {len(still) - NOTION_BATCH + 1} more in scripts/.changelog_held.json.",
-            )
-        ]
-    blocks.append(
-        _block(
-            "heading_2",
-            f"Still held ({len(still)})",
-            is_toggleable=True,
-            children=shown,
+    for i in range(0, max(1, len(shown)), NOTION_BATCH):
+        part = shown[i : i + NOTION_BATCH]
+        span = (
+            f" ({i + 1}-{i + len(part)} of {len(still)})"
+            if len(shown) > NOTION_BATCH
+            else f" ({len(still)})"
         )
-    )
+        blocks.append(
+            _block("heading_2", f"Still held{span}", is_toggleable=True, children=part)
+        )
     return blocks
 
 
@@ -2761,15 +2804,15 @@ def _review_body(data: dict, page_url: str) -> str:
     lines += [
         "",
         "Edit the changelog files directly to change wording. The PR also updates "
-        "`scripts/.changelog_held.json`, the PRs waiting for their flag, and "
-        f"`scripts/.changelog_review.json`, the entries `{SYNC_COMMAND}` reads.",
+        "two encrypted files: the held list of PRs waiting for their flag, and the "
+        f"entries `{SYNC_COMMAND}` reads. The review page shows both.",
     ]
     return "\n".join(lines) + "\n"
 
 
 def cmd_review_notion(args: argparse.Namespace) -> None:
     """Create the week's row in the review database and write the short PR body."""
-    data = json.loads(Path(args.review).read_text())
+    data = _read_state(Path(args.review))
     blocks = _review_blocks(data, args.pr_url)
     page = _notion(
         "POST",
@@ -2890,7 +2933,7 @@ def cmd_review_sync(args: argparse.Namespace) -> None:
     """Add the entries ticked on the PR's review page to the PR's changelog files."""
     root = Path(args.root).resolve()
     review_path = root / REVIEW_FILE.relative_to(_REPO_ROOT)
-    data = json.loads(review_path.read_text())
+    data = _read_state(review_path)
     rows = _notion(
         "POST",
         f"/data_sources/{NOTION_REVIEW_DATA_SOURCE}/query",
@@ -2913,7 +2956,7 @@ def cmd_review_sync(args: argparse.Namespace) -> None:
         )
         item["added"] = True
         added.append(item)
-    review_path.write_text(json.dumps(data, indent=2) + "\n")
+    _write_state(review_path, data)
     if added:
         _notion(
             "PATCH",

@@ -69,6 +69,8 @@ jobs:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           ANTHROPIC_CUSTOM_HEADERS: ${{ secrets.ANTHROPIC_CUSTOM_HEADERS }}
           EPPO_API_KEY: ${{ secrets.EPPO_API_KEY }}
+          # Decrypts and encrypts the held list and the review data.
+          CHANGELOG_STATE_KEY: ${{ secrets.CHANGELOG_STATE_KEY }}
           SINCE: ${{ inputs.since }}
           UNTIL: ${{ inputs.until }}
           DRY_RUN: ${{ inputs.dry_run }}
@@ -128,8 +130,10 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -B "$BRANCH"
-          git add src/langsmith/changelog.mdx src/snippets/langsmith/fleet-changelog.mdx \
-            scripts/.changelog_held.json scripts/.changelog_review.json
+          # -A also stages deleting the old plaintext held list.
+          git add -A -- src/langsmith/changelog.mdx src/snippets/langsmith/fleet-changelog.mdx \
+            scripts/.changelog_held.json scripts/.changelog_held.json.enc \
+            scripts/.changelog_review.json.enc
           git commit -m "docs(langsmith): weekly changelog for ${WEEK}"
           git push --force origin "$BRANCH"
           # A rerun after a failed Notion step reuses the open PR.
@@ -145,6 +149,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          CHANGELOG_STATE_KEY: ${{ secrets.CHANGELOG_STATE_KEY }}
           PR_URL: ${{ steps.pr.outputs.url }}
         run: |
           set -euo pipefail
