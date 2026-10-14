@@ -1528,10 +1528,8 @@ def cmd_mock(args: argparse.Namespace) -> None:
             g["prs"] = [n for n in g["prs"] if n in week_set]
         dropped = [g for g in groups if g["layer"] == "drop"]
         groups = [g for g in groups if g["prs"] and g["layer"] != "drop"]
-        print(
-            f"dropped {len(dropped)} groups: " + "; ".join(g["label"] for g in dropped),
-            file=sys.stderr,
-        )
+        # Counts only: job logs in the public docs repository are public.
+        print(f"dropped {len(dropped)} groups", file=sys.stderr)
         # Hold the model to its own cap: overflow highlights become changes.
         for product in ("cloud", "fleet"):
             ranked = sorted(
