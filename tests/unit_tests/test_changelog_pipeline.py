@@ -349,7 +349,9 @@ def test_fix_text_publishes_clean_rewrites_only(
     def fake_claude(
         _system: str, _schema: dict, prompt: str, _model: str, _workdir: Path
     ) -> tuple[dict, dict]:
-        number = int(re.search(r'number="?(\d+)', prompt).group(1))
+        match = re.search(r'number="?(\d+)', prompt)
+        assert match is not None
+        number = int(match.group(1))
         return replies[number], {"cost_usd": 0.01}
 
     monkeypatch.setattr(cp, "_claude", fake_claude)
