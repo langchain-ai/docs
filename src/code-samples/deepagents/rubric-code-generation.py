@@ -49,7 +49,7 @@ from deepagents import create_deep_agent
 from langgraph.checkpoint.memory import InMemorySaver
 
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-4-6",
+    model="anthropic:claude-sonnet-5-5",
     system_prompt=(
         "You are a careful Python engineer. Write correct, readable code. "
         "Follow the user's instructions exactly."

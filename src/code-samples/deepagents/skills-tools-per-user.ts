@@ -40,7 +40,7 @@ const resolveSkillTools: SkillToolResolver<z.infer<typeof contextSchema>> = (
 
 // KEEP MODEL
 const agent = createDeepAgent({
-  model: "anthropic:claude-sonnet-4-6",
+  model: "anthropic:claude-sonnet-5-5",
   backend,
   contextSchema,
   middleware: [

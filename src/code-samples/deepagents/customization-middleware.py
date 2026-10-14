@@ -34,7 +34,7 @@ def log_tool_calls(request, handler):
 
 
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-4-6",
+    model="anthropic:claude-sonnet-5-5",
     tools=[get_weather],
     middleware=[log_tool_calls],
 )

@@ -9,7 +9,7 @@ ls_sandbox = client.create_sandbox()
 backend = LangSmithSandbox(sandbox=ls_sandbox)
 
 agent = create_deep_agent(
-    model=ChatAnthropic(model="claude-sonnet-4-6"),
+    model=ChatAnthropic(model="claude-sonnet-5-5"),
     system_prompt="You are a Python coding assistant with sandbox access.",
     backend=backend,
 )

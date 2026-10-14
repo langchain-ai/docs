@@ -16,7 +16,7 @@ from deepagents.backends import StateBackend
 from deepagents.middleware import FilesystemMiddleware
 
 agent = create_agent(
-    model="anthropic:claude-sonnet-4-6",
+    model="anthropic:claude-sonnet-5-5",
     tools=[search],
     middleware=[FilesystemMiddleware(backend=StateBackend())],
 )
@@ -31,7 +31,7 @@ from deepagents.backends import StateBackend
 from deepagents.middleware import FilesystemMiddleware, MemoryMiddleware, SkillsMiddleware, SummarizationMiddleware
 
 backend = StateBackend()
-model = "anthropic:claude-sonnet-4-6"
+model = "anthropic:claude-sonnet-5-5"
 
 agent = create_agent(
     model=model,
@@ -62,7 +62,7 @@ def search(query: str) -> str:
 
 
 agent = create_agent(
-    model="anthropic:claude-sonnet-4-6",
+    model="anthropic:claude-sonnet-5-5",
     tools=[search],
     middleware=[
         ModelRetryMiddleware(max_retries=3),
@@ -88,7 +88,7 @@ def search(query: str) -> str:
 
 
 agent = create_agent(
-    model="anthropic:claude-sonnet-4-6",
+    model="anthropic:claude-sonnet-5-5",
     tools=[search],
     middleware=[PIIMiddleware("email")],
 )
@@ -116,7 +116,7 @@ def search(query: str) -> str:
 backend = StateBackend()
 
 agent = create_agent(
-    model="anthropic:claude-sonnet-4-6",
+    model="anthropic:claude-sonnet-5-5",
     tools=[search],
     middleware=[
         FilesystemMiddleware(backend=backend),
@@ -129,7 +129,7 @@ agent = create_agent(
                     "description": "Searches and returns a structured summary.",
                     "system_prompt": "Use the search tool to research the question and summarize key points.",
                     "tools": [search],
-                    "model": "anthropic:claude-sonnet-4-6",
+                    "model": "anthropic:claude-sonnet-5-5",
                     "middleware": [],
                 }
             ],
@@ -155,7 +155,7 @@ def search(query: str) -> str:
 
 
 agent = create_agent(
-    model="anthropic:claude-sonnet-4-6",
+    model="anthropic:claude-sonnet-5-5",
     tools=[search],
     middleware=[HumanInTheLoopMiddleware(interrupt_on={"write_file": True})],
 )

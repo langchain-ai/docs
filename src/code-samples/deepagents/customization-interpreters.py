@@ -5,7 +5,7 @@ from deepagents import create_deep_agent
 from langchain_quickjs import CodeInterpreterMiddleware
 
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-4-6",
+    model="anthropic:claude-sonnet-5-5",
     middleware=[CodeInterpreterMiddleware()],
 )
 # :snippet-end:

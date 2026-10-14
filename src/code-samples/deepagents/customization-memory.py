@@ -14,7 +14,7 @@ with urlopen(
 checkpointer = MemorySaver()
 
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-4-6",
+    model="anthropic:claude-sonnet-5-5",
     memory=[
         "/AGENTS.md"
     ],
@@ -63,7 +63,7 @@ store.put(
 )
 
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-4-6",
+    model="anthropic:claude-sonnet-5-5",
     backend=StoreBackend(namespace=lambda _rt: ("filesystem",)),
     store=store,
     memory=["/AGENTS.md"],
@@ -96,7 +96,7 @@ from langgraph.checkpoint.memory import MemorySaver
 checkpointer = MemorySaver()
 
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-4-6",
+    model="anthropic:claude-sonnet-5-5",
     backend=FilesystemBackend(root_dir="/Users/user/{project}"),
     memory=[
         "./AGENTS.md"

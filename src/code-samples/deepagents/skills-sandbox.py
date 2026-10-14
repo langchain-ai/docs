@@ -85,7 +85,7 @@ async def main() -> None:
 
     try:
         agent = create_deep_agent(
-            model="anthropic:claude-sonnet-4-6",
+            model="anthropic:claude-sonnet-5-5",
             backend=backend,
             skills=["/skills/"],
             store=store,

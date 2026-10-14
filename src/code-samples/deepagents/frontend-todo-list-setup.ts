@@ -3,7 +3,7 @@ import { createDeepAgent } from "deepagents";
 import { todoListMiddleware } from "langchain";
 
 const agent = await createDeepAgent({
-  model: "anthropic:claude-sonnet-4-6",
+  model: "anthropic:claude-sonnet-5-5",
   middleware: [todoListMiddleware()],
 });
 // :snippet-end:

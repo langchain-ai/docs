@@ -16,7 +16,7 @@ async function runQuery(sql: string): Promise<string> {
 // :remove-end:
 
 const agent = await createDeepAgent({
-  model: "anthropic:claude-sonnet-4-6",
+  model: "anthropic:claude-sonnet-5-5",
   tools: [search, fetchUrl, runQuery],
 });
 // :snippet-end:

@@ -7,7 +7,7 @@ import {
 } from "deepagents";
 import { InMemoryStore } from "@langchain/langgraph";
 
-const model = "anthropic:claude-sonnet-4-6";
+const model = "anthropic:claude-sonnet-5-5";
 const backend = new StateBackend();
 
 {

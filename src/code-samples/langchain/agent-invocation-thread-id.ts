@@ -5,7 +5,7 @@ import { createAgent } from "langchain";
 import { MemorySaver } from "@langchain/langgraph";
 
 const agent = createAgent({
-  model: "claude-sonnet-4-6",
+  model: "claude-sonnet-5-5",
   tools: [],
   checkpointer: new MemorySaver(),
 });

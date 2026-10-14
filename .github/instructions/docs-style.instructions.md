@@ -31,7 +31,7 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Use absolute URLs for internal links
 - Use markdown in description fields
 - Use `/python/` or `/javascript/` in links (resolved by build pipeline)
-- Use model aliases: use full identifiers (e.g., `claude-sonnet-4-6`)
+- Use model aliases: use full identifiers (e.g., `claude-sonnet-5-5`)
 - Use `>=` in prose for version minimums: write "v0.153.4 or later"; reserve `>=` for package specifiers in code (`langsmith>=0.3.13`)
 - Use "→" to separate UI navigation steps: write "Go to **Settings** > **API Keys**"
 - Use FontAwesome icon names

@@ -18,7 +18,7 @@ prepare_postgres_store(DB_URI)
 with PostgresStore.from_conn_string(DB_URI) as store:
     store.setup()
     agent: Runnable = create_agent(
-        "claude-sonnet-4-6",
+        "claude-sonnet-5-5",
         tools=[],
         store=store,
     )

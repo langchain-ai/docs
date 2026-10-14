@@ -16,7 +16,7 @@ from langchain.messages import HumanMessage
 EXAMPLE_QUERY = "How do I stream intermediate tool results from a subagent?"
 
 baseline_agent = create_deep_agent(
-    model="anthropic:claude-sonnet-4-6",
+    model="anthropic:claude-sonnet-5-5",
     tools=[],
     system_prompt=(
         "You are a helpful LangChain documentation assistant. "

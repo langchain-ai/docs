@@ -21,7 +21,7 @@ const createIssue = tool(async ({ team, title }) => `${team}-102: ${title}`, {
 
 // KEEP MODEL
 const agent = createDeepAgent({
-  model: "anthropic:claude-sonnet-4-6",
+  model: "anthropic:claude-sonnet-5-5",
   backend,
   tools: [createIssue],
   middleware: [

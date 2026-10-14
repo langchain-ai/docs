@@ -7,7 +7,7 @@ from langchain.messages import ToolMessage
 async def run_agent_structured(server) -> dict:
     async with MCPAdapter(server) as adapter:
         tools = await adapter.list_tools()
-        agent = create_agent("claude-sonnet-5", tools)
+        agent = create_agent("claude-sonnet-5-5", tools)
         result = await agent.ainvoke(
             {"messages": [{"role": "user", "content": "Look up user 42."}]}
         )

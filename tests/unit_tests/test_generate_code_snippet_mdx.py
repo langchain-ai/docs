@@ -31,15 +31,15 @@ def _version_tuple(raw: str) -> tuple[int, ...]:
 
 
 PY_RAG_SAMPLE = """embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-agent = create_agent(model="anthropic:claude-sonnet-5", tools=tools)
+agent = create_agent(model="anthropic:claude-sonnet-5-5", tools=tools)
 """
 
 TS_RAG_SAMPLE = """const embeddings = new OpenAIEmbeddings({ model: "text-embedding-3-small" });
-const agent = createAgent({ model: "anthropic:claude-sonnet-5", tools });
+const agent = createAgent({ model: "anthropic:claude-sonnet-5-5", tools });
 """
 
 PY_KEEP_SAMPLE = """# KEEP MODEL
-agent = create_agent(model="anthropic:claude-sonnet-5", tools=tools)
+agent = create_agent(model="anthropic:claude-sonnet-5-5", tools=tools)
 """
 
 
@@ -197,4 +197,4 @@ def test_keep_model_marker_still_pins_the_next_model() -> None:
     )
     assert expanded is None
     assert "# KEEP MODEL" not in stripped
-    assert 'model="anthropic:claude-sonnet-5"' in stripped
+    assert 'model="anthropic:claude-sonnet-5-5"' in stripped

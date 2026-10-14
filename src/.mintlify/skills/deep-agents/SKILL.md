@@ -51,7 +51,7 @@ def get_weather(city: str) -> str:
     return f"It's always sunny in {city}!"
 
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-4-6",
+    model="anthropic:claude-sonnet-5-5",
     tools=[get_weather],
     system_prompt="You are a helpful assistant",
 )

@@ -133,7 +133,7 @@ def cite_page(runtime: ToolRuntime) -> str:
 
 
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-4-6",
+    model="anthropic:claude-sonnet-5-5",
     tools=[cite_page],
     state_schema=ResearchState,
 )

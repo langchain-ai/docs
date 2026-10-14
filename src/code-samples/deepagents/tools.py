@@ -21,7 +21,7 @@ def run_query(sql: str) -> str:
 # :remove-end:
 
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-4-6",
+    model="anthropic:claude-sonnet-5-5",
     tools=[search, fetch_url, run_query],
 )
 # :snippet-end:

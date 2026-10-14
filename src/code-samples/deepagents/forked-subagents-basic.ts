@@ -21,7 +21,7 @@ const commentWriter = {
 
 const agent = await createDeepAgent({
   // KEEP MODEL
-  model: "anthropic:claude-sonnet-4-6",
+  model: "anthropic:claude-sonnet-5-5",
   tools: [readDiff],
   subagents: [commentWriter],
 });

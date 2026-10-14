@@ -4,7 +4,7 @@
 import { createAgent } from "langchain";
 
 let agent = createAgent({
-  model: "anthropic:claude-sonnet-4-6",
+  model: "anthropic:claude-sonnet-5-5",
   tools: [],
 });
 // :snippet-end:
@@ -164,7 +164,7 @@ const sandbox = await client.createSandbox({
 const backend = new LangSmithSandbox({ sandbox });
 
 agent = createAgent({
-  model: "anthropic:claude-sonnet-4-6",
+  model: "anthropic:claude-sonnet-5-5",
   tools: [],
   middleware: [createFilesystemMiddleware({ backend })],
 });
@@ -209,7 +209,7 @@ await Promise.all([
 // :snippet-start: deep-agent-from-scratch-summarization-js
 import { createSummarizationMiddleware } from "deepagents";
 
-let model = "anthropic:claude-sonnet-4-6";
+let model = "anthropic:claude-sonnet-5-5";
 
 agent = createAgent({
   model,
@@ -254,7 +254,7 @@ await backend.uploadFiles(skillFiles);
 // :snippet-start: deep-agent-from-scratch-skills-js
 import { createSkillsMiddleware } from "deepagents";
 
-model = "anthropic:claude-sonnet-4-6";
+model = "anthropic:claude-sonnet-5-5";
 
 agent = createAgent({
   model,
@@ -271,7 +271,7 @@ agent = createAgent({
 import { todoListMiddleware } from "langchain";
 import { createSubAgentMiddleware, type SubAgent } from "deepagents";
 
-model = "anthropic:claude-sonnet-4-6";
+model = "anthropic:claude-sonnet-5-5";
 
 const visualizer: SubAgent = {
   name: "visualizer",

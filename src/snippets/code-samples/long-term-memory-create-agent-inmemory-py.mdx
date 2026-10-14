@@ -7,7 +7,7 @@ from langgraph.store.memory import InMemoryStore
 store = InMemoryStore()
 
 agent: Runnable = create_agent(
-    "claude-sonnet-4-6",
+    "claude-sonnet-5-5",
     tools=[],
     store=store,
 )

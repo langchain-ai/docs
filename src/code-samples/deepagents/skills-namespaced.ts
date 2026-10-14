@@ -8,7 +8,7 @@ import {
 
 // KEEP MODEL
 const agent = await createDeepAgent({
-  model: "anthropic:claude-sonnet-4-6",
+  model: "anthropic:claude-sonnet-5-5",
   skills: ["/skills/"],
   backend: new CompositeBackend(new StateBackend(), {
     "/skills/": new StoreBackend({

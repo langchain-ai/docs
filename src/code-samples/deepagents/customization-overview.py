@@ -16,7 +16,7 @@ def fetch_url(url: str) -> str:
 from deepagents import create_deep_agent
 
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-4-6",
+    model="anthropic:claude-sonnet-5-5",
     system_prompt="You are a helpful assistant.",
     tools=[search, fetch_url],
     memory=["./AGENTS.md"],
@@ -32,7 +32,7 @@ assert agent is not None
 from deepagents import create_deep_agent
 
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-4-6",
+    model="anthropic:claude-sonnet-5-5",
     system_prompt="You are a customer-support agent for ACME Corp.",
 )
 # Final = USER + BASE + SUFFIX
