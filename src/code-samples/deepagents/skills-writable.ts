@@ -11,7 +11,7 @@ const store = new InMemoryStore(); // Good for local dev; omit for LangSmith Dep
 
 // KEEP MODEL
 const agent = await createDeepAgent({
-  model: "anthropic:claude-sonnet-5-5",
+  model: "anthropic:claude-sonnet-4-6",
   backend: new CompositeBackend(new StateBackend(), {
     "/skills/approved/": new StoreBackend({
       namespace: (rt) => ["approved-skills", rt.context.orgId],

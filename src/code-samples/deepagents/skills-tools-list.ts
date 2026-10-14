@@ -29,7 +29,7 @@ const backend = new FilesystemBackend({
 
 // KEEP MODEL
 const agent = createDeepAgent({
-  model: "anthropic:claude-sonnet-5-5",
+  model: "anthropic:claude-sonnet-4-6",
   backend,
   middleware: [
     createSkillsMiddleware({

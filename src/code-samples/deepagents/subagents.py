@@ -163,7 +163,7 @@ research_subagent = {
 }
 
 agent = create_deep_agent(
-    model="claude-sonnet-5-5",
+    model="claude-sonnet-4-6",
     subagents=[research_subagent],
 )
 

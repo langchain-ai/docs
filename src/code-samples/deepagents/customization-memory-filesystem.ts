@@ -6,7 +6,7 @@ import { MemorySaver } from "@langchain/langgraph";
 const checkpointer = new MemorySaver();
 
 const agent = await createDeepAgent({
-  model: "anthropic:claude-sonnet-5-5",
+  model: "anthropic:claude-sonnet-4-6",
   backend: new FilesystemBackend({ rootDir: "/Users/user/{project}" }),
   memory: ["./AGENTS.md", "./.deepagents/AGENTS.md"],
   interruptOn: {

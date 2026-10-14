@@ -23,7 +23,7 @@ from deepagents import create_deep_agent
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-5-5",
+    model="anthropic:claude-sonnet-4-6",
     tools=[search, fetch_page, run_query],
 )
 # :snippet-end:

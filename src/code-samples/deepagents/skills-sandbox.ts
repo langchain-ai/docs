@@ -124,7 +124,7 @@ async function main() {
 
   try {
     const agent = await createDeepAgent({
-      model: "anthropic:claude-sonnet-5-5",
+      model: "anthropic:claude-sonnet-4-6",
       backend,
       skills: ["/skills/"],
       store,

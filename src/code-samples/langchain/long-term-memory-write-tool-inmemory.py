@@ -35,7 +35,7 @@ def save_user_info(user_info: UserInfo, runtime: ToolRuntime[Context]) -> str:
 
 
 agent: Runnable = create_agent(
-    model="claude-sonnet-5-5",
+    model="claude-sonnet-4-6",
     tools=[save_user_info],
     store=store,
     context_schema=Context,

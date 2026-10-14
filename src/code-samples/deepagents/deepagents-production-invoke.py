@@ -11,7 +11,7 @@ class Context:
 
 
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-5-5",
+    model="anthropic:claude-sonnet-4-6",
     context_schema=Context,
 )
 

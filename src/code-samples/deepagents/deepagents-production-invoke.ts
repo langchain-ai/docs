@@ -6,7 +6,7 @@ import { z } from "zod";
 const contextSchema = z.object({ userId: z.string() });
 
 const agent = createDeepAgent({
-  model: "anthropic:claude-sonnet-5-5",
+  model: "anthropic:claude-sonnet-4-6",
   contextSchema,
 });
 

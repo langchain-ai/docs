@@ -9,7 +9,7 @@ const store = PostgresStore.fromConnString(DB_URI);
 await store.setup();
 
 const agent = createAgent({
-  model: "claude-sonnet-5-5",
+  model: "claude-sonnet-4-6",
   tools: [],
   store,
 });

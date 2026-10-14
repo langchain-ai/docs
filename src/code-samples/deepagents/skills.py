@@ -10,7 +10,7 @@ backend = FilesystemBackend(root_dir="./my-project")
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-5-5",
+    model="anthropic:claude-sonnet-4-6",
     backend=backend,
     skills=["./my-project/skills/"],
 )
@@ -20,7 +20,7 @@ agent = create_deep_agent(
 example_dir = (Path.cwd() / "src/code-samples/deepagents").resolve()
 backend = FilesystemBackend(root_dir=str(example_dir), virtual_mode=True)
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-5-5",
+    model="anthropic:claude-sonnet-4-6",
     backend=backend,
     skills=["/skills/"],
 )
@@ -39,7 +39,7 @@ SKILLS_BY_ROLE = {
 def create_agent_for_user(user_role: str):
     # KEEP MODEL
     return create_deep_agent(
-        model="anthropic:claude-sonnet-5-5",
+        model="anthropic:claude-sonnet-4-6",
         skills=SKILLS_BY_ROLE.get(user_role, []),
     )
 # :snippet-end:
@@ -50,7 +50,7 @@ from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-5-5",
+    model="anthropic:claude-sonnet-4-6",
     skills=["/skills/"],
     backend=CompositeBackend(
         default=StateBackend(),
@@ -96,7 +96,7 @@ from deepagents import create_deep_agent
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-5-5",
+    model="anthropic:claude-sonnet-4-6",
     skills=["/skills/org/", "/skills/team/", "/skills/request/"],
 )
 # :snippet-end:
@@ -107,7 +107,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-5-5",
+    model="anthropic:claude-sonnet-4-6",
     skills=["/skills/editable/"],
     permissions=[
         FilesystemPermission(
@@ -129,7 +129,7 @@ store = InMemoryStore()  # Use for local dev; omit for LangSmith Deployment
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-5-5",
+    model="anthropic:claude-sonnet-4-6",
     backend=CompositeBackend(
         default=StateBackend(),
         routes={
@@ -179,7 +179,7 @@ backend = FilesystemBackend(root_dir="./my-project", virtual_mode=True)
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-5-5",
+    model="anthropic:claude-sonnet-4-6",
     backend=backend,
     middleware=[
         SkillsMiddleware(
@@ -225,7 +225,7 @@ def resolve_skill_tools(name: str, runtime: Runtime) -> list[BaseTool]:
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-5-5",
+    model="anthropic:claude-sonnet-4-6",
     backend=backend,
     middleware=[
         SkillsMiddleware(
@@ -291,7 +291,7 @@ def resolve_skill_tools(name: str, runtime: Runtime[Context]) -> list[BaseTool]:
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-5-5",
+    model="anthropic:claude-sonnet-4-6",
     backend=backend,
     context_schema=Context,
     middleware=[
@@ -328,7 +328,7 @@ def create_issue(team: str, title: str) -> str:
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-5-5",
+    model="anthropic:claude-sonnet-4-6",
     backend=backend,
     tools=[create_issue],
     middleware=[

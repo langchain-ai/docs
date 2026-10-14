@@ -31,15 +31,15 @@ def _version_tuple(raw: str) -> tuple[int, ...]:
 
 
 PY_RAG_SAMPLE = """embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-agent = create_agent(model="anthropic:claude-sonnet-5-5", tools=tools)
+agent = create_agent(model="anthropic:claude-sonnet-5", tools=tools)
 """
 
 TS_RAG_SAMPLE = """const embeddings = new OpenAIEmbeddings({ model: "text-embedding-3-small" });
-const agent = createAgent({ model: "anthropic:claude-sonnet-5-5", tools });
+const agent = createAgent({ model: "anthropic:claude-sonnet-5", tools });
 """
 
 PY_KEEP_SAMPLE = """# KEEP MODEL
-agent = create_agent(model="anthropic:claude-sonnet-5-5", tools=tools)
+agent = create_agent(model="anthropic:claude-sonnet-5", tools=tools)
 """
 
 
@@ -54,7 +54,7 @@ def test_embeddings_model_is_not_expanded_python() -> None:
     assert expanded.count(embeddings_call) == TAB_COUNT
     # The chat model is the one each tab varies.
     assert 'create_agent(model="openai:gpt-5.5"' in expanded
-    assert 'create_agent(model="google_genai:gemini-3.8-flash"' in expanded
+    assert 'create_agent(model="google_genai:gemini-3.6-flash"' in expanded
 
 
 def test_embeddings_model_is_not_expanded_typescript() -> None:
@@ -69,7 +69,7 @@ def test_embeddings_model_is_not_expanded_typescript() -> None:
     # The Google tab routes to @langchain/google, whose provider key is "google".
     # Python has no equivalent key and stays on "google_genai" (see the
     # python test above), so the two tables intentionally differ.
-    assert 'createAgent({ model: "google:gemini-3.8-flash"' in expanded
+    assert 'createAgent({ model: "google:gemini-3.6-flash"' in expanded
     # @langchain/google-genai is long-term support only. Its key must not leak
     # back into TypeScript output.
     assert "google-genai:" not in expanded
@@ -116,7 +116,7 @@ def test_agent_model_after_multiline_chat_class_is_expanded() -> None:
     )
     assert expanded is not None
     assert expanded.count('model: "gpt-5.4-mini"') == TAB_COUNT
-    assert 'createAgent({ model: "google:gemini-3.8-flash"' in expanded
+    assert 'createAgent({ model: "google:gemini-3.6-flash"' in expanded
 
 
 def test_embeddings_only_sample_is_left_alone() -> None:
@@ -228,4 +228,4 @@ def test_keep_model_marker_still_pins_the_next_model() -> None:
     )
     assert expanded is None
     assert "# KEEP MODEL" not in stripped
-    assert 'model="anthropic:claude-sonnet-5-5"' in stripped
+    assert 'model="anthropic:claude-sonnet-5"' in stripped

@@ -4,7 +4,7 @@ from langchain_core.utils.uuid import uuid7
 from langgraph.checkpoint.memory import InMemorySaver
 
 agent = create_agent(
-    model="claude-sonnet-5-5",
+    model="claude-sonnet-4-6",
     tools=[],
     checkpointer=InMemorySaver(),
 )

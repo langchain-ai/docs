@@ -6,7 +6,7 @@ import { InMemoryStore } from "@langchain/langgraph";
 const store = new InMemoryStore();
 
 const agent = createAgent({
-  model: "claude-sonnet-5-5",
+  model: "claude-sonnet-4-6",
   tools: [],
   store,
 });

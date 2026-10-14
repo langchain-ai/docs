@@ -39,7 +39,7 @@ const getUserInfo = tool(
 );
 
 const agent = createAgent({
-  model: "claude-sonnet-5-5",
+  model: "claude-sonnet-4-6",
   tools: [getUserInfo],
   contextSchema,
   // Pass store to agent - enables agent to access store when running tools

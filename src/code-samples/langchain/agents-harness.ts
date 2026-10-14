@@ -16,7 +16,7 @@ import { createAgent } from "langchain";
 import { createFilesystemMiddleware, StateBackend } from "deepagents";
 
 var agent = createAgent({
-  model: "anthropic:claude-sonnet-5-5",
+  model: "anthropic:claude-sonnet-4-6",
   tools: [search],
   middleware: [createFilesystemMiddleware({ backend: new StateBackend() })],
 });
@@ -36,7 +36,7 @@ import {
 } from "deepagents";
 
 var backend = new StateBackend();
-const model = "anthropic:claude-sonnet-5-5";
+const model = "anthropic:claude-sonnet-4-6";
 
 var agent = createAgent({
   model,
@@ -69,7 +69,7 @@ var search = tool(({ query }) => `Search results for: ${query}`, {
 });
 
 var agent = createAgent({
-  model: "anthropic:claude-sonnet-5-5",
+  model: "anthropic:claude-sonnet-4-6",
   tools: [search],
   middleware: [
     modelRetryMiddleware({ maxRetries: 3 }),
@@ -93,7 +93,7 @@ var search = tool(({ query }) => `Search results for: ${query}`, {
 });
 
 var agent = createAgent({
-  model: "anthropic:claude-sonnet-5-5",
+  model: "anthropic:claude-sonnet-4-6",
   tools: [search],
   middleware: [piiMiddleware("email")],
 });
@@ -121,13 +121,13 @@ var search = tool(({ query }) => `Search results for: ${query}`, {
 var backend = new StateBackend();
 
 var agent = createAgent({
-  model: "anthropic:claude-sonnet-5-5",
+  model: "anthropic:claude-sonnet-4-6",
   tools: [search],
   middleware: [
     createFilesystemMiddleware({ backend }),
     todoListMiddleware(),
     createSubAgentMiddleware({
-      defaultModel: "anthropic:claude-sonnet-5-5",
+      defaultModel: "anthropic:claude-sonnet-4-6",
       defaultTools: [],
       subagents: [
         {
@@ -136,7 +136,7 @@ var agent = createAgent({
           systemPrompt:
             "Use the search tool to research the question and summarize key points.",
           tools: [search],
-          model: "anthropic:claude-sonnet-5-5",
+          model: "anthropic:claude-sonnet-4-6",
           middleware: [],
         },
       ],
@@ -160,7 +160,7 @@ var search = tool(({ query }) => `Search results for: ${query}`, {
 });
 
 var agent = createAgent({
-  model: "anthropic:claude-sonnet-5-5",
+  model: "anthropic:claude-sonnet-4-6",
   tools: [search],
   middleware: [humanInTheLoopMiddleware({ interruptOn: { writeFile: true } })],
 });

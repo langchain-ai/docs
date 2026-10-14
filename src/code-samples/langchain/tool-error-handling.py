@@ -23,7 +23,7 @@ def handle_tool_errors(
 
 
 agent = create_agent(
-    model="claude-sonnet-5-5",
+    model="claude-sonnet-4-6",
     tools=[],
     middleware=[handle_tool_errors],
 )

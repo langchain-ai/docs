@@ -3,7 +3,7 @@ import { createDeepAgent } from "deepagents";
 
 // KEEP MODEL
 const agent = await createDeepAgent({
-  model: "anthropic:claude-sonnet-5-5",
+  model: "anthropic:claude-sonnet-4-6",
   skills: ["/skills/org/", "/skills/team/", "/skills/request/"],
 });
 // :snippet-end:

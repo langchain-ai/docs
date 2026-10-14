@@ -10,7 +10,7 @@ const contextSchema = z.object({
 });
 
 const agent = createAgent({
-  model: "claude-sonnet-5-5",
+  model: "claude-sonnet-4-6",
   tools: [],
   contextSchema,
   checkpointer: new MemorySaver(),

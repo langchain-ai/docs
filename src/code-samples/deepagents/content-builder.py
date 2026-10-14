@@ -142,7 +142,7 @@ from deepagents.backends import FilesystemBackend
 def create_content_writer():
     """Create a content writer agent configured by filesystem files."""
     return create_deep_agent(
-        model="anthropic:claude-sonnet-5-5",
+        model="anthropic:claude-sonnet-4-6",
         memory=["./AGENTS.md"],
         skills=["./skills/"],
         tools=[generate_cover, generate_social_image],

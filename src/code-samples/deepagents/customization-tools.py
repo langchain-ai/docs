@@ -25,7 +25,7 @@ def internet_search(
 
 
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-5-5",
+    model="anthropic:claude-sonnet-4-6",
     tools=[internet_search],
 )
 # :snippet-end:

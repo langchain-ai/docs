@@ -14,7 +14,7 @@ from deepagents import create_deep_agent
 from langchain_quickjs import CodeInterpreterMiddleware
 
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-5-5",
+    model="anthropic:claude-sonnet-4-6",
     middleware=[CodeInterpreterMiddleware()],
 )
 # :snippet-end:
@@ -24,7 +24,7 @@ from deepagents import create_deep_agent
 from langchain_quickjs import CodeInterpreterMiddleware
 
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-5-5",
+    model="anthropic:claude-sonnet-4-6",
     middleware=[CodeInterpreterMiddleware(ptc=["web_search"])],
 )
 # :snippet-end:
@@ -34,7 +34,7 @@ from deepagents import create_deep_agent
 from langchain_quickjs import CodeInterpreterMiddleware
 
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-5-5",
+    model="anthropic:claude-sonnet-4-6",
     middleware=[
         CodeInterpreterMiddleware(
             mode="thread",  # Default
@@ -49,7 +49,7 @@ from langchain_quickjs import CodeInterpreterMiddleware
 from langgraph.checkpoint.memory import MemorySaver
 
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-5-5",
+    model="anthropic:claude-sonnet-4-6",
     checkpointer=MemorySaver(),
     middleware=[CodeInterpreterMiddleware(mode="thread")],
 )
@@ -87,7 +87,7 @@ assert CodeInterpreterMiddleware().tools
 assert CodeInterpreterMiddleware(ptc=["web_search"]).tools
 assert CodeInterpreterMiddleware(mode="thread").tools
 persistence_agent = create_deep_agent(
-    model="anthropic:claude-sonnet-5-5",
+    model="anthropic:claude-sonnet-4-6",
     checkpointer=MemorySaver(),
     middleware=[CodeInterpreterMiddleware(mode="thread")],
 )

@@ -5,7 +5,7 @@ const backend = new FilesystemBackend({ rootDir: process.cwd() });
 
 // KEEP MODEL
 const agent = await createDeepAgent({
-  model: "anthropic:claude-sonnet-5-5",
+  model: "anthropic:claude-sonnet-4-6",
   backend,
   skills: ["/skills/"],
 });

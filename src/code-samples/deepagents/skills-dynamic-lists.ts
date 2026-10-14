@@ -18,7 +18,7 @@ const SKILLS_BY_ROLE: Record<string, string[]> = {
 function createAgentForUser(userRole: string) {
   // KEEP MODEL
   return createDeepAgent({
-    model: "anthropic:claude-sonnet-5-5",
+    model: "anthropic:claude-sonnet-4-6",
     skills: SKILLS_BY_ROLE[userRole] ?? [],
   });
 }

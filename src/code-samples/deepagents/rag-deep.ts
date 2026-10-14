@@ -195,7 +195,7 @@ const chunkAnalystSubagent = {
 };
 
 const agent = createDeepAgent({
-  model: "anthropic:claude-sonnet-5-5",
+  model: "anthropic:claude-sonnet-4-6",
   tools: [searchDocumentation],
   backend,
   systemPrompt: instructions,

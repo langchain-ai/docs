@@ -12,7 +12,7 @@ async function fetchUrl(url: string): Promise<string> {
 import { createDeepAgent } from "deepagents";
 
 const agent = await createDeepAgent({
-  model: "anthropic:claude-sonnet-5-5",
+  model: "anthropic:claude-sonnet-4-6",
   systemPrompt: "You are a helpful assistant.",
   tools: [search, fetchUrl],
   memory: ["./AGENTS.md"],

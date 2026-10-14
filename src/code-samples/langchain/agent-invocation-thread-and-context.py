@@ -12,7 +12,7 @@ class Context:
 
 
 agent = create_agent(
-    model="claude-sonnet-5-5",
+    model="claude-sonnet-4-6",
     tools=[],
     context_schema=Context,
     checkpointer=InMemorySaver(),

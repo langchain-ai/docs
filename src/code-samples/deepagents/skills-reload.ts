@@ -3,7 +3,7 @@ import { createDeepAgent, FilesystemBackend } from "deepagents";
 
 const backend = new FilesystemBackend({ rootDir: process.cwd() });
 const agent = await createDeepAgent({
-  model: "anthropic:claude-sonnet-5-5",
+  model: "anthropic:claude-sonnet-4-6",
   backend,
   skills: ["/skills/"],
 });

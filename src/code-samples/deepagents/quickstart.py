@@ -39,7 +39,7 @@ Use this to run an internet search for a given query. You can specify the max nu
 """
 
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-5-5",
+    model="anthropic:claude-sonnet-4-6",
     tools=[internet_search],
     system_prompt=research_instructions,
 )

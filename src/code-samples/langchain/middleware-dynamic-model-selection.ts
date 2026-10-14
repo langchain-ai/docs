@@ -2,7 +2,7 @@
 import { createMiddleware, initChatModel } from "langchain";
 
 const models = {
-  complex: await initChatModel("claude-sonnet-5-5"),
+  complex: await initChatModel("claude-sonnet-4-6"),
   simple: await initChatModel("claude-haiku-4-5-20251001"),
 };
 

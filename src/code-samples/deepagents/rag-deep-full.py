@@ -179,7 +179,7 @@ chunk_analyst_subagent = {
 }
 
 # KEEP MODEL
-model = init_chat_model(model="anthropic:claude-sonnet-5-5")
+model = init_chat_model(model="anthropic:claude-sonnet-4-6")
 
 agent = create_deep_agent(
     model=model,

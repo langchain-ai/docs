@@ -38,7 +38,7 @@ with PostgresStore.from_conn_string(DB_URI) as store:
         return str(user_info.value) if user_info else "Unknown user"
 
     agent: Runnable = create_agent(
-        "claude-sonnet-5-5",
+        "claude-sonnet-4-6",
         tools=[get_user_info],
         store=store,
         context_schema=Context,

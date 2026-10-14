@@ -4,7 +4,7 @@ from collections.abc import Callable
 from langchain.agents.middleware import ModelRequest, ModelResponse, wrap_model_call
 from langchain.chat_models import init_chat_model
 
-complex_model = init_chat_model("claude-sonnet-5-5")
+complex_model = init_chat_model("claude-sonnet-4-6")
 simple_model = init_chat_model("claude-haiku-4-5-20251001")
 
 
@@ -28,7 +28,7 @@ from collections.abc import Callable
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 from langchain.chat_models import init_chat_model
 
-complex_model = init_chat_model("claude-sonnet-5-5")
+complex_model = init_chat_model("claude-sonnet-4-6")
 simple_model = init_chat_model("claude-haiku-4-5-20251001")
 
 

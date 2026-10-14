@@ -9,7 +9,7 @@ thorough research, and then write a polished report. \
 """
 
 agent = create_deep_agent(
-    model="anthropic:claude-sonnet-5-5",
+    model="anthropic:claude-sonnet-4-6",
     system_prompt=research_instructions,
 )
 # :snippet-end:

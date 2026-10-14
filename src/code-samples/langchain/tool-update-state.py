@@ -32,7 +32,7 @@ if __name__ == "__main__":
     from langchain.agents import create_agent
     from langchain_anthropic import ChatAnthropic
 
-    model = ChatAnthropic(model_name="claude-sonnet-5-5", timeout=None)
+    model = ChatAnthropic(model_name="claude-sonnet-4-6", timeout=None)
 
     agent = create_agent(
         model,

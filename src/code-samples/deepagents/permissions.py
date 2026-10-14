@@ -7,7 +7,7 @@ from deepagents import FilesystemPermission, create_deep_agent
 from deepagents.backends import StateBackend
 
 backend = StateBackend()
-model = "anthropic:claude-sonnet-5-5"
+model = "anthropic:claude-sonnet-4-6"
 # :remove-end:
 
 # Read-only agent: deny all writes

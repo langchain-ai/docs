@@ -40,7 +40,7 @@ def get_user_info(runtime: ToolRuntime[Context]) -> str:
 
 
 agent: Runnable = create_agent(
-    model="claude-sonnet-5-5",
+    model="claude-sonnet-4-6",
     tools=[get_user_info],
     # Pass store to agent - enables agent to access store when running tools
     store=store,
