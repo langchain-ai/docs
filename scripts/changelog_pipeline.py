@@ -12,9 +12,10 @@ Each PR merged in a window goes through these steps:
    and writes a held PR into that week's entry once its flag is fully rolled out.
 3. Group and write: Sonnet groups PRs that ship the same change and picks the
    highlights; Sonnet writes highlights and Haiku writes the rest.
-4. Review: entries that leak internal names, or that may be gated (the classifier
-   saw an unrolled flag, or they share code and topic with a held PR), go to a
-   reviewer list instead of the page.
+4. Check: an entry that may be gated (the classifier saw a flag Eppo shows is not
+   rolled out, or it shares code and topic with a held PR) joins the held list
+   under that flag. An entry that names something internal goes to a reviewer
+   list instead of the page.
 
 ``weekly`` runs every step for one Monday-to-Monday week and, with ``--write``,
 inserts the Cloud and Fleet entries into the changelog files and updates the held
@@ -1077,30 +1078,38 @@ def _dirs(pr: dict) -> set[str]:
     }
 
 
-def _review_reasons(
-    group: dict, prs: dict, results: dict, held: list, flags: dict
-) -> list[str]:
-    """Why a written entry needs a human before it publishes, if anything."""
+def _text_reasons(group: dict, flags: dict) -> list[str]:
+    """Why an entry's text cannot publish as written: it names something internal."""
     reasons = []
     text = f"{group.get('title', '')} {group.get('entry', '')}"
     if m := LEAK_RE.search(text) or TICKET_RE.search(text):
         reasons.append(f"internal name: {m.group(0)}")
     reasons += [f"names flag key {k}" for k in flags if len(k) >= 8 and k in text]
+    return reasons
+
+
+def _gating_flags(
+    group: dict, prs: dict, results: dict, held: list, flags: dict
+) -> list[tuple[str, str]]:
+    """Flags not rolled out that may gate an entry, each with the evidence for it."""
+    gates = []
     held_dirs = {h: _dirs(prs[h]) for h, _ in held}
     held_words = {h: _title_words(prs[h]["title"]) for h, _ in held}
     for n in group["prs"]:
         hint = results.get(n, {}).get("pass1", {}).get("feature_flag")
         # Only a real Eppo flag counts; hints also include hook names and free text.
         if hint in flags and not flags[hint]["rolled_out"]:
-            reasons.append(f"#{n}: classifier saw flag {hint}")
+            gates.append((hint, f"#{n}: classifier saw flag {hint}"))
         words = _title_words(prs[n]["title"])
         for h, flag in held:
             if h == n or not (_dirs(prs[n]) & held_dirs[h]):
                 continue
             overlap = len(words & held_words[h]) / max(1, len(words | held_words[h]))
             if overlap >= REVIEW_TITLE_OVERLAP:
-                reasons.append(f"#{n} shares code and topic with held #{h} ({flag})")
-    return list(dict.fromkeys(reasons))
+                gates.append(
+                    (flag, f"#{n} shares code and topic with held #{h} ({flag})")
+                )
+    return list(dict.fromkeys(gates))
 
 
 def _title_words(title: str) -> set[str]:
@@ -1418,13 +1427,34 @@ def cmd_mock(args: argparse.Namespace) -> None:
 
     # Fix renamed products and MDX-unsafe text, then route anything a human must check
     # to the review list.
-    publish, review = [], []
+    # An entry that looks gated by a flag Eppo knows goes on the held list, like a
+    # declared flag, and publishes when that flag rolls out; a later run rewrites and
+    # rechecks it then. Only what a script cannot settle reaches a human.
+    publish, review, auto_held = [], [], []
     for g in written:
         for field in ("title", "entry"):
             if g.get(field):
                 g[field] = _mdx_escape(_apply_renames(g[field]))
-        reasons = _review_reasons(g, prs, results, held, flags)
+        gates = _gating_flags(g, prs, results, held, flags)
+        known = [(flag, why) for flag, why in gates if flag in flags]
+        if known:
+            auto_held.append((g, known))
+            continue
+        # A flag missing from Eppo or a conflicting declaration cannot be checked.
+        reasons = _text_reasons(g, flags) + [why for _, why in gates]
         (review if reasons else publish).append((g, reasons))
+    for g, known in auto_held:
+        for n in g["prs"]:
+            new_ledger.setdefault(
+                str(n),
+                {
+                    "flag": known[0][0],
+                    "title": prs[n]["title"],
+                    "merged_at": (prs[n]["merged_at"] or "")[:10],
+                    "held_since": since,
+                    "evidence": "; ".join(why for _, why in known)[:300],
+                },
+            )
 
     label = args.label or _week_label(
         _validate_date(args.since), _validate_date(args.until)
@@ -1459,6 +1489,17 @@ def cmd_mock(args: argparse.Namespace) -> None:
             [
                 f"- #{n} [{flag}] {prs[n]['title']} (classifier hint: {results[n]['pass1']['feature_flag']})"
                 for n, flag in sorted(held)
+            ]
+            or ["None this week."]
+        ),
+        "",
+        "## Held automatically: may be behind a flag not rolled out",
+        "",
+        *(
+            [
+                f"- [{known[0][0]}] {g.get('title') or ''} {g['entry']}\n  - "
+                + "\n  - ".join(why for _, why in known)
+                for g, known in auto_held
             ]
             or ["None this week."]
         ),
@@ -1515,6 +1556,15 @@ def cmd_mock(args: argparse.Namespace) -> None:
             {"pr": n, "flag": flag, "title": prs[n]["title"]}
             for n, flag in sorted(held)
         ],
+        "auto_held": [
+            {
+                "flag": known[0][0],
+                "line": _entry_line(g, set(pages)),
+                "prs": g["prs"],
+                "evidence": [why for _, why in known],
+            }
+            for g, known in auto_held
+        ],
         "still_held": [
             {"pr": int(n), "title": ledger[n]["title"], "why": why}
             for n, why in sorted(kept.items(), key=lambda kv: int(kv[0]))
@@ -1522,7 +1572,8 @@ def cmd_mock(args: argparse.Namespace) -> None:
     }
     _child(cache, "review.json").write_text(json.dumps(review_data, indent=2) + "\n")
     print(
-        f"{len(publish)} entries published, {len(review)} sent to review",
+        f"{len(publish)} entries published, {len(auto_held)} held behind flags, "
+        f"{len(review)} sent to review",
         file=sys.stderr,
     )
     cost = grouping.get("meta", {}).get("cost_usd", 0) + sum(
@@ -2361,6 +2412,7 @@ def _pr_bullet(n: int, text: str) -> dict:
 def _review_blocks(data: dict, pr_url: str) -> list[dict]:
     """The review page: what needs a decision first, reference material after."""
     items, ungrouped, released = data["items"], data["ungrouped"], data["released"]
+    auto_held = data.get("auto_held", [])
     pr_number = pr_url.rstrip("/").rsplit("/", 1)[-1]
     blocks = [
         {
@@ -2443,6 +2495,22 @@ def _review_blocks(data: dict, pr_url: str) -> list[dict]:
         *[
             _pr_bullet(h["pr"], f"[{h['flag']}] {h['title']}")
             for h in data["newly_held"]
+        ],
+        _block("heading_2", f"Held automatically ({len(auto_held)})"),
+        _block(
+            "paragraph",
+            "These entries look gated: the classifier found a flag in the code, or "
+            "they share code and topic with a held PR, and Eppo shows the flag is not "
+            "rolled out. They are on the held list and publish once it is. Nothing to "
+            "do unless one is already live.",
+        ),
+        *[
+            _block(
+                "bulleted_list_item",
+                f"[{a['flag']}] {a['line'].removeprefix('- ')} "
+                f"({'; '.join(a['evidence'])})",
+            )
+            for a in auto_held
         ],
     ]
     still = data["still_held"]

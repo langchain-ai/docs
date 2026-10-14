@@ -479,3 +479,36 @@ def test_notion_id_rejects_paths() -> None:
 def test_mdx_escape_outside_code_spans(text: str, want: str) -> None:
     """A bare <tag> or {expr} would make MDX fail to parse the changelog."""
     assert cp._mdx_escape(text) == want
+
+
+def test_gating_flags_finds_classifier_and_neighbor_flags() -> None:
+    """An unrolled hinted flag, or a held neighbor's flag, gates an entry."""
+    deep = "a/b/c/d/e/f.py"
+    prs = {
+        1: {"title": "feat: agent archive button", "files": [deep]},
+        2: {"title": "feat: agent archive api", "files": [deep]},
+        3: {"title": "fix: unrelated", "files": ["x.py"]},
+    }
+    results = {
+        1: {"pass1": {"feature_flag": "fleet_support_archive"}},
+        3: {"pass1": {"feature_flag": "shipped_flag"}},
+    }
+    flags = {
+        "fleet_support_archive": {"rolled_out": False},
+        "shipped_flag": {"rolled_out": True},
+        "held_flag": {"rolled_out": False},
+    }
+    held = [(2, "held_flag")]
+    gates = cp._gating_flags({"prs": [1]}, prs, results, held, flags)
+    assert [flag for flag, _ in gates] == ["fleet_support_archive", "held_flag"]
+    assert cp._gating_flags({"prs": [3]}, prs, results, held, flags) == []
+
+
+def test_text_reasons_catch_internal_names_and_flag_keys() -> None:
+    """Text problems go to a human; they are separate from gating."""
+    flags = {"webhook_unification": {"rolled_out": False}}
+    group = {"title": "", "entry": "Behind the webhook_unification_backend flag."}
+    assert cp._text_reasons(group, flags) == ["names flag key webhook_unification"]
+    group = {"title": "", "entry": "Set it on the host-backend deployment."}
+    assert cp._text_reasons(group, flags) == ["internal name: host-backend"]
+    assert cp._text_reasons({"title": "T", "entry": "Plain text."}, flags) == []
