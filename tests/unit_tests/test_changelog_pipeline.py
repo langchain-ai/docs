@@ -69,6 +69,17 @@ def test_strict_turns_type_lists_into_any_of() -> None:
         ("    Flag: none\n\nFlag: new_feature", ["new_feature"]),
         ("Flag: none\nFlag: None", ["none"]),
         ("Flag: none\nFlag: new_feature", ["none", "new_feature"]),
+        (
+            "````markdown\n```go\nFlag: example\n```\n````\n\nFlag: real_flag",
+            ["real_flag"],
+        ),
+        (
+            "```\nFlag: none\n``` not a close\nFlag: example_2\n```\nFlag: real_flag",
+            ["real_flag"],
+        ),
+        ("Flag: real_flag\n```\nFlag: example", ["real_flag"]),
+        ("Flag: <!--\n-->none", []),
+        ("Flag: Some_Flag\nFlag: some_flag", ["Some_Flag"]),
     ],
 )
 def test_declared_flags_matches_langdev_rules(body: str, want: list[str]) -> None:

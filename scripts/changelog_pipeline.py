@@ -1309,23 +1309,44 @@ def _render(
 # Same rules as the `changelog` check in langchainplus (`langdev pr check`): a Flag:
 # line on its own line, ignoring fenced code, HTML comments, quotes, and indented code.
 FLAG_LINE_RE = re.compile(r"(?im)^ {0,3}Flag:[ \t]*(\S+)[ \t\r]*$")
-FENCE_RES = (
-    re.compile(r"(?ms)^ {0,3}```.*?^ {0,3}```[^\n]*$"),
-    re.compile(r"(?ms)^ {0,3}~~~.*?^ {0,3}~~~[^\n]*$"),
-    re.compile(r"(?s)<!--.*?-->"),
-)
+HTML_COMMENT_RE = re.compile(r"(?s)<!--.*?-->")
+FENCE_RE = re.compile(r"^(`{3,}|~{3,})")
 CONFLICTING_FLAGS = "conflicting Flag: lines"
 
 
+def _mask_non_declarations(body: str) -> str:
+    """Blank HTML comments and fenced code, keeping every newline so no lines join."""
+    body = HTML_COMMENT_RE.sub(lambda m: "\n" * m.group(0).count("\n"), body)
+    lines = body.split("\n")
+    opener = ""  # the delimiter of the fence being masked, if any
+    for i, line in enumerate(lines):
+        trimmed = line.lstrip(" ")
+        indented = len(line) - len(trimmed) > 3
+        m = None if indented else FENCE_RE.match(trimmed)
+        if not opener:
+            if m:
+                opener = m.group(1)
+                lines[i] = ""
+            continue
+        # Only a run of the same character, at least as long, with nothing after it
+        # closes a fence; a shorter fence inside it is content.
+        if (
+            m
+            and m.group(1)[0] == opener[0]
+            and len(m.group(1)) >= len(opener)
+            and not trimmed[len(m.group(1)) :].strip()
+        ):
+            opener = ""
+        lines[i] = ""
+    return "\n".join(lines)
+
+
 def _declared_flags(body: str) -> list[str]:
-    """Distinct values of a PR description's Flag: lines."""
-    for pattern in FENCE_RES:
-        body = pattern.sub("", body)
-    return list(
-        dict.fromkeys(
-            m.lower() if m.lower() == "none" else m for m in FLAG_LINE_RE.findall(body)
-        )
-    )
+    """Distinct values of a PR description's Flag: lines, compared ignoring case."""
+    flags: dict[str, str] = {}
+    for value in FLAG_LINE_RE.findall(_mask_non_declarations(body)):
+        flags.setdefault(value.lower(), "none" if value.lower() == "none" else value)
+    return list(flags.values())
 
 
 def _declared_flag(pr: dict) -> str | None:
