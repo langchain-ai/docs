@@ -1,7 +1,21 @@
 ---
-title: "ChatOpenAI integration"
-description: "Integrate with the ChatOpenAI chat model using LangChain Python."
+title: ChatOpenAI integration
+description: Integrate with the ChatOpenAI chat model using LangChain Python.
+integration:
+  name: ChatOpenAI
+  pypi: langchain-openai
+  featured: true
+  stream: true
+  tool_calling: true
+  structured_output: true
+  multimodal: true
 ---
+
+import OpenaiPromptCacheBreakpointChatCompletionsPy from '/snippets/code-samples/openai-prompt-cache-breakpoint-chat-completions-py.mdx';
+import OpenaiPromptCacheBreakpointResponsesPy from '/snippets/code-samples/openai-prompt-cache-breakpoint-responses-py.mdx';
+import OpenaiPromptCacheBreakpointExtrasPy from '/snippets/code-samples/openai-prompt-cache-breakpoint-extras-py.mdx';
+import OpenaiPromptCacheOptionsPy from '/snippets/code-samples/openai-prompt-cache-options-py.mdx';
+import OpenaiPromptCacheWriteTokensPy from '/snippets/code-samples/openai-prompt-cache-write-tokens-py.mdx';
 
 You can find information about OpenAI's latest models, their costs, context windows, and supported input types in the [OpenAI Platform](https://platform.openai.com) docs.
 
@@ -326,6 +340,23 @@ ai_msg.tool_calls
 ```
 
 For more on binding tools and tool call outputs, head to the [tool calling](/oss/langchain/tools) docs.
+
+### Async tools
+
+[Async tool calling](https://developers.openai.com/api/docs/guides/async-tool-calling) lets the model continue working after issuing a tool call, without waiting for the result. When using the Responses API, `ChatOpenAI` supports this by passing `extras={"async": True}` to `@tool`:
+
+```python
+from langchain.tools import tool
+
+@tool(extras={"async": True})  # [!code highlight]
+def lookup_price(sku: str) -> str:
+    """Look up the price of a product."""
+    return "1200"
+```
+
+<Note>
+    Async tools are only supported via the Responses API (`use_responses_api=True`). The `async` flag is round-tripped through the message history so that prompt-cache prefixes remain intact across turns.
+</Note>
 
 ### Custom tools
 
@@ -1030,6 +1061,8 @@ The weather in San Francisco is sunny and 72°F
 
 </Accordion>
 
+To add tools at a specific point in the conversation without tool search, see [Add tools mid-conversation](#add-tools-mid-conversation).
+
 
 ### Computer use
 
@@ -1537,6 +1570,43 @@ for block in response.content_blocks:
 The user is asking about 3 raised to the power of 3. That's a pretty simple calculation! I know that 3^3 equals 27, so I can say, "3 to the power of 3 equals 27." I might also include a quick explanation that it's 3 multiplied by itself three times: 3 × 3 × 3 = 27. So, the answer is definitely 27.
 ```
 
+For a simpler equivalent, use the standard [`reasoning_effort`](/oss/langchain/models#reasoning) parameter, which translates to `reasoning.effort` and adds `summary: "auto"`:
+
+```python
+llm = ChatOpenAI(model="gpt-5-nano", reasoning_effort="medium")
+```
+
+<Note>
+    `reasoning_effort` as a standard parameter requires `langchain-openai>=1.4.1`.
+</Note>
+
+### Changing reasoning effort mid-conversation
+
+Use a [`configuration_update`](https://developers.openai.com/api/docs/guides/reasoning?api-mode=responses#change-reasoning-mid-conversation) content block to change reasoning effort between turns without modifying the request-level `reasoning_effort` parameter — keeping the prompt prefix cacheable. Embed the block directly in a `HumanMessage`:
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain.messages import HumanMessage
+
+llm = ChatOpenAI(model="gpt-6-astra", use_responses_api=True, reasoning_effort="low")
+
+first = llm.invoke("Hello")
+
+# Raise reasoning effort from this message onward
+response = llm.invoke(
+    [
+        "Hello",
+        first,
+        HumanMessage(
+            [
+                {"type": "configuration_update", "reasoning": {"effort": "high"}},  # [!code highlight]
+                {"type": "text", "text": "How many distinct 5-card poker hands are a full house?"},
+            ]
+        ),
+    ]
+)
+```
+
 <Tip>
     **Troubleshooting: Empty responses from reasoning models**
 
@@ -1544,6 +1614,45 @@ The user is asking about 3 raised to the power of 3. That's a pretty simple calc
 
     Ensure `max_tokens` is set to `None` or increase the token limit to allow sufficient tokens for both reasoning and output generation.
 </Tip>
+
+### Add tools mid-conversation
+
+<Note>
+    `additional_tools` requires `langchain-openai>=1.6.5`.
+</Note>
+
+Use an [`additional_tools`](https://developers.openai.com/api/docs/guides/tools-tool-search#add-tools-at-a-specific-point-in-the-input) content block to make tools available from a point in the conversation onward. This is useful when your application loads tools outside the [tool search](#tool-search) flow. Put the block in a @[`SystemMessage`]:
+
+```python
+from langchain.messages import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(model="gpt-6-astra", use_responses_api=True)
+
+response = llm.invoke(
+    [
+        HumanMessage("What time is it?"),
+        SystemMessage(
+            [
+                {
+                    "type": "additional_tools",  # [!code highlight]
+                    "role": "developer",  # [!code highlight]
+                    "tools": [
+                        {
+                            "type": "function",
+                            "name": "get_time",
+                            "description": "Get the current time.",
+                            "parameters": {"type": "object", "properties": {}},
+                        }
+                    ],
+                },
+            ]
+        ),
+    ]
+)
+```
+
+The block requires the Responses API, so set `use_responses_api=True`. On Chat Completions, or on a message other than a `SystemMessage`, `ChatOpenAI` raises a `ValueError`. You can also write the block wrapped in a `non_standard` block, which is how `content_blocks` returns it.
 
 ---
 
@@ -1886,6 +1995,52 @@ response1 = llm.invoke(messages)
 # Override with specific cache key
 response2 = llm.invoke(messages, prompt_cache_key="override-cache-v1")
 ```
+
+### Explicit caching with breakpoints
+
+<Note>
+Requires `langchain-openai>=1.3.5`. Supported on both the Chat Completions API and the [Responses API](/oss/python/integrations/chat/openai#responses-api).
+</Note>
+
+OpenAI supports [explicit prompt-cache breakpoints](https://developers.openai.com/api/docs/guides/prompt-caching#prompt-cache-breakpoints), which let you designate specific content blocks as cache boundaries. This gives you fine-grained control over which parts of a prompt are cached, rather than relying solely on automatic prefix caching.
+
+To mark a content block as a cache breakpoint, add `"prompt_cache_breakpoint": {"mode": "explicit"}` to the block. Explicit breakpoints require GPT-5.6 or later model families.
+
+<Tabs>
+    <Tab title="Chat Completions">
+        <OpenaiPromptCacheBreakpointChatCompletionsPy />
+    </Tab>
+    <Tab title="Responses API">
+        <OpenaiPromptCacheBreakpointResponsesPy />
+    </Tab>
+</Tabs>
+
+Breakpoints are supported on text, image, and file content blocks. You can also nest `prompt_cache_breakpoint` inside an `extras` dict if you prefer to keep the LangChain content block structure clean:
+
+<OpenaiPromptCacheBreakpointExtrasPy />
+
+### Request-level cache options
+
+<Note>
+Requires `langchain-openai>=1.3.5`. `prompt_cache_options` applies to GPT-5.6 and later model families.
+</Note>
+
+You can pass request-level prompt cache options using the `prompt_cache_options` parameter on the model or per invocation:
+
+- **`mode`**: `"implicit"` (default) or `"explicit"`. In `"implicit"` mode, OpenAI places a cache breakpoint on the latest message and also uses any explicit breakpoints you provide. In `"explicit"` mode, only your breakpoints are used for cache reads and writes. If the request has no explicit breakpoints, it does not use prompt caching.
+- **`ttl`**: Minimum cache lifetime for breakpoints written by the request. The only supported value is `"30m"`, which is also the default.
+
+<OpenaiPromptCacheOptionsPy />
+
+For models before the GPT-5.6 family, use `prompt_cache_retention` instead (`"in_memory"` or `"24h"`). That field is separate from `prompt_cache_options` and is deprecated on GPT-5.6 and later model families.
+
+### Cache write tokens
+
+When OpenAI writes new content to the prompt cache, it reports `cache_write_tokens` in the response. `ChatOpenAI` surfaces this as `cache_creation` in `input_token_details`:
+
+<OpenaiPromptCacheWriteTokensPy />
+
+On the `"priority"` and `"flex"` service tiers, these keys are prefixed with the tier name — for example, `"priority_cache_read"` and `"priority_cache_creation"`.
 
 ---
 

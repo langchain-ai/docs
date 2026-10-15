@@ -1,470 +1,631 @@
 ---
 title: Managed Deep Agents CLI reference
 sidebarTitle: CLI reference
-description: Reference for Managed Deep Agents CLI commands, project files, and deploy behavior.
+description: Reference for mda commands, project files, and deploy behavior.
 ---
 
-The `deepagents` CLI, installed from the `deepagents-cli` package, provides deployment tooling for [Managed Deep Agents](/langsmith/managed-deep-agents-overview). Use it to scaffold local agent projects, deploy them to LangSmith, manage Managed Deep Agent resources, and register MCP servers.
+import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
 
-<Note>
-Managed Deep Agents is in **private beta**, available on [LangSmith Cloud](/langsmith/cloud) in the US region only. [Join the waitlist](https://www.langchain.com/langsmith-managed-deep-agents-waitlist) to request access.
-</Note>
+The `mda` CLI compiles and deploys code-first [Managed Deep Agents](/langsmith/managed-deep-agents-overview).
 
-For the fastest end-to-end path, see the [quickstart](/langsmith/managed-deep-agents-quickstart). For workflow guides, see [Connect tools](/langsmith/managed-deep-agents-mcp), [Deploy an agent](/langsmith/managed-deep-agents-deploy), and [Run an agent](/langsmith/managed-deep-agents-invoke).
+:::python
+It is included with the `managed-deepagents` Python package.
+:::
 
-## Requirements
+:::js
+It is included with the `managed-deepagents` npm package.
+:::
 
-<Note>
-    Managed Deep Agents requires `deepagents-cli>=0.2.2`.
-</Note>
+<ManagedDeepAgentsPublicBetaNote />
 
-Install `deepagents-cli` with `uv` (preferred) or `pip`:
+For the fastest end-to-end path, see the [quickstart](/langsmith/managed-deep-agents-quickstart). For workflow guidance, see [Identity](/langsmith/managed-deep-agents-identity), [Memory](/langsmith/managed-deep-agents-memory), [Evals](/langsmith/managed-deep-agents-evals), [Custom tools](/langsmith/managed-deep-agents-tools), [Connections](/langsmith/managed-deep-agents-connections), [Custom middleware](/langsmith/managed-deep-agents-middleware), [Sandboxes](/langsmith/managed-deep-agents-sandboxes), [Channels](/langsmith/managed-deep-agents-channels), [Schedules](/langsmith/managed-deep-agents-schedules), and [Deploy an agent](/langsmith/managed-deep-agents-deploy).
 
-<CodeGroup>
+## Install
+
+`mda init` declares `managed-deepagents` as a project dependency, so run the `mda` binary from the project.
+
+:::python
 
 ```bash uv
-uv tool install "deepagents-cli>=0.2.2"
+uvx --from managed-deepagents mda init my-agent
+cd my-agent
+uv sync
+uv run mda --version
 ```
 
-```bash pip
-pip install -U "deepagents-cli>=0.2.2"
-```
+The package provides agent, identity, schedule, and sandbox authoring APIs with snake-case names, plus the `mda` console script.
+:::
 
+:::js
+
+<CodeGroup>
+    ```bash npm
+    npx managed-deepagents init my-agent
+    cd my-agent
+    npm install
+    npx mda --version
+    ```
+
+    ```bash pnpm
+    pnpm dlx managed-deepagents init my-agent
+    cd my-agent
+    pnpm install
+    pnpm exec mda --version
+    ```
+
+    ```bash bun
+    bunx managed-deepagents init my-agent
+    cd my-agent
+    bun install
+    bunx mda --version
+    ```
 </CodeGroup>
 
-To upgrade an existing `uv` install, run `uv tool upgrade deepagents-cli`.
+The package provides agent, identity, schedule, and sandbox authoring APIs.
+:::
 
-The CLI reads `LANGSMITH_API_KEY`. To create a key, see [Create an API key](/langsmith/create-account-api-key). To override the default endpoint, set `LANGSMITH_ENDPOINT`.
+## Authentication
 
-```bash
-export LANGSMITH_API_KEY="<LANGSMITH_API_KEY>"
+`mda deploy` reads API keys in this order:
+
+1. `LANGGRAPH_HOST_API_KEY`
+2. `LANGSMITH_API_KEY`
+3. `LANGCHAIN_API_KEY`
+
+The CLI reads those values from the project `.env` file first, then from the process environment. If no key is found in an interactive terminal, `mda deploy` prompts for a LangSmith API key and saves it to the project `.env` file.
+
+```text .env
+LANGSMITH_API_KEY=<LANGSMITH_API_KEY>
+OPENAI_API_KEY=<OPENAI_API_KEY>
 ```
 
-Project `.env` files can set API keys. Project `.env` files cannot set endpoint, proxy, or TLS environment variables for managed API requests. Set those overrides in your shell or in `~/.deepagents/.env`.
+To deploy with an organization-scoped key, set `LANGSMITH_WORKSPACE_ID` or pass `--workspace-id` to `mda deploy`.
+
+The LangSmith API key authenticates the deploy. The agent's model provider also needs credentials at runtime. Set the provider key in `.env`, export it in your shell, or configure it as a LangSmith workspace secret. For example, `openai:gpt-5.5` requires `OPENAI_API_KEY`.
+
+`mda deploy` forwards non-reserved `.env` entries, such as `OPENAI_API_KEY`, MCP tokens, and custom tool credentials, as hosted deployment secrets. Reserved platform variables, including `LANGSMITH_API_KEY`, `LANGGRAPH_HOST_API_KEY`, `LANGCHAIN_API_KEY`, and `LANGSMITH_WORKSPACE_ID`, are used for CLI authentication and deploy routing but are not uploaded as user-managed deployment secrets.
 
 ## Command overview
 
+:::python
 | Command | Use |
 | --- | --- |
-| `deepagents --help` | Show CLI help. |
-| `deepagents --version` | Show the installed `deepagents-cli` version. |
-| `deepagents init [name]` | Scaffold a new Managed Deep Agents project. |
-| `deepagents deploy` | Create or update a Managed Deep Agent from local project files. |
-| `deepagents agents list` | List Managed Deep Agents in the workspace. |
-| `deepagents agents get <agent_id>` | Inspect one Managed Deep Agent. |
-| `deepagents agents delete <agent_id>` | Delete one Managed Deep Agent. |
-| `deepagents mcp-servers list` | List registered workspace MCP servers. |
-| `deepagents mcp-servers add` | Register a workspace MCP server. |
-| `deepagents mcp-servers get <server>` | Inspect one MCP server with header values redacted. |
-| `deepagents mcp-servers tools <server>` | List a server's tools and print a `tools.json` snippet. |
-| `deepagents mcp-servers update <server>` | Update an MCP server URL, headers, or auth type. |
-| `deepagents mcp-servers delete <server>` | Delete one MCP server. |
-| `deepagents mcp-servers connect <server>` | Complete OAuth for an OAuth MCP server. |
+| `mda --help` | Show CLI help. |
+| `mda --version` | Show the installed CLI version. |
+| `mda init <name>` | Scaffold a Python Managed Deep Agents project. |
+| `mda build [path]` | Compile a project into a managed LangGraph app without deploying. |
+| `mda evals …` | Initialize a Harbor workspace and continue eval authoring in a coding agent. |
+| `mda dev [path]` | Compile a project and run it on the local LangGraph dev server. |
+| `mda connections …` | Manage authentication for tools and MCP connectors. |
+| `mda deploy [path]` | Compile, sync Context Hub context, upload, and deploy to LangSmith. |
+| `mda channels init slack` | Add a Slack channel declaration to the current project. |
+| `mda logs [path]` | Tail Agent Server logs for a deployed agent. |
+| `mda delete [path]` / `mda destroy [path]` | Delete a deployed agent and the LangSmith resources it created. |
+:::
 
-Bare `deepagents` invocations do not start an interactive REPL. Install and run [Deep Agents Code](/oss/deepagents/code/overview) for interactive coding sessions.
+:::js
+| Command | Use |
+| --- | --- |
+| `mda --help` | Show CLI help. |
+| `mda --version` | Show the installed CLI version. |
+| `mda init <name>` | Scaffold a TypeScript Managed Deep Agents project. |
+| `mda build [path]` | Compile a project into a managed LangGraph app without deploying. |
+| `mda evals …` | Initialize a Harbor workspace and continue eval authoring in a coding agent. |
+| `mda dev [path]` | Compile a project and run it on the local LangGraph dev server. |
+| `mda connections …` | Manage authentication for tools and MCP connectors. |
+| `mda deploy [path]` | Compile, sync Context Hub context, upload, and deploy to LangSmith. |
+| `mda channels init slack` | Add a Slack channel declaration to the current project. |
+| `mda logs [path]` | Tail Agent Server logs for a deployed agent. |
+| `mda delete [path]` / `mda destroy [path]` | Delete a deployed agent and the LangSmith resources it created. |
+:::
 
 ## Initialize projects
 
-Use `deepagents init` to create a project directory:
+Use `mda init` to create a new project directory:
 
+:::python
 ```bash
-deepagents init my-agent
+uvx --from managed-deepagents mda init my-agent
 ```
+:::
 
-If you omit the project name, the CLI prompts for it:
+:::js
+<CodeGroup>
+    ```bash npm
+    npx managed-deepagents init my-agent
+    ```
 
-```bash
-deepagents init
-```
+    ```bash pnpm
+    pnpm dlx managed-deepagents init my-agent
+    ```
+
+    ```bash bun
+    bunx managed-deepagents init my-agent
+    ```
+</CodeGroup>
+:::
 
 | Argument or flag | Use |
 | --- | --- |
-| `name` | Project directory name. If omitted, the CLI prompts for a name. |
-| `--force` | Overwrite files in an existing project directory. |
-| `-h`, `--help` | Show command help. |
+| `name` | Required project directory name. The command fails if the destination already exists. |
+| `--instructions TEXT` | System prompt to write into `instructions.md`. |
+| `--instructions-file PATH` | Read the system prompt for `instructions.md` from a file, or from stdin when set to `-`. |
+| `--identity` | Add managed authentication with user-owned threads. |
+| `--memory agent\|none` | Optionally write a root memory declaration. If omitted, no memory file is created and durable memory is off. |
+| `--model SPEC` | Model the agent runs on, as `provider:model`. |
+| `--no-sandbox` | Leave out the managed sandbox declaration. |
+| `--channel slack` | Initialize the agent with a Slack channel declaration. Repeatable; `--channels` is an alias. |
 
-The `init` command creates the following files in the project directory:
+To include Slack in a new project:
 
-| File or directory | Description |
+:::python
+```bash
+uvx --from managed-deepagents mda init my-agent --channel slack
+```
+:::
+
+:::js
+<CodeGroup>
+    ```bash npm
+    npx managed-deepagents init my-agent --channel slack
+    ```
+
+    ```bash pnpm
+    pnpm dlx managed-deepagents init my-agent --channel slack
+    ```
+
+    ```bash bun
+    bunx managed-deepagents init my-agent --channel slack
+    ```
+</CodeGroup>
+:::
+
+:::python
+The scaffold language comes from the package you run, not from the current directory: the PyPI package always writes a Python project. A CLI installed from PyPI refuses a TypeScript project.
+:::
+
+:::js
+The scaffold language comes from the package you run, not from the current directory: the npm package always writes a TypeScript project. A CLI installed from npm refuses a Python project.
+:::
+
+The scaffold creates:
+
+:::python
+| File | Description |
 | --- | --- |
-| `agent.json` | Agent metadata, model, backend, permissions, and optional target `agent_id`. See the [agent.json](#agent-json) section. |
-| `AGENTS.md` | Main agent instructions. See the [AGENTS.md](#agents-md) section. |
-| `tools.json` | Empty tool configuration. Add MCP-backed tools after registering a server. See the [tools.json](#tools-json) section. |
-| `skills/example-skill/` | Example skill directory. Edit, replace, or delete it. See the [skills](#skills) section. |
-| `subagents/researcher/` | Example subagent directory. Edit, replace, or delete it. See the [subagents](#subagents) section. |
-| `.gitignore` | Excludes local `.env` files. |
+| `agent.py` | Named `agent` export from `define_deep_agent(...)`. |
+| `instructions.md` | Managed system prompt. |
+| `pyproject.toml` | Minimal language-specific manifest. |
+| `README.md` | Local project instructions. |
+| `.env` | Deploy auth and runtime secrets. Do not commit real secrets. |
+| `.gitignore` | Ignores `.env`, `.env.*`, `.mda/`, and dependency caches. |
+:::
 
-## Deploy projects
-
-Run `deepagents deploy` from a project directory:
-
-```bash
-deepagents deploy
-```
-
-The first deploy creates a Managed Deep Agent. Later deploys update the same agent. Deploy state is user-local and stored outside your project, so files committed to the repository do not change which agent you deploy to.
-
-By default, deploy uploads the project, polls the agent health endpoint, and prints the agent name, ID, short revision, agent URL, and a post-deploy MCP health check. Use `--detach` to skip polling and exit immediately after create or update.
-
-| Flag | Use |
+:::js
+| File | Description |
 | --- | --- |
-| `--dir DIR` | Project directory. Defaults to the current working directory. |
-| `--dry-run` | Print the agent payload and managed file tree without sending a request. |
-| `--detach` | Exit after create or update without polling the agent health endpoint. |
-| `--reset` | Discard local deploy state and create a fresh agent. Cannot be used when `agent.json` declares `agent_id`. |
-| `--yes` | Confirm target-agent updates without prompting. |
-| `-h`, `--help` | Show command help. |
+| `agent.ts` | Named `agent` export from `defineDeepAgent(...)`. |
+| `instructions.md` | Managed system prompt. |
+| `package.json` | Minimal language-specific manifest. |
+| `README.md` | Local project instructions. |
+| `.env` | Deploy auth and runtime secrets. Do not commit real secrets. |
+| `.gitignore` | Ignores `.env`, `.env.*`, `.mda/`, and dependency caches. |
+:::
 
-`deepagents deploy --dry-run` prints JSON with:
+Eval tasks are opt-in and are not created by `mda init`. Run `mda evals init -i` from the project root to initialize the Harbor workspace and continue in a coding agent with the `eval-engineering` skill.
 
-| Field | Description |
+## Initialize a Slack channel
+
+Run the following command from the root of an existing managed deep agent project:
+
+:::python
+```bash
+uv run mda channels init slack
+```
+:::
+
+:::js
+<CodeGroup>
+    ```bash npm
+    npx mda channels init slack
+    ```
+
+    ```bash pnpm
+    pnpm exec mda channels init slack
+    ```
+
+    ```bash bun
+    bunx mda channels init slack
+    ```
+</CodeGroup>
+:::
+
+The command creates a Slack channel declaration in the `channels/` directory. The next `mda deploy` sets up the resources the agent needs to appear in Slack. For the complete workflow, see [Connect a Managed Deep Agent to Slack](/langsmith/managed-deep-agents-channels-slack).
+
+## Build projects
+
+Use `mda build` to compile a project into a managed LangGraph app without deploying it:
+
+:::python
+```bash
+uv run mda build
+```
+:::
+
+:::js
+<CodeGroup>
+    ```bash npm
+    npx mda build
+    ```
+
+    ```bash pnpm
+    pnpm exec mda build
+    ```
+
+    ```bash bun
+    bunx mda build
+    ```
+</CodeGroup>
+:::
+
+| Argument or flag | Use |
 | --- | --- |
-| `agent_payload` | The create or update payload for the Managed Deep Agent resource. |
-| `directory_files` | The managed file tree that deploy syncs to Context Hub. |
+| `path` | Project directory. Defaults to the current directory. |
+| `--out OUT` | Output directory for the compiled app. Defaults to `<path>/.mda/build`. The directory is emptied before the build, so it must be missing, empty, or a directory a previous build wrote. |
 
-### Target existing agents
+## Evaluate projects
 
-For shared repositories or intentional updates to an existing Managed Deep Agent, declare the target in `agent.json`:
+Use `mda evals init` to initialize a Harbor workspace. Use the interactive handoff to develop complete tasks with a coding agent and the `eval-engineering` skill.
 
-```json
-{
-  "name": "my-agent",
-  "agent_id": "agent-uuid",
-  "model": "openai:gpt-5.5",
-  "backend": {
-    "type": "state"
-  }
-}
-```
-
-On first use, the CLI asks you to confirm before updating that remote agent. Use `--yes` to skip the prompt.
-
-### Validate the project before deploy
-
-Deploy fails before sending a request when the project is malformed. Common validation rules include:
-
-- `agent.json` and `AGENTS.md` are required.
-- `agent.json` must contain a non-empty `name`.
-- `backend.sandbox_config` requires `backend.type` to be `sandbox`.
-- `backend.sandbox_config.scope` must be `thread` or `agent`.
-- `backend.sandbox_config.policy_ids` must be an array of strings.
-- `backend.sandbox_config.idle_ttl_seconds` and `backend.sandbox_config.delete_after_stop_seconds` must be integers.
-- Symlinks are not allowed in deploy project inputs.
-- `tools.json` must contain a `tools` array.
-- Each tool in `tools.json` must include `name` and `mcp_server_url`.
-- Skill files require YAML frontmatter with `name` and `description`.
-- Subagent directories require `agent.json` and `AGENTS.md`.
-- Legacy `deepagents.toml` and `mcp.json` files produce migration hints instead of being deployed.
-
-Before deploying, the CLI also validates referenced MCP server URLs. If a server URL is not registered, deploy fails with a command hint to add it. If an OAuth server is registered but the caller cannot invoke it, deploy fails with a hint to run `deepagents mcp-servers connect <id|name|url>`.
-
-## Manage agents
-
-List agents:
-
+:::python
 ```bash
-deepagents agents list
+uv run mda evals init -i
 ```
+:::
 
-The command prints tab-separated rows with agent ID, agent name, and update time:
+:::js
+<CodeGroup>
+    ```bash npm
+    npx mda evals init -i
+    ```
 
-```text
-e2de7a35-9dda-462b-b982-9e57051993bc\tmy-agent\t2026-06-01T12:00:00Z
-```
+    ```bash pnpm
+    pnpm exec mda evals init -i
+    ```
 
-Inspect an agent:
+    ```bash bun
+    bunx mda evals init -i
+    ```
+</CodeGroup>
+:::
 
-```bash
-deepagents agents get <agent_id>
-```
-
-Include managed files in the response:
-
-```bash
-deepagents agents get <agent_id> --include-files
-```
-
-| Flag | Use |
+| Command or flag | Use |
 | --- | --- |
-| `--include-files` | Include managed files in the response. |
-| `-h`, `--help` | Show command help. |
+| `mda evals init` | Create `evals/harbor-job.json` when missing and generate the Harbor adapter and runtime settings under `.mda/evals/`. Run this command from the project root. |
+| `-i`, `--interactive` | Start a detected coding agent with the eval-engineering prompt, or copy the prompt for another agent. |
 
-Delete an agent:
+The handoff asks the coding agent to install the `eval-engineering` skill, inspect the managed agent, and write complete Harbor tasks under `evals/<task>/`. It also includes the pinned Harbor command that loads the MDA job plugin and LangSmith plugin.
 
+`mda evals compile` is an internal command used by the Harbor job plugin. The plugin runs it when a Harbor job starts, so you do not compile eval artifacts separately.
+
+For workflow guidance, see [Evals](/langsmith/managed-deep-agents-evals).
+
+## Develop locally
+
+Use `mda dev` to compile a project and run the local LangGraph dev server:
+
+:::python
 ```bash
-deepagents agents delete <agent_id>
+uv run mda dev
 ```
+:::
 
-The delete command asks for confirmation. Skip the prompt with `--yes`:
+:::js
+<CodeGroup>
+    ```bash npm
+    npx mda dev
+    ```
 
-```bash
-deepagents agents delete <agent_id> --yes
-```
+    ```bash pnpm
+    pnpm exec mda dev
+    ```
 
-| Flag | Use |
+    ```bash bun
+    bunx mda dev
+    ```
+</CodeGroup>
+:::
+
+| Argument or flag | Use |
 | --- | --- |
-| `--yes` | Skip the confirmation prompt. |
-| `-h`, `--help` | Show command help. |
+| `path` | Project directory. Defaults to the current directory. |
+| `--port PORT` | Forward a port to the LangGraph dev server. |
+| `--hostname HOSTNAME` | Forward a host to the LangGraph dev server. |
+| `--no-browser` | Prevent the dev server from opening Studio in a browser when it starts. |
+| `--no-reload` | Disable the dev server's hot reload. |
 
-## Manage MCP servers
+`mda dev` compiles into `.mda/build`, then starts the language-specific LangGraph dev server from that directory:
 
-For a practical setup guide, see [Connect tools](/langsmith/managed-deep-agents-mcp).
+:::python
+| Project language | Dev server command |
+| --- | --- |
+| Python | `uv run --with langgraph-cli[inmem]>=0.4.30 langgraph dev` |
+
+Install `uv` before running `mda dev`. The CLI resolves the local LangGraph dev server automatically, so you do not need to install `langgraph-cli[inmem]` yourself.
+:::
+
+:::js
+| Project language | Dev server command |
+| --- | --- |
+| TypeScript | `npx --yes @langchain/langgraph-cli dev` |
+:::
+
+When a sandbox is configured, `mda dev` tries the configured provider. If provider credentials are unavailable or provider creation fails, it falls back to a local temp-directory sandbox and prints the chosen path.
+
+For local development, `mda dev` stages the project `.env` file into `.mda/build/.env` so LangGraph can load model provider keys and other runtime credentials.
+
+## Manage connections
+
+A connection links a managed deep agent to an external service. The credential lives in the LangSmith workspace, so it rotates without a redeploy, and a user-owned connection resolves the credential of whoever called the agent. Tools and MCP connectors resolve connections at runtime with `connections.get(...)`.
+
+Create connections in one of three modes: opaque secret (fixed API key), general OAuth (BYOT app from the catalog or custom endpoints), or MCP OAuth (discover and register from an MCP server URL). Use `mda connections` to manage these credentials in the current workspace.
 
 | Command | Use |
 | --- | --- |
-| `deepagents mcp-servers list` | List MCP server IDs, names, and URLs. |
-| `deepagents mcp-servers add --url URL` | Register a static-header MCP server. |
-| `deepagents mcp-servers add --url URL --auth-type oauth` | Register an OAuth MCP server. |
-| `deepagents mcp-servers get <server>` | Print one MCP server as JSON with header values redacted. |
-| `deepagents mcp-servers tools <server>` | List a server's tools and print a `tools.json` snippet. |
-| `deepagents mcp-servers update <server>` | Update server URL, headers, or auth type. |
-| `deepagents mcp-servers delete <server>` | Delete one MCP server. |
-| `deepagents mcp-servers connect <server>` | Start or reuse OAuth authorization for one MCP server. |
+| `mda connections catalog` | List services with preconfigured OAuth settings. |
+| `mda connections create <slug>` | Create an opaque secret, general OAuth, or MCP OAuth connection. |
+| `mda connections list` | List connection metadata for the workspace. |
+| `mda connections get <slug>` | Show metadata for one connection. |
+| `mda connections delete <slug>` | Delete a connection and its stored material. |
 
-Commands that take `<server>` accept an MCP server ID, exact name, or URL. Non-ID values are resolved against `deepagents mcp-servers list`; URL matching ignores case and trailing slashes. If a name or URL matches more than one server, re-run the command with the server ID.
+The first argument to `mda connections create` is a slug, which is your name for the connection and the name code passes to `connections.get(...)`. Provider names go to `--oauth`.
 
-### Add MCP servers
+The OAuth catalog saves you from looking up a provider's OAuth settings. When you pass a listed service to `--oauth`, the CLI supplies its authorization URL, token URL, token endpoint authentication method, authorization parameters, and default scopes, so you provide only your client ID and client secret. The catalog does not limit which providers you can use: for anything else, pass `--authorize-url` and `--token-url`. Catalog names include `github`, `google`, `linear`, `slack`, `atlassian`, and `notion-api`:
 
-Register a static-header server:
-
+:::python
 ```bash
-deepagents mcp-servers add \
-  --url https://example.com/mcp \
-  --name my-tools \
-  --header Authorization="Bearer <token>"
+uv run mda connections catalog
 ```
+:::
+
+:::js
+<CodeGroup>
+    ```bash npm
+    npx mda connections catalog
+    ```
+
+    ```bash pnpm
+    pnpm exec mda connections catalog
+    ```
+
+    ```bash bun
+    bunx mda connections catalog
+    ```
+</CodeGroup>
+:::
+
+Create an agent-owned API key for a custom Tavily tool:
+
+:::python
+```bash
+uv run mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+```
+:::
+
+:::js
+<CodeGroup>
+    ```bash npm
+    npx mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+    ```
+
+    ```bash pnpm
+    pnpm exec mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+    ```
+
+    ```bash bun
+    bunx mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+    ```
+</CodeGroup>
+:::
+
+The following flags control connection creation:
 
 | Flag | Use |
 | --- | --- |
-| `--url URL` | MCP server URL. Required. |
-| `--name NAME` | Display name. Defaults to the URL hostname. |
-| `--header KEY=VALUE` | Static credential header. Repeat for multiple headers. |
-| `--auth-type headers` | Static-header auth. This is the default. |
-| `--auth-type oauth` | OAuth auth. Cannot be combined with `--header`. |
-| `--connect` | Start OAuth connection after creating an OAuth MCP server. Requires `--auth-type oauth`. |
-| `--no-tools` | Skip best-effort tool listing after registration. |
+| `--project PATH` | Set the project directory. Defaults to the current directory. |
+| `--workspace-id WORKSPACE_ID` | Override `LANGSMITH_WORKSPACE_ID`. |
+| `--secret-from-env VAR` | Read a fixed value or OAuth client secret from the shell or project `.env`. |
+| `--secret-from-file PATH` | Read a fixed value or OAuth client secret from a file. |
+| `--oauth SERVICE` | Use the preconfigured settings for a service in `mda connections catalog`. |
+| `--grant-type GRANT` | Set the OAuth grant to `authorization_code` or `client_credentials`. Defaults to `authorization_code`. |
+| `--client-id CLIENT_ID` | Set the OAuth client ID. |
+| `--auth-method METHOD` | Set the token endpoint method to `client_secret_basic`, `client_secret_post`, or `none`. |
+| `--scope SCOPE` | Replace the provider's default scopes. Repeat for each scope. |
+| `--allowed-scope SCOPE` | Set the maximum scope that an authorization flow can request. Repeat for each scope. |
+| `--authorization-param KEY=VALUE` | Add an OAuth authorization query parameter. Repeat for each parameter. |
+| `--token-param KEY=VALUE` | Add a parameter to the OAuth token request. Repeat for each parameter. |
+| `--authorize-url URL` | Set a custom OAuth authorization endpoint. Requires `--token-url`. |
+| `--token-url URL` | Set a custom OAuth token endpoint. Requires `--authorize-url` for the `authorization_code` grant. |
+| `--mcp URL` | Create an MCP OAuth connection by discovering OAuth from the MCP server URL. |
+| `--authorize` | Sign in to the account the deployed agent uses, storing an agent-owned OAuth grant. Requires OAuth flags and a project directory. |
 
-Register an OAuth MCP server:
+With no value flags and no `--oauth` endpoints, `mda connections create <slug>` infers MCP OAuth when that slug matches exactly one user-owned MCP connection in the project.
 
+Use `--json` with `catalog`, `list`, or `get` for machine-readable output. Use `--yes` with `delete` to skip the confirmation prompt.
+
+For credential owners, create modes, caller identity, and runtime examples, see [Manage connections](/langsmith/managed-deep-agents-connections).
+
+## Deploy projects
+
+Use `mda deploy` to compile and deploy a project to LangSmith:
+
+:::python
 ```bash
-deepagents mcp-servers add \
-  --url https://example.com/mcp \
-  --name github-tools \
-  --auth-type oauth \
-  --connect
+uv run mda deploy
 ```
+:::
 
-OAuth `add` supports the same OAuth flags as [`connect`](/langsmith/managed-deep-agents-cli#connect-oauth-mcp-servers): `--scope`, `--force-new`, `--timeout`, and `--no-browser`.
+:::js
+<CodeGroup>
+    ```bash npm
+    npx mda deploy
+    ```
 
-### List MCP server tools
+    ```bash pnpm
+    pnpm exec mda deploy
+    ```
 
-List a registered server's tools:
+    ```bash bun
+    bunx mda deploy
+    ```
+</CodeGroup>
+:::
 
+:::python
+| Argument or flag | Use |
+| --- | --- |
+| `path` | Project directory. Defaults to the current directory. |
+| `--name NAME` | Deployment name. Defaults to the agent `name` from `define_deep_agent`. |
+| `--deployment-type dev\|prod` | Deployment type when creating a deployment. Defaults to `dev`. |
+| `--workspace-id WORKSPACE_ID` | Workspace ID to deploy into. Overrides `LANGSMITH_WORKSPACE_ID`. |
+| `--context-strategy overwrite\|keep-hub` | Resolve Context Hub conflicts when `instructions.md` or `skills/` changed in Hub since the last sync. Required in non-interactive shells. See [Context Hub](/langsmith/managed-deep-agents-context-hub#source-of-truth). |
+| `--no-wait` | Trigger the remote build and exit without polling for deployment completion. |
+:::
+
+:::js
+| Argument or flag | Use |
+| --- | --- |
+| `path` | Project directory. Defaults to the current directory. |
+| `--name NAME` | Deployment name. Defaults to the agent `name` from `defineDeepAgent`. |
+| `--deployment-type dev\|prod` | Deployment type when creating a deployment. Defaults to `dev`. |
+| `--workspace-id WORKSPACE_ID` | Workspace ID to deploy into. Overrides `LANGSMITH_WORKSPACE_ID`. |
+| `--context-strategy overwrite\|keep-hub` | Resolve Context Hub conflicts when `instructions.md` or `skills/` changed in Hub since the last sync. Required in non-interactive shells. See [Context Hub](/langsmith/managed-deep-agents-context-hub#source-of-truth). |
+| `--no-wait` | Trigger the remote build and exit without polling for deployment completion. |
+:::
+
+Deploy runs these steps:
+
+1. Validate the project directory and load the agent entry file.
+2. Resolve the LangSmith API key and optional workspace ID.
+3. Collect non-reserved `.env` values as hosted deployment secrets.
+4. Verify the model provider API key is available from `.env`, the shell environment, or LangSmith workspace secrets.
+5. Sync deploy-owned context to Context Hub.
+6. Compile the project into `.mda/build` and extract optional `schedules/` and `channels/` declarations.
+7. Create or find a LangSmith hosted deployment by name.
+8. Archive the build, upload it, and trigger a remote build.
+9. Poll the revision until it reaches `DEPLOYED` unless `--no-wait` is set.
+10. Reconcile the managed LangSmith cron jobs for schedules unless `--no-wait` is set.
+11. Provision the declared Slack channel. If Slack authorization or workspace approval is required, display the action and continue after you complete it.
+
+A project with a Slack channel cannot use `--no-wait` because Slack provisioning requires the deployed Agent Server URL. For the complete workflow, see [Connect a Managed Deep Agent to Slack](/langsmith/managed-deep-agents-channels-slack).
+
+On success, the CLI prints the LangSmith deployment dashboard URL. For secrets routing and deploy tips, see [Deploy an agent](/langsmith/managed-deep-agents-deploy).
+
+## Read deployment logs
+
+Use `mda logs` to tail Agent Server logs for a deployed agent:
+
+:::python
 ```bash
-deepagents mcp-servers tools <id|name|url>
+uv run mda logs
 ```
+:::
 
-The command prints each tool name and the first line of its description, then prints a paste-ready `tools.json` snippet. For OAuth servers, connect first so the MCP server record includes the caller's `oauth_provider_id`.
+:::js
+<CodeGroup>
+    ```bash npm
+    npx mda logs
+    ```
 
-### Update MCP servers
+    ```bash pnpm
+    pnpm exec mda logs
+    ```
 
-Update a server URL or headers:
+    ```bash bun
+    bunx mda logs
+    ```
+</CodeGroup>
+:::
 
+| Argument or flag | Use |
+| --- | --- |
+| `path` | Project directory. Defaults to the current directory. |
+| `--name NAME` | Deployment name. Defaults to the agent `name` from the project. |
+| `--lines LINES` | Number of recent log lines to fetch. Defaults to `1000`. |
+| `--level LEVEL` | Only show entries at or above the given severity: `debug`, `info`, `warning`, `error`, or `critical`. |
+| `--follow` | Keep streaming new logs. This is the default in an interactive terminal. |
+| `--no-follow` | Print recent logs and exit. This is the default when output is piped. |
+| `--workspace-id WORKSPACE_ID` | Workspace ID to read from. Overrides `LANGSMITH_WORKSPACE_ID`. |
+
+## Delete deployments
+
+Use `mda delete` to delete a deployed Managed Deep Agent and the LangSmith resources it created. `mda destroy` is an alias.
+
+:::python
 ```bash
-deepagents mcp-servers update <id|name|url> \
-  --url https://new.example.com/mcp \
-  --header Authorization="Bearer <token>"
+uv run mda delete
 ```
+:::
 
-| Flag | Use |
+:::js
+<CodeGroup>
+    ```bash npm
+    npx mda delete
+    ```
+
+    ```bash pnpm
+    pnpm exec mda delete
+    ```
+
+    ```bash bun
+    bunx mda delete
+    ```
+</CodeGroup>
+:::
+
+:::python
+| Argument or flag | Use |
 | --- | --- |
-| `--url URL` | Replace the server URL. |
-| `--header KEY=VALUE` | Replace stored headers with the provided header set. Repeat for multiple headers. |
-| `--clear-headers` | Clear stored headers. Cannot be combined with `--header`. |
-| `--auth-type headers` | Set the auth type to static headers. |
+| `path` | Project directory. Defaults to the current directory. |
+| `--name NAME` | Deployment name. Defaults to the agent `name` from `define_deep_agent`. |
+| `--workspace-id WORKSPACE_ID` | Workspace ID the deployment lives in. Overrides `LANGSMITH_WORKSPACE_ID`. |
+| `--yes` | Delete without asking for confirmation. |
+:::
 
-The command requires at least one change flag.
-
-Delete an MCP server:
-
-```bash
-deepagents mcp-servers delete <id|name|url>
-```
-
-The delete command asks for confirmation. Skip the prompt with `--yes`:
-
-```bash
-deepagents mcp-servers delete <id|name|url> --yes
-```
-
-### Connect OAuth MCP servers
-
-Start or reuse OAuth authorization:
-
-```bash
-deepagents mcp-servers connect <id|name|url>
-```
-
-| Flag | Use |
+:::js
+| Argument or flag | Use |
 | --- | --- |
-| `--scope SCOPE` | OAuth scope to request. Repeat for multiple scopes. |
-| `--force-new` | Create a fresh OAuth session instead of reusing an existing token. |
-| `--timeout SECONDS` | Seconds to wait for OAuth completion. Use `0` to skip polling. Defaults to `300`. |
-| `--no-browser` | Print the verification URL without opening a browser. |
+| `path` | Project directory. Defaults to the current directory. |
+| `--name NAME` | Deployment name. Defaults to the agent `name` from `defineDeepAgent`. |
+| `--workspace-id WORKSPACE_ID` | Workspace ID the deployment lives in. Overrides `LANGSMITH_WORKSPACE_ID`. |
+| `--yes` | Delete without asking for confirmation. |
+:::
 
-If authorization is pending, the CLI prints the verification URL. When `--timeout 0` is set, the CLI starts authorization and exits. Re-run `deepagents mcp-servers connect <id|name|url>` later to complete or reuse the connection.
+## Troubleshooting
 
-## Project file reference
-
-Managed Deep Agents projects use this layout:
-
-```text
-my-agent/
-  agent.json
-  AGENTS.md
-  tools.json
-  skills/<name>/SKILL.md
-  skills/<name>/<file>
-  subagents/<name>/agent.json
-  subagents/<name>/AGENTS.md
-  subagents/<name>/tools.json
-  subagents/<name>/skills/<skill-name>/SKILL.md
-```
-
-### agent.json
-
-`agent.json` configures the Managed Deep Agent resource:
-
-```json
-{
-  "name": "my-agent",
-  "description": "A managed deep agent.",
-  "model": "openai:gpt-5.5",
-  "backend": {
-    "type": "state"
-  }
-}
-```
-
-| Field | Description |
+:::python
+| Symptom | Cause and fix |
 | --- | --- |
-| `name` | Required non-empty agent name. |
-| `description` | Optional agent description. |
-| `agent_id` | Optional existing Managed Deep Agent ID to update. |
-| `model` | Optional shorthand model identifier in `{provider}:{model_id}` form. |
-| `runtime` | Optional API-shaped runtime object. Use either `model` or `runtime`, not both. |
-| `backend` | Optional backend configuration. |
-| `permissions` | Optional identity, visibility, and tenant access settings. |
-| `extras` | Optional extra metadata passed through to the API. |
+| `project root ... is not a directory` | Pass a directory path to `mda dev` or `mda deploy`. |
+| `no agent entry file found` | Add `agent.py` at the project root. |
+| `mda dev` cannot find `uv` | Install `uv` so `mda dev` can resolve the local LangGraph dev server. |
+| `No LangSmith API key found` | Set `LANGSMITH_API_KEY` or add it to the project `.env`. |
+| Deploy fails with 401 or 403 | Confirm the API key belongs to a workspace with deployments access. See [Pricing plans](/langsmith/pricing-plans). |
+| Deploy reports a missing model provider API key | Add the provider key, such as `OPENAI_API_KEY`, to `.env`, export it in your shell, or configure it as a LangSmith workspace secret. |
+| Deploy reports a Context Hub conflict | `instructions.md` or `skills/` changed in Context Hub since the last sync, or the repo changed during sync. In an interactive terminal, answer the overwrite prompt. In a non-interactive shell, re-run with `--context-strategy overwrite` or `--context-strategy keep-hub`. See [Context Hub](/langsmith/managed-deep-agents-context-hub#source-of-truth). |
+| The build exceeds 200 MB | Remove generated artifacts or large files from the project before deploying. |
+| Deployment reaches `BUILD_FAILED` or `DEPLOY_FAILED` | Open the printed deployment URL in LangSmith and inspect the revision logs. |
+:::
 
-### Configure the backend
-
-Managed Deep Agents projects generated by `deepagents-cli>=0.2.2` use the `state` backend. Use a [LangSmith sandbox](/langsmith/sandboxes) backend when the agent needs an isolated environment for code execution, filesystem work, or long-running tasks.
-
-| Backend type | Use for |
+:::js
+| Symptom | Cause and fix |
 | --- | --- |
-| `state` | Use no sandbox-specific backend behavior. |
-| `sandbox` with `sandbox_config.scope: "thread"` | Scope LangSmith sandbox resources to each thread. |
-| `sandbox` with `sandbox_config.scope: "agent"` | Scope LangSmith sandbox resources to the agent. |
-
-Sandbox backends can include optional sandbox settings:
-
-```json
-{
-  "backend": {
-    "type": "sandbox",
-    "sandbox_config": {
-      "scope": "thread",
-      "policy_ids": ["policy-id"],
-      "idle_ttl_seconds": 900,
-      "delete_after_stop_seconds": 300
-    }
-  }
-}
-```
-
-`backend.sandbox_config` is valid only when `backend.type` is `sandbox`. For standalone sandbox features such as snapshots, service URLs, permissions, CLI commands, and SDK usage, see the [LangSmith sandboxes overview](/langsmith/sandboxes).
-
-| Field | Description |
-| --- | --- |
-| `scope` | Sandbox scope. Use `thread` for one sandbox per thread or `agent` for one sandbox shared by the agent. |
-| `policy_ids` | Array of sandbox policy IDs. |
-| `idle_ttl_seconds` | Integer idle timeout. |
-| `delete_after_stop_seconds` | Integer deletion delay after stop. |
-
-### Configure permissions
-
-The optional `permissions` field in `agent.json` sets identity, visibility, and tenant access. Supported values are:
-
-| Field | Values |
-| --- | --- |
-| `identity` | `personal`, `shared` |
-| `visibility` | `tenant`, `user` |
-| `tenant_access_level` | `read`, `run`, `write` |
-
-### AGENTS.md
-
-`AGENTS.md` contains the main agent instructions. The CLI sends this content as the agent system prompt and stores it in the managed file tree.
-
-### tools.json
-
-`tools.json` configures MCP-backed tools. `deepagents init` creates this file with an empty `tools` array. Add tool entries after registering an MCP server:
-
-```json
-{
-  "tools": [
-    {
-      "name": "example_tool",
-      "mcp_server_url": "https://example.com/mcp",
-      "mcp_server_name": "my-tools",
-      "display_name": "example_tool"
-    }
-  ],
-  "interrupt_config": {
-    "https://example.com/mcp::example_tool": true
-  }
-}
-```
-
-Each tool requires `name` and `mcp_server_url`. `mcp_server_name` and `display_name` are optional. `interrupt_config` is optional and must be an object when present. Key each interrupt entry by `"{mcp_server_url}::{tool_name}"`. Additional `::{mcp_server_name}` components are accepted for compatibility.
-
-### skills
-
-Each skill lives under `skills/<name>/SKILL.md` and requires YAML frontmatter:
-
-```mdx
----
-name: summarize
-description: Summarize text into a one-paragraph summary.
----
-
-# Summarize
-
-Given a text, produce a one-paragraph summary.
-```
-
-The CLI recursively includes all other files in the skill directory, excluding hidden paths.
-
-### subagents
-
-Each subagent lives under `subagents/<name>/` and requires:
-
-| File | Description |
-| --- | --- |
-| `agent.json` | Subagent metadata. Supports `description` and `model`. |
-| `AGENTS.md` | Subagent instructions. |
-| `tools.json` | Optional MCP-backed tools for the subagent. |
-| `skills/` | Optional subagent-local skills. |
-
-Example subagent `agent.json`:
-
-```json
-{
-  "description": "Researches a topic.",
-  "model": "openai:gpt-5.5"
-}
-```
-
-The legacy `model_id` key is still accepted in local subagent files, but new projects should use `model`. The REST API `SubagentSpec` uses `model_id`.
-
-Subagent names come from directory names. Names are checked case insensitively for duplicates.
+| `project root ... is not a directory` | Pass a directory path to `mda dev` or `mda deploy`. |
+| `no agent entry file found` | Add `agent.ts` or `agent.tsx` at the project root. |
+| `No LangSmith API key found` | Set `LANGSMITH_API_KEY` or add it to the project `.env`. |
+| Deploy fails with 401 or 403 | Confirm the API key belongs to a workspace with deployments access. See [Pricing plans](/langsmith/pricing-plans). |
+| Deploy reports a missing model provider API key | Add the provider key, such as `OPENAI_API_KEY`, to `.env`, export it in your shell, or configure it as a LangSmith workspace secret. |
+| Deploy reports a Context Hub conflict | `instructions.md` or `skills/` changed in Context Hub since the last sync, or the repo changed during sync. In an interactive terminal, answer the overwrite prompt. In a non-interactive shell, re-run with `--context-strategy overwrite` or `--context-strategy keep-hub`. See [Context Hub](/langsmith/managed-deep-agents-context-hub#source-of-truth). |
+| The build exceeds 200 MB | Remove generated artifacts or large files from the project before deploying. |
+| Deployment reaches `BUILD_FAILED` or `DEPLOY_FAILED` | Open the printed deployment URL in LangSmith and inspect the revision logs. |
+:::

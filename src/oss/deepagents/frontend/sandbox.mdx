@@ -17,6 +17,9 @@ providers, lifecycle scoping, seeding files, secrets, deployment, and production
 
 import { PatternEmbed } from "/snippets/pattern-embed.jsx";
 import FrontendSandboxThreadBackendPy from "/snippets/code-samples/frontend-sandbox-thread-backend-py.mdx";
+import FrontendSandboxUtilsJs from "/snippets/code-samples/api/frontend-sandbox-utils-js.mdx";
+import FrontendSandboxAgentJs from "/snippets/code-samples/frontend-sandbox-agent-js.mdx";
+import FrontendSandboxDetectChangesJs from "/snippets/code-samples/frontend-sandbox-detect-changes-js.mdx";
 
 <PatternEmbed pattern="deep-agent-ide" minHeight={700} />
 
@@ -24,13 +27,25 @@ import FrontendSandboxThreadBackendPy from "/snippets/code-samples/frontend-sand
 
 This setup has three parts:
 
+:::python
+
+1. **Deep agent with a sandbox backend:** The agent gets filesystem tools
+   (`read_file`, `write_file`, `edit_file`, `delete`, `execute`) automatically
+   from the sandbox
+
+:::
+
+:::js
+
 1. **Deep agent with a sandbox backend:** The agent gets filesystem tools
    (`read_file`, `write_file`, `edit_file`, `execute`) automatically from the
    sandbox
 
+:::
+
 :::python
 
-2. **Custom API server** — A FastAPI app exposed via `langgraph.json`'s `http.app`
+2. **Custom API server**—A FastAPI app exposed via `langgraph.json`'s `http.app`
    field, providing file browsing endpoints the frontend can call
 
 :::
@@ -139,55 +154,13 @@ lookup function between them.
 Define `getOrCreateSandboxForThread` in a shared module. Both the agent graph
 factory and the custom API routes import it:
 
-```ts
-// src/api/utils.ts
-import { Client } from "@langchain/langgraph-sdk";
-import { LangSmithSandbox } from "deepagents";
-import { SandboxClient } from "langsmith/sandbox";
-
-export async function getOrCreateSandboxForThread(threadId: string) {
-  const client = new Client({ apiUrl: "http://localhost:2024" });
-  const thread = await client.threads.get(threadId);
-  const sandboxId = thread.metadata?.sandbox_id;
-
-  if (sandboxId) {
-    const existing = await new SandboxClient().getSandbox(sandboxId);
-    if (existing.status === "ready") {
-      return new LangSmithSandbox({ sandbox: existing });
-    }
-  }
-
-  const sandbox = await LangSmithSandbox.create({ templateName: "my-template" });
-  await seedSandbox(sandbox);  // See File transfers below
-  await client.threads.update(threadId, { metadata: { sandbox_id: sandbox.id } });
-  return sandbox;
-}
-```
+<FrontendSandboxUtilsJs />
 
 Wire the agent as an async [graph factory](/langsmith/graph-rebuild) that reads
 `thread_id` from the run config and passes the resolved backend to
 `createDeepAgent`:
 
-```ts
-// src/agents/deep-agent-ide.ts
-import { createDeepAgent } from "deepagents";
-import type { LangGraphRunnableConfig } from "@langchain/langgraph";
-
-import { getOrCreateSandboxForThread } from "../api/utils.js";
-
-export async function agent(config: LangGraphRunnableConfig) {
-  const threadId = config.configurable?.thread_id;
-  if (!threadId) throw new Error("No thread_id — agent must run on a thread");
-
-  const backend = await getOrCreateSandboxForThread(threadId);
-
-  return createDeepAgent({
-    model: "google_genai:gemini-3.5-flash",
-    backend,
-    systemPrompt: "You are an expert developer working on a project in /app.",
-  });
-}
-```
+<FrontendSandboxAgentJs />
 
 :::
 
@@ -351,7 +324,7 @@ async def read_file(
   `getOrCreateSandboxForThread` function. This ensures they always resolve
 :::
   to the same sandbox for a given thread. The sandbox ID in thread metadata
-  is the single source of truth — no in-memory caches needed.
+  is the single source of truth—no in-memory caches needed.
 </Note>
 
 ### Configure `langgraph.json`
@@ -700,18 +673,7 @@ export class IdePreviewComponent {
 Before each agent run, snapshot the current file contents. After files refresh,
 compare against the snapshot to identify which files changed:
 
-```ts
-function detectChanges(current: FileSnapshot, original: FileSnapshot): Set<string> {
-  const changed = new Set<string>();
-  for (const [path, content] of Object.entries(current)) {
-    if (original[path] !== content) changed.add(path);
-  }
-  for (const path of Object.keys(original)) {
-    if (!(path in current)) changed.add(path);
-  }
-  return changed;
-}
-```
+<FrontendSandboxDetectChangesJs />
 
 When a user selects a changed file, default to the diff view so they
 immediately see what the agent modified.
@@ -751,7 +713,7 @@ function DiffPanel({ original, current, fileName }) {
 ### Changed files summary
 
 Show a summary of all modified files with line-level addition/deletion counts.
-This gives users a quick overview of the agent's impact — similar to a `git
+This gives users a quick overview of the agent's impact—similar to a `git
 status`:
 
 ```tsx
@@ -797,10 +759,18 @@ Frontend-specific:
 
 - **Persist `threadId` in `sessionStorage`** so page reloads reconnect to the
   same thread and sandbox instead of creating new ones.
+
+:::python
+- **Sync files on every relevant tool call**, not just when the run finishes. Watch for `write_file`, `edit_file`, `delete`, and `execute`
+  tool messages and refresh immediately.
+:::
+:::js
 - **Sync files on every relevant tool call**, not just when the run finishes. Watch for `write_file`, `edit_file`, and `execute`
   tool messages and refresh immediately.
+:::
+
 - **Default to diff view for changed files**. When a user clicks a file that
-  was modified by the agent, show the diff first — that's what they care about.
+  was modified by the agent, show the diff first—that's what they care about.
 - **Show compact tool results for read-only operations**. Instead of dumping
   the full output of `read_file` in the chat, show a one-liner like
   `Read router.js L1-42`. Reserve the full output display for mutating tools.
@@ -819,8 +789,8 @@ For backends and sandboxes:
   [sandbox auth proxy](/oss/deepagents/going-to-production#managing-secrets)
   instead of environment variables or file uploads for API keys.
 - **Add guardrails before launch**. Configure
-  [rate limits](/oss/deepagents/going-to-production#rate-limiting),
-  [error handling](/oss/deepagents/going-to-production#handling-errors), and
+  [rate limits](/oss/deepagents/fault-tolerance#rate-limiting),
+  [error handling](/oss/deepagents/fault-tolerance#error-handling), and
   [data privacy](/oss/deepagents/going-to-production#data-privacy) middleware
   for autonomous coding agents.
 
@@ -838,5 +808,25 @@ For backends and sandboxes:
   </Card>
   <Card title="Application structure" icon="file-code" href="/oss/langgraph/application-structure">
     Full `langgraph.json` reference, including custom `http.app` routes.
+  </Card>
+</CardGroup>
+
+## Related LangChain guides
+
+The sandbox IDE builds on core LangChain frontend patterns. These guides cover
+the same `useStream` primitives used in this page:
+
+<CardGroup cols={2}>
+  <Card title="Tool calling" icon="hammer" href="/oss/langchain/frontend/tool-calling">
+    Render file and execution tool calls as purpose-built UI cards with type-safe results.
+  </Card>
+  <Card title="Headless tools" icon="cpu" href="/oss/langchain/frontend/headless-tools">
+    Run browser and device APIs on the client side—useful for embedding live preview or terminal output in the IDE panel.
+  </Card>
+  <Card title="Open-ended generative UI" icon="layout-grid" href="/oss/langchain/frontend/open-ended-generative-ui">
+    Render sandboxed app previews and MCP-generated interfaces at the open end of the generative UI spectrum.
+  </Card>
+  <Card title="Join & rejoin streams" icon="arrows-merge" href="/oss/langchain/frontend/join-rejoin">
+    Reconnect to a running coding session after a page reload without losing the sandbox state.
   </Card>
 </CardGroup>

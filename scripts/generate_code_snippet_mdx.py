@@ -1,22 +1,29 @@
 """Generate MDX snippet files from extracted code snippet files.
 
-Reads .snippet.*.py, .snippet.*.ts, .snippet.*.java, and .snippet.*.kt files from src/code-samples-generated/
+Reads .snippet.*.py, .snippet.*.ts, .snippet.*.java, .snippet.*.kt, .snippet.*.go, and .snippet.*.sh files from src/code-samples-generated/
 (produced by ``scripts/extract_code_snippets.py``, Bluehawk-compatible layout).
 and creates corresponding MDX files in src/snippets/code-samples/ for use in docs.
 
-When a snippet uses a LangChain-style model argument (`model="…"` in Python or
-`model: "…"` in TypeScript), the generated MDX can be wrapped in <CodeGroup> with the same
-seven provider/model options as /oss/deepagents/quickstart (Google, OpenAI, Anthropic,
-OpenRouter, Fireworks, Baseten, Ollama). Both `provider:model-id` and bare model names
-(for example `claude-sonnet-4-5-20250929`) are recognized.
+When a snippet uses a LangChain-style model string, the generated MDX can be wrapped in
+<CodeGroup> with the same seven provider/model options as /oss/deepagents/quickstart
+(Google, OpenAI, Anthropic, OpenRouter, Fireworks, Baseten, Ollama). Recognized forms:
 
-Snippets are left as a single fenced block when no model argument is found, or when all
-model arguments are marked to keep.
+- Python: ``model="…"`` / ``model = "…"`` (kwargs or assignments)
+- TypeScript: ``model: "…"`` (object properties) or ``model = "…"`` (assignments,
+  including ``let model = "…"`` / ``const model = "…"``)
+
+The quoted model ID is what gets swapped per tab, so assignment vs property syntax is
+preserved. Every non-kept occurrence of that same ID in the snippet is updated together
+(so a shared ``model = "…"`` plus later ``model`` references stay consistent).
+
+Snippets are left as a single fenced block when no model string is found, or when all
+model strings are marked to keep.
 
 To keep a specific model line:
 
 - In Python, put `# KEEP MODEL` on the line immediately before the `model="..."` line.
-- In TypeScript, put `// KEEP MODEL` on the line immediately before the `model: "..."` line.
+- In TypeScript, put `// KEEP MODEL` on the line immediately before the `model: "..."`
+  or `model = "..."` line.
 
 The marker line is stripped during processing and that model occurrence is not
 replaced/expanded.
@@ -26,14 +33,19 @@ Run as part of `make code-snippets` after `extract_code_snippets.py`.
 Optional **CodeGroup tab label** (Mintlify `` ```lang TabTitle``` `` inside ``<CodeGroup>``):
 
 - Put as the **first line inside** the snippet body (after ``:snippet-start:``): ``# :codegroup-tab: Python`` or ``// :codegroup-tab: Java``. Stripped from emitted code.
-- Optional **fence modifiers** (for example long samples): the **next** line can be ``# :codegroup-fence-mods: expandable wrap`` or ``// :codegroup-fence-mods: expandable wrap``. Stripped from emitted code. Omit for short snippets.
-- The fence becomes e.g. `` ```java Java`` or, with fence-mods, `` ```java Java expandable wrap``.
+- Optional **fence modifiers** (for example long samples): the **next** line after a tab marker, or the **first** line when there is no tab, can be ``# :codegroup-fence-mods: expandable wrap`` or ``// :codegroup-fence-mods: expandable wrap``. Stripped from emitted code. Omit for short snippets.
+- The fence becomes e.g. `` ```java Java``, `` ```python expandable wrap`` (mods only), or `` ```java Java expandable wrap`` (tab + mods).
 """
 
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
+
+# Allow importing sibling helpers when run as ``python scripts/….py``.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from code_sample_tracing import append_trace_link, load_manifest
 
 # Optional prefix lines in extracted snippet body; stripped from output. See module docstring.
 _CODEGROUP_TAB_MARKER_RE = re.compile(
@@ -43,90 +55,108 @@ _CODEGROUP_FENCE_MODS_RE = re.compile(
     r"^\s*(?:#|//)\s*:codegroup-fence-mods:\s*(.+?)\s*$",
 )
 
-# Python: keyword argument model="…" (init_chat_model / create_deep_agent / etc.).
+# Python: keyword argument or assignment model="…" / model = "…".
 DEEPAGENTS_PY_MODEL_KWARG_RE = re.compile(r'\bmodel\s*=\s*"([^"]+)"')
 
-# TypeScript: object property model: "…" (ChatAnthropic, createDeepAgent, …).
-DEEPAGENTS_TS_MODEL_KWARG_RE = re.compile(r'\bmodel\s*:\s*"([^"]+)"')
+# TypeScript: object property model: "…" or assignment model = "…"
+# (also matches let/const/var model = "…").
+DEEPAGENTS_TS_MODEL_KWARG_RE = re.compile(r'\bmodel\s*(?::|=)\s*"([^"]+)"')
 
-# Tab title and full `model=` / `model:` token for each variant (matches
-# src/oss/deepagents/quickstart.mdx Python tabs; JS uses google-genai spelling).
+# Tab title and model ID for each variant (matches /oss/deepagents/quickstart).
+# JS uses @langchain/google, whose provider key is "google"; Python has no
+# equivalent key and stays on "google_genai" (langchain-google-genai).
 DEEPAGENTS_QUICKSTART_PY_MODEL_TABS: list[tuple[str, str]] = [
-    ("Google", 'model="google_genai:gemini-3.5-flash"'),
-    ("OpenAI", 'model="openai:gpt-5.5"'),
-    ("Anthropic", 'model="anthropic:claude-sonnet-4-6"'),
-    ("OpenRouter", 'model="openrouter:z-ai/glm-5.2"'),
-    ("Fireworks", 'model="fireworks:accounts/fireworks/models/kimi-k2p7-code"'),
-    ("Baseten", 'model="baseten:zai-org/GLM-5.2"'),
-    ("Ollama", 'model="ollama:north-mini-code-1.0"'),
+    ("Google", "google_genai:gemini-3.6-flash"),
+    ("OpenAI", "openai:gpt-5.5"),
+    ("Anthropic", "anthropic:claude-sonnet-5"),
+    ("OpenRouter", "openrouter:z-ai/glm-5.2"),
+    ("Fireworks", "fireworks:accounts/fireworks/models/glm-5p2"),
+    ("Baseten", "baseten:zai-org/GLM-5.2"),
+    ("Ollama", "ollama:north-mini-code-1.0"),
 ]
 
 DEEPAGENTS_QUICKSTART_TS_MODEL_TABS: list[tuple[str, str]] = [
-    ("Google", 'model: "google-genai:gemini-3.5-flash"'),
-    ("OpenAI", 'model: "openai:gpt-5.5"'),
-    ("Anthropic", 'model: "anthropic:claude-sonnet-4-6"'),
-    ("OpenRouter", 'model: "openrouter:openrouter:z-ai/glm-5.2"'),
-    ("Fireworks", 'model: "fireworks:accounts/fireworks/models/kimi-k2p7-code"'),
-    ("Baseten", 'model: "baseten:zai-org/GLM-5.2"'),
-    ("Ollama", 'model: "ollama:north-mini-code-1.0"'),
+    ("Google", "google:gemini-3.6-flash"),
+    ("OpenAI", "openai:gpt-5.5"),
+    ("Anthropic", "anthropic:claude-sonnet-5"),
+    ("OpenRouter", "openrouter:z-ai/glm-5.2"),
+    ("Fireworks", "fireworks:accounts/fireworks/models/glm-5p2"),
+    ("Baseten", "baseten:zai-org/GLM-5.2"),
+    ("Ollama", "ollama:north-mini-code-1.0"),
 ]
-
-
-def _model_id_from_py_tab_token(tab_token: str) -> str:
-    m = re.match(r'model="([^"]+)"', tab_token)
-    if not m:
-        msg = f"expected model= tab token, got {tab_token!r}"
-        raise ValueError(msg)
-    return m.group(1)
-
-
-def _model_id_from_ts_tab_token(tab_token: str) -> str:
-    m = re.match(r'model:\s*"([^"]+)"', tab_token)
-    if not m:
-        msg = f"expected model: tab token, got {tab_token!r}"
-        raise ValueError(msg)
-    return m.group(1)
-
-
-DEEPAGENTS_PY_SKIP_EXPAND_MODEL_IDS: frozenset[str] = frozenset()
-DEEPAGENTS_TS_SKIP_EXPAND_MODEL_IDS: frozenset[str] = frozenset()
-
-
-def _id_after_first_colon(tab_id: str) -> str:
-    """For openai:gpt-5.4 return gpt-5.4; for bare ids return as-is."""
-    if ":" not in tab_id:
-        return tab_id
-    return tab_id.split(":", 1)[1]
 
 
 KEEP_MODEL_MARKER_PY = "# KEEP MODEL"
 KEEP_MODEL_MARKER_TS = "// KEEP MODEL"
 
+# The tabs vary one thing: the routable `provider:model` string an agent is
+# built from. A `model` argument does not always hold one. An embeddings
+# constructor takes its own model, and a provider-specific chat class such as
+# `ChatOpenAI` takes a bare ID that provider understands. Substituting a
+# `provider:model` string into either produces code that cannot run.
+#
+# This matters beyond the bad line. A RAG sample builds its retriever before
+# its agent, so the embeddings model is the first match in the file and becomes
+# the ID every tab rewrites, which leaves the agent model, the one the tabs
+# exist to vary, identical in all seven.
+PROVIDER_SPECIFIC_CALLEE_RE = re.compile(r"\b(?:\w*Embeddings|Chat\w+)\s*$")
+EMBEDDING_MODEL_ID_RE = re.compile(r"embedding", re.IGNORECASE)
+
+
+def _enclosing_callee(text: str, pos: int) -> str:
+    """Return the text before the call whose parentheses enclose `pos`.
+
+    Walks back past any unclosed `{` or `[`, so the `model:` property in
+    `new ChatOpenAI({\\n  model: "..."})` resolves to `new ChatOpenAI`.
+    """
+    depth = 0
+    for i in range(pos - 1, -1, -1):
+        char = text[i]
+        if char in ")]}":
+            depth += 1
+        elif char in "([{":
+            if depth:
+                depth -= 1
+            elif char == "(":
+                return text[:i]
+    return ""
+
+
+def _takes_a_provider_specific_model(text: str, pos: int, model_id: str) -> bool:
+    """Report whether the `model` occurrence at `pos` holds a provider-specific ID."""
+    callee = _enclosing_callee(text, pos)
+    return bool(PROVIDER_SPECIFIC_CALLEE_RE.search(callee)) or bool(
+        EMBEDDING_MODEL_ID_RE.search(model_id)
+    )
+
 
 def _strip_codegroup_markers(content: str) -> tuple[str | None, str | None, str]:
-    """Strip optional ``:codegroup-tab:`` and following ``:codegroup-fence-mods:`` lines.
+    """Strip optional ``:codegroup-tab:`` and ``:codegroup-fence-mods:`` prefix lines.
 
-    Returns ``(tab_title, fence_mods, rest)``. If the first line is not a tab marker,
-    returns ``(None, None, original content)``.
+    Returns ``(tab_title, fence_mods, rest)``. Tab is optional; fence-mods may follow a tab
+    or appear alone as the first line (for standalone fenced blocks outside ``<CodeGroup>``).
     """
     if not content:
         return None, None, content
     lines = content.splitlines(keepends=True)
     if not lines:
         return None, None, content
+    i = 0
+    tab_title: str | None = None
+    fence_mods: str | None = None
     first = lines[0].splitlines()[0] if lines[0] else ""
     m = _CODEGROUP_TAB_MARKER_RE.match(first)
-    if not m:
-        return None, None, content
-    tab_title = m.group(1).strip()
-    i = 1
-    fence_mods: str | None = None
+    if m:
+        tab_title = m.group(1).strip()
+        i = 1
     if i < len(lines):
-        second = lines[i].splitlines()[0] if lines[i] else ""
-        m2 = _CODEGROUP_FENCE_MODS_RE.match(second)
+        line = lines[i].splitlines()[0] if lines[i] else ""
+        m2 = _CODEGROUP_FENCE_MODS_RE.match(line)
         if m2:
             fence_mods = m2.group(1).strip()
             i += 1
+    if tab_title is None and fence_mods is None:
+        return None, None, content
     rest = "".join(lines[i:])
     return tab_title, fence_mods, rest
 
@@ -150,18 +180,21 @@ def _replace_span(text: str, start: int, end: int, replacement: str) -> str:
 def _expand_to_deepagents_codegroup(
     content: str,
     *,
-    canonical_span: tuple[int, int],
+    model_id_spans: list[tuple[int, int]],
     tab_definitions: list[tuple[str, str]],
     fence_lang: str,
 ) -> str:
-    """Wrap `content` in a CodeGroup, one tab per quickstart model variant."""
-    start, end = canonical_span
-    parts = [
-        _codegroup_fence(
-            title, fence_lang, _replace_span(content, start, end, model_token)
-        )
-        for title, model_token in tab_definitions
-    ]
+    """Wrap `content` in a CodeGroup, one tab per quickstart model variant.
+
+    ``model_id_spans`` are character ranges of the quoted model ID only (not the
+    ``model=`` / ``model:`` prefix), so assignment and property syntax are preserved.
+    """
+    parts: list[str] = []
+    for title, model_id in tab_definitions:
+        code = content
+        for start, end in reversed(model_id_spans):
+            code = _replace_span(code, start, end, model_id)
+        parts.append(_codegroup_fence(title, fence_lang, code))
     return "<CodeGroup>\n" + "\n\n".join(parts) + "\n</CodeGroup>\n"
 
 
@@ -186,10 +219,11 @@ def maybe_expand_deepagents_quickstart_codegroup(
     else:
         return None, content
 
-    # Strip marker lines while recording which model occurrence to expand.
+    # Strip marker lines while recording which model ID occurrences to expand.
     out_lines: list[str] = []
     keep_next_model = False
-    canonical_span: tuple[int, int] | None = None
+    canonical_model_id: str | None = None
+    model_id_spans: list[tuple[int, int]] = []
 
     for line in content.splitlines(keepends=True):
         if line.strip() == keep_marker:
@@ -197,23 +231,33 @@ def maybe_expand_deepagents_quickstart_codegroup(
             continue
 
         out_offset = sum(len(l) for l in out_lines)
-        m = model_re.search(line)
-        if m is not None:
+        for m in model_re.finditer(line):
             if keep_next_model:
                 keep_next_model = False
-            elif canonical_span is None:
-                canonical_span = (out_offset + m.start(), out_offset + m.end())
+                continue
+            model_id = m.group(1)
+            # Checked after the keep marker so its semantics do not change.
+            if _takes_a_provider_specific_model(
+                "".join(out_lines) + line, out_offset + m.start(), model_id
+            ):
+                continue
+            if canonical_model_id is None:
+                canonical_model_id = model_id
+            if model_id == canonical_model_id:
+                model_id_spans.append(
+                    (out_offset + m.start(1), out_offset + m.end(1))
+                )
 
         out_lines.append(line)
 
     stripped = "".join(out_lines)
-    if canonical_span is None:
+    if not model_id_spans:
         return None, stripped
 
     return (
         _expand_to_deepagents_codegroup(
             stripped,
-            canonical_span=canonical_span,
+            model_id_spans=model_id_spans,
             tab_definitions=tab_definitions,
             fence_lang=fence_lang,
         ),
@@ -235,6 +279,8 @@ def format_snippet_mdx(content: str, *, language: str, fence_lang: str) -> str:
         if fence_mods:
             parts.append(fence_mods)
         fence_opener = " ".join(parts)
+    elif fence_mods:
+        fence_opener = f"{fence_lang} {fence_mods}"
     else:
         fence_opener = fence_lang
     return f"```{fence_opener}\n{content.rstrip()}\n```\n"
@@ -244,6 +290,8 @@ def main() -> None:
     repo_root = Path(__file__).resolve().parent.parent
     generated_dir = repo_root / "src" / "code-samples-generated"
     snippets_dir = repo_root / "src" / "snippets" / "code-samples"
+    trace_manifest = load_manifest(repo_root)
+    trace_links = trace_manifest.get("snippets", {})
 
     if not generated_dir.exists():
         return
@@ -255,12 +303,21 @@ def main() -> None:
         ("*.snippet.*.ts", "ts", "ts"),
         ("*.snippet.*.java", "java", "java"),
         ("*.snippet.*.kt", "kotlin", "kotlin"),
+        ("*.snippet.*.go", "go", "go"),
+        ("*.snippet.*.sh", "bash", "bash"),
     ]
 
-    lang_suffix = {"python": "-py", "ts": "-js", "java": "-java", "kotlin": "-kt"}
+    lang_suffix = {
+        "python": "-py",
+        "ts": "-js",
+        "java": "-java",
+        "kotlin": "-kt",
+        "go": "-go",
+        "bash": "-sh",
+    }
 
     for glob_pattern, language, fence_lang in snippet_configs:
-        for snippet_file in generated_dir.glob(glob_pattern):
+        for snippet_file in generated_dir.rglob(glob_pattern):
             snippet_name = ".".join(snippet_file.stem.split(".")[2:])
             expected_suffix = lang_suffix[language]
             if not snippet_name.endswith(expected_suffix):
@@ -270,7 +327,13 @@ def main() -> None:
             mdx_content = format_snippet_mdx(
                 content, language=language, fence_lang=fence_lang
             )
-            mdx_path = snippets_dir / f"{snippet_name}.mdx"
+            entry = trace_links.get(snippet_name)
+            url = entry.get("url") if isinstance(entry, dict) else None
+            mdx_content = append_trace_link(mdx_content, url)
+            rel_parent = snippet_file.parent.relative_to(generated_dir)
+            out_subdir = snippets_dir / rel_parent
+            out_subdir.mkdir(parents=True, exist_ok=True)
+            mdx_path = out_subdir / f"{snippet_name}.mdx"
             mdx_path.write_text(mdx_content, encoding="utf-8")
             print(f"Generated {mdx_path.relative_to(repo_root)}")
 

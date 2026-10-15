@@ -51,6 +51,11 @@ async def seed_skill_store(store: InMemoryStore) -> None:
     """
     skills_dir = Path(__file__).resolve().parent / "skills"
     for file_path in sorted(p for p in skills_dir.rglob("*") if p.is_file()):
+        # :remove-start:
+        # Skip Finder metadata and other non-skill junk (e.g. .DS_Store).
+        if any(part.startswith(".") for part in file_path.relative_to(skills_dir).parts):
+            continue
+        # :remove-end:
         rel = file_path.relative_to(skills_dir).as_posix()
         key = f"/{rel}"
         await store.aput(

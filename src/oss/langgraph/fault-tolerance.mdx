@@ -5,9 +5,9 @@ description: Configure per-node timeouts, retries, and error handlers in LangGra
 
 When a node fails—from a slow external API, a transient network error, or an unhandled exception—LangGraph gives you three composable mechanisms to respond:
 
-- [**Retries**](#retries) — automatically re-run failed attempts based on exception type and backoff settings
-- [**Timeouts**](#timeouts) — cap how long a single attempt may run
-- [**Error handling**](#error-handling) — run a recovery function after all retries are exhausted
+- [**Retries**](#retries): automatically re-run failed attempts based on exception type and backoff settings
+- [**Timeouts**](#timeouts): cap how long a single attempt may run
+- [**Error handling**](#error-handling): run a recovery function after all retries are exhausted
 
 :::python
 Use [**`set_node_defaults`**](#graph-defaults) to configure these mechanisms once for all nodes instead of repeating them on every `add_node` call.
@@ -867,7 +867,7 @@ If a node wraps a subgraph and the subgraph raises an unhandled exception, that 
 Requires `langgraph>=1.2`.
 </Note>
 
-Instead of repeating the same `retry_policy=`, `error_handler=`, `timeout=`, or `cache_policy=` on every `add_node` call, use `set_node_defaults()` to configure graph-wide defaults in one place:
+Instead of repeating the same `retry_policy=`, `error_handler=`, `timeout=`, or `cache_policy=` on every `add_node` call, use @[`set_node_defaults`] to configure graph-wide defaults in one place:
 
 ```python
 from langgraph.errors import NodeError
@@ -914,43 +914,68 @@ graph = (
 
 ### Default error handler
 
-The `error_handler` default is particularly valuable when you want a single catch-all recovery function for any node that fails without its own handler. The handler accepts the same `(state, error: NodeError)` signature described in [Error handling](#error-handling):
+The `error_handler` default is particularly valuable when every graph run maps to an external process (for example a background job row) and any unhandled node failure should mark that process as failed, without repeating `error_handler=` on every `add_node`. Per-node handlers still take precedence when a step needs its own logic:
 
 ```python
 from langgraph.errors import NodeError
 from langgraph.graph import StateGraph, START
-from langgraph.types import RetryPolicy
+from langgraph.types import Command, RetryPolicy
 from typing_extensions import TypedDict
 
 class State(TypedDict):
+    process_id: str
     status: str
 
-def always_failing(state: State) -> State:
-    raise ValueError("something went wrong")
+def fetch_data(state: State) -> State:
+    return {"status": "fetched"}
 
-def default_handler(state: State, error: NodeError) -> State:
-    return {"status": f"recovered from {error.node}: {error.error}"}
+def charge_payment(state: State) -> State:
+    raise RuntimeError("payment timeout")
+
+def finalize(state: State) -> State:
+    return state
+
+def mark_process_failed(state: State, error: NodeError) -> State:
+    # Persist failure on the external process row keyed by process_id.
+    return {"status": f"failed at {error.node}: {error.error}"}
+
+def refund_payment(state: State, error: NodeError) -> Command:
+    return Command(
+        update={"status": f"compensated after {error.node}"},
+        goto="finalize",
+    )
 
 graph = (
     StateGraph(State)
     .set_node_defaults(
-        retry_policy=RetryPolicy(max_attempts=2),
-        error_handler=default_handler,
+        retry_policy=RetryPolicy(max_attempts=3),
+        error_handler=mark_process_failed,
     )
-    .add_node("always_failing", always_failing)
-    .add_edge(START, "always_failing")
+    .add_node("fetch_data", fetch_data)  # uses mark_process_failed
+    .add_node(
+        "charge_payment",
+        charge_payment,
+        error_handler=refund_payment,  # overrides the graph-wide default
+    )
+    .add_node("finalize", finalize)
+    .add_edge(START, "fetch_data")
+    .add_edge("fetch_data", "charge_payment")
     .compile()
 )
 ```
 
-The node is retried twice, then `default_handler` runs. The default handler also accepts `RunnableConfig` as an optional third argument if you need access to config values such as `thread_id`:
+If `fetch_data` fails after retries, `mark_process_failed` runs. If `charge_payment` fails after retries, `refund_payment` runs instead because the per-node handler overrides the default.
+
+The handler accepts the same `(state, error: NodeError)` signature described in [Error handling](#error-handling). It also accepts `RunnableConfig` as an optional third argument if you need access to config values such as `thread_id`:
 
 ```python
 from langchain_core.runnables import RunnableConfig
 
-def default_handler(state: State, error: NodeError, config: RunnableConfig) -> State:
+def mark_process_failed(
+    state: State, error: NodeError, config: RunnableConfig
+) -> State:
     thread_id = config["configurable"].get("thread_id")
-    return {"status": f"handled on thread {thread_id}"}
+    return {"status": f"failed on thread {thread_id}: {error.error}"}
 ```
 
 ### Applicability matrix
@@ -1017,6 +1042,44 @@ const graph = new StateGraph(State)
   .addEdge(START, "stepA")
   .compile();
 ```
+
+### Default error handler
+
+The `errorHandler` default is particularly valuable when every graph run maps to an external process (for example a background job row) and any unhandled node failure should mark that process as failed, without repeating `errorHandler` on every `addNode`. Per-node handlers still take precedence when a step needs its own compensation logic:
+
+```typescript
+import { Command, NodeError, StateGraph, START } from "@langchain/langgraph";
+
+const markProcessFailed = (
+  state: typeof State.State,
+  error: NodeError
+) => {
+  // Persist failure on the external process row keyed by processId.
+  return { status: `failed at ${error.node}: ${error.error.message}` };
+};
+
+const refundPayment = (state: typeof State.State, error: NodeError) =>
+  new Command({
+    update: { status: `compensated after ${error.node}` },
+    goto: "finalize",
+  });
+
+const graph = new StateGraph(State)
+  .setNodeDefaults({
+    retryPolicy: { maxAttempts: 3 },
+    errorHandler: markProcessFailed,
+  })
+  .addNode("fetchData", fetchData) // uses markProcessFailed
+  .addNode("chargePayment", chargePayment, {
+    errorHandler: refundPayment, // overrides the graph-wide default
+  })
+  .addNode("finalize", finalize)
+  .addEdge(START, "fetchData")
+  .addEdge("fetchData", "chargePayment")
+  .compile();
+```
+
+If `fetchData` fails after retries, `markProcessFailed` runs. If `chargePayment` fails after retries, `refundPayment` runs instead because the per-node handler overrides the default.
 
 ### Applicability matrix
 
