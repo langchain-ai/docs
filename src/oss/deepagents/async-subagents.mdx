@@ -13,10 +13,17 @@ import AsyncSubagentsDescriptionsBadPy from '/snippets/code-samples/async-subage
 import AsyncSubagentsDescriptionsJs from '/snippets/code-samples/async-subagents-descriptions-js.mdx';
 import AsyncSubagentsTroubleshootingPollingPy from '/snippets/code-samples/async-subagents-troubleshooting-polling-py.mdx';
 import AsyncSubagentsTroubleshootingPollingJs from '/snippets/code-samples/async-subagents-troubleshooting-polling-js.mdx';
+import AsyncSubagentsNotificationsPy from '/snippets/code-samples/async-subagents-notifications-py.mdx';
+import AsyncSubagentsAnswerWaitingPy from '/snippets/code-samples/async-subagents-answer-waiting-py.mdx';
+import AsyncSubagentsParentThreadPy from '/snippets/code-samples/async-subagents-parent-thread-py.mdx';
 
 Async subagents let a supervisor agent launch background tasks that return immediately, so the supervisor can continue interacting with the user while subagents work concurrently. The supervisor can check progress, send follow-up instructions, or cancel tasks at any point.
 
 This builds on [subagents](/oss/deepagents/subagents), which run synchronously and block the supervisor until completion. Use async subagents when tasks are long-running, parallelizable, or need mid-flight steering.
+
+:::python
+On an Agent Server, the supervisor is also told when a task finishes, fails, or needs input, so it doesn't have to check. See [Get notified when tasks finish](#get-notified-when-tasks-finish).
+:::
 
 ```mermaid
 graph TB
@@ -130,12 +137,63 @@ sequenceDiagram
 - **Cancel** calls `runs.cancel()` on the server and marks the task as `"cancelled"`.
 - **List** iterates over all tracked tasks. For non-terminal tasks, it fetches live status from the server in parallel. Terminal statuses (`success`, `error`, `cancelled`) are returned from cache.
 
+:::python
+If a subagent paused for input or approval, **check** and **list** report it as `waiting` with what it's asking. Updating a `waiting` task drops its pending request, and cancelling one only marks it as `"cancelled"`, since it has no active run. See [Handle subagents waiting for input](#handle-subagents-waiting-for-input).
+:::
+
+:::python
+## Get notified when tasks finish
+
+<Warning>
+    Task notifications are in [**beta**](/oss/versioning). APIs and behavior may change between releases.
+</Warning>
+
+On an Agent Server, the supervisor learns about its tasks without the user asking:
+
+- **While it's running**, it checks its unfinished tasks before each model call and adds a notification for each task that finished, failed, timed out, or is waiting for input.
+- **While it's idle**, a subagent that is a deep agent on the same deployment (no `url`) starts a new run on the supervisor's thread when it finishes, fails, or pauses. If the supervisor is waiting on its own approval, the update arrives after the user answers.
+
+Subagents with a `url`, and graphs that aren't deep agents, don't wake an idle supervisor. The supervisor sees their updates at its next run.
+
+Notifications need the async path (`ainvoke` or `astream`), which the Agent Server uses. With `invoke`, the supervisor can still check and list its tasks with the tools.
+
+Each notification is a user message framed as a system notification. Its content is a list of content blocks, so the subagent's answer can include images. The message carries a @[`TaskEvent`] (`task_id`, `agent_name`, `status`, `run_id`) in `additional_kwargs["deepagents_notification"]`, so your app can show notifications differently from user messages:
+
+<AsyncSubagentsNotificationsPy />
+
+## Handle subagents waiting for input
+
+<Warning>
+    The `waiting` status is in [**beta**](/oss/versioning). APIs and behavior may change between releases.
+</Warning>
+
+A subagent that pauses for input or approval, with `interrupt()` or [human-in-the-loop](/oss/deepagents/human-in-the-loop), is reported as `waiting` with its pending interrupts. The supervisor can't answer or approve it, so a subagent can't get its actions approved by the agent that launched it. The request is for the user.
+
+Your app answers it on the subagent's own thread. The task ID is the subagent's thread ID:
+
+<AsyncSubagentsAnswerWaitingPy />
+
+When the subagent finishes after the answer, the supervisor is notified as usual. If a subagent needs information from the supervisor rather than the user, have it ask in its result. The supervisor replies with `update_async_task`.
+:::
+
 ## Understand state management
 
 :::python
 Task metadata is stored in a dedicated state channel (`async_tasks`) on the supervisor's graph, separate from the message history. This is critical because deep agents [compact their message history](/oss/deepagents/context-engineering#summarization) when the context window fills up. If task IDs were only in tool messages, they would be lost during compaction. The dedicated channel ensures the supervisor can always recall its tasks through `list_async_tasks`, even after multiple rounds of summarization.
 
 Each tracked task records the task ID, agent name, thread ID, run ID, status, and timestamps (`created_at`, `last_checked_at`, `last_updated_at`).
+
+### Find a supervisor's subagent threads
+
+<Warning>
+    Thread tagging is in [**beta**](/oss/versioning). APIs and behavior may change between releases.
+</Warning>
+
+Each subagent thread is created with `metadata={"parent_thread_id": ...}`, the supervisor's thread ID. Use it to find a supervisor's subagent threads, or to read the supervisor's thread in a subagent's graph factory:
+
+<AsyncSubagentsParentThreadPy />
+
+For example, a subagent can reuse the supervisor's [thread-scoped sandbox](/oss/deepagents/sandboxes#thread-scoped-default) by looking it up with `parent_thread_id`. Check that the caller may access that thread first, since thread metadata can be edited by anyone with access to the thread.
 :::
 
 :::js
