@@ -1,7 +1,7 @@
 from managed_deepagents import define_schedule
 
 schedule = define_schedule(
-    cron="0 9 * * *",
+    cron="0 9 * * 1,3,5",
     timezone="America/Los_Angeles",
     prompt=(
         "Run the OpenWiki docs release check. "

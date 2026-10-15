@@ -6,12 +6,12 @@ For each eligible release (published at least 7 days ago), it compares release n
 
 Current product coverage:
 
-| Product | Tag prefix | Docs | Schedule |
+| Product | Tag prefix | Docs | Schedule (Mon/Wed/Fri, PT) |
 | --- | --- | --- | --- |
-| OpenWiki | (any) | `src/oss/openwiki/` | 09:00 PT |
-| Deep Agents (Python) | `deepagents==` | `src/oss/deepagents/` (excludes `code/`) | 09:30 PT |
-| Deep Agents Code | `deepagents-code==` | `src/oss/deepagents/code/` | 10:00 PT |
-| Deep Agents JS | `deepagents@` | `src/oss/deepagents/` (excludes `code/`, prefer `:::js`) | 10:30 PT |
+| OpenWiki | (any) | `src/oss/openwiki/` | 09:00 |
+| Deep Agents (Python) | `deepagents==` | `src/oss/deepagents/` (excludes `code/`) | 09:30 |
+| Deep Agents Code | `deepagents-code==` | `src/oss/deepagents/code/` | 10:00 |
+| Deep Agents JS | `deepagents@` | `src/oss/deepagents/` (excludes `code/`, prefer `:::js`) | 10:30 |
 
 To add another product: register it in `tools/products.py`, add `skills/<name>/SKILL.md`, and add a `schedules/` prompt.
 

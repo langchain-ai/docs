@@ -1,7 +1,7 @@
 from managed_deepagents import define_schedule
 
 schedule = define_schedule(
-    cron="0 10 * * *",
+    cron="0 10 * * 1,3,5",
     timezone="America/Los_Angeles",
     prompt=(
         "Run the Deep Agents Code docs release check. "
