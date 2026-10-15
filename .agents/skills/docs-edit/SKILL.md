@@ -163,7 +163,7 @@ that the format is wrong.
 make lint_prose FILES="<changed files>"
 ```
 
-Run `make broken-links` as well when links, page names, or navigation entries
+Run `make broken-links-with-anchors` as well when links, page names, or navigation entries
 changed. For a prose review against the style guide, use the `docs-review`
 skill.
 

@@ -8,17 +8,19 @@ Each PR merged in a window goes through these steps:
    want to be told about it?
 2. Hold: an ``announce`` PR whose description declares ``Flag: <key>`` (or, for
    older PRs, whose fragment names a flag) goes on the held list,
-   ``scripts/.changelog_held.json``. Each weekly run checks the list against Eppo
+   ``scripts/.changelog_held.json.enc``. Each weekly run checks the list against Eppo
    and writes a held PR into that week's entry once its flag is fully rolled out.
 3. Group and write: Sonnet groups PRs that ship the same change and picks the
    highlights; Sonnet writes highlights and Haiku writes the rest.
-4. Review: entries that leak internal names, or that may be gated (the classifier
-   saw an unrolled flag, or they share code and topic with a held PR), go to a
-   reviewer list instead of the page.
+4. Check, with no human review: an entry that may be gated (the classifier saw a
+   flag Eppo shows is not rolled out, or it shares code and topic with a held PR)
+   joins the held list under that flag. An entry that names something internal is
+   rewritten and checked again. Anything still uncertain is left out.
 
 ``weekly`` runs every step for one Monday-to-Monday week and, with ``--write``,
 inserts the Cloud and Fleet entries into the changelog files and updates the held
-list. ``seed-held`` imported the fragment pipeline's held backlog once:
+list. The held list is committed encrypted (``CHANGELOG_STATE_KEY``), because this
+repository is public:
 
   uv run python scripts/changelog_pipeline.py weekly --out DIR [--since 2026-10-05 --until 2026-10-12] --write
 
@@ -47,10 +49,11 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections import Counter
+import urllib.request
 from pathlib import Path
 
 import yaml
+from cryptography.fernet import Fernet, InvalidToken
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 REPO = "langchain-ai/langchainplus"
@@ -496,6 +499,16 @@ def _claude(
 _api_client = None
 
 
+def _custom_headers(raw: str | None) -> dict[str, str]:
+    """Parse `Name: Value` lines, the ANTHROPIC_CUSTOM_HEADERS format Claude Code uses."""
+    headers = {}
+    for line in (raw or "").splitlines():
+        name, sep, value = line.partition(":")
+        if sep and name.strip():
+            headers[name.strip()] = value.strip()
+    return headers
+
+
 def _claude_api(
     system: str, schema: dict, prompt: str, model: str
 ) -> tuple[dict, dict]:
@@ -503,7 +516,12 @@ def _claude_api(
 
     global _api_client  # noqa: PLW0603 - one client shared across worker threads
     if _api_client is None:
-        _api_client = anthropic.Anthropic(max_retries=5)
+        # The repo key goes through a gateway: the SDK reads ANTHROPIC_BASE_URL itself,
+        # but not the gateway's headers.
+        _api_client = anthropic.Anthropic(
+            max_retries=5,
+            default_headers=_custom_headers(os.environ.get("ANTHROPIC_CUSTOM_HEADERS")),
+        )
     model_id, in_price, out_price = API_MODELS[model]
     with _api_client.messages.stream(
         model=model_id,
@@ -989,6 +1007,32 @@ ENTRY_SCHEMA = {
     "required": ["entry"],
 }
 
+REWRITE_MODEL = "haiku"
+REWRITE_SYSTEM = f"""You fix one line of the weekly LangSmith Cloud and Fleet changelog.
+
+A check found that the line names something customers never see. You get the line,
+what the check flagged, and the pull requests behind the line. Choose one action:
+- "rewrite": return the line with every flagged term removed or replaced by what a
+  customer sees, keeping the meaning. For a highlight, also return its title;
+  otherwise return an empty title.
+- "drop": the line means nothing without the internal term, or it describes
+  something Cloud and Fleet customers cannot use, such as configuration only
+  self-hosted operators set. Say why in reason.
+
+{ENTRY_RULES}"""
+REWRITE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "action": {"type": "string", "enum": ["rewrite", "drop"]},
+        "title": {"type": "string"},
+        "entry": {"type": "string"},
+        "reason": {"type": "string"},
+    },
+    "required": ["action", "title", "entry", "reason"],
+}
+# Groups from the retry pass sort after the first pass's within each section.
+RETRY_RANK_OFFSET = 1000
+
 
 def _docs_pages() -> dict[str, str]:
     """Map each LangSmith docs route to its page title."""
@@ -1039,6 +1083,15 @@ def _apply_renames(text: str) -> str:
     return text
 
 
+def _mdx_escape(text: str) -> str:
+    """Escape <, {, and } outside code spans; MDX parses them as JSX and fails."""
+    parts = re.split(r"(`[^`\n]+`)", text)
+    return "".join(
+        part if i % 2 else re.sub(r"(?<!\\)([<{}])", r"\\\1", part)
+        for i, part in enumerate(parts)
+    )
+
+
 def _dirs(pr: dict) -> set[str]:
     return {
         "/".join(f.split("/")[:REVIEW_DIR_DEPTH])
@@ -1047,30 +1100,38 @@ def _dirs(pr: dict) -> set[str]:
     }
 
 
-def _review_reasons(
-    group: dict, prs: dict, results: dict, held: list, flags: dict
-) -> list[str]:
-    """Why a written entry needs a human before it publishes, if anything."""
+def _text_reasons(group: dict, flags: dict) -> list[str]:
+    """Why an entry's text cannot publish as written: it names something internal."""
     reasons = []
     text = f"{group.get('title', '')} {group.get('entry', '')}"
     if m := LEAK_RE.search(text) or TICKET_RE.search(text):
         reasons.append(f"internal name: {m.group(0)}")
     reasons += [f"names flag key {k}" for k in flags if len(k) >= 8 and k in text]
+    return reasons
+
+
+def _gating_flags(
+    group: dict, prs: dict, results: dict, held: list, flags: dict
+) -> list[tuple[str, str]]:
+    """Flags not rolled out that may gate an entry, each with the evidence for it."""
+    gates = []
     held_dirs = {h: _dirs(prs[h]) for h, _ in held}
     held_words = {h: _title_words(prs[h]["title"]) for h, _ in held}
     for n in group["prs"]:
         hint = results.get(n, {}).get("pass1", {}).get("feature_flag")
         # Only a real Eppo flag counts; hints also include hook names and free text.
         if hint in flags and not flags[hint]["rolled_out"]:
-            reasons.append(f"#{n}: classifier saw flag {hint}")
+            gates.append((hint, f"#{n}: classifier saw flag {hint}"))
         words = _title_words(prs[n]["title"])
         for h, flag in held:
             if h == n or not (_dirs(prs[n]) & held_dirs[h]):
                 continue
             overlap = len(words & held_words[h]) / max(1, len(words | held_words[h]))
             if overlap >= REVIEW_TITLE_OVERLAP:
-                reasons.append(f"#{n} shares code and topic with held #{h} ({flag})")
-    return list(dict.fromkeys(reasons))
+                gates.append(
+                    (flag, f"#{n} shares code and topic with held #{h} ({flag})")
+                )
+    return list(dict.fromkeys(gates))
 
 
 def _title_words(title: str) -> set[str]:
@@ -1085,6 +1146,90 @@ def _group_prompt(group: dict, prs: dict[int, dict]) -> str:
         parts.append(_pr_prompt(pr))
     parts.append("</change>")
     return "\n".join(parts)
+
+
+def _group_notes(numbers: list[int], prs: dict, results: dict) -> str:
+    """One line per PR for the grouping call: title, verdict, and evidence."""
+    return "\n".join(
+        f"#{n} | {prs[n]['title']} | {results[n]['pass1']['reason'][:300]} | "
+        + "; ".join(results[n]["pass1"]["evidence"][:3])[:300]
+        for n in sorted(numbers)
+    )
+
+
+def _rewrite_one(
+    key: str, group: dict, reasons: list[str], prs: dict, cache: Path, workdir: Path
+) -> dict:
+    target = _child(cache, f"{key}.json")
+    if target.exists():
+        return json.loads(target.read_text())
+    line = (
+        f"{group['title']}: {group['entry']}"
+        if group["layer"] == "highlight"
+        else group["entry"]
+    )
+    prompt = (
+        f'<line layer="{group["layer"]}">\n{line}\n</line>\n'
+        f"<flagged>\n" + "\n".join(reasons) + "\n</flagged>\n"
+        f"{_group_prompt(group, prs)}"
+    )
+    out, meta = _claude(REWRITE_SYSTEM, REWRITE_SCHEMA, prompt, REWRITE_MODEL, workdir)
+    record = {**out, "meta": meta}
+    target.write_text(json.dumps(record, indent=1))
+    return record
+
+
+def _fix_text(
+    to_fix: list[tuple[dict, list[str]]],
+    prs: dict,
+    flags: dict,
+    cache: Path,
+    workers: int,
+) -> tuple[list, list, list, float]:
+    """Rewrite entries that name something internal, and check each rewrite again.
+
+    Returns (fixed, still, dropped, cost): (original, rewritten) pairs that pass,
+    (entry, reasons) pairs a human must see, (entry, why) pairs the model dropped,
+    and the model cost.
+    """
+    fixed, still, dropped, cost = [], [], [], 0.0
+    if not to_fix:
+        return fixed, still, dropped, cost
+    with (
+        tempfile.TemporaryDirectory() as tmp,
+        cf.ThreadPoolExecutor(max_workers=workers) as pool,
+    ):
+        futures = {
+            pool.submit(
+                _rewrite_one,
+                "fix-" + "-".join(str(n) for n in sorted(g["prs"])[:3]),
+                g,
+                reasons,
+                prs,
+                cache,
+                Path(tmp),
+            ): (g, reasons)
+            for g, reasons in to_fix
+        }
+        for fut in cf.as_completed(futures):
+            g, reasons = futures[fut]
+            try:
+                out = fut.result()
+            except Exception as exc:  # noqa: BLE001 - the entry goes to a human
+                still.append((g, [*reasons, f"rewrite failed: {str(exc)[:200]}"]))
+                continue
+            cost += out.get("meta", {}).get("cost_usd", 0)
+            if out["action"] == "drop":
+                dropped.append((g, out["reason"]))
+                continue
+            new = dict(g, entry=_mdx_escape(_apply_renames(out["entry"])))
+            if g["layer"] == "highlight" and out["title"]:
+                new["title"] = _mdx_escape(_apply_renames(out["title"]))
+            if again := _text_reasons(new, flags):
+                still.append((g, reasons + [f"rewrite still has {r}" for r in again]))
+                continue
+            fixed.append((g, new))
+    return fixed, still, dropped, cost
 
 
 def _write_group(
@@ -1109,6 +1254,26 @@ def _write_group(
     return record
 
 
+# Fixes get their own heading, so the collapsed list does not read as part of the
+# section above it.
+FIXES_HEADING = "## Fixes and improvements"
+FIXES_OPEN = '<Accordion title="Show all fixes">'
+
+
+def _update_open(product: str, label: str, since: str) -> str:
+    rss = "LangSmith Cloud update" if product == "cloud" else "Fleet product update"
+    return f'<Update label="{label}" rss={{{{ title: "{since} - {rss}" }}}}>'
+
+
+def _entry_line(g: dict, valid_links: set[str]) -> str:
+    """One changelog bullet: highlights lead with a bold title and may link the docs."""
+    if g["layer"] != "highlight":
+        return f"- {g['entry']}"
+    link = g.get("docs_link", "")
+    more = f" [Learn more]({link})." if link in valid_links else ""
+    return f"- **{g['title']}**: {g['entry']}{more}"
+
+
 def _render(
     product: str, label: str, written: list[dict], valid_links: set[str], since: str
 ) -> str:
@@ -1118,16 +1283,12 @@ def _render(
     highlights = [g for g in rows if g["layer"] == "highlight"]
     changes = [g for g in rows if g["layer"] == "change"]
     fixes = [g for g in rows if g["layer"] == "fix"][:MAX_FIXES]
-    rss = "LangSmith Cloud update" if product == "cloud" else "Fleet product update"
     if not rows:
         return ""
-    lines = [f'<Update label="{label}" rss={{{{ title: "{since} - {rss}" }}}}>', ""]
+    lines = [_update_open(product, label, since), ""]
     if highlights:
         lines += ["## Highlights", ""]
-        for g in highlights:
-            link = g.get("docs_link", "")
-            more = f" [Learn more]({link})." if link in valid_links else ""
-            lines.append(f"- **{g['title']}**: {g['entry']}{more}")
+        lines += [_entry_line(g, valid_links) for g in highlights]
         lines.append("")
     sections: dict[str, list[dict]] = {}
     for g in changes:
@@ -1137,7 +1298,7 @@ def _render(
     ):
         lines += [f"## {section}", ""] + [f"- {g['entry']}" for g in groups] + [""]
     if fixes:
-        lines += ['<Accordion title="Fixes and improvements">', ""]
+        lines += [FIXES_HEADING, "", FIXES_OPEN, ""]
         lines += [f"- {g['entry']}" for g in fixes]
         lines += ["", "</Accordion>", ""]
     lines.append("</Update>")
@@ -1147,23 +1308,45 @@ def _render(
 # Same rules as the `changelog` check in langchainplus (`langdev pr check`): a Flag:
 # line on its own line, ignoring fenced code, HTML comments, quotes, and indented code.
 FLAG_LINE_RE = re.compile(r"(?im)^ {0,3}Flag:[ \t]*(\S+)[ \t\r]*$")
-FENCE_RES = (
-    re.compile(r"(?ms)^ {0,3}```.*?^ {0,3}```[^\n]*$"),
-    re.compile(r"(?ms)^ {0,3}~~~.*?^ {0,3}~~~[^\n]*$"),
-    re.compile(r"(?s)<!--.*?-->"),
-)
+HTML_COMMENT_RE = re.compile(r"(?s)<!--.*?-->")
+FENCE_RE = re.compile(r"^(`{3,}|~{3,})")
 CONFLICTING_FLAGS = "conflicting Flag: lines"
 
 
+def _mask_non_declarations(body: str) -> str:
+    """Blank HTML comments and fenced code, keeping every newline so no lines join."""
+    body = HTML_COMMENT_RE.sub(lambda m: "\n" * m.group(0).count("\n"), body)
+    lines = body.split("\n")
+    opener = ""  # the delimiter of the fence being masked, if any
+    for i, line in enumerate(lines):
+        trimmed = line.lstrip(" ")
+        indented = len(line) - len(trimmed) > 3
+        m = None if indented else FENCE_RE.match(trimmed)
+        if not opener:
+            # A backtick opener cannot contain another backtick: "```x```" is inline code.
+            if m and not (m.group(1)[0] == "`" and "`" in trimmed[len(m.group(1)) :]):
+                opener = m.group(1)
+                lines[i] = ""
+            continue
+        # Only a run of the same character, at least as long, with nothing after it
+        # closes a fence; a shorter fence inside it is content.
+        if (
+            m
+            and m.group(1)[0] == opener[0]
+            and len(m.group(1)) >= len(opener)
+            and not trimmed[len(m.group(1)) :].strip()
+        ):
+            opener = ""
+        lines[i] = ""
+    return "\n".join(lines)
+
+
 def _declared_flags(body: str) -> list[str]:
-    """Distinct values of a PR description's Flag: lines."""
-    for pattern in FENCE_RES:
-        body = pattern.sub("", body)
-    return list(
-        dict.fromkeys(
-            m.lower() if m.lower() == "none" else m for m in FLAG_LINE_RE.findall(body)
-        )
-    )
+    """Distinct values of a PR description's Flag: lines, compared ignoring case."""
+    flags: dict[str, str] = {}
+    for value in FLAG_LINE_RE.findall(_mask_non_declarations(body)):
+        flags.setdefault(value.lower(), "none" if value.lower() == "none" else value)
+    return list(flags.values())
 
 
 def _declared_flag(pr: dict) -> str | None:
@@ -1184,47 +1367,92 @@ def _declared_flag(pr: dict) -> str | None:
     return None
 
 
-HELD_LEDGER = _REPO_ROOT / "scripts" / ".changelog_held.json"
+# State files name private PRs and unreleased work, and this repository is public, so
+# they are committed encrypted (Fernet: AES with an HMAC). The key is the
+# CHANGELOG_STATE_KEY secret; locally, the `changelog-state-key` Keychain item.
+STATE_KEY_ENV = "CHANGELOG_STATE_KEY"
+HELD_LEDGER = _REPO_ROOT / "scripts" / ".changelog_held.json.enc"
+
+
+def _fernet() -> Fernet:
+    key = os.environ.get(STATE_KEY_ENV, "").strip()
+    if not key:
+        raise SystemExit(f"Set {STATE_KEY_ENV} to read or write the encrypted state")
+    try:
+        return Fernet(key.encode())
+    except ValueError:
+        raise SystemExit(f"{STATE_KEY_ENV} is not a valid key") from None
+
+
+def _read_state(path: Path) -> dict:
+    """Read a state file; a `.enc` file is decrypted, anything else is plain JSON."""
+    raw = path.read_bytes()
+    if path.suffix != ".enc":
+        return json.loads(raw)
+    try:
+        return json.loads(_fernet().decrypt(raw.strip()))
+    except InvalidToken:
+        raise SystemExit(f"Cannot decrypt {path.name}: check {STATE_KEY_ENV}") from None
+
+
+def _write_state(path: Path, data: dict) -> None:
+    """Write a state file; a `.enc` file is encrypted and never written in the clear."""
+    text = json.dumps(data, indent=2) + "\n"
+    if path.suffix == ".enc":
+        path.write_bytes(_fernet().encrypt(text.encode()) + b"\n")
+    else:
+        path.write_text(text)
+
+
+def _legacy_sibling(path: Path) -> Path | None:
+    return path.with_suffix("") if path.suffix == ".enc" else None
 
 
 def _load_held(path: Path | None) -> dict[str, dict]:
     """Load the held list: PR number -> {flag, title, merged_at, held_since}."""
-    if path is None or not path.exists():
+    if path is None:
         return {}
-    return json.loads(path.read_text())
+    held = _read_state(path) if path.exists() else {}
+    legacy = _legacy_sibling(path)
+    if legacy and legacy.exists():
+        held = {**json.loads(legacy.read_text()), **held}
+    return held
 
 
 def _write_held(path: Path, held: dict[str, dict]) -> None:
-    """Write the held list with stable ordering, so weekly diffs stay small."""
+    """Write the held list in PR order, and retire a plaintext copy beside it."""
     ordered = {k: dict(sorted(held[k].items())) for k in sorted(held, key=int)}
-    path.write_text(json.dumps(ordered, indent=2) + "\n")
+    _write_state(path, ordered)
+    legacy = _legacy_sibling(path)
+    if legacy and legacy.exists():
+        legacy.unlink()
 
 
 def _release_held(
     held: dict[str, dict], flags: dict[str, dict]
-) -> tuple[dict[str, str], dict[str, str]]:
-    """Split the held list into released PRs and PRs that stay held, each with a reason.
+) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    """Split the held list into released, still held, and dropped PRs, with reasons.
 
-    A flag that Eppo shows fully rolled out releases its PRs. So does an archived
-    flag, since flags are usually archived once a feature ships; the reviewer sees
-    which reason applied. A flag missing from Eppo, or conflicting declarations,
-    stays held for a human to resolve.
+    A flag that Eppo shows fully rolled out releases its PRs. One that is not yet
+    rolled out keeps them held. Anything uncertain is dropped without publishing:
+    an archived flag (the feature may or may not have shipped), a flag missing from
+    Eppo, or conflicting declarations.
     """
-    released, kept = {}, {}
+    released, kept, dropped = {}, {}, {}
     for number, entry in held.items():
         flag = entry.get("flag", "")
         state = flags.get(flag)
         if flag == CONFLICTING_FLAGS:
-            kept[number] = "conflicting Flag: lines; set one and remove this entry"
+            dropped[number] = "conflicting Flag: lines"
         elif state is None:
-            kept[number] = f"flag {flag} not found in Eppo"
+            dropped[number] = f"flag {flag} not found in Eppo"
         elif state.get("rolled_out"):
             released[number] = f"flag {flag} fully rolled out"
         elif state.get("archived"):
-            released[number] = f"flag {flag} archived; confirm it shipped"
+            dropped[number] = f"flag {flag} archived before a full rollout"
         else:
             kept[number] = f"flag {flag} not fully rolled out"
-    return released, kept
+    return released, kept, dropped
 
 
 def cmd_mock(args: argparse.Namespace) -> None:
@@ -1253,10 +1481,11 @@ def cmd_mock(args: argparse.Namespace) -> None:
         Path(args.held_ledger).resolve() if getattr(args, "held_ledger", None) else None
     )
     ledger = _load_held(ledger_path)
-    released, kept = _release_held(ledger, flags)
+    released, kept, dropped_held = _release_held(ledger, flags)
 
     week = []
     held: list[tuple[int, str]] = []
+    skipped_declared: list[tuple[int, str]] = []
     for number in released:
         n = int(number)
         if n in prs and n in results:
@@ -1280,7 +1509,11 @@ def cmd_mock(args: argparse.Namespace) -> None:
         # Hold only on the author's declaration: the PR's Flag: line, or its fragment's flag
         # for PRs merged before the line existed. The classifier's guess is a reviewer hint.
         flag = _declared_flag(pr)
-        if flag and not flags.get(flag, {}).get("rolled_out"):
+        if flag and flag not in flags:
+            # A conflicting declaration or a flag Eppo does not know: left out.
+            skipped_declared.append((n, f"declared flag {flag} cannot be checked"))
+            continue
+        if flag and not flags[flag]["rolled_out"]:
             held.append((n, flag))
             continue
         week.append(n)
@@ -1306,11 +1539,7 @@ def cmd_mock(args: argparse.Namespace) -> None:
         if grouping_path.exists():
             grouping = json.loads(grouping_path.read_text())
         else:
-            notes = "\n".join(
-                f"#{n} | {prs[n]['title']} | {results[n]['pass1']['reason'][:300]} | "
-                + "; ".join(results[n]["pass1"]["evidence"][:3])[:300]
-                for n in sorted(week)
-            )
+            notes = _group_notes(week, prs, results)
             beta = "\n".join(f"- {name}" for name in _beta_features())
             grouping, meta = _claude(
                 GROUP_SYSTEM,
@@ -1331,16 +1560,44 @@ def cmd_mock(args: argparse.Namespace) -> None:
                 f"grouping: {len(missing)} PRs missing, {len(unknown)} unknown",
                 file=sys.stderr,
             )
+        # A second, smaller call places the PRs the first one left out. The week's
+        # highlights are already picked, so its highlights become changes.
+        retry_cost = 0.0
+        if missing:
+            retry_path = _child(cache, "groups-missing.json")
+            if retry_path.exists():
+                retry = json.loads(retry_path.read_text())
+            else:
+                notes = _group_notes(missing, prs, results)
+                beta = "\n".join(f"- {name}" for name in _beta_features())
+                retry, meta = _claude(
+                    GROUP_SYSTEM,
+                    GROUP_SCHEMA,
+                    f"<beta_features>\n{beta}\n</beta_features>\n<prs>\n{notes}\n</prs>",
+                    GROUP_MODEL,
+                    workdir,
+                )
+                retry["meta"] = meta
+                retry_path.write_text(json.dumps(retry, indent=1))
+            retry_cost = retry.get("meta", {}).get("cost_usd", 0)
+            for g in retry["groups"]:
+                g["prs"] = [n for n in g["prs"] if n in set(missing)]
+                g["rank"] += RETRY_RANK_OFFSET
+                if g["layer"] == "highlight":
+                    g["layer"] = "change"
+            groups = groups + retry["groups"]
+            missing = sorted(
+                set(missing) - {n for g in retry["groups"] for n in g["prs"]}
+            )
+            print(f"grouping retry: {len(missing)} PRs still missing", file=sys.stderr)
         # Keep only this week's PRs; a number the model invents or borrows is dropped.
         week_set = set(week)
         for g in groups:
             g["prs"] = [n for n in g["prs"] if n in week_set]
         dropped = [g for g in groups if g["layer"] == "drop"]
         groups = [g for g in groups if g["prs"] and g["layer"] != "drop"]
-        print(
-            f"dropped {len(dropped)} groups: " + "; ".join(g["label"] for g in dropped),
-            file=sys.stderr,
-        )
+        # Counts only: job logs in the public docs repository are public.
+        print(f"dropped {len(dropped)} groups", file=sys.stderr)
         # Hold the model to its own cap: overflow highlights become changes.
         for product in ("cloud", "fleet"):
             ranked = sorted(
@@ -1370,20 +1627,53 @@ def cmd_mock(args: argparse.Namespace) -> None:
                 except Exception as exc:  # noqa: BLE001 - report and keep going
                     print(f"group {futures[fut]}: {exc}", file=sys.stderr)
 
-    # Fix renamed products, then route anything a human must check to the review list.
-    publish, review = [], []
+    # Fix renamed products and MDX-unsafe text, then sort each entry. One that looks
+    # gated by a flag Eppo knows joins the held list and publishes when the flag rolls
+    # out. One that names something internal is rewritten and checked again. Anything
+    # else uncertain is left out: no person reviews the list.
+    publish, excluded, auto_held, to_fix = [], [], [], []
     for g in written:
         for field in ("title", "entry"):
             if g.get(field):
-                g[field] = _apply_renames(g[field])
-        reasons = _review_reasons(g, prs, results, held, flags)
-        (review if reasons else publish).append((g, reasons))
+                g[field] = _mdx_escape(_apply_renames(g[field]))
+        gates = _gating_flags(g, prs, results, held, flags)
+        known = [(flag, why) for flag, why in gates if flag in flags]
+        if known:
+            auto_held.append((g, known))
+            continue
+        text = _text_reasons(g, flags)
+        # A flag missing from Eppo or a conflicting declaration cannot be checked.
+        if unknown := [why for _, why in gates]:
+            excluded.append((g, text + unknown))
+        elif text:
+            to_fix.append((g, text))
+        else:
+            publish.append(g)
+    fixed, still, rewrite_dropped, fix_cost = _fix_text(
+        to_fix, prs, flags, cache, args.workers
+    )
+    publish += [new for _, new in fixed]
+    excluded += still + [
+        (g, [f"rewrite dropped it: {why}"]) for g, why in rewrite_dropped
+    ]
+    for g, known in auto_held:
+        for n in g["prs"]:
+            new_ledger.setdefault(
+                str(n),
+                {
+                    "flag": known[0][0],
+                    "title": prs[n]["title"],
+                    "merged_at": (prs[n]["merged_at"] or "")[:10],
+                    "held_since": since,
+                    "evidence": "; ".join(why for _, why in known)[:300],
+                },
+            )
 
     label = args.label or _week_label(
         _validate_date(args.since), _validate_date(args.until)
     )
     blocks = {
-        product: _render(product, label, [g for g, _ in publish], set(pages), since)
+        product: _render(product, label, publish, set(pages), since)
         for product in ("cloud", "fleet")
     }
     for product, block in blocks.items():
@@ -1393,58 +1683,99 @@ def cmd_mock(args: argparse.Namespace) -> None:
     _child(cache, "held.json").write_text(
         json.dumps(new_ledger, indent=2, sort_keys=True) + "\n"
     )
-    review_lines = [
-        "# For the reviewer",
+
+    def listed(rows: list[str]) -> list[str]:
+        return rows or ["None."]
+
+    def by_number(d: dict[str, str]) -> list[tuple[str, str]]:
+        return sorted(d.items(), key=lambda kv: int(kv[0]))
+
+    # For debugging a run locally. It names private PRs and unreleased work, so it
+    # stays in the output directory and is never published.
+    report = [
+        "# Run report",
         "",
         "## Released from the held list",
         "",
-        *(
+        *listed(
+            [f"- #{n} {ledger[n]['title']} ({why})" for n, why in by_number(released)]
+        ),
+        "",
+        "## Removed from the held list without publishing",
+        "",
+        *listed(
             [
                 f"- #{n} {ledger[n]['title']} ({why})"
-                for n, why in sorted(released.items(), key=lambda kv: int(kv[0]))
+                for n, why in by_number(dropped_held)
             ]
-            or ["None this week."]
         ),
         "",
         "## Newly held: declared flag not rolled out",
         "",
-        *(
+        *listed([f"- #{n} [{flag}] {prs[n]['title']}" for n, flag in sorted(held)]),
+        "",
+        "## Held automatically: may be behind a flag not rolled out",
+        "",
+        *listed(
             [
-                f"- #{n} [{flag}] {prs[n]['title']} (classifier hint: {results[n]['pass1']['feature_flag']})"
-                for n, flag in sorted(held)
+                f"- [{known[0][0]}] {_entry_line(g, set(pages))}\n  - "
+                + "\n  - ".join(why for _, why in known)
+                for g, known in auto_held
             ]
-            or ["None this week."]
         ),
+        "",
+        "## Rewritten: named something internal",
+        "",
+        *listed(
+            [
+                f"- Now: {_entry_line(new, set(pages))}\n  - Was: {_entry_line(g, set(pages))}"
+                for g, new in fixed
+            ]
+        ),
+        "",
+        "## Left out: could not be checked",
+        "",
+        *listed(
+            [
+                f"- {_entry_line(g, set(pages))}\n  - " + "\n  - ".join(reasons)
+                for g, reasons in excluded
+            ]
+            + [
+                f"- #{n} {prs[n]['title']} ({why})"
+                for n, why in sorted(skipped_declared)
+            ]
+        ),
+        "",
+        "## Left out: no group in either grouping call",
+        "",
+        *listed([f"- #{n} {prs[n]['title']}" for n in missing]),
         "",
         f"## Still held ({len(kept)})",
         "",
-        *(
-            [
-                f"- #{n} {ledger[n]['title']} ({why})"
-                for n, why in sorted(kept.items(), key=lambda kv: int(kv[0]))
-            ]
-            or ["None."]
-        ),
-        "",
-        "## Not grouped: the grouping step left these out",
-        "",
-        *([f"- #{n} {prs[n]['title']}" for n in missing] or ["None."]),
-        "",
-        "## Not published: check before adding",
-        "",
-        *[
-            f"- [{g['layer']}] {g.get('title') or ''} {g['entry']}\n  - "
-            + "\n  - ".join(reasons)
-            for g, reasons in review
-        ],
+        *listed([f"- #{n} {ledger[n]['title']} ({why})" for n, why in by_number(kept)]),
     ]
-    _child(cache, "review.md").write_text("\n".join(review_lines) + "\n")
+    _child(cache, "report.md").write_text("\n".join(report) + "\n")
+    # Counts only, for the public PR description.
+    counts = {
+        "Entries published": len(publish),
+        "Rewritten to remove internal names": len(fixed),
+        "Released from the held list": len(released),
+        "Newly held behind a flag": len(held) + len(auto_held),
+        "Left out as uncertain": len(excluded) + len(skipped_declared) + len(missing),
+    }
+    _child(cache, "summary.md").write_text(
+        "| | |\n|---|---|\n" + "".join(f"| {k} | {v} |\n" for k, v in counts.items())
+    )
     print(
-        f"{len(publish)} entries published, {len(review)} sent to review",
+        f"{len(publish)} entries published, {len(auto_held)} held behind flags, "
+        f"{len(excluded)} left out",
         file=sys.stderr,
     )
-    cost = grouping.get("meta", {}).get("cost_usd", 0) + sum(
-        g["meta"]["cost_usd"] for g in written
+    cost = (
+        grouping.get("meta", {}).get("cost_usd", 0)
+        + retry_cost
+        + fix_cost
+        + sum(g["meta"]["cost_usd"] for g in written)
     )
     layers = {
         layer: sum(g["layer"] == layer for g in written)
@@ -1506,14 +1837,113 @@ def _eppo_token(key_file: str | None) -> str:
     return token
 
 
+# Eppo REST API. Domain is hardcoded (allowlist of one) and HTTPS-only per
+# our SSRF guidance; never read the base URL from user input.
+EPPO_API_BASE = "https://eppo.cloud/api/v1"
+EPPO_TIMEOUT_SECONDS = 15
+
+
+def _eppo_get(path: str, token: str) -> dict | list:
+    """GET a path under the Eppo REST API base (HTTPS + allowlisted domain)."""
+    url = f"{EPPO_API_BASE}/{path.lstrip('/')}"
+    if not url.startswith("https://eppo.cloud/"):  # belt-and-suspenders SSRF guard
+        raise ValueError("Eppo URL failed allowlist check")
+    req = urllib.request.Request(url, headers={"X-Eppo-Token": token})
+    with urllib.request.urlopen(req, timeout=EPPO_TIMEOUT_SECONDS) as resp:
+        return json.loads(resp.read().decode())
+
+
+def eppo_flag_index(token: str) -> dict[str, dict]:
+    """Fetch feature flags (with allocations) indexed by their flag key.
+
+    Eppo's flag-detail endpoint is keyed by numeric id, not the flag key, so we
+    list flags and index by ``key``. Accepts a bare list or an envelope.
+
+    NOTE: this reads a single page. If the API paginates and a held fragment's
+    flag is on a later page, it surfaces as "Eppo flag not found" (a loud error,
+    never a silent wrong publish). The truncation check below warns when the
+    envelope reports more flags than were returned.
+    """
+    payload = _eppo_get("feature-flags?include_detailed_allocations=true", token)
+    if isinstance(payload, list):
+        items = payload
+    else:
+        items = (
+            payload.get("flags")
+            or payload.get("data")
+            or payload.get("results")
+            or payload.get("items")
+            or []
+        )
+        total = (
+            payload.get("total_count") or payload.get("total") or payload.get("count")
+        )
+        if isinstance(total, int) and total > len(items):
+            print(
+                f"WARNING: Eppo returned {len(items)} of {total} flags (paginated); "
+                f"some held fragments may falsely report 'flag not found'.",
+                file=sys.stderr,
+            )
+    return {f["key"]: f for f in items if isinstance(f, dict) and f.get("key")}
+
+
+def is_fully_rolled_out(flag_json: dict) -> bool:
+    """Return True when the flag serves one variant to the whole production audience.
+
+    Eppo models each environment as a waterfall of allocations (top-level
+    ``allocations``, tagged by ``environment_id``). Allocations with
+    ``targeting_rules`` only cover the tenants they match; users who match none
+    fall through to the first allocation with no targeting rules (the catch-all,
+    usually ``is_default``). That catch-all decides what the general population
+    gets, so it is the signal for "shipped to everyone".
+
+    Fully rolled out := the production environment is active AND its first
+    no-targeting allocation has full traffic exposure and assigns 100% weight to
+    a single variation. For BOOLEAN flags that variation must be ``"true"`` (a
+    catch-all serving ``"false"`` means the feature is off for everyone).
+    """
+    prod = next(
+        (e for e in flag_json.get("environments", []) if e.get("is_production")), None
+    )
+    if prod is None or not prod.get("active"):
+        return False
+    prod_id = prod.get("id")
+
+    is_boolean = flag_json.get("variation_type") == "BOOLEAN"
+    on_variation_ids = {
+        v["id"]
+        for v in flag_json.get("variations", [])
+        if v.get("variant_key") == "true"
+    }
+
+    prod_allocations = [
+        a
+        for a in flag_json.get("allocations", [])
+        if a.get("environment_id") == prod_id and not a.get("archived_at")
+    ]
+    for alloc in prod_allocations:
+        if alloc.get("targeting_rules"):
+            continue  # only covers targeted tenants; not the general population
+        # First catch-all allocation reached: it decides what everyone else gets.
+        # Eppo expresses full exposure as the fraction 1; tolerate 100 (percent).
+        if alloc.get("percent_exposure", 1) not in (1, 100):
+            return False  # partial traffic exposure
+        served = [
+            w for w in alloc.get("variation_weight", []) if w.get("weight", 0) > 0
+        ]
+        if len(served) != 1:
+            return False  # split across variants (experiment), not a uniform rollout
+        if is_boolean and served[0].get("variation_id") not in on_variation_ids:
+            return False  # catch-all serves "false" -> off for everyone
+        return True
+    return False  # no catch-all -> only targeted tenants get the feature
+
+
 def _load_flags(out: Path, key_file: str | None) -> dict[str, dict]:
     """Fetch every Eppo flag once and cache keys, names, and rollout state (no token)."""
     cache = _child(out, "eppo-flags.json")
     if cache.exists():
         return json.loads(cache.read_text())
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from assemble_changelog import eppo_flag_index, is_fully_rolled_out  # noqa: PLC0415
-
     index = eppo_flag_index(_eppo_token(key_file))
     flags = {
         key: {
@@ -2056,7 +2486,7 @@ def cmd_selfhosted(args: argparse.Namespace) -> None:
     if changes := layer("change"):
         lines += ["### Changes", "", *changes, ""]
     if fixes := layer("fix", MAX_FIXES):
-        lines += ['<Accordion title="Fixes">', "", *fixes, "", "</Accordion>", ""]
+        lines += [FIXES_HEADING, "", FIXES_OPEN, "", *fixes, "", "</Accordion>", ""]
     target = _child(cache, "release.mdx")
     target.write_text("\n".join(lines))
     cost = grouping.get("meta", {}).get("cost_usd", 0) + sum(
@@ -2149,7 +2579,7 @@ def cmd_weekly(args: argparse.Namespace) -> None:
 
     # PRs held in earlier weeks whose flag has since shipped are written this week.
     ledger = Path(args.held_ledger).resolve()
-    released, _ = _release_held(_load_held(ledger), flags)
+    released, _, _ = _release_held(_load_held(ledger), flags)
     if released:
         prs_dir = _child(out, "prs")
         for number in released:
@@ -2191,96 +2621,7 @@ def cmd_weekly(args: argparse.Namespace) -> None:
                     f"Inserted the {product} entry into {path.relative_to(_REPO_ROOT)}",
                     file=sys.stderr,
                 )
-    print(_child(cache, "review.md"))
-
-
-# ---------------------------------------------------------------------------
-# seed-held: carry the fragment pipeline's held backlog into the held list
-
-
-def cmd_seed_held(args: argparse.Namespace) -> None:
-    """Add every held .changelog fragment in langchainplus to the held list, once."""
-    repo = Path(args.repo).expanduser().resolve()
-    root = (repo / ".changelog").resolve()
-    published_ledger = _REPO_ROOT / "scripts" / ".changelog_published.txt"
-    published = (
-        {
-            line.strip()
-            for line in published_ledger.read_text().splitlines()
-            if line.strip() and not line.startswith("#")
-        }
-        if published_ledger.exists()
-        else set()
-    )
-    ledger_path = Path(args.held_ledger).resolve()
-    held = _load_held(ledger_path)
-    # Only flags still waiting to ship carry over. A held fragment whose flag already
-    # rolled out was usually covered by its feature's launch entry, and releasing it
-    # now would republish it; a flag missing from Eppo cannot be resolved by the job.
-    snapshot = json.loads(Path(args.flags_snapshot).read_text())
-    added = skipped = 0
-    not_pending: Counter = Counter()
-    for path in sorted(root.glob("*.yaml")):
-        if path.name.startswith(("_", "TEMPLATE")) or path.name in published:
-            continue
-        try:
-            data = yaml.safe_load(path.read_text()) or {}
-        except yaml.YAMLError:
-            continue
-        flag = data.get("flag")
-        if not flag or str(data.get("status", "")).strip().lower() == "ready":
-            continue
-        state = snapshot.get(str(flag))
-        if state is None or state.get("rolled_out") or state.get("archived"):
-            not_pending[
-                "missing from Eppo"
-                if state is None
-                else "already rolled out or archived"
-            ] += 1
-            continue
-        number, merged = None, path.name[:10]
-        m = re.search(r"#(\d+)\s*$", str(data.get("pr") or ""))
-        if m:
-            number = m.group(1)
-        else:
-            subject = _run(
-                [
-                    "git",
-                    "log",
-                    "-1",
-                    "--diff-filter=A",
-                    "--format=%s%x00%cs",
-                    "origin/main",
-                    "--",
-                    str(path.relative_to(repo)),
-                ],
-                timeout=GH_TIMEOUT_SECONDS,
-                cwd=repo,
-            ).strip()
-            subject, _, commit_date = subject.partition("\x00")
-            merged = commit_date or merged
-            m = re.search(r"\(#(\d+)\)", subject)
-            if m:
-                number = m.group(1)
-        if not number:
-            print(f"{path.name}: could not find its PR; skipping", file=sys.stderr)
-            skipped += 1
-            continue
-        if number in held:
-            continue
-        held[number] = {
-            "flag": str(flag),
-            "title": str(data.get("title") or path.stem),
-            "merged_at": merged,
-            "held_since": "fragment",
-        }
-        added += 1
-    _write_held(ledger_path, held)
-    print(
-        f"Added {added} held fragments ({skipped} without a PR); {len(held)} PRs held. "
-        f"Not carried over: {dict(not_pending)}",
-        file=sys.stderr,
-    )
+    print(_child(cache, "report.md"))
 
 
 def main() -> None:
@@ -2422,20 +2763,6 @@ def main() -> None:
     )
     p.add_argument("--workers", type=int, default=8)
     p.set_defaults(func=cmd_weekly)
-
-    p = sub.add_parser(
-        "seed-held", help="Import held .changelog fragments into the held list, once"
-    )
-    p.add_argument(
-        "--repo", required=True, help="Local langchainplus checkout at current main"
-    )
-    p.add_argument("--held-ledger", default=str(HELD_LEDGER))
-    p.add_argument(
-        "--flags-snapshot",
-        required=True,
-        help="eppo-flags.json from a flags or weekly run; only flags still pending carry over",
-    )
-    p.set_defaults(func=cmd_seed_held)
 
     args = parser.parse_args()
     args.func(args)

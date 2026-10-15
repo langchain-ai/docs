@@ -68,7 +68,7 @@ Error: creating temporary Agent Pool ... "code": "ErrCode_InsufficientVCPUQuota"
 
 **Cause:** Per-region vCPU quotas per VM family. Default for `standardDSv5Family` in `eastus` is often 10 cores. One `Standard_D8s_v5` node, the module default, uses 8; only 2 remain.
 
-**Why `max_pods = 30` triggers it:** AKS default is 30 pods per node. The base install runs ~37 pods on the node: ~17 LangSmith pods plus ~20 system pods. The autoscaler tries to add a second node, hits quota, enters backoff. The module sets `default_node_pool_max_pods = 60` by default so all pods fit on one node. Check that `terraform.tfvars` does not lower it.
+**Why `max_pods = 30` triggers it:** The base install runs ~37 pods (~17 LangSmith plus ~20 system), more than the AKS default of 30 per node, so the autoscaler adds a second node, hits quota, and backs off. The module default `default_node_pool_max_pods = 60` fits all pods on one node. Check that `terraform.tfvars` does not lower it.
 
 **Recommended quota** for multi-dataplane (3 dataplanes): 32 cores.
 
@@ -88,7 +88,7 @@ az quota update \
 az vm list-usage --location eastus --query "[?contains(name.value,'DSv5')]" -o table
 ```
 
-**Alternative, switch VM family if DSv5 quota is exhausted:** Set `default_node_pool_vm_size = "Standard_D8s_v3"` and use `Standard_D16s_v3` for the `large` pool in `additional_node_pools`. Same vCPU and RAM, different quota pool. The module defaulted to DSv3 sizes before it moved to v5. Move back to v5 once the quota arrives. Do not fall back to DSv2 (`Standard_DS4_v2`, `Standard_DS5_v2`), which Azure has retired.
+**Alternative, switch VM family if DSv5 quota is exhausted:** Set `default_node_pool_vm_size = "Standard_D8s_v3"` and use `Standard_D16s_v3` for the `large` pool in `additional_node_pools`. Same vCPU and RAM, different quota pool. Move back to v5 once the quota arrives. Do not fall back to DSv2 (`Standard_DS4_v2`, `Standard_DS5_v2`), which Azure has retired.
 
 <Note>
 `max_pods` is immutable on an existing node pool. Set it before the first `terraform apply`.
@@ -261,7 +261,7 @@ For cause 2, have the vault owner grant the deploying identity Key Vault Secrets
 
 **Symptom:** `nslookup langsmith-demo.eastus.cloudapp.azure.com` returns NXDOMAIN. The cert-manager ACME challenge cannot complete; TLS certificate stays `READY: False`.
 
-**Cause:** The `service.beta.kubernetes.io/azure-dns-label-name` annotation must be set on the ingress controller's LoadBalancer service so Azure assigns the DNS label to the public IP. `make deploy` sets it automatically via `deploy.sh`. If you ran `helm upgrade` directly, the annotation was never set.
+**Cause:** Azure assigns the DNS label to the public IP only when the ingress controller's LoadBalancer service carries the `service.beta.kubernetes.io/azure-dns-label-name` annotation. `make deploy` sets it; a direct `helm upgrade` does not.
 
 **Fix with `ingress_controller = "envoy-gateway"` (the default):** The EnvoyProxy `langsmith-proxy` carries the annotation, and Envoy Gateway copies it onto the proxy service. Check both:
 
@@ -472,7 +472,7 @@ Changing `deployments_encryption_key`, `agent_builder_encryption_key`, `insights
 
 **Symptom:** Pod restarts indefinitely. No traceback. Logs show "Child process died" repeatedly.
 
-**Cause:** `lc_config.settings.SharedSettings` is instantiated at module import time inside the uvicorn worker. A pydantic `ValidationError` raised there exits the worker with code 0; uvicorn's parent prints "Child process died" but swallows the traceback. Common triggers: `BASIC_AUTH_ENABLED = true` but `BASIC_AUTH_JWT_SECRET` is empty, or a required feature-flag key absent from `langsmith-config`.
+**Cause:** A settings validation error at import time exits the uvicorn worker with code 0, and the parent process swallows the traceback. Common triggers: `BASIC_AUTH_ENABLED = true` but `BASIC_AUTH_JWT_SECRET` is empty, or a required feature-flag key absent from `langsmith-config`.
 
 **Diagnose** by running the server in a debug pod with `envFrom` pointing at `langsmith-config` and `PYTHONUNBUFFERED=1`. **Fix:** add the missing key to Key Vault, rerun `make k8s-secrets`, restart the deployment.
 
@@ -601,7 +601,7 @@ make deploy
 
 **Symptom:** `ingress-appgw-deployment` is CrashLoopBackOff. Logs: `ErrorApplicationGatewayForbidden: does not have authorization to perform action Microsoft.Network/applicationGateways/read`.
 
-**Cause:** AKS creates a managed identity for the AGIC add-on (`ingressapplicationgateway-<cluster>` in the `MC_` resource group). The identity is created during cluster provisioning but takes ~5 minutes to register in Microsoft Entra ID before role assignments take effect.
+**Cause:** The AGIC add-on's managed identity (`ingressapplicationgateway-<cluster>` in the `MC_` resource group) takes ~5 minutes to register in Microsoft Entra ID before its role assignments take effect.
 
 **Fix:** The `k8s-cluster` module waits 300s after cluster creation (`time_sleep.agic_identity_propagation`) and creates the three required role assignments automatically. If AGIC is still 403 after `make apply`:
 
