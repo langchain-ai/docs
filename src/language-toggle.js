@@ -22,8 +22,23 @@
 (function () {
   "use strict";
 
-  const PYTHON_PREFIX = "/oss/python/";
-  const JS_PREFIX = "/oss/javascript/";
+  const LANGUAGE_PREFIX_PAIRS = [
+    {
+      python: "/oss/python/",
+      javascript: "/oss/javascript/",
+    },
+    {
+      python: "/langsmith/python/",
+      javascript: "/langsmith/javascript/",
+    },
+  ];
+
+  // Language-agnostic Build tabs still live under the Python/TypeScript
+  // dropdowns (so they appear in Build), but must not show the switcher.
+  const HIDE_LANGUAGE_DROPDOWN_PREFIXES = ["/oss/openwiki"];
+
+  // Toggled on <html>; paired with a CSS rule that hides .nav-dropdown-trigger.
+  const HIDE_LANGUAGE_DROPDOWN_CLASS = "hide-language-dropdown";
 
   // sessionStorage key holding a pending language switch (survives a reload).
   const PENDING_KEY = "lc-language-toggle-pending";
@@ -32,13 +47,28 @@
   // never trigger a stray redirect on some later, unrelated navigation.
   const PENDING_TTL_MS = 8000;
 
+  function shouldHideLanguageDropdown(path) {
+    return HIDE_LANGUAGE_DROPDOWN_PREFIXES.some(
+      (prefix) => path === prefix || path.startsWith(prefix + "/"),
+    );
+  }
+
+  function syncLanguageDropdownVisibility() {
+    document.documentElement.classList.toggle(
+      HIDE_LANGUAGE_DROPDOWN_CLASS,
+      shouldHideLanguageDropdown(location.pathname),
+    );
+  }
+
   /**
    * Detect which language a path belongs to.
    * Returns "python", "javascript", or null.
    */
   function getPathLanguage(path) {
-    if (path.startsWith(PYTHON_PREFIX)) return "python";
-    if (path.startsWith(JS_PREFIX)) return "javascript";
+    for (const prefixes of LANGUAGE_PREFIX_PAIRS) {
+      if (path.startsWith(prefixes.python)) return "python";
+      if (path.startsWith(prefixes.javascript)) return "javascript";
+    }
     return null;
   }
 
@@ -47,11 +77,15 @@
    * e.g., getEquivalentPath("/oss/python/foo", "javascript") → "/oss/javascript/foo"
    */
   function getEquivalentPath(sourcePath, targetLang) {
-    const sourcePrefix = targetLang === "python" ? JS_PREFIX : PYTHON_PREFIX;
-    const targetPrefix = targetLang === "python" ? PYTHON_PREFIX : JS_PREFIX;
+    const sourceLang = targetLang === "python" ? "javascript" : "python";
 
-    if (sourcePath.startsWith(sourcePrefix)) {
-      return targetPrefix + sourcePath.substring(sourcePrefix.length);
+    for (const prefixes of LANGUAGE_PREFIX_PAIRS) {
+      const sourcePrefix = prefixes[sourceLang];
+      if (sourcePath.startsWith(sourcePrefix)) {
+        return (
+          prefixes[targetLang] + sourcePath.substring(sourcePrefix.length)
+        );
+      }
     }
     return null;
   }
@@ -205,6 +239,7 @@
       lastPath = location.pathname;
       applyPendingSwitch();
     }
+    syncLanguageDropdownVisibility();
   }
 
   window.addEventListener("popstate", onPathChange);
@@ -226,4 +261,5 @@
 
   // Handle the full-page-reload case: apply any pending switch on initial load.
   applyPendingSwitch();
+  syncLanguageDropdownVisibility();
 })();

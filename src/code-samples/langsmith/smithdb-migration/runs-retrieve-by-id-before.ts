@@ -10,9 +10,8 @@ async function findRun(projectId: string) {
 
 async function getProjectId() {
   const client = new Client();
-  const page = await client.projects.list({ name: "default", limit: 1 });
-  const projects = page.getPaginatedItems();
-  return projects[0]?.id;
+  const project = await client.readProject({ projectName: "default" });
+  return project.id;
 }
 
 // :snippet-start: runs-retrieve-by-id-before-js

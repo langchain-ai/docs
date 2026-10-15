@@ -12,7 +12,7 @@ FILTER='eq(name, "RetrieveDocs")'
 TRACE_FILTER='and(eq(feedback_key, "user_score"), eq(feedback_score, 1))'
 TREE_FILTER='eq(name, "ExpandQuery")'
 
-curl -X POST "https://api.smith.langchain.com/v2/runs/query" \
+curl -X POST "https://api.smith.langchain.com/api/v2/runs/query" \
   -H "x-api-key: $LANGSMITH_API_KEY" \
   -H "Content-Type: application/json" \
   -d "$(jq -n \

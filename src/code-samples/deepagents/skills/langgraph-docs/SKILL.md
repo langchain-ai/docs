@@ -16,10 +16,10 @@ This returns a structured list of all available documentation with descriptions.
 ### 2. Select Relevant Documentation
 
 Identify 2-4 most relevant URLs from the index. Prioritize:
-- **Implementation questions** — specific how-to guides
-- **Conceptual questions** — core concept pages
-- **End-to-end examples** — tutorials
-- **API details** — reference docs
+- **Implementation questions**: specific how-to guides
+- **Conceptual questions**: core concept pages
+- **End-to-end examples**: tutorials
+- **API details**: reference docs
 
 ### 3. Fetch and Apply
 

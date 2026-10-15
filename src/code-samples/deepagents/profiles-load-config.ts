@@ -5,7 +5,7 @@ import { fileURLToPath } from "url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 copyFileSync(
-  join(here, "profiles-config-profile.yaml"),
+  join(here, "../profile.yaml"),
   join(process.cwd(), "profile.yaml"),
 );
 // :remove-end:

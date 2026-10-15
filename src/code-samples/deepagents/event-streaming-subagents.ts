@@ -1,8 +1,15 @@
 // :remove-start:
+// streamEvents + nested subagents leave LangChainTracer unsettled
+// ("No chain run to end"), which hangs async iterators under
+// CODE_SAMPLE_TRACING=1. Disable tracing for this runnable harness only.
+process.env.LANGSMITH_TRACING = "false";
+process.env.LANGCHAIN_TRACING_V2 = "false";
+
 import { createDeepAgent } from "deepagents";
 
 const agent = createDeepAgent({
   model: "openai:gpt-5.5",
+  name: "main-agent",
   systemPrompt:
     "You are a project coordinator with no creative writing knowledge. " +
     "For every user request, you must call the task() tool with " +
@@ -34,6 +41,8 @@ for await (const subagent of stream.subagents) {
 
   subagentNames.push(subagent.name);
 }
+
+await stream.output;
 // :snippet-end:
 
 // :remove-start:

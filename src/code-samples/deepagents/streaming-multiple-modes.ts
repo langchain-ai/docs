@@ -39,7 +39,7 @@ const agent = createDeepAgent({
 
 // :snippet-start: streaming-multiple-modes-js
 // Skip internal middleware steps - only show meaningful node names
-const INTERESTING_NODES = new Set(["model_request", "tools"]);
+const INTERESTING_NODES = new Set(["model", "tools"]);
 
 let lastSource = "";
 let midLine = false; // true when we've written tokens without a trailing newline

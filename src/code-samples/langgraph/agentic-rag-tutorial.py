@@ -1,14 +1,22 @@
-import getpass
-from functools import lru_cache
-from langchain_core.messages import convert_to_messages
+"""Build a custom RAG agent with LangGraph — docs code samples."""
 
+from __future__ import annotations
+
+# :remove-start:
+import os
+import sys
+
+if not os.environ.get("OPENAI_API_KEY"):
+    print("[agentic-rag-tutorial.py] Skipping (OPENAI_API_KEY required).")
+    sys.exit(0)
+# :remove-end:
 
 # :snippet-start: agentic-rag-setup-env-py
 import getpass
 import os
 
 
-def _set_env(key: str):
+def _set_env(key: str) -> None:
     if key not in os.environ:
         os.environ[key] = getpass.getpass(f"{key}:")
 
@@ -21,6 +29,7 @@ _set_env("OPENAI_API_KEY")
 import bs4
 import requests
 from langchain_core.documents import Document
+
 
 # Below is a minimal helper for demonstration purposes.
 def load_web_page(url: str, bs_kwargs: dict | None = None) -> list[Document]:
@@ -54,9 +63,11 @@ doc_splits = text_splitter.split_documents(docs_list)
 
 
 # :snippet-start: agentic-rag-create-retriever-py
+from functools import lru_cache
+
 from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_openai import OpenAIEmbeddings
-from functools import lru_cache
+
 
 @lru_cache(maxsize=1)
 def _get_retriever():
@@ -65,11 +76,14 @@ def _get_retriever():
         embedding=OpenAIEmbeddings(),
     )
     return vectorstore.as_retriever()
+
+
 # :snippet-end:
 
 
 # :snippet-start: agentic-rag-create-retriever-tool-py
 from langchain.tools import tool
+
 
 @tool
 def retrieve_blog_posts(query: str) -> str:
@@ -83,11 +97,16 @@ retriever_tool = retrieve_blog_posts
 # :snippet-end:
 
 
-# :snippet-start: agentic-rag-generate-query-or-respond-py
-from langgraph.graph import MessagesState
-from langchain.chat_models import init_chat_model
+# :snippet-start: agentic-rag-test-retriever-tool-py
+retriever_tool.invoke({"query": "types of reward hacking"})
+# :snippet-end:
 
-response_model = init_chat_model("openai:gpt-4o-mini", temperature=0)
+
+# :snippet-start: agentic-rag-generate-query-or-respond-py
+from langchain.chat_models import init_chat_model
+from langgraph.graph import MessagesState
+
+response_model = init_chat_model("openai:gpt-5.4-mini", temperature=0)
 
 
 def generate_query_or_respond(state: MessagesState):
@@ -96,11 +115,34 @@ def generate_query_or_respond(state: MessagesState):
     """
     response = response_model.bind_tools([retriever_tool]).invoke(state["messages"])
     return {"messages": [response]}
+
+
 # :snippet-end:
 
+
+# :snippet-start: agentic-rag-try-greeting-py
+input = {"messages": [{"role": "user", "content": "hello!"}]}
+generate_query_or_respond(input)["messages"][-1].pretty_print()
+# :snippet-end:
+
+
+# :snippet-start: agentic-rag-try-retrieval-question-py
+input = {
+    "messages": [
+        {
+            "role": "user",
+            "content": "What does Lilian Weng say about types of reward hacking?",
+        }
+    ]
+}
+generate_query_or_respond(input)["messages"][-1].pretty_print()
+# :snippet-end:
+
+
 # :snippet-start: agentic-rag-grade-documents-py
-from pydantic import BaseModel, Field
 from typing import Literal
+
+from pydantic import BaseModel, Field
 
 GRADE_PROMPT = (
     "You are a grader assessing relevance of a retrieved document to a user question. \n"
@@ -122,7 +164,7 @@ class GradeDocuments(BaseModel):
     )
 
 
-grader_model = init_chat_model("openai:gpt-4o-mini", temperature=0)
+grader_model = init_chat_model("openai:gpt-5.4-mini", temperature=0)
 
 
 def grade_documents(
@@ -139,11 +181,74 @@ def grade_documents(
     if response.binary_score == "yes":
         return "generate_answer"
     return "rewrite_question"
+
+
+# :snippet-end:
+
+
+# :snippet-start: agentic-rag-grade-irrelevant-py
+from langchain_core.messages import convert_to_messages
+
+input = {
+    "messages": convert_to_messages(
+        [
+            {
+                "role": "user",
+                "content": "What does Lilian Weng say about types of reward hacking?",
+            },
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "1",
+                        "name": "retrieve_blog_posts",
+                        "args": {"query": "types of reward hacking"},
+                    }
+                ],
+            },
+            {"role": "tool", "content": "meow", "tool_call_id": "1"},
+        ]
+    )
+}
+grade_documents(input)
+# :snippet-end:
+
+
+# :snippet-start: agentic-rag-grade-relevant-py
+input = {
+    "messages": convert_to_messages(
+        [
+            {
+                "role": "user",
+                "content": "What does Lilian Weng say about types of reward hacking?",
+            },
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "1",
+                        "name": "retrieve_blog_posts",
+                        "args": {"query": "types of reward hacking"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "content": "reward hacking can be categorized into two types: environment or goal misspecification, and reward tampering",
+                "tool_call_id": "1",
+            },
+        ]
+    )
+}
+grade_documents(input)
 # :snippet-end:
 
 
 # :snippet-start: agentic-rag-rewrite-question-py
 from langchain.messages import HumanMessage
+
 REWRITE_PROMPT = (
     "Look at the input and try to reason about the underlying semantic intent / meaning.\n"
     "Here is the initial question:"
@@ -160,6 +265,37 @@ def rewrite_question(state: MessagesState):
     prompt = REWRITE_PROMPT.format(question=question)
     response = response_model.invoke([{"role": "user", "content": prompt}])
     return {"messages": [HumanMessage(content=response.content)]}
+
+
+# :snippet-end:
+
+
+# :snippet-start: agentic-rag-try-rewrite-py
+input = {
+    "messages": convert_to_messages(
+        [
+            {
+                "role": "user",
+                "content": "What does Lilian Weng say about types of reward hacking?",
+            },
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "1",
+                        "name": "retrieve_blog_posts",
+                        "args": {"query": "types of reward hacking"},
+                    }
+                ],
+            },
+            {"role": "tool", "content": "meow", "tool_call_id": "1"},
+        ]
+    )
+}
+
+response = rewrite_question(input)
+print(response["messages"][-1].content)
 # :snippet-end:
 
 
@@ -175,6 +311,7 @@ GENERATE_PROMPT = (
     "<context>\n{context}\n</context>"
 )
 
+
 def generate_answer(state: MessagesState):
     """Generate an answer from question and retrieved context."""
     question = state["messages"][0].content
@@ -182,6 +319,41 @@ def generate_answer(state: MessagesState):
     prompt = GENERATE_PROMPT.format(question=question, context=context)
     response = response_model.invoke([{"role": "user", "content": prompt}])
     return {"messages": [response]}
+
+
+# :snippet-end:
+
+
+# :snippet-start: agentic-rag-try-generate-answer-py
+input = {
+    "messages": convert_to_messages(
+        [
+            {
+                "role": "user",
+                "content": "What does Lilian Weng say about types of reward hacking?",
+            },
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "1",
+                        "name": "retrieve_blog_posts",
+                        "args": {"query": "types of reward hacking"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "content": "reward hacking can be categorized into two types: environment or goal misspecification, and reward tampering",
+                "tool_call_id": "1",
+            },
+        ]
+    )
+}
+
+response = generate_answer(input)
+response["messages"][-1].pretty_print()
 # :snippet-end:
 
 
@@ -191,7 +363,7 @@ from langgraph.prebuilt import ToolNode
 
 workflow = StateGraph(MessagesState)
 
-# Define the nodes we will cycle between
+# Define the nodes to cycle between
 workflow.add_node(generate_query_or_respond)
 workflow.add_node("retrieve", ToolNode([retriever_tool]))
 workflow.add_node(rewrite_question)
@@ -199,12 +371,14 @@ workflow.add_node(generate_answer)
 
 workflow.add_edge(START, "generate_query_or_respond")
 
+
 # Route based on whether the model requested tool calls.
 def route_on_tool_calls(state: MessagesState):
     last_message = state["messages"][-1]
     if getattr(last_message, "tool_calls", None):
         return "tools"
     return END
+
 
 # Decide whether to retrieve
 workflow.add_conditional_edges(
@@ -222,7 +396,7 @@ workflow.add_conditional_edges(
 workflow.add_conditional_edges(
     "retrieve",
     # Assess agent decision
-    grade_documents
+    grade_documents,
 )
 workflow.add_edge("generate_answer", END)
 workflow.add_edge("rewrite_question", "generate_query_or_respond")
@@ -240,7 +414,7 @@ display(Image(graph.get_graph().draw_mermaid_png()))
 
 # :snippet-start: agentic-rag-run-agent-py
 def run_agentic_rag() -> None:
-    stream = graph.stream_events(
+    for chunk in graph.stream(
         {
             "messages": [
                 {
@@ -249,36 +423,39 @@ def run_agentic_rag() -> None:
                 }
             ]
         },
-        version="v3",
-    )
-    for message in stream.messages:
-        for token in message.text:
-            print(token, end="", flush=True)
+        stream_mode="values",
+    ):
+        last_message = chunk["messages"][-1]
+        pretty_print = getattr(last_message, "pretty_print", None)
+        if callable(pretty_print):
+            pretty_print()
+
+
 # :snippet-end:
 
-run_agentic_rag()
 
 # :remove-start:
+from langchain_core.messages import convert_to_messages as _convert_to_messages
+
+
 def _exercise_nodes() -> None:
-    # Validate setup/preprocess outputs.
     assert len(docs) == len(urls)
     assert len(doc_splits) > 0
 
-    # Validate graph node callables are defined.
     for fn in (
         retrieve_blog_posts,
         generate_query_or_respond,
         grade_documents,
         rewrite_question,
         generate_answer,
+        run_agentic_rag,
     ):
         assert callable(fn) or hasattr(fn, "invoke")
 
-    # Validate routing helper behavior without hitting external APIs.
-    no_tool_state = convert_to_messages([{"role": "assistant", "content": "hello"}])
+    no_tool_state = _convert_to_messages([{"role": "assistant", "content": "hello"}])
     assert route_on_tool_calls({"messages": no_tool_state}) == END
 
-    tool_call_state = convert_to_messages(
+    tool_call_state = _convert_to_messages(
         [
             {
                 "role": "assistant",
@@ -295,9 +472,9 @@ def _exercise_nodes() -> None:
     )
     assert route_on_tool_calls({"messages": tool_call_state}) == "tools"
 
-    # Validate graph object exists and compiled successfully.
     assert graph is not None
     assert graph.get_graph() is not None
+    assert graph.get_graph().draw_mermaid_png()
 
 
 if __name__ == "__main__":

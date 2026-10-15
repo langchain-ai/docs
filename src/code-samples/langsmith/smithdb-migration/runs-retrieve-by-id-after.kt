@@ -1,7 +1,7 @@
 ///usr/bin/env jbang "$0" "$@" ; exit $?
 //JAVA 21
 //KOTLIN 2.2.0
-//DEPS com.langchain.smith:langsmith-java:0.1.0-beta.11
+//DEPS com.langchain.smith:langsmith-java:0.1.0-beta.22
 
 // :snippet-start: runs-retrieve-by-id-after-kt
 // :codegroup-tab: After
@@ -13,6 +13,7 @@ import com.langchain.smith.models.runs.RunRetrieveV2Params
 import com.langchain.smith.models.sessions.SessionListParams
 // :remove-start:
 import com.langchain.smith.models.runs.RunQueryV2Params
+import com.langchain.smith.models.runs.RunSelectField
 // :remove-end:
 
 // :remove-start:
@@ -30,13 +31,16 @@ val project = client.sessions().list(
 ).items().first()
 
 var runId = "<run-id>"
-var startTime = "<run-start-time-rfc3339>"
+var startTime = "<run-start-time-rfc3339>" // Optional, but speeds up retrieval
 // :remove-start:
+val maxStart = OffsetDateTime.now()
 val foundRun = client.runs().queryV2(
     RunQueryV2Params.builder()
         .addProjectId(project.id())
-        .addSelect(RunQueryV2Params.Select.ID)
-        .addSelect(RunQueryV2Params.Select.START_TIME)
+        .minStartTime(maxStart.minusMonths(1))
+        .maxStartTime(maxStart)
+        .addSelect(RunSelectField.ID)
+        .addSelect(RunSelectField.START_TIME)
         .pageSize(1L)
         .build()
 ).items().first()

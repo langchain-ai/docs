@@ -2,7 +2,15 @@ import { Client } from "langsmith";
 
 async function findRun(projectId: string) {
   const client = new Client();
-  for await (const run of client.runs.query({ project_ids: [projectId], selects: ["ID", "START_TIME"] })) {
+  const maxStart = new Date();
+  const minStart = new Date(maxStart);
+  minStart.setUTCMonth(minStart.getUTCMonth() - 1);
+  for await (const run of client.runs.query({
+    project_ids: [projectId],
+    min_start_time: minStart.toISOString(),
+    max_start_time: maxStart.toISOString(),
+    selects: ["ID", "START_TIME"],
+  })) {
     return run;
   }
   return null;
@@ -10,9 +18,8 @@ async function findRun(projectId: string) {
 
 async function getProjectId() {
   const client = new Client();
-  const page = await client.projects.list({ name: "default", limit: 1 });
-  const projects = page.getPaginatedItems();
-  return projects[0]?.id;
+  const project = await client.readProject({ projectName: "default" });
+  return project.id;
 }
 
 // :snippet-start: runs-retrieve-basic-after-js
