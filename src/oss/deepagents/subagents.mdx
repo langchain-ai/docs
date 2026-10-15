@@ -201,7 +201,7 @@ If you're creating a custom LangGraph graph, make sure that the graph has a [sta
 
 ## Forked subagents
 
-By default, a subagent runs with `mode: "isolated"`: it sees only the task description you give it and has no memory of the conversation that led up to the delegation. A **forked subagent** (`mode: "fork"`) inherits the parent's full conversation history and exact system prompt instead.
+By default, a subagent runs with `mode: "isolated"`: it sees only the task description you give it and has no memory of the conversation that led up to the delegation. A **forked subagent** (`mode: "fork"`) inherits the parent's conversation history and state instead, and rebuilds the parent's system prompt from that state.
 
 Use forked subagents when the subagent's task is to continue the work the parent already started, like a worker agent that picks up a fix the parent has already diagnosed, or a subagent that drafts the postmortem for an incident investigation. Since forking is a mode you set on the subagent itself, that's a decision you make when you define it.
 
@@ -248,7 +248,9 @@ graph TD
 Set `mode: "fork"` on a @[`SubAgent`] (the default is `mode: "isolated"`). All @[`SubAgent`] fields are available:
 `name`, `description`, `tools`, `model`, `middleware`, `interrupt_on`, `permissions`, and `response_format`.
 
-`skills` is rejected if provided. `system_prompt` is allowed and is appended to the parent's inherited prompt as an addendum, but doing so typically breaks the prompt cache, so leave it unset unless you have a specific need for fork-only instructions.
+`skills` is rejected if provided. `system_prompt` is allowed. It is appended to the parent's base prompt, before the sections that middleware adds, such as skills and memory. This changes the system message, so it typically breaks the prompt cache. Leave it unset unless you have a specific need for fork-only instructions.
+
+`tools` overrides the inherited user tool list instead of adding to it. Middleware tools, such as the filesystem tools, are still added. A different tool list also breaks the prompt cache.
 
 <ForkedSubagentsBasicPy />
 :::
@@ -257,7 +259,9 @@ Set `mode: "fork"` on a @[`SubAgent`] (the default is `mode: "isolated"`). All @
 Set `mode: "fork"` on a @[`SubAgent`] (the default is `mode: "isolated"`). All @[`SubAgent`] fields are available:
 `name`, `description`, `tools`, `model`, `middleware`, `interruptOn`, `permissions`, and `responseFormat`.
 
-`skills` is rejected if provided. `systemPrompt` is allowed and is appended to the parent's inherited prompt as an addendum, but doing so typically breaks the prompt cache, so leave it unset unless you have a specific need for fork-only instructions.
+`skills` is rejected if provided. `systemPrompt` is allowed. It is appended to the parent's base prompt, before the sections that middleware adds, such as skills and memory. This changes the system message, so it typically breaks the prompt cache. Leave it unset unless you have a specific need for fork-only instructions.
+
+`tools` overrides the inherited user tool list instead of adding to it. Middleware tools, such as the filesystem tools, are still added. A different tool list also breaks the prompt cache.
 
 <ForkedSubagentsBasicJs />
 :::
@@ -314,7 +318,11 @@ A fork does not get a fresh task description. It gets the parent's own conversat
 ```
 :::
 
-Reusing the parent's exact prefix also means the fork can reuse the parent's prompt cache instead of starting cold, though tool use that diverges from the parent's will still miss.
+Forking gives three different things, and only the first is guaranteed:
+
+- **Context inheritance:** the fork always gets the parent's conversation history and state.
+- **Prefix preservation:** a declarative fork tries to rebuild the parent's request from the inherited state. Its middleware runs again, so the tools, system message, and earlier messages match only if that middleware produces the same output. The inherited state can differ from what the parent's last model call saw, and the appended task message can trigger different changes, such as summarization.
+- **Cache hits:** the provider reuses the parent's cache only when the model and provider settings are compatible and the prefix is identical up to a point the provider cached. Matching configuration alone does not guarantee a hit.
 
 A @[`CompiledSubAgent`] supports `mode: "fork"` too, though it keeps its own system prompt since the graph is already built.
 
@@ -324,8 +332,8 @@ Compare isolated and forked modes along these dimensions:
 
 | Dimension | Isolated (default) | Forked |
 |-----------|---------------------|--------|
-| **Context** | Only the task description you pass in | The parent's full conversation history and system prompt |
-| **System prompt and skills** | You set them on the subagent | Skills not settable; system prompt appends to the parent's (breaks caching, so usually left unset) |
+| **Context** | Only the task description you pass in | The parent's conversation history and state; the system prompt is rebuilt from that state |
+| **System prompt and skills** | You set them on the subagent | Skills not settable; system prompt is appended to the parent's base prompt (breaks caching, so usually left unset) |
 | **Calling other subagents** | Can use the `task` tool | Cannot use `task`; must finish the work itself |
 | **Best for** | Focused work that needs little prior context | Continuing an investigation the parent has already started |
 
