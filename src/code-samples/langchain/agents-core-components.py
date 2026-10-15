@@ -1,4 +1,4 @@
-"""Agents docs: core component examples (intro, model, tools, system prompt, structured output, name)."""
+"""Agents docs: core component examples."""
 
 # :remove-start:
 tools: list = []
@@ -74,6 +74,26 @@ _structured_output_agent = agent
 _structured_output_result = result
 # :remove-end:
 
+# :snippet-start: agents-agent-state-py
+from langchain.agents import AgentState, create_agent
+
+
+class MyState(AgentState):
+    user_id: str
+    call_count: int
+
+
+agent = create_agent(
+    model="openai:gpt-5.4",
+    tools=[],
+    state_schema=MyState,  # [!code highlight]
+)
+# :snippet-end:
+
+# :remove-start:
+_state_agent = agent
+# :remove-end:
+
 # :snippet-start: agents-name-py
 agent = create_agent(model="openai:gpt-5.4", tools=tools, name="research_assistant")
 # :snippet-end:
@@ -109,6 +129,19 @@ if __name__ == "__main__":
     assert structured.summary.strip(), "expected structured summary"
     assert 0.0 <= structured.confidence <= 1.0, "expected confidence in [0, 1]"
     print("✓ agents structured output")
+    state_result = _state_agent.invoke(
+        {
+            "messages": [
+                {"role": "user", "content": "Say hello in one short sentence."}
+            ],
+            "user_id": "user_123",
+            "call_count": 0,
+        }
+    )
+    assert state_result["user_id"] == "user_123"
+    assert state_result["call_count"] == 0
+    assert _assistant_text(state_result).strip(), "agents agent state: empty reply"
+    print("✓ agents agent state")
     assert _name_agent.name == "research_assistant"
     _assert_invokes(_name_agent, "agents name")
 # :remove-end:

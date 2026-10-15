@@ -165,6 +165,12 @@ flowchart LR
 
 The diagram covers the tool-call path only. `PermissionRequest` is a separate client-owned event when Deep Agents Code is about to show a permission prompt.
 
+### Notify before the prompt cache expires
+
+The `cache_expiring` notification warns before a tracked prompt-cache retention window ends. Use it to trigger your own reminder before the next turn risks a cache miss.
+
+In `hooks.json`, add a handler group under `Notification` with `matcher` set to `cache_expiring`. Deep Agents Code emits it once per thread and cache window during the final 60 seconds. The payload includes `notification_type`, `message`, and `title`.
+
 ## Input payload
 
 Every handler receives a JSON object on stdin. All events share a common envelope, plus event-specific fields.

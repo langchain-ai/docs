@@ -42,6 +42,13 @@ class ContextMiddleware(AgentMiddleware):
 
 # :remove-start:
 if __name__ == "__main__":
+    import os
+
+    # LangSmith run serialization walks GenericFakeChatModel.messages and
+    # exhausts one-shot iterators before _generate runs.
+    os.environ["LANGSMITH_TRACING"] = "false"
+    os.environ["LANGCHAIN_TRACING_V2"] = "false"
+
     from langchain.agents import create_agent
     from langchain.messages import AIMessage
     from langchain_core.language_models.fake_chat_models import GenericFakeChatModel

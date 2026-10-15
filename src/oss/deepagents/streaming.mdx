@@ -28,10 +28,10 @@ Deep Agents build on LangGraph's streaming infrastructure with first-class suppo
 
 What's possible with deep agent streaming:
 
-* <Icon icon="diagram-subtask" size={16} /> [**Stream subagent progress**](#subagent-progress)—track each subagent's execution as it runs in parallel.
-* <Icon icon="square-binary" size={16} /> [**Stream LLM tokens**](#llm-tokens)—stream tokens from the main agent and each subagent.
-* <Icon icon="screwdriver-wrench" size={16} /> [**Stream tool calls**](#tool-calls)—see tool calls and results from within subagent execution.
-* <Icon icon="table" size={16} /> [**Stream custom updates**](#custom-updates)—emit user-defined signals from inside subagent nodes.
+* [**Stream subagent progress**](#subagent-progress)—track each subagent's execution as it runs in parallel.
+* [**Stream LLM tokens**](#llm-tokens)—stream tokens from the main agent and each subagent.
+* [**Stream tool calls**](#tool-calls)—see tool calls and results from within subagent execution.
+* [**Stream custom updates**](#custom-updates)—emit user-defined signals from inside subagent nodes.
 
 ## Enable subgraph streaming
 
@@ -183,49 +183,89 @@ Monitor when subagents start, run, and complete:
 <StreamingLifecycleJs />
 :::
 
+### Handle human-in-the-loop interrupts
+
+When [`interrupt_on`](/oss/deepagents/human-in-the-loop) is configured, the `updates` stream may contain `__interrupt__` entries that pause execution for human approval. Detect them by checking for the `__interrupt__` key in update chunks. Resume with the same flat `{"decisions": [...]}` payload you use with `.invoke()`:
+
 :::python
-## v2 streaming format
+```python
+from langchain_core.utils.uuid import uuid7
 
-<Note>
-Requires LangGraph >= 1.1.
-</Note>
+config = {"configurable": {"thread_id": str(uuid7())}}
 
-All examples on this page use the v2 streaming format (`version="v2"`), which is the recommended approach. Every chunk is a `StreamPart` dict with `type`, `ns`, and `data` keys — the same shape regardless of stream mode, number of modes, or subgraph settings.
-
-The v2 format eliminates nested tuple unpacking, making it straightforward to handle subgraph streaming in Deep Agents. Compare the two formats:
-
-<CodeGroup>
-```python v2 (recommended)
-# Unified format — no nested tuple unpacking
-for chunk in agent.stream(
-    {"messages": [{"role": "user", "content": "Research quantum computing"}]},
-    stream_mode=["updates", "messages", "custom"],
-    subgraphs=True,
-    version="v2",
+for mode, data in agent.stream(
+    {"messages": [{"role": "user", "content": "Delete temp.txt"}]},
+    stream_mode=["messages", "updates"],
+    config=config,
 ):
-    print(chunk["type"])  # "updates", "messages", or "custom"
-    print(chunk["ns"])    # () for main agent, ("tools:<id>",) for subagent
-    print(chunk["data"])  # payload
+    if mode == "updates" and isinstance(data, dict):
+        if "__interrupt__" in data:  # [!code highlight]
+            for interrupt_obj in data["__interrupt__"]:
+                print(f"Approval needed: {interrupt_obj.value}")
 ```
-```python v1 (legacy)
-# Must handle (namespace, (mode, data)) nested tuples
-for namespace, chunk in agent.stream(
+:::
+
+:::js
+```typescript
+import { v7 as uuid7 } from "uuid";
+
+const config = { configurable: { thread_id: uuid7() } };
+
+for await (const [mode, data] of await agent.stream(
+  { messages: [{ role: "user", content: "Delete temp.txt" }] },
+  { streamMode: ["messages", "updates"], ...config }
+)) {
+  if (mode === "updates" && data?.__interrupt__) {  // [!code highlight]
+    for (const interruptObj of data.__interrupt__) {
+      console.log("Approval needed:", interruptObj.value);
+    }
+  }
+}
+```
+:::
+
+See [Human-in-the-loop: Handle interrupts with streaming](/oss/deepagents/human-in-the-loop#handle-interrupts-with-streaming) for the complete stream-resume loop pattern.
+
+## Stream chunk shapes
+
+With `subgraphs=True`, chunk shape depends on whether you pass one stream mode or several:
+
+| `stream_mode` | Chunk shape |
+| ------------- | ----------- |
+| Single mode (for example `"updates"`) | `(namespace, data)` |
+| Multiple modes (for example `["messages", "updates"]`) | `(namespace, mode, data)` |
+
+Without `subgraphs`, a single mode yields `data` directly, and multiple modes yield `(mode, data)`.
+
+```python
+# Single mode + subgraphs
+for namespace, data in agent.stream(
+    {"messages": [{"role": "user", "content": "Research quantum computing"}]},
+    stream_mode="updates",
+    subgraphs=True,
+):
+    print(namespace)  # () for main agent, ("tools:<id>",) for subagent
+    print(data)
+
+# Multiple modes + subgraphs
+for namespace, mode, data in agent.stream(
     {"messages": [{"role": "user", "content": "Research quantum computing"}]},
     stream_mode=["updates", "messages", "custom"],
     subgraphs=True,
 ):
-    mode, data = chunk[0], chunk[1]
     print(mode)       # "updates", "messages", or "custom"
     print(namespace)  # () for main agent, ("tools:<id>",) for subagent
-    print(data)       # payload
+    print(data)
 ```
-</CodeGroup>
 
-See the [LangGraph streaming docs](/oss/langgraph/streaming#stream-output-format-v2) for more details on the v2 format, including type narrowing and Pydantic/dataclass coercion.
+:::python
+LangGraph 1.1 and later also support a unified `version="v2"` `StreamPart` dict format. See [Stream output format (v2)](/oss/langgraph/streaming#stream-output-format-v2). Deep Agents examples on this page use the tuple format, which matches the LangGraph version Deep Agents currently depends on.
 :::
+
 
 ## Related
 
+- [Human-in-the-loop](/oss/deepagents/human-in-the-loop)—Configure approval workflows for sensitive tool operations
 - [Subagents](/oss/deepagents/subagents)—Configure and use subagents with Deep Agents
 - [Frontend streaming](/oss/deepagents/frontend/overview)—Build React UIs with @[`useStream`] for Deep Agents
 - [LangChain Event Streaming](/oss/langchain/event-streaming)—General streaming concepts with LangChain agents

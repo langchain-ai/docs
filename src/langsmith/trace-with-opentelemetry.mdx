@@ -4,6 +4,8 @@ description: Configure OpenTelemetry tracing in LangSmith, including LANGSMITH_O
 sidebarTitle: OpenTelemetry
 ---
 
+import OtlpAgentAddressing from '/snippets/langsmith/otlp-agent-addressing-note.mdx';
+
 
 LangSmith supports OpenTelemetry-based tracing, allowing you to send traces from any OpenTelemetry-compatible application. This guide covers both automatic instrumentation for LangChain applications and manual instrumentation for other frameworks.
 
@@ -122,7 +124,7 @@ For non-LangChain applications or custom instrumentation, you can trace your app
    </CodeGroup>
 
    <Note>
-   Depending on how your otel exporter is configured, you may need to append `/v1/traces` to the endpoint if you are only sending traces.
+   `OTEL_EXPORTER_OTLP_ENDPOINT` is a base URL. OTLP/HTTP exporters append the signal path (`/v1/traces`) themselves, so do not include it: setting the base endpoint to `https://api.smith.langchain.com/otel/v1/traces` sends traces to `/otel/v1/traces/v1/traces`, which returns `404`. Include the full path only with the per-signal `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` variable or a collector exporter's `traces_endpoint`, which are used exactly as given.
    </Note>
 
    <Note>
@@ -139,6 +141,8 @@ For non-LangChain applications or custom instrumentation, you can trace your app
    ```
 
    </CodeGroup>
+
+   <OtlpAgentAddressing />
 
 3. Log a trace.
 
@@ -167,7 +171,7 @@ For non-LangChain applications or custom instrumentation, you can trace your app
    tracer = trace.get_tracer(__name__)
 
    def call_openai():
-       model = "gpt-5.4-mini"
+       model = "gpt-6-luna"
        with tracer.start_as_current_span("call_open_ai") as span:
            span.set_attribute("langsmith.span.kind", "LLM")
            span.set_attribute("langsmith.metadata.user_id", "user_123")
@@ -225,9 +229,24 @@ By default, the LangSmith OpenTelemetry exporter will send data to the LangSmith
 
 ```bash
 OTEL_EXPORTER_OTLP_ENDPOINT: Override the endpoint URL
-OTEL_EXPORTER_OTLP_HEADERS: Add custom headers (LangSmith API keys and Project are added automatically)
+OTEL_EXPORTER_OTLP_HEADERS: Headers for your endpoint, like its API key (if unset, your LangSmith API key and project are sent)
 OTEL_SERVICE_NAME: Set a custom service name (defaults to "langsmith")
+OTEL_RESOURCE_ATTRIBUTES: Attach custom metadata fields at the process level (see below)
 ```
+
+### Add process-level resource attributes
+
+You can attach custom metadata to every trace emitted by a process using the standard OpenTelemetry `OTEL_RESOURCE_ATTRIBUTES` environment variable. Unlike span-level attributes (set per-span in code), resource attributes are set once at the process level and automatically propagated to all spans. This makes them ideal for any custom metadata you want to tag your traces with, such as a username, request ID, environment, or deployment version.
+
+The value is a comma-separated list of `key=value` pairs:
+
+```bash
+OTEL_RESOURCE_ATTRIBUTES="username=abc,id=1,environment=production"
+```
+
+You can use any custom keys you like, or follow the [OpenTelemetry resource semantic conventions](https://opentelemetry.io/docs/specs/semconv/resource/) for standard fields such as `deployment.environment`, `service.version`, and `cloud.region`.
+
+These attributes appear in LangSmith under the trace's metadata, which you can use to filter and group traces across your workspace.
 
 LangSmith uses the HTTP trace exporter by default. If you'd like to use your own tracing provider, you can either:
 
@@ -469,7 +488,7 @@ configure(project_name="adk-otel-demo")
 async def main():
     agent = LlmAgent(
         name="travel_assistant",
-        model="gemini-2.5-flash-lite",
+        model="gemini-3.8-flash",
         instruction="You are a helpful travel assistant.",
     )
 
@@ -501,7 +520,7 @@ Here is an [example](https://smith.langchain.com/public/d6d47eeb-511e-4fda-ad17-
 Native OTLP `parentSpanId` can't reference an existing LangSmith run: an OTLP span ID is 8 bytes, while LangSmith run IDs are full UUIDs. To attach an OpenTelemetry span to a run created elsewhere (for example, a LangChain-SDK run), set the `langsmith.*` attributes with the parent's full UUIDs. They override the IDs derived from the native OTLP span, so the span nests under the existing run in the same trace.
 
 ```python
-import uuid
+from langsmith import uuid7
 from datetime import datetime, timezone
 
 from langsmith import get_current_run_tree, traceable
@@ -512,7 +531,7 @@ tracer = trace.get_tracer("my-harness")
 
 def emit_otel_child(parent):
     """Emit an OTel span that nests under an existing LangSmith run."""
-    child_id = uuid.uuid4()
+    child_id = uuid7()
     start = datetime.now(timezone.utc)
     # dotted_order = parent's dotted_order, a dot, then this span's timestamp + id
     dotted = f"{parent.dotted_order}.{start.strftime('%Y%m%dT%H%M%S%fZ')}{child_id}"
@@ -626,7 +645,7 @@ async def main():
     agent = LlmAgent(
         name="travel_assistant",
         tools=[get_flight_info, get_hotel_recommendations],
-        model="gemini-2.0-flash-exp",
+        model="gemini-3.8-flash",
         instruction="You are a helpful travel assistant that can help with flights and hotels.",
     )
 
@@ -693,12 +712,12 @@ For more advanced scenarios, you can use the OpenTelemetry Collector to fan out 
 
    exporters:
      otlphttp/langsmith:
-       endpoint: https://api.smith.langchain.com/otel/v1/traces
+       traces_endpoint: https://api.smith.langchain.com/otel/v1/traces
        headers:
          x-api-key: ${env:LANGSMITH_API_KEY}
          Langsmith-Project: my_project
      otlphttp/other_provider:
-       endpoint: https://otel.your-provider.com/v1/traces
+       traces_endpoint: https://otel.your-provider.com/v1/traces
        headers:
          api-key: ${env:OTHER_PROVIDER_API_KEY}
 

@@ -3,6 +3,26 @@ title: LangChain v1 migration guide
 sidebarTitle: LangChain v1
 ---
 
+<Prompt
+    description="Migrate a codebase to LangChain v1."
+    icon="arrow-right"
+    actions={["copy"]}
+>
+Migrate this codebase to LangChain v1 (requires `langchain>=1.0.0`, `langchain-core>=1.0.0`, and Python 3.10+).
+
+Key changes:
+
+1. **Package namespace reduction**: the `langchain` package focuses on agents, messages, tools, chat models, and embeddings. Legacy chains, retrievers, indexes, hub, embedding helpers such as `CacheBackedEmbeddings`, and community re-exports moved to `langchain-classic`. Install `langchain-classic` and update those imports to `langchain_classic.*`. Install provider packages directly (for example `langchain-openai`) instead of relying on `langchain` re-exports of community integrations.
+2. **`create_react_agent` → `create_agent`**: replace `from langgraph.prebuilt import create_react_agent` with `from langchain.agents import create_agent`. Rename `prompt=` to `system_prompt=`. Invoke with `agent.invoke({"messages": [...]})` / `agent.stream(...)`. Prefer `langchain.agents.AgentState` over the deprecated `langgraph.prebuilt` agent state helpers.
+3. **Hooks become middleware**: replace `pre_model_hook=`, `post_model_hook=`, and `state_modifier=` customization with `create_agent` middleware (`before_model`, `after_model`, `@wrap_model_call`, `@wrap_tool_call`). For human-in-the-loop tool approval, use `HumanInTheLoopMiddleware(interrupt_on={...})` from `langchain.agents.middleware`.
+4. **Structured output**: keep `response_format=`, but use `ToolStrategy` / `ProviderStrategy` from `langchain.agents.structured_output`. Prompted output forms such as `response_format=("please generate ...", Schema)` are removed.
+5. **Streaming node name**: when filtering or matching streamed events by node name, rename `"agent"` to `"model"`.
+6. **Runtime context**: pass static context via the `context=` argument to `invoke` / `stream` (and `context_schema=` on `create_agent`) instead of only `config["configurable"]`.
+7. **Standard content blocks**: prefer `message.content_blocks` for provider-agnostic content. Existing `message.content` remains valid.
+
+Search the codebase for `create_react_agent`, `pre_model_hook`, `post_model_hook`, `state_modifier`, imports from `langgraph.prebuilt`, and legacy `langchain` modules such as `langchain.chains`, `langchain.retrievers`, `langchain.indexes`, and `langchain.hub`, and apply the necessary changes. Flag anything that cannot be migrated automatically.
+</Prompt>
+
 This guide outlines the major changes between [LangChain v1](/oss/releases/langchain-v1) and previous versions.
 
 ## Simplified package
@@ -871,69 +891,6 @@ model = init_chat_model(
 <Note>
     Learn more: [Messages](/oss/langchain/messages#message-content), [Standard content blocks](/oss/langchain/messages#standard-content-blocks), and [Multimodal](/oss/langchain/messages#multimodal).
 </Note>
-
----
-
-## Simplified package
-
-The `langchain` package namespace has been significantly reduced in v1 to focus on essential building blocks for agents. The streamlined package makes it easier to discover and use the core functionality.
-
-### Namespace
-
-| Module                  | What's available                               | Notes                             |
-|-------------------------|------------------------------------------------|-----------------------------------|
-| @[`langchain.agents`]      | @[`create_agent`], @[`AgentState`]                   | Core agent creation functionality |
-| @[`langchain.messages`]    | Message types, @[content blocks][ContentBlock], @[`trim_messages`] | Re-exported from `langchain-core` |
-| @[`langchain.tools`]       | @[`@tool`], @[`BaseTool`], injection helpers          | Re-exported from `langchain-core` |
-| @[`langchain.chat_models`] | @[`init_chat_model`], @[`BaseChatModel`]             | Unified model initialization      |
-| @[`langchain.embeddings`]  | @[`init_embeddings`], @[`Embeddings`]                | Embedding models                  |
-
-### `langchain-classic`
-
-If you were using any of the following from the `langchain` package, you'll need to install [`langchain-classic`](https://pypi.org/project/langchain-classic/) and update your imports:
-
-- Legacy chains (`LLMChain`, `ConversationChain`, etc.)
-- Retrievers (e.g. `MultiQueryRetriever` or anything from the previous `langchain.retrievers` module)
-- The indexing API
-- The hub module (for managing prompts programmatically)
-- Embeddings modules (e.g. `CacheBackedEmbeddings` and community embeddings)
-- [`langchain-community`](https://pypi.org/project/langchain-community) re-exports
-- Other deprecated functionality
-
-<CodeGroup>
-    ```python v1 (new)
-    # Chains
-    from langchain_classic.chains import LLMChain
-
-    # Retrievers
-    from langchain_classic.retrievers import ...
-
-    # Indexing
-    from langchain_classic.indexes import ...
-
-    # Hub
-    from langchain_classic import hub
-    ```
-
-    ```python v0 (old)
-    # Chains
-    from langchain_classic.chains import LLMChain
-
-    # Retrievers
-    from langchain.retrievers import ...
-
-    # Indexing
-    from langchain.indexes import ...
-
-    # Hub
-    from langchain import hub
-    ```
-</CodeGroup>
-
-**Installation**:
-```bash
-uv pip install langchain-classic
-```
 
 ---
 

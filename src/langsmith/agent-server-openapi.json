@@ -948,6 +948,60 @@
         }
       }
     },
+    "/threads/{thread_id}/storage": {
+      "get": {
+        "tags": ["Threads"],
+        "summary": "Get Thread Storage",
+        "description": "Bytes the thread's checkpoints occupy in the built-in checkpointer, as stored: checkpoints, channel values (per channel) and pending writes. Returns 501 when a custom checkpointer is configured.",
+        "operationId": "get_thread_storage_threads__thread_id__storage_get",
+        "parameters": [
+          {
+            "description": "The ID of the thread.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Thread Id",
+              "description": "The ID of the thread."
+            },
+            "name": "thread_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadStorage"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Thread not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/threads/{thread_id}/state": {
       "get": {
         "tags": ["Threads"],
@@ -1654,7 +1708,7 @@
               "text/event-stream": {
                 "schema": {
                   "type": "string",
-                  "description": "Stream of `ProtocolEvent` frames. Each SSE frame uses the event's `method` as the `event:` field and a JSON-encoded `ProtocolEvent` as the `data:` field; `id:` is set to the event's `seq`.\n\n**Example frame:**\n\nid: 42\n\nevent: messages\n\ndata: {\"type\":\"event\",\"event_id\":\"42\",\"seq\":42,\"method\":\"messages\",\"params\":{\"namespace\":[],\"timestamp\":1700000000000,\"data\":{...}}}"
+                  "description": "Stream of `ProtocolEvent` frames. Each SSE frame uses the event's `method` as the `event:` field and a JSON-encoded `ProtocolEvent` as the `data:` field; `id:` is set to the event's `seq`.\n\nIf reading the thread's event stream fails, the server ends the stream with a final frame whose `event:` field is `error` and whose `data:` field is a `ProtocolError` with `id: null` and `error: \"unknown_error\"`. That frame has no `id:` field.\n\n**Example frame:**\n\nid: 42\n\nevent: messages\n\ndata: {\"type\":\"event\",\"event_id\":\"42\",\"seq\":42,\"method\":\"messages\",\"params\":{\"namespace\":[],\"timestamp\":1700000000000,\"data\":{...}}}"
                 }
               }
             }
@@ -1743,7 +1797,8 @@
                   "metadata",
                   "kwargs",
                   "multitask_strategy",
-                  "langsmith_session_name"
+                  "langsmith_session_name",
+                  "cancel_reason"
                 ]
               },
               "title": "Select",
@@ -4974,6 +5029,12 @@
             "title": "Langsmith Session Name",
             "description": "LangSmith tracing session (project) name for this run, when tracing is enabled at creation time.",
             "nullable": true
+          },
+          "cancel_reason": {
+            "type": "string",
+            "title": "Cancel Reason",
+            "description": "Why the run was cancelled, if it was: for example an explicit cancel request, a client disconnecting, or a newer run superseding it. Server-generated.",
+            "nullable": true
           }
         },
         "type": "object",
@@ -5610,6 +5671,24 @@
             "title": "Metadata",
             "description": "Thread metadata to filter on."
           },
+          "exclude_metadata": {
+            "oneOf": [
+              {
+                "type": "object",
+                "minProperties": 1
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "minProperties": 1
+                },
+                "minItems": 1
+              }
+            ],
+            "title": "Exclude Metadata",
+            "description": "Exclude threads whose metadata contains this object, or any object in this list. Uses the same matching as `metadata`; threads missing the keys are not excluded."
+          },
           "values": {
             "type": "object",
             "title": "Values",
@@ -5693,6 +5772,24 @@
             "type": "object",
             "title": "Metadata",
             "description": "Thread metadata to filter on."
+          },
+          "exclude_metadata": {
+            "oneOf": [
+              {
+                "type": "object",
+                "minProperties": 1
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "minProperties": 1
+                },
+                "minItems": 1
+              }
+            ],
+            "title": "Exclude Metadata",
+            "description": "Exclude threads whose metadata contains this object, or any object in this list. Uses the same matching as `metadata`; threads missing the keys are not excluded."
           },
           "values": {
             "type": "object",
@@ -5939,6 +6036,72 @@
         "type": "object",
         "title": "ThreadStateCheckpointRequest",
         "description": "Payload for getting the state of a thread at a checkpoint."
+      },
+      "ThreadStorage": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Thread Id"
+          },
+          "total_bytes": {
+            "type": "integer",
+            "title": "Total Bytes",
+            "description": "Sum of the three sections below."
+          },
+          "checkpoints": {
+            "type": "object",
+            "title": "Checkpoints",
+            "description": "Checkpoint rows: serialized checkpoint plus metadata.",
+            "properties": {
+              "count": { "type": "integer", "title": "Count" },
+              "bytes": { "type": "integer", "title": "Bytes" }
+            },
+            "required": ["count", "bytes"]
+          },
+          "channel_values": {
+            "type": "object",
+            "title": "Channel Values",
+            "description": "Stored channel values, one row per channel version.",
+            "properties": {
+              "count": { "type": "integer", "title": "Count" },
+              "bytes": { "type": "integer", "title": "Bytes" },
+              "by_channel": {
+                "type": "object",
+                "title": "By Channel",
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "versions": { "type": "integer", "title": "Versions" },
+                    "bytes": { "type": "integer", "title": "Bytes" }
+                  },
+                  "required": ["versions", "bytes"]
+                }
+              }
+            },
+            "required": ["count", "bytes", "by_channel"]
+          },
+          "pending_writes": {
+            "type": "object",
+            "title": "Pending Writes",
+            "description": "Task writes not yet folded into a checkpoint.",
+            "properties": {
+              "count": { "type": "integer", "title": "Count" },
+              "bytes": { "type": "integer", "title": "Bytes" }
+            },
+            "required": ["count", "bytes"]
+          }
+        },
+        "type": "object",
+        "required": [
+          "thread_id",
+          "total_bytes",
+          "checkpoints",
+          "channel_values",
+          "pending_writes"
+        ],
+        "title": "ThreadStorage",
+        "description": "Bytes a thread occupies in the checkpointer, as stored."
       },
       "ThreadState": {
         "properties": {
@@ -6617,6 +6780,10 @@
           },
           "value": {
             "type": "object"
+          },
+          "response_schema": {
+            "type": "object",
+            "description": "JSON Schema for the value expected when resuming the interrupt, if the graph provided one."
           }
         },
         "title": "Interrupt",

@@ -30,7 +30,7 @@ assert agent is not None
 # :snippet-start: context-engineering-skills-py
 agent = create_deep_agent(
     model="google_genai:gemini-3.6-flash",
-    skills=["/skills/research/", "/skills/web-search/"],
+    skills=["/skills/"],
 )
 # :snippet-end:
 

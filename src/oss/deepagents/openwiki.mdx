@@ -1,0 +1,7 @@
+---
+title: OpenWiki
+sidebarTitle: OpenWiki
+description: Generate and maintain repository wikis that coding agents discover through AGENTS.md
+url: "/oss/openwiki/overview"
+noindex: true
+---
