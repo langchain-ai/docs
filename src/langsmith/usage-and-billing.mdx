@@ -180,11 +180,13 @@ This is thrown by our application and varies by organization based on their conf
 
 LangSmith exposes two versions of the run query endpoint with different rate limit profiles.
 
-**v2 (recommended):** `POST /v2/runs/query` ([`list_runs`](https://reference.langchain.com/python/langsmith/client/Client/list_runs) in Python, [`listRuns`](https://reference.langchain.com/javascript/langsmith/client/Client/listRuns) in JavaScript) is backed by SmithDB and has a flat limit with no query-parameter tiers:
+**v2 (recommended):** `POST /v2/runs/query` ([`list_runs`](https://reference.langchain.com/python/langsmith/client/Client/list_runs) in Python, [`listRuns`](https://reference.langchain.com/javascript/langsmith/client/Client/listRuns) in JavaScript) is backed by SmithDB and has a flat per-API-key limit with no time-window tiers:
 
 | **Limit** | **Window** |
 |---|---|
 | 300 requests | 10 seconds |
+
+API key requests that set `sem_filter` (semantic search) are also limited to 10 requests per minute per workspace.
 
 **v1:** `POST /runs/query` has per-tenant rate limits that vary based on query parameters:
 
@@ -209,19 +211,21 @@ To avoid hitting v1 rate limits and reduce query time:
 
 ### Run stats endpoint
 
-The [`POST /runs/stats`](/langsmith/smith-api/run/get-run-stats) endpoint has per-tenant rate limits that vary based on the query time window:
+The [`POST /runs/stats`](/langsmith/smith-api/run/stats-runs) endpoint has per-tenant rate limits that vary based on the query time window:
 
 | **Query type** | **Limit** | **Window** |
 |---|---|---|
-| Short time window (≤ 30 days) | 10 requests | 10 seconds |
-| Large time window (> 30 days) | 3 requests | 10 seconds |
-| No `start_time` | 1 request | 10 seconds |
+| Short time window (≤ 14 days) | 10 requests | 10 seconds |
+| Large time window (> 14 days and < 90 days) | 3 requests | 10 seconds |
+| Extra-large time window (≥ 90 days) or no `start_time` | 1 request | 10 seconds |
 
-The time window is determined by `end_time - start_time`. Queries without a `start_time` are subject to the strictest limit.
+The time window is determined by `end_time - start_time`. If `end_time` is not provided, LangSmith uses the current time. Queries without a `start_time` are subject to the strictest limit.
+
+In the GCP-hosted US region, API key requests to this endpoint are also limited to 1 request per 10 seconds per API key.
 
 To avoid hitting rate limits:
 
-- **Set `start_time`**: use a window of 30 days or less when possible.
+- **Set `start_time`**: use a window of 14 days or less when possible.
 - **Avoid open-ended queries**: always provide a `start_time` to stay in the less-restrictive tier.
 
 ### Workspace invite batch endpoint
