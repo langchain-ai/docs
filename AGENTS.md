@@ -195,7 +195,7 @@ Six tabs, all files flat in `src/langsmith/`:
 | Account | Billing & usage |
 | Cloud | Reference |
 | BYOC | No groups |
-| Self-hosted | Get started by cloud provider, Deploy with Terraform (AWS, GCP, Azure), Setup guides (Manage an installation), Configuration, Connect external services, Platform auth & access control, SmithDB, Self-hosted observability, Hybrid, Scripts, Reference |
+| Self-hosted | Get started by cloud provider, Deploy with Terraform (AWS, GCP, Azure), Install an instance (Additional features → Enable Sandboxes), Configure an instance, Connect external services, Platform auth & access control, SmithDB, Manage an instance, Self-hosted observability, Hybrid, Scripts, Reference |
 | Govern | Organization (Workspace setup), Users & access control, Tools, Auditing, Data & compliance, Additional resources (FAQ) |
 
 #### Other menu items
@@ -233,7 +233,7 @@ Because nav names and directories diverge, use this to go from a file to its pla
 
 ### Reference docs
 
-Three OpenAPI-generated sections. Mintlify generates the endpoint pages at deploy time, so they do not exist in the local `build/` output. `make broken-links` filters them as false positives.
+Three OpenAPI-generated sections. Mintlify generates the endpoint pages at deploy time, so they do not exist in the local `build/` output. `make broken-links-with-anchors` filters them as false positives.
 
 | Section | Nav location | Spec source | Generated under |
 |---------|--------------|-------------|-----------------|
@@ -533,7 +533,7 @@ When investigating a bug or unexpected behavior, always start by reading the rel
 
 ### CI broken-links failures
 
-`make broken-links` runs `mint broken-links` then filters known false positives (OpenAPI-generated pages: `/langsmith/agent-server-api/`, `/api-reference/`, `../langchain/agents`). Output format:
+`make broken-links-with-anchors` runs `mint broken-links --check-anchors --check-redirects`, the same check CI runs, then filters known false positives (OpenAPI-generated pages: `/langsmith/agent-server-api/`, `/api-reference/`, `../langchain/agents`). Output format:
 
 ```txt
 found N broken links in M files
@@ -548,7 +548,7 @@ another-file.mdx                 ← no indented lines = all its links were filt
 
 **Common cause:** Page renamed/deleted but link and/or `src/docs.json` nav entry still references old name. Fix both the link in the MDX file AND the corresponding entry in `docs.json`.
 
-To run locally: `make broken-links`
+To run locally: `make broken-links-with-anchors`. Do not use plain `make broken-links`: it skips anchors, so it can pass locally on a link CI rejects.
 
 ## Helper scripts
 
@@ -600,7 +600,7 @@ Scope to changed files for speed: `make lint_prose FILES="src/path/to/file.mdx"`
 
 The Vale version is pinned once, in `.mise.toml`. The `Makefile`, `scripts/install-vale.sh`, and the `lint-prose` workflow all read it from there, so local runs use the same engine as CI. Bump it only in `.mise.toml`. Do not hardcode a version in any of the three call sites.
 
-Also run `make broken-links` when adding or renaming links, pages, or nav entries.
+Also run `make broken-links-with-anchors` when adding or renaming links, pages, or nav entries.
 
 ## Changelog / Release notes
 
