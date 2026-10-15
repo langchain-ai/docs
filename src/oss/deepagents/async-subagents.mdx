@@ -22,7 +22,7 @@ Async subagents let a supervisor agent launch background tasks that return immed
 This builds on [subagents](/oss/deepagents/subagents), which run synchronously and block the supervisor until completion. Use async subagents when tasks are long-running, parallelizable, or need mid-flight steering.
 
 :::python
-On an Agent Server, the supervisor is also told when a task finishes, fails, or needs input, so it doesn't have to check. See [Get notified when tasks finish](#get-notified-when-tasks-finish).
+On an Agent Server, the supervisor also learns when a task finishes, fails, or needs input, so it does not have to check. See [Get notified when tasks finish](#get-notified-when-tasks-finish).
 :::
 
 ```mermaid
@@ -144,14 +144,14 @@ If a subagent paused for input or approval, **check** and **list** report it as 
 :::python
 ## Get notified when tasks finish
 
-<Warning>
-    Task notifications are in [**beta**](/oss/versioning). APIs and behavior may change between releases.
-</Warning>
+<Note>
+    Task notifications require `deepagents>=0.7.26`. They are in [**beta**](/oss/versioning); APIs and behavior may change between releases.
+</Note>
 
 On an Agent Server, the supervisor learns about its tasks without the user asking:
 
-- **While it's running**, it checks its unfinished tasks before each model call and adds a notification for each task that finished, failed, timed out, or is waiting for input.
-- **While it's idle**, a subagent that is a deep agent on the same deployment (no `url`) starts a new run on the supervisor's thread when it finishes, fails, or pauses. If the supervisor is waiting on its own approval, the update arrives after the user answers.
+- **While it is running**, it checks its unfinished tasks before each model call and adds a notification for each task that finished, failed, timed out, or is waiting for input.
+- **While it is idle**, a subagent that is a deep agent on the same deployment (no `url`) starts a new run on the supervisor's thread when it finishes, fails, or pauses. If the supervisor is waiting on its own approval, it receives the update after the user answers.
 
 Subagents with a `url`, and graphs that aren't deep agents, don't wake an idle supervisor. The supervisor sees their updates at its next run.
 
@@ -163,17 +163,17 @@ Each notification is a user message framed as a system notification. Its content
 
 ## Handle subagents waiting for input
 
-<Warning>
-    The `waiting` status is in [**beta**](/oss/versioning). APIs and behavior may change between releases.
-</Warning>
+<Note>
+    The `waiting` status requires `deepagents>=0.7.26`. It is in [**beta**](/oss/versioning); APIs and behavior may change between releases.
+</Note>
 
-A subagent that pauses for input or approval, with `interrupt()` or [human-in-the-loop](/oss/deepagents/human-in-the-loop), is reported as `waiting` with its pending interrupts. The supervisor can't answer or approve it, so a subagent can't get its actions approved by the agent that launched it. The request is for the user.
+When a subagent pauses for input or approval with `interrupt()` or [human-in-the-loop](/oss/deepagents/human-in-the-loop), the **check** and **list** tasks report it as `waiting` with its pending interrupts. The supervisor cannot answer or approve on the user's behalf. The request is for the user.
 
 Your app answers it on the subagent's own thread. The task ID is the subagent's thread ID:
 
 <AsyncSubagentsAnswerWaitingPy />
 
-When the subagent finishes after the answer, the supervisor is notified as usual. If a subagent needs information from the supervisor rather than the user, have it ask in its result. The supervisor replies with `update_async_task`.
+When the subagent finishes after the answer, the supervisor receives a notification as usual. If a subagent needs information from the supervisor rather than the user, have it ask in its result. The supervisor replies with `update_async_task`.
 :::
 
 ## Understand state management
@@ -185,15 +185,15 @@ Each tracked task records the task ID, agent name, thread ID, run ID, status, an
 
 ### Find a supervisor's subagent threads
 
-<Warning>
-    Thread tagging is in [**beta**](/oss/versioning). APIs and behavior may change between releases.
-</Warning>
+<Note>
+    Thread tagging requires `deepagents>=0.7.26`. It is in [**beta**](/oss/versioning); APIs and behavior may change between releases.
+</Note>
 
-Each subagent thread is created with `metadata={"parent_thread_id": ...}`, the supervisor's thread ID. Use it to find a supervisor's subagent threads, or to read the supervisor's thread in a subagent's graph factory:
+`start_async_task` creates each subagent thread with `metadata={"parent_thread_id": ...}`, the supervisor's thread ID. Use it to find a supervisor's subagent threads, or to read the supervisor's thread in a subagent's graph factory:
 
 <AsyncSubagentsParentThreadPy />
 
-For example, a subagent can reuse the supervisor's [thread-scoped sandbox](/oss/deepagents/sandboxes#thread-scoped-default) by looking it up with `parent_thread_id`. Check that the caller may access that thread first, since thread metadata can be edited by anyone with access to the thread.
+For example, a subagent can reuse the supervisor's [thread-scoped sandbox](/oss/deepagents/sandboxes#thread-scoped-default) by looking it up with `parent_thread_id`. Check that the caller may access that thread first, since anyone with access to the thread can edit its metadata.
 :::
 
 :::js
