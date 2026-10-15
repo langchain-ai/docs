@@ -11,6 +11,8 @@ Event streaming sits one level above the [streaming API](/langsmith/streaming), 
 
 <Note>
 Event streaming requires `langgraph-api>=0.10.0` on the [LangGraph Agent Server](/langsmith/agent-server). Managed LangSmith deployments are updated automatically; self-hosted servers must be on a compatible version. The client SDK must be `langgraph-sdk>=0.4.0` with `langchain-core>=1.4.0` (Python) or `@langchain/langgraph-sdk>=1.9.15` (JavaScript). Servers on earlier versions continue to serve the [streaming API](/langsmith/streaming).
+
+Upgrade clients before you move a deployment to `langchain-core` 1.7.0 or later. See [Upgrade clients before the server](#upgrade-clients-before-the-server).
 </Note>
 
 ## Quickstart
@@ -643,7 +645,7 @@ Each event is a `ProtocolEvent` envelope wrapping a channel-specific payload:
     ```text
     event: messages
     id: 42
-    data: {"type":"event","seq":42,"method":"messages","params":{"namespace":["researcher:6f4d"],"timestamp":1736283600123,"data":{"event":"content-block-delta","index":0,"delta":{"type":"text","text":"Hello"}}},"event_id":"01HZQ8XK5N6F9M2A3B4C5D6E7F"}
+    data: {"type":"event","seq":42,"method":"messages","params":{"namespace":["researcher:6f4d"],"timestamp":1736283600123,"data":{"event":"content-block-delta","index":0,"delta":{"type":"text-delta","text":"Hello"}}},"event_id":"01HZQ8XK5N6F9M2A3B4C5D6E7F"}
     ```
 
     The `id:` line carries the per-session `seq`; the durable `event_id` lives in the JSON body and is the key clients use for deduplication. The wire protocol does not use the `Last-Event-ID` header for resumption — instead, a client passes a `since` seq cursor in the request body. The Agent Server buffers events per run in a bounded buffer and replays them on a new subscription, and the SDK dedupes by `event_id` client-side.
@@ -674,6 +676,18 @@ The typed projections (`thread.messages`, `thread.values`, `thread.toolCalls`, e
 ### Messages
 
 The `messages` channel models output as content blocks. The `data.event` field is one of `message-start`, `content-block-start`, `content-block-delta`, `content-block-finish`, `message-finish`, or `error`. Content blocks have explicit boundaries: a block starts, emits zero or more deltas, and finishes before the next block in the same message starts. `message-finish` may include token usage; unrecoverable model-call failures arrive as message error events.
+
+Each `content-block-delta` event carries one delta for the block at its `index`:
+
+| Delta `type` | Effect on the block |
+| ------------ | ------------------- |
+| `text-delta` | Appends its `text` to the block's `text`. |
+| `reasoning-delta` | Appends its `reasoning` to the block's `reasoning`. |
+| `data-delta` | Appends its `data` to the block's `base64`. |
+| `tool-call-delta` | Appends its `args` to the block's `args`. |
+| `block-delta` | Sets each key in `fields` on the block, replacing the earlier value. |
+
+`content-block-finish` carries the complete block. Ignore any delta type your client does not recognize, and keep reading the stream. Deployments on `langchain-core` earlier than 1.7.0 send tool-call arguments as `block-delta` events. See [Upgrade clients before the server](#upgrade-clients-before-the-server).
 
 ### Tools
 
@@ -727,6 +741,17 @@ To resume across a process boundary—a page reload, a worker handoff, or a sepa
     At the wire level, a `since` seq cursor in the request body returns only events after that point. The SDK manages this cursor automatically on reconnect, so `client.threads.stream(...)` does not expose `since` as a parameter.
     </Tab>
 </Tabs>
+
+## Upgrade clients before the server
+
+Starting in `langchain-core` 1.7.0, tool-call arguments stream as `tool-call-delta` events, which carry only the new part of the arguments. Earlier versions send `block-delta` events that repeat all of the arguments so far. The Agent Server passes events through unchanged, so the `langchain-core` version in your deployment determines which form clients receive.
+
+To upgrade a deployment:
+
+1. Upgrade every client that reads its stream. For JavaScript clients, upgrade `@langchain/langgraph-sdk` to 1.12.5 or later, and `@langchain/react`, `@langchain/vue`, `@langchain/svelte`, or `@langchain/angular` to 1.2.5 or later. For Python clients that use `langgraph-sdk`, upgrade `langchain-core` to 1.7.0 or later.
+2. Upgrade `langchain-core` to 1.7.0 or later and `langchain` to 1.4.7 or later together in the deployment.
+
+`langchain` and `deepagents` accept any `langchain-core` 1.x, so upgrading either one can pull in 1.7.0. Until you upgrade every client, pin `langchain-core<1.7.0` in the deployment's dependencies.
 
 ## Related
 
