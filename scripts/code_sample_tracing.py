@@ -12,6 +12,10 @@ snippet ID so the Python and JS LangSmith SDKs attach it as run metadata. The
 collector then requires that metadata value and does not fall back to an
 arbitrary LangGraph root in the time window (which previously shuffled links
 under parallel ``CODE_SAMPLE_JOBS``).
+
+When a successful sample run has no stamped root (for example a mock-only tool
+harness), any previous manifest entry for that snippet is removed so generated
+MDX does not keep a stale CTA.
 """
 
 from __future__ import annotations
@@ -327,10 +331,21 @@ def collect_trace_for_sample(
         exclude_ids=exclude_ids,
     )
     if run is None:
-        print(
-            f"  … {rel_source}: no root run stamped with "
-            f"{DOCS_SNIPPET_ENV}={snippet_id}; skip trace link"
-        )
+        # Fail closed: drop any prior link. Keeping an unstamped/shuffled
+        # leftover after a successful sample run is worse than omitting the CTA
+        # (common for mock-only harnesses that never create a root run).
+        if snippet_id in manifest["snippets"]:
+            manifest["snippets"].pop(snippet_id, None)
+            save_manifest(repo_root, manifest)
+            print(
+                f"  … {rel_source}: no root run stamped with "
+                f"{DOCS_SNIPPET_ENV}={snippet_id}; cleared stale trace link"
+            )
+        else:
+            print(
+                f"  … {rel_source}: no root run stamped with "
+                f"{DOCS_SNIPPET_ENV}={snippet_id}; skip trace link"
+            )
         return None
 
     url = share_run_public_url(client, run)
