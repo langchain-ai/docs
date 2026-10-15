@@ -1,11 +1,8 @@
 ---
 type: documentation workflow
 title: Code Sample Lifecycle
-description: How runnable multi-language documentation samples are validated, extracted through markers, and rendered as derived MDX. Covers optional LangSmith trace publication, retry behavior, and the CI refresh gate for public trace links.
+description: How runnable multi-language documentation samples are tested, extracted through markers, and rendered as derived MDX. Covers shared TypeScript dependencies, provider-safe CodeGroups, optional LangSmith trace publication, and CI refresh behavior.
 tags: [code-samples, documentation, mdx, testing, tracing, ci]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-14T08:21:39.311Z
 sources:
   - id: openwiki-source-ddbddbe474c8dc57119458d7
     resource: repo://.agents/skills/docs-code-samples/SKILL.md
@@ -27,15 +24,26 @@ sources:
     resource: repo://scripts/generate_code_snippet_mdx.py
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
-  - id: openwiki-source-b0deb1022f38d6591d1ee3af
-    resource: repo://src/code-samples/deepagents/skills.py
+  - id: openwiki-source-7f26a409583049fe35ef49cb
+    resource: repo://src/code-samples/deepagents/skills-tools-integration.ts
+  - id: openwiki-source-c9c648aacfd8fc8c248381eb
+    resource: repo://src/code-samples/deepagents/skills-tools-list.ts
+  - id: openwiki-source-cbef4b4cff0c213933349279
+    resource: repo://src/code-samples/deepagents/skills-tools-per-user.ts
+  - id: openwiki-source-137355b3a7bb3ad2696f7a39
+    resource: repo://src/code-samples/deepagents/skills-tools-resolver.ts
+  - id: openwiki-source-9de7aeed9769aea4863c6578
+    resource: repo://src/code-samples/deepagents/skills-tools-search.ts
   - id: openwiki-source-2d6fb565fec243c560da8729
     resource: repo://src/code-samples/package-lock.json
   - id: openwiki-source-e0401fc6d5f2a13d30455bd9
     resource: repo://src/code-samples/package.json
   - id: openwiki-source-b68d7bad2afd9a38e8c331d5
     resource: repo://tests/unit_tests/test_generate_code_snippet_mdx.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-14T08:21:39.311Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-15T08:21:56.046Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-15T08:21:56.046Z
 ---
 
 ## Ownership and lifecycle
@@ -50,14 +58,14 @@ flowchart TD
   Extract --> Intermediate["Ignored intermediate files"]
   Intermediate --> Render["Generate MDX"]
   Validate --> TraceGate{"Tracing enabled and sample passed"}
-  TraceGate -->|"single snippet"| Collect["Find and share eligible trace"]
+  TraceGate -->|"single snippet"| Collect["Find and share stamped trace"]
   Collect --> Manifest["Update trace manifest"]
   Manifest --> Render
   TraceGate -->|"otherwise"| NoPublish["No public trace publication"]
   Collect -->|"collection failure"| Warn["Warn and continue"]
 ```
 
-This diagram separates source validation from snippet generation: `make code-snippets` extracts and renders but does not run samples. Trace publication is an optional branch after successful execution; a failed trace lookup or share does not turn a successfully executed sample into a failed sample.
+This is the source-to-documentation lifecycle. `make code-snippets` extracts and renders but does not execute samples. Trace publication is an optional post-success branch; a failed lookup or share does not turn an already successful sample into a failed sample.
 
 ## Author a sample that is both readable and executable
 
@@ -67,14 +75,18 @@ The extractor is deliberately line based rather than parsing the host language. 
 
 Put executable setup and the behavior being demonstrated before a deliberate exit. A hidden tail can assert constructed values or avoid a blocking/live invocation after the visible code has run. In TypeScript, visible and removed regions execute in one module and share top-level bindings. Split independently runnable examples into separate files when imports, `const`/`let`, classes, or functions would collide.
 
-`src/code-samples/deepagents/skills.py` is a representative multi-snippet Python source. Its visible regions demonstrate filesystem-backed skills, role-dependent skill lists, namespaced `StoreBackend` storage, subagent-specific sources, permission-gated writes, and resolver-based tools. Its remove regions replace documentation paths with a local virtual backend and contain assertions and test-only fixtures. This organization is appropriate for related documentation snippets, but has a trace-publication consequence: a source with more than one snippet is ineligible for a per-snippet public trace link.
+### Deep Agents skills tool samples
+
+The current `skills-tools-*.ts` examples are intentionally separate, single-snippet entry points. They keep virtual `FilesystemBackend` setup, test tool definitions, and validation checks in remove regions while retaining the public skills-tool configuration in the extracted snippet. This makes each example independently executable and eligible for a trace link, unlike a multi-snippet source.
+
+Together they cover the meaningful resolver modes: returning every tool for an integration name, passing a fixed list, resolving tools from `runtime.context.userId`, mapping documentation-facing tool aliases to actual tools, and combining deferred tool loading with `providerToolSearchMiddleware()`. The agent-building examples mark the Anthropic model with `// KEEP MODEL`, so provider CodeGroup expansion cannot silently change the deliberate model choice. Keep the checks after the visible block: the runner must construct—and, where the example invokes it, exercise—the configuration shown to readers.
 
 ## Validate the source program
 
 Use a focused run while iterating:
 
 ```bash
-make test-code-samples FILES="src/code-samples/deepagents/skills.py"
+make test-code-samples FILES="src/code-samples/deepagents/skills-tools-resolver.ts"
 ```
 
 `FILES` is a space-separated explicit list. Invalid, unsupported, missing, or out-of-tree paths are warned about and omitted. With no list, the runner recursively selects eligible files while excluding `node_modules` and `__pycache__`. It runs Python with `uv run python`, TypeScript with `npx tsx` from `src/code-samples/`, Java and Kotlin through JBang pinned to Java 21, Go with `go run` from that shared directory, and shell with `bash`. Each subprocess receives the parent environment; the default timeout is 1,200 seconds and `CODE_SAMPLE_TIMEOUT_SECONDS` can override it.
@@ -96,18 +108,20 @@ make code-snippets
 This target first extracts source regions into files named like `<source-stem>.snippet.<snippet-id>.<extension>` below `src/code-samples-generated/`, then scans those intermediates to render `<snippet-id>.mdx` below `src/snippets/code-samples/`. A full extraction deletes supported intermediate files before rebuilding them. For a fast local iteration, `CODE_SNIPPET_SOURCES` accepts existing supported paths below `src/code-samples/` and replaces intermediates for those source stems only:
 
 ```bash
-CODE_SNIPPET_SOURCES="src/code-samples/deepagents/skills.py" make code-snippets
+CODE_SNIPPET_SOURCES="src/code-samples/deepagents/skills-tools-resolver.ts" make code-snippets
 ```
 
 MDX generation still scans every intermediate left in the directory. Run a full extraction before treating the output as complete repository-wide state, and inspect all generated changes after a partial run.
 
 The renderer emits language fences and consumes optional first-line presentation directives: `:codegroup-tab:` supplies a Mintlify CodeGroup tab name, and `:codegroup-fence-mods:` supplies fence modifiers. For eligible Python and TypeScript LangChain-style model strings, it can render seven provider variants in a CodeGroup. `# KEEP MODEL` or `// KEEP MODEL` preserves the following model occurrence. Embedding model IDs and models in provider-specific embedding/chat constructors stay untouched, because substituting a routable `provider:model` value would make the example invalid. The Google provider variant is intentionally language-specific: Python uses `google_genai:`, while TypeScript uses `google:`.
 
+Provider safeguards extend to executable TypeScript samples. They must use `googleSearch` rather than the legacy `google_search` key, and must not use Python's `google_genai:` provider prefix. The generator tests scan the complete TypeScript and Python sample sets for those incompatible spellings. They also require both the declared and lockfile-resolved `@langchain/google` version to be at least `0.2.6`, because that release configures Gemini correctly when built-in and function tools are mixed. These checks protect examples from failing before their request reaches the provider.
+
 ## Publish public traces only deliberately
 
 Ordinary sample validation does not publish traces. `make update-code-sample-traces` sets `CODE_SAMPLE_TRACING=1`, uses `LANGSMITH_PROJECT` or the default `docs-code-samples`, runs the samples, and regenerates MDX. It requires `LANGSMITH_API_KEY` to access LangSmith and create public shares.
 
-After a successful traced sample, collection reads its source markers under a lock, preventing parallel workers from overwriting the manifest or claiming the same run. A source with no markers receives no link; a source with more than one marker is recorded in `skipped_multi_snippet` and stale entries for its IDs are removed. Only an unambiguous single-snippet source can be associated with an agent-like root run in its execution window. The collector excludes already claimed run IDs, shares the selected trace publicly, and records source, URL, run/trace IDs, run name, and update time in `src/code-samples/trace-links.json`. Rendering appends the **View example trace** Card only when that manifest contains a URL for the snippet; it removes a stale trailing CTA when no URL is available.
+After a successful traced sample, collection reads its source markers under a lock, preventing parallel workers from overwriting the manifest or claiming the same run. A source with no markers receives no link; a source with more than one marker is recorded in `skipped_multi_snippet` and stale entries for its IDs are removed. Only an unambiguous single-snippet source can be associated with a stamped root run in its execution window. The runner sets `LANGSMITH_DOCS_SNIPPET` to that sole ID, and the collector filters and verifies the matching metadata rather than falling back to a nearby root run. It excludes already claimed run IDs, shares the selected trace publicly, and records source, URL, run/trace IDs, run name, and update time in `src/code-samples/trace-links.json`. Rendering appends the **View example trace** Card only when that manifest contains a URL for the snippet; it removes a stale trailing CTA when no URL is available.
 
 Treat this as a security and content-publication boundary: credentials are necessary, publication is explicit, and splitting a multi-snippet file is required before it can gain a per-snippet public trace link.
 
@@ -119,18 +133,18 @@ The test step continues after errors so a full traced run can still collect link
 
 ## Change checklist
 
-1. Edit the runnable file under `src/code-samples/`; do not hand-edit generated snippet MDX.
+1. Edit the runnable file under `src/code-samples/`; do not hand-edit generated snippet MDX or extraction intermediates.
 2. Use matched, language-correct markers and a unique ID with the expected language suffix.
 3. Keep the visible code on an executed path. Put local fixtures, assertions, cleanup, and non-reader-facing setup in remove regions.
 4. For a TypeScript dependency change, update the shared `src/code-samples/package.json` owner and its `package-lock.json` together.
-5. Run `make test-code-samples FILES="…"`, then run `make code-snippets` with `CODE_SNIPPET_SOURCES` if appropriate.
+5. Run `make test-code-samples FILES="…"` before including the sample, then run `make code-snippets` with `CODE_SNIPPET_SOURCES` if appropriate.
 6. Review generated MDX, remembering that partial extraction does not clear unrelated intermediates.
 7. Use trace refresh only with intended credentials and only when publishing a public trace for an unambiguous single-snippet source is acceptable.
 
 ## Related pages
 
+- [Preprocessing](/openwiki/concepts/preprocessing.md)
 - [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md)
-- [Adding Pages](/openwiki/operations/adding-pages.md)
 - [CLI Tools](/openwiki/operations/cli-tools.md)
 - [Quickstart](/openwiki/quickstart.md)
 - [Testing Overview](/openwiki/testing/test-overview.md)

@@ -3,9 +3,6 @@ type: architecture reference
 title: Source Directory Map
 description: Maps documentation source families and docs.json projections to emitted routes, explicit Mintlify navigation and redirects, deployment-generated API reference, and current LangSmith and OSS product clusters. Use it to identify the source of truth for a route, menu placement, redirect, or generated reference change.
 tags: [documentation, routing, navigation, mintlify]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-14T08:21:39.311Z
 sources:
   - id: openwiki-source-5153f86e64d6ee0b305f72b3
     resource: repo://.github/workflows/refresh-langsmith-openapi.yml

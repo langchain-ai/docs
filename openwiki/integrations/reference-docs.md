@@ -40,10 +40,10 @@ sources:
     resource: repo://tests/unit_tests/test_check_cross_refs.py
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
+generated: { by: "openwiki/0.4.3", at: "2026-10-15T08:21:56.046Z" }
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-06T08:22:08.206Z
-generated: { by: "openwiki/0.4.3", at: "2026-10-06T08:22:08.206Z" }
+    at: 2026-10-15T08:21:56.046Z
 ---
 
 # Reference Documentation Boundaries
@@ -99,11 +99,11 @@ This source-level check is separate from Mintlify's rendered-site link check: su
 
 `src/docs.json` is the configuration boundary between each OpenAPI source and Mintlify route generation. The three LangSmith sections deliberately have different source lifecycles:
 
-| Section | Source lifecycle | Mintlify route directory |
-| --- | --- | --- |
-| Agent Server API | Committed `src/langsmith/agent-server-openapi.json`; updates arrive in `langgraph-api` PRs titled `Update Agent ServerOpenAPI spec for API version X.Y.Z`. | `langsmith/agent-server-api` |
-| Control Plane API | Service-owned `https://api.host.langchain.com/openapi.json`, fetched at deployment; there is no local specification. | Mintlify default route directory (`/api-reference/`) |
-| LangSmith REST API | Committed `src/langsmith/langsmith-platform-openapi.json`, produced by scheduled refresh automation. | `langsmith/smith-api` |
+| Section | Source lifecycle and owner | Safe escalation | Mintlify route directory |
+| --- | --- | --- | --- |
+| Agent Server API | Committed `src/langsmith/agent-server-openapi.json`; updates arrive in `langgraph-api` PRs titled `Update Agent ServerOpenAPI spec for API version X.Y.Z`. | Obtain or review the upstream `langgraph-api` spec-update PR; do not hand-edit generated output. | `langsmith/agent-server-api` |
+| Control Plane API | Service-owned `https://api.host.langchain.com/openapi.json`, fetched at deployment; there is no local specification. | Correct the service-owned source; do not copy a spec into this repository. | Mintlify default route directory (`/api-reference/`) |
+| LangSmith REST API | Committed `src/langsmith/langsmith-platform-openapi.json`, produced by scheduled refresh automation. | Fix the upstream source or processor policy, regenerate, and review the refresh PR; never patch the JSON by hand. | `langsmith/smith-api` |
 
 ### Navigation and authored entrypoints
 
@@ -171,6 +171,7 @@ Change this repository when the issue is an authored semantic marker, a scoped m
 ## Related documentation
 
 - [Source map](/openwiki/architecture/source-map.md) — documentation-source and navigation ownership.
-- [Mintlify](/openwiki/integrations/mintlify.md) — renderer and deployment boundary.
 - [Adding pages](/openwiki/operations/adding-pages.md) — placing authored guides beside generated navigation entries.
-- [Quickstart](/openwiki/quickstart.md) — local setup and documentation-preview entrypoints.
+- [Cross-references](/openwiki/operations/cross-references.md) — detailed scoped-link authoring and validation.
+- [Testing overview](/openwiki/testing/test-overview.md) — selecting evidence appropriate to a source, generated artifact, or hosted deployment change.
+- [LangSmith Platform OpenAPI Refresh](/openwiki/workflows/langsmith-openapi-refresh.md) — the processor policy and standing review-PR lifecycle.
