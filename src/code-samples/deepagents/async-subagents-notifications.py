@@ -1,7 +1,7 @@
 """Async subagents: recognize task notifications in the supervisor's messages."""
 
 # :remove-start:
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain.messages import AIMessage, HumanMessage
 
 event = {"task_id": "thread-123", "agent_name": "researcher", "status": "success", "run_id": "run-456"}
 state = {
