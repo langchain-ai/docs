@@ -1,0 +1,69 @@
+---
+title: Self-hosted platform features
+sidebarTitle: Platform features
+icon: "list-check"
+description: Self-hosted-only platform features for LangSmith Deployment, including custom databases, listeners, and resource customization.
+---
+
+This page describes the platform features that apply only to [self-hosted](/langsmith/self-hosted) deployments.
+
+## Custom PostgreSQL
+
+A custom PostgreSQL instance can be used instead of the [one automatically created by the control plane](/langsmith/cloud-platform-features#database-provisioning). Specify the [`POSTGRES_URI_CUSTOM`](/langsmith/env-var-self-hosted) environment variable to use a custom PostgreSQL instance. To authenticate with a cloud workload identity instead of a static password, see [Configure IAM authentication for data stores](/langsmith/configure-iam-auth).
+
+Multiple deployments can share the same PostgreSQL instance. For example, for `Deployment A`, `POSTGRES_URI_CUSTOM` can be set to `postgres://<user>:<password>@/<database_name_1>?host=<hostname_1>` and for `Deployment B`, `POSTGRES_URI_CUSTOM` can be set to `postgres://<user>:<password>@/<database_name_2>?host=<hostname_1>`. `<database_name_1>` and `<database_name_2>` are different databases within the same instance, but `<hostname_1>` is shared. **The same database cannot be used for separate deployments**.
+
+## Custom Redis
+
+A custom Redis instance can be used instead of the one automatically created by the control plane. Specify the [`REDIS_URI_CUSTOM`](/langsmith/env-var-self-hosted) environment variable to use a custom Redis instance. To authenticate with a cloud workload identity instead of a static password, see [Configure IAM authentication for data stores](/langsmith/configure-iam-auth).
+
+Multiple deployments can share the same Redis instance. For example, for `Deployment A`, `REDIS_URI_CUSTOM` can be set to `redis://<hostname_1>:<port>/1` and for `Deployment B`, `REDIS_URI_CUSTOM` can be set to `redis://<hostname_1>:<port>/2`. `1` and `2` are different database numbers within the same instance, but `<hostname_1>` is shared. **The same database number cannot be used for separate deployments**.
+
+Redis Cluster supports only database `0`, so deployments cannot share a Redis Cluster by database number. To share one Redis server across deployments, use a standalone Redis instance with a separate database number for each deployment.
+
+## Listeners
+
+A listener is an instance of a [listener application](/langsmith/data-plane#listener-application). A listener contains metadata about the application (such as its version) and metadata about the compute infrastructure where it can deploy to (such as Kubernetes namespaces).
+
+The listener data model only applies to self-hosted deployments. The control plane and listener coordinate to provision and reconcile deployments running on your own infrastructure.
+
+### Listener version requirements
+
+Keep the listener current before you change a deployment's `resource_spec`. The control plane validates a `PATCH` against the rules of its own version. The listener then validates the stored `resource_spec` again against the rules of its own version when it applies the revision. If the listener is older than the control plane, a `PATCH` can return `200` and the revision then fails with `DEPLOY_FAILED`.
+
+The rejected value stays in the stored `resource_spec`, so every later revision of that deployment also fails, including image-only deploys, until you `PATCH` the deployment with a value the listener accepts.
+
+The following `resource_spec` fields depend on the listener version:
+
+| Field | Minimum listener version |
+| :--- | :--- |
+| Fractional `cpu` and `queue_cpu` values (for example, `0.5`) | Later than 0.12.x. Listener 0.12.x rejects fractional values. |
+| `redis_cpu` and `redis_cpu_limit` | 0.13.22 or later. Earlier listeners ignore these fields. |
+| `redis_memory_mb` below `2048` | 0.13.27 or later. Earlier listeners require at least `2048`. |
+
+Upgrading the listener does not restart existing deployments. After you upgrade, `PATCH` each deployment with its full `resource_spec` to apply the new values. For the accepted ranges and `PATCH` behavior, see [Resource spec](/langsmith/api-ref-control-plane#resource-spec).
+
+## Resource customization
+
+You set resources for each self-hosted deployment, including its Redis and PostgreSQL instances, through the deployment's `resource_spec`. Unlike Cloud, which exposes fixed Serverless and Dedicated [deployment types](/langsmith/cloud-platform-features#deployment-types), self-hosted deployments size CPU, memory, replicas, and storage according to your infrastructure configuration. Some fields, such as Redis CPU, require a minimum listener version. See [Listener version requirements](#listener-version-requirements).
+
+The `db_*` fields size the PostgreSQL instance that the control plane creates, and the `redis_*` fields size the Redis instance. If a deployment uses [custom PostgreSQL](#custom-postgresql) or [custom Redis](#custom-redis), the matching fields have no effect.
+
+There are no organization or workspace defaults for deployment resources. Fields you do not set fall back to the defaults for the deployment type, so send a full `resource_spec` when you create each deployment. See [Configure Agent Server for scale](/langsmith/agent-server-scale) for tuning guidance.
+
+## PodDisruptionBudgets
+
+Starting in operator 0.1.60 (`langgraph-dataplane` chart 0.2.24), the operator creates a PodDisruptionBudget with `minAvailable: 1` for a deployment's API server and queue worker Deployments when their minimum replica count is 2 or more. You cannot turn these PodDisruptionBudgets off.
+
+Before you upgrade to operator 0.1.60 or later, remove any PodDisruptionBudgets of your own that select the same pods. When two PodDisruptionBudgets select the same pod, Kubernetes cannot evict it, so node drains and other evictions fail.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/self-hosted-platform-features.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
