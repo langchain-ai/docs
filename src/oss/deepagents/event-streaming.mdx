@@ -1,0 +1,167 @@
+---
+title: Event streaming
+description: Stream subagents, messages, tool calls, and final output from Deep Agents.
+tag: "Beta"
+---
+
+import EventStreamingSubagentsPy from '/snippets/code-samples/event-streaming-subagents-py.mdx';
+import EventStreamingSubagentsJs from '/snippets/code-samples/event-streaming-subagents-js.mdx';
+import EventStreamingLifecyclePy from '/snippets/code-samples/event-streaming-lifecycle-py.mdx';
+import EventStreamingLifecycleJs from '/snippets/code-samples/event-streaming-lifecycle-js.mdx';
+import EventStreamingMessagesPy from '/snippets/code-samples/event-streaming-messages-py.mdx';
+import EventStreamingMessagesJs from '/snippets/code-samples/event-streaming-messages-js.mdx';
+import EventStreamingToolCallsPy from '/snippets/code-samples/event-streaming-tool-calls-py.mdx';
+import EventStreamingToolCallsJs from '/snippets/code-samples/event-streaming-tool-calls-js.mdx';
+import EventStreamingNestedPy from '/snippets/code-samples/event-streaming-nested-py.mdx';
+import EventStreamingNestedJs from '/snippets/code-samples/event-streaming-nested-js.mdx';
+import EventStreamingInterleavePy from '/snippets/code-samples/event-streaming-interleave-py.mdx';
+import EventStreamingConcurrentJs from '/snippets/code-samples/event-streaming-concurrent-js.mdx';
+import EventStreamingRawProtocolPy from '/snippets/code-samples/event-streaming-raw-protocol-py.mdx';
+import EventStreamingRawProtocolJs from '/snippets/code-samples/event-streaming-raw-protocol-js.mdx';
+
+This page covers streaming concerns specific to Deep Agents—most importantly, streaming from delegated subagents via `stream.subagents`. For general agent streaming (`stream.messages`, `stream.values`, tool calls, custom updates), see [LangChain Event Streaming](/oss/langchain/event-streaming).
+
+## Stream subagents
+
+Deep Agents add a subagent projection on top of LangGraph streaming. Use `stream.subagents` when you want one stream handle per delegated `task` call. The projection is lightweight: it discovers subagent tasks first, and message, tool-call, and value streams are opened only when you access them on a subagent handle.
+
+Each handle's `name` is the sub-agent's configured name: the `subagent_type` the coordinator passes when it calls the `task` tool. Deep Agents binds that name to the delegated run, so the same label you defined in your subagent specs is what you filter and route on in the stream.
+
+:::python
+<EventStreamingSubagentsPy />
+:::
+
+:::js
+<EventStreamingSubagentsJs />
+:::
+
+## Subagent stream fields
+
+Each subagent stream exposes the same kinds of projections as the parent run, such as messages, tool calls, nested subagents, and final output. For the general parent-run streaming model, see [LangChain Event Streaming](/oss/langchain/event-streaming).
+
+:::python
+Python uses snake_case projection names such as `tool_calls`. Each subagent stream can expose `.messages`, `.tool_calls`, `.values`, `.subagents`, and `.output`.
+:::
+
+:::js
+TypeScript uses camelCase projection names such as `toolCalls` and `taskInput`. Each subagent stream can expose `.messages`, `.toolCalls`, `.values`, `.subagents`, and `.output`.
+:::
+
+| Field | Description |
+| ----- | ----------- |
+| `name` | Sub-agent name, taken from the `subagent_type` the coordinator selects in its `task` call. |
+| `messages` | Messages emitted by the subagent. |
+| `subagents` | Nested subagent invocations. |
+| `output` | Final subagent state, or completion signal for the delegated task. |
+:::python
+| `path` | Namespace path for the subagent stream. |
+| `status` | Lifecycle status such as `started`, `completed`, `failed`, or `interrupted`. |
+| `tool_calls` | Tool calls scoped to the subagent. |
+::::::js
+| `taskInput` | Promise for the prompt passed to the task tool. |
+| `toolCalls` | Tool calls scoped to the subagent. |
+:::
+
+## Track subagent lifecycle
+
+Use `stream.subagents` when you only need to show which subagents started and finished. You do not need to subscribe to message or value streams unless you access those projections on an individual subagent.
+
+:::python
+<EventStreamingLifecyclePy />
+:::
+
+:::js
+<EventStreamingLifecycleJs />
+:::
+
+
+## Stream messages
+
+Deep Agents can emit messages from the coordinator agent and from delegated subagents. Use `stream.messages` for top-level messages and `subagent.messages` for each delegated subagent.
+
+:::python
+<EventStreamingMessagesPy />
+:::
+
+:::js
+<EventStreamingMessagesJs />
+:::
+
+## Stream tool calls
+
+Deep Agents expose tool calls at each level of the agent tree. Use the top-level `stream.tool_calls` for coordinator tools and each `subagent.tool_calls` for delegated work.
+
+:::python
+<EventStreamingToolCallsPy />
+:::
+
+:::js
+<EventStreamingToolCallsJs />
+:::
+
+## Stream nested work
+
+You can recurse into a subagent stream to observe nested subagents, messages, and tool calls.
+
+:::python
+<EventStreamingNestedPy />
+:::
+
+:::js
+<EventStreamingNestedJs />
+:::
+
+## Consume concurrently
+
+Coordinator and subagent output often interleave. Consume projections concurrently when you need live UI updates.
+
+:::python
+For concurrent consumption in async code, use `astream_events` with `asyncio.gather`:
+
+```py
+import asyncio
+
+stream = await agent.astream_events(input, version="v3")
+
+async def consume_coordinator():
+    async for message in stream.messages:
+        print("[coordinator]", await message.text)
+
+async def consume_subagents():
+    async for subagent in stream.subagents:
+        async for message in subagent.messages:
+            print(f"[{subagent.name}]", await message.text)
+
+await asyncio.gather(consume_coordinator(), consume_subagents())
+```
+
+For synchronous code, use `stream.interleave(...)` instead:
+
+<EventStreamingInterleavePy />
+:::
+
+:::js
+Use concurrent consumers in JavaScript:
+
+<EventStreamingConcurrentJs />
+:::
+
+When you need exact arrival order across the coordinator and all subagents, iterate raw protocol events and use `namespace` to identify the source:
+
+:::python
+<EventStreamingRawProtocolPy />
+:::
+
+:::js
+<EventStreamingRawProtocolJs />
+:::
+
+## Subagents versus subgraphs
+
+`stream.subgraphs` shows graph execution structure. `stream.subagents` shows product-level Deep Agents task delegations. Use `stream.subagents` for user-facing UI because it hides internal graph nodes and exposes the subagent concept directly.
+
+## Related
+
+- [LangChain Event Streaming](/oss/langchain/event-streaming) covers general agent message and tool-call streaming concepts.
+- [Subagent frontend streaming](/oss/deepagents/frontend/subagent-streaming) shows UI patterns that separate coordinator messages from subagent cards.
+- [LangGraph Event Streaming](/oss/langgraph/event-streaming) covers the underlying graph streaming model.

@@ -136,6 +136,12 @@ class DocsFileHandler(FileSystemEventHandler):
         if self._should_ignore_file(file_path):
             return
 
+        if file_path.exists():
+            if file_path.suffix.lower() in self.builder.copy_extensions:
+                logger.info("File changed: %s", file_path)
+                self.loop.call_soon_threadsafe(self.event_queue.put_nowait, file_path)
+            return
+
         relative_path = file_path.relative_to(self.builder.src_dir.absolute())
         output_path = self.builder.build_dir / relative_path
 
@@ -356,6 +362,15 @@ class FileWatcher:
                     # OSS content is versioned - check Python and JavaScript versions
                     # Skip if it's a shared file (images, JS, CSS) - those go to root
                     if self.builder.is_shared_file(source_file):
+                        built_file = self.build_dir / relative_path
+                        if built_file.suffix.lower() == ".md":
+                            built_file = built_file.with_suffix(".mdx")
+                        if built_file.exists():
+                            os.utime(built_file, (current_time, current_time))
+                            touched_count += 1
+                    elif self.builder.is_unversioned_oss_file(source_file):
+                        # Language-agnostic OSS products (Deep Agents Code,
+                        # OpenWiki) build once at their source-relative path.
                         built_file = self.build_dir / relative_path
                         if built_file.suffix.lower() == ".md":
                             built_file = built_file.with_suffix(".mdx")

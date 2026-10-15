@@ -24,7 +24,7 @@ import { ExampleEmbed } from "/snippets/example-embed.jsx"
 Install AI Elements components via the CLI. They're added as editable source files into your project:
 
 ```bash
-npm install @langchain/react @ai-elements/react
+npm install @langchain/react
 npx ai-elements@latest add conversation message prompt-input tool reasoning suggestion
 ```
 
@@ -34,7 +34,7 @@ Render AI Elements components directly from `stream.messages`. Each LangChain `B
 
 ```tsx
 import { useStream } from "@langchain/react";
-import { HumanMessage, AIMessage } from "@langchain/core/messages";
+import { HumanMessage, AIMessage } from "langchain";
 
 import {
   Conversation,
@@ -66,10 +66,27 @@ import {
   PromptInputSubmit,
 } from "@/components/ai-elements/prompt-input";
 
+function getReasoningText(msg: AIMessage) {
+  return msg.contentBlocks.find((block) => block.type === "reasoning")?.reasoning ?? "";
+}
+
+function getTextContent(msg: AIMessage) {
+  return msg.text;
+}
+
+function getToolCalls(msg: AIMessage) {
+  return (msg.tool_calls ?? []).map((tc) => ({
+    id: tc.id,
+    name: tc.name,
+    args: tc.args,
+    state: "input-available" as const,
+  }));
+}
+
 export function Chat() {
   const stream = useStream({
     apiUrl: "http://localhost:2024",
-    assistantId: "agent",
+    assistantId: "ai_elements",
   });
 
   return (
@@ -80,7 +97,7 @@ export function Chat() {
             if (HumanMessage.isInstance(msg)) {
               return (
                 <Message key={i} from="user">
-                  <MessageContent>{msg.content as string}</MessageContent>
+                  <MessageContent>{msg.text}</MessageContent>
                 </Message>
               );
             }
@@ -142,6 +159,6 @@ export function Chat() {
 ## Best practices
 
 - **Edit source files freely:** components ship in your project, not as an external package dependency, so you can change anything without forking
-- **Use `MessageResponse` for streaming:** it handles streamed partial tokens correctly; avoid rendering raw `msg.content` directly during streaming
+- **Use `MessageResponse` for streaming:** it handles streamed partial tokens correctly; avoid rendering raw message content directly during streaming
 - **Wrap in `Conversation`:** the `Conversation` component manages scroll behaviour so new messages auto-scroll into view
 - **Gate on `isInstance`:** use `HumanMessage.isInstance(msg)` and `AIMessage.isInstance(msg)` rather than checking `msg.getType()` for proper TypeScript narrowing

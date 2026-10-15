@@ -3,7 +3,7 @@ from langchain.agents import create_agent
 from langchain_core.runnables import Runnable
 from langgraph.store.postgres import PostgresStore  # type: ignore[import-not-found]
 
-DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable"
+DB_URI = "postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable"
 # :remove-start:
 import sys
 from pathlib import Path
