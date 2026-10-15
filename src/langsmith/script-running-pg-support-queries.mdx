@@ -97,7 +97,7 @@ curl -OJ \
 
 ### Export via SQL scripts
 
-If you have direct database access, run `run_all_full_exports_pg.sh` from the chart's `scripts/` directory to export every usage dataset in one command (requires Helm chart version 0.17.x or later).
+If you have direct database access, run [`run_all_full_exports_pg.sh`](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/scripts/run_all_full_exports_pg.sh) to export every usage dataset in one command. The script calls `run_support_query_pg.sh` and reads the queries in `support_queries/postgres/`, so run it from a copy of the chart's `scripts/` directory that contains both.
 
 ```bash
 sh run_all_full_exports_pg.sh <postgres_url>
@@ -109,11 +109,13 @@ For example, if you are using the bundled version with port-forwarding:
 sh run_all_full_exports_pg.sh "postgres://postgres:postgres@localhost:5432/postgres"
 ```
 
-This writes one CSV per dataset into `./langsmith-usage-export/` and bundles `./langsmith-usage-export.tar.gz`. Pass `--output-dir <dir>` to change the location, `--debug` for verbose psql output, or `--help` for full usage.
+The script runs every read-only `pg_usage_*_full_export.sql` query and never runs the `*_backfill_*` scripts. It writes one CSV per dataset into `./langsmith-usage-export/`: `traces`, `nodes`, `agent_builder`, `snapshots`, `langchain_usage`, `sandbox`, `engine_intelligence`, and `engine_issues_agent`. If `tar` is available, it also bundles them into `./langsmith-usage-export.tar.gz`. Pass `--output-dir <dir>` to change the location, `--debug` for verbose psql output, or `--help` for full usage.
+
+If a dataset's table does not exist on your deployment, the script skips that export with a warning, continues with the rest, and exits with a non-zero status.
 
 #### Export individual datasets
 
-To export a single dataset — or on releases that predate the combined export script — run each query individually with `run_support_query_pg.sh`.
+To export a single dataset, or on releases that predate the combined export script, run each query individually with `run_support_query_pg.sh`.
 
 To export trace usage (requires Helm chart version 0.11.4 or later):
 
@@ -145,4 +147,36 @@ To export usage snapshots (daily entity counts such as workspaces, projects, dat
 sh run_support_query_pg.sh <postgres_url> \
   --input support_queries/postgres/pg_usage_snapshots_full_export.sql \
   --output usage_snapshots_export.csv
+```
+
+To export `langchain_usage` rows (the shared usage store for newer products such as Sandboxes, Engine, LLM Gateway hosted models, and Fleet):
+
+```bash
+sh run_support_query_pg.sh <postgres_url> \
+  --input support_queries/postgres/pg_usage_langchain_usage_full_export.sql \
+  --output langchain_usage.csv
+```
+
+To export sandbox uptime usage:
+
+```bash
+sh run_support_query_pg.sh <postgres_url> \
+  --input support_queries/postgres/pg_usage_sandbox_full_export.sql \
+  --output sandbox.csv
+```
+
+To export Engine token usage:
+
+```bash
+sh run_support_query_pg.sh <postgres_url> \
+  --input support_queries/postgres/pg_usage_engine_intelligence_full_export.sql \
+  --output engine_intelligence.csv
+```
+
+To export legacy issues-agent (Engine) token usage:
+
+```bash
+sh run_support_query_pg.sh <postgres_url> \
+  --input support_queries/postgres/pg_usage_engine_issues_agent_full_export.sql \
+  --output engine_issues_agent.csv
 ```
