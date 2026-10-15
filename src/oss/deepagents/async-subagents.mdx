@@ -3,23 +3,20 @@ title: Async subagents
 description: Launch background subagents that run concurrently while the supervisor continues interacting with the user
 ---
 
+import AsyncSubagentsConfigurePy from '/snippets/code-samples/async-subagents-configure-py.mdx';
+import AsyncSubagentsConfigureJs from '/snippets/code-samples/async-subagents-configure-js.mdx';
+import AsyncSubagentsHttpTransportPy from '/snippets/code-samples/async-subagents-http-transport-py.mdx';
+import AsyncSubagentsHybridPy from '/snippets/code-samples/async-subagents-hybrid-py.mdx';
+import AsyncSubagentsHybridJs from '/snippets/code-samples/async-subagents-hybrid-js.mdx';
+import AsyncSubagentsDescriptionsGoodPy from '/snippets/code-samples/async-subagents-descriptions-good-py.mdx';
+import AsyncSubagentsDescriptionsBadPy from '/snippets/code-samples/async-subagents-descriptions-bad-py.mdx';
+import AsyncSubagentsDescriptionsJs from '/snippets/code-samples/async-subagents-descriptions-js.mdx';
+import AsyncSubagentsTroubleshootingPollingPy from '/snippets/code-samples/async-subagents-troubleshooting-polling-py.mdx';
+import AsyncSubagentsTroubleshootingPollingJs from '/snippets/code-samples/async-subagents-troubleshooting-polling-js.mdx';
+
 Async subagents let a supervisor agent launch background tasks that return immediately, so the supervisor can continue interacting with the user while subagents work concurrently. The supervisor can check progress, send follow-up instructions, or cancel tasks at any point.
 
 This builds on [subagents](/oss/deepagents/subagents), which run synchronously and block the supervisor until completion. Use async subagents when tasks are long-running, parallelizable, or need mid-flight steering.
-
-<Warning>
-:::python
-Async subagents are a preview feature targeted for `deepagents` 0.5.0. You can try them now by installing a prerelease version. Preview features are under active development and are not recommended for production use.
-
-For Python, install the `0.5.0a1` prerelease with `--pre` or `--allow-prereleases`.
-:::
-
-:::js
-Async subagents are a preview feature targeted for `deepagents` 1.9.0. You can try them now by installing a prerelease version. Preview features are under active development and are not recommended for production use.
-
-For JavaScript, install the prerelease version explicitly, for example `deepagents@1.9.0-alpha.0`.
-:::
-</Warning>
 
 ```mermaid
 graph TB
@@ -52,29 +49,7 @@ Async subagents communicate with any server that implements the [Agent Protocol]
 Define async subagents as a list of @[`AsyncSubAgent`] specs, each pointing to an Agent Protocol server:
 
 :::python
-```python
-from deepagents import AsyncSubAgent, create_deep_agent
-
-async_subagents = [
-    AsyncSubAgent(
-        name="researcher",
-        description="Research agent for information gathering and synthesis",
-        graph_id="researcher",
-        # No url → ASGI transport (co-deployed in the same deployment)
-    ),
-    AsyncSubAgent(
-        name="coder",
-        description="Coding agent for code generation and review",
-        graph_id="coder",
-        # url="https://coder-deployment.langsmith.dev"  # Optional: HTTP transport for remote
-    ),
-]
-
-agent = create_deep_agent(
-    model="claude-sonnet-4-6",
-    subagents=async_subagents,
-)
-```
+<AsyncSubagentsConfigurePy />
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -83,32 +58,11 @@ agent = create_deep_agent(
 | `graph_id` | `str` | Required. The graph ID (or assistant ID) on the Agent Protocol server. For LangGraph-based deployments, this must match a graph registered in `langgraph.json`. |
 | `url` | `str` | Optional. When omitted, uses ASGI transport (in-process). When set, uses HTTP transport to a remote Agent Protocol server. |
 | `headers` | `dict[str, str]` | Optional. Additional headers for requests to the remote server. Use for custom authentication with self-hosted Agent Protocol servers. |
+| `mode` | `"isolated" \| "fork"` | Optional. Controls what conversation context the subagent receives at launch. Defaults to `"isolated"`. See [Choose a launch mode](#choose-a-launch-mode). |
 :::
 
 :::js
-```typescript
-import { createDeepAgent, AsyncSubAgent } from "deepagents";
-
-const asyncSubagents: AsyncSubAgent[] = [
-  {
-    name: "researcher",
-    description: "Research agent for information gathering and synthesis",
-    graphId: "researcher",
-    // No url → ASGI transport (co-deployed in the same deployment)
-  },
-  {
-    name: "coder",
-    description: "Coding agent for code generation and review",
-    graphId: "coder",
-    // url: "https://coder-deployment.langsmith.dev"  // Optional: HTTP transport for remote
-  },
-];
-
-const agent = createDeepAgent({
-  model: "claude-sonnet-4-6",
-  subagents: [...asyncSubagents],
-});
-```
+<AsyncSubagentsConfigureJs />
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -133,7 +87,7 @@ For LangGraph-based deployments, register all graphs in the same `langgraph.json
 
 ## Use the async subagent tools
 
-The @[`AsyncSubAgentMiddleware`] gives the supervisor five tools:
+The @[`AsyncSubAgentMiddleware`] which is included in the [Deep Agents stack](/oss/deepagents/customization#deep-agents-stack) when async subagents are configured, gives the supervisor five tools:
 
 | Tool | Purpose | Returns |
 |------|---------|---------|
@@ -180,13 +134,13 @@ sequenceDiagram
 ## Understand state management
 
 :::python
-Task metadata is stored in a dedicated state channel (`async_tasks`) on the supervisor's graph, separate from the message history. This is critical because deep agents [compact their message history](/oss/deepagents/customization#summarization) when the context window fills up -- if task IDs were only in tool messages, they would be lost during compaction. The dedicated channel ensures the supervisor can always recall its tasks through `list_async_tasks`, even after multiple rounds of summarization.
+Task metadata is stored in a dedicated state channel (`async_tasks`) on the supervisor's graph, separate from the message history. This is critical because deep agents [compact their message history](/oss/deepagents/context-engineering#summarization) when the context window fills up. If task IDs were only in tool messages, they would be lost during compaction. The dedicated channel ensures the supervisor can always recall its tasks through `list_async_tasks`, even after multiple rounds of summarization.
 
 Each tracked task records the task ID, agent name, thread ID, run ID, status, and timestamps (`created_at`, `last_checked_at`, `last_updated_at`).
 :::
 
 :::js
-Task metadata is stored in a dedicated state channel (`asyncTasks`) on the supervisor's graph, separate from the message history. This is critical because deep agents [compact their message history](/oss/deepagents/customization#summarization) when the context window fills up -- if task IDs were only in tool messages, they would be lost during compaction. The dedicated channel ensures the supervisor can always recall its tasks through `list_async_tasks`, even after multiple rounds of summarization.
+Task metadata is stored in a dedicated state channel (`asyncTasks`) on the supervisor's graph, separate from the message history. This is critical because deep agents [compact their message history](/oss/deepagents/context-engineering#summarization) when the context window fills up/ If task IDs were only in tool messages, they would be lost during compaction. The dedicated channel ensures the supervisor can always recall its tasks through `list_async_tasks`, even after multiple rounds of summarization.
 
 Each tracked task records the task ID, agent name, thread ID, run ID, status, and timestamps (`createdAt`, `checkedAt`, `updatedAt`).
 :::
@@ -204,14 +158,7 @@ ASGI transport eliminates network latency and requires no additional auth config
 Add a `url` field to switch to HTTP transport, where SDK calls go over the network to a remote Agent Protocol server:
 
 :::python
-```python
-AsyncSubAgent(
-    name="researcher",
-    description="Research agent",
-    graph_id="researcher",
-    url="https://my-research-deployment.langsmith.dev",
-)
-```
+<AsyncSubagentsHttpTransportPy />
 :::
 
 :::js
@@ -229,6 +176,46 @@ For LangGraph deployments, authentication is handled by the LangGraph SDK using 
 
 Use HTTP transport when subagents need independent scaling, different resource profiles, or are maintained by a different team.
 
+## Choose a launch mode
+
+The `mode` field on each @[`AsyncSubAgent`] spec controls what conversation context the subagent receives when a task starts.
+
+| Mode | Behavior |
+|------|----------|
+| `"isolated"` (default) | Sends only the delegated task description. The subagent starts fresh with no knowledge of the parent's conversation history. |
+| `"fork"` | Sends a snapshot of the parent's conversation at launch, followed by the task description. The subagent can use that context while working in the background. |
+
+`"isolated"` is the right choice for most tasks. Use `"fork"` when the subagent needs established context — for example, a background drafting agent that should write in the style and voice already set up in the conversation.
+
+### Fork mode
+
+<Warning>
+
+`mode="fork"` is available in Python only. It is experimental and may change in a future release.
+
+</Warning>
+
+:::python
+
+Set `mode="fork"` on any `AsyncSubAgent` spec:
+
+```python
+async_subagents=[
+    {
+        "name": "drafter",
+        "description": "Drafts documents based on the conversation context",
+        "graph_id": "drafter",
+        "mode": "fork",
+    }
+]
+```
+
+:::
+
+At launch, `start_async_task` sends the parent's full conversation history — replayed up to that point — followed by the task description. Later messages from the parent are not forwarded to the child.
+
+**Prompt-cache reuse.** To get cache hits on the forked conversation prefix, configure the remote agent with the same model, system prompt, tools, and prompt-processing middleware as the parent. Fork mode copies conversation history; it does not synchronize those settings. Matching configuration is necessary but not sufficient: the rendered prefix must match, and cache hits depend on the provider.
+
 ## Choose a deployment topology
 
 ### Single deployment
@@ -241,50 +228,14 @@ Supervisor on one server, subagents on another via HTTP transport. Use when suba
 
 ### Hybrid
 
-In a split deployment, you have the supervisor on one server and subagents on another via HTTP transport. Use when subagents need different compute profiles or independent scaling.
-
-### Hybrid
-
 In a hybrid deployment, some subagents are co-deployed via ASGI, others remote via HTTP:
 
 :::python
-```python
-async_subagents = [
-    AsyncSubAgent(
-        name="researcher",
-        description="Research agent",
-        graph_id="researcher",
-        # No url → ASGI (co-deployed)
-    ),
-    AsyncSubAgent(
-        name="coder",
-        description="Coding agent",
-        graph_id="coder",
-        url="https://coder-deployment.langsmith.dev",
-        # url present → HTTP (remote)
-    ),
-]
-```
+<AsyncSubagentsHybridPy />
 :::
 
 :::js
-```typescript
-const asyncSubagents: AsyncSubAgent[] = [
-  {
-    name: "researcher",
-    description: "Research agent",
-    graphId: "researcher",
-    // No url → ASGI (co-deployed)
-  },
-  {
-    name: "coder",
-    description: "Coding agent",
-    graphId: "coder",
-    url: "https://coder-deployment.langsmith.dev",
-    // url present → HTTP (remote)
-  },
-];
-```
+<AsyncSubagentsHybridJs />
 :::
 
 ## Best practices
@@ -302,39 +253,14 @@ langgraph dev --n-jobs-per-worker 10
 The supervisor uses descriptions to decide which subagent to launch. Be specific and action-oriented:
 
 :::python
-```python
-# Good
-AsyncSubAgent(
-    name="researcher",
-    description="Conducts in-depth research using web search. Use for questions requiring multiple searches and synthesis.",
-    graph_id="researcher",
-)
-
-# Bad
-AsyncSubAgent(
-    name="helper",
-    description="helps with stuff",
-    graph_id="helper",
-)
-```
+<CodeGroup>
+    <AsyncSubagentsDescriptionsGoodPy />
+    <AsyncSubagentsDescriptionsBadPy />
+</CodeGroup>
 :::
 
 :::js
-```typescript
-// Good
-{
-  name: "researcher",
-  description: "Conducts in-depth research using web search. Use for questions requiring multiple searches and synthesis.",
-  graphId: "researcher",
-}
-
-// Bad
-{
-  name: "helper",
-  description: "helps with stuff",
-  graphId: "helper",
-}
-```
+<AsyncSubagentsDescriptionsJs />
 :::
 
 ### Trace with thread IDs
@@ -350,29 +276,11 @@ When using LangGraph-based deployments, every async subagent run is a standard L
 **Solution**: The middleware injects system prompt rules to prevent this. If polling persists, reinforce the behavior in your supervisor's system prompt:
 
 :::python
-```python
-agent = create_deep_agent(
-    model="claude-sonnet-4-6",
-    system_prompt="""...your instructions...
-
-    After launching an async subagent, ALWAYS return control to the user.
-    Never call check_async_task immediately after launch.""",
-    subagents=async_subagents,
-)
-```
+<AsyncSubagentsTroubleshootingPollingPy />
 :::
 
 :::js
-```typescript
-const agent = createDeepAgent({
-  model: "claude-sonnet-4-6",
-  systemPrompt: `...your instructions...
-
-    After launching an async subagent, ALWAYS return control to the user.
-    Never call check_async_task immediately after launch.`,
-  subagents: [...asyncSubagents],
-});
-```
+<AsyncSubagentsTroubleshootingPollingJs />
 :::
 
 ### Supervisor reports stale status
@@ -391,7 +299,7 @@ const agent = createDeepAgent({
 
 **Problem**: Launching a subagent hangs or takes a long time to start.
 
-**Solution**: The worker pool is likely exhausted. Increase the pool size with `--n-jobs-per-worker`. See [Size the worker pool](#size-the-worker-pool).
+**Solution**: The worker pool is likely exhausted. Increase the pool size with `--n-jobs-per-worker`. See [Size the worker pool](#size-the-worker-pool-for-local-development).
 
 ## Reference implementation
 

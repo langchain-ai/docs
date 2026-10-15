@@ -93,6 +93,118 @@ Your integration package will typically implement a subclass of at least one of 
     <Tab title="Sandboxes">
         Sandbox integrations enable [Deep Agents](/oss/deepagents/overview) to run code in isolated environments.
 
-        **Reference implementation:** See the [Daytona partner integration](https://github.com/langchain-ai/deepagents/tree/main/libs/partners/daytona) for structure and patterns.
+        :::python
+        Implement the @[`SandboxBackendProtocol`] from Deep Agents. This protocol includes `execute()`, async variants, and the filesystem tool methods such as `ls`, `read`, `write`, `edit`, `glob`, and `grep`.
+
+        In practice, if your sandbox environment can run shell commands and has `python3` available, you should usually subclass @[`BaseSandbox`]. `BaseSandbox` provides the filesystem operations through `python3`, so you mainly need to implement `execute()`, `upload_files()`, `download_files()`, and `id`.
+
+        ```python Example BaseSandbox scaffold expandable
+        from __future__ import annotations
+
+        from deepagents.backends.protocol import (
+            ExecuteResponse,
+            FileDownloadResponse,
+            FileUploadResponse,
+        )
+        from deepagents.backends.sandbox import BaseSandbox  # [!code highlight]
+
+
+        class MySandbox(BaseSandbox):
+            def __init__(self, client: MySandboxSdkClient) -> None:
+                self._client = client
+
+            @property
+            def id(self) -> str:
+                return self._client.sandbox_id
+
+            def execute(
+                self,
+                command: str,
+                *,
+                timeout: int | None = None,
+            ) -> ExecuteResponse:
+                # Execute `command` in your sandbox and map the provider response
+                # into ExecuteResponse.
+                result = self._client.run(command=command, timeout=timeout)
+                output = result.stdout or ""
+                if result.stderr:
+                    output += f"\n<stderr>{result.stderr}</stderr>"
+                return ExecuteResponse(
+                    output=output,
+                    exit_code=result.exit_code,
+                    truncated=False,
+                )
+
+            def upload_files(
+                self,
+                files: list[tuple[str, bytes]],
+            ) -> list[FileUploadResponse]:
+                # Validate paths, batch requests where possible, and map provider
+                # results back into FileUploadResponse objects in input order.
+                # Only catch and normalize errors that an LLM can plausibly retry
+                # or fix, such as invalid_path or file_not_found.
+                return self._client.upload_files(files)
+
+            def download_files(self, paths: list[str]) -> list[FileDownloadResponse]:
+                # Validate paths, batch requests where possible, and map provider
+                # results back into FileDownloadResponse objects in input order.
+                # Only catch and normalize errors that an LLM can plausibly retry
+                # or fix, such as invalid_path or file_not_found.
+                return self._client.download_files(paths)
+
+            async def aexecute(
+                self,
+                command: str,
+                *,
+                timeout: int | None = None,
+            ) -> ExecuteResponse:
+                ...
+
+            async def aupload_files(
+                self,
+                files: list[tuple[str, bytes]],
+            ) -> list[FileUploadResponse]:
+                ...
+
+            async def adownload_files(
+                self,
+                paths: list[str],
+            ) -> list[FileDownloadResponse]:
+                ...
+        ```
+
+        ## Test your integration
+
+        Validate your integration with the [sandbox standard test suite](/oss/contributing/standard-tests-langchain#sandbox-integrations). The Python suite uses `SandboxIntegrationTests` from `langchain_tests.integration_tests`; subclass it and provide a `sandbox` fixture that yields a clean `SandboxBackendProtocol` instance.
+
+        ```python Example sandbox standard test setup expandable
+        from __future__ import annotations
+
+        from collections.abc import Iterator
+
+        import pytest
+        from deepagents.backends.protocol import SandboxBackendProtocol
+        from langchain_tests.integration_tests import SandboxIntegrationTests
+
+        from langchain_myprovider import MySandbox
+        from myprovider_sdk import MySandboxSdkClient
+
+
+        class TestMySandboxStandard(SandboxIntegrationTests):
+            @pytest.fixture(scope="class")
+            def sandbox(self) -> Iterator[SandboxBackendProtocol]:
+                client = MySandboxSdkClient()
+                backend = MySandbox(client=client)
+                try:
+                    yield backend
+                finally:
+                    # Replace this with your provider's cleanup logic.
+                    client.delete_sandbox(backend.id)
+        ```
+
+        Put this in a file such as `tests/integration_tests/test_sandbox.py`. The standard suite will handle the actual filesystem and command-execution assertions for you.
+
+        **Reference implementation:** See the [Daytona partner integration](https://github.com/langchain-ai/deepagents/tree/main/libs/partners/daytona), which subclasses `BaseSandbox` and implements `execute()`, `upload_files()`, `download_files()`, and `id`.
+        :::
     </Tab>
 </Tabs>

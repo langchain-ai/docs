@@ -12,15 +12,20 @@ const addContextMiddleware = createMiddleware({
 });
 
 const agent = createAgent({
-  model: "gpt-4.1",
+  model: "gpt-5.5",
   systemPrompt: "You are a helpful assistant.",
   middleware: [addContextMiddleware],
 });
 // :snippet-end:
 
 // :remove-start:
+// Fake model harness: disable tracing so LangSmith serialization does not
+// interfere with canned FakeListChatModel responses.
+process.env.LANGSMITH_TRACING = "false";
+process.env.LANGCHAIN_TRACING_V2 = "false";
+
 import { FakeListChatModel } from "@langchain/core/utils/testing";
-import type { BaseMessage } from "@langchain/core/messages";
+import type { BaseMessage } from "langchain";
 
 function flattenMessageContent(content: unknown): string {
   if (typeof content === "string") return content;

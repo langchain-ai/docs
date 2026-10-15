@@ -1,0 +1,15 @@
+
+// :snippet-start: runs-query-pagination-after-js
+// :codegroup-tab: After
+import { Client } from "langsmith";
+
+const client = new Client();
+const project = await client.readProject({ projectName: "default" });
+const runs: unknown[] = [];
+for await (const run of client.runs.query({
+  project_ids: [project.id],
+})) {
+  runs.push(run);
+  if (runs.length >= 150) break;
+}
+// :snippet-end:

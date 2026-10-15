@@ -6,6 +6,7 @@ description: Render structured agent responses with custom UI components instead
 Structured output lets the agent return typed, machine-readable data instead of plain text. Instead of rendering a single string, you get a structured object you can map to any UI: cards, tables, charts, step-by-step breakdowns, or domain-specific renderers.
 
 import { PatternEmbed } from "/snippets/pattern-embed.jsx"
+import UseStreamTypeInference from '/snippets/oss/use-stream-type-inference.mdx';
 
 <PatternEmbed pattern="structured-output-latex" />
 
@@ -32,38 +33,19 @@ The agent accomplishes this by calling a "structured output" tool whose argument
 
 Define a TypeScript type for the structured data the agent returns. The shape of this schema determines how you render the UI.
 
-Here's an example for a recipe assistant:
+The following is the math-solution schema used by the embedded demo:
 
 ```ts
-interface Ingredient {
-  name: string;
-  amount: string;
-  unit: string;
-}
-
-interface RecipeStep {
-  instruction: string;
-  duration?: string;
-}
-
-interface Recipe {
-  title: string;
-  description: string;
-  servings: number;
-  ingredients: Ingredient[];
-  steps: RecipeStep[];
-  totalTime: string;
+interface MathSolution {
+  problem: string; // The original math problem
+  steps: {
+    explanation: string;
+    latex: string; // Optional display math for this step
+  }[]; // Step-by-step derivation
+  finalAnswer: string; // Plain-text final answer
+  finalAnswerLatex: string; // LaTeX representation of the final answer
 }
 ```
-
-| Field | Type | Description |
-|---|---|---|
-| `title` | `string` | Name of the recipe |
-| `description` | `string` | Short summary of the dish |
-| `servings` | `number` | Number of servings |
-| `ingredients` | `Ingredient[]` | List of ingredients with amounts and units |
-| `steps` | `RecipeStep[]` | Ordered preparation steps |
-| `totalTime` | `string` | Estimated total preparation and cooking time |
 
 Your schema can be anything. The pattern works the same way regardless of shape.
 
@@ -72,14 +54,11 @@ Your schema can be anything. The pattern works the same way regardless of shape.
 The structured output lives in the `tool_calls` array of the last `AIMessage`. Extract it by finding the AI message and accessing the first tool call's arguments:
 
 ```ts
-import { AIMessage } from "@langchain/core/messages";
+import { AIMessage } from "langchain";
 
 function extractStructuredOutput<T>(messages: any[]): T | null {
-  const aiMessages = messages.filter(AIMessage.isInstance);
-  if (aiMessages.length === 0) return null;
-
-  const lastAI = aiMessages[aiMessages.length - 1];
-  const toolCall = lastAI.tool_calls?.[0];
+  const aiMessage = messages.find(AIMessage.isInstance);
+  const toolCall = aiMessage?.tool_calls?.[0];
   if (!toolCall) return null;
 
   return toolCall.args as T;
@@ -92,53 +71,37 @@ The structured output tool call may not have `args` populated until the agent fi
 
 ## Set up `useStream`
 
-:::python
+Connect @[`useStream`] to your structured-output agent, then read
+`stream.messages` and extract the typed payload from the latest @[`AIMessage`]
+tool call. Render your custom UI once `args` is complete, show a loading state
+while `stream.isLoading` is true (tool arguments may stream in gradually), and
+use `stream.submit()` to send the next prompt.
 
-Define a TypeScript interface matching your agent's state schema and pass it as a type parameter to `useStream` for type-safe access to state values. In the examples below, replace `typeof myAgent` with your interface name:
-
-```ts
-import type { BaseMessage } from "@langchain/core/messages";
-
-interface AgentState {
-  messages: BaseMessage[];
-}
-```
-
-:::
-
-:::js
-
-Import your agent and pass `typeof myAgent` as a type parameter to `useStream` for type-safe access to state values:
-
-```ts
-import type { myAgent } from "./agent";
-```
-
-:::
+<UseStreamTypeInference />
 
 <CodeGroup>
 
 ```tsx React
 import { useStream } from "@langchain/react";
-import { AIMessage } from "@langchain/core/messages";
+import { AIMessage } from "langchain";
 
-function RecipeChat() {
+function MathSolutionChat() {
   const stream = useStream<typeof myAgent>({
     apiUrl: "http://localhost:2024",
-    assistantId: "recipe_assistant",
+    assistantId: "structured_output_latex",
   });
 
-  const recipe = extractStructuredOutput<Recipe>(stream.messages);
+  const solution = extractStructuredOutput<MathSolution>(stream.messages);
 
   return (
     <div>
-      {!recipe && !stream.isLoading && (
+      {!solution && !stream.isLoading && (
         <PromptInput onSubmit={(text) =>
           stream.submit({ messages: [{ type: "human", content: text }] })
         } />
       )}
       {stream.isLoading && <LoadingIndicator />}
-      {recipe && <RecipeCard recipe={recipe} />}
+      {solution && <SolutionCard solution={solution} />}
     </div>
   );
 }
@@ -147,16 +110,16 @@ function RecipeChat() {
 ```vue Vue
 <script setup lang="ts">
 import { useStream } from "@langchain/vue";
-import { AIMessage } from "@langchain/core/messages";
+import { AIMessage } from "langchain";
 import { computed } from "vue";
 
 const stream = useStream<typeof myAgent>({
   apiUrl: "http://localhost:2024",
-  assistantId: "recipe_assistant",
+  assistantId: "structured_output_latex",
 });
 
-const recipe = computed(() =>
-  extractStructuredOutput<Recipe>(stream.messages.value)
+const solution = computed(() =>
+  extractStructuredOutput<MathSolution>(stream.messages.value)
 );
 
 function handleSubmit(text: string) {
@@ -166,9 +129,9 @@ function handleSubmit(text: string) {
 
 <template>
   <div>
-    <PromptInput v-if="!recipe && !stream.isLoading" @submit="handleSubmit" />
+    <PromptInput v-if="!solution && !stream.isLoading" @submit="handleSubmit" />
     <LoadingIndicator v-if="stream.isLoading" />
-    <RecipeCard v-if="recipe" :recipe="recipe" />
+    <SolutionCard v-if="solution" :solution="solution" />
   </div>
 </template>
 ```
@@ -176,59 +139,59 @@ function handleSubmit(text: string) {
 ```svelte Svelte
 <script lang="ts">
   import { useStream } from "@langchain/svelte";
-  import { AIMessage } from "@langchain/core/messages";
+  import { AIMessage } from "langchain";
 
-  const { messages, isLoading, submit } = useStream<typeof myAgent>({
+  const stream = useStream<typeof myAgent>({
     apiUrl: "http://localhost:2024",
-    assistantId: "recipe_assistant",
+    assistantId: "structured_output_latex",
   });
 
-  $: recipe = extractStructuredOutput<Recipe>($messages);
+  const solution = $derived(extractStructuredOutput<MathSolution>(stream.messages));
 
   function handleSubmit(text: string) {
-    submit({ messages: [{ type: "human", content: text }] });
+    stream.submit({ messages: [{ type: "human", content: text }] });
   }
 </script>
 
 <div>
-  {#if !recipe && !$isLoading}
+  {#if !solution && !stream.isLoading}
     <PromptInput on:submit={(e) => handleSubmit(e.detail)} />
   {/if}
-  {#if $isLoading}
+  {#if stream.isLoading}
     <LoadingIndicator />
   {/if}
-  {#if recipe}
-    <RecipeCard {recipe} />
+  {#if solution}
+    <SolutionCard {solution} />
   {/if}
 </div>
 ```
 
 ```ts Angular
 import { Component, computed } from "@angular/core";
-import { useStream } from "@langchain/angular";
+import { injectStream } from "@langchain/angular";
 
 @Component({
-  selector: "app-recipe-chat",
+  selector: "app-math-solution-chat",
   template: `
-    @if (!recipe() && !stream.isLoading()) {
+    @if (!solution() && !stream.isLoading()) {
       <prompt-input (onSubmit)="handleSubmit($event)" />
     }
     @if (stream.isLoading()) {
       <loading-indicator />
     }
-    @if (recipe()) {
-      <recipe-card [recipe]="recipe()" />
+    @if (solution()) {
+      <solution-card [solution]="solution()" />
     }
   `,
 })
-export class RecipeChatComponent {
-  stream = useStream<typeof myAgent>({
+export class MathSolutionChatComponent {
+  stream = injectStream<typeof myAgent>({
     apiUrl: "http://localhost:2024",
-    assistantId: "recipe_assistant",
+    assistantId: "structured_output_latex",
   });
 
-  recipe = computed(() =>
-    extractStructuredOutput<Recipe>(this.stream.messages())
+  solution = computed(() =>
+    extractStructuredOutput<MathSolution>(this.stream.messages())
   );
 
   handleSubmit(text: string) {
@@ -248,58 +211,28 @@ appropriate UI element. This is the core of the pattern: turning structured
 data into a purpose-built interface.
 
 ```tsx
-function RecipeCard({ recipe }: { recipe: Recipe }) {
+function LatexBlock({ latex }: { latex: string }) {
+  return <div className="latex-block">{latex}</div>; // Render with KaTeX or MathJax.
+}
+
+function SolutionCard({ solution }: { solution: MathSolution }) {
   return (
-    <div className="recipe-card">
-      <div className="recipe-header">
-        <h3>{recipe.title}</h3>
-        <p className="recipe-description">{recipe.description}</p>
-        <div className="recipe-meta">
-          <span>{recipe.servings} servings</span>
-          <span>{recipe.totalTime}</span>
-        </div>
-      </div>
-
-      <div className="recipe-ingredients">
-        <h4>Ingredients</h4>
-        <ul>
-          {recipe.ingredients.map((ing, i) => (
-            <li key={i}>
-              <strong>{ing.amount} {ing.unit}</strong> {ing.name}
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      <div className="recipe-steps">
-        <h4>Instructions</h4>
-        {recipe.steps.map((step, i) => (
-          <div key={i} className="step">
-            <div className="step-number">Step {i + 1}</div>
-            <p className="step-instruction">{step.instruction}</p>
-            {step.duration && (
-              <span className="step-duration">{step.duration}</span>
-            )}
-          </div>
+    <div className="solution-card">
+      <h3>{solution.problem}</h3>
+      <ol>
+        {solution.steps.map((step, i) => (
+          <li key={i}>
+            <span>{step.explanation}</span>
+            {step.latex && <LatexBlock latex={step.latex} />}
+          </li>
         ))}
-      </div>
+      </ol>
+      <strong>{solution.finalAnswer}</strong>
+      {solution.finalAnswerLatex && <LatexBlock latex={solution.finalAnswerLatex} />}
     </div>
   );
 }
 ```
-
-The same approach works for any domain. Map each field to the UI element that best represents it:
-
-| Data type | Rendering strategy |
-|---|---|
-| Plain text | Paragraphs, headings, list items |
-| Numbers/metrics | Stat cards, progress bars, badges |
-| Arrays | Lists, tables, grids |
-| Nested objects | Nested cards, accordion sections |
-| Markdown | Markdown renderer (e.g. `react-markdown`) |
-| LaTeX/math | KaTeX or MathJax |
-| Dates/times | Formatted timestamps, relative time |
-| URLs | Links, embedded previews |
 
 ## Handle partial streaming data
 
@@ -330,10 +263,10 @@ function extractStructuredOutput<T>(
 Use the `requiredFields` parameter to wait until critical fields are populated before rendering:
 
 ```ts
-const recipe = extractStructuredOutput<Recipe>(stream.messages, [
-  "title",
-  "ingredients",
+const solution = extractStructuredOutput<MathSolution>(stream.messages, [
+  "problem",
   "steps",
+  "finalAnswer",
 ]);
 ```
 
@@ -342,39 +275,28 @@ const recipe = extractStructuredOutput<Recipe>(stream.messages, [
 Rather than waiting for the complete structured output, render fields as they arrive. This gives users immediate feedback while the agent is still generating:
 
 ```tsx
-function ProgressiveRecipeCard({ messages }: { messages: any[] }) {
-  const partial = extractStructuredOutput<Partial<Recipe>>(messages);
+function ProgressiveSolutionCard({ messages }: { messages: any[] }) {
+  const partial = extractStructuredOutput<Partial<MathSolution>>(messages);
   if (!partial) return null;
 
   return (
-    <div className="recipe-card">
-      {partial.title && <h3>{partial.title}</h3>}
-      {partial.description && <p>{partial.description}</p>}
-
-      {partial.ingredients && partial.ingredients.length > 0 && (
-        <div className="recipe-ingredients">
-          <h4>Ingredients</h4>
-          <ul>
-            {partial.ingredients.map((ing, i) => (
-              <li key={i}>
-                {ing.amount} {ing.unit} {ing.name}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+    <div className="solution-card">
+      {partial.problem && <h3>{partial.problem}</h3>}
 
       {partial.steps && partial.steps.length > 0 && (
-        <div className="recipe-steps">
-          <h4>Instructions</h4>
+        <div className="solution-steps">
+          <h4>Steps</h4>
           {partial.steps.map((step, i) => (
             <div key={i} className="step">
               <div className="step-number">Step {i + 1}</div>
-              <p>{step.instruction}</p>
+              <p>{step.explanation}</p>
+              {step.latex && <LatexBlock latex={step.latex} />}
             </div>
           ))}
         </div>
       )}
+
+      {partial.finalAnswer && <strong>{partial.finalAnswer}</strong>}
     </div>
   );
 }
@@ -382,23 +304,9 @@ function ProgressiveRecipeCard({ messages }: { messages: any[] }) {
 
 <Tip>
 Progressive rendering works well when the schema has a natural top-to-bottom
-order: title, then description, then details. The agent typically generates
-fields in schema order, so the UI fills in naturally.
+order: problem, then derivation steps, then final answer. The agent typically
+generates fields in schema order, so the UI fills in naturally.
 </Tip>
-
-## Reset and re-submit
-
-To let the user submit a new query after viewing a result, add a button that starts a new thread:
-
-```tsx
-{recipe && (
-  <button onClick={() => stream.switchThread(null)}>
-    Start over
-  </button>
-)}
-```
-
-This clears the current conversation and lets the user begin a fresh interaction.
 
 ## Best practices
 

@@ -7,7 +7,7 @@ const embed = (texts: string[]): number[][] => {
 
 const DB_URI =
   process.env.POSTGRES_URI ??
-  "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable";
+  "postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable";
 const store = PostgresStore.fromConnString(DB_URI, {
   index: { embed, dims: 2 },
 });
@@ -16,7 +16,7 @@ const store = PostgresStore.fromConnString(DB_URI, {
 await (
   store as { core: { pool: { query: (q: string) => Promise<unknown> } } }
 ).core.pool.query(
-  "DROP TABLE IF EXISTS public.store_vectors CASCADE; DROP TABLE IF EXISTS public.store CASCADE; DROP TABLE IF EXISTS public.store_migrations CASCADE;",
+  "DROP TABLE IF EXISTS public.store_vectors CASCADE; DROP TABLE IF EXISTS public.store CASCADE; DROP TABLE IF EXISTS public.store_migrations CASCADE; DROP TABLE IF EXISTS public.vector_migrations CASCADE;",
 );
 // :remove-end:
 await store.setup();

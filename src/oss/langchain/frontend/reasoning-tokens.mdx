@@ -3,9 +3,10 @@ title: Reasoning tokens
 description: Display model thinking and reasoning processes in collapsible blocks
 ---
 
-Reasoning tokens expose the internal thought process of advanced models like OpenAI's o1/o3 and Anthropic's Claude with extended thinking. These models produce structured content blocks that separate reasoning from the final answer, letting you build UIs that show *how* the model arrived at its response.
+Reasoning tokens expose the internal thought process of advanced models like OpenAI's GPT-5 and Anthropic's Claude with extended thinking. These models produce structured content blocks that separate reasoning from the final answer, letting you build UIs that show *how* the model arrived at its response.
 
 import { PatternEmbed } from "/snippets/pattern-embed.jsx"
+import UseStreamTypeInference from '/snippets/oss/use-stream-type-inference.mdx';
 
 <PatternEmbed pattern="reasoning-tokens" />
 
@@ -43,7 +44,7 @@ Not all models produce reasoning tokens. This pattern applies specifically to mo
 The `contentBlocks` array on an `AIMessage` contains all blocks in the order they were generated. Filter them by `type` to separate reasoning from text:
 
 ```ts
-import { AIMessage } from "@langchain/core/messages";
+import { AIMessage } from "langchain";
 
 function extractBlocks(msg: AIMessage) {
   const reasoningBlocks = msg.contentBlocks
@@ -65,35 +66,20 @@ A single message may contain multiple reasoning blocks (e.g., if the model pause
 
 ## Accessing messages from `useStream`
 
-:::python
+Connect @[`useStream`] to your reasoning-capable agent and iterate
+`stream.messages` in your chat UI. Branch on `HumanMessage.isInstance` and
+`AIMessage.isInstance`, then pass each assistant message to a component that
+reads `contentBlocks` and separates reasoning from text. Set `isStreaming` on
+the last message while `stream.isLoading` is true so thinking blocks update as
+tokens arrive.
 
-Define a TypeScript interface matching your agent's state schema and pass it as a type parameter to `useStream` for type-safe access to state values. In the examples below, replace `typeof myAgent` with your interface name:
-
-```ts
-import type { BaseMessage } from "@langchain/core/messages";
-
-interface AgentState {
-  messages: BaseMessage[];
-}
-```
-
-:::
-
-:::js
-
-Import your agent and pass `typeof myAgent` as a type parameter to `useStream` for type-safe access to state values:
-
-```ts
-import type { myAgent } from "./agent";
-```
-
-:::
+<UseStreamTypeInference />
 
 <CodeGroup>
 
 ```tsx React
 import { useStream } from "@langchain/react";
-import { AIMessage, HumanMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage } from "langchain";
 
 function Chat() {
   const stream = useStream<typeof myAgent>({
@@ -105,7 +91,7 @@ function Chat() {
     <div className="messages">
       {stream.messages.map((msg, i) => {
         if (HumanMessage.isInstance(msg)) {
-          return <HumanBubble key={i} text={msg.content} />;
+          return <HumanBubble key={i} text={msg.text} />;
         }
         if (AIMessage.isInstance(msg)) {
           return (
@@ -126,7 +112,7 @@ function Chat() {
 ```vue Vue
 <script setup lang="ts">
 import { useStream } from "@langchain/vue";
-import { AIMessage, HumanMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage } from "langchain";
 
 const stream = useStream<typeof myAgent>({
   apiUrl: "http://localhost:2024",
@@ -136,12 +122,12 @@ const stream = useStream<typeof myAgent>({
 
 <template>
   <div class="messages">
-    <template v-for="(msg, i) in stream.messages" :key="i">
-      <HumanBubble v-if="HumanMessage.isInstance(msg)" :text="msg.content" />
+    <template v-for="(msg, i) in stream.messages.value" :key="i">
+      <HumanBubble v-if="HumanMessage.isInstance(msg)" :text="msg.text" />
       <AIResponse
         v-else-if="AIMessage.isInstance(msg)"
         :message="msg"
-        :isStreaming="stream.isLoading && i === stream.messages.length - 1"
+        :isStreaming="stream.isLoading.value && i === stream.messages.value.length - 1"
       />
     </template>
   </div>
@@ -151,22 +137,22 @@ const stream = useStream<typeof myAgent>({
 ```svelte Svelte
 <script lang="ts">
   import { useStream } from "@langchain/svelte";
-  import { AIMessage, HumanMessage } from "@langchain/core/messages";
+  import { AIMessage, HumanMessage } from "langchain";
 
-  const { messages, isLoading, submit } = useStream<typeof myAgent>({
+  const stream = useStream<typeof myAgent>({
     apiUrl: "http://localhost:2024",
     assistantId: "reasoning",
   });
 </script>
 
 <div class="messages">
-  {#each $messages as msg, i}
+  {#each stream.messages as msg, i}
     {#if HumanMessage.isInstance(msg)}
-      <HumanBubble text={msg.content} />
+      <HumanBubble text={msg.text} />
     {:else if AIMessage.isInstance(msg)}
       <AIResponse
         message={msg}
-        isStreaming={$isLoading && i === $messages.length - 1}
+        isStreaming={stream.isLoading && i === stream.messages.length - 1}
       />
     {/if}
   {/each}
@@ -175,8 +161,8 @@ const stream = useStream<typeof myAgent>({
 
 ```ts Angular
 import { Component } from "@angular/core";
-import { useStream } from "@langchain/angular";
-import { AIMessage, HumanMessage } from "@langchain/core/messages";
+import { injectStream } from "@langchain/angular";
+import { AIMessage, HumanMessage } from "langchain";
 
 @Component({
   selector: "app-chat",
@@ -184,7 +170,7 @@ import { AIMessage, HumanMessage } from "@langchain/core/messages";
     <div class="messages">
       @for (msg of stream.messages(); track $index) {
         @if (isHuman(msg)) {
-          <human-bubble [text]="msg.content" />
+          <human-bubble [text]="msg.text" />
         } @else if (isAI(msg)) {
           <ai-response
             [message]="msg"
@@ -196,7 +182,7 @@ import { AIMessage, HumanMessage } from "@langchain/core/messages";
   `,
 })
 export class ChatComponent {
-  stream = useStream<typeof myAgent>({
+  stream = injectStream<typeof myAgent>({
     apiUrl: "http://localhost:2024",
     assistantId: "reasoning",
   });
@@ -263,83 +249,6 @@ function ThinkingBubble({
   );
 }
 ```
-
-### Styling the ThinkingBubble
-
-Differentiate reasoning blocks from regular messages with a distinct visual treatment:
-
-```css
-.thinking-bubble {
-  background-color: #f8f5ff;
-  border: 1px solid #e2d9f3;
-  border-radius: 8px;
-  padding: 12px;
-  margin: 8px 0;
-  font-size: 0.9em;
-}
-
-.thinking-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  background: none;
-  border: none;
-  width: 100%;
-  text-align: left;
-  color: #6b21a8;
-  font-weight: 500;
-}
-
-.thinking-content {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid #e2d9f3;
-  white-space: pre-wrap;
-  color: #4a4a4a;
-  line-height: 1.5;
-}
-
-.thinking-preview {
-  margin-top: 4px;
-  color: #9ca3af;
-  font-style: italic;
-  font-size: 0.85em;
-}
-
-.chevron {
-  margin-left: auto;
-  transition: transform 0.2s;
-}
-
-.chevron.expanded {
-  transform: rotate(90deg);
-}
-```
-
-## Streaming indicator for reasoning
-
-While the model is still generating reasoning tokens, show an animated indicator to communicate that thinking is in progress:
-
-```css
-.thinking-spinner {
-  display: inline-block;
-  width: 16px;
-  height: 16px;
-  border: 2px solid #e2d9f3;
-  border-top-color: #6b21a8;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-```
-
-<Tip>
-During streaming, keep the ThinkingBubble collapsed by default and show only the spinner. Expanding mid-stream can cause layout jitter as new tokens arrive. Let users expand after the reasoning phase completes.
-</Tip>
 
 ## Rendering the complete AI response
 

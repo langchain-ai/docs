@@ -1,66 +1,43 @@
 ---
 title: Branching chat
-description: Edit messages, regenerate responses, and navigate conversation branches
+description: Edit messages and regenerate responses by forking from checkpoints
 ---
 
 Conversations with AI agents are rarely linear. You may want to rephrase a
-question, regenerate a response you didn't like, or explore a completely
-different conversational path without losing your previous work. Branching chat
-brings version-control semantics to your chat UI. Every edit creates a new
-branch, and you can freely navigate between them.
+question, regenerate a response you didn't like, or explore a different
+conversational path without losing the checkpoint history. Branching chat uses
+LangGraph checkpoints as fork points: every edit or regeneration submits a new
+run from the selected message's parent checkpoint.
 
 import { PatternEmbed } from "/snippets/pattern-embed.jsx"
 
 <PatternEmbed pattern="branching-chat" />
 
 import RequiresLanggraphServer from '/snippets/oss/requires-langgraph-server.mdx';
+import UseStreamTypeInference from '/snippets/oss/use-stream-type-inference.mdx';
 
 <RequiresLanggraphServer />
 
 ## What is branching chat?
 
-Branching chat treats a conversation as a tree rather than a list. Each message
-is a node, and editing a message or regenerating a response creates a **fork**
-from that point. The original path is preserved as a sibling branch, so users
-can switch back and forth between different conversation trajectories.
+Branching chat treats a conversation as a checkpointed timeline rather than a
+flat list. Each message has metadata that points to the checkpoint before that
+message was created. Editing a message or regenerating a response submits a new
+run from that checkpoint.
 
 Key capabilities:
 
-- **Edit any user message:** rewrite a previous prompt and re-run the agent
-  from that point
-- **Regenerate any AI response:** ask the agent to produce a different answer
-  for the same input
-- **Navigate branches:** switch between different versions of the conversation
-  using per-message branch controls
+- **Edit any user message:** rewrite a previous prompt and re-run the agent from that point
+- **Regenerate any AI response:** ask the agent to produce a different answer for the same input
+- **Inspect history:** use the LangGraph client to load checkpoints when you need a branch timeline
 
-## Set up useStream with history
+## Set up stream metadata
 
-To enable branching, pass `fetchStateHistory: true` so that `useStream`
-retrieves checkpoint metadata needed for branch operations.
+Use the root stream for messages, then read per-message checkpoint metadata in
+the component that renders each message. The metadata includes the parent
+checkpoint ID to fork from.
 
-:::python
-
-Define a TypeScript interface matching your agent's state schema and pass it as a type parameter to `useStream` for type-safe access to state values. In the examples below, replace `typeof myAgent` with your interface name:
-
-```ts
-import type { BaseMessage } from "@langchain/core/messages";
-
-interface AgentState {
-  messages: BaseMessage[];
-}
-```
-
-:::
-
-:::js
-
-Import your agent and pass `typeof myAgent` as a type parameter to `useStream` for type-safe access to state values:
-
-```ts
-import type { myAgent } from "./agent";
-```
-
-:::
+<UseStreamTypeInference />
 
 <CodeGroup>
 ```tsx React
@@ -71,25 +48,14 @@ const AGENT_URL = "http://localhost:2024";
 export function Chat() {
   const stream = useStream<typeof myAgent>({
     apiUrl: AGENT_URL,
-    assistantId: "branching_chat",
-    fetchStateHistory: true,
+    assistantId: "simple_agent",
   });
 
   return (
     <div>
-      {stream.messages.map((msg) => {
-        const metadata = stream.getMessagesMetadata(msg);
-        return (
-          <Message
-            key={msg.id}
-            message={msg}
-            metadata={metadata}
-            onEdit={(text) => handleEdit(stream, msg, metadata, text)}
-            onRegenerate={() => handleRegenerate(stream, metadata)}
-            onBranchSwitch={(id) => stream.setBranch(id)}
-          />
-        );
-      })}
+      {stream.messages.map((msg) => (
+        <MessageWithForkControls key={msg.id} stream={stream} message={msg} />
+      ))}
     </div>
   );
 }
@@ -103,38 +69,17 @@ const AGENT_URL = "http://localhost:2024";
 
 const stream = useStream<typeof myAgent>({
   apiUrl: AGENT_URL,
-  assistantId: "branching_chat",
-  fetchStateHistory: true,
+  assistantId: "simple_agent",
 });
-
-function handleEdit(msg: any, metadata: any, text: string) {
-  const checkpoint = metadata.firstSeenState?.parent_checkpoint;
-  if (!checkpoint) return;
-
-  stream.submit(
-    { messages: [{ ...msg, content: text }] },
-    { checkpoint }
-  );
-}
-
-function handleRegenerate(metadata: any) {
-  const checkpoint = metadata.firstSeenState?.parent_checkpoint;
-  if (!checkpoint) return;
-
-  stream.submit(undefined, { checkpoint });
-}
 </script>
 
 <template>
   <div>
-    <Message
+    <MessageWithForkControls
       v-for="msg in stream.messages.value"
       :key="msg.id"
+      :stream="stream"
       :message="msg"
-      :metadata="stream.getMessagesMetadata(msg)"
-      @edit="(text) => handleEdit(msg, stream.getMessagesMetadata(msg), text)"
-      @regenerate="handleRegenerate(stream.getMessagesMetadata(msg))"
-      @branch-switch="(id) => stream.setBranch(id)"
     />
   </div>
 </template>
@@ -146,39 +91,17 @@ function handleRegenerate(metadata: any) {
 
   const AGENT_URL = "http://localhost:2024";
 
-  const { messages, getMessagesMetadata, setBranch, submit } = useStream<typeof myAgent>({
+  const stream = useStream<typeof myAgent>({
     apiUrl: AGENT_URL,
-    assistantId: "branching_chat",
-    fetchStateHistory: true,
+    assistantId: "simple_agent",
   });
-
-  function handleEdit(msg: any, metadata: any, text: string) {
-    const checkpoint = metadata.firstSeenState?.parent_checkpoint;
-    if (!checkpoint) return;
-
-    submit(
-      { messages: [{ ...msg, content: text }] },
-      { checkpoint }
-    );
-  }
-
-  function handleRegenerate(metadata: any) {
-    const checkpoint = metadata.firstSeenState?.parent_checkpoint;
-    if (!checkpoint) return;
-
-    submit(undefined, { checkpoint });
-  }
 </script>
 
 <div>
-  {#each $messages as msg (msg.id)}
-    {@const metadata = getMessagesMetadata(msg)}
+  {#each stream.messages as msg (msg.id)}
     <Message
       message={msg}
-      {metadata}
-      onEdit={(text) => handleEdit(msg, metadata, text)}
-      onRegenerate={() => handleRegenerate(metadata)}
-      onBranchSwitch={(id) => setBranch(id)}
+      {stream}
     />
   {/each}
 </div>
@@ -186,7 +109,7 @@ function handleRegenerate(metadata: any) {
 
 ```ts Angular
 import { Component } from "@angular/core";
-import { useStream } from "@langchain/angular";
+import { injectStream } from "@langchain/angular";
 
 const AGENT_URL = "http://localhost:2024";
 
@@ -196,122 +119,137 @@ const AGENT_URL = "http://localhost:2024";
     @for (msg of stream.messages(); track msg.id) {
       <app-message
         [message]="msg"
-        [metadata]="stream.getMessagesMetadata(msg)"
-        (edit)="handleEdit(msg, stream.getMessagesMetadata(msg), $event)"
-        (regenerate)="handleRegenerate(stream.getMessagesMetadata(msg))"
-        (branchSwitch)="stream.setBranch($event)"
+        [stream]="stream"
       />
     }
   `,
 })
 export class ChatComponent {
-  stream = useStream<typeof myAgent>({
+  stream = injectStream<typeof myAgent>({
     apiUrl: AGENT_URL,
-    assistantId: "branching_chat",
-    fetchStateHistory: true,
+    assistantId: "simple_agent",
   });
-
-  handleEdit(msg: any, metadata: any, text: string) {
-    const checkpoint = metadata.firstSeenState?.parent_checkpoint;
-    if (!checkpoint) return;
-
-    this.stream.submit(
-      { messages: [{ ...msg, content: text }] },
-      { checkpoint }
-    );
-  }
-
-  handleRegenerate(metadata: any) {
-    const checkpoint = metadata.firstSeenState?.parent_checkpoint;
-    if (!checkpoint) return;
-
-    this.stream.submit(undefined, { checkpoint });
-  }
 }
 ```
 </CodeGroup>
 
 ## Understand message metadata
 
-The `getMessagesMetadata(msg)` function returns branch information for each
-message:
+The `useMessageMetadata(stream, messageId)` helper returns @[MessageMetadata]
+for one message. Use it in the component that renders each message so the
+metadata stays scoped to that message ID:
 
-```ts
-interface MessageMetadata {
-  branch: string;
-  branchOptions: string[];
-  firstSeenState: {
-    parent_checkpoint: Checkpoint | null;
-  };
+```tsx
+import type { BaseMessage } from "langchain";
+import { useState } from "react";
+import { useMessageMetadata, useStream } from "@langchain/react";
+
+function Chat() {
+  const stream = useStream<typeof myAgent>({
+    apiUrl: AGENT_URL,
+    assistantId: "simple_agent",
+  });
+
+  return stream.messages.map((message) => (
+    <MessageWithForkControls
+      key={message.id}
+      stream={stream}
+      message={message}
+    />
+  ));
+}
+
+function MessageWithForkControls({
+  stream,
+  message,
+}: {
+  stream: ReturnType<typeof useStream>;
+  message: BaseMessage;
+}) {
+  const metadata = useMessageMetadata(stream, message.id);
+  const checkpointId = metadata?.parentCheckpointId;
+  const [editedText, setEditedText] = useState(message.text);
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!checkpointId) return;
+
+        stream.submit(
+          { messages: [{ type: "human", content: editedText }] },
+          { forkFrom: { checkpointId } }
+        );
+      }}
+    >
+      <textarea
+        value={editedText}
+        onChange={(event) => setEditedText(event.target.value)}
+      />
+      <button disabled={!checkpointId || editedText === message.text}>
+        Submit edited branch
+      </button>
+    </form>
+  );
 }
 ```
 
-| Property | Description |
-| --- | --- |
-| `branch` | The branch ID of this specific message version |
-| `branchOptions` | Array of all branch IDs available for this message position |
-| `firstSeenState.parent_checkpoint` | The checkpoint just before this message. Use it as the fork point for edits and regenerations |
-
-When a message has only one version, `branchOptions` contains a single entry.
-After an edit or regeneration, new branch IDs are added to `branchOptions`,
-and you can navigate between them.
+`parentCheckpointId` is the checkpoint just before the message. Use it as the
+fork point for edits and regenerations.
 
 ## Edit a message
 
-To edit a user message and create a new branch:
+To edit a user message and fork the conversation:
 
-1. Get the `parent_checkpoint` from the message's metadata
-2. Submit the edited message with that checkpoint
-3. The agent re-runs from that point, creating a new branch
+1. Get `parentCheckpointId` from the message's metadata
+2. Submit the edited message with `forkFrom: { checkpointId }`
+3. The agent re-runs from that point
 
 ```ts
 function handleEdit(
   stream: ReturnType<typeof useStream>,
   originalMsg: HumanMessage,
-  metadata: MessageMetadata,
+  metadata: MessageMetadata | undefined,
   newText: string
 ) {
-  const checkpoint = metadata.firstSeenState?.parent_checkpoint;
-  if (!checkpoint) return;
+  if (!metadata?.parentCheckpointId) return;
 
   stream.submit(
     {
-      messages: [{ ...originalMsg, content: newText }],
+      messages: [{ type: "human", content: newText }],
     },
-    { checkpoint }
+    { forkFrom: { checkpointId: metadata.parentCheckpointId } }
   );
 }
 ```
 
 After the edit:
 
-- The message's `branchOptions` gains a new entry
-- The view switches to the new branch automatically
 - The agent re-runs from the fork point with the updated message
-- The original version is preserved and accessible via the branch switcher
+- The original path remains available in the thread history
 
 ## Regenerate a response
 
 To regenerate an AI response without changing the input:
 
 1. Get the `parent_checkpoint` from the AI message's metadata
-2. Submit with `undefined` input and the parent checkpoint
-3. The agent produces a fresh response, creating a new branch
+2. Submit with empty input and `forkFrom: { checkpointId }`
+3. The agent produces a fresh response from that point
 
 ```ts
 function handleRegenerate(
   stream: ReturnType<typeof useStream>,
-  metadata: MessageMetadata
+  metadata: MessageMetadata | undefined
 ) {
-  const checkpoint = metadata.firstSeenState?.parent_checkpoint;
-  if (!checkpoint) return;
+  if (!metadata?.parentCheckpointId) return;
 
-  stream.submit(undefined, { checkpoint });
+  stream.submit(undefined, {
+    forkFrom: { checkpointId: metadata.parentCheckpointId },
+  });
 }
 ```
 
-Each regeneration creates a new branch for the AI message at that position.
-Users can then use the branch switcher to compare different responses.
+Each regeneration creates a new path for the AI message at that position.
 
 <Tip>
 Regeneration is useful for non-deterministic agents. Since LLM outputs vary
@@ -319,68 +257,11 @@ with temperature, regenerating the same prompt often produces meaningfully
 different responses.
 </Tip>
 
-## Build a branch switcher
-
-When a message has multiple branches, show a compact inline control with the
-current version index and navigation arrows:
-
-```tsx
-function BranchSwitcher({
-  metadata,
-  onSwitch,
-}: {
-  metadata: MessageMetadata;
-  onSwitch: (branchId: string) => void;
-}) {
-  const { branch, branchOptions } = metadata;
-
-  if (branchOptions.length <= 1) return null;
-
-  const currentIndex = branchOptions.indexOf(branch);
-  const hasPrev = currentIndex > 0;
-  const hasNext = currentIndex < branchOptions.length - 1;
-
-  return (
-    <div className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
-      <button
-        disabled={!hasPrev}
-        onClick={() => onSwitch(branchOptions[currentIndex - 1])}
-        className="hover:text-gray-900 disabled:opacity-30"
-        aria-label="Previous version"
-      >
-        ◀
-      </button>
-      <span className="min-w-[3ch] text-center">
-        {currentIndex + 1}/{branchOptions.length}
-      </span>
-      <button
-        disabled={!hasNext}
-        onClick={() => onSwitch(branchOptions[currentIndex + 1])}
-        className="hover:text-gray-900 disabled:opacity-30"
-        aria-label="Next version"
-      >
-        ▶
-      </button>
-    </div>
-  );
-}
-```
-
-When the user clicks a branch arrow, call `stream.setBranch(branchId)` to
-switch the conversation view to that branch. This is instant since all branch
-data is already loaded via `fetchStateHistory: true`.
-
-<Note>
-Switching branches affects not only the target message but also all subsequent
-messages. If you switch to a different version of message 3, messages 4, 5, 6,
-etc. will also update to reflect the conversation that followed that version.
-</Note>
-
 ## How branching works under the hood
 
 LangGraph persists every state transition as a **checkpoint**. When you submit
-with a `checkpoint` parameter, the backend forks from that point instead of
-appending to the current conversation. The result is a tree structure:
+with `forkFrom`, the backend starts a new execution path from that point instead
+of appending to the current conversation. The result is a tree structure:
 
 ```
 User: "What is React?"
@@ -394,218 +275,22 @@ User: "Tell me about JSX" (edited from branch A)
   └─ AI: "JSX is a syntax extension..."
 ```
 
-Each branch is an independent path through the conversation tree. Switching
-branches updates the displayed messages but does not delete any data. All
-branches persist in the checkpoint store.
-
-## Complete message component
-
-Here is a full component that combines message display, editing, regeneration,
-and branch switching:
-
-```tsx
-function MessageWithBranching({
-  message,
-  metadata,
-  stream,
-}: {
-  message: BaseMessage;
-  metadata: MessageMetadata;
-  stream: ReturnType<typeof useStream>;
-}) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editText, setEditText] = useState(message.content as string);
-
-  const isHuman = message._getType() === "human";
-  const isAI = message._getType() === "ai";
-  const hasBranches = metadata.branchOptions.length > 1;
-
-  return (
-    <div className="group relative py-2">
-      {isEditing ? (
-        <EditForm
-          text={editText}
-          onChange={setEditText}
-          onSave={() => {
-            handleEdit(stream, message as HumanMessage, metadata, editText);
-            setIsEditing(false);
-          }}
-          onCancel={() => {
-            setEditText(message.content as string);
-            setIsEditing(false);
-          }}
-        />
-      ) : (
-        <>
-          <div className={isHuman ? "text-right" : "text-left"}>
-            <div
-              className={
-                isHuman
-                  ? "inline-block rounded-lg bg-blue-600 px-4 py-2 text-white"
-                  : "inline-block rounded-lg bg-gray-100 px-4 py-2"
-              }
-            >
-              {message.content as string}
-            </div>
-          </div>
-
-          <div className="mt-1 flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
-            {isHuman && (
-              <button
-                className="text-xs text-gray-400 hover:text-gray-700"
-                onClick={() => setIsEditing(true)}
-              >
-                Edit
-              </button>
-            )}
-
-            {isAI && (
-              <button
-                className="text-xs text-gray-400 hover:text-gray-700"
-                onClick={() =>
-                  handleRegenerate(stream, metadata)
-                }
-              >
-                Regenerate
-              </button>
-            )}
-
-            {hasBranches && (
-              <BranchSwitcher
-                metadata={metadata}
-                onSwitch={(id) => stream.setBranch(id)}
-              />
-            )}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-function EditForm({
-  text,
-  onChange,
-  onSave,
-  onCancel,
-}: {
-  text: string;
-  onChange: (text: string) => void;
-  onSave: () => void;
-  onCancel: () => void;
-}) {
-  return (
-    <div className="space-y-2">
-      <textarea
-        className="w-full rounded-lg border p-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        value={text}
-        onChange={(e) => onChange(e.target.value)}
-        rows={3}
-      />
-      <div className="flex gap-2">
-        <button
-          className="rounded bg-blue-600 px-4 py-1.5 text-sm text-white hover:bg-blue-700"
-          onClick={onSave}
-        >
-          Save & Rerun
-        </button>
-        <button
-          className="rounded border px-4 py-1.5 text-sm hover:bg-gray-50"
-          onClick={onCancel}
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-}
-```
-
-## Combine with optimistic updates
-
-Combine branching with optimistic updates for a seamless editing experience. When the user saves an edit, optimistically show the updated message before the server responds:
-
-```ts
-function handleEditOptimistic(
-  stream: ReturnType<typeof useStream>,
-  originalMsg: HumanMessage,
-  metadata: MessageMetadata,
-  newText: string
-) {
-  const checkpoint = metadata.firstSeenState?.parent_checkpoint;
-  if (!checkpoint) return;
-
-  const updatedMsg = { ...originalMsg, content: newText };
-
-  stream.submit(
-    { messages: [updatedMsg] },
-    {
-      checkpoint,
-      optimisticValues: (prev) => {
-        if (!prev?.messages) return { messages: [updatedMsg] };
-
-        const idx = prev.messages.findIndex((m) => m.id === originalMsg.id);
-        if (idx === -1) return prev;
-
-        return {
-          ...prev,
-          messages: [...prev.messages.slice(0, idx), updatedMsg],
-        };
-      },
-    }
-  );
-}
-```
-
-## Add keyboard navigation
-
-For power users, add keyboard shortcuts to navigate branches:
-
-```tsx
-useEffect(() => {
-  function handleKeyDown(e: KeyboardEvent) {
-    if (!focusedMessageMetadata) return;
-
-    const { branch, branchOptions } = focusedMessageMetadata;
-    const idx = branchOptions.indexOf(branch);
-
-    if (e.altKey && e.key === "ArrowLeft" && idx > 0) {
-      stream.setBranch(branchOptions[idx - 1]);
-    }
-    if (e.altKey && e.key === "ArrowRight" && idx < branchOptions.length - 1) {
-      stream.setBranch(branchOptions[idx + 1]);
-    }
-  }
-
-  window.addEventListener("keydown", handleKeyDown);
-  return () => window.removeEventListener("keydown", handleKeyDown);
-}, [focusedMessageMetadata, stream]);
-```
-
-<Tip>
-`Alt + ←` / `Alt + →` is a natural mapping for branch navigation since it
-mirrors browser back/forward navigation.
-</Tip>
+Each path is persisted in the checkpoint store. Use
+`stream.client.threads.getHistory(threadId)` when you want to build a separate
+timeline view across checkpoints.
 
 ## Best practices
 
-- **Always enable `fetchStateHistory`**: without it, `getMessagesMetadata`
-  cannot return branch information.
-- **Only show the branch switcher when there are multiple branches**: a
-  `1/1` indicator adds clutter without value.
-- **Show branch controls on hover**: branch navigation arrows and edit buttons
-  should appear on hover to keep the UI clean.
-- **Keep the branch switcher compact**: it sits inline with message controls
-  and should not dominate the UI.
-- **Preserve scroll position**: when switching branches, try to keep the
-  viewport anchored to the message that changed.
-- **Indicate the active branch**: use subtle visual cues (e.g., a colored dot
-  or branch label) so users know which branch they're viewing.
+- **Read metadata near the message**: call `useMessageMetadata` in the component
+  that renders the message controls.
+- **Show fork controls on hover**: edit and regenerate buttons should appear on
+  hover to keep the UI clean.
+- **Refresh history on demand**: call `client.threads.getHistory()` only when
+  rendering a timeline or after a fork settles.
 - **Disable controls while streaming**: don't allow edits or regeneration
   while the agent is actively streaming a response. Check `stream.isLoading`
   before enabling these actions.
 - **Preserve edit text on cancel**: if the user starts editing, then cancels,
   reset the textarea to the original message content.
-- **Test with deep branch trees**: users who edit and regenerate frequently
-  can create many branches. Ensure the branch switcher and data handling
-  remain performant.
+- **Test with deep checkpoint trees**: users who edit and regenerate frequently
+  can create many paths. Ensure timeline rendering remains performant.

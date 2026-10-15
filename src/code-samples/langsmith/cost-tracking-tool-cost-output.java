@@ -1,0 +1,60 @@
+///usr/bin/env jbang "$0" "$@" ; exit $?
+//DEPS com.langchain.smith:langsmith-java:0.1.0-alpha.25
+
+// :snippet-start: cost-tracking-tool-cost-output-java
+// :codegroup-tab: Java
+import com.langchain.smith.client.LangsmithClient;
+import com.langchain.smith.client.okhttp.LangsmithOkHttpClient;
+import com.langchain.smith.tracing.RunType;
+import com.langchain.smith.tracing.TraceConfig;
+import com.langchain.smith.tracing.Tracing;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
+
+class CostTrackingToolCostOutput {
+  public static void main(String[] args) throws InterruptedException {
+    if (System.getenv("LANGSMITH_API_KEY") == null
+        || System.getenv("LANGSMITH_API_KEY").isBlank()) {
+      System.out.println(
+          "[cost-tracking-tool-cost-output] Skipping (LANGSMITH_API_KEY is not set).");
+      return;
+    }
+
+    LangsmithClient langsmith = LangsmithOkHttpClient.fromEnv();
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+
+    try {
+      Function<String, Map<String, Object>> getWeather =
+          Tracing.traceFunction(
+              city -> {
+                Map<String, Object> result = new HashMap<>();
+                result.put("temperature_f", 68);
+                result.put("condition", "sunny");
+                result.put("city", city);
+
+                Map<String, Object> usageMetadata = new HashMap<>();
+                usageMetadata.put("total_cost", 0.0015);
+                result.put("usage_metadata", usageMetadata);
+                return result;
+              },
+              TraceConfig.builder()
+                  .name("get_weather")
+                  .runType(RunType.TOOL)
+                  .client(langsmith)
+                  .executor(executor)
+                  .build());
+
+      Map<String, Object> toolResponse = getWeather.apply("San Francisco");
+    } finally {
+      executor.shutdown();
+      if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
+        throw new IllegalStateException("Timed out waiting for LangSmith traces to submit");
+      }
+    }
+  }
+}
+// :snippet-end:
