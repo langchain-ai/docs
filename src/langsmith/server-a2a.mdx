@@ -201,6 +201,8 @@ GET /.well-known/agent-card.json?assistant_id={assistant_id}
 
 The agent card includes the assistant's name, description, available skills, supported input/output modes, and the A2A endpoint URL for communication.
 
+To serve a card when the request omits `assistant_id`, set the [`DEFAULT_A2A_ASSISTANT_ID`](/langsmith/env-var-self-hosted) environment variable. If the agent card URLs show an internal host, set `LANGGRAPH_API_URL` to your deployment's public URL.
+
 ## Optional capabilities
 
 These are configured per assistant through `metadata.a2a` on the Assistants API. `langgraph.json`
