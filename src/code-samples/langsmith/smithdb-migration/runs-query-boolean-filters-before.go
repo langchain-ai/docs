@@ -25,7 +25,7 @@ if err != nil {
 // :remove-end:
 project := sessions.Items[0]
 
-filterStr := `and(gt(start_time, "2023-07-15T12:34:56Z"), or(neq(status, "error"), and(eq(feedback_key, "Correctness"), eq(feedback_score, 0.0))))`
+filterStr := `and(gt(start_time, "2023-07-15T12:34:56Z"), or(eq(status, "error"), eq(run_type, "llm")))`
 runs, err := client.Runs.Query(ctx, langsmith.RunQueryParams{
 	Session: langsmith.F([]string{project.ID}),
 	Filter:  langsmith.F(filterStr),

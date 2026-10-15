@@ -1,6 +1,4 @@
-> **Keep in sync:** `AGENTS.md` and `CLAUDE.md` contain identical guidelines. If you update one, update the other.
->
-> Four files derive from this one, for agents that do not read `CLAUDE.md` or `AGENTS.md`. When you change a section listed below, update its copies in the same PR:
+> Four files derive from this one, for agents that do not read `AGENTS.md`. When you change a section listed below, update its copies in the same PR:
 >
 > - **Style guide** (through Product and feature name capitalization) is mirrored verbatim in `.cursor/rules/docs-style.mdc` and `.github/instructions/docs-style.instructions.md`. Both are path-scoped to `src/**/*.mdx`, so they load only when a page is edited.
 > - **Critical rules, Repository structure, Quick reference, Frontmatter, and Syntax** are summarized in `.cursorrules` and `.github/copilot-instructions.md`.
@@ -48,7 +46,7 @@ once to link the tree.
 | Skill | Use it for |
 |-------|-----------|
 | `add-docs-page` | Adding, moving, renaming, or deleting a page: directory choice, frontmatter, `src/docs.json` navigation, redirects, verification. |
-| `docs-edit` | Editing a page that already has an open PR: checking out that PR's own branch, forked PRs, reading the real diff. |
+| `docs-edit` | Editing a page that already has an open PR: checking out that PR's own branch, forked PRs, reading the real diff, checking the edit against related pages. |
 | `docs-restructure` | Splitting a page that grew too long, moving sections between pages, retiring a page, or a topic documented in two places: the duplication map, choosing one owner, cutting rather than relocating. |
 | `docs-team-voice` | Drafting or revising prose in the house voice: sentence length, cross-link density, stating defaults, the revision pass. |
 | `docs-review` | Reviewing changed prose against Vale and the style guide, reporting the rule each finding breaks. `add-docs-page` invokes it before committing. |
@@ -177,7 +175,7 @@ Five tabs, all files flat in `src/langsmith/`:
 |-----|--------|
 | Overview | Single page |
 | Trace | Tracing setup (Integrations → LLM providers, Agent frameworks, Voice AI frameworks, Developer tools; Manual instrumentation), Configuration & troubleshooting (Project & environment settings, Advanced tracing techniques, Data & privacy, Troubleshooting guides) |
-| Debug | Viewing & managing traces, Bulk export trace data, Messages view, Data type reference |
+| Debug | Viewing & managing traces, Bulk export trace data, Trajectory view, Data type reference |
 | Observe | Monitoring & alerting, Online evaluators, Automations |
 | Reference | SmithDB SDK migration, LangSmith REST API |
 
@@ -193,11 +191,11 @@ Six tabs, all files flat in `src/langsmith/`:
 
 | Tab | Groups |
 |-----|--------|
-| Overview | Single page |
+| Overview | Hosting, Agent-based workspaces |
 | Account | Billing & usage |
 | Cloud | Reference |
 | BYOC | No groups |
-| Self-hosted | Get started by cloud provider, Deploy with Terraform (AWS, GCP, Azure), Setup guides (Manage an installation), Configuration, Connect external services, Platform auth & access control, SmithDB, Self-hosted observability, Hybrid, Scripts, Reference |
+| Self-hosted | Get started by cloud provider, Deploy with Terraform (AWS, GCP, Azure), Install an instance (Additional features → Enable Sandboxes), Configure an instance, Connect external services, Platform auth & access control, SmithDB, Manage an instance, Self-hosted observability, Hybrid, Scripts, Reference |
 | Govern | Organization (Workspace setup), Users & access control, Tools, Auditing, Data & compliance, Additional resources (FAQ) |
 
 #### Other menu items
@@ -230,11 +228,12 @@ Because nav names and directories diverge, use this to go from a file to its pla
 | `src/oss/contributing/` | Build → Contribute |
 | `src/langsmith/managed-deep-agents*.mdx` | Build → Managed Deep Agents |
 | `src/langsmith/fleet/` | Products and setup → No-code agents |
+| `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx`, `create-an-agent.mdx`, `build-an-agent.mdx`, `deploy-to-agent-environment.mdx` | Products and setup → LangSmith setup → Overview → Agent-based workspaces |
 | `src/langsmith/*.mdx` (everything else) | Test, Deploy, Monitor, or LangSmith setup, depending on subject |
 
 ### Reference docs
 
-Three OpenAPI-generated sections. Mintlify generates the endpoint pages at deploy time, so they do not exist in the local `build/` output. `make broken-links` filters them as false positives.
+Three OpenAPI-generated sections. Mintlify generates the endpoint pages at deploy time, so they do not exist in the local `build/` output. `make broken-links-with-anchors` filters them as false positives.
 
 | Section | Nav location | Spec source | Generated under |
 |---------|--------------|-------------|-----------------|
@@ -303,6 +302,8 @@ Use `@[ClassName]` to auto-link to API docs. Defined in `pipeline/preprocessors/
 ## Assets
 
 **Images:** Store in `src/images/`. Use descriptive filenames and alt text.
+
+**SVG text:** Keep labels as native `<text>` when sharpness at reading size matters. Mintlify CLI 4.2.671 strips `<text>` and `<use>` from plain MDX; use a named-export JSX snippet for native SVG rendering, as in `src/snippets/sandbox-diagram.jsx`. Reference only trusted local assets, and compare the result at the actual docs column width rather than only in an enlarged viewer.
 
 **Icons:** Use Tabler names only (`icon="home"`, `icon="brand-github"`). For missing icons, use SVG path: `icon="/images/providers/name.svg"`
 
@@ -512,6 +513,12 @@ Reserve "the platform" for LangSmith. LangChain is the open agent engineering ec
 2. Add the page to the component's index page (`src/oss/javascript/integrations/<component>/index.mdx`); only edit `src/docs.json` when creating a brand-new component group
 3. If the provider has an overview page at `src/oss/javascript/integrations/providers/<provider>.mdx`, add or update a section there linking to the new page (`/oss/integrations/<component>/<provider>`)
 
+**Beta callouts on agent-based workspace pages:** every page in the
+`Agent-based workspaces` group opens with the shared
+`/snippets/langsmith/agent-beta-note.mdx` callout, placed after the page's
+opening definition and before the first `##` heading. Do not hand-write a
+per-page variant, and do not add a page-level `tag` on top of the group tag.
+
 **Add a reusable snippet:**
 
 1. Create `src/snippets/<product>/<name>.mdx`
@@ -526,7 +533,7 @@ When investigating a bug or unexpected behavior, always start by reading the rel
 
 ### CI broken-links failures
 
-`make broken-links` runs `mint broken-links` then filters known false positives (OpenAPI-generated pages: `/langsmith/agent-server-api/`, `/api-reference/`, `../langchain/agents`). Output format:
+`make broken-links-with-anchors` runs `mint broken-links --check-anchors --check-redirects`, the same check CI runs, then filters known false positives (OpenAPI-generated pages: `/langsmith/agent-server-api/`, `/api-reference/`, `../langchain/agents`). Output format:
 
 ```txt
 found N broken links in M files
@@ -541,7 +548,7 @@ another-file.mdx                 ← no indented lines = all its links were filt
 
 **Common cause:** Page renamed/deleted but link and/or `src/docs.json` nav entry still references old name. Fix both the link in the MDX file AND the corresponding entry in `docs.json`.
 
-To run locally: `make broken-links`
+To run locally: `make broken-links-with-anchors`. Do not use plain `make broken-links`: it skips anchors, so it can pass locally on a link CI rejects.
 
 ## Helper scripts
 
@@ -593,7 +600,7 @@ Scope to changed files for speed: `make lint_prose FILES="src/path/to/file.mdx"`
 
 The Vale version is pinned once, in `.mise.toml`. The `Makefile`, `scripts/install-vale.sh`, and the `lint-prose` workflow all read it from there, so local runs use the same engine as CI. Bump it only in `.mise.toml`. Do not hardcode a version in any of the three call sites.
 
-Also run `make broken-links` when adding or renaming links, pages, or nav entries.
+Also run `make broken-links-with-anchors` when adding or renaming links, pages, or nav entries.
 
 ## Changelog / Release notes
 

@@ -1,47 +1,29 @@
 ---
-name: Check llms.txt URLs resolve
+name: Check llms.txt coverage
 
-# The build derives API reference URLs by reproducing Mintlify's slug rules for
-# OpenAPI operations. That is not a published contract, so a change on their
-# side would turn hundreds of index entries into 404s with nothing in this repo
-# failing. Nothing in PR CI can catch it either, because it only shows up
-# against the deployed site. This job watches for it.
+# Mintlify generates llms.txt and splits it into nested /_llms/ indexes. None
+# of that is produced or checked in this repo, and a gap only shows up against
+# the deployed site. This job crawls the served index and fails if any sitemap
+# page is unreachable from it.
 
 on:
   schedule:
     # Weekly, Monday 07:13 UTC. Off the hour to avoid the scheduler rush.
     - cron: "13 7 * * 1"
   workflow_dispatch:
-    inputs:
-      check_all:
-        description: "Check every URL instead of a sample"
-        type: boolean
-        default: false
 
 permissions:
   contents: read
 
 jobs:
-  check-urls:
+  check-coverage:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 1
           persist-credentials: false
 
-      - uses: "./.github/actions/uv_setup"
-        with:
-          python-version: "3.13"
-
-      - name: Install dependencies
-        run: uv sync --group test
-
-      - name: Build documentation
-        run: make build
-
-      - name: Check that indexed URLs resolve
-        run: |
-          uv run python scripts/check_llms_urls.py \
-            ${{ inputs.check_all && '--all' || '' }}
+      - name: Check the served llms.txt index
+        run: python3 scripts/check_llms_urls.py

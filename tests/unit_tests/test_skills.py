@@ -28,7 +28,7 @@ CHECKED_ROOTS = (
     ".deepagents/",
 )
 CHECKED_FILES = frozenset(
-    {"AGENTS.md", "CLAUDE.md", "IDE_SETUP.md", "Makefile", ".vale.ini", ".cursorrules"}
+    {"AGENTS.md", "IDE_SETUP.md", "Makefile", ".vale.ini", ".cursorrules"}
 )
 
 # Illustrative paths that stand in for a real one and are not expected to exist.
