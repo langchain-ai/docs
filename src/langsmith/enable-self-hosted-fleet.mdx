@@ -64,6 +64,39 @@ helm upgrade -i langsmith langchain/langsmith --values langsmith_config.yaml --v
 kubectl get pods -n <namespace>
 ```
 
+### (Optional) Forward caller headers to MCP servers
+
+Header forwarding passes `X-Fleet-Forward-*` headers from a Fleet API run request to the agent's custom MCP servers on each tool call. Use it to give an MCP server, or a policy gateway in front of it, per-run context such as the end user's ID.
+
+Header forwarding requires Helm chart version 0.17.0 or later. It is disabled by default.
+
+To enable it, set `FLEET_MCP_FORWARD_CALLER_HEADERS` on the platform backend and on both Fleet components, then redeploy:
+
+```yaml
+platformBackend:
+  deployment:
+    extraEnv:
+      - name: FLEET_MCP_FORWARD_CALLER_HEADERS
+        value: "true"
+fleet:
+  apiServer:
+    deployment:
+      extraEnv:
+        - name: FLEET_MCP_FORWARD_CALLER_HEADERS
+          value: "true"
+  queue:
+    deployment:
+      extraEnv:
+        - name: FLEET_MCP_FORWARD_CALLER_HEADERS
+          value: "true"
+```
+
+<Warning>
+Set the variable on all three components. The platform backend reads the headers from the request and replaces any forwarded headers the caller put in the run body. If you enable it only on the Fleet components, callers can set forwarded header values directly in the run body.
+</Warning>
+
+For how to send forwarded headers, see [Forward caller headers to MCP servers](/langsmith/fleet/code#forward-caller-headers-to-mcp-servers).
+
 ### (Optional) Enable OAuth tools and triggers for Fleet
 
 To enable OAuth-based tools such as Gmail, Slack, or Linear in Fleet, configure the `providerOrgId` and add provider IDs for each integration you want to use. You can enable any combination of providers.
