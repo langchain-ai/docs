@@ -23,16 +23,26 @@ openwiki code --init
 openwiki code --update
 openwiki code --update --print
 
-# Defaults to code mode
+# Defaults to code mode and specify a language
 openwiki --init
 openwiki --update
+openwiki --init --language ko
 
 # One-shot print mode
 openwiki -p "Summarize what you can do"
 
-# Explore the wiki locally
+# Explore the wiki locally or export a static visualizer
 openwiki visualize
 openwiki visualize openwiki --port 4400 --no-open
+openwiki visualize openwiki --export docs/openwiki-visualizer
+
+# Coding-agent integrations
+openwiki integrations list
+openwiki integrations install codex
+openwiki integrations install claude
+openwiki integrations install opencode
+openwiki integrations install cursor
+openwiki integrations uninstall codex
 
 # Help
 openwiki --help
@@ -42,8 +52,9 @@ openwiki --help
 
 | Flag | Description |
 | --- | --- |
-| `--init` | Generate initial documentation. Defaults to code mode. In a TTY without `--print`, streams agent output and exits automatically on success. `--init` and `--update` cannot be combined. |
+| `--init` | Generate initial documentation. Defaults to code mode. Re-running regenerates the repository wiki from scratch while preserving `openwiki/INSTRUCTIONS.md`. In a TTY without `--print`, streams agent output and exits automatically on success. `--init` and `--update` cannot be combined. |
 | `--update` | Update existing documentation. Defaults to code mode. In a TTY without `--print`, streams agent output and exits automatically on success. `--init` and `--update` cannot be combined. |
+| `-l`, `--language <locale>` | Generate wiki documentation in the given BCP-47 locale, for example `ko`, `zh-CN`, or `pt-BR`. Unrecognized values are rejected. |
 | `--mode <personal\|code>` | Choose personal brain or repository docs. |
 | `-p`, `--print` | Run once, print the final assistant output, and exit. Provide a message or command. Interactive chat without `--print` stays open for follow-ups. |
 | `--modelId` / `--model-id` | Choose a model ID for the run. |
@@ -52,15 +63,28 @@ openwiki --help
 
 ## Visualize
 
-You can visualize the generated wiki as an interactive node graph and live Markdown reader.
+You can visualize the generated wiki as an interactive node graph and live Markdown reader, or export a static site for hosting:
 
 ```bash
 openwiki visualize
 openwiki visualize openwiki --port 4400 --no-open
+openwiki visualize openwiki --export docs/openwiki-visualizer
 openwiki visualize ~/.openwiki/wiki
 ```
 
 For details, see [Visualize your wiki](/oss/openwiki/visualize).
+
+## Coding-agent integrations
+
+Install OpenWiki into a host coding agent so the host's model and repository tools drive generation while OpenWiki owns the durable page-job lifecycle:
+
+```bash
+openwiki integrations list [--project [path]]
+openwiki integrations install <codex|claude|opencode|cursor> [--force] [--project [path]]
+openwiki integrations uninstall <codex|claude|opencode|cursor> [--project [path]]
+```
+
+For details, see [Coding-agent integrations](/oss/openwiki/integrations).
 
 ## Auth and connectors
 
@@ -107,11 +131,13 @@ In interactive chat mode, you can use the following commands:
 - `/api-key`: Update the current provider API key (masked prompt)
 - `/langsmith-key`: Update or clear LangSmith tracing credentials (masked prompt)
 - `/provider` and `/model`: Change provider or model for the session (persisted to `~/.openwiki/.env`)
+- `/effort`: Set reasoning effort for supported OpenAI GPT-5.6 and NVIDIA NIM models, or `/effort default` to restore the provider default
 - `/init` and `/update`: Launch init or update from the session
 - `/exit`: Exit the app
 
 ## See also
 
+- [Coding-agent integrations](/oss/openwiki/integrations)
 - [Personal mode](/oss/openwiki/personal-mode)
 - [Model providers](/oss/openwiki/providers)
 - [Automate updates](/oss/openwiki/automate-updates)

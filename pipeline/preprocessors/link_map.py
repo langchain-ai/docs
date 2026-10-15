@@ -65,6 +65,11 @@ LINK_MAPS: list[LinkMap] = [
             "create_agent(response_format)": "langchain/agents/factory/create_agent",
             "create_agent(name)": "langchain/agents/factory/create_agent",
             "system_prompt": "langchain/agents/#langchain.agents.create_agent(system_prompt)",
+            # MCP
+            "MCPAdapter": "langchain/mcp/adapter/MCPAdapter",
+            "MCPAdapter.list_tools": "langchain/mcp/adapter/MCPAdapter/list_tools",
+            "MCPToolArtifact": "langchain/mcp/tools/MCPToolArtifact",
+            "as_langchain_tool": "langchain/mcp/tools/as_langchain_tool",
             "AgentState": "langchain/agents/middleware/types/AgentState",
             "ModelRequest": "langchain/agents/middleware/types/ModelRequest",
             "ModelResponse": "langchain/agents/middleware/types/ModelResponse",
@@ -171,11 +176,11 @@ LINK_MAPS: list[LinkMap] = [
             "langchain-google-genai": "langchain-google-genai/",
             "ChatGoogleGenerativeAI": "langchain-google-genai/chat_models/ChatGoogleGenerativeAI",
             "langchain-google-vertexai": "langchain-google-vertexai/",
-            "ChatVertexAI": "langchain-community/chat_models/vertexai/ChatVertexAI",
+            "ChatVertexAI": "langchain-google-vertexai/chat_models/ChatVertexAI",
             "langchain-google-community": "langchain-google-community/",
             # langchain-ollama
             "langchain-ollama": "langchain-ollama/",
-            "ChatOllama": "langchain-community/chat_models/ollama/ChatOllama",
+            "ChatOllama": "langchain-ollama/chat_models/ChatOllama",
             # langchain-xai
             "langchain-xai": "langchain-xai/",
             "ChatXAI": "langchain-xai/chat_models/ChatXAI",
@@ -247,8 +252,8 @@ LINK_MAPS: list[LinkMap] = [
             "Document": "langchain-core/documents/base/Document",
             # Document loaders
             "BaseLoader": "langchain-core/document_loaders/base/BaseLoader",
-            "AzureBlobStorageContainerLoader": "langchain-community/document_loaders/azure_blob_storage_container/AzureBlobStorageContainerLoader",
-            "AzureBlobStorageFileLoader": "langchain-community/document_loaders/azure_blob_storage_file/AzureBlobStorageFileLoader",
+            "AzureBlobStorageContainerLoader": "langchain-azure-storage/document_loaders/AzureBlobStorageLoader",
+            "AzureBlobStorageFileLoader": "langchain-azure-storage/document_loaders/AzureBlobStorageLoader",
             # Text splitters
             "CharacterTextSplitter": "langchain-text-splitters/character/CharacterTextSplitter",
             "RecursiveCharacterTextSplitter": "langchain-text-splitters/character/RecursiveCharacterTextSplitter",
@@ -268,7 +273,7 @@ LINK_MAPS: list[LinkMap] = [
             "AstraDBVectorStore": "langchain-astradb/vectorstores/AstraDBVectorStore",
             "ChromaVectorStore": "langchain-chroma/vectorstores/Chroma",
             "ElasticSearchStore": "langchain-elasticsearch/vectorstores/ElasticsearchStore",
-            "FAISS": "langchain-community/vectorstores/faiss/FAISS",
+            "FAISS": "langchain-classic/vectorstores/faiss",
             "MilvusVectorStore": "langchain-milvus/vectorstores/milvus/Milvus",
             "MongoDBAtlasVectorSearch": "langchain-mongodb/vectorstores/MongoDBAtlasVectorSearch",
             "PineconeSparseVectorStore": "langchain-pinecone/vectorstores_sparse/PineconeSparseVectorStore",
@@ -505,7 +510,6 @@ LINK_MAPS: list[LinkMap] = [
             "load_mcp_tools": "langchain-mcp-adapters/tools/load_mcp_tools",
             "load_mcp_prompt": "langchain-mcp-adapters/prompts/load_mcp_prompt",
             "load_mcp_resources": "langchain-mcp-adapters/resources/load_mcp_resources",
-            "MCPToolArtifact": "langchain-mcp-adapters/tools/MCPToolArtifact",
             "ToolCallInterceptor": "langchain-mcp-adapters/interceptors/ToolCallInterceptor",
             "CallbackContext": "langchain-mcp-adapters/callbacks/CallbackContext",
             "Callbacks": "langchain-core/callbacks/base/Callbacks",
@@ -592,6 +596,9 @@ LINK_MAPS: list[LinkMap] = [
             "on_llm_new_token": "interfaces/_langchain_core.callbacks_base.BaseCallbackHandlerMethods.html#onLlmNewToken",
             "langchain.messages": "modules/_langchain_core.messages.html",
             "BaseMessage(content)": "langchain-core/messages/BaseMessage",
+            # @langchain/mcp-adapters
+            "MCPAdapter": "langchain-mcp-adapters/MCPAdapter",
+            "MCPAdapter.listTools": "langchain-mcp-adapters/MCPAdapter/listTools",
             # Text splitters
             "RecursiveCharacterTextSplitter": "langchain-textsplitters/RecursiveCharacterTextSplitter",
             "TokenTextSplitter": "langchain-textsplitters/TokenTextSplitter",
@@ -679,6 +686,7 @@ LINK_MAPS: list[LinkMap] = [
             "HumanInTheLoopMiddleware": "langchain/middleware/humanInTheLoopMiddleware",
             "humanInTheLoopMiddleware": "langchain/middleware/humanInTheLoopMiddleware",
             "HITLRequest": "langchain/index/HITLRequest",
+            "ToolCallRequest": "langchain/index/ToolCallRequest",
             "AnthropicPromptCachingMiddleware": "langchain/index/anthropicPromptCachingMiddleware",
             "BedrockPromptCachingMiddleware": "langchain/index/bedrockPromptCachingMiddleware",
             "SummarizationMiddleware": "langchain/index/summarizationMiddleware",

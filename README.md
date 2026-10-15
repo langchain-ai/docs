@@ -103,15 +103,16 @@ API reference is generated and deployed outside this repo. Browse [Python](https
 
 * `make dev` - Start development mode with file watching and live rebuild
 * `make build` - Build documentation to `./build` directory
-* `make broken-links` - Check for broken links in documentation
-* `make broken-links-with-anchors` - Check for broken links + check links with anchors
-* `make install` - Install all dependencies
+* `make broken-links-with-anchors` - Check for broken links, including anchors (the check CI runs)
+* `make broken-links` - Check for broken links, without anchors
+* `make install` - Install all dependencies and link authoring skills
 * `make clean` - Remove build artifacts
 * `make test` - Run the test suite
 * `make lint` - Check code style and formatting
 * `make format` - Auto-format code
 * `make lint_md` - Lint markdown files
 * `make lint_md_fix` - Lint and fix markdown files
+* `make skills` - Link `.agents/skills` into `.claude/skills` for Claude Code. Runs as part of `make install`; re-run it after new skills are added
 * `make help` - Show all available commands
 
 **`docs` CLI tool:**
@@ -165,7 +166,7 @@ Codespell is configured in `pyproject.toml` under `[tool.codespell]`:
 You can also follow these steps to enable `vale` with VS Code or Cursor:
 
 1. Install the [Vale extension](https://marketplace.visualstudio.com/items?itemName=chrischinchilla.vale-vscode) (Vale by Chris Chinchilla)
-2. Install Vale CLI: `brew install vale` (macOS) or see [Vale installation](https://vale.sh/docs/vale-cli/installation/) for other platforms
+2. Install Vale CLI: `brew install vale` (macOS) or see [Vale installation](https://vale.sh/docs/install) for other platforms
 3. Navigate to the Vale extension settings:
    - Set `Vale CLI: Config` to the absolute path to `.vale.ini` (in the root of this repo)
    - Set `Vale CLI: Min Alert Level` to `suggestion` (many rules are coded as suggestions)
@@ -229,6 +230,22 @@ Unable to parse .venv/lib/python3.13/site-packages/soupsieve-2.7.dist-info/licen
 **Why this works**: The solution ensures Mintlify commands run from the `build/` directory where the final documentation is generated, which is the correct place to check for broken links. This avoids scanning the Python virtual environment in the project root.
 
 **Prevention**: Always use the provided Make commands instead of running raw `mint` commands from the project root.
+
+### Offline export and `htmltest`
+
+Use **`make export`** to run [`mint export`](https://www.mintlify.com/docs/deploy/export) from `build/` after `make build` so Python and JavaScript OSS routes match the files on disk. The default zip path is **`build/export.zip`** (Mintlify’s default filename when exporting from `build/`).
+
+**Prerequisites for `mint export`:**
+
+- A recent Mintlify CLI that includes `export` (`npm install -g mint@latest`; older CLIs report `Unknown command: export`)
+- Node.js LTS **20 or 22** (Mintlify does not support Node 25+)
+- An [Enterprise](https://www.mintlify.com/docs/deploy/export) Mintlify plan
+
+If you use nvm: `nvm use 22 && npm install -g mint@latest`, then run `make export` from that shell.
+
+Then run **`make htmltest`** to unpack that zip under `build/mint-export-htmltest-unpacked/` and run [htmltest](https://github.com/wjdp/htmltest) on the static HTML. Install htmltest first (for example `brew install htmltest`, or the [install script](https://github.com/wjdp/htmltest#installation)). By default it checks **external URLs only** (`htmltest-mint-export.yml`), because mint export does not emit a complete page set for reliable internal link checks. Pass extra flags via `HTMLTEST_ARGS` if needed. If you exported to a different file, set `EXPORT_ZIP` (for example `make htmltest EXPORT_ZIP=build/my-export.zip`).
+
+**`make export-htmltest`** runs **`make export`** and then **`make htmltest`** in one go.
 
 ### Warning: page doesn't exist
 

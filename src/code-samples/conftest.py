@@ -117,10 +117,14 @@ def prepare_postgres_store(uri: str) -> None:
     try:
         with psycopg.connect(uri, autocommit=True) as conn:
             with conn.cursor() as cur:
+                # Drop vector_migrations too. setup() skips VECTOR_MIGRATIONS when
+                # that table is present, which leaves store_vectors missing after a
+                # partial reset (put then fails with UndefinedTable).
                 cur.execute(
                     "DROP TABLE IF EXISTS public.store_vectors CASCADE; "
                     "DROP TABLE IF EXISTS public.store CASCADE; "
-                    "DROP TABLE IF EXISTS public.store_migrations CASCADE;"
+                    "DROP TABLE IF EXISTS public.store_migrations CASCADE; "
+                    "DROP TABLE IF EXISTS public.vector_migrations CASCADE;"
                 )
     except psycopg.OperationalError as e:
         print(f"conftest: could not connect to clean tables: {e}", file=sys.stderr)

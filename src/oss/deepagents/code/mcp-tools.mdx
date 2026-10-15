@@ -4,9 +4,15 @@ sidebarTitle: MCP tools
 description: Load additional tools from MCP (Model Context Protocol) servers
 ---
 
+import ConnectDocsMcpPrompt from '/snippets/connect-docs-mcp-prompt.mdx';
+
 [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) lets you extend Deep Agents Code with tools from external servers—file systems, APIs, databases, and more—without modifying the agent itself. Deep Agents Code connects to MCP servers at startup, discovers their tools, and makes them available to the agent alongside the built-in tools.
 
 Add MCP servers by adding a `.mcp.json` config file to your project for project-level scope, or at user-level to apply to all projects.
+
+Paste this prompt into your coding agent to connect the servers, or follow the steps below for Deep Agents Code specifically. For other editors, see [Use docs programmatically](/use-these-docs).
+
+<ConnectDocsMcpPrompt />
 
 ## Quickstart
 
@@ -132,6 +138,8 @@ Each key under `mcpServers` is a server name. The server's fields determine how 
 
 stdio servers are spawned as child processes. Deep Agents Code communicates with them over stdin/stdout.
 
+Approved project servers and servers supplied through `--mcp-config` start in the session working directory. User-level and plugin servers inherit the backend process directory instead. Set a server's `cwd` field to override either default.
+
 ```json title="mcp-config.json"
 {
   "mcpServers": {
@@ -169,7 +177,7 @@ For remote MCP servers, set `type` to `"sse"` or `"http"` and provide a `url`:
 
 <AccordionGroup>
     <Accordion title="stdio (default)">
-        **Required:** `command`. **Optional:** `args`, `env`, plus the shared [tool-filter fields](#tool-filtering).
+        **Required:** `command`. **Optional:** `args`, `env`, `cwd`, plus the shared [tool-filter fields](#tool-filtering).
 
         <ResponseField name="command" type="string" required>
             The executable to run.
@@ -181,6 +189,10 @@ For remote MCP servers, set `type` to `"sse"` or `"http"` and provide a `url`:
 
         <ResponseField name="env" type="object">
             Environment variables set for the subprocess. Use this to pass API keys and other credentials without exposing them in shell history.
+        </ResponseField>
+
+        <ResponseField name="cwd" type="string">
+            Working directory for the subprocess. Overrides the default directory for this server's configuration source.
         </ResponseField>
     </Accordion>
 
@@ -273,6 +285,14 @@ You can configure as many servers as you need. Tools from all servers are merged
   }
 }
 ```
+
+## Set tool-call timeouts
+
+MCP tool calls return an error after 120 seconds by default, so a stalled server does not block the agent indefinitely.
+
+Set `[mcp].tool_timeout` in `~/.deepagents/config.toml` to a number of seconds from `1` through `900`. Set `DEEPAGENTS_CODE_MCP_TOOL_TIMEOUT` to override the user config value. Invalid values fall through to the next configuration source rather than disabling the timeout.
+
+A timeout does not guarantee that the server canceled the operation. Check its state before retrying a tool that changes data: another call can duplicate work.
 
 ## Tool filtering
 
@@ -483,6 +503,8 @@ The legacy flat `[mcp].enabled_project_servers` list is ignored in `config.toml`
 
 Use `[mcp].disabled_project_servers` in `~/.deepagents/config.toml`, or `DEEPAGENTS_CODE_DISABLED_PROJECT_MCP_SERVERS` in your shell or global `~/.deepagents/.env`, to always reject project MCP servers by name. Denies win over saved approvals and over the `--trust-project-mcp` flag.
 
+The interactive startup prompt also offers session-only denial or permanent denial of selected server names. Permanent denials apply across all projects, unlike project-scoped approvals. To undo a saved denial, remove the name from `[mcp].disabled_project_servers` in `~/.deepagents/config.toml`.
+
 For automation that must pre-approve project MCP servers by name, set `DEEPAGENTS_CODE_DANGEROUSLY_ENABLE_PROJECT_MCP_SERVERS` in your shell or global `~/.deepagents/.env` to a comma-separated list of server names. This is a process-wide escape hatch: A different project, command change, or URL change under the same server name still matches. When this variable is set, Deep Agents Code ignores saved approvals for that process. Prefer saved approvals or `--trust-project-mcp` unless you need name-based approval across projects and server-definition changes.
 
 `deepagents-code>=0.1.40` ignores the former `DEEPAGENTS_CODE_ENABLED_PROJECT_MCP_SERVERS` variable. Replace it with `DEEPAGENTS_CODE_DANGEROUSLY_ENABLE_PROJECT_MCP_SERVERS` if you need the same name-based behavior.
@@ -532,5 +554,5 @@ Connected MCP servers and their tools are automatically listed in the agent's sy
 ## Further reading
 
 - [LangSmith Remote MCP](/langsmith/langsmith-remote-mcp): connect Deep Agents Code to LangSmith tools over OAuth
-- [LangChain MCP guide](/oss/langchain/mcp): protocol details, building custom servers, and using `langchain-mcp-adapters` programmatically
+- [LangChain MCP guide](/oss/langchain/mcp): connecting agents to MCP servers with the `MCPAdapter`
 - [MCP specification](https://modelcontextprotocol.io/): the official protocol spec and server registry

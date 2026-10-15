@@ -84,8 +84,7 @@ print(f"Indexed {len(all_splits)} chunks.")
 # :snippet-end:
 
 # :snippet-start: rag-deep-search-tool-py
-import uuid
-
+from langchain_core.utils.uuid import uuid7
 from deepagents.backends import StateBackend
 from langchain.tools import tool
 
@@ -103,7 +102,7 @@ def search_documentation(query: str) -> str:
         File paths where retrieved chunks were saved under /retrieved/.
     """
     retrieved_docs = vector_store.similarity_search(query, k=4)
-    batch_id = uuid.uuid4().hex[:8]
+    batch_id = uuid7().hex[:8]
     uploads: list[tuple[str, bytes]] = []
     saved_paths: list[str] = []
 

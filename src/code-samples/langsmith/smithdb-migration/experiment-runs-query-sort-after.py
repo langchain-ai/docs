@@ -1,5 +1,5 @@
 # :remove-start:
-import uuid
+from langsmith import uuid7
 from datetime import datetime, timezone
 
 from langsmith import Client
@@ -30,7 +30,7 @@ if not _setup_client.has_project(_EXPERIMENT_NAME):
     for _example in _setup_client.list_examples(dataset_id=dataset_id):
         _a, _b = (int(x) for x in _example.inputs["question"].split(" + "))
         _answer = str(_a + _b)
-        _run_id = str(uuid.uuid4())
+        _run_id = str(uuid7())
         _now = datetime.now(timezone.utc)
         _setup_client.create_run(
             name="target",

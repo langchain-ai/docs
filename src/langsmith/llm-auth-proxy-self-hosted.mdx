@@ -149,7 +149,7 @@ If both are set, `jwksUri` takes precedence.
 ```yaml
 authProxy:
   upstream: "https://gateway.example.com"
-  jwtIssuer: "langsmith" # must match LLM_AUTH_PROXY_ISSUER in LangSmith values.yaml
+  jwtIssuer: "langsmith" # must match config.llmAuthProxyIssuer in LangSmith values.yaml
   jwtAudiences:
     - "example-audience" # must match the org setting in LangSmith
 
@@ -390,7 +390,7 @@ When mutating the body, your `ext_proc` service must also update the `content-le
 Example with `ext_proc` enabled for header injection and body rewriting:
 
 ```
-curl -H "X-LangSmith-LLM-Auth: <JWT>" -d '{"model":"gpt-4",...}'
+curl -H "X-LangSmith-LLM-Auth: <JWT>" -d '{"model":"gpt-5.5",...}'
   -> Envoy(:10000)
   -> built-in Envoy JWT filter (validate sig, iss, aud)
   -> `ext_proc` filter -> transformer:50051 (gRPC)
@@ -699,7 +699,7 @@ For production reliability, set `authProxy.autoscaling.hpa.minReplicas` to at le
 ```yaml
 authProxy:
   upstream: "https://gateway.example.com"   # your LLM gateway or provider
-  jwtIssuer: "langsmith"                    # must match LLM_AUTH_PROXY_ISSUER on LangSmith
+  jwtIssuer: "langsmith"                    # must match config.llmAuthProxyIssuer on LangSmith
   jwtAudiences:
     - "example-audience"                    # must match org setting in LangSmith
 
@@ -746,16 +746,20 @@ LangSmith signs JWTs using **Ed25519 (EdDSA)**. Public keys are served at `/.wel
 | Claim | Description |
 |-------|-------------|
 | `iat`, `exp`, `jti`, `nbf` | Standard JWT claims (issued-at, expiry, JWT ID, not-before) |
-| `iss` | Issuer. `langsmith` for SaaS; set via `LLM_AUTH_PROXY_ISSUER` for self-hosted |
+| `iss` | Issuer. `langsmith` for SaaS; set via `config.llmAuthProxyIssuer` for self-hosted |
 | `aud` | Audience. Matches the JWT audience in LangSmith organization settings |
 | `sub` | Actor identifier (user ID, evaluator ID, assistant ID, or API key ID) |
-| `actor_type` | One of: `user`, `evaluator`, `agent-builder`, `api_key` |
+| `actor_type` | One of: `user`, `evaluator`, `agent-builder`, `insights`, `polly`, `api_key:pat` (personal access token), or `api_key:service` (service account key) |
 | `workspace_id` | Workspace ID |
 | `workspace_name` | Workspace Name |
 | `organization_id` | Organization ID |
 | `organization_name` | Organization Name |
 | `request_id` | Request correlation ID |
-| `ls_user_id` | LangSmith user ID (present only when `actor_type` is `user`) |
+| `ls_user_id` | LangSmith user ID (present whenever the request has an associated user) |
+
+<Warning>
+Use `ls_user_id` to identify the end user. On agent runs, `sub` is the assistant's ID and `actor_type` is `agent-builder`, so neither identifies the person.
+</Warning>
 
 The JWT is passed to your `ext_authz` or transformer service in the `x-langsmith-llm-auth` request header.
 
@@ -779,7 +783,7 @@ Yes. Multiple organizations can point to the same auth proxy instance via their 
 
 <Accordion title="Can the LangSmith to auth proxy connection use HTTP instead of HTTPS?">
 Yes, but only in self-hosted, and we generally recommend placing the auth proxy behind a dedicated ingress so communication uses HTTPS. To allow HTTP, add `LLM_AUTH_PROXY_ACCEPT_HTTP` to `commonEnv` and `playground.deployment.extraEnv` in your [LangSmith `values.yaml`](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/values.yaml).
-To enable HTTP traffic to the auth proxy for [Chat and Insights](/langsmith/deploy-self-hosted-full-platform#enable-fleet-insights-and-chat), set this environment variable in the respective `extraEnv` sections: `config.polly.agent.extraEnv` (for Chat, which was formerly called Polly) and `config.insights.agent.extraEnv`.
+To enable HTTP traffic to the auth proxy for [Chat and Insights](/langsmith/self-host-insights-chat), set this environment variable in the respective `extraEnv` sections: `config.polly.agent.extraEnv` (for Chat, which was formerly called Polly) and `config.insights.agent.extraEnv`.
 </Accordion>
 
 <Accordion title="Does the auth proxy work without a public ingress?">
