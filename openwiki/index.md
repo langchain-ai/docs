@@ -4,7 +4,7 @@ okf_version: "0.2"
 
 # Files
 
-- [Quickstart](quickstart.md) - Set up the LangChain documentation monorepo, use the source-to-preview loop safely, and select proportionate validation or the right contributor workflow.
+- [Repository Wiki Quickstart](quickstart.md) - Route a documentation change to its durable source, configuration, generator, workflow, or external owner before selecting validation. Use this repository-specific map to avoid generated surfaces and find the maintained guidance for documentation work.
 
 # Directories
 

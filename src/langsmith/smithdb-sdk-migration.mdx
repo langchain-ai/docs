@@ -36,7 +36,7 @@ The [LangSmith CLI](/langsmith/langsmith-cli) queries the same SmithDB-backed en
 
 ## About self-hosted
 
-- The new methods documented in this guide require `>=0.16` self-hosted version, independent of the data store used.
+- The new methods documented in this guide require self-hosted version 0.16 or later, independent of the data store used.
 - The deprecated methods stop working once ClickHouse is disabled.
 - Where possible, the SDK raises a warning or error identifying the version to upgrade to, instead of failing without explanation.
 
@@ -72,7 +72,7 @@ This guide is written to be fetched and applied directly by an AI coding agent. 
 <Prompt
     description="Migrate LangSmith SDK usage to SmithDB methods"
     icon="arrow-right"
-    actions={["copy", "cursor"]}
+    actions={["copy"]}
 >
 Migrate this codebase's LangSmith SDK usage to the new SmithDB-backed methods.
 

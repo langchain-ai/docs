@@ -4,13 +4,16 @@ sidebarTitle: OpenAI Codex
 description: Capture OpenAI Codex agent turns, tool calls, model metadata, and subagent threads in LangSmith.
 ---
 
+import CodingAgentSecretRedaction from '/snippets/langsmith/coding-agent-secret-redaction.mdx';
+
 The [`langsmith-codex-plugins`](https://github.com/langchain-ai/langsmith-codex-plugins) marketplace ships a tracing plugin that sends [OpenAI Codex](https://developers.openai.com/codex) session data to LangSmith. Use it to inspect agent turns, model metadata, token usage, tool calls, and subagent threads from your Codex workflows.
 
 ## Prerequisites
 
 Before setting up tracing, ensure you have:
 
-- [Codex CLI](https://developers.openai.com/codex/quickstart?setup=cli) v0.128 or later.
+- [Node.js](https://nodejs.org/) 22.x or later.
+- [Codex CLI](https://developers.openai.com/codex/quickstart?setup=cli) v0.153.4 or later, with synchronous `UserPromptSubmit` plugin hooks enabled and trusted.
 - A [LangSmith API key](/langsmith/create-account-api-key).
 
 ## Install and enable the plugin
@@ -21,15 +24,14 @@ Add the marketplace using the Codex CLI:
 codex plugin marketplace add langchain-ai/langsmith-codex-plugins
 ```
 
-Enable plugin hooks and the tracing plugin globally in `~/.codex/config.toml`, or only for a specific project in `.codex/config.toml`:
+Enable the tracing plugin globally in `~/.codex/config.toml`, or only for a specific project in `.codex/config.toml`:
 
 ```toml
-[features]
-plugin_hooks = true
-
 [plugins."tracing@langsmith-codex-plugins"]
 enabled = true
 ```
+
+Then trust this plugin's hooks with `/hooks`, or in Codex's plugin UI when prompted. Enabling the plugin alone does not trust its hooks.
 
 ## Configure tracing
 
@@ -47,6 +49,8 @@ The plugin reads Codex-specific variables first, then falls back to the generic 
 | `LANGSMITH_CODEX_PROJECT` | No | `codex` | LangSmith project name. Falls back to `LANGSMITH_PROJECT`. |
 | `LANGSMITH_CODEX_METADATA` | No | - | JSON object merged into root trace metadata. Falls back to `LANGSMITH_METADATA`. |
 | `LANGSMITH_CODEX_RUNS_ENDPOINTS` | No | - | JSON array of replica destinations. Falls back to `LANGSMITH_RUNS_ENDPOINTS`. |
+| `LANGSMITH_CODEX_REDACT` | No | `true` | Set to a falsy value to disable secret redaction. Falls back to `LANGSMITH_REDACT`. |
+| `LANGSMITH_CODEX_REDACT_EXTRA` | No | - | JSON array of extra `{ pattern, replace }` redaction rules. Falls back to `LANGSMITH_REDACT_EXTRA`. |
 
 Add the variables to your shell configuration file (`~/.zshrc`, `~/.bashrc`, or `~/.bash_profile`):
 
@@ -81,6 +85,8 @@ Use `<project>/.codex/langsmith.json` for project-level settings or `~/.codex/la
 | `project` | `LANGSMITH_CODEX_PROJECT`, `LANGSMITH_PROJECT` | `codex` | LangSmith project name. |
 | `metadata` | `LANGSMITH_CODEX_METADATA`, `LANGSMITH_METADATA` | - | Object merged into root trace metadata. |
 | `replicas` | `LANGSMITH_CODEX_RUNS_ENDPOINTS`, `LANGSMITH_RUNS_ENDPOINTS` | - | Additional LangSmith destinations to replicate traces to. |
+| `redact` | `LANGSMITH_CODEX_REDACT`, `LANGSMITH_REDACT` | `true` | Set to `false` to disable [secret redaction](#secret-redaction). |
+| `redact_extra_rules` | `LANGSMITH_CODEX_REDACT_EXTRA`, `LANGSMITH_REDACT_EXTRA` | - | Extra `{ pattern, replace }` rules applied after the built-in ones. |
 
 Keep config files that include API keys out of version control.
 
@@ -146,6 +152,29 @@ Each replica object supports the following fields:
 | `projectName` | Yes | Project name in the destination workspace. |
 | `updates` | No | Optional run fields to override on replicated runs, such as extra metadata. |
 
+## Secret redaction
+
+The plugin redacts detected secrets from run inputs, outputs, errors, and metadata before uploading them to LangSmith. Redaction is on by default.
+
+<CodingAgentSecretRedaction />
+
+To turn redaction off, set `LANGSMITH_CODEX_REDACT` to `false`, `0`, `no`, or `off`, or set `"redact": false` in a config file. Values are trimmed and compared case-insensitively.
+
+To redact additional patterns, set `LANGSMITH_CODEX_REDACT_EXTRA` to a JSON array of `{ "pattern": ..., "replace": ... }` rules, or set `redact_extra_rules` in a config file. Each `pattern` is a regular expression string, applied globally and case-sensitively. `replace` is optional and falls back to `[redacted]`. Extra rules run after the built-in ones.
+
+```json
+{
+  "enabled": true,
+  "project": "codex",
+  "redact": true,
+  "redact_extra_rules": [{ "pattern": "ACME-[A-Z0-9]{16}", "replace": "[REDACTED_ACME_KEY]" }]
+}
+```
+
+Setting `redact_extra_rules` to `[]` clears rules inherited from a lower-priority source. In a config file, one rule with an invalid regular expression discards every setting in that file, so verify the patterns before committing them.
+
+Because a project-level `.codex/langsmith.json` or `langsmith-plugins.json` can set `redact` to `false`, review those files before enabling tracing in a repository you do not control.
+
 ## What gets traced
 
 Each LLM run includes:
@@ -170,7 +199,7 @@ The plugin uploads full Codex transcript data to LangSmith. Do not enable tracin
 
 If traces do not appear in LangSmith:
 
-- Confirm `plugin_hooks = true` and the tracing plugin is enabled in `config.toml`.
+- Confirm the tracing plugin is enabled in `config.toml` and its hooks are trusted (`/hooks`). `[features] hooks` is on by default, so set it only to undo a local override.
 - Confirm `TRACE_TO_LANGSMITH=true` is visible to the Codex process.
 - Confirm `LANGSMITH_CODEX_API_KEY` or `LANGSMITH_API_KEY` is set and valid.
 - If runs land in the wrong project, set `LANGSMITH_CODEX_PROJECT` or the `project` config key.

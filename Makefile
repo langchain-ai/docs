@@ -1,4 +1,4 @@
-.PHONY: all dev build export htmltest export-htmltest format lint test install install_vale clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples check-cross-refs
+.PHONY: all dev build export htmltest export-htmltest format lint test install install_vale clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples update-code-sample-traces check-cross-refs skills
 
 # Default target
 all: help
@@ -125,6 +125,7 @@ install:
 	uv sync --all-groups
 	npm install
 	npm install -g mint@latest
+	@$(MAKE) --no-print-directory skills
 	@echo "If the docs command is not available, relaunch your shell so it picks up the docs binary."
 
 clean:
@@ -143,6 +144,9 @@ clean:
 #   Snippet /oss/ links are absolute language-prefixed paths under
 #   build/snippets/{python|javascript}/...; mint checks snippets as standalone files
 #   so those look broken until inlined into a page.
+# --check-redirects also validates that every docs.json redirect destination resolves.
+#   Without it, 261 redirects pointing at unversioned /oss/ paths sat broken undetected.
+#   Reported as indented "source -> destination" lines, so the same failure test catches them.
 # Failure: only when filtered output still has indented link lines (real broken links we care about)
 # Run mint, capture output, filter exclusions. Only show output when failing.
 broken-links: build
@@ -153,7 +157,7 @@ broken-links: build
 			VERSION=$$(node -e "console.log(require('$$KATEX_DIR/package.json').version)" 2>/dev/null); \
 			if [ -n "$$VERSION" ]; then sed -i.bak "s/__VERSION__/\"$$VERSION\"/g" "$$KATEX_MJS" 2>/dev/null || true; fi; \
 		fi
-	@cd build && mint broken-links 2>&1 | tee /tmp/broken-links.txt > /dev/null; \
+	@cd build && mint broken-links --check-redirects 2>&1 | tee /tmp/broken-links.txt > /dev/null; \
 		filtered=$$(python3 ../scripts/filter_mint_broken_links.py --input /tmp/broken-links.txt); \
 		if echo "$$filtered" | grep -qE '^[[:space:]]+[^[:space:]]'; then \
 			echo "$$filtered"; echo ""; echo "❌ Broken links found"; exit 1; \
@@ -169,7 +173,7 @@ broken-links-with-anchors: build
 			VERSION=$$(node -e "console.log(require('$$KATEX_DIR/package.json').version)" 2>/dev/null); \
 			if [ -n "$$VERSION" ]; then sed -i.bak "s/__VERSION__/\"$$VERSION\"/g" "$$KATEX_MJS" 2>/dev/null || true; fi; \
 		fi
-	@cd build && mint broken-links --check-anchors 2>&1 | tee /tmp/broken-links.txt > /dev/null; \
+	@cd build && mint broken-links --check-anchors --check-redirects 2>&1 | tee /tmp/broken-links.txt > /dev/null; \
 		filtered=$$(python3 ../scripts/filter_mint_broken_links.py --check-anchors --input /tmp/broken-links.txt); \
 		if echo "$$filtered" | grep -qE '^[[:space:]]+[^[:space:]]'; then \
 			echo "$$filtered"; echo ""; echo "❌ Broken links found"; exit 1; \
@@ -192,13 +196,47 @@ code-snippets:
 # Run code samples. By default runs all; pass FILES to test specific paths.
 #   make test-code-samples
 #   make test-code-samples FILES="src/code-samples/langchain/return-a-string.py"
+# Set CODE_SAMPLE_JOBS=N (default 4) to run samples concurrently.
+# Samples that share a LangSmith dataset/fixture (evaluate-rag-*,
+# experiment-runs-query-*) stay serialized within their group.
 test-code-samples:
 	@if [ -f src/code-samples/package.json ]; then (cd src/code-samples && npm install --silent); fi
-	@FILES="$(FILES)" PYTHONPATH=$(CURDIR) python scripts/test_code_samples.py
+	@FILES="$(FILES)" PYTHONPATH=$(CURDIR) uv run python scripts/test_code_samples.py
+
+# Run code samples with LangSmith tracing, update public share links in
+# src/code-samples/trace-links.json, then regenerate snippet MDX so docs show
+# "View example trace" under single-snippet samples that produced an agent run.
+# Each traced sample stamps LANGSMITH_DOCS_SNIPPET=<snippet-id>; collection
+# matches that metadata (no time-window LangGraph fallback). Multi-snippet
+# source files are skipped until split. Requires LANGSMITH_API_KEY.
+#   make update-code-sample-traces
+#   make update-code-sample-traces FILES="src/code-samples/deepagents/overview-quickstart.py"
+update-code-sample-traces:
+	@if [ -f src/code-samples/package.json ]; then (cd src/code-samples && npm install --silent); fi
+	@CODE_SAMPLE_TRACING=1 \
+	LANGSMITH_PROJECT="$${LANGSMITH_PROJECT:-docs-code-samples}" \
+	FILES="$(FILES)" \
+	PYTHONPATH=$(CURDIR) uv run python scripts/test_code_samples.py
+	@$(MAKE) code-snippets
 
 # Check that all @[ref] cross-references in source files resolve against link_map.py
 check-cross-refs:
 	@PYTHONPATH=$(CURDIR) uv run python scripts/check_cross_refs.py
+
+skills:
+	@mkdir -p .claude/skills
+	@for d in .agents/skills/*/; do \
+		n=$$(basename "$$d"); \
+		if [ -e ".claude/skills/$$n" ] && [ ! -L ".claude/skills/$$n" ]; then \
+			echo "Skipped $$n: .claude/skills/$$n exists and is not a symlink"; \
+		else \
+			ln -sfn "../../.agents/skills/$$n" ".claude/skills/$$n"; \
+			echo "Linked .claude/skills/$$n"; \
+		fi; \
+	done
+	@for l in .claude/skills/*; do \
+		if [ -L "$$l" ] && [ ! -e "$$l" ]; then rm "$$l"; echo "Removed stale link $$l"; fi; \
+	done
 
 help:
 	@echo "Available commands:"
@@ -216,8 +254,10 @@ help:
 	@echo "  make lint_md_fix        - Lint and fix markdown files"
 	@echo "  make lint_prose         - Lint prose with Vale (terminology, style)"
 	@echo "  make test               - Run tests"
-	@echo "  make install            - Install dependencies"
+	@echo "  make install            - Install dependencies and link skills"
 	@echo "  make code-snippets      - Extract code snippets (line-based, Bluehawk-compatible)"
 	@echo "  make test-code-samples  - Run code samples (FILES=\"path ...\" for specific)"
+	@echo "  make skills             - Link .agents/skills into .claude/skills for Claude Code"
+	@echo "  make update-code-sample-traces - Trace samples, update share links, regenerate snippets"
 	@echo "  make clean              - Clean build artifacts"
 	@echo "  make help               - Show this help message"

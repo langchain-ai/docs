@@ -1,17 +1,32 @@
 # :snippet-start: mcp-tool-errors-py
+from langchain.agents import create_agent
 from langchain.mcp import MCPAdapter
+from langchain.messages import ToolMessage
 
 
-async def divide_by_zero(server):
+async def divide_by_zero(server) -> dict:
     async with MCPAdapter(server) as adapter:
-        [divide] = await adapter.list_tools()
+        tools = await adapter.list_tools()
+        agent = create_agent("claude-sonnet-5", tools)
+        result = await agent.ainvoke(
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Use the divide tool to calculate 10 divided by 0.",
+                    }
+                ]
+            }
+        )
 
     # A server error (isError=True) reaches the model as a failed ToolMessage,
-    # so the agent can read the server's own message and retry. Transport
+    # so the agent can read the server's own message and recover. Transport
     # failures still raise, because a model cannot act on those.
-    return await divide.ainvoke(
-        {"name": "divide", "args": {"a": 10, "b": 0}, "id": "1", "type": "tool_call"}
-    )
+    for message in result["messages"]:
+        if isinstance(message, ToolMessage) and message.status == "error":
+            print(f"Tool reported: {message.text}")  # [!code highlight]
+
+    return result
 
 
 # :snippet-end:
@@ -59,9 +74,23 @@ def calculator_server() -> FastMCP:
 
 
 async def _run() -> None:
-    message = await divide_by_zero(calculator_server())
-    assert message.status == "error"
-    assert "zero" in message.text.lower()
+    result = await divide_by_zero(calculator_server())
+    failures = [
+        message
+        for message in result["messages"]
+        if isinstance(message, ToolMessage) and message.status == "error"
+    ]
+    if failures:
+        assert "zero" in failures[0].text.lower()
+    else:
+        assistant_text = "\n".join(
+            getattr(message, "text", "")
+            for message in result["messages"]
+            if getattr(message, "type", None) == "ai"
+        )
+        assert "zero" in assistant_text.lower(), (
+            "expected either a failed ToolMessage or an assistant response that mentions zero"
+        )
 
     async with MCPAdapter(calculator_server()) as adapter:
         [divide] = await adapter.list_tools()

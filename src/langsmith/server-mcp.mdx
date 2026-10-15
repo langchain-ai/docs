@@ -9,6 +9,8 @@ The Model Context Protocol (MCP) is an open protocol for describing tools and da
 
 The MCP endpoint is available at `/mcp` on [Agent Server](/langsmith/agent-server).
 
+Managed Deep Agents deployments run on Agent Server, so they expose the same `/mcp` endpoint. For Managed Deep Agents URL discovery and identity headers, see [Connect MCP clients to a managed deep agent](/langsmith/managed-deep-agents-mcp-endpoint).
+
 You can set up [custom authentication middleware](/langsmith/custom-auth) to authenticate a user with an MCP server to get access to user-scoped tools within your LangSmith deployment.
 
 An example architecture for this flow:
@@ -119,46 +121,48 @@ Use an MCP-compliant client to connect to the Agent Server. The following exampl
     ```
     </Tab>
     <Tab title="Python">
-    Install the adapter with:
+    Install LangChain with the MCP extra:
 
-    ```bash
-    pip install langchain-mcp-adapters
+    <CodeGroup>
+    ```bash pip
+    pip install "langchain[mcp]"
     ```
 
-    Here is an example of how to connect to a remote MCP endpoint and use an agent as a tool:
+    ```bash uv
+    uv add "langchain[mcp]"
+    ```
+    </CodeGroup>
+
+    Connect to a remote MCP endpoint and use an agent as a tool:
 
     ```python
-    # Create server parameters for stdio connection
-    from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
     import asyncio
+    import os
 
-    from langchain_mcp_adapters.tools import load_mcp_tools
+    from fastmcp.client import Client
+    from fastmcp.client.transports import StreamableHttpTransport
     from langchain.agents import create_agent
+    from langchain.mcp import MCPAdapter
 
-
-    server_params = {
-        "url": "https://mcp-finance-agent.xxx.us.langgraph.app/mcp",
-        "headers": {
-            "X-Api-Key":"lsv2_pt_your_api_key"
-        }
-    }
 
     async def main():
-        async with streamablehttp_client(**server_params) as (read, write, _):
-            async with ClientSession(read, write) as session:
-                # Initialize the connection
-                await session.initialize()
+        async with MCPAdapter(
+            Client(
+                StreamableHttpTransport(
+                    "https://mcp-finance-agent.xxx.us.langgraph.app/mcp",
+                    headers={"X-Api-Key": os.environ["LANGSMITH_API_KEY"]},
+                )
+            )
+        ) as adapter:
+            # Load the remote graph as if it was a tool
+            tools = await adapter.list_tools()
 
-                # Load the remote graph as if it was a tool
-                tools = await load_mcp_tools(session)
+            agent = create_agent("gpt-5.5", tools)
+            agent_response = await agent.ainvoke(
+                {"messages": "What can the finance agent do for me?"}
+            )
+            print(agent_response)
 
-                # Create and run a react agent with the tools
-                agent = create_agent("gpt-5.5", tools)
-
-                # Invoke the agent with a message
-                agent_response = await agent.ainvoke({"messages": "What can the finance agent do for me?"})
-                print(agent_response)
 
     if __name__ == "__main__":
         asyncio.run(main())
@@ -247,22 +251,21 @@ You have added your own [custom auth middleware](/langsmith/custom-auth) that po
 To make user-scoped tools available to your LangSmith deployment, start with implementing a snippet like the following:
 
 ```python
-from langchain_mcp_adapters.client import MultiServerMCPClient
+from fastmcp.client import Client
+from langchain.mcp import MCPAdapter
 
-def mcp_tools_node(state, config):
+
+async def mcp_tools_node(state, config):
     user = config["configurable"].get("langgraph_auth_user")
-         , user["github_token"], user["email"], etc.
+    # user includes github_token, email, etc.
 
-    client = MultiServerMCPClient({
-        "github": {
-            "transport": "streamable_http", # (1)
-            "url": "https://my-github-mcp-server/mcp", # (2)
-            "headers": {
-                "Authorization": f"Bearer {user['github_token']}"
-            }
-        }
-    })
-    tools = await client.get_tools() # (3)
+    async with MCPAdapter(
+        Client(
+            "https://my-github-mcp-server/mcp",  # (1)
+            auth=user["github_token"],  # (2)
+        )
+    ) as adapter:
+        tools = await adapter.list_tools()  # (3)
 
     # Your tool-calling logic here
 
@@ -270,9 +273,9 @@ def mcp_tools_node(state, config):
     return {"messages": tool_messages}
 ```
 
-1. MCP only supports adding headers to requests made to `streamable_http` and `sse` `transport` servers.
-2. Your MCP server URL.
-3. Get available tools from your MCP server.
+1. Your MCP server URL. A URL target uses Streamable HTTP.
+2. Pass a bearer token with `auth=` on `Client`. For non-bearer headers (such as `x-api-key`), use `StreamableHttpTransport(url, headers=...)` instead. See [Authentication](/oss/langchain/mcp/auth).
+3. Discover tools from the MCP server.
 
 _This can also be done by [rebuilding your graph at runtime](/langsmith/graph-rebuild) to have a different configuration for a new run_
 

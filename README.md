@@ -103,15 +103,16 @@ API reference is generated and deployed outside this repo. Browse [Python](https
 
 * `make dev` - Start development mode with file watching and live rebuild
 * `make build` - Build documentation to `./build` directory
-* `make broken-links` - Check for broken links in documentation
-* `make broken-links-with-anchors` - Check for broken links + check links with anchors
-* `make install` - Install all dependencies
+* `make broken-links-with-anchors` - Check for broken links, including anchors (the check CI runs)
+* `make broken-links` - Check for broken links, without anchors
+* `make install` - Install all dependencies and link authoring skills
 * `make clean` - Remove build artifacts
 * `make test` - Run the test suite
 * `make lint` - Check code style and formatting
 * `make format` - Auto-format code
 * `make lint_md` - Lint markdown files
 * `make lint_md_fix` - Lint and fix markdown files
+* `make skills` - Link `.agents/skills` into `.claude/skills` for Claude Code. Runs as part of `make install`; re-run it after new skills are added
 * `make help` - Show all available commands
 
 **`docs` CLI tool:**
@@ -165,7 +166,7 @@ Codespell is configured in `pyproject.toml` under `[tool.codespell]`:
 You can also follow these steps to enable `vale` with VS Code or Cursor:
 
 1. Install the [Vale extension](https://marketplace.visualstudio.com/items?itemName=chrischinchilla.vale-vscode) (Vale by Chris Chinchilla)
-2. Install Vale CLI: `brew install vale` (macOS) or see [Vale installation](https://vale.sh/docs/vale-cli/installation/) for other platforms
+2. Install Vale CLI: `brew install vale` (macOS) or see [Vale installation](https://vale.sh/docs/install) for other platforms
 3. Navigate to the Vale extension settings:
    - Set `Vale CLI: Config` to the absolute path to `.vale.ini` (in the root of this repo)
    - Set `Vale CLI: Min Alert Level` to `suggestion` (many rules are coded as suggestions)

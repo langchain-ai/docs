@@ -1,5 +1,6 @@
 # Files
 
-- [Adding and Modifying Documentation Pages](adding-pages.md) - End-to-end procedure for selecting a documentation source domain, authoring or moving pages, maintaining navigation and redirects, and verifying published routes.
-- [Documentation CLI Tools](cli-tools.md) - Reference for the repository Make targets and Python documentation CLI, including inputs, generated outputs, validation scope, and focused versus full operations.
-- [Cross-Reference Links](cross-references.md) - Author and maintain semantic @[ref] links to external API reference documentation. Use the dedicated scope-aware validator to catch unresolved references separately from rendered-site link checking.
+- [Adding and Maintaining Documentation Pages](adding-pages.md) - Safely add, move, retire, or regenerate documentation pages by selecting the source owner, maintaining navigation and redirects, and validating emitted routes.
+- [Agent Authoring Skills](agent-skills.md) - Use the repository's task-specific skill catalog without duplicating global rules, distribute the canonical tree to supported agents, and follow source-verified, generated-file-safe documentation workflows.
+- [Local Commands and Automation Tools](cli-tools.md) - Operational reference for the documentation CLI and Make targets, including generated-site validation, runnable examples, snippet generation, and LangSmith trace refreshes.
+- [Cross-References](cross-references.md) - Author, resolve, and validate scoped semantic @[ref] API-reference links. Covers Python and JavaScript lookup, MCP aliases, link-map ownership, and the separate source and rendered-link checks.

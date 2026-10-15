@@ -341,6 +341,23 @@ ai_msg.tool_calls
 
 For more on binding tools and tool call outputs, head to the [tool calling](/oss/langchain/tools) docs.
 
+### Async tools
+
+[Async tool calling](https://developers.openai.com/api/docs/guides/async-tool-calling) lets the model continue working after issuing a tool call, without waiting for the result. When using the Responses API, `ChatOpenAI` supports this by passing `extras={"async": True}` to `@tool`:
+
+```python
+from langchain.tools import tool
+
+@tool(extras={"async": True})  # [!code highlight]
+def lookup_price(sku: str) -> str:
+    """Look up the price of a product."""
+    return "1200"
+```
+
+<Note>
+    Async tools are only supported via the Responses API (`use_responses_api=True`). The `async` flag is round-tripped through the message history so that prompt-cache prefixes remain intact across turns.
+</Note>
+
 ### Custom tools
 
 <Info>
@@ -1044,6 +1061,8 @@ The weather in San Francisco is sunny and 72°F
 
 </Accordion>
 
+To add tools at a specific point in the conversation without tool search, see [Add tools mid-conversation](#add-tools-mid-conversation).
+
 
 ### Computer use
 
@@ -1561,6 +1580,33 @@ llm = ChatOpenAI(model="gpt-5-nano", reasoning_effort="medium")
     `reasoning_effort` as a standard parameter requires `langchain-openai>=1.4.1`.
 </Note>
 
+### Changing reasoning effort mid-conversation
+
+Use a [`configuration_update`](https://developers.openai.com/api/docs/guides/reasoning?api-mode=responses#change-reasoning-mid-conversation) content block to change reasoning effort between turns without modifying the request-level `reasoning_effort` parameter — keeping the prompt prefix cacheable. Embed the block directly in a `HumanMessage`:
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain.messages import HumanMessage
+
+llm = ChatOpenAI(model="gpt-6-astra", use_responses_api=True, reasoning_effort="low")
+
+first = llm.invoke("Hello")
+
+# Raise reasoning effort from this message onward
+response = llm.invoke(
+    [
+        "Hello",
+        first,
+        HumanMessage(
+            [
+                {"type": "configuration_update", "reasoning": {"effort": "high"}},  # [!code highlight]
+                {"type": "text", "text": "How many distinct 5-card poker hands are a full house?"},
+            ]
+        ),
+    ]
+)
+```
+
 <Tip>
     **Troubleshooting: Empty responses from reasoning models**
 
@@ -1568,6 +1614,45 @@ llm = ChatOpenAI(model="gpt-5-nano", reasoning_effort="medium")
 
     Ensure `max_tokens` is set to `None` or increase the token limit to allow sufficient tokens for both reasoning and output generation.
 </Tip>
+
+### Add tools mid-conversation
+
+<Note>
+    `additional_tools` requires `langchain-openai>=1.6.5`.
+</Note>
+
+Use an [`additional_tools`](https://developers.openai.com/api/docs/guides/tools-tool-search#add-tools-at-a-specific-point-in-the-input) content block to make tools available from a point in the conversation onward. This is useful when your application loads tools outside the [tool search](#tool-search) flow. Put the block in a @[`SystemMessage`]:
+
+```python
+from langchain.messages import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(model="gpt-6-astra", use_responses_api=True)
+
+response = llm.invoke(
+    [
+        HumanMessage("What time is it?"),
+        SystemMessage(
+            [
+                {
+                    "type": "additional_tools",  # [!code highlight]
+                    "role": "developer",  # [!code highlight]
+                    "tools": [
+                        {
+                            "type": "function",
+                            "name": "get_time",
+                            "description": "Get the current time.",
+                            "parameters": {"type": "object", "properties": {}},
+                        }
+                    ],
+                },
+            ]
+        ),
+    ]
+)
+```
+
+The block requires the Responses API, so set `use_responses_api=True`. On Chat Completions, or on a message other than a `SystemMessage`, `ChatOpenAI` raises a `ValueError`. You can also write the block wrapped in a `non_standard` block, which is how `content_blocks` returns it.
 
 ---
 

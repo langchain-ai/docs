@@ -3,25 +3,56 @@ title: Human-in-the-loop
 ---
 
 import HitlDecisionTypesTable from '/snippets/oss/hitl-decision-types-table.mdx';
+import HitlPerCallAgentPy from '/snippets/code-samples/hitl-per-call-agent-py.mdx';
+import HitlPerCallInvokePy from '/snippets/code-samples/hitl-per-call-invoke-py.mdx';
+import HitlPerCallResumePy from '/snippets/code-samples/hitl-per-call-resume-py.mdx';
+import HitlPerCallInvalidPy from '/snippets/code-samples/hitl-per-call-invalid-py.mdx';
+import HitlPerCallStreamPy from '/snippets/code-samples/hitl-per-call-stream-py.mdx';
 
 The Human-in-the-Loop (HITL) [middleware](/oss/langchain/middleware/built-in#human-in-the-loop) lets you add human oversight to agent tool calls.
 When a model proposes an action that might require review—for example, writing to a file or executing SQL—the middleware can pause execution and wait for a decision.
 
 It does this by checking each tool call against a configurable policy. If intervention is needed, the middleware issues an @[interrupt] that halts execution. The graph state is saved using LangGraph's [persistence layer](/oss/langgraph/persistence), so execution can pause safely and resume later.
 
+:::python
 A human decision then determines what happens next: the action can be approved as-is (`approve`), modified before running (`edit`), rejected with feedback (`reject`), or responded to directly (`respond`) for "ask user" style tools.
+:::
+
+:::js
+A human decision then determines what happens next: the action can be approved as-is (`approve`), modified before running (`edit`), or rejected with feedback (`reject`).
+:::
 
 ## Interrupt decision types
 
+:::python
 The [middleware](/oss/langchain/middleware/built-in#human-in-the-loop) defines four built-in ways a human can respond to an interrupt:
+:::
+
+:::js
+The [middleware](/oss/langchain/middleware/built-in#human-in-the-loop) defines three built-in ways a human can respond to an interrupt:
+:::
 
 <HitlDecisionTypesTable />
 
 The available decision types for each tool depend on the policy you configure in `interrupt_on`.
 When multiple tool calls are paused at the same time, each action requires a separate decision.
-Decisions must be provided in the same order as the actions appear in the interrupt request.
 
+:::python
+In the default batched mode, provide decisions in the same order as the actions appear in the interrupt request. In [per-call mode](#pause-once-per-tool-call), each tool call has its own interrupt and takes one decision.
+:::
+
+:::js
+Decisions must be provided in the same order as the actions appear in the interrupt request.
+:::
+
+:::python
 Use `reject` when the human is denying the requested action. Use `respond` only when the human is acting as the tool, such as answering an `ask_user` prompt. Do not use `respond` to deny side-effecting tools, because its message is treated as a successful tool result.
+:::
+
+:::js
+Use `reject` when the human is denying the requested action.
+:::
+
 
 <Tip>
 When **editing** tool arguments, make changes conservatively. Significant modifications to the original arguments may cause the model to re-evaluate its approach and potentially execute the tool multiple times or take unexpected actions.
@@ -32,6 +63,10 @@ When **editing** tool arguments, make changes conservatively. Significant modifi
 To use HITL, add the [middleware](/oss/langchain/middleware/built-in#human-in-the-loop) to the agent's `middleware` list when creating the agent.
 
 You configure it with a mapping of tool actions to the decision types that are allowed for each action. The middleware will interrupt execution when a tool call matches an action in the mapping.
+
+:::python
+This example uses the default batched mode. To pause once per tool call, see [Set the interrupt mode](#set-the-interrupt-mode).
+:::
 
 :::python
 ```python
@@ -74,7 +109,7 @@ const agent = createAgent({
     middleware: [
         humanInTheLoopMiddleware({
             interruptOn: {
-                write_file: true, // All decisions (approve, edit, reject, respond) allowed
+                write_file: true, // All decisions (approve, edit, reject) allowed
                 execute_sql: {
                     allowedDecisions: ["approve", "reject"],
                     // No editing allowed
@@ -121,6 +156,14 @@ const agent = createAgent({
     Prefix for action request descriptions
 </ParamField>
 
+<ParamField body="interrupt_mode" type="string" default="batched">
+    How the agent pauses for review. `"batched"` raises one interrupt per model turn, answered with an ordered list. `"per_call"` raises one interrupt per gated call, answered by interrupt ID. `"per_call"` requires `langchain>=1.4.6`. See [Set the interrupt mode](#set-the-interrupt-mode).
+</ParamField>
+
+<ParamField body="edit_notice" type="string | None">
+    Text added before the result of a call that a reviewer replaced with an `edit` decision, so the model knows the call changed. Defaults to a note that a human reviewer replaced the call. Pass `None` to add nothing.
+</ParamField>
+
 **`InterruptOnConfig` options:**
 
 <ParamField body="allowed_decisions" type="list[string]">
@@ -138,21 +181,25 @@ const agent = createAgent({
 
 :::js
 <ParamField body="interruptOn" type="object" required>
-    Mapping of tool names to approval configs
+    Mapping of tool names to approval configs. Values can be `true` (interrupt with default config), `false` (auto-approve), or an `InterruptOnConfig` object.
 </ParamField>
 
-**Tool approval config options:**
-
-<ParamField body="allowAccept" type="boolean" default="false">
-    Whether approval is allowed
+<ParamField body="descriptionPrefix" type="string" default="Tool execution requires approval">
+    Prefix for action request descriptions
 </ParamField>
 
-<ParamField body="allowEdit" type="boolean" default="false">
-    Whether editing is allowed
+**`InterruptOnConfig` options:**
+
+<ParamField body="allowedDecisions" type="string[]">
+    List of allowed decisions: `'approve'`, `'edit'`, or `'reject'`
 </ParamField>
 
-<ParamField body="allowRespond" type="boolean" default="false">
-    Whether responding/rejection is allowed
+<ParamField body="description" type="string | callable">
+    Static string or callable function for custom description
+</ParamField>
+
+<ParamField body="when" type="callable">
+    Optional predicate that receives a @[ToolCallRequest] and returns `true` to interrupt or `false` to auto-approve. Use it to gate interrupts on a call's arguments. Requires `langchain>=1.4.6`.
 </ParamField>
 :::
 
@@ -206,16 +253,227 @@ agent = create_agent(
 )
 ```
 
-When the `when` predicate returns `False`, the call runs without interrupting. When it returns `True`, or when you omit `when`, the call pauses as usual. Calls that evaluate to `False` are never added to the interrupt batch, so a reviewer only sees the actions that need a decision.
+When the `when` predicate returns `False`, the call runs without interrupting. When it returns `True`, or when you omit `when`, the call pauses as usual. Calls that evaluate to `False` never pause, so a reviewer only sees the actions that need a decision.
+
+The predicate runs again when the agent resumes, so it must return the same result for the same call. If it returns `False` on resume, the tool runs and the reviewer's answer is ignored, even a `reject`. In batched mode, if the result changes for only some of the calls, the middleware raises a `ValueError`.
 :::
 
 :::js
-Conditional interrupts are currently available in Python only.
+<Note>
+Conditional interrupts require `langchain>=1.4.6`.
+</Note>
+
+```typescript
+import { createAgent, humanInTheLoopMiddleware } from "langchain";
+import type { ToolCallRequest } from "langchain";
+import { MemorySaver } from "@langchain/langgraph";
+
+// Pause writes to paths outside the workspace directory.
+const writesOutsideWorkspace = (request: ToolCallRequest) =>
+  !String(request.toolCall.args.path ?? "").startsWith("/workspace/");
+
+// Pause SQL that isn't a read-only SELECT.
+const isWriteQuery = (request: ToolCallRequest) =>
+  !String(request.toolCall.args.query ?? "")
+    .trimStart()
+    .toUpperCase()
+    .startsWith("SELECT");
+
+const agent = createAgent({
+  model: "gpt-5.5",
+  tools: [writeFile, executeSql, readData],
+  middleware: [
+    humanInTheLoopMiddleware({
+      interruptOn: {
+        write_file: {
+          allowedDecisions: ["approve", "edit", "reject"],
+          when: writesOutsideWorkspace,
+        },
+        execute_sql: {
+          allowedDecisions: ["approve", "reject"],
+          when: isWriteQuery,
+        },
+      },
+    }),
+  ],
+  checkpointer: new MemorySaver(),
+});
+```
+
+When the `when` predicate returns `false`, the call runs without interrupting. When it returns `true`, or when you omit `when`, the call pauses as usual. Calls that evaluate to `false` are never added to the interrupt batch, so a reviewer only sees the actions that need a decision.
+:::
+
+:::python
+
+## Set the interrupt mode
+
+The middleware pauses in one of two modes, set with `interrupt_mode`:
+
+- **`"per_call"`**: Each tool call that needs review raises its own interrupt as it starts. Each interrupt carries a [`response_schema`](/oss/langgraph/interrupts#define-an-interrupt-response-schema) of the answers it accepts. You answer it with one decision, keyed by the interrupt ID.
+- **`"batched"`** (default): One interrupt per model turn lists every call that needs review. You answer with a list of decisions in the same order.
+
+Use per-call mode for new agents. LangChain plans to make it the default in the next major release. For a side-by-side comparison and the problems per-call mode solves, see the [human-in-the-loop overview](/oss/concepts/human-in-the-loop).
+
+## Pause once per tool call
+
+<Note>
+Per-call interrupts require `langchain>=1.4.6`.
+</Note>
+
+Set `interrupt_mode="per_call"` to review each tool call separately. This agent gates `write_file` and `execute_sql`, and lets `read_data` run without review:
+
+<HitlPerCallAgentPy />
+
+### Read the interrupts
+
+When the model calls all three tools in one turn, `read_data` runs right away. The two gated calls each raise an interrupt:
+
+<HitlPerCallInvokePy />
+
+Each interrupt value has `type: "tool_approval"`, so a client can tell it apart from other interrupts. The `tool_call_id`, `name`, and `args` fields identify the call under review.
+
+### Read the response schema
+
+Each interrupt also carries a `response_schema`: a JSON schema with one branch per decision the tool allows, matched on the decision's `type`. The `execute_sql` schema has `approve` and `reject` branches. The `write_file` schema has all four. For a tool that allows one decision, `response_schema` is that decision's schema alone, with no `oneOf`.
+
+Each tab shows one `write_file` branch, an answer that matches it, and the @[ToolMessage] the model receives. For readability, the branches below expand `$ref` definitions in place and omit the `title` and `description` fields.
+
+<Tabs>
+<Tab title="approve">
+Run the call as proposed.
+
+```json Schema branch
+{"properties": {"type": {"const": "approve", "type": "string"}}, "required": ["type"], "type": "object"}
+```
+
+```python Answer
+{"type": "approve"}
+```
+
+```text Model receives
+Wrote 14 characters to orders_archive.csv
+```
+
+</Tab>
+<Tab title="edit">
+Run the call with new arguments. `edited_action.name` must stay `write_file`, and `edited_action.args` must match `write_file`'s argument schema. Arguments the tool does not declare are ignored, as they are when the model sends them.
+
+```json Schema branch
+{
+  "properties": {
+    "type": {"const": "edit", "type": "string"},
+    "edited_action": {
+      "properties": {
+        "name": {"const": "write_file", "type": "string"},
+        "args": {
+          "properties": {
+            "path": {"type": "string"},
+            "content": {"type": "string"}
+          },
+          "required": ["path", "content"],
+          "type": "object"
+        }
+      },
+      "required": ["name", "args"],
+      "type": "object"
+    }
+  },
+  "required": ["type", "edited_action"],
+  "type": "object"
+}
+```
+
+```python Answer
+{
+    "type": "edit",
+    "edited_action": {
+        "name": "write_file",
+        "args": {"path": "archive/orders_2024.csv", "content": "id,total\n1,20\n"},
+    },
+}
+```
+
+The model receives the tool's result after a note that a reviewer replaced the call. Set `edit_notice` on the middleware to change the note, or pass `None` to remove it.
+
+```text Model receives
+Note: a human reviewer replaced this tool call before it ran. The call recorded in your message is the one you produced, not the one that executed. This was intentional and authorized. Do not re-issue your original call. Executed instead: write_file with arguments {"path": "archive/orders_2024.csv", "content": "id,total\n1,20\n"}.
+
+Tool response:
+Wrote 14 characters to archive/orders_2024.csv
+```
+
+</Tab>
+<Tab title="reject">
+Skip the call. The `message` is optional and tells the model why.
+
+```json Schema branch
+{"properties": {"type": {"const": "reject", "type": "string"}, "message": {"type": "string"}}, "required": ["type"], "type": "object"}
+```
+
+```python Answer
+{"type": "reject", "message": "Write to the archive/ folder instead."}
+```
+
+```text Model receives (error status)
+User rejected the tool call for `write_file` with reason: Write to the archive/ folder instead.
+```
+
+</Tab>
+<Tab title="respond">
+Skip the call and answer in place of the tool. The `message` is required. The model receives it as a successful tool result, so use `reject` to deny a call.
+
+```json Schema branch
+{"properties": {"type": {"const": "respond", "type": "string"}, "message": {"type": "string"}}, "required": ["type", "message"], "type": "object"}
+```
+
+```python Answer
+{"type": "respond", "message": "Saved orders_archive.csv to the shared drive myself."}
+```
+
+```text Model receives
+Saved orders_archive.csv to the shared drive myself.
+```
+
+</Tab>
+</Tabs>
+
+### Resume each call by ID
+
+Answer each interrupt with one decision, keyed by its ID:
+
+<HitlPerCallResumePy />
+
+You can also answer interrupts one at a time. An interrupt you do not answer stays pending, and its tool runs once it gets an answer.
+
+<Warning>
+If one of several answers sent together is invalid, the tools for the others can run while their interrupts still show as pending. Answering them again runs those tools twice. Check answers against `response_schema` before you send them together, or send one at a time.
+</Warning>
+
+### Correct an invalid answer
+
+LangGraph checks each answer against the interrupt's `response_schema` before it saves the answer. An invalid answer raises a `ValidationError` and nothing is saved, so you can send a corrected answer to the same interrupt ID. Here, the edit leaves out `content`:
+
+<HitlPerCallInvalidPy />
+
+Each error names the field that failed, so you can show it to the reviewer. For a tool whose arguments are a raw JSON schema instead of a Pydantic model, `response_schema` shows the arguments, but LangGraph does not check edits against them.
+
+### Order middleware for per-call review
+
+In per-call mode, the review happens as the tool call starts, inside the tool-call middleware chain:
+
+- List `HumanInTheLoopMiddleware` before tool retry or error-handling middleware, such as @[ToolRetryMiddleware] and @[ToolErrorMiddleware], so it wraps them. Otherwise a retried call asks the reviewer again, and an invalid answer is retried or returned to the model as a tool error.
+- When the agent resumes, middleware listed before `HumanInTheLoopMiddleware` runs again up to the pause, so it must not have side effects before it calls its handler. The tool runs only after the answer.
+- A [`when` predicate](#conditional-interrupts) runs as each call starts, so the @[ToolCallRequest] it receives includes the tool.
+
 :::
 
 ## Responding to interrupts
 
 When you invoke the agent, it runs until it either completes or an interrupt is raised. An interrupt is triggered when a tool call matches the policy you configured in `interrupt_on`. With `version="v2"`, the result is a `GraphOutput` with an `interrupts` attribute containing the actions that require review. You can then present those actions to a reviewer and resume execution once decisions are provided.
+
+:::python
+The examples in this section and the decision types below use the default batched mode. For per-call mode, see [Pause once per tool call](#pause-once-per-tool-call).
+:::
 
 
 :::python
@@ -248,7 +506,7 @@ print(result.interrupts)  # [!code highlight]
 # >          'action_requests': [
 # >             {
 # >                'name': 'execute_sql',
-# >                'arguments': {'query': 'DELETE FROM records WHERE created_at < NOW() - INTERVAL \'30 days\';'},
+# >                'args': {'query': 'DELETE FROM records WHERE created_at < NOW() - INTERVAL \'30 days\';'},
 # >                'description': 'Tool execution pending approval\n\nTool: execute_sql\nArgs: {...}'
 # >             }
 # >          ],
@@ -327,7 +585,7 @@ await agent.invoke(
 ### Decision types
 
 <Tabs>
-<Tab title="✅ approve">
+<Tab title="approve">
 Use `approve` to approve the tool call as-is and execute it without changes.
 
 :::python
@@ -371,7 +629,7 @@ await agent.invoke(
 ```
 :::
 </Tab>
-<Tab title="✏️ edit">
+<Tab title="edit">
     Use `edit` to modify the tool call before execution.
     Provide the edited action with the new tool name and arguments.
 
@@ -438,7 +696,7 @@ await agent.invoke(
 
 </Tab>
 
-<Tab title="❌ reject">
+<Tab title="reject">
     Use `reject` to deny the tool call and provide feedback instead of execution. The tool is not executed.
 
     :::python
@@ -492,10 +750,10 @@ The `message` is added to the conversation as feedback to help the agent underst
 
 </Tab>
 
-<Tab title="💬 respond">
+:::python
+<Tab title="respond">
     Use `respond` for "ask user" style tools where the tool's real implementation is the human's reply. The `message` content is returned directly as the tool result; the tool itself is not executed.
 
-    :::python
     ```python
     agent.invoke(
         Command(
@@ -516,33 +774,12 @@ The `message` is added to the conversation as feedback to help the agent underst
         version="v2",
     )
     ```
-    :::
-
-    :::js
-    ```typescript
-    await agent.invoke(
-        new Command({
-            // Decisions are provided as a list, one per action under review.
-            // The order of decisions must match the order of actions
-            // in the interrupt request.
-            resume: {
-                decisions: [
-                    {
-                        type: "respond",
-                        // The human's reply, returned directly as the tool result
-                        message: "Blue.",
-                    }
-                ]
-            }
-        }),
-        config  // Same thread ID to resume the paused conversation
-    );
-    ```
-    :::
 
 The `message` is returned to the agent as a successful `ToolMessage`. Use `respond` when the tool is intentionally a placeholder for human input, for example, an `ask_user` tool that prompts for clarification. Do not use `respond` to deny a proposed action, because it tells the model that the tool completed successfully.
 
 </Tab>
+:::
+
 </Tabs>
 
 ---
@@ -627,6 +864,10 @@ for message in stream.messages:  # [!code highlight]
     for token in message.text:
         print(token, end="", flush=True)
 ```
+
+In [per-call mode](#pause-once-per-tool-call), `stream.interrupts` holds one interrupt per gated tool call. Resume with a dict keyed by interrupt ID:
+
+<HitlPerCallStreamPy />
 :::
 
 :::js
@@ -674,7 +915,18 @@ The middleware defines an `after_model` hook that runs after the model generates
 2. The middleware inspects the response for tool calls.
 3. If any calls require human input, the middleware builds a @[HITLRequest] with `action_requests` and `review_configs` and calls @[interrupt].
 4. The agent waits for human decisions.
+:::python
 5. Based on the `HITLResponse` decisions, the middleware executes approved or edited calls, synthesizes @[ToolMessage]'s for rejected calls, returns human replies directly as @[ToolMessage]'s for `respond` decisions, and resumes execution.
+:::
+
+:::js
+5. Based on the `HITLResponse` decisions, the middleware executes approved or edited calls, synthesizes @[ToolMessage]'s for rejected calls, and resumes execution.
+:::
+
+:::python
+In [per-call mode](#pause-once-per-tool-call), the `after_model` hook does nothing. The middleware instead pauses each gated call as it runs, with one @[interrupt] per call, and runs the tool once that call's decision arrives.
+:::
+
 
 
 ## Custom HITL logic

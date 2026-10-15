@@ -1,4 +1,4 @@
 # Files
 
-- [Markdown Preprocessing Pipeline](preprocessing.md) - Ordered build-time transformations that turn authored Markdown and MDX into language-specific documentation artifacts. Covers scoped API references, CTA attribution, conditional content, route and snippet rewrites, footers, validation, and failure behavior.
-- [Language Versioning Strategy](versioning.md) - How source domains, emitted routes, and docs.json navigation combine to deliver Python and JavaScript documentation while retaining intentional unversioned products.
+- [Documentation Preprocessing](preprocessing.md) - Build-time transformations that turn authored Markdown and MDX into language-specific documentation artifacts. Covers scoped cross-references, CTA attribution, conditional content, output-time route rewrites, and strict cross-reference validation.
+- [Language Variants and Route Versioning](versioning.md) - Explains how source ownership, build-time language selection, and docs.json navigation and redirects produce the documentation route families. Covers shared and language-owned OSS, unversioned product exceptions, and Managed Deep Agents.
