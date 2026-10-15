@@ -128,9 +128,9 @@ try {
   // Pass tools to createAgent({ tools, ... }).
   // :remove-start:
   assert.deepEqual(tools.map((tool) => tool.name).sort(), [
-    "legacy__get_forecast",
-    "local__get_forecast",
-    "remote__get_forecast",
+    "legacy_get_forecast",
+    "local_get_forecast",
+    "remote_get_forecast",
   ]);
   for (const tool of tools) {
     assert.equal(await tool.invoke({ city: "Oslo" }), "Oslo: 18C and clear.");

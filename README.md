@@ -103,8 +103,8 @@ API reference is generated and deployed outside this repo. Browse [Python](https
 
 * `make dev` - Start development mode with file watching and live rebuild
 * `make build` - Build documentation to `./build` directory
-* `make broken-links` - Check for broken links in documentation
-* `make broken-links-with-anchors` - Check for broken links + check links with anchors
+* `make broken-links-with-anchors` - Check for broken links, including anchors (the check CI runs)
+* `make broken-links` - Check for broken links, without anchors
 * `make install` - Install all dependencies and link authoring skills
 * `make clean` - Remove build artifacts
 * `make test` - Run the test suite

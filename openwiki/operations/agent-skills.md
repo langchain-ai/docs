@@ -1,11 +1,8 @@
 ---
 type: operations guide
-title: Agent authoring skills
-description: Use the repository's task-specific skill catalog without duplicating global rules, distribute the canonical tree to supported agents, and validate skill and tooling changes.
+title: Agent Authoring Skills
+description: Use the repository's task-specific skill catalog without duplicating global rules, distribute the canonical tree to supported agents, and follow source-verified, generated-file-safe documentation workflows.
 tags: [agents, skills, documentation, automation, validation]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-24T08:22:38.580Z
 sources:
   - id: openwiki-source-18732c72f962c06354cb62db
     resource: repo://.agents/skills/add-docs-page/SKILL.md
@@ -43,10 +40,13 @@ sources:
     resource: repo://src/oss/deepagents/skills.mdx
   - id: openwiki-source-1695beda93a0ca504f038424
     resource: repo://tests/unit_tests/test_skills.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-24T08:22:38.580Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-15T08:21:56.046Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-15T08:21:56.046Z
 ---
 
-# Agent authoring skills
+# Agent Authoring Skills
 
 Repository skills are conditional, task-specific procedures. The tracked `.agents/skills/` tree is the canonical source; repository-wide rules remain in `AGENTS.md`. This boundary keeps global constraints always available while agents load a detailed procedure only when a task calls for it.
 
@@ -111,7 +111,30 @@ Invoke a skill when the request matches its procedure. Do not use a broad editin
 
 ### Author, restructure, and review docs safely
 
-For a named PR, `docs-edit` requires work on its head branch. It checks that the tree is clean, verifies `HEAD` and its upstream, uses `gh pr checkout` for a cross-repository PR, and prefers `gh pr diff` to a local comparison that may include unrelated commits. Before handoff, inspect related pages, lint changed prose, and run link checks when links, page names, or navigation changed.
+For a named PR, `docs-edit` requires work on its actual head branch, not a similarly named local branch. Start from a clean tree, obtain the live PR metadata, check that `HEAD` matches `headRefOid`, and confirm that the branch has an upstream. Use `gh pr checkout <n>` for a cross-repository PR so its fork remote is configured and push access can be confirmed. Prefer `gh pr diff <n>` to a local comparison that may include unrelated commits. Before handoff, inspect related pages, verify factual claims against the implementation source that owns them rather than sibling documentation, lint changed prose, and run link checks when links, page names, or navigation changed.
+
+```mermaid
+flowchart TD
+  Request["Named documentation PR"] --> Clean{"Working tree clean"}
+  Clean -- "No" --> Stop["Stop and ask"]
+  Clean -- "Yes" --> Metadata["Read live PR metadata"]
+  Metadata --> Fork{"Cross repository PR"}
+  Fork -- "Yes" --> ForkCheckout["Run gh pr checkout"]
+  Fork -- "No" --> HeadCheckout["Check out tracked head branch"]
+  ForkCheckout --> Confirm["Confirm HEAD and upstream"]
+  HeadCheckout --> Confirm
+  Confirm --> Diff["Inspect gh pr diff"]
+  Diff --> Verify["Verify claims against owning source"]
+  Verify --> Generated{"Generated file involved"}
+  Generated -- "Yes" --> Upstream["Fix generator or upstream source"]
+  Generated -- "No" --> Validate["Lint prose and check affected links"]
+  Upstream --> Validate
+  Validate --> Report["Report branch related pages and gaps"]
+```
+
+This workflow keeps edits on the intended review branch, uses implementation evidence for factual prose, and routes generated-output defects to their owner.
+
+`docs-edit` also identifies generated outputs that must not be edited: weekly and self-hosted changelogs, LangSmith and Agent Server OpenAPI files, the Deep Agents evaluation-category matrix and MDA OAuth catalog snippets, and `build/`. Fix their generator or upstream source instead; generated edits can be overwritten, and changelog output may already have been distributed through RSS.
 
 `docs-restructure` is for the prior question: whether content belongs on a page at all. Build and report a page-family duplication map before editing, choose one owner per topic, replace duplicated material with a concise pointer, and resolve conflicting facts against implementation source. It hands navigation, redirects, and anchor mechanics to `add-docs-page`.
 
