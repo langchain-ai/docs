@@ -51,9 +51,13 @@ For API key authentication, add `AZURE_FOUNDRY_API_KEY` and `AZURE_FOUNDRY_RESOU
 
 To use an Entra ID service principal instead:
 
-1. Create an app registration in Microsoft Entra ID, or use an existing service principal. Record its directory (tenant) ID and application (client) ID.
-1. Create a client secret for the app registration. Copy the secret **value**, not the secret ID.
-1. Assign the service principal the `Cognitive Services OpenAI User` role, scoped to the Azure resource.
+1. Create a Foundry resource and deploy a chat model, or use an existing resource and deployment. Record the resource name and deployment name separately. Use the deployment name as the `model` value in requests.
+1. In the Azure portal, go to **Microsoft Entra ID > App registrations > New registration**, or select an existing app registration. No redirect URI is needed. From the app's overview, record the directory (tenant) ID and application (client) ID.
+1. Go to **Certificates & secrets > New client secret** for the app registration. Copy the secret **value**, not the secret ID, before leaving the page. The value is shown only once.
+1. Open the **Foundry resource**, not a project inside it. Go to **Access control (IAM) > Add > Add role assignment**. Assign the app's service principal the `Cognitive Services OpenAI User` role at the resource scope.
+
+   A role assigned on a project does not grant access to the parent resource. The generic `Contributor`, `Owner`, and `Reader` roles do not grant permission to call models. Allow 5–10 minutes for a new role assignment to take effect.
+
 1. In LangSmith, select the workspace that routes Azure requests. Go to **Settings > Integrations > Provider Secrets** and add each of the following as a custom secret:
 
    | Secret name | Value |
@@ -70,6 +74,21 @@ To use an Entra ID service principal instead:
 All three Entra ID secrets are required. If any are missing, the gateway returns a `400` error identifying the missing secrets. The gateway obtains and refreshes Azure access tokens automatically. Users continue to authenticate to the gateway with their LangSmith API key, not the Azure credentials.
 
 This method uses a client secret. It does not use managed identity or workload identity federation.
+
+#### Verify Azure access
+
+Before testing through the gateway, verify that the service principal can call Azure directly. Use the Azure CLI to sign in as the service principal and obtain an access token for `https://cognitiveservices.azure.com`. Send that token as `Authorization: Bearer <token>` to your resource's `/openai/v1/chat/completions` endpoint, with the deployment name as `model`.
+
+After completing the gateway access steps below, send the same chat request through the gateway at `/azure/v1/chat/completions`. Authenticate with your LangSmith API key instead of the Azure token. A successful response confirms that the workspace secrets and Azure permissions work together.
+
+The gateway also supports `/azure/v1/responses` and `/azure/v1/messages`. The messages endpoint requires a compatible model deployment. Do not use the older `/openai/deployments/<name>/chat/completions?api-version=...` URL format as a gateway path.
+
+#### Troubleshoot Azure authentication
+
+- **Missing model permissions:** If Azure reports a missing `Microsoft.CognitiveServices/accounts/OpenAI/deployments/chat/completions/action` permission, check the role assignment on the Foundry resource. An assignment on a project is not sufficient.
+- **New role assignment:** If Azure reports `Principal does not have access to API/Operation.`, allow 5–10 minutes for permissions to propagate, then retry the direct Azure call.
+- **Direct Azure call succeeds, but gateway call fails:** Check the secrets in the workspace associated with your LangSmith API key. Confirm the resource name is not a URL and `AZURE_FOUNDRY_API_KEY` is absent.
+- **Deployment listing returns 404:** For `/azure/deployments`, use `api-version=2023-03-15-preview`. Newer API versions can omit this endpoint.
 
 ## 2. Configure gateway access for users
 
