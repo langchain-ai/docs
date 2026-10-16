@@ -156,23 +156,17 @@ export const schedule = defineSchedule({
 
 ## Deliver results to Slack
 
-:::python
-Set `deliver_to` to post the final response through a configured [Slack channel](/langsmith/managed-deep-agents-channels-slack).
-:::
-
-:::js
-Set `deliverTo` to post the final response through a configured [Slack channel](/langsmith/managed-deep-agents-channels-slack).
-:::
-
-Use a Slack channel ID because scheduled runs have no originating thread.
+Set `delivery` to post the final response through a configured [Slack channel](/langsmith/managed-deep-agents-channels-slack). A schedule in `schedules/` has no originating conversation, so `delivery` names a channel from `channels/` and a Slack channel ID.
 
 <Note>
+`delivery` requires `managed-deepagents` 0.9.3 or later.
+
 :::python
-Schedule delivery requires `managed-deepagents>=0.4.0`.
+Earlier versions use `deliver_to`, which still works but is deprecated.
 :::
 
 :::js
-Schedule delivery requires `managed-deepagents` version 0.4.0 or later.
+Earlier versions use `deliverTo`, which still works but is deprecated.
 :::
 </Note>
 
@@ -183,15 +177,15 @@ from managed_deepagents import define_schedule
 schedule = define_schedule(
     cron="0 9 * * 1",
     prompt="Write a short Monday greeting.",
-    deliver_to={
+    delivery={
         "channel": "slack",
-        "to": {
-            "type": "provider_conversation",
-            "conversation_id": "C0123456789",
-        },
+        "type": "provider_conversation",
+        "conversation_id": "C0123456789",
     },
 )
 ```
+
+To reply in a Slack thread, set `"type": "provider_thread"` and add `thread_id`.
 :::
 
 :::js
@@ -201,15 +195,15 @@ import { defineSchedule } from "managed-deepagents";
 export const schedule = defineSchedule({
   cron: "0 9 * * 1",
   prompt: "Write a short Monday greeting.",
-  deliverTo: {
+  delivery: {
     channel: "slack",
-    to: {
-      type: "provider_conversation",
-      conversationId: "C0123456789",
-    },
+    type: "provider_conversation",
+    conversationId: "C0123456789",
   },
 });
 ```
+
+To reply in a Slack thread, set `type: "provider_thread"` and add `threadId`.
 :::
 
 The Slack bot must have access to the destination.
@@ -232,13 +226,19 @@ Schedule declarations are extracted at compile time. Keep schedule configuration
 
 ## Test schedules locally
 
-`mda dev` compiles `schedules/` and lists each schedule in its startup banner, but it does not provision them. Schedules run only on a deployment.
+:::python
+`mda dev` creates a cron job on the local server for each schedule in `schedules/`, so schedules fire locally as they do on a deployment. When `schedules/` changes, `mda dev` deletes and recreates them. Pass `--no-schedules` to stop schedules from firing while you iterate.
 
-<Warning>
-Schedules never fire under `mda dev`. The local server reports no error, so a schedule that is listed at startup is still inactive.
-</Warning>
+<Note>
+Local schedules require `managed-deepagents` 0.9.3 or later. Earlier versions list schedules at startup but do not run them.
+</Note>
+:::
+
+:::js
+The TypeScript dev server does not run cron jobs. `mda dev` lists each schedule at startup and warns that schedules are not active locally.
 
 To test the agent behavior a schedule triggers, send the schedule's `prompt` or `input` to the agent directly in local Studio. To test the schedule itself, deploy the project to a development deployment.
+:::
 
 ## Deploy schedules
 
@@ -263,11 +263,11 @@ The agent reaches this API only through tools that you write. Expose the calls t
 When a tool creates a schedule during a [channel](/langsmith/managed-deep-agents-channels) run, such as a Slack conversation, the schedule inherits that channel. Each run posts its final answer back to it. A new thread posts a new Slack message, and the current thread replies in the existing Slack thread.
 
 :::python
-`new_thread` decides which of the two a schedule uses.
+`new_thread` decides which of the two a schedule uses. To post somewhere else in that channel, such as the owner's direct message, set [`delivery`](#create-options).
 :::
 
 :::js
-`newThread` decides which of the two a schedule uses.
+`newThread` decides which of the two a schedule uses. To post somewhere else in that channel, such as the owner's direct message, set [`delivery`](#create-options).
 
 Managed Deep Agents sets `runtime.schedules` on every tool and middleware runtime. Its TypeScript type is optional only because annotated tools must still match LangChain's native runtime type, so the examples use `runtime.schedules!`.
 :::
@@ -427,6 +427,32 @@ A one-time schedule defaults to the current thread, so its run continues the con
 </ParamField>
 :::
 
+:::python
+<ParamField path="delivery" type="dict | False">
+  Where each run posts its final answer, in the channel of the run that creates the schedule. Requires `managed-deepagents` 0.9.3 or later.
+
+  - `{"type": "current_thread"}`: Reply in the thread where the schedule was created.
+  - `{"type": "current_conversation"}`: Post a new message in that conversation.
+  - `{"type": "direct_message"}`: Post in the owner's direct message with the agent. Requires a user owner.
+  - `False`: Post nothing.
+
+  Without `delivery`, a `cron` schedule posts to the current conversation and an `at` schedule replies in the current thread. `current_thread` runs continue the current thread, and the other destinations start a new thread, so do not pass a conflicting `new_thread`. Any destination other than `False` requires a channel run.
+</ParamField>
+:::
+
+:::js
+<ParamField path="delivery" type="object | false">
+  Where each run posts its final answer, in the channel of the run that creates the schedule. Requires `managed-deepagents` 0.9.3 or later.
+
+  - `{ type: "current_thread" }`: Reply in the thread where the schedule was created.
+  - `{ type: "current_conversation" }`: Post a new message in that conversation.
+  - `{ type: "direct_message" }`: Post in the owner's direct message with the agent. Requires a user owner.
+  - `false`: Post nothing.
+
+  Without `delivery`, a `cron` schedule posts to the current conversation and an `at` schedule replies in the current thread. `current_thread` runs continue the current thread, and the other destinations start a new thread, so do not pass a conflicting `newThread`. Any destination other than `false` requires a channel run.
+</ParamField>
+:::
+
 <ParamField path="paused" type="boolean" default="false">
   Create the schedule without running it.
 </ParamField>
@@ -462,12 +488,27 @@ await runtime.schedules!.delete(item.id, { owner });
 :::
 
 :::python
-`update` accepts `cron`, `at`, `timezone`, `prompt`, `input`, `paused`, and `metadata`. The channel and the thread choice are fixed at creation. `list` hides expired one-time schedules unless you pass `include_expired=True`. For the agent owner, `list` and `get` also return the schedules in `schedules/`, which you change in code.
+`update` accepts `cron`, `at`, `timezone`, `prompt`, `input`, `paused`, and `metadata`. The channel, the delivery, and the thread choice are fixed at creation. `list` hides expired one-time schedules unless you pass `include_expired=True`. For the agent owner, `list` and `get` also return the schedules in `schedules/`, which you change in code.
 :::
 
 :::js
-`update` accepts `cron`, `at`, `timezone`, `prompt`, `input`, `paused`, and `metadata`. The channel and the thread choice are fixed at creation. `list` hides expired one-time schedules unless you pass `includeExpired: true`. For the agent owner, `list` and `get` also return the schedules in `schedules/`, which you change in code.
+`update` accepts `cron`, `at`, `timezone`, `prompt`, `input`, `paused`, and `metadata`. The channel, the delivery, and the thread choice are fixed at creation. `list` hides expired one-time schedules unless you pass `includeExpired: true`. For the agent owner, `list` and `get` also return the schedules in `schedules/`, which you change in code.
 :::
+
+### Schedule limits
+
+Each owner can have at most 20 runtime schedules per agent. Paused schedules count. Expired one-time schedules and schedules in `schedules/` do not count. A create or update past the limit fails with `Schedule limit reached`.
+
+To change the limit, set these variables in the deployment environment:
+
+| Variable | Limit for |
+| --- | --- |
+| `MDA_MAX_AGENT_SCHEDULES` | Schedules owned by the agent |
+| `MDA_MAX_USER_SCHEDULES` | Schedules owned by each user |
+
+<Note>
+Schedule limits require `managed-deepagents` 0.9.3 or later.
+</Note>
 
 ## Troubleshoot schedules
 
@@ -484,7 +525,15 @@ await runtime.schedules!.delete(item.id, { owner });
 - `schedule is not static`: Replace computed values with literals or top-level literal constants.
 - `failed to create cron for schedule`: Open the deployment URL in LangSmith and confirm the deployed Agent Server is healthy.
 - `Invalid thread ID: must be a UUID (HTTP 422)`: A persistent schedule declares a thread ID that is not a UUID. Replace it with the UUID of an existing thread. See [Choose thread behavior](#choose-thread-behavior).
-- **A schedule does not run during local development**: `mda dev` does not provision schedules. See [Test schedules locally](#test-schedules-locally).
+- `Schedule limit reached`: The owner has reached the runtime schedule limit. Delete a schedule, or raise the limit. See [Schedule limits](#schedule-limits).
+
+:::python
+- **A schedule does not run during local development**: Confirm that you did not pass `--no-schedules` to `mda dev`. See [Test schedules locally](#test-schedules-locally).
+:::
+
+:::js
+- **A schedule does not run during local development**: The TypeScript dev server does not run schedules. See [Test schedules locally](#test-schedules-locally).
+:::
 
 ## Next steps
 
