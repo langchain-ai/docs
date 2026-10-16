@@ -41,7 +41,7 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 Task-specific procedures live in `.agents/skills/`, one directory per skill.
 Cursor, Codex, GitHub Copilot, Gemini CLI, OpenCode, and Deep Agents read that
 path directly. Claude Code reads `.claude/skills/` only, so run `make skills`
-once to link the tree.
+once to link the tree, and again in each new git worktree.
 
 | Skill | Use it for |
 |-------|-----------|

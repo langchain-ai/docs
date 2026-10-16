@@ -155,6 +155,14 @@ expects. Run the pipeline directly rather than working around the build:
 PYTHONPATH="$(pwd)" .venv/bin/python -m pipeline build
 ```
 
+A fresh git worktree has no `.venv`, and the same version check blocks
+`uv sync` from creating one. Point at the main checkout's interpreter instead;
+`PYTHONPATH` still loads the pipeline code from the worktree:
+
+```bash
+PYTHONPATH="$(pwd)" <main-checkout>/.venv/bin/python -m pipeline build
+```
+
 `make broken-links-with-anchors` depends on `build`, so it fails the same way.
 Its link-check half runs on its own once the build output exists:
 

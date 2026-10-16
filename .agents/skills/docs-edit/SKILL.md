@@ -20,9 +20,20 @@ git fetch origin <headRefName>
 git checkout <headRefName>      # tracks origin/<headRefName>
 ```
 
-Use plain `git checkout <branch>`. Do not use `git checkout -b`, `--no-track`,
-or a worktree: each produces a net-new branch, and committing there opens a
-second PR against someone else's work.
+Use plain `git checkout <branch>`. Do not use `git checkout -b` or `--no-track`:
+each produces a net-new branch, and committing there opens a second PR against
+someone else's work.
+
+A worktree on the PR's own branch is fine, and safer when other sessions share
+the main checkout. Pass the existing branch name, never `-b`:
+
+```bash
+git fetch origin <headRefName>
+git worktree add <dir> <headRefName>   # tracks origin/<headRefName>
+```
+
+This fails if the branch is already checked out in another worktree. Use that
+worktree instead of forcing a second one.
 
 A local branch whose name merely mentions the PR is not the same branch. Confirm
 that `git rev-parse HEAD` matches the `headRefOid` from `gh pr view` before
