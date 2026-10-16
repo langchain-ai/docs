@@ -6,7 +6,7 @@ from tools.releases import get_eligible_release, get_release_notes, list_watched
 
 agent = define_deep_agent(
     name="docs-release-watch",
-    model="anthropic:claude-sonnet-4-6",
+    model="langsmith:anthropic/claude-sonnet-4-6",
     tools=[
         list_watched_products,
         get_eligible_release,

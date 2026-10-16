@@ -46,7 +46,7 @@ docs-release-watch/
 ## Prerequisites
 
 - LangSmith workspace with Managed Deep Agents beta access
-- Anthropic API key for `anthropic:claude-sonnet-4-6`
+- LangSmith API key with Gateway access; model is `langsmith:anthropic/claude-sonnet-4-6` (Anthropic must be configured as a workspace Provider Secret)
 - GitHub **fine-grained** personal access token for `langchain-ai/docs` (the org blocks classic PATs). Needs Contents read/write and Pull requests read/write. Authorize SSO for `langchain-ai` if prompted.
 - Linear API key with **Read** and **Write** (or Create issues) on team `DOC`. New issues are assigned to the API key owner. Override with `LINEAR_ASSIGNEE_ID` if needed.
 
@@ -61,12 +61,13 @@ Fill `.env` (names only shown here):
 
 ```text
 LANGSMITH_API_KEY=
-ANTHROPIC_API_KEY=
 GITHUB_TOKEN=
 LINEAR_API_KEY=
 MDA_DEV_DOCS_GITHUB=
 MDA_DEV_DOCS_LINEAR=
 ```
+
+`ANTHROPIC_API_KEY` is not required while the model uses LLM Gateway.
 
 For `mda dev`, agent-owned connections resolve from `MDA_DEV_<SLUG>`:
 
