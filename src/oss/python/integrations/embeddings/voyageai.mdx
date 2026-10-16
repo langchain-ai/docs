@@ -1,6 +1,6 @@
 ---
 title: Voyage AI integration
-description: Integrate with the Voyage AI embedding model using LangChain Python.
+description: Integrate with the VoyageAIEmbeddings embedding model using LangChain Python.
 integration:
   name: Voyage AI
   pypi: langchain-voyageai
@@ -10,32 +10,33 @@ import LangchainCommunityUnmaintained from '/snippets/oss/langchain-community-un
 
 >[Voyage AI](https://www.voyageai.com/) provides cutting-edge embedding/vectorizations models.
 
-Let's load the Voyage AI Embedding class. (Install the LangChain partner package with `pip install langchain-voyageai`)
+Load the Voyage AI embedding class. (Install the LangChain partner package with `pip install langchain-voyageai`)
 
 ```python
 from langchain_voyageai import VoyageAIEmbeddings
 ```
 
-Voyage AI utilizes API keys to monitor usage and manage permissions. To obtain your key, create an account on our [homepage](https://www.voyageai.com). Then, create a VoyageEmbeddings model with your API key. You can use any of the following models: ([source](https://docs.voyageai.com/docs/embeddings)):
+Voyage AI uses API keys to monitor usage and manage permissions. To obtain your key, create an account on the [homepage](https://www.voyageai.com). Then, create a `VoyageAIEmbeddings` model with your API key. You can use any of the following models ([source](https://docs.voyageai.com/docs/embeddings)):
 
 - `voyage-4-large`
 - `voyage-4`
 - `voyage-4-lite`
 - `voyage-code-4`
+- `voyage-4-nano`
 - `voyage-context-4`
 - `voyage-context-3`
+- `voyage-finance-2`
+- `voyage-law-2`
+- `voyage-3-large`
 - `voyage-3.5`
 - `voyage-3.5-lite`
-- `voyage-3-large`
 - `voyage-3`
 - `voyage-3-lite`
-- `voyage-large-2`
-- `voyage-code-2`
-- `voyage-2`
-- `voyage-law-2`
-- `voyage-large-2-instruct`
-- `voyage-finance-2`
+- `voyage-code-3`
 - `voyage-multilingual-2`
+- `voyage-large-2-instruct`
+- `voyage-large-2`
+- `voyage-2`
 
 ```python
 embeddings = VoyageAIEmbeddings(
@@ -113,4 +114,57 @@ print(top1_retrieved_doc)
 
 ```text
 An LLMChain is a chain that composes basic LLM functionality. It consists of a PromptTemplate and a language model (either an LLM or chat model). It formats the prompt template using the input key values provided (and also memory key values, if available), passes the formatted string to LLM and returns the LLM output.
+```
+
+## Contextualized chunk embeddings
+
+Contextual models (`voyage-context-4` and `voyage-context-3`) embed each chunk with the context of the surrounding chunks from the same document, improving retrieval quality without a separate contextualization step. Call these models through the `voyageai` client's `contextualized_embed` method ([source](https://docs.voyageai.com/docs/contextualized-chunk-embeddings)):
+
+```bash
+pip install -qU voyageai
+```
+
+The `inputs` parameter is typed `Union[List[List[str]], List[str]]`, so both input formats are supported.
+
+Pass a `List[List[str]]` to embed pre-chunked documents. Each inner list is one document, and its chunks are embedded together as a group:
+
+```python
+import voyageai
+
+vo = voyageai.Client()  # uses the VOYAGE_API_KEY environment variable
+
+inputs = [
+    [
+        "This is the SEC filing on Leafy Inc.'s Q2 2024 performance.",
+        "The company's revenue increased by 15% compared to the previous quarter.",
+    ],
+    [
+        "This is the SEC filing on Elephant Ltd.'s Q2 2024 performance.",
+        "The company's revenue decreased by 2% compared to the previous quarter.",
+    ],
+]
+
+result = vo.contextualized_embed(
+    inputs=inputs,
+    model="voyage-context-4",
+    input_type="document",
+)
+
+# result.results holds one entry per document; .embeddings holds one vector per chunk
+document_embeddings = [res.embeddings for res in result.results]
+```
+
+Pass a `List[str]` to embed a flat list of texts, such as queries:
+
+```python
+result = vo.contextualized_embed(
+    inputs=[
+        "What was the revenue growth for Leafy Inc. in Q2 2024?",
+        "What changed in Elephant Ltd. between Q1 and Q2 2024?",
+    ],
+    model="voyage-context-4",
+    input_type="query",
+)
+
+query_embeddings = [res.embeddings[0] for res in result.results]
 ```
