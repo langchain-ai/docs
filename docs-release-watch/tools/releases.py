@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import quote
 
@@ -116,7 +116,7 @@ async def get_eligible_release(product: str = "openwiki", min_age_days: int = 7)
             }
         )
 
-    cutoff = datetime.now(timezone.utc) - timedelta(days=min_age_days)
+    cutoff = datetime.now(UTC) - timedelta(days=min_age_days)
     eligible: list[dict[str, Any]] = []
     for release in releases:
         if release.get("draft") or release.get("prerelease"):

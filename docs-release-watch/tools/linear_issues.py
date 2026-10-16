@@ -32,7 +32,9 @@ def _normalize_api_key(raw: str) -> str:
     return key
 
 
-async def _linear_graphql(query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
+async def _linear_graphql(
+    query: str, variables: dict[str, Any] | None = None
+) -> dict[str, Any]:
     token = _normalize_api_key(await linear_api_key())
     async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(
@@ -49,9 +51,7 @@ async def _linear_graphql(query: str, variables: dict[str, Any] | None = None) -
         payload = {"raw": response.text[:500]}
 
     if response.status_code >= 400:
-        raise RuntimeError(
-            f"Linear HTTP {response.status_code}: {payload}"
-        )
+        raise RuntimeError(f"Linear HTTP {response.status_code}: {payload}")
     if payload.get("errors"):
         raise RuntimeError(f"Linear GraphQL error: {payload['errors']}")
     data = payload.get("data")
@@ -108,9 +108,7 @@ async def _resolve_assignee() -> dict[str, str]:
             "email": str(user.get("email") or ""),
         }
 
-    data = await _linear_graphql(
-        "{ viewer { id name displayName email } }"
-    )
+    data = await _linear_graphql("{ viewer { id name displayName email } }")
     viewer = data.get("viewer") or {}
     if not viewer.get("id"):
         raise RuntimeError("Could not resolve Linear viewer for issue assignment.")
@@ -190,7 +188,8 @@ async def create_linear_issue(
             "identifier": issue["identifier"],
             "title": issue["title"],
             "url": issue["url"],
-            "assignee": issue.get("assignee") or {
+            "assignee": issue.get("assignee")
+            or {
                 "id": assignee["id"],
                 "name": assignee["name"],
             },

@@ -1,8 +1,11 @@
 from managed_deepagents import define_deep_agent
-
 from tools.github_prs import create_draft_docs_pr
 from tools.linear_issues import create_linear_issue
-from tools.releases import get_eligible_release, get_release_notes, list_watched_products
+from tools.releases import (
+    get_eligible_release,
+    get_release_notes,
+    list_watched_products,
+)
 
 agent = define_deep_agent(
     name="docs-release-watch",

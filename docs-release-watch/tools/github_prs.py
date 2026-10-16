@@ -77,12 +77,16 @@ async def create_draft_docs_pr(
         raise ValueError(f"files_json must be valid JSON: {exc}") from exc
 
     if not isinstance(files, list) or not files:
-        raise ValueError("files_json must be a non-empty JSON array of {path, content}.")
+        raise ValueError(
+            "files_json must be a non-empty JSON array of {path, content}."
+        )
 
     normalized: list[dict[str, str]] = []
     for item in files:
         if not isinstance(item, dict) or "path" not in item or "content" not in item:
-            raise ValueError("Each file must be an object with path and content strings.")
+            raise ValueError(
+                "Each file must be an object with path and content strings."
+            )
         path = str(item["path"]).lstrip("/")
         if path.startswith("docs-release-watch/"):
             raise ValueError("Do not modify the agent project from a docs PR.")
@@ -92,9 +96,13 @@ async def create_draft_docs_pr(
     if not branch.startswith("docs/"):
         branch = f"docs/{_slugify(branch)}"
 
-    ref = await _gh("GET", f"/repos/{DOCS_REPO}/git/ref/heads/{base_branch}", token=token)
+    ref = await _gh(
+        "GET", f"/repos/{DOCS_REPO}/git/ref/heads/{base_branch}", token=token
+    )
     base_sha = ref["object"]["sha"]
-    base_commit = await _gh("GET", f"/repos/{DOCS_REPO}/git/commits/{base_sha}", token=token)
+    base_commit = await _gh(
+        "GET", f"/repos/{DOCS_REPO}/git/commits/{base_sha}", token=token
+    )
     base_tree_sha = base_commit["tree"]["sha"]
 
     tree_items: list[dict[str, str]] = []
