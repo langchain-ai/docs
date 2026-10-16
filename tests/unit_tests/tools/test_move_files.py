@@ -1,6 +1,8 @@
 """Unit tests for pipeline.tools.move_files module."""
 
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -742,6 +744,49 @@ class TestMoveFileWithLinkUpdates:
             # Log file should be created
             log_path = temp_dir / "link_changes.jsonl"
             assert log_path.exists()
+
+    @pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+    @pytest.mark.parametrize("layout", ["sibling", "nested"])
+    def test_move_file_from_git_worktree(
+        self, layout: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test auto-detected git root in a real worktree rewrites that worktree."""
+
+        def git(*args: str, cwd: Path) -> None:
+            subprocess.run(  # noqa: S603
+                ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args],  # noqa: S607
+                cwd=cwd,
+                check=True,
+                capture_output=True,
+            )
+
+        main = tmp_path / "main"
+        (main / "src").mkdir(parents=True)
+        (main / "src/page1.md").write_text("See [page 2](page2.md).", encoding="utf-8")
+        (main / "src/page2.md").write_text("# Page 2", encoding="utf-8")
+        git("init", "-q", cwd=main)
+        git("add", ".", cwd=main)
+        git("commit", "-q", "-m", "init", cwd=main)
+
+        worktree = (
+            tmp_path / "wt" if layout == "sibling" else main / ".worktrees" / "wt"
+        )
+        git("worktree", "add", "-q", "--detach", str(worktree), cwd=main)
+        monkeypatch.chdir(worktree / "src")
+
+        changes = move_file_with_link_updates(Path("page2.md"), Path("moved/page2.md"))
+
+        assert changes == [("page2.md", "moved/page2.md")]
+        assert (worktree / "src/moved/page2.md").exists()
+        page1 = (worktree / "src/page1.md").read_text(encoding="utf-8")
+        assert page1 == "See [page 2](moved/page2.md)."
+        assert (worktree / "link_changes.jsonl").exists()
+        # The main checkout is untouched.
+        assert (main / "src/page2.md").exists()
+        assert (main / "src/page1.md").read_text(encoding="utf-8") == (
+            "See [page 2](page2.md)."
+        )
+        assert not (main / "link_changes.jsonl").exists()
 
     def test_move_file_invalid_docs_root(self) -> None:
         """Test RuntimeError when docs root doesn't exist."""
