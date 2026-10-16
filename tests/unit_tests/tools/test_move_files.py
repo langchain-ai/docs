@@ -38,6 +38,27 @@ class TestFindGitRoot:
             result = _find_git_root(temp_dir / "subdir")
             assert result == temp_dir
 
+    def test_find_git_root_worktree(self) -> None:
+        """Test finding git root when .git is a file, as in a worktree."""
+        files: list[File] = [
+            {"path": ".git", "content": "gitdir: /repo/.git/worktrees/wt\n"},
+            {"path": "subdir/file.md", "content": "# Test"},
+        ]
+        with temp_directory(files) as temp_dir:
+            result = _find_git_root(temp_dir / "subdir")
+            assert result == temp_dir
+
+    def test_find_git_root_worktree_inside_checkout(self) -> None:
+        """Test a worktree nested in a checkout resolves to the worktree."""
+        files: list[File] = [
+            {"path": ".git/config", "content": "[core]\n"},
+            {"path": ".worktrees/wt/.git", "content": "gitdir: ../../.git\n"},
+            {"path": ".worktrees/wt/src/file.md", "content": "# Test"},
+        ]
+        with temp_directory(files) as temp_dir:
+            result = _find_git_root(temp_dir / ".worktrees/wt/src")
+            assert result == temp_dir / ".worktrees/wt"
+
     def test_find_git_root_not_found(self) -> None:
         """Test RuntimeError when no .git directory is found."""
         files: list[File] = [{"path": "file.md", "content": "# Test"}]

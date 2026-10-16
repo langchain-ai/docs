@@ -31,6 +31,9 @@ logger = logging.getLogger(__name__)
 def _find_git_root(start: Path) -> Path:
     """Return the repository root - the closest ancestor containing `.git`.
 
+    `.git` is a directory in a regular checkout and a file in a worktree or
+    submodule, so either form marks the root.
+
     Args:
         start: A path *inside* the repository.
 
@@ -38,11 +41,11 @@ def _find_git_root(start: Path) -> Path:
         The absolute path to the repo's root directory.
 
     Raises:
-        RuntimeError: If no `.git` directory is found while traversing up the
+        RuntimeError: If no `.git` entry is found while traversing up the
             directory tree.
     """
     for candidate in (start, *start.parents):
-        if (candidate / ".git").is_dir():
+        if (candidate / ".git").exists():
             return candidate
     msg = f"Could not locate Git repository root from {start}."
     raise RuntimeError(msg)
