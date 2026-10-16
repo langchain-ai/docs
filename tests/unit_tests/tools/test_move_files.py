@@ -1,21 +1,191 @@
 """Unit tests for pipeline.tools.move_files module."""
 
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from pipeline.tools.links import (
+    _build_route_map,
     _find_git_root,
     _rel_to_docs_root,
+    _rewrite_docs_json,
     _rewrite_links,
     _rewrite_links_in_notebook,
+    _rewrite_route_links,
+    _route_forms,
     _scan_and_rewrite,
     _update_internal_links_in_moved_file,
     _update_internal_links_in_moved_notebook,
     move_file_with_link_updates,
 )
 from tests.unit_tests.utils import File, temp_directory
+
+
+class TestRouteForms:
+    """Tests for _route_forms function."""
+
+    def test_plain_page(self) -> None:
+        """Test a LangSmith page is reached by its path alone."""
+        assert _route_forms(Path("langsmith/page.mdx")) == {
+            "unversioned": "/langsmith/page"
+        }
+
+    def test_shared_oss_page(self) -> None:
+        """Test a shared OSS page is reached unversioned and per language."""
+        assert _route_forms(Path("oss/langchain/agents.mdx")) == {
+            "unversioned": "/oss/langchain/agents",
+            "python": "/oss/python/langchain/agents",
+            "javascript": "/oss/javascript/langchain/agents",
+        }
+
+    def test_language_specific_oss_page(self) -> None:
+        """Test a language-specific OSS page keeps its own language only."""
+        assert _route_forms(Path("oss/python/integrations/chat/openai.mdx")) == {
+            "python": "/oss/python/integrations/chat/openai",
+            "unversioned": "/oss/integrations/chat/openai",
+        }
+
+    @pytest.mark.parametrize(
+        "rel_path", ["oss/deepagents/code/overview.mdx", "oss/openwiki/index.mdx"]
+    )
+    def test_unversioned_oss_product(self, rel_path: str) -> None:
+        """Test Deep Agents Code and OpenWiki pages have no language routes."""
+        assert set(_route_forms(Path(rel_path))) == {"unversioned"}
+
+    def test_managed_deep_agents_page(self) -> None:
+        """Test a Managed Deep Agents page is reached by its language routes."""
+        assert _route_forms(Path("langsmith/managed-deep-agents-cli.mdx")) == {
+            "unversioned": "/langsmith/managed-deep-agents-cli",
+            "python": "/langsmith/python/managed-deep-agents-cli",
+            "javascript": "/langsmith/javascript/managed-deep-agents-cli",
+        }
+
+
+class TestBuildRouteMap:
+    """Tests for _build_route_map function."""
+
+    def test_shared_oss_page_keeps_each_form(self) -> None:
+        """Test each link form maps to the same form at the destination."""
+        with temp_directory([]) as temp_dir:
+            route_map = _build_route_map(
+                Path("oss/langchain/old.mdx"), Path("oss/langchain/new.mdx"), temp_dir
+            )
+        assert route_map == {
+            "/oss/langchain/old": "/oss/langchain/new",
+            "/oss/python/langchain/old": "/oss/python/langchain/new",
+            "/oss/javascript/langchain/old": "/oss/javascript/langchain/new",
+        }
+
+    def test_unversioned_link_with_counterpart_is_left(self) -> None:
+        """Test an unversioned link that also reaches the other language is skipped."""
+        files: list[File] = [
+            {"path": "oss/javascript/integrations/chat/openai.mdx", "content": ""}
+        ]
+        with temp_directory(files) as temp_dir:
+            route_map = _build_route_map(
+                Path("oss/python/integrations/chat/openai.mdx"),
+                Path("oss/python/integrations/chat/openai-new.mdx"),
+                temp_dir,
+            )
+        assert route_map == {
+            "/oss/python/integrations/chat/openai": (
+                "/oss/python/integrations/chat/openai-new"
+            )
+        }
+
+    def test_unversioned_link_without_counterpart_is_rewritten(self) -> None:
+        """Test an unversioned link that reaches only this page is rewritten."""
+        with temp_directory([]) as temp_dir:
+            route_map = _build_route_map(
+                Path("oss/python/integrations/chat/only.mdx"),
+                Path("oss/python/integrations/chat/only-new.mdx"),
+                temp_dir,
+            )
+        assert route_map["/oss/integrations/chat/only"] == (
+            "/oss/integrations/chat/only-new"
+        )
+
+    def test_form_missing_at_destination_is_left(self) -> None:
+        """Test a JavaScript link is skipped when the page moves into Python."""
+        with temp_directory([]) as temp_dir:
+            route_map = _build_route_map(
+                Path("oss/langchain/page.mdx"),
+                Path("oss/python/langchain/page.mdx"),
+                temp_dir,
+            )
+        assert "/oss/javascript/langchain/page" not in route_map
+
+    def test_language_form_maps_to_plain_destination(self) -> None:
+        """Test language links collapse to the path when the destination has none."""
+        with temp_directory([]) as temp_dir:
+            route_map = _build_route_map(
+                Path("langsmith/managed-deep-agents-old.mdx"),
+                Path("langsmith/old.mdx"),
+                temp_dir,
+            )
+        assert route_map["/langsmith/python/managed-deep-agents-old"] == (
+            "/langsmith/old"
+        )
+
+
+_ROUTE_MAP: dict[str, str] = {"/langsmith/old": "/langsmith/new"}
+
+
+class TestRewriteRouteLinks:
+    """Tests for _rewrite_route_links function."""
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("[a](/langsmith/old)", "[a](/langsmith/new)"),
+            ("[a](/langsmith/old#step-2)", "[a](/langsmith/new#step-2)"),
+            ('[a](/langsmith/old "Title")', '[a](/langsmith/new "Title")'),
+            ("[a](/langsmith/old/)", "[a](/langsmith/new/)"),
+            ('<Card href="/langsmith/old">', '<Card href="/langsmith/new">'),
+            ("[a](/langsmith/old-other)", "[a](/langsmith/old-other)"),
+            ("[a](/langsmith/old/child)", "[a](/langsmith/old/child)"),
+            ("Use /langsmith/old in prose.", "Use /langsmith/old in prose."),
+        ],
+    )
+    def test_rewrite(self, text: str, expected: str) -> None:
+        """Test only exact route matches are rewritten, keeping the rest."""
+        assert _rewrite_route_links(text, _ROUTE_MAP)[0] == expected
+
+    def test_index_page_by_folder_route(self) -> None:
+        """Test a link to an index page by its folder route is rewritten."""
+        route_map = {"/oss/guide/index": "/oss/handbook/index"}
+        text, changes = _rewrite_route_links("[a](/oss/guide)", route_map)
+        assert text == "[a](/oss/handbook)"
+        assert changes == [("/oss/guide", "/oss/handbook")]
+
+
+class TestRewriteDocsJson:
+    """Tests for _rewrite_docs_json function."""
+
+    def test_rewrites_nav_and_destination_not_source(self) -> None:
+        """Test nav entries and redirect destinations move; sources stay."""
+        docs_json = {
+            "navigation": {"pages": ["langsmith/old", "langsmith/other"]},
+            "redirects": [
+                {"source": "/langsmith/old", "destination": "/langsmith/x"},
+                {"source": "/langsmith/legacy", "destination": "/langsmith/old#a"},
+            ],
+        }
+        files: list[File] = [
+            {"path": "docs.json", "content": json.dumps(docs_json, indent=2)}
+        ]
+        with temp_directory(files) as temp_dir:
+            changes = _rewrite_docs_json(
+                temp_dir, {"/langsmith/old": "/langsmith/new"}, dry_run=False
+            )
+            result = json.loads((temp_dir / "docs.json").read_text(encoding="utf-8"))
+        assert result["navigation"]["pages"] == ["langsmith/new", "langsmith/other"]
+        assert result["redirects"][0]["source"] == "/langsmith/old"
+        assert result["redirects"][1]["destination"] == "/langsmith/new#a"
+        assert len(changes) == 2
 
 
 class TestFindGitRoot:
@@ -37,6 +207,27 @@ class TestFindGitRoot:
         with temp_directory(files) as temp_dir:
             result = _find_git_root(temp_dir / "subdir")
             assert result == temp_dir
+
+    def test_find_git_root_worktree(self) -> None:
+        """Test finding git root when .git is a file, as in a worktree."""
+        files: list[File] = [
+            {"path": ".git", "content": "gitdir: /repo/.git/worktrees/wt\n"},
+            {"path": "subdir/file.md", "content": "# Test"},
+        ]
+        with temp_directory(files) as temp_dir:
+            result = _find_git_root(temp_dir / "subdir")
+            assert result == temp_dir
+
+    def test_find_git_root_worktree_inside_checkout(self) -> None:
+        """Test a worktree nested in a checkout resolves to the worktree."""
+        files: list[File] = [
+            {"path": ".git/config", "content": "[core]\n"},
+            {"path": ".worktrees/wt/.git", "content": "gitdir: ../../.git\n"},
+            {"path": ".worktrees/wt/src/file.md", "content": "# Test"},
+        ]
+        with temp_directory(files) as temp_dir:
+            result = _find_git_root(temp_dir / ".worktrees/wt/src")
+            assert result == temp_dir / ".worktrees/wt"
 
     def test_find_git_root_not_found(self) -> None:
         """Test RuntimeError when no .git directory is found."""
@@ -721,6 +912,49 @@ class TestMoveFileWithLinkUpdates:
             # Log file should be created
             log_path = temp_dir / "link_changes.jsonl"
             assert log_path.exists()
+
+    @pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+    @pytest.mark.parametrize("layout", ["sibling", "nested"])
+    def test_move_file_from_git_worktree(
+        self, layout: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test auto-detected git root in a real worktree rewrites that worktree."""
+
+        def git(*args: str, cwd: Path) -> None:
+            subprocess.run(  # noqa: S603
+                ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args],  # noqa: S607
+                cwd=cwd,
+                check=True,
+                capture_output=True,
+            )
+
+        main = tmp_path / "main"
+        (main / "src").mkdir(parents=True)
+        (main / "src/page1.md").write_text("See [page 2](page2.md).", encoding="utf-8")
+        (main / "src/page2.md").write_text("# Page 2", encoding="utf-8")
+        git("init", "-q", cwd=main)
+        git("add", ".", cwd=main)
+        git("commit", "-q", "-m", "init", cwd=main)
+
+        worktree = (
+            tmp_path / "wt" if layout == "sibling" else main / ".worktrees" / "wt"
+        )
+        git("worktree", "add", "-q", "--detach", str(worktree), cwd=main)
+        monkeypatch.chdir(worktree / "src")
+
+        changes = move_file_with_link_updates(Path("page2.md"), Path("moved/page2.md"))
+
+        assert changes == [("page2.md", "moved/page2.md")]
+        assert (worktree / "src/moved/page2.md").exists()
+        page1 = (worktree / "src/page1.md").read_text(encoding="utf-8")
+        assert page1 == "See [page 2](moved/page2.md)."
+        assert (worktree / "link_changes.jsonl").exists()
+        # The main checkout is untouched.
+        assert (main / "src/page2.md").exists()
+        assert (main / "src/page1.md").read_text(encoding="utf-8") == (
+            "See [page 2](page2.md)."
+        )
+        assert not (main / "link_changes.jsonl").exists()
 
     def test_move_file_invalid_docs_root(self) -> None:
         """Test RuntimeError when docs root doesn't exist."""
