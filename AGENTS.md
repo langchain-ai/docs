@@ -41,7 +41,7 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 Task-specific procedures live in `.agents/skills/`, one directory per skill.
 Cursor, Codex, GitHub Copilot, Gemini CLI, OpenCode, and Deep Agents read that
 path directly. Claude Code reads `.claude/skills/` only, so run `make skills`
-once to link the tree.
+once to link the tree, and again in each new git worktree.
 
 | Skill | Use it for |
 |-------|-----------|
@@ -128,7 +128,7 @@ Two language dropdowns (Python, TypeScript) with the same 10 tabs each. Most con
 | Managed Deep Agents | `src/langsmith/managed-deep-agents*.mdx` | Get started, Agent definition (Channels), Build and deploy |
 | LangChain | `src/oss/langchain/` | Get started, Core components, Middleware, Frontend (Patterns → Generative UI, Integrations), Advanced usage (Multi-agent), Agent development (Test), Production |
 | LangGraph | `src/oss/langgraph/` | Get started, Capabilities, Production, Frontend, LangGraph APIs (Graph API, Functional API) |
-| OpenWiki | `src/oss/openwiki/` | Modes, Integrations, Visualize, CLI reference, Customize, Providers, Automate updates, Changelog |
+| OpenWiki | `src/oss/openwiki/` | Modes, Integrations, Search and link, Visualize, CLI reference, Customize, Providers, Automate updates, Changelog |
 | Integrations | `src/oss/python/integrations/` or `src/oss/javascript/integrations/` | Python: Popular Providers, Integrations by component. TypeScript: Popular Providers (OpenAI, Anthropic, Google, AWS, Microsoft), General integrations, RAG integrations |
 | Learn | `src/oss/` (various) | Tutorials (Deep Agents, LangChain, Multi-agent, LangGraph), Conceptual overviews, Additional resources. TypeScript adds LangChain Academy |
 | Reference | `src/oss/reference/` | Reference, Releases (Releases, Migration guides), Policies; short entry pages linking to reference.langchain.com |
@@ -195,7 +195,7 @@ Six tabs, all files flat in `src/langsmith/`:
 | Account | Billing & usage |
 | Cloud | Reference |
 | BYOC | No groups |
-| Self-hosted | Get started by cloud provider, Deploy with Terraform (AWS, GCP, Azure), Setup guides (Manage an installation), Configuration, Connect external services, Platform auth & access control, SmithDB, Self-hosted observability, Hybrid, Scripts, Reference |
+| Self-hosted | Get started by cloud provider, Deploy with Terraform (AWS, GCP, Azure), Install an instance (Additional features → Enable Sandboxes), Configure an instance, Connect external services, Platform auth & access control, SmithDB, Manage an instance, Self-hosted observability, Hybrid, Scripts, Reference |
 | Govern | Organization (Workspace setup), Users & access control, Tools, Auditing, Data & compliance, Additional resources (FAQ) |
 
 #### Other menu items
@@ -233,7 +233,7 @@ Because nav names and directories diverge, use this to go from a file to its pla
 
 ### Reference docs
 
-Three OpenAPI-generated sections. Mintlify generates the endpoint pages at deploy time, so they do not exist in the local `build/` output. `make broken-links` filters them as false positives.
+Three OpenAPI-generated sections. Mintlify generates the endpoint pages at deploy time, so they do not exist in the local `build/` output. `make broken-links-with-anchors` filters them as false positives.
 
 | Section | Nav location | Spec source | Generated under |
 |---------|--------------|-------------|-----------------|
@@ -302,6 +302,8 @@ Use `@[ClassName]` to auto-link to API docs. Defined in `pipeline/preprocessors/
 ## Assets
 
 **Images:** Store in `src/images/`. Use descriptive filenames and alt text.
+
+**SVG text:** Keep labels as native `<text>` when sharpness at reading size matters. Mintlify CLI 4.2.671 strips `<text>` and `<use>` from plain MDX; use a named-export JSX snippet for native SVG rendering, as in `src/snippets/sandbox-diagram.jsx`. Reference only trusted local assets, and compare the result at the actual docs column width rather than only in an enlarged viewer.
 
 **Icons:** Use Tabler names only (`icon="home"`, `icon="brand-github"`). For missing icons, use SVG path: `icon="/images/providers/name.svg"`
 
@@ -531,7 +533,7 @@ When investigating a bug or unexpected behavior, always start by reading the rel
 
 ### CI broken-links failures
 
-`make broken-links` runs `mint broken-links` then filters known false positives (OpenAPI-generated pages: `/langsmith/agent-server-api/`, `/api-reference/`, `../langchain/agents`). Output format:
+`make broken-links-with-anchors` runs `mint broken-links --check-anchors --check-redirects`, the same check CI runs, then filters known false positives (OpenAPI-generated pages: `/langsmith/agent-server-api/`, `/api-reference/`, `../langchain/agents`). Output format:
 
 ```txt
 found N broken links in M files
@@ -546,7 +548,7 @@ another-file.mdx                 ← no indented lines = all its links were filt
 
 **Common cause:** Page renamed/deleted but link and/or `src/docs.json` nav entry still references old name. Fix both the link in the MDX file AND the corresponding entry in `docs.json`.
 
-To run locally: `make broken-links`
+To run locally: `make broken-links-with-anchors`. Do not use plain `make broken-links`: it skips anchors, so it can pass locally on a link CI rejects.
 
 ## Helper scripts
 
@@ -598,7 +600,7 @@ Scope to changed files for speed: `make lint_prose FILES="src/path/to/file.mdx"`
 
 The Vale version is pinned once, in `.mise.toml`. The `Makefile`, `scripts/install-vale.sh`, and the `lint-prose` workflow all read it from there, so local runs use the same engine as CI. Bump it only in `.mise.toml`. Do not hardcode a version in any of the three call sites.
 
-Also run `make broken-links` when adding or renaming links, pages, or nav entries.
+Also run `make broken-links-with-anchors` when adding or renaming links, pages, or nav entries.
 
 ## Changelog / Release notes
 

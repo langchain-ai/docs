@@ -1,14 +1,16 @@
 ---
 type: architecture
-title: Build System Architecture
-description: How the documentation pipeline transforms authored src content into the disposable Mintlify build tree, including routing, language-aware preprocessing, shared assets, npm overlays, and local development.
+title: Documentation Build System
+description: How the Python documentation pipeline turns authored src content into a disposable Mintlify build tree, including routing, preprocessing, local development, and validation.
 tags: [build-system, documentation-pipeline, mintlify, preprocessing, content-routing]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-29T08:22:38.059Z
+    at: 2026-10-16T08:20:25.784Z
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
+  - id: openwiki-source-6e6efa1569f158fcdb678ef0
+    resource: repo://pipeline/cli.py
   - id: openwiki-source-41f7c907e42a5efd3b3405cd
     resource: repo://pipeline/commands/build.py
   - id: openwiki-source-b481a230af378c0c50ed9994
@@ -21,20 +23,24 @@ sources:
     resource: repo://pipeline/preprocessors/handle_auto_links.py
   - id: openwiki-source-06a4c757b1153b7de4f47a0e
     resource: repo://pipeline/preprocessors/markdown_preprocessor.py
+  - id: openwiki-source-3ae8d89866d72418f1bdab6b
+    resource: repo://pipeline/preprocessors/utm_links.py
+  - id: openwiki-source-05ccef8d4cf1698187f20464
+    resource: repo://pyproject.toml
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-29T08:22:38.059Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
 ---
 
-# Build System Architecture
+# Documentation Build System
 
 `DocumentationBuilder` is the filesystem boundary between authored `src/` inputs and `build/`, the generated tree that Mintlify consumes. `build/` is disposable: a full build deletes and recreates it, so contributors must change `src/` and rebuild rather than patch output. The Python pipeline materializes authored pages, configuration, assets, and components; Mintlify separately renders and deploys that completed tree. In particular, deployment-time OpenAPI endpoint pages are not locally authored build artifacts.
 
 ## Entrypoints and full-build lifecycle
 
-`make build` installs npm dependencies and runs `uv run pipeline build`. Its command handler requires `src/`, creates `build/` when needed, constructs `DocumentationBuilder(src, build)`, and calls `build_all()`; a missing source directory returns exit code 1.
+`make build` installs npm dependencies and runs `uv run pipeline build`. The Python CLI registers `build` and asynchronous `dev` subcommands and propagates an integer command result as its process exit code. The build handler requires `src/`, creates `build/` when needed, constructs `DocumentationBuilder(src, build)`, and calls `build_all()`; a missing source directory returns exit code 1.
 
 ```mermaid
 flowchart TD
@@ -99,6 +105,12 @@ Incremental mode is not a substitute for reconstruction:
 - Deletion handling removes only the source-relative output path, not every routed variant. A deleted versioned or Managed Deep Agents source can therefore leave generated files until the next full build.
 - `build_file()` does not rerun whole-tree shared-file collection or the npm overlay. Use a full build for cross-file effects, package changes, deletions, navigation changes, or suspicious preview state.
 - Managed Deep Agents output is rebuilt correctly into both language routes, but the touch logic treats LangSmith as unversioned and does not touch those emitted routes. A full build is the reliable refresh path for this case.
+
+## Local validation and release-oriented operations
+
+Validation consumes the generated tree, not `src/`. Run `make broken-links` after a build to execute `mint broken-links --check-redirects` from `build/`; the target filters expected reports for deployment-time OpenAPI pages and standalone snippets, then fails when the remaining report contains broken-link lines. `make broken-links-with-anchors` adds anchor validation. Redirect checking is deliberately enabled so destinations in `docs.json` are checked too.
+
+For an offline artifact, `make export` requires an installed Mint CLI with `mint export`, a supported Node version, and the required Mintlify plan; it runs `mint export` from `build/`. `make htmltest` then unpacks that zip and checks external URLs only, because exported output can omit pages and make internal-link checks noisy. `make export-htmltest` runs those two targets sequentially. These operations validate or package generated output; they do not make `build/` a source of record.
 
 ## Safety and tests
 

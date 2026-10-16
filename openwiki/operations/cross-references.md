@@ -1,11 +1,11 @@
 ---
 type: operations guide
-title: Cross-References
-description: Author, resolve, and validate scoped semantic @[ref] API-reference links. Covers Python and JavaScript lookup, MCP aliases, link-map ownership, and the separate source and rendered-link checks.
+title: Cross-References and Links
+description: Author, resolve, repair, and validate scoped semantic API-reference links alongside documentation routes, snippets, and redirects. Covers Python and JavaScript lookup, link-map ownership, and distinct source and rendered-link checks.
 tags: [documentation, cross-references, api-reference, markdown, validation]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-02T08:21:54.688Z
+    at: 2026-10-16T08:20:25.784Z
 sources:
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
@@ -29,10 +29,10 @@ sources:
     resource: repo://tests/unit_tests/test_builder.py
   - id: openwiki-source-2ecfcd33b729fccd843ab705
     resource: repo://tests/unit_tests/test_handle_auto_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-02T08:21:54.688Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
 ---
 
-# Cross-References
+# Cross-References and Links
 
 `@[ref]` is source-level Markdown/MDX syntax for a semantic API-reference link. Rather than hard-coding a destination URL into every page, authors name an API symbol and preprocessing resolves it from the map for the active language scope. This keeps destination ownership in `pipeline/preprocessors/link_map.py` and lets shared content point at different Python and JavaScript reference sites.
 

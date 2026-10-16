@@ -206,7 +206,9 @@ test-code-samples:
 # Run code samples with LangSmith tracing, update public share links in
 # src/code-samples/trace-links.json, then regenerate snippet MDX so docs show
 # "View example trace" under single-snippet samples that produced an agent run.
-# Multi-snippet source files are skipped until split. Requires LANGSMITH_API_KEY.
+# Each traced sample stamps LANGSMITH_DOCS_SNIPPET=<snippet-id>; collection
+# matches that metadata (no time-window LangGraph fallback). Multi-snippet
+# source files are skipped until split. Requires LANGSMITH_API_KEY.
 #   make update-code-sample-traces
 #   make update-code-sample-traces FILES="src/code-samples/deepagents/overview-quickstart.py"
 update-code-sample-traces:

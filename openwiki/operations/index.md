@@ -1,6 +1,6 @@
 # Files
 
 - [Adding and Maintaining Documentation Pages](adding-pages.md) - Safely add, move, retire, or regenerate documentation pages by selecting the source owner, maintaining navigation and redirects, and validating emitted routes.
-- [Agent authoring skills](agent-skills.md) - Use the repository's task-specific skill catalog without duplicating global rules, distribute the canonical tree to supported agents, and validate skill and tooling changes.
-- [CLI Tools and Make Targets](cli-tools.md)
-- [Cross-References](cross-references.md) - Author, resolve, and validate scoped semantic @[ref] API-reference links. Covers Python and JavaScript lookup, MCP aliases, link-map ownership, and the separate source and rendered-link checks.
+- [Agent Authoring Skills](agent-skills.md) - Use the repository's task-specific skill catalog without duplicating global rules, distribute the canonical tree to supported agents, and follow source-verified, generated-file-safe documentation workflows.
+- [Developer CLI Tools](cli-tools.md) - Operational reference for the documentation Python CLI, the separately installed Mintlify CLI, Make targets, validation, runnable examples, snippet generation, and trace-link refreshes.
+- [Cross-References and Links](cross-references.md) - Author, resolve, repair, and validate scoped semantic API-reference links alongside documentation routes, snippets, and redirects. Covers Python and JavaScript lookup, link-map ownership, and distinct source and rendered-link checks.

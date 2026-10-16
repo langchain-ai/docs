@@ -1,4 +1,4 @@
 # Files
 
 - [Documentation Preprocessing](preprocessing.md) - Build-time transformations that turn authored Markdown and MDX into language-specific documentation artifacts. Covers scoped cross-references, CTA attribution, conditional content, output-time route rewrites, and strict cross-reference validation.
-- [Versioned Documentation and Routes](versioning.md) - Explains how the documentation builder selects source families and emits Python, JavaScript, and language-agnostic routes. Covers build-time rendering, link and snippet rewriting, MCP authoring ownership, Mintlify navigation, and compatibility redirects.
+- [Language Versions and Route Variants](versioning.md) - Explains how source ownership, conditional rendering, and route-specific exceptions produce Python and TypeScript documentation variants. Covers navigation, redirects, link rewriting, and the invariants required to keep published routes valid.
