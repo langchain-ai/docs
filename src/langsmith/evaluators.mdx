@@ -171,6 +171,8 @@ To include extended stats:
 
 A chained evaluator is an online evaluator that runs only on runs another evaluator has already scored. Chaining lets you reserve a more expensive or more specific evaluator for the runs that need it, for example running an [LLM-as-a-judge evaluator](/langsmith/online-evaluations-llm-as-judge) only when an earlier `correctness` score is below a threshold.
 
+Chaining applies to run-level evaluators only, not [multi-turn (thread-level) evaluators](/langsmith/online-evaluations-multi-turn). Both evaluators must evaluate the same runs, because the filter matches feedback attached to the run being evaluated.
+
 To chain a second evaluator onto a first:
 
 1. Create or open the second evaluator, and expand its filter. For more information, see [Apply a filter to runs that trigger the evaluator](/langsmith/online-evaluations-llm-as-judge#apply-a-filter-to-runs-that-trigger-the-evaluator).
@@ -178,7 +180,7 @@ To chain a second evaluator onto a first:
    - To run on every run the first evaluator scored, filter on the key alone:
 
      ```text
-     has(feedback_key, "correctness")
+     eq(feedback_key, "correctness")
      ```
 
    - To run only when the score meets a condition, combine the key with a `feedback_score` comparison. For example, to run only when `correctness` is below `0.5`:
@@ -199,7 +201,7 @@ The filter matches on the feedback key rather than the evaluator that produced i
 How the second evaluator reads the first evaluator's score depends on its type:
 
 - **LLM-as-a-judge evaluators**: [Include extended stats](#include-extended-stats), then map a prompt variable to `run.feedback_stats.<feedback_key>.avg`. For example, map `{{correctness_average}}` to `run.feedback_stats.correctness.avg`.
-- **Code evaluators**: Read the [feedback record](/langsmith/feedback-data-format) in `run["feedback"]` whose `key` is the first evaluator's feedback key, and use its `score`. Code evaluators receive `run["feedback"]` whether or not you enable extended stats. To read the average from `run["feedback_stats"]["<feedback_key>"]["avg"]` instead, include extended stats. To configure the filter on a code evaluator, see [Create a filter](/langsmith/online-evaluations-code#3-create-a-filter).
+- **Code evaluators**: Read the [feedback record](/langsmith/feedback-data-format) in `run["feedback"]` whose `key` is the first evaluator's feedback key, and use its `score`. Code evaluators receive `run["feedback"]` whether or not you enable extended stats. `run["feedback"]` holds at most 100 feedback records across each batch of runs the evaluator processes, and the oldest records are dropped first, so the score can be missing when the batch carries many feedback records. To read the score reliably, include extended stats and read the average from `run["feedback_stats"]["<feedback_key>"]["avg"]`. To configure the filter on a code evaluator, see [Create a filter](/langsmith/online-evaluations-code#3-create-a-filter).
 
 ## Delete an evaluator
 
