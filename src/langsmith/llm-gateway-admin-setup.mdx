@@ -19,7 +19,7 @@ On self-hosted LangSmith, [enable the gateway in the Helm chart](/langsmith/llm-
 
 Skip this step for LangChain-hosted models: they use your LangSmith API key, not provider secrets. See [Gateway Credits](/langsmith/llm-gateway-credits) for paid chat models. Continue with step 2 to grant gateway access.
 
-The gateway resolves provider API keys from your workspace's Provider Secrets—this is how it proxies calls to upstream providers without individual users needing local copies of provider keys.
+The gateway resolves provider credentials from your workspace's Provider Secrets. This lets it proxy calls to upstream providers without individual users needing local copies of provider credentials.
 
 Go to **Settings > Integrations > Provider Secrets** and add the keys for the providers you want to proxy through the gateway:
 
@@ -27,8 +27,11 @@ Go to **Settings > Integrations > Provider Secrets** and add the keys for the pr
 | --- | --- |
 | `ANTHROPIC_API_KEY` | Anthropic |
 | `AWS_BEARER_TOKEN_BEDROCK` | AWS Bedrock |
-| `AZURE_FOUNDRY_API_KEY` | Azure Foundry |
-| `AZURE_FOUNDRY_RESOURCE_NAME` | Azure Foundry |
+| `AZURE_FOUNDRY_API_KEY` | Azure Foundry (API key authentication only) |
+| `AZURE_FOUNDRY_RESOURCE_NAME` | Azure Foundry (required for both authentication methods) |
+| `AZURE_TENANT_ID` | Azure Foundry (Entra ID authentication only) |
+| `AZURE_CLIENT_ID` | Azure Foundry (Entra ID authentication only) |
+| `AZURE_CLIENT_SECRET` | Azure Foundry (Entra ID authentication only) |
 | `BASETEN_API_KEY` | Baseten |
 | `FIREWORKS_API_KEY` | Fireworks |
 | `GOOGLE_API_KEY` | Google Gemini |
@@ -36,7 +39,37 @@ Go to **Settings > Integrations > Provider Secrets** and add the keys for the pr
 | `SCALEDOWN_API_KEY` | ScaleDown |
 | `VERTEX_SERVICE_ACCOUNT_JSON` | Gemini Enterprise Agent Platform |
 
-Add only the providers your organization uses. The gateway will return an error if a user tries to call a provider whose key hasn't been added.
+Add only the providers your organization uses. The gateway returns an error if a user calls a provider whose credentials have not been added.
+
+### Configure Azure Foundry authentication
+
+Azure Foundry supports either an API key or a Microsoft Entra ID service principal. Service principal authentication lets you use resources that disable API key authentication (`disableLocalAuth`).
+
+Both methods require `AZURE_FOUNDRY_RESOURCE_NAME`. Set it to the Azure resource name, not a URL or deployment name. The gateway sends requests to `<resource-name>.openai.azure.com` in the Azure public cloud.
+
+For API key authentication, add `AZURE_FOUNDRY_API_KEY` and `AZURE_FOUNDRY_RESOURCE_NAME` through the Azure Foundry provider form.
+
+To use an Entra ID service principal instead:
+
+1. Create an app registration in Microsoft Entra ID, or use an existing service principal. Record its directory (tenant) ID and application (client) ID.
+1. Create a client secret for the app registration. Copy the secret **value**, not the secret ID.
+1. Assign the service principal the `Cognitive Services OpenAI User` role, scoped to the Azure resource.
+1. In LangSmith, select the workspace that routes Azure requests. Go to **Settings > Integrations > Provider Secrets** and add each of the following as a custom secret:
+
+   | Secret name | Value |
+   | --- | --- |
+   | `AZURE_FOUNDRY_RESOURCE_NAME` | Azure resource name. |
+   | `AZURE_TENANT_ID` | Directory (tenant) ID. |
+   | `AZURE_CLIENT_ID` | Application (client) ID. |
+   | `AZURE_CLIENT_SECRET` | Client secret value. |
+
+   Select **Custom** in the provider selector to enter each secret's name and value. The Azure Foundry provider form only exposes API key authentication.
+
+1. Remove `AZURE_FOUNDRY_API_KEY` from the workspace if it is set. An API key takes precedence over service principal credentials, even when the resource disables API key authentication.
+
+All three Entra ID secrets are required. If any are missing, the gateway returns a `400` error identifying the missing secrets. The gateway obtains and refreshes Azure access tokens automatically. Users continue to authenticate to the gateway with their LangSmith API key, not the Azure credentials.
+
+This method uses a client secret. It does not use managed identity or workload identity federation.
 
 ## 2. Configure gateway access for users
 
