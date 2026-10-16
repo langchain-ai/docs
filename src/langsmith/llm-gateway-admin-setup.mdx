@@ -75,20 +75,23 @@ All three Entra ID secrets are required. If any are missing, the gateway returns
 
 This method uses a client secret. It does not use managed identity or workload identity federation.
 
-#### Verify Azure access
+#### Verify the setup
 
-Before testing through the gateway, verify that the service principal can call Azure directly. Use the Azure CLI to sign in as the service principal and obtain an access token for `https://cognitiveservices.azure.com`. Send that token as `Authorization: Bearer <token>` to your resource's `/openai/v1/chat/completions` endpoint, with the deployment name as `model`.
+After you [configure gateway access](#2-configure-gateway-access-for-users), send a test request through the gateway with your LangSmith API key:
 
-After completing the gateway access steps below, send the same chat request through the gateway at `/azure/v1/chat/completions`. Authenticate with your LangSmith API key instead of the Azure token. A successful response confirms that the workspace secrets and Azure permissions work together.
+```bash
+curl https://gateway.smith.langchain.com/azure/v1/chat/completions \
+  --header "Authorization: Bearer $LANGSMITH_API_KEY" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "model": "<deployment-name>",
+    "messages": [{"role": "user", "content": "Say hello"}]
+  }'
+```
 
-The gateway also supports `/azure/v1/responses` and `/azure/v1/messages`. The messages endpoint requires a compatible model deployment. Do not use the older `/openai/deployments/<name>/chat/completions?api-version=...` URL format as a gateway path.
+A `chat.completion` response confirms the setup. For other Cloud regions, replace the hostname with your [regional gateway](/langsmith/llm-gateway-how-it-works#use-a-regional-gateway).
 
-#### Troubleshoot Azure authentication
-
-- **Missing model permissions:** If Azure reports a missing `Microsoft.CognitiveServices/accounts/OpenAI/deployments/chat/completions/action` permission, check the role assignment on the Foundry resource. An assignment on a project is not sufficient.
-- **New role assignment:** If Azure reports `Principal does not have access to API/Operation.`, allow 5–10 minutes for permissions to propagate, then retry the direct Azure call.
-- **Direct Azure call succeeds, but gateway call fails:** Check the secrets in the workspace associated with your LangSmith API key. Confirm the resource name is not a URL and `AZURE_FOUNDRY_API_KEY` is absent.
-- **Deployment listing returns 404:** For `/azure/deployments`, use `api-version=2023-03-15-preview`. Newer API versions can omit this endpoint.
+If Azure returns `PermissionDenied`, confirm that the `Cognitive Services OpenAI User` role is assigned on the Foundry resource, not a project, and allow 5–10 minutes for it to take effect.
 
 ## 2. Configure gateway access for users
 
