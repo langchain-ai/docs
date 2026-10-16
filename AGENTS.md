@@ -41,7 +41,7 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 Task-specific procedures live in `.agents/skills/`, one directory per skill.
 Cursor, Codex, GitHub Copilot, Gemini CLI, OpenCode, and Deep Agents read that
 path directly. Claude Code reads `.claude/skills/` only, so run `make skills`
-once to link the tree.
+once to link the tree, and again in each new git worktree.
 
 | Skill | Use it for |
 |-------|-----------|
@@ -128,7 +128,7 @@ Two language dropdowns (Python, TypeScript) with the same 10 tabs each. Most con
 | Managed Deep Agents | `src/langsmith/managed-deep-agents*.mdx` | Get started, Agent definition (Channels), Build and deploy |
 | LangChain | `src/oss/langchain/` | Get started, Core components, Middleware, Frontend (Patterns → Generative UI, Integrations), Advanced usage (Multi-agent), Agent development (Test), Production |
 | LangGraph | `src/oss/langgraph/` | Get started, Capabilities, Production, Frontend, LangGraph APIs (Graph API, Functional API) |
-| OpenWiki | `src/oss/openwiki/` | Modes, Integrations, Visualize, CLI reference, Customize, Providers, Automate updates, Changelog |
+| OpenWiki | `src/oss/openwiki/` | Modes, Integrations, Search and link, Visualize, CLI reference, Customize, Providers, Automate updates, Changelog |
 | Integrations | `src/oss/python/integrations/` or `src/oss/javascript/integrations/` | Python: Popular Providers, Integrations by component. TypeScript: Popular Providers (OpenAI, Anthropic, Google, AWS, Microsoft), General integrations, RAG integrations |
 | Learn | `src/oss/` (various) | Tutorials (Deep Agents, LangChain, Multi-agent, LangGraph), Conceptual overviews, Additional resources. TypeScript adds LangChain Academy |
 | Reference | `src/oss/reference/` | Reference, Releases (Releases, Migration guides), Policies; short entry pages linking to reference.langchain.com |

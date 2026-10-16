@@ -3,6 +3,9 @@ type: operations guide
 title: Agent Authoring Skills
 description: Use the repository's task-specific skill catalog without duplicating global rules, distribute the canonical tree to supported agents, and follow source-verified, generated-file-safe documentation workflows.
 tags: [agents, skills, documentation, automation, validation]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-16T08:20:25.784Z
 sources:
   - id: openwiki-source-18732c72f962c06354cb62db
     resource: repo://.agents/skills/add-docs-page/SKILL.md
@@ -40,10 +43,7 @@ sources:
     resource: repo://src/oss/deepagents/skills.mdx
   - id: openwiki-source-1695beda93a0ca504f038424
     resource: repo://tests/unit_tests/test_skills.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-15T08:21:56.046Z" }
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-15T08:21:56.046Z
+generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
 ---
 
 # Agent Authoring Skills
@@ -92,6 +92,8 @@ flowchart TD
 
 The canonical tree can reach consumers directly, through live Claude symlinks, or through a copy that requires explicit refresh.
 
+Deep Agents Code gives a project `.agents/skills/` directory higher precedence than the legacy project `.deepagents/skills/` directory. Consequently, the integration workflow can resolve `submit-integration` from the canonical tree without a shim.
+
 ## Choose the narrow procedure
 
 Invoke a skill when the request matches its procedure. Do not use a broad editing workflow to bypass a lifecycle, review, source-verification, or automation-specific requirement.
@@ -134,7 +136,7 @@ flowchart TD
 
 This workflow keeps edits on the intended review branch, uses implementation evidence for factual prose, and routes generated-output defects to their owner.
 
-`docs-edit` also identifies generated outputs that must not be edited: weekly and self-hosted changelogs, LangSmith and Agent Server OpenAPI files, the Deep Agents evaluation-category matrix and MDA OAuth catalog snippets, and `build/`. Fix their generator or upstream source instead; generated edits can be overwritten, and changelog output may already have been distributed through RSS.
+`docs-edit` identifies generated outputs that must not be edited: weekly and self-hosted changelogs, LangSmith and Agent Server OpenAPI files, the Deep Agents evaluation-category matrix and MDA OAuth catalog snippets, and `build/`. Fix their generator or upstream source instead; generated edits can be overwritten, and changelog output may already have been distributed through RSS.
 
 `docs-restructure` is for the prior question: whether content belongs on a page at all. Build and report a page-family duplication map before editing, choose one owner per topic, replace duplicated material with a concise pointer, and resolve conflicting facts against implementation source. It hands navigation, redirects, and anchor mechanics to `add-docs-page`.
 
@@ -185,6 +187,8 @@ Repair a stale procedure, referenced path, Make target, or catalog rather than w
 The authoring tree describes repository workflows. Separately, Deep Agents runtime skills load once per thread when a checkpointer is configured and remain in agent state. Additions, edits, and deletions do not reach that thread until stored skill metadata is reset. Without a checkpointer, state does not survive between runs, so the next run loads skills again.
 
 Use `None` in Python or `null` in JavaScript to request a reload, not an empty list. An empty list means that sources loaded successfully with no skills and remains the thread's skill set. A changed reload changes the system prompt and invalidates that thread's prompt cache; an identical reload does not. Python loads at the next run, while JavaScript loads before the next model call.
+
+When an application explicitly names skills for a Deep Agents run, it can pin them. The middleware reads each selected `SKILL.md` and appends its body without frontmatter as a `HumanMessage`, in the supplied order, so the agent does not need to decide that the skill matches.
 
 ## See also
 

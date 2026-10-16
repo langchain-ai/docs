@@ -5,7 +5,7 @@ description: Explains the repository's GitHub Actions trust boundaries, validati
 tags: [github-actions, ci-cd, automation, security, testing]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-15T08:21:56.046Z
+    at: 2026-10-16T08:20:25.784Z
 sources:
   - id: openwiki-source-1e075575622e1a77a3dc46e6
     resource: repo://.github/pull_request_template.md
@@ -37,7 +37,7 @@ sources:
     resource: repo://scripts/flag_hosted_docs_candidates.py
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-15T08:21:56.046Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
 ---
 
 ## Trust boundaries
@@ -62,6 +62,8 @@ flowchart TD
   Change -->|"yes"| Review["Scoped review branch or PR"]
   Change -->|"no"| Noop["Successful no-op"]
 ```
+
+*Event type and authorization determine whether a workflow can execute contributed code, mutate PR metadata, or write a review branch.*
 
 This diagram separates execution of contributed code from privileged metadata mutation and repository writes. Do not use `pull_request_target` as a workaround for testing forks, and do not construct shell commands from untrusted PR or issue-form fields.
 
@@ -96,7 +98,7 @@ The reusable test and lint workflows make shallow checkouts, synchronize the `te
 
 `changelog-weekly.yml` runs Mondays at 13:00 UTC or manually. A manual window must provide both `since` and `until` as `YYYY-MM-DD` dates, or neither. The repository-wide `changelog-weekly` concurrency group serializes runs without cancelling one in progress.
 
-The workflow has contents and pull-request write permission because it creates a review branch. It calls `scripts/changelog_pipeline.py weekly` with a read token for upstream PRs plus Anthropic, Eppo, and encrypted-held-state credentials. The pipeline treats upstream PR content as untrusted model input, disables CLI tools for model calls, and schema-validates responses. Its weekly processing classifies merged upstream work, holds potentially unrolled feature-flag work in encrypted state, rewrites internal-name leakage for another check, and omits uncertain entries rather than publishing them.
+The workflow has contents and pull-request write permission because it creates a review branch. It invokes `scripts/changelog_pipeline.py weekly` with its configured read, model, feature-flag, and encrypted-state inputs. The workflow deliberately keeps the private pipeline report out of the public repository surfaces.
 
 A `dry_run` omits `--write` and puts proposed entries in the run summary; it does not open a PR. A normal run records Vale output without making Vale immediately fatal, then checks only the two changelog files and encrypted held-list state. No diff exits successfully. A diff is committed to force-pushed `changelog/weekly-<UTC-date>` and opened as a review PR, whose body contains only counts and recent Vale output rather than the private run report.
 
@@ -112,7 +114,9 @@ flowchart TD
   Diff -->|"yes"| PR["Force push review branch and open PR"]
 ```
 
-This workflow proposes publication; human review remains the publication gate. For a failed run, first distinguish invalid dispatch input, missing upstream/model/flag credentials, or pipeline safety exclusions from a Vale warning. Inspect the generated PR's wording, held-state change, reviewer material, and Vale output before merge. See [Changelog Publication](/openwiki/workflows/changelog-publication.md) for pipeline-specific lifecycle and recovery details.
+*The weekly writer either reports a dry-run proposal, exits with no change, or creates a review PR from its scoped state.*
+
+This workflow proposes publication; human review remains the publication gate. For a failed run, first distinguish invalid dispatch input, external-service or configuration failure, or pipeline safety exclusions from a Vale warning. Inspect the generated PR's wording, held-state change, reviewer material, and Vale output before merge. See [Changelog Publication](/openwiki/workflows/changelog-publication.md) for pipeline-specific lifecycle and recovery details.
 
 ### Credentialed code-sample execution and trace refresh
 
@@ -154,4 +158,5 @@ Hosted-documentation candidate detection creates Linear issues only when both `L
 - [Testing Overview](/openwiki/testing/test-overview.md)
 - [Changelog Publication](/openwiki/workflows/changelog-publication.md)
 - [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md)
+- [Integration Listing Automation](/openwiki/workflows/integration-listing-automation.md)
 - [LangSmith OpenAPI Refresh](/openwiki/workflows/langsmith-openapi-refresh.md)

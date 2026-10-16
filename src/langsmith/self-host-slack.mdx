@@ -178,7 +178,7 @@ Saving a destination does not send a test message. An Engine destination sends n
 To verify an Engine destination:
 
 1. Save a Slack destination for `issue.created` on a test project. Under **Notify when**, select **Issue created**. Set **Minimum issue severity** to **All severities** during testing.
-2. Enable [Engine for the test project](/langsmith/engine#turn-on-engine-for-a-tracing-project) and let it analyze new traces. Wait for Engine to create a new issue. If Engine finds no new issue, there is no `issue.created` notification to send.
+2. Enable [Engine for the test project](/langsmith/engine-setup#turn-on-engine-for-a-tracing-project) and let it analyze new traces. Wait for Engine to create a new issue. If Engine finds no new issue, there is no `issue.created` notification to send.
 3. Check that a message arrives in the selected channel and that **View issue** opens your self-hosted instance.
 
 To verify Slack delivery without waiting for a new Engine issue, configure a Slack destination in a test project's alert settings. Click **Send Test Notification** and check the selected channel. See [Test the alert integration](/langsmith/alerts#2-test-the-integration). This checks the Slack connection, not Engine's event generation.
