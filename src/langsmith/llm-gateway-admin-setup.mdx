@@ -27,11 +27,8 @@ Go to **Settings > Integrations > Provider Secrets** and add the keys for the pr
 | --- | --- |
 | `ANTHROPIC_API_KEY` | Anthropic |
 | `AWS_BEARER_TOKEN_BEDROCK` | AWS Bedrock |
-| `AZURE_FOUNDRY_API_KEY` | Azure Foundry (API key authentication only) |
-| `AZURE_FOUNDRY_RESOURCE_NAME` | Azure Foundry (required for API key or Entra ID authentication) |
-| `AZURE_TENANT_ID` | Azure Foundry (Entra ID authentication only) |
-| `AZURE_CLIENT_ID` | Azure Foundry (Entra ID authentication only) |
-| `AZURE_CLIENT_SECRET` | Azure Foundry (Entra ID authentication only) |
+| `AZURE_FOUNDRY_API_KEY` | Azure Foundry |
+| `AZURE_FOUNDRY_RESOURCE_NAME` | Azure Foundry |
 | `BASETEN_API_KEY` | Baseten |
 | `FIREWORKS_API_KEY` | Fireworks |
 | `GOOGLE_API_KEY` | Google Gemini |
@@ -41,57 +38,9 @@ Go to **Settings > Integrations > Provider Secrets** and add the keys for the pr
 
 Add only the providers your organization uses. The gateway returns an error if a user calls a provider whose credentials have not been added.
 
-### Configure Azure Foundry authentication
-
-Azure Foundry supports either an API key or a Microsoft Entra ID service principal. Service principal authentication lets you use resources that disable API key authentication (`disableLocalAuth`).
-
-Both methods require `AZURE_FOUNDRY_RESOURCE_NAME`. Set it to the Azure resource name, not a URL or deployment name. The gateway sends requests to `<resource-name>.openai.azure.com` in the Azure public cloud.
-
-For API key authentication, add `AZURE_FOUNDRY_API_KEY` and `AZURE_FOUNDRY_RESOURCE_NAME` through the Azure Foundry provider form.
-
-To use an Entra ID service principal instead:
-
-1. Create a Foundry resource and deploy a chat model, or use an existing resource and deployment. Record the resource name and deployment name separately. Use the deployment name as the `model` value in requests.
-1. In the Azure portal, go to **Microsoft Entra ID > App registrations > New registration**, or select an existing app registration. No redirect URI is needed. From the app's overview, record the directory (tenant) ID and application (client) ID.
-1. Go to **Certificates & secrets > New client secret** for the app registration. Copy the secret **value**, not the secret ID, before leaving the page. The value is shown only once.
-1. Open the **Foundry resource**, not a project inside it. Go to **Access control (IAM) > Add > Add role assignment**. Assign the app's service principal the `Cognitive Services OpenAI User` role at the resource scope.
-
-   A role assigned on a project does not grant access to the parent resource. The generic `Contributor`, `Owner`, and `Reader` roles do not grant permission to call models. Allow 5–10 minutes for a new role assignment to take effect.
-
-1. In LangSmith, select the workspace that routes Azure requests. Go to **Settings > Integrations > Provider Secrets** and add each of the following as a custom secret:
-
-   | Secret name | Value |
-   | --- | --- |
-   | `AZURE_FOUNDRY_RESOURCE_NAME` | Azure resource name. |
-   | `AZURE_TENANT_ID` | Directory (tenant) ID. |
-   | `AZURE_CLIENT_ID` | Application (client) ID. |
-   | `AZURE_CLIENT_SECRET` | Client secret value. |
-
-   Select **Custom** in the provider selector to enter each secret's name and value. The Azure Foundry provider form only exposes API key authentication.
-
-1. Remove `AZURE_FOUNDRY_API_KEY` from the workspace if it is set. An API key takes precedence over service principal credentials, even when the resource disables API key authentication.
-
-All three Entra ID secrets are required. If any are missing, the gateway returns a `400` error identifying the missing secrets. The gateway obtains and refreshes Azure access tokens automatically. Users continue to authenticate to the gateway with their LangSmith API key, not the Azure credentials.
-
-This method uses a client secret. It does not use managed identity or workload identity federation.
-
-#### Verify the setup
-
-After you [configure gateway access](#2-configure-gateway-access-for-users), send a test request through the gateway with your LangSmith API key:
-
-```bash
-curl https://gateway.smith.langchain.com/azure/v1/chat/completions \
-  --header "Authorization: Bearer $LANGSMITH_API_KEY" \
-  --header "Content-Type: application/json" \
-  --data '{
-    "model": "<deployment-name>",
-    "messages": [{"role": "user", "content": "Say hello"}]
-  }'
-```
-
-A `chat.completion` response confirms the setup. For other Cloud regions, replace the hostname with your [regional gateway](/langsmith/llm-gateway-how-it-works#use-a-regional-gateway).
-
-If Azure returns `PermissionDenied`, confirm that the `Cognitive Services OpenAI User` role is assigned on the Foundry resource, not a project, and allow 5–10 minutes for it to take effect.
+<Tip>
+Azure Foundry also supports Microsoft Entra ID service principal authentication, for resources that disable API keys. For setup steps, see [Provider authentication](/langsmith/llm-gateway-provider-authentication#configure-azure-foundry).
+</Tip>
 
 ## 2. Configure gateway access for users
 
