@@ -114,6 +114,54 @@ console.log(snapshot.id);
 
 </CodeGroup>
 
+### User, working directory, and environment
+
+A snapshot built from a container image records that image's `USER`, `WORKDIR`, and `ENV`, and every sandbox created from it runs commands that way — the same values `docker run` would use.
+
+Pass `run_config` to override them. `user` and `work_dir` replace the image's; `env_vars` merge over the image's `ENV` key by key, so a key set here wins and the rest of the image's environment stays.
+
+<CodeGroup>
+
+```python Python
+snapshot = client.create_snapshot(
+    "python",
+    docker_image="python:3.12-slim",
+    fs_capacity_bytes=1 * 1024**3,
+    run_config={
+        "user": "app",
+        "work_dir": "/srv",
+        "env_vars": {"PYTHONUNBUFFERED": "1"},
+    },
+)
+
+print(snapshot.run_config)
+```
+
+```ts TypeScript
+const snapshot = await client.createSnapshot(
+  "python",
+  "python:3.12-slim",
+  1_073_741_824,
+  {
+    runConfig: {
+      user: "app",
+      work_dir: "/srv",
+      env_vars: { PYTHONUNBUFFERED: "1" },
+    },
+  },
+);
+
+console.log(snapshot.run_config);
+```
+
+</CodeGroup>
+
+`user` accepts the same forms as `docker run -u`: `name`, `uid`, `name:group`, or `uid:gid`. `work_dir` must be absolute, and is created if it does not exist. Every snapshot response reports the `run_config` it resolved, so you can see what a snapshot will boot as before you use it.
+
+<Note>
+Snapshots built before LangSmith recorded run configs carry no `run_config` and keep their previous behavior: commands run as root with only the sandbox's own environment. Rebuilding such a snapshot picks up the image's `USER` and `ENV`. To keep running as root on a rebuilt snapshot, pass `run_config={"user": "0"}`.
+</Note>
+
 ### Verify a snapshot built from a container image
 
 LangSmith builds a custom snapshot from the filesystem in the container image you provide. To independently verify those contents:

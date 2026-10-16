@@ -109,10 +109,9 @@ try {
   console.log(result.stderr);     // ""
   console.log(result.exit_code);  // 0
 
-  // Pass environment variables and working directory
+  // Pass environment variables and a working directory
   const envResult = await sandbox.run("echo $MY_VAR", {
-    env: { MY_VAR: "test-value" },
-    cwd: "/tmp",
+    runConfig: { env_vars: { MY_VAR: "test-value" }, work_dir: "/tmp" },
   });
 } finally {
   await sandbox.delete();
@@ -120,6 +119,62 @@ try {
 ```
 
 </CodeGroup>
+
+## Run as a different user, directory, or environment
+
+`run_config` sets the account commands run as, their working directory, and their environment. It mirrors `docker run -u/-w/-e`: `user` and `work_dir` replace the value from the layer below, and `env_vars` merge over it key by key.
+
+It applies at three points, each layered over the one before:
+
+| Where | Effect |
+| --- | --- |
+| Snapshot | What every sandbox built from it boots with. See [snapshots](/langsmith/sandbox-snapshots#user-working-directory-and-environment). |
+| Sandbox | On create, overrides the snapshot's. On update, changes what subsequent commands run with. |
+| Command | Applies to that one command only. |
+
+<CodeGroup>
+
+```python Python
+# Override the snapshot's run config for this sandbox
+with client.sandbox(run_config={"user": "app", "work_dir": "/srv"}) as sb:
+    print(sb.run("id -un").stdout)  # "app"
+
+    # Change it for subsequent commands
+    client.update_sandbox(sb.name, run_config={"env_vars": {"STAGE": "beta"}})
+    print(sb.run("echo $STAGE").stdout)  # "beta"
+
+    # Or for one command only
+    result = sb.run(
+        "whoami",
+        run_config={"user": "root", "env_vars": {"STAGE": "debug"}},
+    )
+    print(result.stdout)  # "root"
+```
+
+```ts TypeScript
+// Override the snapshot's run config for this sandbox
+const sandbox = await client.createSandbox(snapshot.id, {
+  runConfig: { user: "app", work_dir: "/srv" },
+});
+
+// Change it for subsequent commands
+await client.updateSandbox(sandbox.name, {
+  runConfig: { env_vars: { STAGE: "beta" } },
+});
+
+// Or for one command only
+const result = await sandbox.run("whoami", {
+  runConfig: { user: "root", env_vars: { STAGE: "debug" } },
+});
+```
+
+</CodeGroup>
+
+An update takes effect for commands started after it; commands already running keep what they started with, and a stopped sandbox picks the change up on its next start. A snapshot captured from a sandbox carries the sandbox's run config, so the next sandbox built from it starts the same way.
+
+<Warning>
+The per-command `cwd` and `env` arguments are deprecated in favor of `run_config["work_dir"]` and `run_config["env_vars"]`. They still work on their own, but a command that sets them together with `run_config` is rejected.
+</Warning>
 
 ## Stream output
 
