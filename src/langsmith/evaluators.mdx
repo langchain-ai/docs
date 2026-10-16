@@ -175,8 +175,8 @@ The second evaluator must be a run-level evaluator because [multi-turn (thread-l
 
 To chain a second evaluator onto a first:
 
-1. Create or open the second evaluator and expand its filter. For more information, see [Apply a filter to runs that trigger the evaluator](/langsmith/online-evaluations-llm-as-judge#apply-a-filter-to-runs-that-trigger-the-evaluator).
-1. Filter on the first evaluator's feedback key:
+1. Create or open the second evaluator and expand its filter. For more information, see [Apply a filter to runs that trigger the evaluator](/langsmith/online-evaluations-llm-as-judge#apply-a-filter-to-runs-that-trigger-the-evaluator) for LLM-as-a-judge evaluators or [Create a filter](/langsmith/online-evaluations-code#3-create-a-filter) for code evaluators.
+1. Filter on the first evaluator's feedback key. The filter matches on the key rather than the evaluator that produced it, so feedback from any source with that key triggers the second evaluator, including [user feedback](/langsmith/attach-user-feedback). Use a key that only the first evaluator produces.
    - To trigger on every run the first evaluator scored, filter on the key alone:
 
      ```text
@@ -189,19 +189,19 @@ To chain a second evaluator onto a first:
      and(eq(feedback_key, "correctness"), lt(feedback_score, 0.5))
      ```
 
-1. (Optional) To read the first score in an LLM-as-a-judge prompt, [include extended stats](#include-extended-stats). Code evaluators can read the score without it. For more information, see [Read the first score](#read-the-first-score).
+1. If the second evaluator reads the first score, [include extended stats](#include-extended-stats). LLM-as-a-judge evaluators require it, and code evaluators use it to read the score reliably. For more information, see [Read the first score](#read-the-first-score).
 1. Save the evaluator.
 
 The second evaluator picks up a run only after the first evaluator's score is attached to it, so the order in which the evaluators run does not matter. For the full filter syntax, see [Trace query syntax](/langsmith/trace-query-syntax).
-
-The filter matches on the feedback key rather than the evaluator that produced it, so feedback from any source with that key triggers the second evaluator, including [user feedback](/langsmith/attach-user-feedback). Use a feedback key that only the first evaluator produces.
 
 ### Read the first score
 
 How the second evaluator reads the first evaluator's score depends on its type:
 
 - **LLM-as-a-judge evaluators**: [Include extended stats](#include-extended-stats), then map a prompt variable to `run.feedback_stats.<feedback_key>.avg`. For example, map `{{correctness_average}}` to `run.feedback_stats.correctness.avg`.
-- **Code evaluators**: Read the [feedback record](/langsmith/feedback-data-format) in `run["feedback"]` whose `key` is the first evaluator's feedback key, and use its `score`. Code evaluators receive `run["feedback"]` whether or not you enable extended stats. `run["feedback"]` holds at most 100 feedback records across each batch of runs the evaluator processes, and the oldest records are dropped first, so the score can be missing when the batch carries many feedback records. To read the score reliably, include extended stats and read the average from `run["feedback_stats"]["<feedback_key>"]["avg"]`. To configure the filter on a code evaluator, see [Create a filter](/langsmith/online-evaluations-code#3-create-a-filter).
+- **Code evaluators**: Read the [feedback record](/langsmith/feedback-data-format) in `run["feedback"]` whose `key` is the first evaluator's feedback key, and use its `score`. `run["feedback"]` holds at most 100 feedback records across each batch of runs the evaluator processes, and the oldest records are dropped first, so the score can be missing when the batch carries many feedback records. To read the score reliably, include extended stats and read the average from `run["feedback_stats"]["<feedback_key>"]["avg"]`.
+
+The `avg` field averages every feedback record with that key on the run, so it equals the first evaluator's score only when the run has one record with that key. Another record with the same key, such as user feedback, changes the average.
 
 ## Delete an evaluator
 
