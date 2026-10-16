@@ -28,7 +28,7 @@ def _seed_agent(address: ls.AgentAddress, timeout: float = 120) -> None:
     deadline = time.monotonic() + timeout
     while True:
         try:
-            asyncio.run(seed_client.sessions.resolve(**address.to_api_address()))
+            asyncio.run(seed_client.sessions.resolve(**address))
             return
         except Exception as error:
             if not _is_not_found(error) or time.monotonic() > deadline:
@@ -45,14 +45,14 @@ import asyncio
 import langsmith as ls
 
 client = ls.Client()
-agent = ls.AgentAddress("checkout", "production")
+agent = ls.agent_address("checkout", "production")
 # :remove-start:
 _seed_agent(agent)
 # :remove-end:
 
 
 async def main() -> None:
-    project = await client.sessions.resolve(**agent.to_api_address())
+    project = await client.sessions.resolve(**agent)
 
     async for run in client.runs.query(project_ids=[project.session_id]):
         print(run.id)
@@ -81,11 +81,11 @@ seeded_experiment = client.create_project(
 )
 experiment_id = str(seeded_experiment.id)
 # :remove-end:
-experiment = ls.ExperimentAddress(experiment_id)
+experiment = ls.experiment_address(experiment_id)
 
 
 async def main() -> None:
-    project = await client.sessions.resolve(**experiment.to_api_address())
+    project = await client.sessions.resolve(**experiment)
 
     async for run in client.runs.query(project_ids=[project.session_id]):
         print(run.id)
@@ -107,7 +107,7 @@ import asyncio
 import langsmith as ls
 
 client = ls.Client()
-evaluators = ls.EvaluatorAddress()
+evaluators = ls.evaluator_address()
 # :remove-start:
 # Evaluator traces go to the workspace's project named "evaluators".
 client.create_project("evaluators", upsert=True)
@@ -115,7 +115,7 @@ client.create_project("evaluators", upsert=True)
 
 
 async def main() -> None:
-    project = await client.sessions.resolve(**evaluators.to_api_address())
+    project = await client.sessions.resolve(**evaluators)
 
     async for run in client.runs.query(project_ids=[project.session_id]):
         print(run.id)

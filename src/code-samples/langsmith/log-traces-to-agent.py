@@ -3,7 +3,7 @@ import langsmith as ls
 from langsmith import traceable
 
 
-@traceable(address=ls.AgentAddress("checkout", "production"))
+@traceable(address=ls.agent_address("checkout", "production"))
 def handle_order(order_id: str) -> dict:
     return {"order_id": order_id, "status": "charged"}
 
@@ -26,7 +26,7 @@ def handle_order(order_id: str) -> dict:
     return {"order_id": order_id, "status": "charged"}
 
 
-with tracing_context(address=ls.AgentAddress("checkout", "production")):
+with tracing_context(address=ls.agent_address("checkout", "production")):
     handle_order("A-1")
 # :snippet-end:
 
