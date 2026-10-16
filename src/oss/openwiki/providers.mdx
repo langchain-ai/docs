@@ -101,6 +101,37 @@ OPENWIKI_PROVIDER=copilot
 OPENWIKI_MODEL_ID=gpt-5.5
 ```
 
+## Microsoft Entra auth
+
+OpenWiki supports Microsoft Entra ID (formerly Azure Active Directory) as a token provider for OpenAI-compatible endpoints that require Entra bearer tokens instead of static API keys.
+
+<Note>
+Entra ID authentication requires OpenWiki v0.7.0 or later.
+</Note>
+
+To configure Entra auth interactively, run `openwiki --init`, select **OpenAI-compatible**, then select **Microsoft Entra ID**. Enter the HTTPS API root, the token scope your gateway accepts, and the model ID. OpenWiki saves these settings for later `--update` runs. It does not ask for or store an access token.
+
+For non-interactive runs, set the same values as environment variables:
+
+```bash
+OPENWIKI_PROVIDER=openai-compatible
+OPENAI_COMPATIBLE_AUTH=entra-id
+OPENAI_COMPATIBLE_BASE_URL=https://gateway.example.com/openai/v1
+OPENAI_COMPATIBLE_ENTRA_SCOPE=api://gateway-application-id/.default
+OPENWIKI_MODEL_ID=your-gateway-model
+```
+
+- **`OPENAI_COMPATIBLE_AUTH`**: Set to `entra-id` to enable Entra auth. The default is `api-key`. In Entra mode, `OPENAI_COMPATIBLE_API_KEY` is not required.
+- **`OPENAI_COMPATIBLE_BASE_URL`**: Must use HTTPS and cannot contain embedded credentials.
+- **`OPENAI_COMPATIBLE_ENTRA_SCOPE`**: Optional. Defaults to `https://cognitiveservices.azure.com/.default`, the Azure OpenAI scope. Custom gateways may require a different scope.
+
+OpenWiki obtains tokens through [Azure Identity](https://learn.microsoft.com/en-us/javascript/api/overview/azure/identity-readme), which caches them and refreshes them before expiry. Configure an Azure Identity credential separately in each environment that runs OpenWiki:
+
+- **Workload identity federation**: Set `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_FEDERATED_TOKEN_FILE`. When `AZURE_FEDERATED_TOKEN_FILE` is set, OpenWiki uses `WorkloadIdentityCredential`. Point the file variable at the runner-provided token file. Do not commit the file.
+- **Other environments**: OpenWiki uses `DefaultAzureCredential`, which accepts credentials such as `az login`, a managed identity, or environment credentials.
+
+Generated CI workflows keep the auth mode and scope, but you still need to configure an unattended Azure Identity credential in CI.
+
 ## OpenAI (ChatGPT login)
 
 The `openai-chatgpt` provider calls OpenAI's Codex backend using your ChatGPT subscription instead of a metered API key:

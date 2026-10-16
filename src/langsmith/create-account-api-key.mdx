@@ -10,12 +10,15 @@ To get started with LangSmith, you need to create an account. You can sign up fo
 
 ## API keys
 
-LangSmith supports two types of API keys. You can use both types of token to authenticate requests to the LangSmith API, but they have different use cases:
+LangSmith supports three types of API keys with different permissions and lifecycles:
 
 - [**Personal Access Tokens (PATs)**](/langsmith/administration-overview#personal-access-tokens-pats) inherit the permissions of the user who created them. Use PATs for personal scripts or tools.
+- [**Tracing keys**](#tracing-keys) submit traces in selected workspaces without access to stored traces or administrative operations.
 - [**Service keys**](/langsmith/administration-overview#service-keys) scope to specific [workspaces](/langsmith/administration-overview#workspaces) or the entire [organization](/langsmith/administration-overview#organizations). Use service keys for applications and production services.
 
-To log [traces](/langsmith/observability-concepts#traces) and run [evaluations](/langsmith/evaluation) with LangSmith, create an API key to authenticate your requests.
+Use a tracing key to log [traces](/langsmith/observability-concepts#traces). Use a PAT or service key with the required permissions for [evaluations](/langsmith/evaluation) and other API operations.
+
+To create a PAT or service key in the UI:
 
 <Steps>
   <Step title="Open API Keys settings" icon="settings">
@@ -67,6 +70,59 @@ Authentication results are cached, so a deactivated or deleted token stops worki
 [Audit logs](/langsmith/audit-logs) record deactivation as `revoke_personal_access_token` and reactivation as `reinstate_personal_access_token`.
 
 Service keys can only be deleted, not deactivated. Open the **Service** tab and select **Delete key** in the **Actions** column, then confirm with the typed description that deleting a PAT requires.
+
+## Tracing keys
+
+Tracing keys are organization-owned credentials for submitting traces in selected workspaces. They limit an application's access to `runs:create` and `projects:create`.
+
+A tracing key can create projects and submit run updates through the tracing ingestion APIs. It cannot read stored traces, update project configuration, create saved views, run experiments, or manage keys. Project upsert requests are also denied. Use a separate credential for operations that require those permissions.
+
+### Create a tracing key
+
+Tracing-key creation requires active organization membership and active membership in every selected workspace. You need `workspaces:tracing-keys:create` in each workspace, including permissions granted through teams. Built-in Workspace Admin and Workspace Editor roles receive this permission; Workspace Viewers do not. Administrators must grant it explicitly to custom roles. You do not need `runs:create` yourself.
+
+To create a key in LangSmith:
+
+1. Go to **Settings** > **API Keys** and select **API Key**.
+2. Select **Tracing Only** and enter a description.
+3. Select the workspaces and an expiration date, then select **Create API Key**.
+4. Copy the key before closing the dialog.
+
+The tracing option requires a supported deployment. For BYOC workspaces, the data plane must also support tracing keys. Only workspaces where you have the creation permission and the deployment supports tracing keys are available for selection.
+
+You can also create the key with `POST /api/v1/orgs/current/tracing-keys`. Authenticate as a user, including through a PAT if organization policy permits API keys to create keys. Service-account keys cannot create tracing keys.
+
+The request accepts:
+
+- **`workspaces`**: A required list of one or more workspace IDs. The key has no organization-wide scope.
+- **`description`**: An optional label for the key.
+- **`expires_at`**: An optional expiration timestamp, subject to service-key expiry limits.
+
+The response returns `201 Created`, a `Location` header, and the secret in `key`. Copy the secret when you create it; list responses do not return it. Tracing keys have the `lsv2_tr_` prefix.
+
+Use the key as `LANGSMITH_API_KEY` with the [SDK configuration](#configure-the-sdk) below. For a key scoped to multiple workspaces, set `LANGSMITH_WORKSPACE_ID` to a selected workspace. Direct API requests use `X-Tenant-Id`.
+
+### Scope and lifecycle
+
+A tracing key has fixed permissions across its selected workspaces. It does not inherit the creator's roles or project-tag access policies. Its workspace scope and permissions cannot be edited. Create a replacement key to change the scope.
+
+Removing or disabling the creator does not disable tracing with the key. Deleting a selected workspace removes access to that workspace; it does not add access to other workspaces. Expiration and key deletion stop authentication, subject to authentication caching.
+
+### List and delete tracing keys
+
+In **Settings** > **API Keys**, select **Tracing** to view keys. To delete a key, select its delete action and enter its description to confirm. The delete action appears only when you have permission to delete that key.
+
+`GET /api/v1/orgs/current/tracing-keys` lists keys visible to the authenticated user. It returns `items` and `next_cursor`. Use `page_size` to request 1–100 keys per page; the default is 50. Pass `next_cursor` as `cursor` to request the next page. The optional `workspace_ids` filter limits results to matching visible workspaces.
+
+Listing a key does not necessarily grant permission to delete it. Hidden workspace IDs and names are omitted for callers without access to the full scope. Check `can_delete` for deletion authority.
+
+`DELETE /api/v1/orgs/current/tracing-keys/{api_key_id}` deletes a tracing key. Repeated deletion returns `204 No Content`. Deletion is allowed for:
+
+- **Creators**: The creator must remain an active organization member.
+- **Organization key managers**: Callers with `organization:service-key:manage`, including service-account automation.
+- **Workspace key managers**: Active members with `workspaces:manage-keys` in every remaining selected workspace.
+
+The create, list, and delete endpoints are available over HTTP. Generated SDK key-management methods do not expose them. An issued tracing key works with the SDK's tracing APIs.
 
 ## Configure the SDK
 

@@ -1,7 +1,7 @@
 ---
 type: integration boundary
-title: Reference Documentation Boundaries
-description: Distinguishes the externally operated SDK reference site from the three LangSmith OpenAPI inputs that Mintlify generates at deployment. Explains navigation, spec ownership, refresh automation, and validation boundaries.
+title: Reference Documentation Integrations
+description: Explains the ownership and publication paths for the external SDK reference site and Mintlify-generated LangSmith OpenAPI sections, including committed inputs, refresh automation, and validation boundaries.
 tags: [api-reference, openapi, cross-references, mintlify, langsmith]
 sources:
   - id: openwiki-source-759309714d08144a07e1b2e0
@@ -40,13 +40,13 @@ sources:
     resource: repo://tests/unit_tests/test_check_cross_refs.py
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-15T08:21:56.046Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-15T08:21:56.046Z
+    at: 2026-10-16T08:20:25.784Z
 ---
 
-# Reference Documentation Boundaries
+# Reference Documentation Integrations
 
 ## Boundary and ownership
 
@@ -101,7 +101,7 @@ This source-level check is separate from Mintlify's rendered-site link check: su
 
 | Section | Source lifecycle and owner | Safe escalation | Mintlify route directory |
 | --- | --- | --- | --- |
-| Agent Server API | Committed `src/langsmith/agent-server-openapi.json`; updates arrive in `langgraph-api` PRs titled `Update Agent ServerOpenAPI spec for API version X.Y.Z`. | Obtain or review the upstream `langgraph-api` spec-update PR; do not hand-edit generated output. | `langsmith/agent-server-api` |
+| Agent Server API | Committed `src/langsmith/agent-server-openapi.json`; updates arrive in `langgraph-api` PRs titled `Update Agent ServerOpenAPI spec for API version X.Y.Z`. | Obtain or review the upstream `langgraph-api` spec-update PR. | `langsmith/agent-server-api` |
 | Control Plane API | Service-owned `https://api.host.langchain.com/openapi.json`, fetched at deployment; there is no local specification. | Correct the service-owned source; do not copy a spec into this repository. | Mintlify default route directory (`/api-reference/`) |
 | LangSmith REST API | Committed `src/langsmith/langsmith-platform-openapi.json`, produced by scheduled refresh automation. | Fix the upstream source or processor policy, regenerate, and review the refresh PR; never patch the JSON by hand. | `langsmith/smith-api` |
 

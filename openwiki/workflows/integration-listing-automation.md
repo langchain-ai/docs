@@ -5,7 +5,7 @@ description: Explains how hosted-guide metadata, external listing metadata, and 
 tags: [integrations, automation, documentation, metadata, ci]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-14T08:21:39.311Z
+    at: 2026-10-16T08:20:25.784Z
 sources:
   - id: openwiki-source-8bdd8b6031ea08044f515d8c
     resource: repo://.agents/skills/submit-integration/SKILL.md
@@ -41,7 +41,7 @@ sources:
     resource: repo://src/oss/python/integrations/providers/all_providers.mdx
   - id: openwiki-source-7be0fdefc402d868b9f2fdca
     resource: repo://tests/unit_tests/test_refresh_integration_downloads.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-14T08:21:39.311Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
 ---
 
 # Integration Listing Automation
@@ -183,5 +183,5 @@ A blocker file, failed agent, or no diff yields an issue comment rather than a P
 
 - [Source Directory Map](/openwiki/architecture/source-map.md)
 - [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md)
-- [Adding Pages](/openwiki/operations/adding-pages.md)
+- [Quickstart](/openwiki/quickstart.md)
 - [Testing overview](/openwiki/testing/test-overview.md)
