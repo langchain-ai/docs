@@ -76,14 +76,20 @@ instead, and touch `docs.json` only when creating a brand-new component group.
 ## Step 4. Add redirects for a move, rename, or deletion
 
 For a move or rename of a file that was already on `main`, run the repo's mover first. It rewrites cross-references
-across the corpus, which hand-editing misses:
+across the corpus, which hand-editing misses: every link to the page in every
+form (`/oss/langchain/x`, `/oss/python/langchain/x`, `href="..."`), plus the
+`src/docs.json` nav entries and redirect destinations that name it:
 
 ```bash
 uv run docs mv src/langsmith/old-name.mdx src/langsmith/new-name.mdx --dry-run
 ```
 
-Drop `--dry-run` once the preview looks right. Then add the redirect to the
-`redirects` array in `src/docs.json`:
+Read any `Left ... links unchanged` warning in the output. It marks links the
+mover could not rewrite safely, such as an unversioned `/oss/integrations/...`
+link that also reaches the other language's page. Fix those by hand.
+
+Drop `--dry-run` once the preview looks right. The mover does not add a
+redirect, so add one to the `redirects` array in `src/docs.json`:
 
 ```json
 { "source": "/langsmith/old-name", "destination": "/langsmith/new-name" }
