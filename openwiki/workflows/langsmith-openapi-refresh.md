@@ -5,7 +5,7 @@ description: Documents the scheduled, reviewed refresh that turns the LangSmith 
 tags: [langsmith, openapi, automation, github-actions, mintlify, security]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-15T08:21:56.046Z
+    at: 2026-10-16T08:20:25.784Z
 sources:
   - id: openwiki-source-5153f86e64d6ee0b305f72b3
     resource: repo://.github/workflows/refresh-langsmith-openapi.yml
@@ -23,7 +23,7 @@ sources:
     resource: repo://src/docs.json
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-15T08:21:56.046Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
 ---
 
 # LangSmith OpenAPI Refresh
@@ -61,7 +61,7 @@ flowchart TD
 
 This flow shows the constrained upstream input, curated JSON, review gate, and deployment-generated endpoint routes.
 
-The GitHub Actions job is a trusted writer, not a pull-request workflow. It runs on `ubuntu-latest` with a 15-minute timeout and only `contents: write` and `pull-requests: write` permissions, checks out shallow history, provisions Python 3.13 through the repository uv action, and runs the processor with `--write`. Its write phase stages only `src/langsmith/langsmith-platform-openapi.json`; that narrow artifact path and the review PR limit the effect of a changing remote specification.
+The GitHub Actions job is a trusted writer, not a pull-request workflow. It runs on `ubuntu-latest` with a 15-minute timeout and only `contents: write` and `pull-requests: write` permissions, checks out shallow history, provisions Python 3.13 through the repository uv action, and runs the processor with `--write`. Its write phase stages only `src/langsmith/langsmith-platform-openapi.json`; that narrow artifact path limits the repository write surface, while the review PR is the approval boundary for a changing remote specification.
 
 ## Public-documentation shaping
 
@@ -108,7 +108,15 @@ A disallowed fetch hostname raises `ValueError`; a network, TLS, timeout, or JSO
 
 There is no repository command that proves Mintlify rendered every LangSmith REST endpoint page. `make check-openapi` currently validates only the Agent Server specification. The normal link checks pass Mint output through `scripts/filter_mint_broken_links.py`, which excludes `/langsmith/smith-api` because that route family is generated at deployment rather than present in the local build. Inspect a Mintlify preview or deployed site for the rendered REST endpoint surface; use the processor command to verify transformation and the refresh PR to verify the candidate change.
 
-The focused unit coverage in this area tests the link-report filter's exemptions while retaining ordinary failures. It does not render the deployment-generated API routes; the deployed preview remains the relevant integration check.
+### Focused test boundary
+
+The focused unit coverage in this area is the link-report filter test, which preserves the exemption for generated OpenAPI-route reports while retaining ordinary broken-link failures. Run it with:
+
+```bash
+make test TEST_FILE=tests/unit_tests/test_filter_mint_broken_links.py
+```
+
+It does not exercise remote fetches, the processor transformation policy, GitHub branch/PR operations, or deployment-generated API routes. Use a controlled local processor run and generated-diff review for transformation changes; use the scheduled/manual workflow and a Mintlify preview or deployed site for those integration boundaries.
 
 ## Safe change checklist
 
