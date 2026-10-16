@@ -1,0 +1,112 @@
+---
+title: Connect Engine to your repository
+sidebarTitle: Connect your repository
+description: Connect your agent's code repository to LangSmith Engine so it can read your source code when investigating issues and propose fixes as pull requests.
+---
+
+Connecting your agent's code repository lets [LangSmith Engine](/langsmith/engine) read your source code when investigating traces, and propose fixes as pull requests. A connection is optional for trace analysis. For what Engine gains from source access and the permissions it uses, see [Why connect GitHub](/langsmith/engine#why-connect-github).
+
+Engine connects to repositories on GitHub:
+
+- **LangSmith Cloud**: Use the LangChain-managed GitHub App on GitHub.com. Start with [Connect GitHub repositories](#connect-repositories).
+- **Self-hosted LangSmith**: An operator first completes [GitHub configuration for self-hosted](/langsmith/engine-self-hosted-github) for your GitHub instance. Then, workspace users follow the same repository connection steps below.
+
+## GitHub
+
+<a id="langsmith-cloud"></a>
+
+### Connect repositories
+
+These steps apply to LangSmith Cloud and to self-hosted deployments with a configured GitHub App.
+
+Enable [Engine](/langsmith/engine) for your tracing project or agent environment. You need permission to configure Engine in that project and to connect a GitHub integration in your LangSmith workspace. Ask a workspace administrator if those actions are unavailable.
+
+On GitHub, you need permission to install the App on the repositories you want to connect, or access to an existing installation. Your GitHub organization or enterprise may require an administrator to approve the installation. Complete your organization's SSO sign-in when prompted.
+
+<Note>
+For Enterprise Managed Users, connect organization-owned repositories. GitHub does not allow this App to be installed on a managed user's personal account. See [Enterprise Managed Users](/langsmith/engine-self-hosted-github#enterprise-managed-users) for the requirements on GitHub.com and `ghe.com`.
+</Note>
+
+For fixes, the repository must permit Engine's branches and draft PRs. Review [Repository policies](#repository-policies) before testing a fix.
+
+To connect repositories to an existing Engine project:
+
+1. Open the tracing project or agent environment. In its **Engine** tab, select **Configure Engine**.
+2. Under **Code repository**, select **Connect GitHub**. If your workspace already has a connection, the repository picker appears instead.
+3. In GitHub, authorize the App configured for your LangSmith deployment. Install it on the organization or account that owns your code and select the repositories it can access. If the App is already installed, LangSmith may ask you to select an existing installation.
+4. Complete any GitHub approval prompts and return to LangSmith. Authorizing the App and installing it are separate steps: authorization identifies your GitHub account; installation grants the App access to repositories.
+5. In the repository picker, search by account or repository name, select a repository, and click **Connect repository**.
+6. Repeat for additional repositories. Each repository can have its own branch and subfolder.
+
+You can also connect repositories while first setting up Engine, under **Connect your agent's code repository**.
+
+#### Choose the branch and subfolder
+
+For each connected repository:
+
+- **Branch**: Select the branch Engine should read and use as the base for fixes. Leave it blank to use the repository's default branch.
+- **Subfolder**: Optionally focus Engine on the part of the repository that contains your agent. This setting does not restrict the GitHub App's repository access.
+
+Engine creates fix branches in the connected repository and opens draft pull requests against the selected base branch. Review and merge those pull requests through your usual GitHub process. Engine does not merge them for you.
+
+#### Connect another organization or account
+
+One GitHub App can have an installation in each of several organizations or accounts. Repositories from those installations can be connected to the same Engine project.
+
+In the repository picker, select **Install on another GitHub organization or repository...**. Complete the GitHub flow, return to LangSmith, and connect the additional repositories. On self-hosted LangSmith, the App's [ownership and visibility](/langsmith/engine-self-hosted-github#choose-who-owns-the-app) determine which accounts GitHub offers as installation targets.
+
+On self-hosted LangSmith, all connected repositories must belong to the same GitHub instance. Connecting to a different LangSmith workspace also requires connecting the appropriate installation in that workspace.
+
+#### Manage repository access
+
+Installing an App on **Only select repositories** does not automatically include repositories created later. In the picker, select **Missing a repo? Manage repo access for ...** or **Manage app access →**. Add the repository in GitHub, save the installation settings, and reload the picker.
+
+Removing a repository from an Engine project stops Engine from using it for that project. It does not uninstall the GitHub App or remove its access for other projects. Manage the App installation in GitHub to revoke repository access.
+
+#### Verify the connection
+
+Use a test repository and an Engine project with representative traces. On self-hosted LangSmith, ask your operator to [verify webhook delivery](/langsmith/engine-self-hosted-github#verify-webhook-delivery) during this test.
+
+To verify the connection:
+
+1. Run an Engine analysis and confirm it can use the repository's source code.
+2. Generate a fix for an issue, inspect its diff, and click **Open PR**. Confirm that **View PR** opens a draft PR on the expected GitHub instance, repository, and base branch.
+3. Review and merge the test PR. Confirm the corresponding Engine issue becomes complete.
+
+To create PRs automatically, enable **Open a draft pull request for every fix** in **Code repository** settings.
+
+#### Repository policies
+
+Repositories must support draft PRs and allow Engine to push fix branches. Engine does not use a fork-based contribution workflow.
+
+Engine's Git commits are unsigned. Rules that require signed commits on the fix branch can reject pushes. Branch-name rules, push restrictions, and GHES pre-receive hooks can also reject a fix. In LangSmith v0.17, fix branches use the `issues-agent/` prefix.
+
+Review policies that apply to these branches and the App identity. Keep your normal review and merge requirements on the target branch. A requirement on the target branch may still need to be satisfied when a person merges; configuring the App does not bypass repository policy.
+
+Engine does not fetch Git LFS file contents or initialize Git submodules.
+
+#### Troubleshoot repository selection
+
+| Symptom | What to check |
+| --- | --- |
+| GitHub is not configured, or the connection fails before GitHub opens | On self-hosted LangSmith, ask your operator to check the [deployment configuration](/langsmith/engine-self-hosted-github#configure-langsmith). |
+| Your organization is not an installation target | Confirm your GitHub role, organization approval policy, and the App's visibility. A private App can only be installed on its owning account. |
+| Your managed-user account is not an installation target | Use an organization-owned repository. Personal managed-user repositories cannot use this integration. |
+| The App is installed, but LangSmith has no connection | Start **Connect GitHub** in LangSmith, including after an administrator approves installation or you install directly from GitHub. On self-hosted LangSmith, ask your operator to [check setup](/langsmith/engine-self-hosted-github#troubleshoot-setup) if authorization does not finish. |
+| An installation or repository is missing | Check which GitHub account you authorized, the App's selected repositories, and whether the installation was connected to this LangSmith workspace. Complete your organization's SSO authorization when prompted. |
+| Authorization succeeds, but the repository cannot be read | Check the App's repository access. On self-hosted LangSmith, also ask your operator to check [GitHub API and sandbox network access](/langsmith/engine-self-hosted-github#allow-network-access). Browser sign-in does not test those connections. |
+| A fix cannot be pushed | Check rules that apply to the new fix branch, including signed-commit requirements, branch restrictions, and pre-receive hooks. See [Repository policies](#repository-policies). |
+
+<a id="self-hosted"></a>
+<a id="self-hosted-configuration"></a>
+
+## Self-hosted LangSmith
+
+On self-hosted LangSmith, an operator registers a GitHub App and configures LangSmith before anyone can connect repositories. See [Configure GitHub for Engine on self-hosted](/langsmith/engine-self-hosted-github).
+
+## See also
+
+- [Set up Engine](/langsmith/engine-setup): Turn on Engine for a tracing project and select its repositories.
+- [Why connect GitHub](/langsmith/engine#why-connect-github): What Engine gains from source access, and the permissions it uses.
+- [Configure GitHub for Engine on self-hosted](/langsmith/engine-self-hosted-github): Register and configure the GitHub App on self-hosted LangSmith.
+- [Engine security](/langsmith/engine-security): How Engine handles your data and repository access.
