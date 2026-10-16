@@ -54,7 +54,7 @@ _seed_agent(agent)
 async def main() -> None:
     project = await client.sessions.resolve(**agent.to_api_address())
 
-    async for run in client.runs.query_v2(project_ids=[project.session_id]):
+    async for run in client.runs.query(project_ids=[project.session_id]):
         print(run.id)
 
 
@@ -87,7 +87,7 @@ experiment = ls.ExperimentAddress(experiment_id)
 async def main() -> None:
     project = await client.sessions.resolve(**experiment.to_api_address())
 
-    async for run in client.runs.query_v2(project_ids=[project.session_id]):
+    async for run in client.runs.query(project_ids=[project.session_id]):
         print(run.id)
 
 
@@ -117,7 +117,7 @@ client.create_project("evaluators", upsert=True)
 async def main() -> None:
     project = await client.sessions.resolve(**evaluators.to_api_address())
 
-    async for run in client.runs.query_v2(project_ids=[project.session_id]):
+    async for run in client.runs.query(project_ids=[project.session_id]):
         print(run.id)
 
 
