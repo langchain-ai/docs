@@ -1,11 +1,16 @@
 ---
 type: workflow guide
-title: Local Development
-description: Set up and operate the local documentation build and Mintlify preview loop. Covers full and incremental builds, skill linking, recovery from generated-output drift, and focused validation.
+title: Local Development Workflow
+description: Install the documentation toolchain, author inputs in src, and use the build, preview, lint, test, and link-check loops safely. Explains when incremental rebuilding is sufficient and when to regenerate disposable build output.
 tags: [local-development, documentation, mintlify, build-system, workflow]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-16T08:20:25.784Z
 sources:
   - id: openwiki-source-9c06bd9d7d25770709e07c7c
     resource: repo://.mise.toml
+  - id: openwiki-source-8037e2358a2c4f9b2c722a11
+    resource: repo://AGENTS.md
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
   - id: openwiki-source-6e6efa1569f158fcdb678ef0
@@ -24,19 +29,22 @@ sources:
     resource: repo://README.md
   - id: openwiki-source-16b92823fdcb07d686f2e27f
     resource: repo://tests/unit_tests/test_watcher.py
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-29T08:22:38.059Z
-generated: { by: "openwiki/0.4.3", at: "2026-09-29T08:22:38.059Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
 ---
 
-# Local Development
+# Local Development Workflow
 
-The local loop has a strict input/output boundary: author documentation, navigation, and assets in `src/`; the Python pipeline generates the Mintlify-facing `build/` tree. `build/` is disposable output. Never edit it directly: a full build removes and recreates it.
+The local loop has a strict input/output boundary: author documentation, navigation, and assets in `src/`; the Python pipeline generates the Mintlify-facing `build/` tree. `build/` is disposable generated output. Never edit it directly: a full build removes and recreates it.
 
 ## First-time setup
 
-The checkout requires Python 3.13 or later, Node.js, and `uv`. The repository's `.mise.toml` provides a reproducible local tool selection—Node.js 22, Python 3.13, and `uv` 0.9.26—when using mise. Install Python dependency groups, project npm dependencies, the global Mintlify CLI, and the local Claude Code skill links:
+The checkout requires Python 3.13 or later, Node.js, and `uv`. The repository's `.mise.toml` provides a reproducible local tool selection—Node.js 22, Python 3.13, and `uv` 0.9.26—when using mise. It also pins Vale and configures a post-install hook that installs `prek` pre-commit and pre-push hooks. To use mise, follow its configured setup sequence:
+
+```bash
+mise trust && mise install
+```
+
+Install the project dependencies, global Mintlify CLI, and Claude Code skill links:
 
 ```bash
 git clone https://github.com/langchain-ai/docs.git
@@ -47,6 +55,19 @@ make install
 `make install` runs `uv sync --all-groups`, `npm install`, and `npm install -g mint@latest`; it also invokes `make skills`. The latter links each canonical `.agents/skills/<name>/` directory into the gitignored `.claude/skills/` directory for Claude Code. It retains non-symlink personal entries and removes stale symlinks. Re-run `make skills` after pulling a newly added or renamed skill. Other supported agents use `.agents/skills/` directly; see [Agent Authoring Skills](/openwiki/operations/agent-skills.md).
 
 If the `docs` console script is unavailable after installation, open a new shell. Confirm the separate global executable with `mint --version`.
+
+## Edit authored inputs
+
+Make changes under `src/`, not `build/`. `src/docs.json` owns Mintlify site configuration and navigation; update it when adding a page. The primary authored locations include product content under `src/langsmith/` and `src/oss/`, reusable MDX in `src/snippets/`, assets in `src/images/`, and custom styles in `src/style.css`.
+
+When Mint warns that a new navigation page does not exist, ensure the group lists its root `index` route without an extension:
+
+```json
+{
+  "group": "New group",
+  "pages": ["new-group/index", "new-group/other-page"]
+}
+```
 
 ## Choose an entrypoint
 
@@ -60,7 +81,7 @@ uv run pipeline dev --skip-build # reuse a suitable existing build tree
 uv run pipeline build            # direct one-shot build
 ```
 
-The CLI exposes `docs build --watch`, but the build command ignores command arguments and returns after one build. Use `dev` for supported watch behavior.
+The CLI exposes `docs build --watch`, but the build command ignores command arguments and returns after one build. Use `dev` for supported watch behavior. See [CLI Tools](/openwiki/operations/cli-tools.md) for the broader command surface.
 
 ## Start the edit–preview loop
 
@@ -91,7 +112,7 @@ This flow distinguishes the full-build reset from focused updates during a previ
 
 ### Startup, failure, and shutdown
 
-A normal start returns failure before creating the watcher or Mint process when its initial build fails. `--skip-build` deliberately bypasses that guard and only warns when `build/` does not exist, so use it only with a suitable existing generated tree. If `mint` cannot start, the command exits with an installation recommendation. After startup, a nonzero Mint exit, a cancelled watcher, or an unexpected watcher stop makes development mode fail.
+A normal start returns failure before creating the watcher or Mint process when its initial build fails. `--skip-build` deliberately bypasses that guard and only warns when `build/` does not exist, so use it only with a suitable existing generated tree. After startup, a nonzero Mint exit, a cancelled watcher, or an unexpected watcher stop makes development mode fail.
 
 Press Ctrl+C to stop. The command signals watcher shutdown, cancels a pending debounced rebuild, terminates Mint, waits up to five seconds, then kills Mint if necessary. It cancels and joins the watcher, Mint wait, and log-forwarding tasks so an interrupted session does not leave them running. On Windows Mint is launched through a shell for `.CMD` compatibility; Unix uses direct execution.
 
@@ -119,7 +140,7 @@ Choose the narrowest check that establishes the changed boundary:
 | --- | --- | --- |
 | Pipeline, preprocessing, routing, or watcher behavior | `make test` | Pytest with network sockets disabled except Unix sockets. Focus the watcher suite with `make test TEST_FILE=tests/unit_tests/test_watcher.py`. |
 | Python tooling and spelling | `make lint` | Ruff format/check, `ty`, and Codespell on `src`. |
-| Markdown style | `make lint_md` | Markdownlint below `src`; use `make lint_md_fix` to apply its fixes. |
+| Markdown style | `make lint_md` | Markdownlint below `src`; use `make lint_md_fix` to apply its fixes. Install markdownlint CLI, or use the suggested VS Code extension. |
 | Prose | `make lint_prose` | Installs the Vale version pinned in `.mise.toml` to `.bin/vale`, then checks `src` or `FILES`. |
 | Generated links and anchors | `make broken-links-with-anchors` | Builds first, runs Mint from `build/` with `--check-anchors`, and filters known non-actionable reports. |
 | Source `@[ref]` references | `make check-cross-refs` | Checks source references separately from Mint's built-site check. |
@@ -144,15 +165,6 @@ mint broken-links
 
 Both link-check targets run after a full build, validate redirect destinations with `--check-redirects`, and filter known deployment-generated and standalone-snippet reports before failing on remaining link lines; the anchor target additionally passes `--check-anchors`. The same working-directory rule applies to raw export and OpenAPI commands. If Mint reports compatibility errors, update it with `mint update` or `npm install -g mint@latest`.
 
-When Mint warns that a new navigation page does not exist, ensure `src/docs.json` lists the root `index` route without an extension:
-
-```json
-{
-  "group": "New group",
-  "pages": ["new-group/index", "new-group/other-page"]
-}
-```
-
 ### Recovery checklist
 
 1. Re-run `make install` if Python dependencies, npm packages, Mint, or Claude Code skill links are missing.
@@ -166,5 +178,6 @@ When Mint warns that a new navigation page does not exist, ensure `src/docs.json
 - [Quickstart](/openwiki/quickstart.md)
 - [Build System Architecture](/openwiki/architecture/build-system.md)
 - [Mintlify Integration](/openwiki/integrations/mintlify.md)
+- [CLI Tools](/openwiki/operations/cli-tools.md)
 - [Agent Authoring Skills](/openwiki/operations/agent-skills.md)
 - [Testing Overview](/openwiki/testing/test-overview.md)
