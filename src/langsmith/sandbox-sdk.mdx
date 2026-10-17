@@ -79,6 +79,51 @@ await sandbox.delete();
 
 </CodeGroup>
 
+## Choose thread or user scope
+
+Sandbox scope determines which application requests share an execution environment. Your application implements this scope by choosing when to create a sandbox and which sandbox to reuse. The SDK does not provide a `scope="user"` creation option.
+
+| Scope | Choose it when | Tradeoff |
+|-------|----------------|----------|
+| Thread | Each conversation needs independent files and execution state. | Setup repeats across threads unless you start from a prepared [snapshot](/langsmith/sandbox-snapshots). Files do not automatically carry across threads. |
+| User | The same user needs working files and installed dependencies across conversations. | Threads share a filesystem and running processes. Concurrent work needs coordination, and cleanup affects every thread using the sandbox. |
+| Thread with user-scoped storage | Conversations need independent execution but share selected durable files. | Your application must synchronize files and enforce storage access separately. |
+
+Scope is a reuse policy, not an authorization boundary. [Sandbox permissions](/langsmith/sandbox-permissions) apply to the LangSmith caller and workspace. Naming a sandbox after an application user does not restrict access to that user. When your backend uses one API key for multiple users, enforce application-user ownership before every command, file operation, or service access.
+
+### Reuse a sandbox per user
+
+A user-scoped sandbox is one sandbox that your application reuses across that user's threads. Keep the user-to-sandbox mapping in durable application storage so it survives backend restarts.
+
+To manage a sandbox per user:
+
+1. Authenticate the request and derive the user identity from your authentication system. Do not trust a user ID or sandbox name supplied by the client as proof of ownership.
+2. Look up the sandbox mapping using both your application's tenant identity and the authenticated user identity. Authorize access before resolving the sandbox.
+3. Serialize provisioning for that mapping, including across backend workers. Inside the lock or transaction, read the mapping again to avoid duplicate creation.
+4. If the mapping exists, call `get_sandbox(name)` in Python or `getSandbox(name)` in TypeScript. If it does not exist, call `create_sandbox(...)` or `createSandbox(...)` and persist the returned sandbox name before releasing the provisioning lock.
+5. If the mapped sandbox was permanently deleted, recreate it and replace the mapping. Restore durable files from your application's storage or a retained snapshot before running work.
+6. Route subsequent threads for that user to the same sandbox. Delete the sandbox and remove its mapping when your application no longer needs it.
+
+Handle not-found separately from permission errors, timeouts, and other failures. Do not create a replacement sandbox for every lookup error. If you use deterministic names, handle a concurrent name conflict by resolving the existing sandbox and verifying its ownership. Wait for provisioning to complete before issuing commands. A provisioning lock alone does not make an external API call and a database write atomic: reconcile a sandbox created before a failed mapping write on retry.
+
+Use `create_sandbox` rather than the Python `client.sandbox()` context manager for cross-thread reuse. The context manager deletes the sandbox when it exits. In TypeScript, keep the sandbox after a run instead of calling `delete()` in that run's cleanup.
+
+### Coordinate concurrent threads
+
+Threads using one sandbox can overwrite each other's files or change the execution environment. Serialize work that modifies shared state, or coordinate access to shared paths and processes in your application. Separate thread directories reduce accidental path collisions, but they do not isolate code execution or prevent access to other directories.
+
+If threads need independent execution environments, use separate sandboxes. Share selected files through application-managed storage instead of sharing the whole filesystem.
+
+### Retain and recreate user environments
+
+User scope does not keep a sandbox running indefinitely. Configure [sandbox lifetime and retention](#sandbox-lifetime-and-retention) for the period your application needs to preserve working files:
+
+- **Idle stop**: `idle_ttl_seconds` (`idleTtlSeconds` in TypeScript) stops an inactive sandbox. A stopped sandbox retains its filesystem and wakes on the next command or file operation.
+- **Deletion after stop**: `delete_after_stop_seconds` (`deleteAfterStopSeconds` in TypeScript) permanently deletes the sandbox and its filesystem after the stopped retention period. Set it to `0` to disable this deletion and manage cleanup yourself.
+- **Recovery**: Preserve durable user files outside the sandbox or in retained snapshots. A user-to-sandbox mapping does not recover files after permanent deletion.
+
+Use snapshots to prepare dependencies for new sandboxes. Plan how to refresh existing user environments when dependencies change; recreating an environment requires preserving the user's durable files first.
+
 ## Run commands
 
 Every `run()` call returns an `ExecutionResult` with `stdout`, `stderr`, `exit_code`, and `success`.
