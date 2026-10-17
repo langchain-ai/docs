@@ -252,6 +252,7 @@ With only a `model` (no other optional arguments), the main agent typically incl
 4. @[`PatchToolCallsMiddleware`]
 5. **Prompt caching** middleware (added for supported providers; no-ops elsewhere)
 6. **Harness profile extras** and **excluded-tool filtering**, if the resolved model profile defines them
+7. `UnsupportedContentMiddleware` (always added last; replaces content the active model cannot accept with a text placeholder before each model call)
 :::
 
 #### Full stack
@@ -299,6 +300,7 @@ From first to last:
 
 11. `HumanInTheLoopMiddleware`: Only when you pass `interruptOn`. Pauses for human approval or input at configured tool calls.
 12. **Excluded-tool filtering**: When the harness profile lists excluded tools, middleware removes those tools from the agent.
+13. `UnsupportedContentMiddleware`: Always added last, after every other entry. Before each model call, it inspects the message history and replaces any content the active model cannot accept (based on `model.profile.fileMimeTypes`) with a text placeholder. This prevents a single provider rejection from failing every later turn. File support detection requires `@langchain/core@1.2.14` or later, and `@langchain/openai@1.6.1` or later for OpenAI and Azure OpenAI models.
 
 :::
 
@@ -585,6 +587,22 @@ Declarative subagents defined via `subagents=` do not inherit the main agent's m
 </AccordionGroup>
 :::
 
+:::js
+
+<AccordionGroup>
+    <Accordion title="Handle unsupported model content" icon="alert-triangle">
+        `UnsupportedContentMiddleware` is added automatically last in the stack by `createDeepAgent` and all subagents. Before each model call it inspects the message history and replaces any content the active model cannot accept (determined by `model.profile.fileMimeTypes`) with a text placeholder, so a single provider rejection does not fail every subsequent turn.
+
+        <Note>
+        File-support detection requires `@langchain/core` 1.2.14 or later. For OpenAI and Azure OpenAI models, `@langchain/openai` 1.6.1 or later is also required.
+        </Note>
+
+        The middleware runs last so it sees the final message list after summarization, caching, and memory injection. No configuration is needed for the default behavior. To disable it, pass a replacement instance whose `.name` matches `"UnsupportedContentMiddleware"` and whose `beforeModel` hook is a no-op, or remove unsupported content upstream before it reaches the agent.
+    </Accordion>
+</AccordionGroup>
+
+:::
+
 ### Interpreters
 
 Use [interpreters](/oss/deepagents/interpreters) to add an `eval` tool that runs JavaScript in a scoped QuickJS runtime. Interpreters are useful when the agent needs to compose tools programmatically, batch work, handle errors in code, or transform structured data without a full shell environment.
@@ -859,4 +877,3 @@ For more information and examples, see [response format](/oss/langchain/structur
 `createDeepAgent` pre-assembles a middleware stack on top of `createAgent`. To build a fully custom agent—choosing exactly which capabilities to include—see [Configure the harness](/oss/langchain/agents#configure-the-harness).
 
 :::
-
