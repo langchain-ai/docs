@@ -40,6 +40,7 @@ LINK_MAPS: list[LinkMap] = [
             "SubAgentMiddleware": "deepagents/middleware/subagents/SubAgentMiddleware",
             "AsyncSubAgent": "deepagents/middleware/async_subagents/AsyncSubAgent",
             "AsyncSubAgentMiddleware": "deepagents/middleware/async_subagents/AsyncSubAgentMiddleware",
+            "TaskEvent": "deepagents/middleware/async_subagents/TaskEvent",
             "SkillsMiddleware": "deepagents/middleware/skills/SkillsMiddleware",
             "MemoryMiddleware": "deepagents/middleware/memory/MemoryMiddleware",
             "FilesystemMiddleware": "deepagents/middleware/filesystem/FilesystemMiddleware",
