@@ -125,7 +125,7 @@ sequenceDiagram
     Supervisor-->>User: "Here are the results"
 ```
 
-- **Launch** creates a new thread on the server, starts a run with the task description as input, and returns the thread ID as the task ID. The supervisor reports this ID to the user and does not poll for completion.
+- **Launch** creates a new thread on the server and starts a run with input determined by the [launch mode](#choose-a-launch-mode). Isolated mode sends only the task description; Python fork mode also sends the parent's effective conversation history. The thread ID is returned as the task ID. The supervisor reports this ID to the user and does not poll for completion.
 - **Check** fetches the current run status. If the run succeeded, it retrieves the thread state to extract the subagent's final output. If still running, it reports that to the user.
 - **Update** creates a new run on the same thread with an interrupt multitask strategy. The previous run is interrupted, and the subagent restarts with the full conversation history plus the new instructions. The task ID stays the same.
 - **Cancel** calls `runs.cancel()` on the server and marks the task as `"cancelled"`.
@@ -212,7 +212,9 @@ async_subagents=[
 
 :::
 
-At launch, `start_async_task` sends the parent's full conversation history — replayed up to that point — followed by the task description. Later messages from the parent are not forwarded to the child.
+At launch, `start_async_task` sends a snapshot of the parent's effective conversation history, followed by the task description. If the parent has compacted its history, the snapshot includes that compacted context, not every original message. Later messages from the parent are not forwarded to the child.
+
+The subagent starts on a new server thread. Fork mode sends conversation messages as run input; it does not copy the parent's checkpoint history or all parent state. Metadata can associate the new thread with its supervisor, but that association does not itself transfer conversation context.
 
 **Prompt-cache reuse.** To get cache hits on the forked conversation prefix, configure the remote agent with the same model, system prompt, tools, and prompt-processing middleware as the parent. Fork mode copies conversation history; it does not synchronize those settings. Matching configuration is necessary but not sufficient: the rendered prefix must match, and cache hits depend on the provider.
 
