@@ -21,6 +21,9 @@ sources:
   - id: openwiki-source-0d0e77eb273a56717af74faa
     resource: repo://tests/unit_tests/utils.py
 generated: { by: "openwiki/0.4.3", at: "2026-09-29T08:22:38.059Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-29T08:22:38.059Z
 ---
 
 ## Scope and test boundary

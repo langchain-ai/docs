@@ -3,9 +3,6 @@ type: workflow guide
 title: Local Development Workflow
 description: Install the documentation toolchain, author inputs in src, and use the build, preview, lint, test, and link-check loops safely. Explains when incremental rebuilding is sufficient and when to regenerate disposable build output.
 tags: [local-development, documentation, mintlify, build-system, workflow]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-16T08:20:25.784Z
 sources:
   - id: openwiki-source-9c06bd9d7d25770709e07c7c
     resource: repo://.mise.toml
@@ -29,7 +26,10 @@ sources:
     resource: repo://README.md
   - id: openwiki-source-16b92823fdcb07d686f2e27f
     resource: repo://tests/unit_tests/test_watcher.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-17T08:17:43.098Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-17T08:17:43.098Z
 ---
 
 # Local Development Workflow
@@ -112,7 +112,7 @@ This flow distinguishes the full-build reset from focused updates during a previ
 
 ### Startup, failure, and shutdown
 
-A normal start returns failure before creating the watcher or Mint process when its initial build fails. `--skip-build` deliberately bypasses that guard and only warns when `build/` does not exist, so use it only with a suitable existing generated tree. After startup, a nonzero Mint exit, a cancelled watcher, or an unexpected watcher stop makes development mode fail.
+A normal start returns failure before creating the watcher or Mint process when its initial build fails. If the `mint` executable is unavailable, development mode reports the installation remedy and returns failure before it starts its async watcher and log-forwarding tasks. `--skip-build` deliberately bypasses the initial-build guard and only warns when `build/` does not exist, so use it only with a suitable existing generated tree. After startup, a nonzero Mint exit, a cancelled watcher, or an unexpected watcher stop makes development mode fail.
 
 Press Ctrl+C to stop. The command signals watcher shutdown, cancels a pending debounced rebuild, terminates Mint, waits up to five seconds, then kills Mint if necessary. It cancels and joins the watcher, Mint wait, and log-forwarding tasks so an interrupted session does not leave them running. On Windows Mint is launched through a shell for `.CMD` compatibility; Unix uses direct execution.
 

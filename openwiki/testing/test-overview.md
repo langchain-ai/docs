@@ -1,52 +1,44 @@
 ---
 type: validation guide
 title: Testing Overview
-description: Change-oriented validation guidance for deterministic tests, generated documentation, credentialed samples, remote onboarding checks, and trusted scheduled automation. Choose the narrowest boundary that proves a change, then add the boundary-specific checks it requires.
-tags: [testing, pytest, ci, documentation, code-samples, changelog]
-sources:
-  - id: openwiki-source-5c124605ed6e394bffee862c
-    resource: repo://.github/workflows/_check-links.yml
-  - id: openwiki-source-5e9ca8e4c3cab7d91998bc9e
-    resource: repo://.github/workflows/changelog-weekly.yml
-  - id: openwiki-source-75c7744a0e664440f0552945
-    resource: repo://.github/workflows/check-onboarding-models.yml
-  - id: openwiki-source-164e2da859b5277df81c7d94
-    resource: repo://.github/workflows/ci.yml
-  - id: openwiki-source-97746d8f3662d803e625550e
-    resource: repo://.github/workflows/test-code-samples.yml
-  - id: openwiki-source-012f2c78e3b1446dfc35803f
-    resource: repo://Makefile
-  - id: openwiki-source-05ccef8d4cf1698187f20464
-    resource: repo://pyproject.toml
-  - id: openwiki-source-025c5762dd0d95eed99ef36d
-    resource: repo://scripts/changelog_pipeline.py
-  - id: openwiki-source-819e9af046c9d9b8116a3da7
-    resource: repo://scripts/check_onboarding_models.py
-  - id: openwiki-source-2654e40275744504b4ca7e2b
-    resource: repo://scripts/code_sample_tracing.py
-  - id: openwiki-source-b44190969c9eb39de1c69815
-    resource: repo://scripts/data/onboarding_models.yaml
-  - id: openwiki-source-fd0cb9d6fca56bf4963559e9
-    resource: repo://scripts/extract_code_snippets.py
-  - id: openwiki-source-560bf24db9566b97ee19e383
-    resource: repo://scripts/generate_code_snippet_mdx.py
-  - id: openwiki-source-2b15ecffacad911ef9db112f
-    resource: repo://scripts/test_code_samples.py
-  - id: openwiki-source-fa345f5b82e4b995e2e1280e
-    resource: repo://tests/unit_tests/test_changelog_pipeline.py
-  - id: openwiki-source-b68d7bad2afd9a38e8c331d5
-    resource: repo://tests/unit_tests/test_generate_code_snippet_mdx.py
-  - id: openwiki-source-98a4de3472710de1bf3ccb4f
-    resource: repo://tests/unit_tests/test_url_stub_noindex.py
+description: Change-oriented validation guidance for deterministic tests, generated documentation, credentialed samples, remote onboarding checks, trusted scheduled automation, and release-watch changes. Choose the narrowest boundary that proves a change, then add the boundary-specific checks it requires.
+tags: [testing, pytest, ci, documentation, code-samples, changelog, release-watch]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-16T08:20:25.784Z
-generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
+    at: 2026-10-17T08:17:43.098Z
+sources:
+  - id: openwiki-source-15059b0f9cd678e06d6faff0
+    resource: repo://docs-release-watch/agent.py
+  - id: openwiki-source-d282f31d82e34c26a1df41a1
+    resource: repo://docs-release-watch/instructions.md
+  - id: openwiki-source-ac1d4c62086c683f572e37b8
+    resource: repo://docs-release-watch/memory.py
+  - id: openwiki-source-12c8fb32a02de9dce773720f
+    resource: repo://docs-release-watch/README.md
+  - id: openwiki-source-7343358ab26816c0490e183e
+    resource: repo://docs-release-watch/schedules/daily_deepagents_check.py
+  - id: openwiki-source-80699156d95c578d363ff7bc
+    resource: repo://docs-release-watch/schedules/daily_deepagents_code_check.py
+  - id: openwiki-source-08108374c068c41a2942873f
+    resource: repo://docs-release-watch/schedules/daily_deepagentsjs_check.py
+  - id: openwiki-source-644335efc60c7f4dd134c6a8
+    resource: repo://docs-release-watch/schedules/daily_openwiki_check.py
+  - id: openwiki-source-a8cf0b3622fff481f5e15c41
+    resource: repo://docs-release-watch/tools/credentials.py
+  - id: openwiki-source-98da08303623382d6a9ad5e8
+    resource: repo://docs-release-watch/tools/github_prs.py
+  - id: openwiki-source-2b522af6f26794f2e71ccb4e
+    resource: repo://docs-release-watch/tools/products.py
+  - id: openwiki-source-0a04d5d3ade1211f24c16b3b
+    resource: repo://docs-release-watch/tools/releases.py
+  - id: openwiki-source-025c5762dd0d95eed99ef36d
+    resource: repo://scripts/changelog_pipeline.py
+generated: { by: "openwiki/0.4.3", at: "2026-10-17T08:17:43.098Z" }
 ---
 
 ## Choose the validation boundary
 
-Start with the smallest deterministic check that proves the changed contract. Add regeneration, documentation build, live sample, or trusted workflow evidence only when the change crosses that boundary. A unit-test pass does not establish that a rendered site, provider-backed example, secret-bearing job, or GitHub API integration works.
+Start with the smallest deterministic check that proves the changed contract. Add regeneration, documentation build, live sample, or trusted workflow evidence only when the change crosses that boundary. A unit-test pass does not establish that a rendered site, provider-backed example, secret-bearing job, GitHub API integration, or managed release-watch agent works.
 
 | Change | Focused validation | Establishes | Does not establish |
 | --- | --- | --- | --- |
@@ -57,6 +49,7 @@ Start with the smallest deterministic check that proves the changed contract. Ad
 | General Python change | `make test` | Socket-isolated pytest suite | Network-backed behavior |
 | Authored docs, anchors, redirects, or Agent Server OpenAPI | `make broken-links-with-anchors` and `make check-openapi` | Mint checks against the disposable `build/` tree | Hosted-site state |
 | Runnable code sample | `make test-code-samples FILES="src/code-samples/..."` | Selected sample ran with local toolchains and supplied services/credentials | Generated documentation correctness or a rate-limited skipped sample |
+| Release-watch product, prompt, tool, or credential change | Run the affected schedule prompt with `uv run mda dev`; inspect the agent response and any created draft artifact in an authorized non-production context | The managed-agent control path, release selection, and connected GitHub/Linear boundary | A merged documentation change or an unattended deployment schedule |
 
 ```mermaid
 flowchart TD
@@ -68,10 +61,12 @@ flowchart TD
   Change --> Live["Credentialed sample run"]
   Live --> Services["Provider and PostgreSQL services"]
   Change --> Automation["Trusted scheduled workflow"]
-  Automation --> Remote["GitHub Eppo and model APIs"]
+  Automation --> Remote["GitHub Eppo model APIs"]
+  Change --> Watch["Managed release-watch agent"]
+  Watch --> Draft["Linear ticket and draft PR"]
 ```
 
-This flow separates local contract evidence from generated-output, rendered-site, live-service, and secret-bearing automation evidence.
+This flow separates local contract evidence from generated-output, rendered-site, live-service, secret-bearing automation, and managed-agent evidence.
 
 ## Deterministic suite, generated docs, and ordinary CI
 
@@ -143,6 +138,33 @@ When `CODE_SAMPLE_TRACING` is enabled, successful samples are followed by LangSm
 
 On a scheduled or manual full run, snippet regeneration occurs only when the sample step was not cancelled, fewer than 20 samples failed, and at least one trace entry changed. The workflow can open or update the trace-refresh PR, but a final step still fails the job if sample execution failed.
 
+## Release watch: managed, credentialed change proposal
+
+`docs-release-watch` is a Managed Deep Agent, not a GitHub Actions job. Its tool surface is deliberately narrow: it can list watched products, obtain an eligible release and full release notes, create a Linear issue, and create a draft documentation PR. The release tool skips draft and prerelease releases, filters shared release feeds by each product's tag prefix, and selects the newest matching release published at least seven days ago.
+
+```mermaid
+flowchart TD
+  Prompt["Product schedule prompt"] --> Memory["Read shared release tracking memory"]
+  Memory --> Release["Find eligible release"]
+  Release --> Eligible{"Release needs docs work"}
+  Eligible -->|"no"| Stop["Report and stop"]
+  Eligible -->|"yes"| Skill["Load product skill and inspect scoped docs"]
+  Skill --> Split["Split into features"]
+  Split --> Issue["Create one Linear DOC issue"]
+  Issue --> PR["Create one draft docs PR"]
+  PR --> Record["Record tracking URLs and status in memory"]
+```
+
+This is the release-watch control flow. The age gate and tag filter constrain what is considered; the feature split and tracking memory constrain duplication. A draft PR is a proposal, not evidence that a documentation change is correct or merged.
+
+The product registry is the extension boundary. A product config names its release repository, documentation paths, optional excluded prefixes, tag prefix, skill, and a separate memory file. Adding coverage requires the registry entry, a matching product skill, and a schedule prompt, followed by redeployment. Current schedules run OpenWiki and the three Deep Agents variants Monday, Wednesday, and Friday in `America/Los_Angeles` at staggered morning times.
+
+For a safe local validation, run `uv sync` and then `uv run mda dev` from `docs-release-watch`; schedules do not fire in development, so send the relevant schedule prompt manually. Local development resolves agent-owned connections from `MDA_DEV_DOCS_GITHUB` and `MDA_DEV_DOCS_LINEAR`, with `GITHUB_TOKEN`/`LINEAR_API_KEY` as tool fallbacks. Deployment instead requires the `docs-github` and `docs-linear` agent-owned connections. Never put either token in a prompt, memory, ticket, or PR body.
+
+The durable `/memories/agent/` store is deployment-shared and its hot `AGENTS.md` is injected into later runs, so treat all memory as untrusted input rather than authority. Keep only product/release/feature tracking and Linear/PR URLs there. The agent instructions require verification against source and release notes, one feature per DOC issue and draft PR, and memory-based deduplication; humans still review every draft before merge.
+
+The PR-writing tool always targets `langchain-ai/docs`, creates blobs, a tree, commit, branch, and then a draft PR against `main`. It rejects attempts to modify `docs-release-watch/` through a docs PR and normalizes a branch to the `docs/` namespace. Validate changes to this writer against an authorized test repository or carefully controlled development credential because its successful path has real write effects.
+
 ## Triage
 
 - **Socket-isolated pytest failure:** repair the test, fixture, or mock rather than probing a remote service.
@@ -151,5 +173,6 @@ On a scheduled or manual full run, snippet regeneration occurs only when the sam
 - **Mint failure:** reproduce with build-oriented commands and inspect `build/`, redirects, anchors, and source generation.
 - **Live sample failure:** inspect credentials, provider behavior, PostgreSQL readiness, and language toolchains. Treat rate-limit skips as coverage gaps.
 - **Weekly workflow issue:** distinguish deterministic pipeline behavior from GitHub access, model behavior, Eppo state, encryption-key availability, and human publication review.
+- **Release-watch failure:** distinguish release eligibility or product-scoping logic from unavailable GitHub/Linear connections, shared-memory content, or draft-PR write permissions. Do not retry a write operation blindly; first determine whether an issue, branch, commit, or PR was already created.
 
-See [Builder Tests](/openwiki/testing/builder-tests.md), [Changelog Publication](/openwiki/workflows/changelog-publication.md), [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md), [Local Development](/openwiki/workflows/local-development.md), and [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md).
+See [Builder Tests](/openwiki/testing/builder-tests.md), [Changelog Publication](/openwiki/workflows/changelog-publication.md), [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md), [Local Development](/openwiki/workflows/local-development.md), [Release Watch](/openwiki/workflows/release-watch.md), and [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md).

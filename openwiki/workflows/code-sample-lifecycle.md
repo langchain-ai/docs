@@ -5,7 +5,7 @@ description: How executable documentation samples become generated MDX, are test
 tags: [code-samples, documentation, mdx, testing, tracing, ci]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-16T08:20:25.784Z
+    at: 2026-10-17T08:17:43.098Z
 sources:
   - id: openwiki-source-ddbddbe474c8dc57119458d7
     resource: repo://.agents/skills/docs-code-samples/SKILL.md
@@ -43,7 +43,7 @@ sources:
     resource: repo://src/code-samples/package.json
   - id: openwiki-source-b68d7bad2afd9a38e8c331d5
     resource: repo://tests/unit_tests/test_generate_code_snippet_mdx.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-17T08:17:43.098Z" }
 ---
 
 ## Ownership and lifecycle
@@ -63,7 +63,7 @@ flowchart TD
   Result -->|"no or tracing disabled"| NoPublish["No public trace publication"]
 ```
 
-This is the executable-source-to-documentation flow. `make code-snippets` performs extraction and rendering; it does not run samples. Trace sharing is a separate, optional post-success publication branch.
+This shows the executable-source-to-documentation flow. `make code-snippets` performs extraction and rendering; it does not run samples. Trace sharing is a separate, optional post-success publication branch.
 
 ## Authoring executable, extractable samples
 
@@ -73,7 +73,7 @@ The extractor intentionally uses line-based marker recognition rather than a hos
 
 Prefer one source file for related snippets on a documentation page, with shared helpers or test-only setup written once. TypeScript is the important exception: the complete `.ts` file runs as one module, including visible regions and remove blocks. Split independently runnable snippets into separate files when duplicate imports or top-level `const`, `let`, class, or function declarations would collide. Keep visible code on an executed path; do not exit before the snippet has exercised its imports, construction, and configuration.
 
-The five `skills-tools-*.ts` Deep Agents samples illustrate this boundary: they are separate single-snippet entry points. Their virtual backend fixtures and validation remain in remove regions while the generated snippet exposes integration-wide, fixed-list, per-user, alias-resolver, or deferred-search tools configuration. The deliberate Anthropic model is preceded by `// KEEP MODEL`, preventing renderer expansion from changing it.
+The five `skills-tools-*.ts` Deep Agents samples illustrate this boundary: they are separate single-snippet entry points. Their virtual backend fixtures and validation remain in remove regions while the generated snippets expose integration-wide, fixed-list, per-user, alias-resolver, or deferred-search tool configuration patterns. The agent-building samples place `// KEEP MODEL` before their deliberately selected Anthropic model so renderer expansion does not change it.
 
 ## Run the source programs
 
@@ -113,7 +113,7 @@ Provider identifiers are language-specific. TypeScript samples must use `google:
 
 ## Public trace sharing is a credentialed publication boundary
 
-Normal sample validation does not publish traces. `make update-code-sample-traces` explicitly enables `CODE_SAMPLE_TRACING=1`, selects `LANGSMITH_PROJECT` or the default `docs-code-samples`, runs the samples, and regenerates MDX. It requires `LANGSMITH_API_KEY`. Treat this command as publication of a public LangSmith URL, not as ordinary timing or test telemetry.
+Normal sample validation does not publish traces. `make update-code-sample-traces` explicitly enables `CODE_SAMPLE_TRACING=1`, selects `LANGSMITH_PROJECT` or the default `docs-code-samples`, runs the samples, and regenerates MDX. It requires `LANGSMITH_API_KEY`. Treat this command as publication of a public LangSmith URL, not as ordinary timing or test telemetry; use only intended credentials and do not place credentials or private trace details in source samples or generated documentation.
 
 ```mermaid
 sequenceDiagram
@@ -130,6 +130,8 @@ sequenceDiagram
   Collector->>Service: create or reuse public share
   Collector->>Manifest: write URL and run metadata
 ```
+
+This shows the guarded public-trace publication path after a successful sample run.
 
 The sole snippet ID—not timing proximity—establishes eligibility. For an eligible single-snippet source, the runner sets `LANGSMITH_DOCS_SNIPPET`; the collector queries and verifies that metadata on a root run, rather than falling back to a nearby run. It also excludes run IDs already claimed by parallel work. Trace collection occurs under a lock, which protects both that claim set and the shared `src/code-samples/trace-links.json` manifest.
 
@@ -157,6 +159,6 @@ The test step continues after errors. On manual or scheduled runs, MDX regenerat
 
 - [Preprocessing](/openwiki/concepts/preprocessing.md)
 - [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md)
+- [Agent Skills](/openwiki/operations/agent-skills.md)
 - [CLI Tools](/openwiki/operations/cli-tools.md)
-- [Quickstart](/openwiki/quickstart.md)
 - [Testing Overview](/openwiki/testing/test-overview.md)

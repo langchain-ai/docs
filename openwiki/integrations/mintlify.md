@@ -1,11 +1,11 @@
 ---
 type: integration
 title: Mintlify Integration
-description: Mintlify renders the repository's generated documentation tree and creates selected deployment-time artifacts for docs.langchain.com. This page explains configuration, local and hosted validation, previews, exports, and the boundary of repository ownership.
+description: Mintlify renders the repository's generated documentation tree and creates selected deployment-time artifacts for docs.langchain.com. This page covers the configuration, local tooling, hosted validation, previews, exports, and ownership boundaries of that handoff.
 tags: [mintlify, documentation, navigation, openapi, deployment]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-16T08:20:25.784Z
+    at: 2026-10-17T08:17:43.098Z
 sources:
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
@@ -37,12 +37,12 @@ sources:
     resource: repo://src/docs.json
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-17T08:17:43.098Z" }
 ---
 
 # Mintlify Integration
 
-Mintlify renders the generated documentation tree from `/build/` for [docs.langchain.com](https://docs.langchain.com). The repository owns content in `src/`, the builder, and the reproducible handoff; Mintlify owns serving, rendering behavior, and deployment-generated artifacts. Edit `src/` and `/src/docs.json`, never `/build/`, a preview branch, or an endpoint page Mintlify creates from an OpenAPI input.
+Mintlify renders the generated documentation tree from `/build/` for [docs.langchain.com](https://docs.langchain.com). The repository owns content in `src/`, the builder, and the reproducible handoff; Mintlify owns serving, rendering behavior, and deployment-generated artifacts. Edit `src/` and `src/docs.json`, never `/build/`, a preview branch, or an endpoint page Mintlify creates from an OpenAPI input.
 
 ```mermaid
 flowchart TD
@@ -57,25 +57,29 @@ flowchart TD
     Mint --> Site["docs.langchain.com"]
 ```
 
-The diagram shows the handoff: repository automation produces the tree, while Mintlify deploys it and creates hosted-only output.
+The diagram shows the repository-to-Mintlify handoff and the hosted outputs that are not ordinary source files.
 
-## Configuration and navigation contract
+## Configuration and route contract
 
-`src/docs.json` is Mintlify's site configuration and navigation manifest; the builder copies shared files, including it, into `build/`. It declares the `aspen` theme; colors; light and dark logo and favicon assets; Tabler icons; TWK Lausanne headings and Inter body font; contextual actions; GTM; canonical metadata; injected CSS and chat script; footer and navbar; navigation; and redirects. Navigation is an explicit projection of routes, not a directory scan. Consequently, adding or moving a page requires both a generated route and the applicable navigation and redirect changes.
+`src/docs.json` is Mintlify's site configuration and navigation manifest; the builder copies shared files, including it, into `build/`. It specifies the `aspen` theme, branding assets and colors, Tabler icons, TWK Lausanne and Inter fonts, contextual actions, Google Tag Manager, canonical metadata, injected CSS and chat script, site chrome, navigation, and redirects. Navigation is an explicit projection of routes rather than a directory scan. Adding or moving a page therefore requires a generated route and the applicable navigation and redirect changes.
 
 The builder establishes output route families before Mintlify reads the tree:
 
-- Ordinary OSS documentation is emitted into both `/oss/python/...` and `/oss/javascript/...` trees. It rewrites eligible `/oss/` links for the target language.
-- Managed Deep Agents pages emit only at `/langsmith/python/...` and `/langsmith/javascript/...`; `docs.json` redirects legacy unversioned URLs to Python so Mintlify does not serve orphaned unversioned copies.
+- Ordinary OSS documentation is emitted into both `/oss/python/...` and `/oss/javascript/...`; eligible `/oss/` links are rewritten for the target language.
+- Managed Deep Agents pages emit only at `/langsmith/python/...` and `/langsmith/javascript/...`; `docs.json` redirects legacy unversioned URLs to Python.
 - Deep Agents Code and OpenWiki are language-agnostic OSS products. Deep Agents Code is emitted once at `/oss/deepagents/code/...`, and link rewriting leaves that prefix unversioned.
 
-These are builder rules, not Mintlify conventions. Choose the output family before adding navigation or links.
+These are builder rules, not Mintlify conventions. Select the intended output family before adding navigation or links.
 
-## Local development and checks
+## Install and develop locally
 
-`make dev` installs local npm dependencies and invokes `uv run pipeline dev`. The command builds first unless `--skip-build` is set, starts `FileWatcher` for `src/` to `build/`, and launches the separately installed global Mint CLI as `mint dev --port 3000` from `build/`. If Mint exits nonzero, the watcher ends unexpectedly, or the initial build fails, the command fails; interruption shuts down the watcher and Mint subprocess. `--skip-build` merely warns when `build/` is missing and does not establish that the tree is valid.
+Run `make install` for the repository's Python and npm dependencies and the global Mint CLI. Its Mint installation retries `npm install -g mint@latest` up to three times. `make dev` itself runs `npm install` and `uv run pipeline dev`; it assumes `mint` is already on `PATH`.
 
-For navigation, redirect, route, or anchor changes, use:
+The development command builds first unless `--skip-build` is set, starts `FileWatcher` from `src/` to `build/`, and launches `mint dev --port 3000` from `build/`. It forwards Mint logs and returns a failure when the initial build fails, Mint exits nonzero, or the watcher stops unexpectedly. Interruption shuts down the watcher and Mint subprocess; if the graceful Mint wait exceeds five seconds, the command kills it. `--skip-build` only warns when `build/` is absent, so it does not prove that an existing tree is valid.
+
+## Link and input validation
+
+For route, redirect, or anchor changes, run:
 
 ```bash
 make broken-links
@@ -83,11 +87,15 @@ make broken-links-with-anchors
 make check-openapi
 ```
 
-Both link targets rebuild first and run `mint broken-links` in `build/`; they enable redirect checking, and the latter additionally enables anchors. The filter removes all standalone snippet sections because snippets' rewritten language-prefixed links resolve only when imported, deployment-time OpenAPI routes, several legacy relative paths, and—only in anchor mode—two known SmithDB migration anchors. The Make target fails only when filtered output still has an indented link entry. Unit tests cover the filtering boundary; the reusable CI workflow uses Node 22 and runs the anchor target plus `make check-openapi`.
+Both link targets rebuild first, run `mint broken-links` from `build/`, and enable redirect checking; the anchor variant also supplies `--check-anchors`. The targets capture the Mint report, filter known non-actionable output, and fail only when a remaining indented link entry is present. The filter drops entire standalone `snippets/` report sections because their rewritten language-specific links resolve only when snippets are imported. It also drops deployment-time OpenAPI paths, specified legacy relative paths, and—in anchor mode only—the two known SmithDB migration anchors. Unit tests protect the distinction between these exclusions and ordinary failures.
 
-`make check-openapi` runs `mint openapi-check langsmith/agent-server-openapi.json` after building. It validates only the Agent Server source, not the remote Control Plane input or the committed LangSmith REST input.
+The reusable link-validation workflow runs the anchor target and `make check-openapi` on Node 22. `make check-openapi` rebuilds and runs `mint openapi-check langsmith/agent-server-openapi.json`; it does **not** validate the remote Control Plane input or committed LangSmith REST input.
 
-`make export` is separate from link checking. It builds, requires a global Mint CLI that supports `mint export`, Node 20 or 22, and an Enterprise Mintlify plan, then writes `build/export.zip` by default. `make htmltest` unpacks that archive and checks external content links with internal paths and hashes disabled: Mint export does not contain a complete page set, so it cannot establish internal navigation correctness.
+## Export is an external-link check, not a site build check
+
+`make export` rebuilds and invokes `mint export` from `build/`, writing `build/export.zip` unless `MINT_EXPORT_ARGS` changes the Mint output path. It rejects an unavailable CLI, a CLI without `mint export`, and Node 25 or later; the documented prerequisites are a recent Mint CLI, Node 20 or 22, and an Enterprise Mintlify plan.
+
+After exporting, `make htmltest` requires `htmltest`, `unzip`, and the export archive, then unpacks it beneath `build/` and checks it with `htmltest-mint-export.yml`. That configuration checks external content URLs but disables internal paths and hashes because the export is not a complete page set. It is useful for exported-content and external-link regressions, but cannot establish internal navigation correctness.
 
 ## OpenAPI reference boundary
 
@@ -96,27 +104,29 @@ Mintlify configuration has three OpenAPI groups:
 | Group | Input | Configured directory |
 | --- | --- | --- |
 | Agent Server API | `langsmith/agent-server-openapi.json` in the generated tree | `langsmith/agent-server-api` |
-| Control Plane API | `https://api.host.langchain.com/openapi.json` fetched by Mintlify during deployment | None |
+| Control Plane API | `https://api.host.langchain.com/openapi.json`, fetched by Mintlify at deployment | None |
 | LangSmith REST API | committed `src/langsmith/langsmith-platform-openapi.json`, copied into the generated tree | `langsmith/smith-api` |
 
-Mintlify creates endpoint routes for these groups when it deploys. They are not authored Markdown or MDX files and, in particular, absent local endpoint paths must not be created or documented as authored repository pages. The local link checker intentionally filters `/langsmith/agent-server-api/`, `/langsmith/smith-api`, and `/api-reference/` reports; inspect a hosted preview or production deployment to validate the rendered endpoint surface.
+Mintlify generates endpoint routes for these groups at deployment. They are not authored Markdown or MDX files and are absent from local build output. The local link checker intentionally filters reports for `/langsmith/agent-server-api/`, `/langsmith/smith-api`, and `/api-reference/`; use a hosted preview or production deployment to inspect the rendered endpoint surface.
 
-The LangSmith REST specification is refreshed daily. The refresh job fetches only the allow-listed `api.smith.langchain.com` host, hides Fleet, internal, and selected health operations, normalizes endpoint titles (including visible non-sandbox v2 labels), assigns and orders human-readable tag groups, and writes the committed specification. If it differs, the job appends to the existing `chore/refresh-langsmith-openapi` pull request or creates one; if it is unchanged, it makes no commit. Treat the resulting PR as a public-reference change.
+The LangSmith REST specification refreshes daily. The processor fetches only the allow-listed `api.smith.langchain.com` host, hides Fleet, internal, and selected health operations, standardizes operation titles—including visible non-sandbox v2 labels—and assigns and orders human-readable tag groups. The workflow writes the committed specification only when it changes; it then appends to an open `chore/refresh-langsmith-openapi` pull request or creates one. Review that PR as a public-reference change.
 
 ## Preview and production lifecycle
 
-For same-repository pull requests, the preview workflow validates source branch characters and length, runs `make build`, creates a collision-resistant `preview-` branch name from a sanitized prefix, timestamp, and commit SHA, and force-adds the generated `build/` tree to that branch. It then calls Mintlify's preview API only after checking the API key, project ID, and branch name. A non-JSON response—or an error response with neither status ID nor preview URL—fails the workflow. Fork PRs are skipped because the workflow needs repository write access. On PR close, cleanup finds matching preview branches and refuses to delete a name without the `preview-` prefix.
+For a same-repository pull request, the preview workflow validates source-branch syntax and length, runs `make build`, creates a collision-resistant `preview-` branch from a sanitized prefix, timestamp, and commit SHA, and force-adds `build/` to that branch. It invokes Mintlify's preview API only after checking the API key, project ID, and generated branch name. A non-JSON response, or an error response with neither a status ID nor preview URL, fails the workflow. Fork PRs are skipped because the workflow needs repository write access. When a PR closes, cleanup finds matching branches but refuses to delete a branch without the `preview-` prefix.
 
-On pushes to `main` or manual dispatch, the production workflow builds the tree, copies it to `public/build`, and publishes `public` to the `prod` branch. Both preview and `prod` branches are generated deployment handoffs, not authoring locations.
+On a push to `main` or manual dispatch, the production workflow builds the tree, copies it to `public/build`, and publishes `public` to the `prod` branch. Preview and `prod` branches are generated deployment handoffs, not authoring locations.
 
 ## Hosted-only `llms.txt`
 
-Mintlify generates `llms.txt` and, when required, nested `/_llms/` indexes only on the deployed site. The weekly coverage job crawls these served indexes from `https://docs.langchain.com`, follows same-site index links, normalizes landing-page URLs, and compares the discovered pages with `sitemap.xml`. It fails if a sitemap page is unreachable from the index. The checker uses `langchain-docs-llms-check` as its user agent, a 30-second timeout, and three attempts for connection failures; HTTP errors fail immediately. A gap is a deployed integration issue after first confirming that no custom `llms.txt` was placed in the build.
+Mintlify generates `llms.txt` and, once it exceeds 100,000 characters, nested `/_llms/` indexes only on the deployed site. The weekly coverage job crawls the served root and nested indexes from `https://docs.langchain.com`, follows same-site index links, normalizes landing-page URLs, and compares discovered pages with `sitemap.xml`. It fails when a sitemap page is unreachable from the index.
 
-## Safe change checklist
+The checker uses `langchain-docs-llms-check` as its user agent, a 30-second timeout, and up to three attempts for connection-level failures; HTTP errors fail immediately. A coverage gap is a hosted integration issue after first confirming that no custom `llms.txt` was added to the build.
+
+## Safe-change checklist
 
 1. Change `src/` and `src/docs.json`, then run `make build`; do not patch generated output or deployment-created endpoint routes.
-2. Select the intended output family before modifying links or navigation, especially dual-language OSS and Managed Deep Agents pages.
+2. Choose the output family before modifying links or navigation, especially for dual-language OSS and Managed Deep Agents pages.
 3. Update a moved route, navigation entry, and compatibility redirects together; run `make broken-links-with-anchors`.
 4. Run `make check-openapi` for Agent Server input changes and review LangSmith REST refresh PRs as public API documentation changes.
 5. Use a Mintlify preview or production deployment to inspect generated OpenAPI endpoints and `llms.txt` coverage.
@@ -124,7 +134,7 @@ Mintlify generates `llms.txt` and, when required, nested `/_llms/` indexes only 
 ## Related concepts
 
 - [Build system](/openwiki/architecture/build-system.md) — generated-tree lifecycle and ownership.
-- [Source map](/openwiki/architecture/source-map.md) — source-to-output route mapping.
 - [Reference documentation](/openwiki/integrations/reference-docs.md) — API-reference boundaries.
+- [CLI tools](/openwiki/operations/cli-tools.md) — command-line tooling and setup.
 - [Test overview](/openwiki/testing/test-overview.md) — validation entry points.
 - [Local development](/openwiki/workflows/local-development.md) — developer setup and watch workflow.
