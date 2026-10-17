@@ -3,6 +3,9 @@ type: integration boundary
 title: Reference Documentation Integrations
 description: Explains the ownership and publication paths for the external SDK reference site and Mintlify-generated LangSmith OpenAPI sections, including committed inputs, refresh automation, and validation boundaries.
 tags: [api-reference, openapi, cross-references, mintlify, langsmith]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-17T08:17:43.098Z
 sources:
   - id: openwiki-source-759309714d08144a07e1b2e0
     resource: repo://.github/ISSUE_TEMPLATE/04-reference-docs.yml
@@ -40,10 +43,7 @@ sources:
     resource: repo://tests/unit_tests/test_check_cross_refs.py
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-16T08:20:25.784Z
+generated: { by: "openwiki/0.4.3", at: "2026-10-17T08:17:43.098Z" }
 ---
 
 # Reference Documentation Integrations
@@ -171,6 +171,7 @@ Change this repository when the issue is an authored semantic marker, a scoped m
 ## Related documentation
 
 - [Source map](/openwiki/architecture/source-map.md) — documentation-source and navigation ownership.
+- [Mintlify integration](/openwiki/integrations/mintlify.md) — the build and deployment boundary that consumes `docs.json`.
 - [Adding pages](/openwiki/operations/adding-pages.md) — placing authored guides beside generated navigation entries.
 - [Cross-references](/openwiki/operations/cross-references.md) — detailed scoped-link authoring and validation.
 - [Testing overview](/openwiki/testing/test-overview.md) — selecting evidence appropriate to a source, generated artifact, or hosted deployment change.

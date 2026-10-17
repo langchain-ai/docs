@@ -5,7 +5,7 @@ description: Explains the review-gated weekly generator for LangSmith Cloud and 
 tags: [langsmith, changelog, publication, github-actions, release-management]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-16T08:20:25.784Z
+    at: 2026-10-17T08:17:43.098Z
 sources:
   - id: openwiki-source-b48b39ee604e5154ddb6fbad
     resource: repo://.agents/skills/docs-edit/SKILL.md
@@ -15,7 +15,7 @@ sources:
     resource: repo://scripts/changelog_pipeline.py
   - id: openwiki-source-fa345f5b82e4b995e2e1280e
     resource: repo://tests/unit_tests/test_changelog_pipeline.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-17T08:17:43.098Z" }
 ---
 
 # LangSmith Changelog Publication
@@ -90,7 +90,7 @@ uv run python scripts/changelog_pipeline.py weekly --out /tmp/changelog
 uv run python scripts/changelog_pipeline.py weekly --out /tmp/changelog --since 2026-10-05 --until 2026-10-12 --write
 ```
 
-The first command renders cached review artifacts but does not mutate changelog targets or the ledger. The second is a trusted write operation requiring the relevant credentials and review workflow.
+The first command generates review artifacts under `--out` but does not mutate changelog targets or the ledger. The second is a trusted write operation requiring the relevant credentials and review workflow.
 
 `selfhosted` is separate from weekly Cloud/Fleet publication. It accepts a whitespace-separated list of release PR numbers, prepares a `release.mdx` artifact under `--out`, and screens generated lines for internal names and ticket IDs. It does not insert into `src/langsmith/self-hosted-changelog.mdx` or replace the Helm bot.
 

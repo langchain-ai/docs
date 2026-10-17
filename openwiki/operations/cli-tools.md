@@ -1,7 +1,7 @@
 ---
 type: operations reference
-title: Developer CLI Tools
-description: Operational reference for the documentation Python CLI, the separately installed Mintlify CLI, Make targets, validation, runnable examples, snippet generation, and trace-link refreshes.
+title: Developer CLI Tools and Make Targets
+description: Operational reference for the documentation Python CLI, the separately installed Mintlify CLI, Make targets, validation, runnable examples, snippet generation, trace-link refreshes, and safe source moves.
 tags: [cli, make, documentation, code-samples, operations]
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
@@ -30,13 +30,13 @@ sources:
     resource: repo://scripts/generate_code_snippet_mdx.py
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
+generated: { by: "openwiki/0.4.3", at: "2026-10-17T08:17:43.098Z" }
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-16T08:20:25.784Z
-generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
+    at: 2026-10-17T08:17:43.098Z
 ---
 
-# Developer CLI Tools
+# Developer CLI Tools and Make Targets
 
 Author documentation in `src/`. The pipeline produces Mintlify input in `build/`; it is disposable output, not an authoring surface. **Do not edit `build/`**: every full build removes and recreates it.
 
@@ -114,9 +114,9 @@ A missing input exits 1. A parse error is reported for that file while the batch
 
 ### `docs mv <old_path> <new_path>`
 
-The move tool discovers the Git root and scans `<root>/src` `.md`, `.mdx`, and `.ipynb` files for relative cross-references. It preserves anchors, rewrites inbound links, and recalculates internal relative links in a moved Markdown/MDX file or notebook. `--dry-run` previews both link-change sets without writes or a move.
+The move tool discovers the Git root and scans `<root>/src` `.md`, `.mdx`, and `.ipynb` files. It rewrites relative inbound links and site-absolute Markdown or MDX links and `href` attributes whose routes reach the old file, preserving anchors. It also updates matching navigation values and redirect **destinations** in `src/docs.json` (never redirect `source` values), then recalculates internal relative links in a moved Markdown/MDX file or notebook. To avoid changing an ambiguous route, it leaves a route form unchanged when the destination has no equivalent form or an unversioned language-specific route is shadowed by another page. `--dry-run` previews every proposed link and `docs.json` change without writes or a move.
 
-A real move creates destination directories, appends absolute old/new paths to root-level `link_changes.jsonl`, rewrites inbound links, moves the file, then updates links inside it. It does not update navigation, redirects, or prose mentions; reconcile those authored surfaces and run `make broken-links-with-anchors` afterward.
+A real move appends absolute old/new paths to root-level `link_changes.jsonl`, creates destination directories, applies the discovered rewrites, moves the file, and then updates links inside it. It cannot infer prose mentions or intended compatibility policy: review route-family semantics, redirects, and navigation after the automated update, then run `make broken-links-with-anchors`.
 
 ## Generated-site validation and quality targets
 

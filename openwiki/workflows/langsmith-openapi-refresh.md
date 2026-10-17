@@ -5,7 +5,7 @@ description: Documents the scheduled, reviewed refresh that turns the LangSmith 
 tags: [langsmith, openapi, automation, github-actions, mintlify, security]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-16T08:20:25.784Z
+    at: 2026-10-17T08:17:43.098Z
 sources:
   - id: openwiki-source-5153f86e64d6ee0b305f72b3
     resource: repo://.github/workflows/refresh-langsmith-openapi.yml
