@@ -136,7 +136,7 @@ for await (const message of stream.messages) {
 :::python
 `message.text` is iterable in synchronous code. Iterate it for token-by-token output, or call `str(message.text)` for the complete text.
 
-`message.reasoning` exposes reasoning deltas, and `message.tool_calls` exposes tool-call argument chunks. If you need text, reasoning, and tool-call chunks in exact arrival order, iterate the message stream's raw events instead of each projection separately.
+`message.reasoning` exposes reasoning deltas. `message.tool_calls` exposes tool-call chunks, each with the call's `id` and `name` and only the new part of its `args`. If you need text, reasoning, and tool-call chunks in exact arrival order, iterate the message stream's raw events instead of each projection separately.
 :::
 
 :::js
@@ -402,6 +402,22 @@ The `messages` channel models output as content blocks. The data's `event` field
 
 Content blocks have explicit boundaries: a block starts, emits zero or more deltas, and finishes before the next block in the same message starts. This makes token streaming, reasoning blocks, tool-call blocks, and multimodal content explicit without requiring provider-specific formats. `message-finish` may include token usage; unrecoverable model-call failures arrive as message error events.
 
+Each `content-block-delta` event carries one delta for the block at its `index`:
+
+| Delta `type` | Effect on the block |
+| ------------ | ------------------- |
+| `text-delta` | Appends its `text` to the block's `text`. |
+| `reasoning-delta` | Appends its `reasoning` to the block's `reasoning`. |
+| `data-delta` | Appends its `data` to the block's `base64`. |
+| `tool-call-delta` | Appends its `args` to the block's `args`. |
+| `block-delta` | Sets each key in `fields` on the block, replacing the earlier value. |
+
+`content-block-finish` carries the complete block. Ignore any delta type you do not recognize, and keep reading the stream.
+
+:::python
+Starting in `langchain-core` 1.7.0, tool-call arguments arrive as `tool-call-delta` events. Earlier versions send `block-delta` events that repeat all of the arguments so far. If clients read the stream from a deployment, see [Upgrade clients before the server](/langsmith/event-streaming#upgrade-clients-before-the-server).
+:::
+
 To consume raw content-block events directly instead of using the `stream.messages` projection:
 
 :::python
@@ -421,6 +437,8 @@ for event in stream:
         print(block.get("text", ""), end="", flush=True)
     elif block.get("type") == "reasoning-delta":
         print(f"[thinking]{block.get('reasoning', '')}", end="", flush=True)
+    elif block.get("type") == "tool-call-delta":
+        print(f"[args]{block.get('args', '')}", end="", flush=True)
 ```
 :::
 
