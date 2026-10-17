@@ -23,22 +23,55 @@ Deployments use the newest `stable` version by default and are automatically upd
 
 ## v0.17
 
-Latest version: `0.17.0rc1`
+Latest version: `0.17.0rc3`
 
 <Callout icon="info" color="#F59E0B">
-This minor line is still a release candidate. The last stable release is `0.16.0`.
+This minor line is still a release candidate. The last stable release is `0.16.1`.
 </Callout>
-
 ### Changes
 
 #### New Features
 - Adds `exclude_metadata` to thread search and count to exclude threads whose metadata matches any given object
+- Added `FF_RESUME_DRAINED_RUNS` to resume runs stopped by `RunControl.request_drain()` from their checkpoint instead of failing them. Requires langgraph 1.2.15+ in the deployment's dependencies; on older langgraph the flag is ignored with a startup warning.
+- Hands off in-flight runs to another replica when a replica shuts down, on Postgres-backed deployments running langgraph 1.2.15 or later with `FF_RESUME_DRAINED_RUNS` enabled.
 
 #### Fixes
 - Speeds up DeltaChannel reads on Postgres for threads that existed before the channel was added and had `update_state` run under langgraph before 1.2.13.
 - Fixes a prune that could delete DeltaChannel history needed by later reads on threads where `update_state` ran under langgraph before 1.2.13.
+- Fixes runs on Redis Cluster that kept running after a cancel or rollback request once a failover or scale-in removed a Redis node.
+- Fixes `input.respond` failing with `no_such_interrupt` while the interrupt's run is still going; the answer is now queued and applied when the run pauses.
+- Fixes `input.respond` rejecting interrupts with `no_such_interrupt` when the run that raised them then failed, timed out or was cancelled, or was started from an earlier checkpoint.
+- `run.start` input sent while a thread is paused on several interrupts now returns `invalid_argument` and leaves the thread paused, instead of starting a run that fails.
+- Preserves request IDs in worker logs for runs started or resumed through HTTP event-streaming commands.
+- A message sent with `run.start` while a run is going is now queued at once instead of after up to 5 seconds, and is no longer lost when sent while answered interrupts are running or after cancelling a run that had none open.
+- Thread event streams now reject a thread the caller can't read before streaming: `POST /threads/{thread_id}/stream/events` returns 403 or 404 instead of a 200 with an error frame (422 for a malformed thread ID), and the WebSocket endpoint closes with 4403, 4404 or 4422.
+- Restores 0.17.0rc1 handling of `run.start` input sent while a run is going, so a resume sent right after an interrupt (for example from `RemoteGraph`) resumes the run instead of starting a new one with the resume value as input.
 
 <Accordion title="v0.17 releases">
+<Update label="2026-10-16" tags={["agent-server"]}>
+## v0.17.0rc3
+
+### New Features
+- Added `FF_RESUME_DRAINED_RUNS` to resume runs stopped by `RunControl.request_drain()` from their checkpoint instead of failing them. Requires langgraph 1.2.15+ in the deployment's dependencies; on older langgraph the flag is ignored with a startup warning.
+- Hands off in-flight runs to another replica when a replica shuts down, on Postgres-backed deployments running langgraph 1.2.15 or later with `FF_RESUME_DRAINED_RUNS` enabled.
+
+### Fixes
+- Restores 0.17.0rc1 handling of `run.start` input sent while a run is going, so a resume sent right after an interrupt (for example from `RemoteGraph`) resumes the run instead of starting a new one with the resume value as input.
+
+</Update>
+<Update label="2026-10-15" tags={["agent-server"]}>
+## v0.17.0rc2
+
+### Fixes
+- Fixes runs on Redis Cluster that kept running after a cancel or rollback request once a failover or scale-in removed a Redis node.
+- Fixes `input.respond` failing with `no_such_interrupt` while the interrupt's run is still going; the answer is now queued and applied when the run pauses.
+- Fixes `input.respond` rejecting interrupts with `no_such_interrupt` when the run that raised them then failed, timed out or was cancelled, or was started from an earlier checkpoint.
+- `run.start` input sent while a thread is paused on several interrupts now returns `invalid_argument` and leaves the thread paused, instead of starting a run that fails.
+- Preserves request IDs in worker logs for runs started or resumed through HTTP event-streaming commands.
+- A message sent with `run.start` while a run is going is now queued at once instead of after up to 5 seconds, and is no longer lost when sent while answered interrupts are running or after cancelling a run that had none open.
+- Thread event streams now reject a thread the caller can't read before streaming: `POST /threads/{thread_id}/stream/events` returns 403 or 404 instead of a 200 with an error frame (422 for a malformed thread ID), and the WebSocket endpoint closes with 4403, 4404 or 4422.
+
+</Update>
 <Update label="2026-10-10" tags={["agent-server"]}>
 ## v0.17.0rc1
 
@@ -54,7 +87,7 @@ This minor line is still a release candidate. The last stable release is `0.16.0
 
 ## v0.16
 
-Latest version: `0.16.0`
+Latest version: `0.16.1`
 ### Changes
 
 #### New Features
@@ -96,6 +129,7 @@ Latest version: `0.16.0`
 - Fixes delta channels reading back empty or incomplete on threads where `update_state` ran under langgraph before 1.2.13.
 - Speeds up DeltaChannel reads on Postgres for threads that existed before the channel was added and had `update_state` run under langgraph before 1.2.13.
 - Fixes a prune that could delete DeltaChannel history needed by later reads on threads where `update_state` ran under langgraph before 1.2.13.
+- Preserves request IDs in worker logs for runs started or resumed through HTTP event-streaming commands.
 
 #### Security
 - Update the Go toolchain to 1.26.8 and upgrade golang.org/x/mod to address checksum database verification vulnerabilities.
@@ -105,8 +139,19 @@ Latest version: `0.16.0`
 - Ensure LangGraph Server images install AnyIO 4.14.2 or newer to address upstream security vulnerabilities.
 - JS/TS custom auth handlers now have their request mutations applied by the server, including the store namespace rewrite used to scope items per user. This fixes cross-user store isolation in LangGraph.js deployments following the documented pattern. Namespaces produced by any custom auth handler, Python or JS, are now validated before reaching the store: an empty or period-containing label is rejected with 422 instead of writing an item that cannot be read back.
 - Updates bundled Datadog serverless-init, ddtrace, langgraph-sdk, and MongoDB Go driver to clear known CVEs.
+- Updates Agent Server's Go toolchain and HTTP/2 dependencies with upstream security fixes.
 
 <Accordion title="v0.16 releases">
+<Update label="2026-10-15" tags={["agent-server"]}>
+## v0.16.1
+
+### Fixes
+- Preserves request IDs in worker logs for runs started or resumed through HTTP event-streaming commands.
+
+### Security
+- Updates Agent Server's Go toolchain and HTTP/2 dependencies with upstream security fixes.
+
+</Update>
 <Update label="2026-10-09" tags={["agent-server"]}>
 ## v0.16.0
 
