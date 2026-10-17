@@ -352,21 +352,31 @@ Use `--sandbox-setup` to run a shell script inside the sandbox after creation. T
 ```bash title="setup.sh"
 #!/bin/bash
 set -e
+set +x
 
-# Clone repository using GitHub token
-git clone https://x-access-token:${GITHUB_TOKEN}@github.com/username/repo.git $HOME/workspace
-cd $HOME/workspace
-
-# Make environment variables persistent
-cat >> ~/.bashrc <<'EOF'
-export GITHUB_TOKEN="${GITHUB_TOKEN}"
-export OPENAI_API_KEY="${OPENAI_API_KEY}"
-cd $HOME/workspace
+repo_url="https://github.com/username/repo.git"
+credential_helper="$(mktemp)"
+trap 'rm -f "$credential_helper"' EXIT
+chmod 700 "$credential_helper"
+cat > "$credential_helper" <<'EOF'
+#!/bin/sh
+case "$1" in
+  *Username*) printf '%s\n' 'x-access-token' ;;
+  *Password*) printf '%s\n' '${GITHUB_TOKEN}' ;;
+esac
 EOF
-source ~/.bashrc
+
+GIT_ASKPASS="$credential_helper" GIT_TERMINAL_PROMPT=0 \
+  git clone "$repo_url" "$HOME/workspace"
+git -C "$HOME/workspace" remote set-url origin "$repo_url"
+rm -f "$credential_helper"
+trap - EXIT
+cd "$HOME/workspace"
 ```
 
-Deep Agents Code expands `${VAR}` references in setup scripts using your local environment variables. Store secrets in a local `.env` file for the setup script to access.
+Deep Agents Code expands `${VAR}` references in setup scripts using your local environment variables. Store secrets in a local `.env` file for the setup script to access. The example keeps the expanded token in a short-lived credential helper, removes the helper after cloning, and leaves only a credential-free `origin` URL.
+
+Never put credentials in Git URL userinfo, such as `https://user:token@host/repo.git`. Git can persist clone URLs in `.git/config`, and shell logs or image layers can retain the command. Supply credentials through an ephemeral, secret-backed credential helper, disable shell tracing while the helper can access the secret, and reset `origin` to a credential-free URL immediately after cloning. Inject any credentials needed after setup through the sandbox provider's secret mechanism instead of writing them to shell startup files.
 
 <Warning>
     Sandboxes isolate code execution, but agents remain vulnerable to prompt injection with untrusted inputs. Use human-in-the-loop approval, short-lived secrets, and trusted setup scripts only. See [Security considerations](/oss/deepagents/sandboxes#security-considerations) for details.
