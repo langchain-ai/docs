@@ -125,6 +125,76 @@ Once configured, you should be able to reinstall your LangSmith instance. If eve
 ## Redis cluster
 As of LangSmith helm version **0.12.25**, we officially support **Redis Cluster**.
 
+<Tabs>
+  <Tab title="v0.18.0 and later">
+
+### Cluster endpoint
+
+LangSmith discovers the nodes of a Redis Cluster from the endpoint it connects to. Set `redis.external.connectionUrl` to one endpoint that serves the cluster topology, such as a [Memorystore Cluster discovery endpoint](#memorystore-for-redis-iam-authentication), an ElastiCache configuration endpoint, or any node.
+
+The URL uses the same format as for standalone Redis, with the password in the URL:
+
+```text
+redis://:password@hostname:port
+```
+
+Percent-encode special characters in the password. TLS is controlled by `redis.external.cluster.tlsEnabled`, which defaults to `true`. Set it to `false` if your cluster does not use TLS.
+
+<Note>
+Configuring Redis Cluster with `connectionUrl` requires LangSmith v0.18.0 or later. Earlier versions use node URIs (see the **Before v0.18.0** tab). Node URIs are deprecated in v0.18.0 but still work, and take precedence over `connectionUrl` when set.
+</Note>
+
+### Configuration
+
+Set `redis.external.cluster.enabled` and provide the cluster endpoint either directly in `values.yaml` or through an existing Kubernetes `Secret`.
+
+<CodeGroup>
+
+```yaml Helm (inline values)
+redis:
+  external:
+    enabled: true
+    # One endpoint that serves the cluster topology, with the password if your cluster requires one.
+    connectionUrl: "redis://:your_redis_password@redis-cluster.example.internal:6379"
+    cluster:
+      enabled: true
+      # TLS is enabled by default. Set to false if your cluster does not use TLS.
+      tlsEnabled: true
+```
+
+```yaml Helm (using an existing Secret)
+redis:
+  external:
+    enabled: true
+    # Name of an existing Secret that contains the cluster endpoint
+    existingSecretName: "my-redis-cluster-secret"
+    connectionUrlSecretKey: "connection_url"
+    cluster:
+      enabled: true
+      tlsEnabled: true
+```
+
+</CodeGroup>
+
+If using an existing Secret, it should contain:
+
+<CodeGroup>
+
+```yaml Kubernetes Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-redis-cluster-secret
+type: Opaque
+stringData:
+  connection_url: "redis://:your_redis_password@redis-cluster.example.internal:6379"
+```
+
+</CodeGroup>
+
+  </Tab>
+  <Tab title="Before v0.18.0">
+
 ### Host names
 
 When using Redis Cluster, provide a list of node hostnames and ports. Each node URI must be in the form:
@@ -206,6 +276,9 @@ stringData:
 ```
 
 </CodeGroup>
+
+  </Tab>
+</Tabs>
 
 ## Azure managed Redis
 
@@ -494,7 +567,35 @@ IAM authentication is only available for Memorystore Cluster, not standalone Mem
 
 #### Configuration
 
-**Memorystore Cluster with IAM:**
+**LangSmith v0.18.0 and later:**
+
+Set the connection URL to the cluster's discovery endpoint. LangSmith discovers the cluster's shards from it. IAM authentication replaces the password, so the URL has none.
+
+```yaml
+redis:
+  external:
+    enabled: true
+    existingSecretName: "redis-cluster-secret"
+    connectionUrlSecretKey: "connection_url"
+    iamAuthProvider: "gcp"
+    cluster:
+      enabled: true
+      # Set to false if in-transit encryption is disabled on the cluster.
+      tlsEnabled: true
+```
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-cluster-secret
+type: Opaque
+stringData:
+  # The cluster's discovery endpoint, for example redis://10.1.2.3:6379
+  connection_url: "redis://<discovery-endpoint-ip>:6379"
+```
+
+**Before LangSmith v0.18.0:**
 
 ```yaml
 redis:
