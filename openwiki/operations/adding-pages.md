@@ -3,9 +3,6 @@ type: operations guide
 title: Adding and Maintaining Documentation Pages
 description: Safely add, move, retire, or regenerate documentation pages by selecting the source owner, maintaining navigation and redirects, and validating emitted routes.
 tags: [documentation, operations, navigation, redirects, build-system]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-16T08:20:25.784Z
 sources:
   - id: openwiki-source-18732c72f962c06354cb62db
     resource: repo://.agents/skills/add-docs-page/SKILL.md
@@ -41,7 +38,10 @@ sources:
     resource: repo://src/langsmith/bind-evaluator-to-dataset-link.mdx
   - id: openwiki-source-a39cb5ba9006abfe6280b6f8
     resource: repo://src/oss/openwiki/cli-reference.mdx
-generated: { by: "openwiki/0.4.3", at: "2026-10-15T08:21:56.046Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-19T08:25:25.748Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-19T08:25:25.748Z
 ---
 
 # Adding and Maintaining Documentation Pages
@@ -119,12 +119,12 @@ Start a source-file move with the repository mover in preview mode:
 uv run docs mv src/langsmith/evaluation.mdx src/langsmith/deploy/evaluation.mdx --dry-run
 ```
 
-The installed `docs` console script dispatches to `pipeline.cli:main`. Its mover scans `src/` Markdown, MDX, and notebook Markdown cells for links resolving to the moved file. If a directory changes, it recalculates relative links within the moved document. Dry-run reports prospective changes without moving or writing; a real invocation appends a move record to `link_changes.jsonl`, relocates the file, then updates its internal links.
+The installed `docs` console script dispatches to `pipeline.cli:main`. Its mover scans `src/` Markdown, MDX, and notebook Markdown cells for relative links and site-absolute routes. It rewrites matching source links, plus existing `docs.json` navigation values and redirect **destinations**; redirect sources remain unchanged because they name URLs that must continue to redirect. If a directory changes, it recalculates relative links within the moved document. It leaves ambiguous or unavailable route forms unchanged and logs a warning, so review every `Left ... links unchanged` message. Dry-run reports prospective changes without moving or writing; a real invocation appends a move record to `link_changes.jsonl`, relocates the file, then updates its internal links.
 
-The mover does not update public navigation or redirects. After a move or retirement:
+The mover rewrites existing references, but it does not choose navigation placement or create compatibility redirects. After a move or retirement:
 
-1. Update or remove route strings in their actual `docs.json` menu arrays.
-2. Search root-relative and fragment references to the old public route or heading.
+1. Inspect the actual `docs.json` menu arrays and correct the moved route's discovery placement or remove a retired route.
+2. Search root-relative and fragment references to the old public route or heading, including any warning the mover left unchanged.
 3. Add a compatibility redirect for every published route that moved or retired, including each language route where applicable.
 
 ```json
