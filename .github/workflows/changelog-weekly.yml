@@ -30,13 +30,47 @@ jobs:
     name: Write the weekly changelog
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    # The App token pushes the branch and opens the PR. A PR opened with GITHUB_TOKEN
+    # never triggers the pull_request workflows, so CI would not run on it.
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
+    env:
+      BOT_EMAIL: github-actions[bot]@users.noreply.github.com
     steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.ORG_MEMBERSHIP_APP_ID }}
+          private-key: ${{ secrets.ORG_MEMBERSHIP_APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@v6
         with:
           fetch-depth: 1
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Check the branch
+        id: branch
+        if: ${{ inputs.dry_run != true }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          BRANCH="changelog/weekly-$(date -u +%Y-%m-%d)"
+          echo "BRANCH=$BRANCH" >> "$GITHUB_ENV"
+          # Fail now, not after the pipeline, if the App cannot push.
+          git push --dry-run --force origin "HEAD:refs/heads/$BRANCH"
+          # A same-day rerun force-pushes the branch. Skip it when anyone but this job
+          # has pushed there, so their edits are not overwritten.
+          if git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null; then
+            OTHERS="$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$BRANCH" \
+              --jq '.commits[].commit.author.email' | grep -vxF "$BOT_EMAIL" || true)"
+            if [ -n "$OTHERS" ]; then
+              echo "::warning::$BRANCH has commits from someone else; skipping this run"
+              echo "Skipped: $BRANCH has commits from someone else. Delete the branch to regenerate this week, or edit its PR instead." >> "$GITHUB_STEP_SUMMARY"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            fi
+          fi
 
       - name: Set up Python 3.13 + uv
         uses: "./.github/actions/uv_setup"
@@ -61,6 +95,7 @@ jobs:
           fi
 
       - name: Run the pipeline
+        if: ${{ steps.branch.outputs.skip != 'true' }}
         env:
           # Read-only access to langchainplus PRs.
           GH_TOKEN: ${{ secrets.LANGCHAINPLUS_READ_TOKEN }}
@@ -95,7 +130,7 @@ jobs:
           fi
 
       - name: Lint the entries
-        if: ${{ inputs.dry_run != true }}
+        if: ${{ inputs.dry_run != true && steps.branch.outputs.skip != 'true' }}
         id: vale
         continue-on-error: true
         run: |
@@ -104,9 +139,9 @@ jobs:
             2>&1 | sed 's/\x1b\[[0-9;]*m//g' | tee "$RUNNER_TEMP/vale.txt"
 
       - name: Open the PR
-        if: ${{ inputs.dry_run != true }}
+        if: ${{ inputs.dry_run != true && steps.branch.outputs.skip != 'true' }}
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
           # Also catches a week with no entries that still changes the held list.
@@ -120,7 +155,6 @@ jobs:
           fi
           REPORT="$(tail -n 1 "$RUNNER_TEMP/report-path.txt")"
           WEEK="$(cat "$(dirname "$REPORT")/label.txt")"
-          BRANCH="changelog/weekly-$(date -u +%Y-%m-%d)"
 
           # Counts only: this repository is public, and the run report names private
           # PRs and unreleased work.
@@ -139,7 +173,7 @@ jobs:
           } > "$RUNNER_TEMP/pr-body.md"
 
           git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.email "$BOT_EMAIL"
           git checkout -B "$BRANCH"
           git add -A -- "${STATE[@]}"
           git commit -m "docs(langsmith): weekly changelog for ${WEEK}"
