@@ -517,8 +517,9 @@ Reserve "the platform" for LangSmith. LangChain is the open agent engineering ec
 `Agent-based workspaces` group opens with the shared
 `/snippets/langsmith/agent-availability-note.mdx` callout, placed after the
 page's opening definition and before the first `##` heading. Do not hand-write
-a per-page variant. Agent-based workspaces are GA in a staged rollout, so do
-not label them beta or add a `Beta` tag to the group or its pages.
+a per-page variant. Agent-based workspaces are available on LangSmith Cloud
+and not on self-hosted, so do not label them beta or add a `Beta` tag to the
+group or its pages.
 
 **Add a reusable snippet:**
 
