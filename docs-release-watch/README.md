@@ -2,7 +2,7 @@
 
 Managed Deep Agent that watches product releases and opens documentation updates.
 
-For each eligible release (published at least 7 days ago), it compares release notes to the docs, then opens **one Linear DOC ticket and one draft PR per feature**.
+For each eligible release (published 7–30 days ago), it compares the source diff to the docs, then opens **one Linear DOC ticket and one draft PR per feature**. The 30-day cap keeps first runs from backfilling older history.
 
 Current product coverage:
 
@@ -30,6 +30,7 @@ docs-release-watch/
     daily_deepagents_code_check.py
     daily_deepagentsjs_check.py
   skills/
+    release-research/
     openwiki/
     deepagents/
     deepagents-code/
@@ -38,15 +39,19 @@ docs-release-watch/
   tools/
     products.py
     releases.py
+    evidence.py
+    source.py
+    docs_edit.py
     linear_issues.py
     github_prs.py
     credentials.py
+  tests/
 ```
 
 ## Prerequisites
 
 - LangSmith workspace with Managed Deep Agents beta access
-- LangSmith API key with Gateway access; model is `langsmith:anthropic/claude-sonnet-4-6` (Anthropic must be configured as a workspace Provider Secret)
+- LangSmith API key with Gateway access. Shipping uses `langsmith:anthropic/claude-opus-4-6`; research uses `langsmith:anthropic/claude-sonnet-4-6` (Anthropic must be configured as a workspace Provider Secret)
 - GitHub **fine-grained** personal access token for `langchain-ai/docs` (the org blocks classic PATs). Needs Contents read/write and Pull requests read/write. Authorize SSO for `langchain-ai` if prompted.
 - Linear API key with **Read** and **Write** (or Create issues) on team `DOC`. New issues are assigned to the API key owner. Override with `LINEAR_ASSIGNEE_ID` if needed.
 
@@ -92,6 +97,8 @@ Schedules do not fire under `mda dev`. Use the schedule prompt above to exercise
 
 ## Deploy
 
+Redeploy after changing tools, skills, instructions, schedules, or `sandbox/setup.sh` (the sandbox snapshot rebakes from `setup.sh`):
+
 ```bash
 uv run mda deploy
 ```
@@ -111,6 +118,15 @@ The daily schedule `daily_openwiki_check` runs at 09:00 America/Los_Angeles and 
 2. Add `skills/<product>/SKILL.md` with docs paths and judgment rules.
 3. Add or extend a schedule prompt that names that product.
 4. Redeploy.
+
+## Anti-hallucination controls
+
+Runs in two phases:
+
+1. **Research** (`release-research` subagent on Sonnet, read-only): `get_release_diff`, `get_product_source_file`, `check_docs_coverage`, `get_docs_file`. Returns a JSON feature list. No Linear or PR tools.
+2. **Ship** (main agent on Opus): only features from that report. Read docs `AGENTS.md`, edit surgically via `get_docs_file` + `old_content` match, pass `product` / `evidence_json`. Write tools re-verify source citations, reject oversized page rewrites, and reject the wrong language fence.
+
+Release notes are secondary leads. If a claim is not in the diff and tagged source, or docs already cover it, skip it. Never claim a ticket or PR without a tool-returned URL.
 
 ## Safety
 

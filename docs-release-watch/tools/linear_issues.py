@@ -10,7 +10,9 @@ from typing import Any
 import httpx
 from langchain.tools import tool
 
-from tools.credentials import linear_api_key
+from tools.credentials import github_token, linear_api_key
+from tools.evidence import ensure_evidence_in_body, parse_evidence_json
+from tools.source import verify_evidence_in_source
 
 LINEAR_API = "https://api.linear.app/graphql"
 _HTTP_HEADERS = {
@@ -123,6 +125,7 @@ async def _resolve_assignee() -> dict[str, str]:
 async def create_linear_issue(
     title: str,
     description: str,
+    evidence_json: str,
     team_key: str = "DOC",
     product: str = "openwiki",
     release_tag: str = "",
@@ -132,13 +135,23 @@ async def create_linear_issue(
     Args:
         title: Short issue title focused on one feature.
         description: Markdown description with release context, docs paths, and scope.
+        evidence_json: JSON object with source_repo, source_tag, and items
+            [{path, symbol}] or [{path, quote}] verified in product source at
+            the release tag. Required; the tool refuses empty evidence.
         team_key: Linear team key (default: DOC).
         product: Product key this issue covers.
         release_tag: Product release tag that triggered the work.
     """
+    evidence = parse_evidence_json(evidence_json)
+    gh_token = None
+    try:
+        gh_token = await github_token()
+    except RuntimeError:
+        pass
+    verification = await verify_evidence_in_source(evidence, token=gh_token)
     team_id = await _resolve_team_id(team_key)
     assignee = await _resolve_assignee()
-    body = (description or "").strip()
+    body = ensure_evidence_in_body((description or "").strip(), evidence)
     meta_lines = [
         "",
         "---",
@@ -196,5 +209,7 @@ async def create_linear_issue(
             "team_key": team_key.strip().upper(),
             "product": product,
             "release_tag": release_tag,
+            "evidence": evidence,
+            "evidence_verified": verification,
         }
     )
