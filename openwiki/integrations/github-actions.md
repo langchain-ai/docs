@@ -1,11 +1,11 @@
 ---
 type: CI/CD trust model
 title: GitHub Actions and CI/CD
-description: Explains the repository's GitHub Actions trust boundaries, validation checks, and narrowly scoped automation writers. Covers weekly changelog proposals, credentialed code-sample trace refreshes, and the detect-only onboarding-model drift check.
+description: Explains GitHub Actions validation, event trust boundaries, and narrowly scoped automation writers. Covers the OpenWiki updater, documentation release watch, scheduled maintenance, and operational triage.
 tags: [github-actions, ci-cd, automation, security, testing]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-16T08:20:25.784Z
+    at: 2026-10-19T08:25:25.748Z
 sources:
   - id: openwiki-source-1e075575622e1a77a3dc46e6
     resource: repo://.github/pull_request_template.md
@@ -27,17 +27,23 @@ sources:
     resource: repo://.github/workflows/external-integration-pr-comment.yml
   - id: openwiki-source-1db901655f02af312133801d
     resource: repo://.github/workflows/integration-submission.yml
+  - id: openwiki-source-6d4b4e707b8d60b6ccfa3425
+    resource: repo://.github/workflows/openwiki-update.yml
   - id: openwiki-source-97746d8f3662d803e625550e
     resource: repo://.github/workflows/test-code-samples.yml
   - id: openwiki-source-4de47c60d7e3210385c34d35
     resource: repo://.github/workflows/update-package-downloads.yml
+  - id: openwiki-source-d282f31d82e34c26a1df41a1
+    resource: repo://docs-release-watch/instructions.md
+  - id: openwiki-source-12c8fb32a02de9dce773720f
+    resource: repo://docs-release-watch/README.md
   - id: openwiki-source-819e9af046c9d9b8116a3da7
     resource: repo://scripts/check_onboarding_models.py
   - id: openwiki-source-250d64a0be85992104c0f95b
     resource: repo://scripts/flag_hosted_docs_candidates.py
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-19T08:25:25.748Z" }
 ---
 
 ## Trust boundaries
@@ -46,9 +52,9 @@ GitHub event selection is a security boundary. This repository uses three distin
 
 | Role | Entrypoints | Authority and safe boundary |
 | --- | --- | --- |
-| Revision validation | `pull_request`, push to `main` | Check out and validate the proposed revision without relying on secrets or repository writes. |
+| Revision validation | `pull_request`, push to `main` | Check out and validate the proposed revision without relying on repository writes. Core CI is in this category. |
 | Metadata-only PR automation | `pull_request_target` | Read base policy and GitHub API metadata to label, comment, request review, or close; never check out, source, or execute fork-head code. |
-| Trusted writer | Scheduled run, manual dispatch, or maintainer authorization | Use narrowly scoped write credentials to create a branch or review PR; validate inputs, preserve a no-op path, and restrict staged paths. |
+| Trusted writer | Scheduled run, manual dispatch, or maintainer authorization | Use narrowly scoped write credentials to create a branch, issue, or review PR; validate inputs, preserve a no-op path, and restrict staged paths. |
 
 ```mermaid
 flowchart TD
@@ -65,7 +71,7 @@ flowchart TD
 
 *Event type and authorization determine whether a workflow can execute contributed code, mutate PR metadata, or write a review branch.*
 
-This diagram separates execution of contributed code from privileged metadata mutation and repository writes. Do not use `pull_request_target` as a workaround for testing forks, and do not construct shell commands from untrusted PR or issue-form fields.
+This diagram separates execution of contributed code from privileged metadata mutation and repository writes. Do not use `pull_request_target` as a workaround for testing forks, and do not construct shell commands from untrusted PR or issue-form fields. A credentialed `pull_request` job must explicitly gate fork runs; it must not imply that fork PRs receive provider or repository credentials.
 
 ## Core validation
 
@@ -80,7 +86,7 @@ The reusable test and lint workflows make shallow checkouts, synchronize the `te
 ### Triage validation failures
 
 - **Tests or lint:** reproduce with `make test` or `make lint`; a cancelled run is not evidence for the current commit.
-- **Links or OpenAPI:** run `make broken-links-with-anchors` and `make check-openapi`; these validate the generated documentation build.
+- **Links or OpenAPI:** run `make broken-links-with-anchors` and `make check-openapi`.
 - **Cross references or external listing URLs:** run `make check-cross-refs` or `uv run python scripts/refresh_integration_downloads.py --check-docs-urls`.
 - **Generated overview:** rerun `uv run python pipeline/tools/partner_pkg_table.py`, inspect the diff, and commit it when metadata changed. Do not use the bypass label to conceal ordinary drift.
 
@@ -90,15 +96,21 @@ The reusable test and lint workflows make shallow checkouts, synchronize the `te
 
 `external-integration-pr-comment.yml` is a metadata-only `pull_request_target` workflow. It does not check out or execute PR code: it uses API file metadata and an organization-membership App token to label qualifying external integration PRs, reads added MDX only as bytes to detect featured frontmatter, and otherwise posts an idempotent listing-form redirect before closing the PR.
 
-`integration-submission.yml` is a trusted writer but an issue opening alone cannot start it. Manual dispatch or the `integration-run` label first requires write-level repository permission; `integration-automation` prevents duplicate processing. After authorization, parsed issue-form values remain untrusted listing metadata and the agent is directed to make local edits only. Parse, blocker, agent, and no-diff outcomes are reported on the issue; only a real diff lets the workflow create and link a review PR.
+`integration-submission.yml` is a trusted writer, but an issue opening alone cannot start it. Manual dispatch or the `integration-run` label first requires write-level repository permission; `integration-automation` prevents duplicate processing. After authorization, parsed issue-form values remain untrusted listing metadata and the agent is directed to make local edits only. Parse, blocker, agent, and no-diff outcomes are reported on the issue; only a real diff lets the workflow create and link a review PR.
 
 ## Trusted writers
+
+### OpenWiki update
+
+`openwiki-update.yml` runs daily at 08:00 UTC and can be dispatched manually. It deliberately performs a full-history checkout so `openwiki code --update` can compare the current revision with the revision it last documented. The job uses repository-scoped AI-provider, source-connector, and optional tracing credentials only while generating documentation; its PR creation step may add only `openwiki`, `AGENTS.md`, and its own workflow file to the fixed `openwiki/update` branch. Review the resulting `docs: update OpenWiki` PR like any other generated change.
+
+This updater documents this repository's code into the `/openwiki` tree. It is separate from `docs-release-watch`, a Managed Deep Agent project rather than a GitHub Actions workflow. Release watch examines eligible product releases that have aged at least seven days and, for each documentation feature it identifies, opens one Linear ticket and one **draft** PR for human review. Its OpenWiki product coverage targets `src/oss/openwiki/`, not the generated `/openwiki` repository wiki; the systems therefore have different inputs, outputs, credentials, and review queues.
 
 ### Weekly changelog proposal
 
 `changelog-weekly.yml` runs Mondays at 13:00 UTC or manually. A manual window must provide both `since` and `until` as `YYYY-MM-DD` dates, or neither. The repository-wide `changelog-weekly` concurrency group serializes runs without cancelling one in progress.
 
-The workflow has contents and pull-request write permission because it creates a review branch. It invokes `scripts/changelog_pipeline.py weekly` with its configured read, model, feature-flag, and encrypted-state inputs. The workflow deliberately keeps the private pipeline report out of the public repository surfaces.
+The workflow has contents and pull-request write permission because it creates a review branch. It invokes `scripts/changelog_pipeline.py weekly` with read access to upstream PRs, model and feature-flag access, and encrypted held-state access. The workflow deliberately keeps the private pipeline report out of public repository surfaces.
 
 A `dry_run` omits `--write` and puts proposed entries in the run summary; it does not open a PR. A normal run records Vale output without making Vale immediately fatal, then checks only the two changelog files and encrypted held-list state. No diff exits successfully. A diff is committed to force-pushed `changelog/weekly-<UTC-date>` and opened as a review PR, whose body contains only counts and recent Vale output rather than the private run report.
 
@@ -122,7 +134,7 @@ This workflow proposes publication; human review remains the publication gate. F
 
 `test-code-samples.yml` runs for relevant code-sample or workflow changes in a pull request, by manual dispatch, and monthly on the first day at 00:00 UTC. It has repository and pull-request write permissions, but the credentialed job skips fork PRs because it needs provider API keys. Scheduled and manual runs test all samples and enable tracing; PR runs compute changed supported sample paths and test only those. A PR with no matching sample source exits the test step successfully with zero failures and trace updates.
 
-The job prepares PostgreSQL plus Python, Node, Java/JBang, and Go. It supplies provider and LangSmith credentials only to the sample test step. `scripts/test_code_samples.py` runs eligible Python, TypeScript, Java, Kotlin, Go, and shell sources with bounded concurrency; fixture-sharing path families are serialized. Ordinary sample failures fail the eventual job, while persistent recognized 429s are retried and then reported as skipped. Trace collection happens only after a successful sample, is serialized to protect the shared manifest and run ownership, and warns rather than failing the sample suite when collection cannot complete.
+The job prepares PostgreSQL plus Python, Node, Java/JBang, and Go. It supplies provider and tracing credentials only to the sample test step. `scripts/test_code_samples.py` runs eligible Python, TypeScript, Java, Kotlin, Go, and shell sources with bounded concurrency; fixture-sharing path families are serialized. Ordinary sample failures fail the eventual job, while persistent recognized 429s are retried and then reported as skipped. Trace collection happens only after a successful sample, is serialized to protect the shared manifest and run ownership, and warns rather than failing the sample suite when collection cannot complete.
 
 On full runs, snippet regeneration requires that the sample step was not cancelled, fewer than 20 samples failed, and at least one trace link was refreshed. Only then can the writer restore the regenerated artifacts onto `chore/refresh-code-sample-traces`. It stages only `src/code-samples/trace-links.json` and `src/snippets/code-samples`; no diff is a successful no-op. An existing open PR on that branch receives an appended commit, otherwise the workflow force-pushes the branch and opens the standing review PR. The final step still fails the job when the sample test step failed, so a trace refresh never masks execution failures.
 
@@ -130,30 +142,30 @@ For triage, verify whether the run was skipped because the PR is from a fork, wh
 
 ### Onboarding-model drift detection
 
-`check-onboarding-models.yml` is a detect-only scheduled check: it runs Mondays at 08:30 UTC or manually, has `contents: read` and `issues: write`, and checks out without persisted credentials. Its read token accesses the configured `langchain-ai/langchainplus` onboarding snippets; it never edits that repository.
+`check-onboarding-models.yml` is a detect-only scheduled check: it runs Mondays at 08:30 UTC or manually, has `contents: read` and `issues: write`, and checks out without persisted credentials. Its read token accesses the configured onboarding snippets in the upstream product repository; it never edits that repository.
 
 `check_onboarding_models.py` validates the local registry's repository, ref, and source paths before reading the remote Git tree and in-scope files. It recognizes supported OpenAI, Anthropic, and Google model-ID forms, accepts configured current IDs and their dated snapshots, ignores configured exceptions, and reports an outdated ID with the registry's preferred replacement. Exit status `0` means all checked IDs are current, `1` means drift was found, and `2` means the registry or remote source could not be read.
 
-The workflow writes the report to its summary. On status `1`, it creates or updates one standing issue titled `Outdated models in LangSmith onboarding snippets`; on status `0`, it closes that issue if present. Status `2` fails before issue mutation, avoiding a false all-clear or accidental closure during an upstream-read outage. Fix the relevant snippets in `langchainplus`, or deliberately update the checked-in registry/ignore policy after review; do not expect this workflow to rewrite product code.
+The workflow writes the report to its summary. On status `1`, it creates or updates one standing issue titled `Outdated models in LangSmith onboarding snippets`; on status `0`, it closes that issue if present. Status `2` fails before issue mutation, avoiding a false all-clear or accidental closure during an upstream-read outage. Fix the relevant snippets in the upstream repository, or deliberately update the checked-in registry/ignore policy after review; do not expect this workflow to rewrite product code.
 
 ### Package-download maintenance
 
 `update-package-downloads.yml` runs Sundays at 23:59 UTC or manually. Its first job is read-only: it refreshes package counts only when their download timestamp is older than 24 hours, regenerates provider and integration download surfaces, and hands candidate files to a second job in a one-day artifact. The second job alone has contents and pull-request write permission; it exits successfully on no candidate diff or creates a timestamped PR and enables squash auto-merge when there is one.
 
-Hosted-documentation candidate detection creates Linear issues only when both `LINEAR_API_KEY` and `LINEAR_TEAM_KEY` are configured; otherwise it deliberately detects candidates in dry-run mode. It uses the default 50,000 monthly-download threshold and does not create a duplicate while a matching Linear issue remains open.
+Hosted-documentation candidate detection creates Linear issues only when both the required issue-service credential and team configuration are available; otherwise it deliberately detects candidates in dry-run mode. It uses the default 50,000 monthly-download threshold and does not create a duplicate while a matching Linear issue remains open.
 
 ## Safe-change checklist
 
 1. Keep `pull_request` validation, `pull_request_target` metadata automation, and trusted writers separate.
 2. Never check out or execute fork-head code in `pull_request_target`; API-fetched head content is data only.
 3. Preserve writer no-op exits, narrow staged paths, review PRs, and explicit credential boundaries.
-4. Preserve the code-sample fork gate and do not expose provider secrets to general PR validation.
+4. Preserve the code-sample fork gate and do not expose provider credentials to general PR validation.
 5. Preserve changelog input validation, dry-run behavior, and its review gate; package-download auto-merge is an explicit exception.
 6. Treat onboarding-model status `2` as an operational read failure, not as drift resolution.
+7. Keep `/openwiki` update scope separate from product-documentation release watch scope; neither writer should silently broaden the other's paths or publication behavior.
 
 ## Related pages
 
-- [CLI Tools and Make Targets](/openwiki/operations/cli-tools.md)
 - [Quickstart](/openwiki/quickstart.md)
 - [Testing Overview](/openwiki/testing/test-overview.md)
 - [Changelog Publication](/openwiki/workflows/changelog-publication.md)

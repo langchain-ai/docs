@@ -3,71 +3,29 @@ type: architecture reference
 title: Source Directory Map
 description: Maps authored documentation families to emitted routes and separates builder output from explicit Mintlify navigation, redirects, generated API reference, and product taxonomy. Use it to find the correct source of truth before changing a route, menu item, redirect, or reference surface.
 tags: [documentation, routing, navigation, mintlify]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-16T08:20:25.784Z
 sources:
   - id: openwiki-source-5153f86e64d6ee0b305f72b3
     resource: repo://.github/workflows/refresh-langsmith-openapi.yml
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
+  - id: openwiki-source-012f2c78e3b1446dfc35803f
+    resource: repo://Makefile
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
+  - id: openwiki-source-fd0cb9d6fca56bf4963559e9
+    resource: repo://scripts/extract_code_snippets.py
+  - id: openwiki-source-560bf24db9566b97ee19e383
+    resource: repo://scripts/generate_code_snippet_mdx.py
   - id: openwiki-source-697851c98229599f97376bfb
     resource: repo://scripts/process_langsmith_openapi.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
-  - id: openwiki-source-661abd9305024589f43ce542
-    resource: repo://src/langsmith/agents.mdx
-  - id: openwiki-source-3225362f66429aee81d6a0d9
-    resource: repo://src/langsmith/application-structure.mdx
-  - id: openwiki-source-4e258b7fd0aee5e7df6fba88
-    resource: repo://src/langsmith/control-plane.mdx
-  - id: openwiki-source-4256c14336d0eb39aed5e217
-    resource: repo://src/langsmith/data-plane.mdx
-  - id: openwiki-source-a27620f1abc3e0bbef984219
-    resource: repo://src/langsmith/llm-gateway-credits.mdx
-  - id: openwiki-source-95a114643a70288e7f5458da
-    resource: repo://src/langsmith/llm-gateway-how-it-works.mdx
-  - id: openwiki-source-d67d5f0a5ce9fbed759bdc27
-    resource: repo://src/langsmith/managed-deep-agents-deploy.mdx
-  - id: openwiki-source-43ff65f03831177d52580c83
-    resource: repo://src/langsmith/managed-deep-agents-overview.mdx
-  - id: openwiki-source-17cda5e480a486a133aa3e81
-    resource: repo://src/langsmith/managed-deep-agents-runtime.mdx
-  - id: openwiki-source-0ab5b536400c44173ebccd67
-    resource: repo://src/langsmith/managed-deep-agents-sandboxes.mdx
-  - id: openwiki-source-fa546764ecaebb51fc64437e
-    resource: repo://src/langsmith/sandboxes.mdx
-  - id: openwiki-source-dc010f4c5f7e636c2056fa1d
-    resource: repo://src/langsmith/self-host-sandbox-architecture.mdx
-  - id: openwiki-source-3e471962a1ecd6495d5d8fdd
-    resource: repo://src/langsmith/self-host-smithdb-features.mdx
-  - id: openwiki-source-c52470905e74b4e82e1c1ae5
-    resource: repo://src/langsmith/self-host-smithdb-install.mdx
-  - id: openwiki-source-64bcd09aa388b45f25ea6da5
-    resource: repo://src/langsmith/self-host-smithdb.mdx
-  - id: openwiki-source-222b22691fa5b319ecd2ae6f
-    resource: repo://src/oss/deepagents/code/configuration.mdx
-  - id: openwiki-source-f79b8bced12e446a4f7394de
-    resource: repo://src/oss/deepagents/code/remote-sandboxes.mdx
-  - id: openwiki-source-031ab3cc5ad2aa3eb2de459c
-    resource: repo://src/oss/deepagents/memory.mdx
-  - id: openwiki-source-c6258cab179201344bfb89d2
-    resource: repo://src/oss/javascript/migrate/langchain-mcp-adapters.mdx
-  - id: openwiki-source-867d24ecd094a73112272b9b
-    resource: repo://src/oss/langchain/mcp/index.mdx
-  - id: openwiki-source-57d888befacccdf3384bf1e6
-    resource: repo://src/oss/langgraph/persistence.mdx
-  - id: openwiki-source-e9105e813a1bc86fe40c7444
-    resource: repo://src/oss/langgraph/stores.mdx
-  - id: openwiki-source-4d9644891221cf29cff85bfb
-    resource: repo://src/oss/python/integrations/chat/index.mdx
-  - id: openwiki-source-40800c01aa5ea143782c9738
-    resource: repo://src/oss/python/integrations/document_loaders/index.mdx
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-19T08:25:25.748Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-19T08:25:25.748Z
 ---
 
 `src/` is authored input, not the published-site hierarchy. Four independent ownership planes determine what readers see:
@@ -145,12 +103,27 @@ The Agent Server, Control Plane, and LangSmith REST OpenAPI declarations generat
 | Surface | Specification input | Generated route location |
 | --- | --- | --- |
 | Agent Server API | Committed `src/langsmith/agent-server-openapi.json` | `langsmith/agent-server-api` |
-| Control Plane API | `https://api.host.langchain.com/openapi.json` | Mintlify default location |
+| Control Plane API | `https://api.host.langchain.com/openapi.json` | `/api-reference/` |
 | LangSmith REST API | Committed `src/langsmith/langsmith-platform-openapi.json` | `langsmith/smith-api` |
 
 The LangSmith REST specification is a committed, post-processed publication input. `scripts/process_langsmith_openapi.py` allow-lists its live host, hides Fleet/internal/health operations, assigns and orders tag groups, and normalizes visible operation titles. The daily refresh runs that processor, exits without a commit when the specification is unchanged, and appends changes to the standing `chore/refresh-langsmith-openapi` pull request.
 
 Do not confuse these OpenAPI endpoint references with the external SDK-reference site: the latter is a separate site and is not produced from the deployed Mintlify OpenAPI declarations or authored MDX in this repository.
+
+## Snippets, runnable samples, and generated artifacts
+
+`src/snippets/` is authored reusable MDX and component input, rather than a page family selected by `docs.json`. The builder copies it as shared input, emits Markdown snippets at their source-relative path plus Python and JavaScript copies, and rewrites unqualified MDX imports in language-targeted pages to the matching copy. Keep an import intended to vary by language in the `from '/snippets/...'` form; JSX and TSX snippet components remain shared. Snippets have no contribution footer because they are embedded in another page.
+
+`src/code-samples/` has a different owner and lifecycle. It holds executable example programs; it is not a `DocumentationBuilder` route family and is not selected by a navigation entry. `make test-code-samples` tests the source, and `make code-snippets` extracts marked regions through the ignored `src/code-samples-generated/` intermediate into generated MDX in `src/snippets/code-samples/`. Edit and test the executable source, then regenerate and review the snippet output; do not hand-edit either derived layer.
+
+| Intended change | Durable owner(s) that change together | Do not edit |
+| --- | --- | --- |
+| New or moved authored page | The selected `src/` MDX file and its explicit `src/docs.json` menu entry; redirects when a public URL changes | `build/` |
+| Shared OSS content | One `src/oss/` page, both language menu entries, and both rendered routes | Two copied source pages or a language prefix on an OpenWiki/Deep Agents Code route |
+| Managed Deep Agents page | Direct `src/langsmith/managed-deep-agents*.mdx`, both language menu routes, and compatibility redirects when applicable | An unversioned duplicate MDX page |
+| Reusable prose or UI fragment | `src/snippets/` source and consuming imports | Generated snippet copies in `build/` |
+| Runnable displayed example | `src/code-samples/` program, shared language dependency metadata if changed, and regenerated `src/snippets/code-samples/` output | `src/code-samples-generated/` or generated snippet MDX by hand |
+| LangSmith REST API reference | Processor or its upstream policy, committed spec, and OpenAPI declaration as appropriate | Deployment-generated endpoint MDX |
 
 ## Product and operational boundaries represented by source families
 
@@ -191,7 +164,8 @@ LangGraph checkpointers persist graph state per thread, while stores hold applic
 4. For Managed Deep Agents, check both language outputs plus the unversioned-to-Python redirects.
 5. Keep LangSmith source in `src/langsmith/`; use `docs.json` to project it into Gateway, No-code agents, Engine, Sandboxes, or self-hosted taxonomy.
 6. Change an endpoint reference through its OpenAPI input and declaration, never by creating generated endpoint MDX. Review the processor and refresh workflow for LangSmith REST changes.
-7. Extend focused `tests/unit_tests/test_builder.py` coverage for source-family routing, preprocessing, special-family behavior, or source-tree safety changes.
+7. For a displayed runnable example, modify and test `src/code-samples/`, then regenerate `src/snippets/code-samples/`; neither generated snippets nor the intermediate are authoritative.
+8. Extend focused `tests/unit_tests/test_builder.py` coverage for source-family routing, preprocessing, special-family behavior, or source-tree safety changes.
 
 ## Related pages
 
@@ -199,4 +173,6 @@ LangGraph checkpointers persist graph state per thread, while stores hold applic
 - [Versioning](/openwiki/concepts/versioning.md)
 - [Reference docs](/openwiki/integrations/reference-docs.md)
 - [Adding pages](/openwiki/operations/adding-pages.md)
+- [Quickstart](/openwiki/quickstart.md)
+- [Code sample lifecycle](/openwiki/workflows/code-sample-lifecycle.md)
 - [Versioned content](/openwiki/workflows/versioned-content.md)

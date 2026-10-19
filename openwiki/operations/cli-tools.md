@@ -1,8 +1,11 @@
 ---
 type: operations reference
-title: Developer CLI Tools
-description: Operational reference for the documentation Python CLI, the separately installed Mintlify CLI, Make targets, validation, runnable examples, snippet generation, and trace-link refreshes.
+title: CLI Tools and Make Targets
+description: Operational reference for the documentation pipeline CLI, the separately installed Mintlify CLI, Make targets, validation, runnable examples, snippet generation, and trace-link refreshes.
 tags: [cli, make, documentation, code-samples, operations]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-19T08:25:25.748Z
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
@@ -18,6 +21,8 @@ sources:
     resource: repo://pipeline/tools/links.py
   - id: openwiki-source-05ccef8d4cf1698187f20464
     resource: repo://pyproject.toml
+  - id: openwiki-source-23775c3de52f3ab95a13cb8b
+    resource: repo://README.md
   - id: openwiki-source-7c3064080adf2cb0048e51fc
     resource: repo://scripts/check_llms_urls.py
   - id: openwiki-source-819e9af046c9d9b8116a3da7
@@ -26,17 +31,16 @@ sources:
     resource: repo://scripts/code_sample_tracing.py
   - id: openwiki-source-fd0cb9d6fca56bf4963559e9
     resource: repo://scripts/extract_code_snippets.py
+  - id: openwiki-source-49f717adb7cc59501f5c17ac
+    resource: repo://scripts/filter_mint_broken_links.py
   - id: openwiki-source-560bf24db9566b97ee19e383
     resource: repo://scripts/generate_code_snippet_mdx.py
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-16T08:20:25.784Z
-generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-19T08:25:25.748Z" }
 ---
 
-# Developer CLI Tools
+# CLI Tools and Make Targets
 
 Author documentation in `src/`. The pipeline produces Mintlify input in `build/`; it is disposable output, not an authoring surface. **Do not edit `build/`**: every full build removes and recreates it.
 
@@ -66,7 +70,7 @@ uv run pipeline mv old.mdx new.mdx --dry-run
 | Execute examples | `make test-code-samples` | Runs live sample programs with the caller environment |
 | Refresh reusable snippets | `make code-snippets` | Sample source → extraction intermediate → generated MDX |
 
-See [Local Development](/openwiki/workflows/local-development.md) for setup, [Mintlify](/openwiki/integrations/mintlify.md) for the site boundary, and [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md) for snippet markers.
+See [Quickstart](/openwiki/quickstart.md) and [Local Development](/openwiki/workflows/local-development.md) for setup, [Mintlify](/openwiki/integrations/mintlify.md) for the site boundary, [Adding Pages](/openwiki/operations/adding-pages.md) and [Cross-References](/openwiki/operations/cross-references.md) for source edits, and [Test Overview](/openwiki/testing/test-overview.md) for broader test guidance.
 
 ## Build and preview
 
@@ -114,9 +118,9 @@ A missing input exits 1. A parse error is reported for that file while the batch
 
 ### `docs mv <old_path> <new_path>`
 
-The move tool discovers the Git root and scans `<root>/src` `.md`, `.mdx`, and `.ipynb` files for relative cross-references. It preserves anchors, rewrites inbound links, and recalculates internal relative links in a moved Markdown/MDX file or notebook. `--dry-run` previews both link-change sets without writes or a move.
+The move tool discovers the Git root and scans `<root>/src` `.md`, `.mdx`, and `.ipynb` files for relative cross-references. It preserves anchors, rewrites inbound links, and recalculates internal relative links in a moved Markdown/MDX file or notebook. It also maps safe site-absolute routes and updates matching links in Markdown, MDX, notebook Markdown cells, and `src/docs.json` navigation entries and redirect *destinations*; redirect sources remain unchanged. Ambiguous language-versioned route forms, or forms without a destination equivalent, are deliberately left unchanged and logged as warnings. `--dry-run` previews changes without writes or a move.
 
-A real move creates destination directories, appends absolute old/new paths to root-level `link_changes.jsonl`, rewrites inbound links, moves the file, then updates links inside it. It does not update navigation, redirects, or prose mentions; reconcile those authored surfaces and run `make broken-links-with-anchors` afterward.
+A real move creates destination directories, appends absolute old/new paths to root-level `link_changes.jsonl`, rewrites references, moves the file, then updates its internal links. It cannot update prose mentions; review the diff and run `make broken-links-with-anchors` afterward.
 
 ## Generated-site validation and quality targets
 

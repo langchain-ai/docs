@@ -5,7 +5,7 @@ description: Mintlify renders the repository's generated documentation tree and 
 tags: [mintlify, documentation, navigation, openapi, deployment]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-16T08:20:25.784Z
+    at: 2026-10-19T08:25:25.748Z
 sources:
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
@@ -37,7 +37,7 @@ sources:
     resource: repo://src/docs.json
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-19T08:25:25.748Z" }
 ---
 
 # Mintlify Integration
@@ -126,5 +126,6 @@ Mintlify generates `llms.txt` and, when required, nested `/_llms/` indexes only 
 - [Build system](/openwiki/architecture/build-system.md) — generated-tree lifecycle and ownership.
 - [Source map](/openwiki/architecture/source-map.md) — source-to-output route mapping.
 - [Reference documentation](/openwiki/integrations/reference-docs.md) — API-reference boundaries.
-- [Test overview](/openwiki/testing/test-overview.md) — validation entry points.
+- [CLI tools](/openwiki/operations/cli-tools.md) — command-line validation entry points.
+- [Cross-references](/openwiki/operations/cross-references.md) — link and redirect maintenance.
 - [Local development](/openwiki/workflows/local-development.md) — developer setup and watch workflow.

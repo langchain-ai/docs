@@ -1,11 +1,11 @@
 ---
 type: operations guide
 title: Agent Authoring Skills
-description: Use the repository's task-specific skill catalog without duplicating global rules, distribute the canonical tree to supported agents, and follow source-verified, generated-file-safe documentation workflows.
+description: Use the repository's canonical task-specific skill library, keep global rules in AGENTS.md, and validate or distribute skills safely across supported agent environments.
 tags: [agents, skills, documentation, automation, validation]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-16T08:20:25.784Z
+    at: 2026-10-19T08:25:25.748Z
 sources:
   - id: openwiki-source-18732c72f962c06354cb62db
     resource: repo://.agents/skills/add-docs-page/SKILL.md
@@ -43,7 +43,7 @@ sources:
     resource: repo://src/oss/deepagents/skills.mdx
   - id: openwiki-source-1695beda93a0ca504f038424
     resource: repo://tests/unit_tests/test_skills.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-19T08:25:25.748Z" }
 ---
 
 # Agent Authoring Skills
@@ -193,6 +193,8 @@ When an application explicitly names skills for a Deep Agents run, it can pin th
 ## See also
 
 - [Adding and Modifying Documentation Pages](/openwiki/operations/adding-pages.md)
+- [CLI Tools](/openwiki/operations/cli-tools.md)
 - [Quickstart](/openwiki/quickstart.md)
 - [Testing Overview](/openwiki/testing/test-overview.md)
+- [Release Watch](/openwiki/workflows/release-watch.md)
 - [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md)

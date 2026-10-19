@@ -5,7 +5,7 @@ description: Documents the scheduled, reviewed refresh that turns the LangSmith 
 tags: [langsmith, openapi, automation, github-actions, mintlify, security]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-16T08:20:25.784Z
+    at: 2026-10-19T08:25:25.748Z
 sources:
   - id: openwiki-source-5153f86e64d6ee0b305f72b3
     resource: repo://.github/workflows/refresh-langsmith-openapi.yml
@@ -23,14 +23,14 @@ sources:
     resource: repo://src/docs.json
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-19T08:25:25.748Z" }
 ---
 
 # LangSmith OpenAPI Refresh
 
-The LangSmith REST API reference is published from the generated, committed `src/langsmith/langsmith-platform-openapi.json`. It is **not** an authored MDX endpoint tree: `src/docs.json` supplies that file to Mintlify's `langsmith/smith-api` directory, and Mintlify generates endpoint routes at deployment. Do not edit the generated specification or imagined generated endpoint pages by hand.
+The LangSmith REST API reference is published from the generated, committed `src/langsmith/langsmith-platform-openapi.json`. It is **not** an authored MDX endpoint tree: `src/docs.json` supplies that file to Mintlify's `langsmith/smith-api` directory, and Mintlify generates endpoint routes at deployment. Do not edit the generated specification or deployment-generated endpoint pages by hand.
 
-This is also distinct from the SDK API reference at [reference.langchain.com](https://reference.langchain.com/python/), which is generated and deployed outside this repository. The related Agent Server API uses a different committed OpenAPI input and route directory; it is not maintained by this refresh workflow.
+This is distinct from the SDK API reference at [reference.langchain.com](https://reference.langchain.com/python/), which is generated and deployed outside this repository. The related Agent Server API uses a different committed OpenAPI input and route directory; it is not maintained by this refresh workflow.
 
 ## Ownership and trust boundary
 
@@ -40,9 +40,9 @@ This is also distinct from the SDK API reference at [reference.langchain.com](ht
 | Public-reference policy | `scripts/process_langsmith_openapi.py` | Adjust the explicit hide, grouping, title, or ordering rules and regenerate. |
 | Generated deployment input | `src/langsmith/langsmith-platform-openapi.json` | Review and merge the refresh PR; never manually patch the JSON. |
 | Refresh and GitHub write authority | `.github/workflows/refresh-langsmith-openapi.yml` | Preserve its narrow path staging, no-diff exit, and standing-PR behavior. |
-| Endpoint-page rendering | Mintlify deployment configured by `src/docs.json` | Inspect a deployed preview or production; generated endpoint pages are not MDX sources. |
+| Endpoint-page rendering | Mintlify deployment configured by `src/docs.json` | Inspect a deployed preview or production site; generated endpoint pages are not MDX sources. |
 
-`src/docs.json` separately declares the Agent Server input, `src/langsmith/agent-server-openapi.json`, under `langsmith/agent-server-api`. Agent Server updates come from the `langgraph-api` update process; route an Agent Server specification issue there rather than changing the platform processor or its schedule.
+`src/docs.json` separately declares the Agent Server input, `src/langsmith/agent-server-openapi.json`, under `langsmith/agent-server-api`. Agent Server updates arrive in specification-update PRs from `langgraph-api`, rather than through the platform processor or its schedule. Route an Agent Server specification issue to that externally maintained update path.
 
 The processor accepts network input only from `api.smith.langchain.com`. It defaults to `https://api.smith.langchain.com/openapi.json`; an unallowlisted parsed hostname raises an error before a request. A local `--input` file is the controlled alternative for reproduction and policy work.
 
@@ -61,14 +61,14 @@ flowchart TD
 
 This flow shows the constrained upstream input, curated JSON, review gate, and deployment-generated endpoint routes.
 
-The GitHub Actions job is a trusted writer, not a pull-request workflow. It runs on `ubuntu-latest` with a 15-minute timeout and only `contents: write` and `pull-requests: write` permissions, checks out shallow history, provisions Python 3.13 through the repository uv action, and runs the processor with `--write`. Its write phase stages only `src/langsmith/langsmith-platform-openapi.json`; that narrow artifact path limits the repository write surface, while the review PR is the approval boundary for a changing remote specification.
+The GitHub Actions job is a trusted writer, not a pull-request workflow. It runs on `ubuntu-latest` with a 15-minute timeout and only `contents: write` and `pull-requests: write` permissions, checks out shallow history, provisions Python 3.13 through the repository uv action, and runs the processor with `--write`. Its write phase stages only `src/langsmith/langsmith-platform-openapi.json`; the review PR is the approval boundary for a changing remote specification.
 
 ## Public-documentation shaping
 
 `process_spec()` mutates a loaded upstream OpenAPI object. The CLI serializes the result as UTF-8 JSON with two-space indentation and a trailing newline. It skips path-level OpenAPI metadata while iterating operations. The transformation deliberately curates what Mintlify exposes:
 
-- **Hide non-public operations.** It sets `x-hidden: true` on operations carrying configured Fleet, product-feedback, internal/infrastructure, administration/debug, or low-value-system tags, and on configured health and internal path rules. It also hides matching top-level tag entries.
-- **Normalize operation titles.** Every operation gets a summary, falling back to `METHOD path`, sentence-cased while preserving configured acronyms and proper nouns. Backend `[Beta]` and trailing `V2` wording become consistent trailing `(Beta)` and `(v2)` markers. Visible non-sandbox `/v2/` operations receive `(v2)`; the configured run operations use canonical title overrides. Existing markers are removed before markers are reapplied, making title processing idempotent.
+- **Hide non-public operations.** It sets `x-hidden: true` on operations carrying configured Fleet, product-feedback, internal/infrastructure, administration/debug, or metrics tags, and on configured health and internal path rules. It also hides matching top-level tag entries.
+- **Normalize operation titles.** Every operation gets a summary, falling back to `METHOD path`, sentence-cased while preserving configured acronyms and proper nouns. Backend `[Beta]` and trailing `V2` wording become consistent trailing `(Beta)` and `(v2)` markers. Visible non-sandbox `/v2/` operations receive `(v2)`; configured run operations use canonical title overrides. Existing markers are removed before markers are reapplied, making title processing idempotent.
 - **Build navigation metadata.** The processor creates a top-level `tags` list if absent, updates known tags with human-readable `x-group` values, adds tag objects for tags found only on operations, and sorts them by the configured group order. Unknown groups sort alphabetically after ordered groups.
 
 The policy lives in the processor constants: `HIDDEN_TAGS`, `HIDDEN_PATHS`, `HIDDEN_PATH_PREFIXES`, `TAG_GROUPS`, `GROUP_ORDER`, and the v2/title tables. Add or remove a public category there rather than editing a generated operation or tag in the JSON artifact.
@@ -106,7 +106,7 @@ This maintains at most one outstanding refresh PR instead of creating a daily qu
 
 A disallowed fetch hostname raises `ValueError`; a network, TLS, timeout, or JSON-decoding failure prevents a candidate from being produced. The workflow shell uses `set -euo pipefail`, so checkout, push, or PR failures stop the step. A no-diff result is a successful no-op, not a failed refresh.
 
-There is no repository command that proves Mintlify rendered every LangSmith REST endpoint page. `make check-openapi` currently validates only the Agent Server specification. The normal link checks pass Mint output through `scripts/filter_mint_broken_links.py`, which excludes `/langsmith/smith-api` because that route family is generated at deployment rather than present in the local build. Inspect a Mintlify preview or deployed site for the rendered REST endpoint surface; use the processor command to verify transformation and the refresh PR to verify the candidate change.
+There is no repository command that proves Mintlify rendered every LangSmith REST endpoint page. `make check-openapi` currently validates only the Agent Server specification. The normal link checks pass Mint output through `scripts/filter_mint_broken_links.py`, which explicitly removes reports containing `/langsmith/smith-api` because that route family is generated at deployment rather than present in the local build. Inspect a Mintlify preview or deployed site for the rendered REST endpoint surface; use the processor command to verify transformation and the refresh PR to verify the candidate change.
 
 ### Focused test boundary
 
@@ -124,14 +124,12 @@ It does not exercise remote fetches, the processor transformation policy, GitHub
 2. Keep remote fetches restricted to `api.smith.langchain.com`; use `--input` for a controlled local candidate.
 3. Modify hiding, grouping, title, or ordering rules in `scripts/process_langsmith_openapi.py`, then regenerate and review the complete diff.
 4. Preserve the workflow's single generated path, no-diff exit, and one-standing-PR lifecycle when changing automation.
-5. Route Agent Server input changes to its own upstream/update process and SDK-reference issues to the external reference site.
-6. Review a refresh PR as a public API documentation change, then inspect a Mintlify preview or production for endpoint rendering.
+5. Route Agent Server input changes to its own externally maintained update process and SDK-reference issues to the external reference site.
+6. Review a refresh PR as a public API documentation change, then inspect a Mintlify preview or production site for endpoint rendering.
 
 ## Related pages
 
-- [Source Directory Map](/openwiki/architecture/source-map.md)
-- [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md)
+- [Mintlify Integration](/openwiki/integrations/mintlify.md)
 - [Reference Documentation Boundaries](/openwiki/integrations/reference-docs.md)
 - [Adding and Maintaining Documentation Pages](/openwiki/operations/adding-pages.md)
-- [Repository Wiki Quickstart](/openwiki/quickstart.md)
 - [Testing Overview](/openwiki/testing/test-overview.md)
