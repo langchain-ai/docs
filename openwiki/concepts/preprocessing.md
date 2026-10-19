@@ -5,7 +5,7 @@ description: Build-time transformations that turn authored Markdown and MDX into
 tags: [build, markdown, preprocessing, cross-references, language-versioning, api-reference]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-16T08:20:25.784Z
+    at: 2026-10-19T08:25:25.748Z
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
@@ -29,7 +29,7 @@ sources:
     resource: repo://tests/unit_tests/test_handle_auto_links.py
   - id: openwiki-source-5255204fc494ae04cd6ba685
     resource: repo://tests/unit_tests/test_utm_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-19T08:25:25.748Z" }
 ---
 
 ## Overview
@@ -84,6 +84,8 @@ For the wider route model, see [Language Versioning Strategy](/openwiki/concepts
 Authors can write `@[link_name]`, `@[title][link_name]`, and `@[`link_name`]`. `replace_autolinks()` looks up the key in `SCOPE_LINK_MAPS` and produces a Markdown link; a custom title is retained, and the simple backticked form retains backticks in its generated link text. Prefix a reference with `\` to show it literally: it is not resolved, and the final pass removes the escape.
 
 Resolution starts in `default_scope`. A `:::python` or `:::js` line changes the active scope; a bare closing `:::` resets it to the default scope. Regular backtick and tilde code fences prevent both reference replacement and scope changes within their content. An unclosed regular fence protects the remaining input from reference replacement.
+
+Fence protection is deliberately lightweight: both the autolink and CTA passes maintain one Boolean that toggles on every line beginning with at least three backticks or tildes. They do not pair an opening delimiter with a matching delimiter. Keep well-formed, balanced fences in authored input; malformed or mixed fence markers can change which later lines the source-level passes treat as code.
 
 `SCOPE_LINK_MAPS` is assembled by scope from host-and-scope `LINK_MAPS` entries: relative targets are joined to the entry host, while absolute targets remain absolute. The maps deliberately allow one key to resolve differently in Python and JavaScript and include compatibility aliases where shared prose needs the other language's API spelling.
 

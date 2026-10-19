@@ -35,6 +35,14 @@ git worktree add <dir> <headRefName>   # tracks origin/<headRefName>
 This fails if the branch is already checked out in another worktree. Use that
 worktree instead of forcing a second one.
 
+mise trusts config files by path, so each new worktree's `.mise.toml` starts
+out untrusted. The Vale pre-commit hook runs through `mise exec`, and the first
+commit fails with `Config files in <dir>/.mise.toml are not trusted`. Run
+`mise trust` once in the worktree, then commit again. To stop this
+for good, add the main checkout to `trusted_config_paths` in
+`~/.config/mise/config.toml`. It trusts every worktree created inside the
+checkout, such as `.claude/worktrees/*`, but not sibling directories.
+
 A local branch whose name merely mentions the PR is not the same branch. Confirm
 that `git rev-parse HEAD` matches the `headRefOid` from `gh pr view` before
 editing, and that the branch has an upstream:

@@ -5,7 +5,7 @@ description: How executable documentation samples become generated MDX, are test
 tags: [code-samples, documentation, mdx, testing, tracing, ci]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-16T08:20:25.784Z
+    at: 2026-10-19T08:25:25.748Z
 sources:
   - id: openwiki-source-ddbddbe474c8dc57119458d7
     resource: repo://.agents/skills/docs-code-samples/SKILL.md
@@ -43,7 +43,7 @@ sources:
     resource: repo://src/code-samples/package.json
   - id: openwiki-source-b68d7bad2afd9a38e8c331d5
     resource: repo://tests/unit_tests/test_generate_code_snippet_mdx.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-19T08:25:25.748Z" }
 ---
 
 ## Ownership and lifecycle
@@ -73,7 +73,7 @@ The extractor intentionally uses line-based marker recognition rather than a hos
 
 Prefer one source file for related snippets on a documentation page, with shared helpers or test-only setup written once. TypeScript is the important exception: the complete `.ts` file runs as one module, including visible regions and remove blocks. Split independently runnable snippets into separate files when duplicate imports or top-level `const`, `let`, class, or function declarations would collide. Keep visible code on an executed path; do not exit before the snippet has exercised its imports, construction, and configuration.
 
-The five `skills-tools-*.ts` Deep Agents samples illustrate this boundary: they are separate single-snippet entry points. Their virtual backend fixtures and validation remain in remove regions while the generated snippet exposes integration-wide, fixed-list, per-user, alias-resolver, or deferred-search tools configuration. The deliberate Anthropic model is preceded by `// KEEP MODEL`, preventing renderer expansion from changing it.
+The five `skills-tools-*.ts` Deep Agents samples are separate single-snippet entry points. Together they illustrate integration-wide, fixed-list, per-user, alias-resolver, and deferred-search tool configuration. They use remove regions for selected fixture or validation code, while the reader-visible regions retain the configuration being demonstrated. The intentional Anthropic models are preceded by `// KEEP MODEL`, preventing renderer expansion from changing them.
 
 ## Run the source programs
 
@@ -155,8 +155,7 @@ The test step continues after errors. On manual or scheduled runs, MDX regenerat
 
 ## Related pages
 
-- [Preprocessing](/openwiki/concepts/preprocessing.md)
 - [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md)
-- [CLI Tools](/openwiki/operations/cli-tools.md)
+- [Agent skills](/openwiki/operations/agent-skills.md)
 - [Quickstart](/openwiki/quickstart.md)
 - [Testing Overview](/openwiki/testing/test-overview.md)

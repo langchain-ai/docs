@@ -32,16 +32,20 @@ sources:
     resource: repo://scripts/generate_code_snippet_mdx.py
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
+  - id: openwiki-source-24e5f74f0f40e9bfd381871f
+    resource: repo://tests/unit_tests/test_builder.py
   - id: openwiki-source-fa345f5b82e4b995e2e1280e
     resource: repo://tests/unit_tests/test_changelog_pipeline.py
+  - id: openwiki-source-c2764a7369c8fbf3e49da6f8
+    resource: repo://tests/unit_tests/test_check_cross_refs.py
   - id: openwiki-source-b68d7bad2afd9a38e8c331d5
     resource: repo://tests/unit_tests/test_generate_code_snippet_mdx.py
   - id: openwiki-source-98a4de3472710de1bf3ccb4f
     resource: repo://tests/unit_tests/test_url_stub_noindex.py
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-16T08:20:25.784Z
-generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
+    at: 2026-10-19T08:25:25.748Z
+generated: { by: "openwiki/0.4.3", at: "2026-10-19T08:25:25.748Z" }
 ---
 
 ## Choose the validation boundary
@@ -54,7 +58,10 @@ Start with the smallest deterministic check that proves the changed contract. Ad
 | Onboarding registry or detector | `make test TEST_FILE=tests/unit_tests/test_check_onboarding_models.py` | Registry safety, model detection, suggestions, and local-checkout behavior | Access to the remote `langchainplus` checkout |
 | Snippet generator or sample dependency invariant | `make test TEST_FILE=tests/unit_tests/test_generate_code_snippet_mdx.py`, then `make code-snippets` | Language/provider and dependency-floor invariants plus derived MDX | Provider-backed execution |
 | Redirect-only documentation page | `make test TEST_FILE=tests/unit_tests/test_url_stub_noindex.py` | Redirect stubs are excluded from discovery surfaces | Rendered links and deployment behavior |
+| Documentation-build pipeline change | `make test TEST_FILE=tests/unit_tests/test_builder.py` | Builder behavior on synthetic source/build trees, including supported assets, language variants, and error paths | The complete repository build, Mint parsing, or deployment output |
 | General Python change | `make test` | Socket-isolated pytest suite | Network-backed behavior |
+| Python quality or type-facing change | `make lint` | Ruff formatting and lint diffs, `ty`, and Codespell checks | Runtime behavior, generated artifacts, or prose style |
+| `@[...]` source cross-reference or language fence | `make check-cross-refs` | Eligible source references resolve in the applicable Python/JavaScript scope | Built routes, anchors, redirects, or external destinations |
 | Authored docs, anchors, redirects, or Agent Server OpenAPI | `make broken-links-with-anchors` and `make check-openapi` | Mint checks against the disposable `build/` tree | Hosted-site state |
 | Runnable code sample | `make test-code-samples FILES="src/code-samples/..."` | Selected sample ran with local toolchains and supplied services/credentials | Generated documentation correctness or a rate-limited skipped sample |
 
@@ -75,7 +82,9 @@ This flow separates local contract evidence from generated-output, rendered-site
 
 ## Deterministic suite, generated docs, and ordinary CI
 
-The project requires Python `>=3.13.0,<4.0.0`. Pytest discovers `tests`, uses automatic asyncio mode with function-scoped event-loop fixtures, and `make test` disables network sockets other than Unix sockets. HTTP-facing tests therefore need mocks or another local test double.
+The project requires Python `>=3.13.0,<4.0.0`. Pytest discovers `tests`, uses automatic asyncio mode with function-scoped event-loop fixtures, and `make test` disables network sockets other than Unix sockets. HTTP-facing tests therefore need mocks or another local test double. For a pipeline change, start with its focused unit test: `test_builder.py`, for example, exercises `DocumentationBuilder` against temporary source and build trees. That proves transformation behavior without proving that the full repository builds or Mint renders it.
+
+`make lint` is a separate static gate: it asks Ruff to report formatting and lint diffs, runs `ty check`, and runs Codespell over `src`. It is useful after Python or configuration-adjacent changes, but it neither executes code nor validates derived documentation. Symbolic `@[...]` references are another separate boundary: `make check-cross-refs` validates eligible source MDX/Markdown references in their language scope, while ignoring ordinary fenced code and generated code-sample snippets. Run it after changing a reference or conditional-language fence; then use Mint checks for routes, anchors, and redirects.
 
 The main CI workflow runs on pull requests, pushes to `main`, and manual dispatch. It invokes reusable test, lint, and documentation-link workflows, then separately checks unresolved merge markers, source cross-references, integration `docs_url` values, and drift in the generated provider overview. Update its generator or `packages.yml`, regenerate `src/oss/python/integrations/providers/overview.mdx`, and review the result rather than editing that output by hand.
 
@@ -152,4 +161,4 @@ On a scheduled or manual full run, snippet regeneration occurs only when the sam
 - **Live sample failure:** inspect credentials, provider behavior, PostgreSQL readiness, and language toolchains. Treat rate-limit skips as coverage gaps.
 - **Weekly workflow issue:** distinguish deterministic pipeline behavior from GitHub access, model behavior, Eppo state, encryption-key availability, and human publication review.
 
-See [Builder Tests](/openwiki/testing/builder-tests.md), [Changelog Publication](/openwiki/workflows/changelog-publication.md), [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md), [Local Development](/openwiki/workflows/local-development.md), and [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md).
+See [Quickstart](/openwiki/quickstart.md), [Builder Tests](/openwiki/testing/builder-tests.md), [Conditional Rendering](/openwiki/testing/conditional-rendering.md), [Changelog Publication](/openwiki/workflows/changelog-publication.md), [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md), and [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md).

@@ -124,7 +124,17 @@ install:
 	@echo "Installing all dependencies"
 	uv sync --all-groups
 	npm install
-	npm install -g mint@latest
+	@for attempt in 1 2 3; do \
+		if npm install -g mint@latest; then \
+			break; \
+		elif [ "$$attempt" -eq 3 ]; then \
+			echo "Mintlify CLI installation failed after $$attempt attempts." >&2; \
+			exit 1; \
+		fi; \
+		delay=$$((attempt * 10)); \
+		echo "Mintlify CLI installation failed; retrying in $${delay}s ($$attempt/3)..." >&2; \
+		sleep "$$delay"; \
+	done
 	@$(MAKE) --no-print-directory skills
 	@echo "If the docs command is not available, relaunch your shell so it picks up the docs binary."
 

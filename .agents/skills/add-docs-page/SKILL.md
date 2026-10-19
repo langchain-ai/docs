@@ -163,6 +163,11 @@ A fresh git worktree has no `.venv`, and the same version check blocks
 PYTHONPATH="$(pwd)" <main-checkout>/.venv/bin/python -m pipeline build
 ```
 
+A fresh worktree's `.mise.toml` is also untrusted, so the first commit fails
+at the Vale hook with `Config files in <dir>/.mise.toml are not trusted`. Run
+`mise trust` once in the worktree. The `docs-edit` skill covers the permanent
+fix.
+
 `make broken-links-with-anchors` depends on `build`, so it fails the same way.
 Its link-check half runs on its own once the build output exists:
 
