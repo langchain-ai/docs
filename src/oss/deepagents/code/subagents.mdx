@@ -43,7 +43,7 @@ Subagent `AGENTS.md` files use YAML frontmatter followed by a markdown body:
 ---
 name: researcher
 description: Research topics on the web before writing content
-model: anthropic:claude-haiku-4-5-20251001
+model: anthropic:claude-haiku-5-5
 ---
 
 You are a research assistant with access to web search.
@@ -75,7 +75,7 @@ Use a cheaper, faster model for simple delegation tasks while keeping the main a
 ---
 name: general-purpose
 description: General-purpose agent for research and multi-step tasks
-model: anthropic:claude-haiku-4-5-20251001
+model: anthropic:claude-haiku-5-5
 ---
 
 You are a general-purpose assistant. Complete the task efficiently and return a concise summary.

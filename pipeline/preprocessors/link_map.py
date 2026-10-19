@@ -672,6 +672,8 @@ LINK_MAPS: list[LinkMap] = [
             "FilesystemMiddleware": "deepagents/middleware/createFilesystemMiddleware",
             "SummarizationToolMiddleware": "deepagents/middleware/createSummarizationMiddleware",
             "PatchToolCallsMiddleware": "deepagents/middleware/createPatchToolCallsMiddleware",
+            "UnsupportedContentMiddleware": "deepagents/middleware/createUnsupportedContentMiddleware",
+            "createUnsupportedContentMiddleware": "deepagents/middleware/createUnsupportedContentMiddleware",
             "StateBackend": "deepagents/backends/StateBackend",
             "FilesystemBackend": "deepagents/backends/FilesystemBackend",
             "LocalShellBackend": "deepagents/backends/LocalShellBackend",

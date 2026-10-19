@@ -76,14 +76,20 @@ instead, and touch `docs.json` only when creating a brand-new component group.
 ## Step 4. Add redirects for a move, rename, or deletion
 
 For a move or rename of a file that was already on `main`, run the repo's mover first. It rewrites cross-references
-across the corpus, which hand-editing misses:
+across the corpus, which hand-editing misses: every link to the page in every
+form (`/oss/langchain/x`, `/oss/python/langchain/x`, `href="..."`), plus the
+`src/docs.json` nav entries and redirect destinations that name it:
 
 ```bash
 uv run docs mv src/langsmith/old-name.mdx src/langsmith/new-name.mdx --dry-run
 ```
 
-Drop `--dry-run` once the preview looks right. Then add the redirect to the
-`redirects` array in `src/docs.json`:
+Read any `Left ... links unchanged` warning in the output. It marks links the
+mover could not rewrite safely, such as an unversioned `/oss/integrations/...`
+link that also reaches the other language's page. Fix those by hand.
+
+Drop `--dry-run` once the preview looks right. The mover does not add a
+redirect, so add one to the `redirects` array in `src/docs.json`:
 
 ```json
 { "source": "/langsmith/old-name", "destination": "/langsmith/new-name" }
@@ -148,6 +154,19 @@ expects. Run the pipeline directly rather than working around the build:
 ```bash
 PYTHONPATH="$(pwd)" .venv/bin/python -m pipeline build
 ```
+
+A fresh git worktree has no `.venv`, and the same version check blocks
+`uv sync` from creating one. Point at the main checkout's interpreter instead;
+`PYTHONPATH` still loads the pipeline code from the worktree:
+
+```bash
+PYTHONPATH="$(pwd)" <main-checkout>/.venv/bin/python -m pipeline build
+```
+
+A fresh worktree's `.mise.toml` is also untrusted, so the first commit fails
+at the Vale hook with `Config files in <dir>/.mise.toml are not trusted`. Run
+`mise trust` once in the worktree. The `docs-edit` skill covers the permanent
+fix.
 
 `make broken-links-with-anchors` depends on `build`, so it fails the same way.
 Its link-check half runs on its own once the build output exists:

@@ -200,6 +200,27 @@ For organizations rolling the gateway out to all developers, distribute the conf
 
 Provider API keys stay centralized in LangSmith workspace secrets. Gateway Credits models do not require provider API keys.
 
+## Group calls into conversation threads
+
+The gateway maps recognized coding-agent session headers to LangSmith `thread_id` metadata. Calls with the same ID belong to the same conversation thread within a tracing project.
+
+Header detection works across all providers, request paths, and API formats. The gateway checks these headers in order:
+
+1. `X-Claude-Code-Session-Id`
+1. `X-Deepseek-Harness-Session-Id`
+1. `thread-id`
+1. `thread_id`
+1. `session-id`
+1. `session_id`
+
+The gateway trims whitespace, skips blank values, and uses the first nonblank header value.
+
+If no header supplies an ID, the gateway can read the ID from the body of a Chat Completions or Responses request. It uses the `conversation` field, either a string or an object's `id`, and falls back to `prompt_cache_key`. The gateway reads these fields only when it already loads the request body for another reason, such as a guard policy. Send a header for consistent threading.
+
+To set a thread ID explicitly, send `X-Gateway-Thread-Id` or set `thread_id` in the JSON object in `X-Gateway-Metadata`. A nonblank explicit value overrides automatic detection. If both metadata headers specify a thread ID, `X-Gateway-Metadata` takes precedence.
+
+If the gateway finds no explicit ID, recognized session header, or body field, it does not add `thread_id` metadata.
+
 ## Verify the setup
 
 After configuring a coding agent, make a test call and confirm that:
