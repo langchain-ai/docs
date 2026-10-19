@@ -1,6 +1,6 @@
 # Files
 
-- [GitHub Actions and CI/CD](github-actions.md) - Maps repository validation, metadata-only pull-request automation, and trusted maintenance writers. Covers CI gates, code-sample tracing, HTML export checks, Linear notifications, generated documentation, and pull-request expectations.
-- [Mintlify Integration](mintlify.md) - Mintlify renders the generated documentation tree and deployment-time OpenAPI references for docs.langchain.com. This page defines repository ownership, route configuration, operational handoffs, and the limits of local validation.
-- [NPM Snippet Components](npm-snippets.md) - Describes how @langchain/docs-sandbox supplies interactive documentation components to the generated build tree, including overlay precedence, output paths, degraded-install behavior, and test boundaries.
-- [Reference Documentation Boundaries](reference-docs.md) - Distinguishes the externally operated SDK reference site from the three LangSmith OpenAPI inputs that Mintlify generates at deployment. Explains navigation, spec ownership, refresh automation, and validation boundaries.
+- [GitHub Actions and CI/CD](github-actions.md) - Explains GitHub Actions validation, event trust boundaries, and narrowly scoped automation writers. Covers the OpenWiki updater, documentation release watch, scheduled maintenance, and operational triage.
+- [Mintlify Integration](mintlify.md) - Mintlify renders the repository's generated documentation tree and creates selected deployment-time artifacts for docs.langchain.com. This page explains configuration, local and hosted validation, previews, exports, and the boundary of repository ownership.
+- [NPM Snippet Components](npm-snippets.md) - How @langchain/docs-sandbox assets are allowlisted, copied into the generated documentation tree, and diagnosed when dependency installation or component generation fails.
+- [Reference Documentation Integrations](reference-docs.md) - Explains the external SDK reference boundary and Mintlify OpenAPI publication paths, including ownership, automated refreshes, validation limits, and issue routing.

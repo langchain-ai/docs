@@ -1,11 +1,11 @@
 ---
 type: integration
 title: NPM Snippet Components
-description: Describes how @langchain/docs-sandbox supplies interactive documentation components to the generated build tree, including overlay precedence, output paths, degraded-install behavior, and test boundaries.
+description: How @langchain/docs-sandbox assets are allowlisted, copied into the generated documentation tree, and diagnosed when dependency installation or component generation fails.
 tags: [npm, snippet-components, documentation-build, mintlify]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-29T08:22:38.059Z
+    at: 2026-10-16T08:20:25.784Z
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
@@ -17,6 +17,8 @@ sources:
     resource: repo://pipeline/commands/build.py
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
+  - id: openwiki-source-636af982f42ea94123d2d7e9
+    resource: repo://pipeline/core/watcher.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
   - id: openwiki-source-13bb4a68b3327e33785edf79
@@ -25,12 +27,12 @@ sources:
     resource: repo://src/oss/langchain/frontend/integrations/copilotkit.mdx
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-29T08:22:38.059Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
 ---
 
 # NPM Snippet Components
 
-`@langchain/docs-sandbox` owns a small set of interactive documentation assets. The documentation repository consumes those assets at build time rather than maintaining their implementation in `src/`: `package.json` declares `^0.0.24` and the lockfile resolves `0.0.24`. The package has peer dependencies on React and Zod, which are supplied by the documentation runtime rather than bundled by this integration.
+`@langchain/docs-sandbox` owns a small set of interactive documentation assets. The documentation repository consumes those assets at build time rather than maintaining their implementation in `src/`: `package.json` declares `^0.0.24` and the lockfile resolves `0.0.24`. The resolved package declares React (`^18 || ^19`) and Zod (`^4.3.6`) as peer dependencies.
 
 This is distinct from authored Markdown snippets under `src/snippets/`. The latter are normal source inputs; the npm package is an explicit, allowlisted overlay. Do not edit `node_modules/` or `build/`: a dependency install or full build replaces both relevant inputs and outputs.
 
@@ -64,7 +66,7 @@ The `pattern` and `example` values are component-package contracts. Confirm an i
 
 ## Overlay lifecycle and precedence
 
-A full build deletes and recreates `build/`, emits the versioned and unversioned documentation families, copies shared source files, and then applies the npm overlay. `shutil.copy2` preserves file metadata while overwriting its destination. Therefore, if `src/snippets/` contains a source-tree fallback at the same mapped destination, the installed package copy is authoritative in the finished build.
+A full build deletes and recreates `build/`, emits the versioned and unversioned documentation families, copies shared source files, and then applies the npm overlay; it does not generate `llms.txt` indexes. `shutil.copy2` preserves file metadata while overwriting its destination. Therefore, if `src/snippets/` contains a source-tree fallback at the same mapped destination, the installed package copy is authoritative in the finished build.
 
 ```mermaid
 flowchart TD
@@ -98,6 +100,8 @@ For a package upgrade or mapping change, use a full build rather than relying on
 make build
 ```
 
-Then verify the expected generated artifact, the importing MDX route, and—in the root-script case—the deferred script entry in `build/docs.json`. See [Build System Architecture](/openwiki/architecture/build-system.md) for full-build and watcher boundaries, [Local Development Workflow](/openwiki/workflows/local-development.md) for preview operation, and [Builder Tests](/openwiki/testing/builder-tests.md) for fixture conventions.
+`make build` installs the package before it invokes the pipeline. If you run `uv run pipeline build` directly, install npm dependencies first. The development watcher rebuilds individual source files; it does not rerun shared-file collection or `_copy_npm_snippets()`. Restarting a preview without a full build can therefore leave the old component artifact in place.
+
+Then verify the expected generated artifact, the importing MDX route, and—in the root-script case—the deferred script entry in `build/docs.json`. For a missing embed, first check whether `node_modules/@langchain/docs-sandbox/dist/` and the required allowlisted filename exist; then run a full build and inspect the mapped `build/` path. A warning about a missing package or artifact explains an omitted component but does not make the pipeline fail. See [Build System Architecture](/openwiki/architecture/build-system.md) for full-build and watcher boundaries, [Documentation Preprocessing](/openwiki/concepts/preprocessing.md) for language-specific import rewriting, [Local Development Workflow](/openwiki/workflows/local-development.md) for preview operation, and [Builder Tests](/openwiki/testing/builder-tests.md) for fixture conventions.
 
 The focused builder tests verify language rewriting of Markdown snippet imports, preservation of a `.jsx` import, preservation of an already language-scoped Markdown import, and copying of a local TSX snippet component. They contain no direct test of `_copy_npm_snippets()` itself. Changes to package copying should add isolated fixtures for mapped-file output, source-copy overwrite precedence, and warnings for a missing package directory or individual artifact.

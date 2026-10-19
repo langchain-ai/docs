@@ -171,7 +171,7 @@ For non-LangChain applications or custom instrumentation, you can trace your app
    tracer = trace.get_tracer(__name__)
 
    def call_openai():
-       model = "gpt-5.4-mini"
+       model = "gpt-6-luna"
        with tracer.start_as_current_span("call_open_ai") as span:
            span.set_attribute("langsmith.span.kind", "LLM")
            span.set_attribute("langsmith.metadata.user_id", "user_123")
@@ -229,7 +229,7 @@ By default, the LangSmith OpenTelemetry exporter will send data to the LangSmith
 
 ```bash
 OTEL_EXPORTER_OTLP_ENDPOINT: Override the endpoint URL
-OTEL_EXPORTER_OTLP_HEADERS: Add custom headers (LangSmith API keys and Project are added automatically)
+OTEL_EXPORTER_OTLP_HEADERS: Headers for your endpoint, like its API key (if unset, your LangSmith API key and project are sent)
 OTEL_SERVICE_NAME: Set a custom service name (defaults to "langsmith")
 OTEL_RESOURCE_ATTRIBUTES: Attach custom metadata fields at the process level (see below)
 ```
@@ -355,14 +355,22 @@ When sending traces to LangSmith via OpenTelemetry, the following attributes are
 
 ### GenAI usage metrics
 
-| OpenTelemetry attribute          | LangSmith field                | Notes                                     |
-| -------------------------------- | ------------------------------ | ----------------------------------------- |
-| `gen_ai.usage.input_tokens`      | `usage_metadata.input_tokens`  | Number of input tokens used               |
-| `gen_ai.usage.output_tokens`     | `usage_metadata.output_tokens` | Number of output tokens used              |
-| `gen_ai.usage.total_tokens`      | `usage_metadata.total_tokens`  | Total number of tokens used               |
-| `gen_ai.usage.prompt_tokens`     | `usage_metadata.input_tokens`  | Number of input tokens used (deprecated)  |
-| `gen_ai.usage.completion_tokens` | `usage_metadata.output_tokens` | Number of output tokens used (deprecated) |
-| `gen_ai.usage.details.reasoning_tokens` | `usage_metadata.reasoning_tokens` | Number of reasoning tokens used |
+| OpenTelemetry attribute                    | LangSmith field                                     | Notes                                                                           |
+| ------------------------------------------ | --------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `gen_ai.usage.input_tokens`                | `usage_metadata.input_tokens`                       | Number of input tokens used                                                     |
+| `gen_ai.usage.output_tokens`               | `usage_metadata.output_tokens`                      | Number of output tokens used                                                    |
+| `gen_ai.usage.total_tokens`                | `usage_metadata.total_tokens`                       | Total number of tokens used. Not part of the current GenAI semantic conventions |
+| `gen_ai.usage.cache_read.input_tokens`     | `usage_metadata.input_token_details.cache_read`     | Input tokens read from the provider cache                                       |
+| `gen_ai.usage.cache_write.input_tokens`    | `usage_metadata.input_token_details.cache_creation` | Input tokens written to the provider cache                                      |
+| `gen_ai.usage.reasoning.output_tokens`     | `usage_metadata.output_token_details.reasoning`     | Number of reasoning tokens used                                                 |
+| `gen_ai.usage.prompt_tokens`               | `usage_metadata.input_tokens`                       | Number of input tokens used (deprecated)                                        |
+| `gen_ai.usage.completion_tokens`           | `usage_metadata.output_tokens`                      | Number of output tokens used (deprecated)                                       |
+| `gen_ai.usage.cache_creation.input_tokens` | `usage_metadata.input_token_details.cache_creation` | Input tokens written to the provider cache (deprecated)                         |
+| `gen_ai.usage.details.reasoning_tokens`    | `usage_metadata.output_token_details.reasoning`     | Number of reasoning tokens used (deprecated)                                    |
+| `gen_ai.usage.cache_read_input_tokens`     | `usage_metadata.input_token_details.cache_read`     | Input tokens read from the provider cache (OpenLLMetry spelling)                |
+| `gen_ai.usage.cache_creation_input_tokens` | `usage_metadata.input_token_details.cache_creation` | Input tokens written to the provider cache (OpenLLMetry spelling)               |
+
+If a span sets more than one attribute for the same cache or reasoning field, LangSmith uses the current semantic convention attribute first, then the deprecated dotted spelling, then the OpenLLMetry underscore spelling.
 
 ### TraceLoop attributes
 
@@ -488,7 +496,7 @@ configure(project_name="adk-otel-demo")
 async def main():
     agent = LlmAgent(
         name="travel_assistant",
-        model="gemini-2.5-flash-lite",
+        model="gemini-3.8-flash",
         instruction="You are a helpful travel assistant.",
     )
 
@@ -520,7 +528,7 @@ Here is an [example](https://smith.langchain.com/public/d6d47eeb-511e-4fda-ad17-
 Native OTLP `parentSpanId` can't reference an existing LangSmith run: an OTLP span ID is 8 bytes, while LangSmith run IDs are full UUIDs. To attach an OpenTelemetry span to a run created elsewhere (for example, a LangChain-SDK run), set the `langsmith.*` attributes with the parent's full UUIDs. They override the IDs derived from the native OTLP span, so the span nests under the existing run in the same trace.
 
 ```python
-import uuid
+from langsmith import uuid7
 from datetime import datetime, timezone
 
 from langsmith import get_current_run_tree, traceable
@@ -531,7 +539,7 @@ tracer = trace.get_tracer("my-harness")
 
 def emit_otel_child(parent):
     """Emit an OTel span that nests under an existing LangSmith run."""
-    child_id = uuid.uuid4()
+    child_id = uuid7()
     start = datetime.now(timezone.utc)
     # dotted_order = parent's dotted_order, a dot, then this span's timestamp + id
     dotted = f"{parent.dotted_order}.{start.strftime('%Y%m%dT%H%M%S%fZ')}{child_id}"
@@ -645,7 +653,7 @@ async def main():
     agent = LlmAgent(
         name="travel_assistant",
         tools=[get_flight_info, get_hotel_recommendations],
-        model="gemini-2.0-flash-exp",
+        model="gemini-3.8-flash",
         instruction="You are a helpful travel assistant that can help with flights and hotels.",
     )
 

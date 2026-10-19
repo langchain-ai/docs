@@ -64,6 +64,16 @@ dcode --clear-default-model
 
 You can also pin a default from the interactive `/model` switcher (`Ctrl+S`) or set `[models].default` in `config.toml`. See [Set a default model](/oss/deepagents/code/providers#set-a-default-model).
 
+### Set reasoning effort
+
+`/effort` controls reasoning effort for the current model. Open the picker to see the levels supported by that model, or pass a level directly with `/effort <level>`.
+
+Deep Agents Code saves the selection per `provider:model` in `~/.deepagents/config.toml` for future sessions. Run `/effort clear` to remove the current model's saved preference and session override. Configured model parameters can still supply an effort value.
+
+You can open `/effort` or click the footer's effort label while the agent works. A selection waits until the current task completes; it does not change the model request already in progress. If the model changes before the selection applies, reopen the picker for the new model.
+
+For Anthropic models with `thinking.type` set to `between_tools`, the available levels are the model-supported subset of `low`, `medium`, and `high`.
+
 ### Choose a summarization model
 
 Use a separate model for automatic context compaction, `/offload`, and `/compact` without changing the main agent model:
@@ -147,6 +157,17 @@ dcode -r abc123-thread-id
 
 List and delete sessions with `dcode threads list` and `dcode threads delete`. See [Memory and skills](/oss/deepagents/code/memory-and-skills) for how per-agent memory works.
 
+### Name a thread
+
+Deep Agents Code automatically generates names for conversations so they are easier to find.
+
+After the first model call, Deep Agents Code makes a separate LLM call to generate a name for the thread. Generation uses `[threads].rename_model` when set, otherwise the selected conversation model. Set `[threads].auto_rename = false` to disable automatic naming. See [Name threads automatically](/oss/deepagents/code/config-file#name-threads-automatically).
+
+In an interactive session:
+
+- `/rename <name>`: Set a name of 1 to 50 printable characters.
+- `/rename`: Generate a suggestion and edit it if needed.
+
 ## Non-interactive mode and piping
 
 Use `-n`/`--non-interactive` to run a single task without the interactive UI. Each non-interactive run starts a fresh thread; file-based state (memory, skills, configuration) persists across invocations:
@@ -174,7 +195,7 @@ dcode -n "Generate a .gitignore for Python" -q > .gitignore
 dcode -n "List dependencies" -q --no-stream | sort
 ```
 
-Add `--show-reasoning` to display provider-visible reasoning. In an interactive session, reasoning streams into a separate row that collapses when the phase ends; press `Ctrl+O` to reopen it. In non-interactive mode, reasoning goes to stderr so the final answer on stdout remains pipeable. This setting is off by default and applies for the full session. See [Show provider-visible reasoning](/oss/deepagents/code/config-file#show-provider-visible-reasoning) for persistent configuration.
+Provider-visible reasoning is shown by default in interactive sessions, where it streams into a separate row that collapses when the phase ends; press `Ctrl+O` to reopen it. Non-interactive mode hides reasoning by default. When enabled there, reasoning goes to stderr so the final answer on stdout remains pipeable. Set `DEEPAGENTS_CODE_SHOW_REASONING=0` to hide it in both modes, or pass `--show-reasoning` to show it for one launch. This setting applies for the full session. See [Show provider-visible reasoning](/oss/deepagents/code/config-file#show-provider-visible-reasoning) for persistent configuration.
 
 Cap agent runs in CI with `--max-turns` or `--timeout`. Both exit with code 124 when the budget is exceeded. Requires `-n` or piped stdin:
 
@@ -460,7 +481,7 @@ Run OAuth login for an MCP server marked `auth: "oauth"` with `dcode mcp login <
 | `--timeout SECONDS`    | Hard wall-clock timeout for non-interactive mode. Exits with code 124 when exceeded. Requires `-n` or piped stdin. See [Non-interactive mode and piping](#non-interactive-mode-and-piping) |
 | `-q`, `--quiet`        | Clean output for piping—only the agent's response goes to stdout. Requires `-n` or piped stdin |
 | `--no-stream`          | Buffer the full response and write to stdout at once instead of streaming. Requires `-n` or piped stdin |
-| `--show-reasoning`     | Show provider-visible reasoning in the interactive transcript or on stderr in non-interactive mode. Off by default |
+| `--show-reasoning`     | Show provider-visible reasoning in the interactive transcript or on stderr in non-interactive mode. On by default in interactive sessions and off in non-interactive mode; overrides the environment and config preference |
 | `--stdin`              | Read input from stdin explicitly instead of auto-detection. Errors clearly when stdin is unavailable or is a TTY |
 | `-y`, `--auto-approve` | Enable classifier-backed [Auto](/oss/deepagents/code/approval-modes) mode. Requires an interactive local session; toggle with `Shift+Tab` during an interactive session |
 | `--auto-classifier-model MODEL` | Model used by the [Auto classifier](/oss/deepagents/code/approval-modes#select-a-classifier-model) to review gated tool calls (`provider:model` format). Overrides `DEEPAGENTS_CODE_AUTO_CLASSIFIER_MODEL` and `[models].auto_classifier` in `config.toml`. Interactive TUI sessions only |
@@ -470,9 +491,10 @@ Run OAuth login for an MCP server marked `auth: "oauth"` with `dcode mcp login <
 | `--json`               | Emit machine-readable JSON from supported management subcommands, including `tools`, `agents`, `threads`, `skills`, and `update`. Output envelope: `{"schema_version": 1, "command": "...", "data": ...}` |
 | `--sandbox TYPE`       | Remote sandbox for code execution: `none` (default), `langsmith`, `agentcore`, `daytona`, `modal`, `runloop`, `vercel`, and third-party providers. LangSmith is included; other built-ins require extras. Pass `--sandbox` with no value to use `[sandboxes].default` from config |
 | `--sandbox-id ID`      | Reuse an existing sandbox (skips creation and cleanup)      |
-| `--sandbox-snapshot-name NAME` | Sandbox snapshot name to use or create (`langsmith`, `runloop`, and providers that advertise snapshot support) |
+| `--sandbox-snapshot-name NAME` | Sandbox snapshot name to use or create (`langsmith`, `daytona`, `runloop`, and providers that advertise snapshot support) |
 | `--sandbox-setup PATH` | Path to setup script to run in sandbox after creation       |
 | `--mcp-config PATH`    | Add an explicit MCP config as the highest-precedence source (merged with auto-discovered configs) |
+| `--no-tracing`         | Disable LangSmith agent tracing for this session. See [Trace with LangSmith](/oss/deepagents/code/quickstart#trace-with-langsmith) |
 | `--no-mcp`             | Disable all MCP tool loading                                |
 | `--trust-project-mcp`  | Trust project-level MCP servers without prompting for the current run. Explicit denies still apply. |
 | `-e`, `--extension PATH` | Load a Python extension file or directory for this run. Repeat to add multiple paths. Requires `DEEPAGENTS_CODE_EXPERIMENTAL=1` and extension discovery enabled (`[extensions].enabled` / `DEEPAGENTS_CODE_EXTENSIONS`). See [Python extensions](/oss/deepagents/code/extensions) |
@@ -543,7 +565,7 @@ Pair `dcode doctor` with `dcode config show` when you need both a high-level hea
 | `dcode skills create NAME [--project]`    | Create a new skill with template `SKILL.md`. Idempotent—re-creating an existing skill prints an informational message instead of an error |
 | `dcode skills info NAME [--project]`      | Show detailed information about a skill |
 | `dcode skills delete NAME [--project] [-f]` | Delete a skill and its contents. Supports `--dry-run` |
-| `dcode threads list [--agent NAME] [--limit N]` | List sessions (alias: `ls`). Default limit: 20. Set `DEEPAGENTS_CODE_RECENT_THREADS` to change the default, or use `-n` as a short flag for `--limit`. Additional flags: `--sort {created,updated}`, `--branch TEXT` (filter by git branch), `--cwd [PATH]` (filter by working directory; bare flag uses current directory), `-v`/`--verbose` (show all columns including branch, created time, and initial prompt), `-r`/`--relative` (relative timestamps) |
+| `dcode threads list [--agent NAME] [--limit N]` | List sessions (alias: `ls`), including each thread's name when set. Default limit: 100. Set `DEEPAGENTS_CODE_RECENT_THREADS` to change the default, or use `-n` as a short flag for `--limit`. Additional flags: `--sort {created,updated}`, `--branch TEXT` (filter by git branch), `--cwd [PATH]` (filter by working directory; bare flag uses current directory), `-v`/`--verbose` (show all columns including branch, created time, and initial prompt), `-r`/`--relative` (relative timestamps) |
 | `dcode threads delete ID`       | Delete a session. Supports `--dry-run` |
 | `dcode mcp login [NAME] [--mcp-config PATH]` | With `NAME`, run the OAuth login flow for a server marked `auth: "oauth"`. Omit `NAME` to list configured OAuth servers that need login. See [MCP tools](/oss/deepagents/code/mcp-tools#oauth-login) |
 | `dcode mcp config`              | Show MCP config discovery paths        |
