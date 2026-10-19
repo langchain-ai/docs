@@ -144,6 +144,12 @@ jobs:
           git add -A -- "${STATE[@]}"
           git commit -m "docs(langsmith): weekly changelog for ${WEEK}"
           git push --force origin "$BRANCH"
-          gh pr create --base main --head "$BRANCH" \
-            --title "docs(langsmith): weekly changelog for ${WEEK}" \
-            --body-file "$RUNNER_TEMP/pr-body.md"
+          # A rerun on the same day force-pushes the same branch, which already has a PR.
+          EXISTING="$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$EXISTING" ]; then
+            gh pr edit "$EXISTING" --body-file "$RUNNER_TEMP/pr-body.md"
+          else
+            gh pr create --base main --head "$BRANCH" \
+              --title "docs(langsmith): weekly changelog for ${WEEK}" \
+              --body-file "$RUNNER_TEMP/pr-body.md"
+          fi
