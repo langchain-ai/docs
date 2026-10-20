@@ -11,11 +11,14 @@ Policy (1A):
   ``packages.yml`` (and listing hrefs that used the old GitHub URL). Never
   auto-retarget into ``langchain-ai/*``.
 - If a live GitLab project remains, do not delist; report it under attention.
-  Marketing / docs sites do not count as a VCS home and do not block delist.
-- If no live GitHub or GitLab alternate exists, fully delist the package:
-  ``packages.yml``, matching external YAML rows, downloads-table rows, and the
-  ``all_providers`` card when no other remaining package shares the same
-  provider key (``name_short``).
+- If a live partner docs / homepage URL remains (PyPI Documentation/Homepage or
+  an external ``docs_url``, excluding registry pages and the dead GitHub URL),
+  do not delist; report it under attention. A missing GitHub repo alone is not
+  enough when the package still has reachable docs (for example Writer).
+- If no live GitHub, GitLab, or partner-docs alternate exists, fully delist the
+  package: ``packages.yml``, matching external YAML rows, downloads-table rows,
+  and the ``all_providers`` card when no other remaining package shares the
+  same provider key (``name_short``).
 
 Usage (from repo root):
 
@@ -160,6 +163,18 @@ def url_exists(url: str, get: HttpGet) -> bool:
     return 200 <= response.status_code < 400
 
 
+def is_registry_page(url: str) -> bool:
+    """Whether ``url`` is a PyPI/npm registry page rather than partner docs."""
+    host = urlparse(url).netloc.casefold().removeprefix("www.")
+    return host in {"pypi.org", "npmjs.com", "registry.npmjs.org"}
+
+
+def is_github_or_gitlab_url(url: str) -> bool:
+    """Whether ``url`` points at GitHub or GitLab (handled as VCS, not docs)."""
+    host = urlparse(url).netloc.casefold().removeprefix("www.")
+    return host in {"github.com", "gitlab.com"}
+
+
 def normalize_repo_slug(repo: str) -> str:
     """Collapse accidental ``owner//repo`` typos to ``owner/repo``."""
     return re.sub(r"/+", "/", repo.strip().strip("/"))
@@ -292,6 +307,42 @@ def collect_vcs_hits(
         if gl:
             add(VcsHit("gitlab", gl, gl, "external_docs"))
 
+    return hits
+
+
+
+def collect_docs_homes(
+    *,
+    package_name: str,
+    dead_repo: str,
+    docs_urls: list[str],
+    get: HttpGet,
+) -> list[VcsHit]:
+    """Gather live partner docs/homepage URLs that are not VCS or registry pages."""
+    candidates: list[tuple[str, str]] = []
+    for label, url in pypi_project_urls(package_name, get).items():
+        candidates.append((url, f"pypi:{label}"))
+    for docs_url in docs_urls:
+        candidates.append((docs_url, "external_docs"))
+
+    dead_github = f"https://github.com/{dead_repo}".rstrip("/").casefold()
+    hits: list[VcsHit] = []
+    seen: set[str] = set()
+    for url, source in candidates:
+        url = url.strip()
+        if not url.startswith(("http://", "https://")):
+            continue
+        if is_registry_page(url) or is_github_or_gitlab_url(url):
+            continue
+        if url.rstrip("/").casefold() == dead_github:
+            continue
+        key = url.rstrip("/").casefold()
+        if key in seen:
+            continue
+        if not url_exists(url, get):
+            continue
+        seen.add(key)
+        hits.append(VcsHit("docs", url, url, source))
     return hits
 
 
@@ -463,13 +514,33 @@ def classify_package(
             npm=npm,
         )
 
+    live_docs = collect_docs_homes(
+        package_name=name,
+        dead_repo=repo,
+        docs_urls=docs_urls,
+        get=get,
+    )
+    if live_docs:
+        chosen = live_docs[0]
+        return PackageFinding(
+            name=name,
+            repo=repo,
+            disposition="attention",
+            detail=(
+                f"GitHub {repo} is 404 but live partner docs remain at "
+                f"{chosen.url} ({chosen.source}); not delisting"
+            ),
+            pypi=name,
+            npm=npm,
+        )
+
     return PackageFinding(
         name=name,
         repo=repo,
         disposition="delist",
         detail=(
-            f"GitHub {repo} is 404 and no live GitHub/GitLab alternate was found "
-            "on PyPI, npm, or external docs_url values"
+            f"GitHub {repo} is 404 and no live GitHub, GitLab, or partner-docs "
+            "alternate was found on PyPI, npm, or external docs_url values"
         ),
         pypi=name,
         npm=npm,

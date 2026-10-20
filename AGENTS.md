@@ -603,12 +603,13 @@ existing `docs_url` values in `scripts/data/integration_external_docs.yaml`:
 - **Rename**: different live third-party GitHub `owner/repo` found → update
   `packages.yml` (and listing hrefs that used the old URL). Never auto-retarget
   into `langchain-ai/*`.
-- **Delist**: no live GitHub/GitLab home → remove the package from `packages.yml`,
-  matching external YAML rows, downloads-table rows, and the `all_providers` card
-  when no other package shares the provider key (`name_short`). Marketing docs
-  sites do not block delist.
-- **Attention only**: a live GitLab project remains, or the only alternate is
-  first-party → do not change listings; report in the evidence table.
+- **Delist**: no live GitHub, GitLab, or partner-docs home → remove the package
+  from `packages.yml`, matching external YAML rows, downloads-table rows, and the
+  `all_providers` card when no other package shares the provider key
+  (`name_short`).
+- **Attention only**: a live GitLab project or partner docs/homepage remains (for
+  example Writer's `dev.writer.com` when GitHub is gone), or the only alternate
+  is first-party → do not change listings; report in the evidence table.
 - **Skipped**: first-party `langchain-ai/*` packages.
 
 ```bash
