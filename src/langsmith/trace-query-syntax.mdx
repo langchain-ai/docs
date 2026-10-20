@@ -46,22 +46,25 @@ The filtering grammar is based on comparator functions applied to fields of the 
 | `gte`      | Greater than or equal to                                 | `gte(latency, 1.5)` |
 | `lt`       | Less than                                                | `lt(start_time, "2024-01-01T00:00:00Z")` |
 | `lte`      | Less than or equal to                                    | `lte(feedback_score, 0.5)` |
-| `like`     | Pattern match (case-sensitive); `%` matches any sequence | `like(metadata_value, "%prod%")` |
-| `notlike`  | Inverse pattern match; `%` matches any sequence          | `notlike(metadata_value, "%staging%")` |
+| `like`     | Pattern match; `%` matches any sequence of characters    | `like(metadata_value, "%prod%")` |
+| `notlike`  | Inverse of `like`                                        | `notlike(metadata_value, "%staging%")` |
 | `has`      | Check if the run contains a tag or metadata key-value    | `has(tags, "production")` |
 | `search`   | Search for a substring across all string fields          | `search("invoice")` |
 | `in`       | Check if a field value is in a list                      | `in(metadata_key, ["session_id", "thread_id"])` |
 
 ### Wildcard pattern matching
 
-`like` and `notlike` match a field value against a pattern. Use `%` as a wildcard that matches any sequence of characters, including an empty sequence.
+`like` and `notlike` match a field value against a pattern. How the pattern applies depends on the field:
+
+- **`name`, `metadata_key`, and `metadata_value`**: `%` matches any sequence of characters, including none. Matching is case-sensitive. Without `%`, `like` matches only the exact value, the same as `eq`.
+- **`inputs`, `outputs`, and `error`**: Matching is case-insensitive and always matches a substring, so `%` is optional. LangSmith can match each word of the pattern separately rather than as a phrase, so do not rely on `like` to match an exact phrase in these fields.
+
+For example:
 
 - `like(metadata_value, "%prod%")` matches any value that contains `prod`, such as `production` or `eu-prod-1`.
 - `notlike(metadata_value, "%staging%")` matches any value that does not contain `staging`.
 
-Patterns are case-sensitive. Wrap the pattern in double quotes and place `%` inside the quotes where you want the wildcard, for example `"%staging%"`. Without `%`, `like` behaves like `eq`.
-
-`like` and `notlike` are the API equivalents of the UI's **contains** and **does not contain** operators. Refer to the [UI-to-API operator map](#ui-to-api-operator-map) for a full mapping.
+In the UI filter builder, the **contains** and **does not contain** operators produce `like` and `notlike` filters. To translate a search bar query, refer to the [UI-to-API operator map](#ui-to-api-operator-map).
 
 ### Logical operators
 
@@ -98,32 +101,28 @@ or(eq(status, "error"), and(eq(feedback_key, "score"), lt(feedback_score, 0.5)))
 
 ## UI-to-API operator map
 
-The LangSmith UI offers named operators in its filter builder. The table below shows the API comparator that corresponds to each UI operator.
+The search bar in the LangSmith UI uses its own syntax, documented in [Filter traces](/langsmith/filter-traces#operators). The following table maps each search bar operator to the comparator that does the same job in this language:
 
-| UI operator | API comparator | Notes |
-| ----------- | -------------- | ----- |
-| is | `eq` | Exact match. |
-| is not | `neq` | Inverts `eq`. |
-| contains | `like` | Use `%` as a wildcard: `like(metadata_value, "%staging%")`. |
-| does not contain | `notlike` | Use `%` as a wildcard: `notlike(metadata_value, "%staging%")`. |
-| greater than | `gt` | Numeric and timestamp fields. |
-| greater than or equal | `gte` | Numeric and timestamp fields. |
-| less than | `lt` | Numeric and timestamp fields. |
-| less than or equal | `lte` | Numeric and timestamp fields. |
-| has tag | `has` | `has(tags, "value")`. |
-| in list | `in` | `in(metadata_key, ["a", "b"])`. |
-
-Refer to [Filter traces](/langsmith/filter-traces) for the full UI filter reference.
+| Search bar operator | Search bar syntax | API comparator |
+| ------------------- | ----------------- | -------------- |
+| is | `name:value` | `eq(name, "value")` |
+| is not | `-name:value` | `neq(name, "value")` |
+| wildcard | `name:*value*` | `like(name, "%value%")`. Replace each `*` with `%`. |
+| matches | `input:~value` | `like(inputs, "%value%")`. Also applies to `outputs` and `error`. |
+| does not match | `-input:~value` | `notlike(inputs, "%value%")` |
+| comparison | `latency:>5` | `gt(latency, 5)`. Use `gte`, `lt`, and `lte` for `>=`, `<`, and `<=`. |
+| exists | `metadata.env:*` | `eq(metadata_key, "env")` |
 
 ## Alert filters
 
-Alert rules in LangSmith accept the same filter query language in their `filter` and `denominator_filter` fields. A few behaviors are specific to alerts:
+Alert rules accept the same filter query language in their `filter` and `denominator_filter` fields:
 
-- **Runs without the metadata key** match `neq` and `notlike` conditions. A run with no `env` metadata key satisfies `notlike(metadata_value, "%staging%")`.
-- **Error, inputs, and outputs** are matched token-by-token, not as a full phrase. Use `like` with `%` to match a substring reliably.
-- The `filter` field narrows which runs count toward the alert numerator. The `denominator_filter` field narrows the baseline population.
+- **`filter`**: Selects the runs that count toward the alert.
+- **`denominator_filter`**: Selects the baseline population for a percentage-based alert. When it is empty, every run counts toward the baseline.
 
-Example alert filter that excludes staging runs:
+Alert filters accept only `and`. Combining conditions with `or` is not supported.
+
+Example alert filter that matches runs whose `env` metadata value does not contain `staging`:
 
 ```text
 and(eq(metadata_key, "env"), notlike(metadata_value, "%staging%"))
