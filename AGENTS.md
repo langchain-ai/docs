@@ -594,6 +594,37 @@ Notes:
 - After regenerating, commit only `src/snippets/langsmith/mda-oauth-catalog.mdx`. Do not edit
   that snippet by hand.
 
+### Check integration repo links
+
+`scripts/check_integration_repos.py` scans every third-party `repo:` in `packages.yml`
+against GitHub. When a repo is 404, it looks for a live alternate on PyPI, npm, and
+existing `docs_url` values in `scripts/data/integration_external_docs.yaml`:
+
+- **Rename**: different live third-party GitHub `owner/repo` found → update
+  `packages.yml` (and listing hrefs that used the old URL). Never auto-retarget
+  into `langchain-ai/*`.
+- **Docs URL redirect**: an external `docs_url` that permanently redirects (HTTP
+  301 or 308) → update that `docs_url` and matching listing hrefs (for example
+  `hashlock.markets/docs` → `docs.hashlock.markets`). Temporary redirects
+  (302/307) are left alone.
+- **Delist**: no live GitHub, GitLab, or partner-docs home → remove the package
+  from `packages.yml`, matching external YAML rows, downloads-table rows, and the
+  `all_providers` card when no other package shares the provider key
+  (`name_short`).
+- **Attention only**: a live GitLab project or partner docs/homepage remains (for
+  example Writer's `dev.writer.com` when GitHub is gone), or the only alternate
+  is first-party → do not change listings; report in the evidence table.
+- **Skipped**: first-party `langchain-ai/*` packages.
+
+```bash
+export GITHUB_TOKEN="$(gh auth token)"
+uv run python scripts/check_integration_repos.py
+uv run python scripts/check_integration_repos.py --write --evidence /tmp/evidence.md
+```
+
+The weekly workflow `.github/workflows/check-integration-repos.yml` runs this with
+`--write` and opens or updates a standing **draft** PR on `chore/dead-integration-repos`.
+
 ## Pre-commit linting
 
 Always run `make lint_prose` (Vale) before handing off or committing doc changes. CI blocks on it. Common offenders: em-dashes with surrounding spaces (` — ` → `—`, enforced by `LangChain.DashesSpaces`), terminology, style.
