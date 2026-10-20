@@ -1,11 +1,8 @@
 ---
 type: documentation route model
-title: Language Versions and Route Variants
-description: Explains how source ownership produces Python and JavaScript documentation routes, including unversioned exceptions and Managed Deep Agents. Covers conditional selection, scoped cross-references, link rewriting, navigation, redirects, and route-validation boundaries.
+title: Language Variants and Route Ownership
+description: Explains how source ownership produces Python and JavaScript documentation routes, including unversioned product exceptions and Managed Deep Agents. Covers conditional selection, link rewriting, navigation, redirects, and route-validation boundaries.
 tags: [documentation-pipeline, routes, language-versioning, redirects]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-19T08:25:25.748Z
 sources:
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
@@ -17,10 +14,13 @@ sources:
     resource: repo://src/language-toggle.js
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-19T08:25:25.748Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-20T08:20:37.912Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-20T08:20:37.912Z
 ---
 
-# Language Versions and Route Variants
+# Language Variants and Route Ownership
 
 `DocumentationBuilder` derives emitted routes from source ownership below `src/`. `src/docs.json` is copied as a shared file and separately defines navigation and compatibility redirects. It does not decide which source family emits a route. Treat source ownership, generated artifacts, reader-facing navigation, and redirects as independent contracts.
 

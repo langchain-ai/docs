@@ -1,11 +1,11 @@
 ---
 type: documentation pipeline
-title: Documentation Preprocessing
+title: Preprocessing and Link Resolution
 description: Build-time transformations that turn authored Markdown and MDX into language-specific documentation artifacts. Covers scoped cross-references, CTA attribution, conditional content, output-time route rewrites, and strict cross-reference validation.
 tags: [build, markdown, preprocessing, cross-references, language-versioning, api-reference]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-19T08:25:25.748Z
+    at: 2026-10-20T08:20:37.912Z
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile

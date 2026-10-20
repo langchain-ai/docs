@@ -1,8 +1,11 @@
 ---
 type: operations guide
-title: Adding and Maintaining Documentation Pages
-description: Safely add, move, retire, or regenerate documentation pages by selecting the source owner, maintaining navigation and redirects, and validating emitted routes.
+title: Adding and Moving Documentation Pages
+description: Safely add, move, rename, or retire authored documentation pages by selecting their source owner, updating navigation and redirects, and validating emitted routes.
 tags: [documentation, operations, navigation, redirects, build-system]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-20T08:20:37.912Z
 sources:
   - id: openwiki-source-18732c72f962c06354cb62db
     resource: repo://.agents/skills/add-docs-page/SKILL.md
@@ -38,13 +41,10 @@ sources:
     resource: repo://src/langsmith/bind-evaluator-to-dataset-link.mdx
   - id: openwiki-source-a39cb5ba9006abfe6280b6f8
     resource: repo://src/oss/openwiki/cli-reference.mdx
-generated: { by: "openwiki/0.4.3", at: "2026-10-19T08:25:25.748Z" }
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-19T08:25:25.748Z
+generated: { by: "openwiki/0.4.3", at: "2026-10-20T08:20:37.912Z" }
 ---
 
-# Adding and Maintaining Documentation Pages
+# Adding and Moving Documentation Pages
 
 A page change is complete only when its source owner, emitted public route, `src/docs.json` navigation, redirects, and rendered output agree. Manual content belongs under `src/`; never edit `build/`, because a full build removes and recreates it. Change generator inputs, not generated changelogs, snippets, integration listings, transformed specifications, or deployment-generated endpoints.
 

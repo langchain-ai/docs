@@ -1,51 +1,19 @@
 ---
 type: validation guide
-title: Testing Overview
+title: Testing and Validation Overview
 description: Change-oriented validation guidance for deterministic tests, generated documentation, credentialed samples, remote onboarding checks, and trusted scheduled automation. Choose the narrowest boundary that proves a change, then add the boundary-specific checks it requires.
 tags: [testing, pytest, ci, documentation, code-samples, changelog]
 sources:
-  - id: openwiki-source-5c124605ed6e394bffee862c
-    resource: repo://.github/workflows/_check-links.yml
-  - id: openwiki-source-5e9ca8e4c3cab7d91998bc9e
-    resource: repo://.github/workflows/changelog-weekly.yml
-  - id: openwiki-source-75c7744a0e664440f0552945
-    resource: repo://.github/workflows/check-onboarding-models.yml
-  - id: openwiki-source-164e2da859b5277df81c7d94
-    resource: repo://.github/workflows/ci.yml
-  - id: openwiki-source-97746d8f3662d803e625550e
-    resource: repo://.github/workflows/test-code-samples.yml
+  - id: openwiki-source-ded8a20999ec9d794fa86ab9
+    resource: repo://docs-release-watch/tests/test_evidence.py
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
-  - id: openwiki-source-05ccef8d4cf1698187f20464
-    resource: repo://pyproject.toml
-  - id: openwiki-source-025c5762dd0d95eed99ef36d
-    resource: repo://scripts/changelog_pipeline.py
-  - id: openwiki-source-819e9af046c9d9b8116a3da7
-    resource: repo://scripts/check_onboarding_models.py
-  - id: openwiki-source-2654e40275744504b4ca7e2b
-    resource: repo://scripts/code_sample_tracing.py
-  - id: openwiki-source-b44190969c9eb39de1c69815
-    resource: repo://scripts/data/onboarding_models.yaml
-  - id: openwiki-source-fd0cb9d6fca56bf4963559e9
-    resource: repo://scripts/extract_code_snippets.py
-  - id: openwiki-source-560bf24db9566b97ee19e383
-    resource: repo://scripts/generate_code_snippet_mdx.py
-  - id: openwiki-source-2b15ecffacad911ef9db112f
-    resource: repo://scripts/test_code_samples.py
-  - id: openwiki-source-24e5f74f0f40e9bfd381871f
-    resource: repo://tests/unit_tests/test_builder.py
-  - id: openwiki-source-fa345f5b82e4b995e2e1280e
-    resource: repo://tests/unit_tests/test_changelog_pipeline.py
-  - id: openwiki-source-c2764a7369c8fbf3e49da6f8
-    resource: repo://tests/unit_tests/test_check_cross_refs.py
-  - id: openwiki-source-b68d7bad2afd9a38e8c331d5
-    resource: repo://tests/unit_tests/test_generate_code_snippet_mdx.py
-  - id: openwiki-source-98a4de3472710de1bf3ccb4f
-    resource: repo://tests/unit_tests/test_url_stub_noindex.py
+  - id: openwiki-source-5d310b0d0e3f7a2baf5a473a
+    resource: repo://tests/changelog-navigation.test.js
+generated: { by: "openwiki/0.4.3", at: "2026-10-20T08:20:37.912Z" }
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-19T08:25:25.748Z
-generated: { by: "openwiki/0.4.3", at: "2026-10-19T08:25:25.748Z" }
+    at: 2026-10-20T08:20:37.912Z
 ---
 
 ## Choose the validation boundary
@@ -61,8 +29,11 @@ Start with the smallest deterministic check that proves the changed contract. Ad
 | Documentation-build pipeline change | `make test TEST_FILE=tests/unit_tests/test_builder.py` | Builder behavior on synthetic source/build trees, including supported assets, language variants, and error paths | The complete repository build, Mint parsing, or deployment output |
 | General Python change | `make test` | Socket-isolated pytest suite | Network-backed behavior |
 | Python quality or type-facing change | `make lint` | Ruff formatting and lint diffs, `ty`, and Codespell checks | Runtime behavior, generated artifacts, or prose style |
+| Edited prose | `make lint_prose FILES="src/..."` | Vale terminology and style checks for the named source files | Rendered pages, routes, anchors, or factual correctness |
 | `@[...]` source cross-reference or language fence | `make check-cross-refs` | Eligible source references resolve in the applicable Python/JavaScript scope | Built routes, anchors, redirects, or external destinations |
+| Changelog chapter navigation script | `node --test tests/changelog-navigation.test.js` | DOM behavior for stable visible minor-release indexes, filters, page transitions, and the inline fallback | A browser, Mint rendering, or real changelog publication |
 | Authored docs, anchors, redirects, or Agent Server OpenAPI | `make broken-links-with-anchors` and `make check-openapi` | Mint checks against the disposable `build/` tree | Hosted-site state |
+| Mint export external destinations | `make export-htmltest` | Exportable external URLs after Mint export | Complete internal route or anchor coverage, because exported pages are incomplete |
 | Runnable code sample | `make test-code-samples FILES="src/code-samples/..."` | Selected sample ran with local toolchains and supplied services/credentials | Generated documentation correctness or a rate-limited skipped sample |
 
 ```mermaid
@@ -91,6 +62,14 @@ The main CI workflow runs on pull requests, pushes to `main`, and manual dispatc
 The reusable documentation-link workflow syncs the frozen test dependency group, installs Node 22 and Mint, then runs the anchor/redirect link check and the OpenAPI check. Both Make targets rebuild the disposable `build/` tree first. They validate generated documentation rather than the deployed site.
 
 `test_url_stub_noindex.py` protects a separate discovery invariant: every MDX page with `url:` frontmatter must set `noindex: true`, preventing redirect-only sidebar stubs from entering Mintlify discovery outputs such as `llms.txt` and the sitemap.
+
+Use `make lint_prose FILES="src/..."` for edited narrative source. It installs the pinned Vale binary and excludes `node_modules` and `src/code-samples` from the check. This is a style and terminology gate, not a claim that the prose is factually correct or that Mint can render it.
+
+`tests/changelog-navigation.test.js` is an isolated Node test of `src/changelog-navigation.js`, not an integration test. Its in-memory DOM verifies that only visible, stable minor releases on `/langsmith/self-hosted-changelog` receive an index; patches, release candidates, other pages, and hidden headings are left alone. It also covers mutation coalescing, cleanup after route changes, filter rerenders, and the inline index used when the sidebar is absent. Run it with `node --test tests/changelog-navigation.test.js`; it does not load a browser or publish a changelog.
+
+For external destinations after an export, use `make export-htmltest`. The export requires a global Mint CLI with `mint export`, Node 20 or 22, and an Enterprise Mintlify plan; `make htmltest` unpacks the archive and uses a configuration that checks external URLs only. Because Mint export omits many pages, this check deliberately cannot prove internal navigation or anchors—retain `make broken-links-with-anchors` for that boundary.
+
+The release-watch agent keeps its own focused tests under `docs-release-watch/tests/`. `test_evidence.py` is deterministic: it supplies synthetic evidence payloads, file-change payloads, source text, and language-fenced pages to test evidence validation and surgical-edit guards. It is useful when changing that agent's tooling, but it does not validate this documentation build, a release selection, GitHub/Linear calls, or the human review of a draft proposal.
 
 ## Weekly changelog: deterministic core and encrypted state
 
@@ -161,4 +140,4 @@ On a scheduled or manual full run, snippet regeneration occurs only when the sam
 - **Live sample failure:** inspect credentials, provider behavior, PostgreSQL readiness, and language toolchains. Treat rate-limit skips as coverage gaps.
 - **Weekly workflow issue:** distinguish deterministic pipeline behavior from GitHub access, model behavior, Eppo state, encryption-key availability, and human publication review.
 
-See [Quickstart](/openwiki/quickstart.md), [Builder Tests](/openwiki/testing/builder-tests.md), [Conditional Rendering](/openwiki/testing/conditional-rendering.md), [Changelog Publication](/openwiki/workflows/changelog-publication.md), [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md), and [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md).
+See [Quickstart](/openwiki/quickstart.md), [Builder Tests](/openwiki/testing/builder-tests.md), [Conditional Rendering](/openwiki/testing/conditional-rendering.md), [Mintlify Integration and Link Validation](/openwiki/integrations/mintlify.md), [Changelog Publication](/openwiki/workflows/changelog-publication.md), [Documentation Release Watch](/openwiki/workflows/release-watch.md), [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md), and [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md).

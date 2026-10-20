@@ -1,11 +1,11 @@
 ---
 type: testing guide
 title: Conditional Rendering Tests
-description: Test build-time selection of Python and JavaScript Markdown branches, scoped autolinks, and language-specific page and snippet artifacts. Covers the preprocessing order and fence cases that determine observable output.
+description: Test build-time selection of Python and JavaScript Markdown branches, scoped autolinks, and language-specific page and snippet artifacts. Covers preprocessing order and focused suites for conditional content and link transformations.
 tags: [testing, conditional-rendering, markdown-preprocessing, language-versioning]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-19T08:25:25.748Z
+    at: 2026-10-20T08:20:37.912Z
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
@@ -27,7 +27,9 @@ sources:
     resource: repo://tests/unit_tests/test_handle_auto_links.py
   - id: openwiki-source-2f15ccdb144af3cca87e162b
     resource: repo://tests/unit_tests/test_lexer.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-19T08:25:25.748Z" }
+  - id: openwiki-source-5255204fc494ae04cd6ba685
+    resource: repo://tests/unit_tests/test_utm_links.py
+generated: { by: "openwiki/0.4.3", at: "2026-10-20T08:20:37.912Z" }
 ---
 
 # Conditional Rendering Tests
@@ -63,7 +65,9 @@ flowchart TD
     Render --> JavaScript["JavaScript artifact"]
 ```
 
-This is the preprocessing order: autolinks and CTA decoration see the original branches before final branch selection. Test an `@[reference]` in a branch at this boundary when a failure might be caused by scope rather than by rendering.
+This shows the preprocessor order and the two possible rendered artifacts.
+
+Autolinks and CTA decoration therefore see the original branches before final branch selection. Test an `@[reference]` in a branch at this boundary when a failure might be caused by scope rather than by rendering.
 
 ## Scoped references and ordinary code fences
 
@@ -76,6 +80,16 @@ Run the focused scanner suite with:
 ```bash
 make test TEST_FILE=tests/unit_tests/test_handle_auto_links.py
 ```
+
+### CTA link transformations
+
+The CTA stage targets Markdown links to `https://smith.langchain.com` only when their path is the root or `/agents` (with or without a trailing slash). It appends the docs CTA UTM fields while preserving an existing query and an optional Markdown title; functional paths such as `/settings`, other domains, and fenced code remain untouched. Its `utm_content` is derived from the source path. When a conditional-content change includes one of these links, run the dedicated suite as well:
+
+```bash
+make test TEST_FILE=tests/unit_tests/test_utm_links.py
+```
+
+This isolates CTA classification and code-fence behavior from conditional selection. Add a builder-level fixture only if the change also depends on the generated artifact or a route rewrite.
 
 ### Code fences do not protect the final renderer
 
@@ -147,13 +161,14 @@ The build target installs Node dependencies and runs `pipeline build` through `P
 
 1. Render the same fixture for `python` and `js`; assert shared content, retained matching content, and absent nonmatching content in each result.
 2. If a branch contains `@[references]`, assert the branch scope is used before selection. Include a conditional-looking line in a normal code fence when changing the autolink scanner.
-3. Exercise escaped opening and closing markers through the full preprocessor and assert literal unescaped markers in output.
-4. When changing the conditional regex, pin unsupported labels, missing closes, first-close behavior, whitespace behavior, and a complete marker pair inside a normal code fence.
-5. For a page or snippet consumer, call `build_all()` and inspect both generated language artifacts plus the target-specific imports and routes.
+3. If a branch contains a LangSmith CTA, run `test_utm_links.py` and assert only an eligible non-code link receives UTM parameters.
+4. Exercise escaped opening and closing markers through the full preprocessor and assert literal unescaped markers in output.
+5. When changing the conditional regex, pin unsupported labels, missing closes, first-close behavior, whitespace behavior, and a complete marker pair inside a normal code fence.
+6. For a page or snippet consumer, call `build_all()` and inspect both generated language artifacts plus the target-specific imports and routes.
 
 ## See also
 
 - [Markdown preprocessing pipeline](/openwiki/concepts/preprocessing.md)
 - [Language versioning strategy](/openwiki/concepts/versioning.md)
-- [Testing overview](/openwiki/testing/test-overview.md)
+- [Builder tests](/openwiki/testing/builder-tests.md)
 - [Changing versioned content](/openwiki/workflows/versioned-content.md)

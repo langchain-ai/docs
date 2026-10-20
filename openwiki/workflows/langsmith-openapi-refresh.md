@@ -3,9 +3,6 @@ type: generated API publication workflow
 title: LangSmith OpenAPI Refresh
 description: Documents the scheduled, reviewed refresh that turns the LangSmith service OpenAPI document into the committed input for Mintlify's LangSmith REST API reference. Covers transformation policy, constrained remote ingestion, standing-PR lifecycle, validation limits, and ownership boundaries.
 tags: [langsmith, openapi, automation, github-actions, mintlify, security]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-19T08:25:25.748Z
 sources:
   - id: openwiki-source-5153f86e64d6ee0b305f72b3
     resource: repo://.github/workflows/refresh-langsmith-openapi.yml
@@ -23,7 +20,10 @@ sources:
     resource: repo://src/docs.json
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-19T08:25:25.748Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-20T08:20:37.912Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-20T08:20:37.912Z
 ---
 
 # LangSmith OpenAPI Refresh
@@ -129,6 +129,7 @@ It does not exercise remote fetches, the processor transformation policy, GitHub
 
 ## Related pages
 
+- [GitHub Actions and CI Automation](/openwiki/integrations/github-actions.md)
 - [Mintlify Integration](/openwiki/integrations/mintlify.md)
 - [Reference Documentation Boundaries](/openwiki/integrations/reference-docs.md)
 - [Adding and Maintaining Documentation Pages](/openwiki/operations/adding-pages.md)

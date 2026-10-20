@@ -1,32 +1,30 @@
 ---
 type: publication workflow
-title: LangSmith Changelog Publication
-description: Explains the review-gated weekly generator for LangSmith Cloud and Fleet changelog proposals. Covers merged-PR collection, safety gates, encrypted held state, dry runs, review PRs, and the deterministic test boundary.
+title: Weekly Changelog Publication
+description: Explains the review-gated weekly proposal pipeline for LangSmith Cloud and Fleet changelogs. Covers windowed PR collection, model-assisted curation, rollout-held encrypted state, privacy boundaries, and focused validation.
 tags: [langsmith, changelog, publication, github-actions, release-management]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-19T08:25:25.748Z
+    at: 2026-10-20T08:20:37.912Z
 sources:
-  - id: openwiki-source-b48b39ee604e5154ddb6fbad
-    resource: repo://.agents/skills/docs-edit/SKILL.md
   - id: openwiki-source-5e9ca8e4c3cab7d91998bc9e
     resource: repo://.github/workflows/changelog-weekly.yml
   - id: openwiki-source-025c5762dd0d95eed99ef36d
     resource: repo://scripts/changelog_pipeline.py
   - id: openwiki-source-fa345f5b82e4b995e2e1280e
     resource: repo://tests/unit_tests/test_changelog_pipeline.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-19T08:25:25.748Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-20T08:20:37.912Z" }
 ---
 
-# LangSmith Changelog Publication
+# Weekly Changelog Publication
 
-The Cloud and Fleet changelogs are generator-owned publication outputs, not ordinary documentation pages. The weekly workflow owns `src/langsmith/changelog.mdx` and `src/snippets/langsmith/fleet-changelog.mdx`; the Fleet page imports the latter. `src/langsmith/self-hosted-changelog.mdx` belongs to a separate Helm changelog bot. Do not manually edit the Cloud/Fleet targets or `scripts/.changelog_held.json.enc`, including on a generated review branch. Correct the pipeline, the upstream PR facts, or the rollout state instead. Manual output changes can be overwritten, and changelog content may already have been distributed through RSS.
+The Cloud and Fleet changelogs are pipeline-owned publication outputs. The weekly proposal workflow writes `src/langsmith/changelog.mdx` and `src/snippets/langsmith/fleet-changelog.mdx`; the Fleet changelog page imports that snippet. Treat both files and `scripts/.changelog_held.json.enc` as generated outputs: do not manually edit them as a way to alter a proposal or release held work. Correct the generator, the underlying PR information, or rollout state, then rerun and review the generated change. This matters especially because the Cloud and Fleet pages are RSS-enabled.
 
-The active Cloud/Fleet path is `.github/workflows/changelog-weekly.yml`, which runs `scripts/changelog_pipeline.py weekly` against merged `langchain-ai/langchainplus` PRs. It produces a proposal in a review PR; it does not merge or independently publish the proposal.
+`.github/workflows/changelog-weekly.yml` is the Cloud/Fleet entrypoint. It invokes `scripts/changelog_pipeline.py weekly`, creates a review branch and pull request when tracked outputs change, and never merges that proposal itself. The separate `selfhosted` CLI subcommand only prepares a release artifact; it is not the Cloud/Fleet workflow.
 
-## Weekly lifecycle
+## Lifecycle and entrypoints
 
-The workflow runs at 13:00 UTC each Monday and also supports manual dispatch. A dispatch supplies both `since` and `until` in `YYYY-MM-DD` format, or neither. Without explicit dates, `weekly` selects the Monday-to-Monday period ending on the most recent Monday. The collection interval is half-open, so a PR merged on the ending Monday belongs to the next week.
+The workflow is scheduled for 13:00 UTC on Monday and can also be manually dispatched. Dispatch dates must be supplied as a `since`/`until` pair in `YYYY-MM-DD` form, or omitted together. With no dates, `weekly` chooses the Monday-to-Monday period ending on the most recent Monday. The end is exclusive, so a PR merged on the ending Monday belongs to the next window.
 
 ```mermaid
 flowchart TD
@@ -34,73 +32,66 @@ flowchart TD
   Window --> Collect["Collect merged feat and fix PRs"]
   Collect --> Classify["Classify customer relevance"]
   Classify --> Coverage{"At least 90 percent classified"}
-  Coverage -->|"no"| Stop["Stop without publication changes"]
-  Coverage -->|"yes"| Rollout["Load Eppo rollout state and held ledger"]
-  Rollout --> Hold["Hold gated or uncertain work"]
-  Hold --> Render["Group write and guard entries"]
+  Coverage -->|"no"| Halt["Stop without changes"]
+  Coverage -->|"yes"| Rollout["Load rollout state and held ledger"]
+  Rollout --> Safeguard["Hold or exclude unsafe entries"]
+  Safeguard --> Render["Render Cloud and Fleet blocks"]
   Render --> Mode{"Write mode"}
-  Mode -->|"dry run"| Summary["Put candidate entries in job summary"]
-  Mode -->|"write"| Review["Update generated outputs and open review PR"]
+  Mode -->|"no"| Summary["Candidate entries in job summary"]
+  Mode -->|"yes"| Review["Update outputs and open review PR"]
 ```
 
-This is the proposal and review path. Only entries that clear the publication checks appear in the dry-run summary or generated changelog blocks.
+*The weekly command separates proposal generation from the write-mode state transition and review pull request.*
 
-Collection finds merged PRs with `feat` or `fix` titles in the selected interval. It excludes recognized cherry-picks and backports before model processing and caches records under `--out`. Each record uses bounded PR-body and diff content; the diff builder omits fragments, lockfiles, snapshots, and similar low-signal files, prioritizes source files over test files, and records omissions. Cached collection and model artifacts allow a rerun to resume work.
-
-Haiku first classifies customer relevance as `announce`, `minor`, or `internal`. The decision must have customer-visible diff evidence. A weekly run stops when fewer than 90% of collected records receive a classification, rather than publishing a partial result. In write mode, a matching week label in either target makes a rerun a no-op, which prevents duplicate blocks.
-
-For announce-tier candidates, Sonnet groups related PRs and assigns the `highlight`, `change`, `fix`, or `drop` layer; a group can contain several PRs for the same shipped change. Sonnet writes highlights and Haiku writes other entries. Rendering produces separate Cloud and Fleet `<Update>` blocks with highlights, ranked sections, and no more than 20 fixes per product in an accordion. New blocks are inserted before the existing newest block.
-
-## Model and publication safeguards
-
-PR descriptions, titles, paths, and diffs are untrusted model input. System prompts direct every model pass to ignore embedded instructions. The API path requests JSON-schema output. The CLI path disables tools and session persistence, accepts no setting sources, and runs from an empty temporary directory so repository context does not enter the call. Refusal, truncation, invalid structured output, or another per-item failure does not become a publishable entry.
-
-Generated prose then passes guarded processing:
-
-- MDX-sensitive characters outside code spans are escaped and known product-name replacements are applied.
-- Text containing an internal identifier, ticket-like ID, or flag key goes to a rewrite pass and is checked again. A failed, still-leaking, or dropped rewrite is excluded.
-- A classifier-detected flag that is not fully rolled out, or an entry that overlaps a held PR in both code area and topic, moves affected PRs to held state rather than publication.
-- A signal that cannot be validated is excluded. The detailed local run report contains private PR and unreleased-work context, so it remains under `--out` and never becomes public workflow output.
-
-Public artifacts are intentionally narrower. A dry run omits `--write` and copies only generated candidate entries from `mock.mdx` to the job summary. A normal review-PR body contains aggregate counts and recent Vale output, not the detailed report. Vale is non-blocking and is not publication approval.
-
-## Held state and rollout gate
-
-The durable ledger is `scripts/.changelog_held.json.enc`. It holds private PR and unreleased-work context, so it is Fernet-encrypted with `CHANGELOG_STATE_KEY`; missing, invalid, or incorrect keys fail closed. The pipeline writes an `.enc` ledger without a plaintext intermediate. During migration, it folds a legacy plaintext sibling into encrypted state and removes that sibling only after a successful write. Ledger writes sort PR numbers and entry fields to keep generated diffs stable.
-
-For an announce-tier PR, a standalone `Flag: <key>` declaration in the description is authoritative. Parsing ignores examples in fenced code, HTML comments, block quotes, and indented code; `Flag: none` means no flag. A legacy `.changelog` fragment is only a fallback when there is no usable declaration. Conflicting declarations, unknown flags, and flags that are not fully rolled out do not publish.
-
-Eppo treats a feature as fully rolled out only when an active production catch-all allocation serves all traffic to one variation. For Boolean flags, that variation must be the enabled one. Targeted-only, partial, split, inactive, or false-serving allocations do not qualify. On a subsequent run, only a held entry whose flag is fully rolled out can return to the candidate set. Pending flags remain held. Conflicting declarations, missing Eppo flags, and flags archived before full rollout are removed from the ledger without publication and are recorded only in the private report. If a released PR cannot be recollected, it remains held for a rerun rather than disappearing.
-
-Only `--write` persists the recalculated encrypted ledger and inserts generated blocks. Consequently, a normal review PR captures the state transition with the public proposal, and a held-state-only change can still create a PR.
-
-## Dispatch, dry runs, and review PRs
-
-The Actions job has a 90-minute timeout and serializes the `changelog-weekly` concurrency group without cancelling an in-progress run. It receives read access to upstream GitHub PRs, model and gateway configuration, Eppo access, and the state key through secrets. Do not expose credential values in logs, artifacts, fixtures, commands, PR text, or documentation.
-
-For a non-dry run, the workflow runs Vale with `continue-on-error`, then checks whether either generated changelog target or the held-state file changed. With no state or output change, it exits successfully without a branch or PR. Otherwise, it force-pushes `changelog/weekly-<UTC-date>` and opens a PR against `main`. Human review is the publication gate: review the proposed public wording, links, aggregate counts, encrypted-state diff, and Vale output, then route corrections to the generator, upstream PR facts, or rollout state rather than manually changing generated output or state.
-
-## Entrypoints and scope
-
-The normal entrypoint is:
+The normal command is:
 
 ```bash
 uv run python scripts/changelog_pipeline.py weekly --out /tmp/changelog
 uv run python scripts/changelog_pipeline.py weekly --out /tmp/changelog --since 2026-10-05 --until 2026-10-12 --write
 ```
 
-The first command renders local review artifacts without mutating changelog targets or the ledger. The second is the write path and requires the configured integration credentials and review process.
+The first form produces local cache and review artifacts without changing repository targets or the ledger. `--write` is the mutation boundary: it persists the recalculated encrypted ledger and inserts non-empty blocks before the existing newest `<Update>` blocks. Before it does any work, write mode returns successfully if either target already contains the week label; this prevents a merged week from being inserted twice.
 
-`selfhosted` is separate from weekly Cloud/Fleet publication. It accepts a whitespace-separated list of release PR numbers, prepares a `release.mdx` artifact under `--out`, and screens generated lines for internal names and ticket IDs. It does not insert into `src/langsmith/self-hosted-changelog.mdx` or replace the Helm bot.
+Collection lists merged `feat` and `fix` PRs from `langchain-ai/langchainplus` in the half-open window. Cherry-picks and backports are discarded before model processing. Per-PR records cached under `--out` bound body and diff sizes; diffs exclude changelog fragments, lockfiles, snapshots, and similar low-signal files, prefer source before tests, and record files omitted by the budget. Cached PRs, classifications, grouping, and writing results let a stopped run resume rather than repeat successful calls.
+
+A model-key preflight runs before collection when the API path is configured, so an invalid key fails once instead of causing a per-PR failure. Haiku classifies PRs as `announce`, `minor`, or `internal` from concrete customer-visible diff evidence. The run fails rather than silently producing a partial proposal if fewer than 90% of collected records classify.
+
+## Curation, rendering, and model boundary
+
+For announce-tier work, Sonnet groups PRs that ship the same change and assigns `highlight`, `change`, `fix`, or `drop`; every PR is expected to be in one group. Highlights are written with Sonnet, while other entries are written with Haiku. The renderer emits independent Cloud and Fleet `<Update>` blocks, puts ranked highlights and change sections first, and caps each product's fixes at 20 inside an accordion. The grouping policy also drops cosmetic, limited-rollout, operational, and otherwise non-public changes.
+
+PR titles, bodies, paths, and diffs are untrusted model input. The prompts say to ignore instructions embedded in those materials. The API uses a closed JSON schema; the fallback CLI disables tools and setting sources, disables session persistence, and runs in an empty temporary directory so repository context is not implicitly available. Refusal, truncation, malformed structured output, or a per-item model error cannot become a publishable entry.
+
+Before rendering, the pipeline applies approved product-name replacements and escapes MDX-sensitive characters outside code spans. Entries that expose internal identifiers, ticket-like IDs, or flag keys go through a rewrite pass and are checked again; failed, still-leaking, or dropped rewrites are excluded. A classifier-detected unrolled Eppo flag, or overlap in both code area and topic with a held PR, moves the affected group to held state. Partial-rollout language and uncheckable gate signals are excluded rather than softened into a general-availability claim.
+
+## Held-state lifecycle and rollout gate
+
+`scripts/.changelog_held.json.enc` is a durable PR-number-to-metadata ledger for unreleased work. It is sensitive pipeline state, not a changelog input for manual editing. Fernet encryption requires `CHANGELOG_STATE_KEY`; missing, invalid, or incorrect keys fail closed, and the encrypted file is never written in plaintext. A legacy plaintext sibling is read during migration, merged into the encrypted ledger, and deleted only after a successful encrypted write. Deterministic PR-number and field ordering keeps state diffs stable.
+
+For announce-tier PRs, a standalone `Flag: <key>` declaration in the PR description wins over a legacy `.changelog` fragment; `Flag: none` declares no gate. Parsing ignores examples in fenced code, comments, quotations, and indented code. A declared unknown or conflicting flag is not published. Held work is released only after Eppo reports its flag fully rolled out; missing flags, conflicting declarations, and flags archived before full rollout are removed without publication, while pending flags remain held. If a now-released PR cannot be recollected, it stays held for a later retry.
+
+An Eppo flag is fully rolled out only when an active production environment has a catch-all allocation with full traffic exposure and one served variation. For Boolean flags, that variation must be the enabled (`true`) variation. Targeted-only, partial, split, inactive, or false-serving allocations therefore do not authorize publication.
+
+## Privacy, operations, and review
+
+The detailed run report can name private PRs and unreleased work, so it remains under `--out` and is never posted by the public-repository workflow. A dry run deliberately omits `--write` and publishes only the generated candidate entries from `mock.mdx` to the Actions job summary. A normal PR body contains aggregate counts and the final Vale output, not the detailed report. Vale is non-blocking; it is review input, not publication approval.
+
+The Actions job has a 90-minute timeout and serializes the `changelog-weekly` concurrency group without cancelling an active run. It uses a GitHub App token for branch/PR writes and passes read access to upstream PRs, Anthropic gateway configuration, Eppo access, and the state key through secrets. Keep credential values and private PR/report content out of logs, fixtures, commands, documentation, and review text.
+
+Before running a non-dry proposal, the workflow checks that its date-based `changelog/weekly-<UTC-date>` branch can be pushed. If an existing branch includes commits not authored by `github-actions[bot]`, it skips rather than force-overwriting human work. Otherwise it runs Vale and checks only the two generated targets plus held-state paths. No output or state diff is a successful no-op. A change force-pushes the dated branch and creates or updates its PR against `main`; a same-day rerun updates the existing PR body.
+
+Reviewers should assess public wording and links, aggregate counts, encrypted-state diff, and Vale results. The review PR is the human publication gate. For general CI trust boundaries and trusted-writer guidance, see [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md).
+
+## Separate self-hosted artifact
+
+`selfhosted` accepts a whitespace-separated file of Helm-release PR numbers, reuses cached PR/classification data when requested, collects and classifies eligible `feat`/`fix` work, then groups it into upgrade, change, fix, or dropped material. It writes `release.mdx` and a review file under `--out`, filtering generated lines with internal names or ticket IDs. It does not insert content into a self-hosted changelog target.
 
 ## Validation and safe changes
 
-After changing the generator, run the deterministic focused suite:
+Run the deterministic focused suite after changing this pipeline:
 
 ```bash
 make test TEST_FILE=tests/unit_tests/test_changelog_pipeline.py
 ```
 
-The suite covers weekly labels and windows, structured-output schema closure, `Flag:` parsing, insertion ordering, collection filtering, guarded text rewriting, encrypted-state failure and plaintext migration, and Eppo rollout semantics. It uses no-network helpers and mocks. It does not exercise live GitHub, Anthropic, Eppo, Actions secrets, generated PR creation, or rendered-site behavior; those integration boundaries require separate operational review.
-
-For workflow-wide credential and review boundaries, see [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md). For generated-output ownership, see [Agent Skills](/openwiki/operations/agent-skills.md) and [Repository Wiki Quickstart](/openwiki/quickstart.md). For the test boundary, see [Testing Overview](/openwiki/testing/test-overview.md).
+The suite uses no-network helpers and doubles to cover weekly labels and windows, strict structured-output schemas, API response failures, `Flag:` parsing, collection filtering, rendering and insertion order, guarded rewrites, encrypted-state failure and migration, and Eppo rollout semantics. It does not exercise live GitHub, Anthropic, Eppo, Actions secrets, branch/PR creation, or rendered-site behavior; those boundaries need operational review. See [Testing Overview](/openwiki/testing/test-overview.md) for the test boundary and [Local Development Workflow](/openwiki/workflows/local-development.md) for the repository toolchain.
