@@ -1,0 +1,67 @@
+---
+title: Provider authentication
+description: Configure identity-based authentication between the LLM Gateway and model providers that support more than an API key.
+---
+
+import LLMGatewayBetaNote from '/snippets/langsmith/llm-gateway-beta-note.mdx';
+
+<LLMGatewayBetaNote />
+
+The gateway authenticates to each model provider with credentials stored in your workspace's Provider Secrets. Most providers need only an API key, which you add in [Admin setup](/langsmith/llm-gateway-admin-setup#1-add-provider-secrets). Some providers also support identity-based authentication, which lets you use the gateway when your organization disables provider API keys.
+
+## Configure Azure Foundry
+
+Azure Foundry supports either an API key or a Microsoft Entra ID service principal. Service principal authentication lets you use resources that [disable local authentication](https://learn.microsoft.com/en-us/azure/ai-services/disable-local-auth).
+
+Both methods require `AZURE_FOUNDRY_RESOURCE_NAME`. Set it to the Azure resource name, not a URL or deployment name. The gateway sends requests to `<resource-name>.openai.azure.com` in the Azure public cloud.
+
+For API key authentication, add `AZURE_FOUNDRY_API_KEY` and `AZURE_FOUNDRY_RESOURCE_NAME` through the Azure Foundry provider form, as described in [Admin setup](/langsmith/llm-gateway-admin-setup#1-add-provider-secrets).
+
+### Use an Entra ID service principal
+
+To use an Entra ID service principal instead of an API key:
+
+1. Deploy a model on a Foundry resource, or use an existing deployment. Record the resource name and the deployment name. Use the deployment name as the `model` value in requests.
+1. [Register an application](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app) in Microsoft Entra ID, or use an existing app registration. Record its directory (tenant) ID and application (client) ID.
+1. [Add a client secret](https://learn.microsoft.com/en-us/entra/identity-platform/how-to-add-credentials) to the app registration. Record the secret's value, not its ID.
+1. On the Foundry resource, not a project inside it, [assign the app's service principal](https://learn.microsoft.com/en-us/azure/foundry/concepts/rbac-foundry) the `Foundry User` role (formerly `Azure AI User`). The generic `Owner`, `Contributor`, and `Reader` roles do not [grant permission to call models](https://learn.microsoft.com/en-us/azure/foundry/concepts/rbac-foundry#permissions-for-each-built-in-role).
+1. In LangSmith, select the workspace that routes Azure requests. Go to **Settings > Integrations > Provider Secrets** and add each of the following as a custom secret:
+
+   | Secret name | Value |
+   | --- | --- |
+   | `AZURE_FOUNDRY_RESOURCE_NAME` | Azure resource name. |
+   | `AZURE_TENANT_ID` | Directory (tenant) ID. |
+   | `AZURE_CLIENT_ID` | Application (client) ID. |
+   | `AZURE_CLIENT_SECRET` | Client secret value. |
+
+   Select **Custom** in the provider selector to enter each secret's name and value. The Azure Foundry provider form only exposes API key authentication.
+
+1. Remove `AZURE_FOUNDRY_API_KEY` from the workspace if it is set. An API key takes precedence over service principal credentials, even when the resource disables API key authentication.
+
+All three Entra ID secrets are required. The gateway obtains and refreshes Azure access tokens automatically. Users continue to authenticate to the gateway with their LangSmith API key, not the Azure credentials.
+
+This method uses a client secret. It does not use managed identity or workload identity federation. Client secrets expire, so update `AZURE_CLIENT_SECRET` when you rotate the secret in Entra ID.
+
+### Verify the setup
+
+After you [configure gateway access](/langsmith/llm-gateway-admin-setup#2-configure-gateway-access-for-users), send a test request through the gateway with your LangSmith API key:
+
+```bash
+curl https://gateway.smith.langchain.com/azure/v1/chat/completions \
+  --header "Authorization: Bearer $LANGSMITH_API_KEY" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "model": "<deployment-name>",
+    "messages": [{"role": "user", "content": "Say hello"}]
+  }'
+```
+
+A `chat.completion` response confirms the setup. For other Cloud regions, replace the hostname with your [regional gateway](/langsmith/llm-gateway-how-it-works#use-a-regional-gateway).
+
+If Azure returns `PermissionDenied`, confirm that the `Foundry User` role is assigned on the Foundry resource, not a project. A new role assignment can take [up to 10 minutes](https://learn.microsoft.com/en-us/azure/role-based-access-control/troubleshooting#symptom---role-assignment-changes-are-not-being-detected) to take effect.
+
+## See also
+
+- [Admin setup](/langsmith/llm-gateway-admin-setup): add provider secrets and grant gateway access.
+- [Direct model access](/langsmith/llm-gateway-direct-model-access): call provider APIs through provider-specific gateway paths.
+- [Self-hosted LLM Gateway](/langsmith/llm-gateway-self-hosted): enable the gateway on self-hosted LangSmith.

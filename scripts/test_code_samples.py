@@ -8,6 +8,8 @@ By default runs all code samples. Pass FILES to test specific files only.
 
 Set ``CODE_SAMPLE_TRACING=1`` to enable LangSmith tracing, share public links for
 agent runs from single-snippet samples, and update ``src/code-samples/trace-links.json``.
+Traced single-snippet samples set ``LANGSMITH_DOCS_SNIPPET`` so collection can
+match the correct root run under parallel jobs.
 
 Set ``CODE_SAMPLE_JOBS`` to run samples concurrently (default: 4). Trace-link
 collection stays serialized under a lock so parallel samples do not clobber the
@@ -38,7 +40,12 @@ from pathlib import Path
 
 # Allow ``from code_sample_tracing import …`` when run as ``python scripts/….py``.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from code_sample_tracing import DEFAULT_PROJECT, collect_trace_for_sample
+from code_sample_tracing import (
+    DEFAULT_PROJECT,
+    DOCS_SNIPPET_ENV,
+    collect_trace_for_sample,
+    primary_snippet_id,
+)
 
 TIMEOUT_SECONDS = int(os.environ.get("CODE_SAMPLE_TIMEOUT_SECONDS", "1200"))
 
@@ -263,6 +270,16 @@ def run_sample(
                 "LANGSMITH_PROJECT",
                 os.environ.get("LANGSMITH_PROJECT", DEFAULT_PROJECT),
             )
+            # Stamp the sole snippet ID onto run metadata (Python/JS SDKs copy
+            # non-secret LANGSMITH_* env vars). Collection matches on this key
+            # so parallel jobs cannot claim a neighbor's LangGraph root.
+            try:
+                source_text = file_path.read_text(encoding="utf-8")
+            except OSError:
+                source_text = ""
+            snippet_id = primary_snippet_id(source_text)
+            if snippet_id is not None:
+                env[DOCS_SNIPPET_ENV] = snippet_id
         if lang == "python":
             result = subprocess.run(
                 ["uv", "run", "python", str(file_path)],

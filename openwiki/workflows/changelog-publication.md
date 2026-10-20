@@ -1,148 +1,97 @@
 ---
 type: publication workflow
-title: LangSmith Changelog Publication
-description: Assemble reviewable weekly LangSmith Cloud and Fleet changelog updates from sibling-repository fragments while using rollout and publication-state safeguards. Also describes the independent self-hosted release changelog structure and navigation enhancement.
-tags: [langsmith, changelog, publication, documentation, release-management]
+title: Weekly Changelog Publication
+description: Explains the review-gated weekly proposal pipeline for LangSmith Cloud and Fleet changelogs. Covers windowed PR collection, model-assisted curation, rollout-held encrypted state, privacy boundaries, and focused validation.
+tags: [langsmith, changelog, publication, github-actions, release-management]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-08T08:23:51.982Z
+    at: 2026-10-20T08:20:37.912Z
 sources:
-  - id: openwiki-source-14b8a828704ca0a8d2ae4067
-    resource: repo://scripts/.changelog_published.txt
-  - id: openwiki-source-eb7a028ac20098c574b90426
-    resource: repo://scripts/assemble_changelog.py
-  - id: openwiki-source-d8dd873ae4038b47fa4fce75
-    resource: repo://scripts/audit_changelog_coverage.py
-  - id: openwiki-source-4150c2e25aef90010ad7b03d
-    resource: repo://src/changelog-navigation.js
-  - id: openwiki-source-d5e03d3b71d4904429831f94
-    resource: repo://src/langsmith/changelog.mdx
-  - id: openwiki-source-29fbe7359daff35ebb1492a3
-    resource: repo://src/langsmith/self-hosted-changelog.mdx
-  - id: openwiki-source-554339f52225d7d8edff3ed0
-    resource: repo://src/style.css
-  - id: openwiki-source-5d310b0d0e3f7a2baf5a473a
-    resource: repo://tests/changelog-navigation.test.js
-  - id: openwiki-source-2c73e322d3e9ba3868329a78
-    resource: repo://tests/unit_tests/test_assemble_changelog.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-08T08:23:51.982Z" }
+  - id: openwiki-source-5e9ca8e4c3cab7d91998bc9e
+    resource: repo://.github/workflows/changelog-weekly.yml
+  - id: openwiki-source-025c5762dd0d95eed99ef36d
+    resource: repo://scripts/changelog_pipeline.py
+  - id: openwiki-source-fa345f5b82e4b995e2e1280e
+    resource: repo://tests/unit_tests/test_changelog_pipeline.py
+generated: { by: "openwiki/0.4.3", at: "2026-10-20T08:20:37.912Z" }
 ---
 
-# LangSmith Changelog Publication
+# Weekly Changelog Publication
 
-LangSmith has two intentionally separate changelog paths:
+The Cloud and Fleet changelogs are pipeline-owned publication outputs. The weekly proposal workflow writes `src/langsmith/changelog.mdx` and `src/snippets/langsmith/fleet-changelog.mdx`; the Fleet changelog page imports that snippet. Treat both files and `scripts/.changelog_held.json.enc` as generated outputs: do not manually edit them as a way to alter a proposal or release held work. Correct the generator, the underlying PR information, or rollout state, then rerun and review the generated change. This matters especially because the Cloud and Fleet pages are RSS-enabled.
 
-- `src/langsmith/changelog.mdx` is the weekly Cloud and Fleet stream. `scripts/assemble_changelog.py` turns per-PR YAML fragments from the sibling `langchainplus` checkout into a paste-ready `<Update>` block.
-- `src/langsmith/self-hosted-changelog.mdx` is an independently authored release-note stream for self-hosted Helm charts. Its browser enhancement builds navigation only; it neither assembles nor changes release-note content.
+`.github/workflows/changelog-weekly.yml` is the Cloud/Fleet entrypoint. It invokes `scripts/changelog_pipeline.py weekly`, creates a review branch and pull request when tracked outputs change, and never merges that proposal itself. The separate `selfhosted` CLI subcommand only prepares a release artifact; it is not the Cloud/Fleet workflow.
 
-The assembler is a **curation aid, not an autonomous publisher**. It prints MDX on standard output and reports on standard error. The weekly changelog agent runs it on Fleet, reviews the candidate, and opens a documentation PR for human approval. The agent, the sibling checkout, and the Eppo credential are outside this repository's publication authority.
+## Lifecycle and entrypoints
 
-## Cloud and Fleet weekly assembly
-
-### Inputs, ownership, and durable state
-
-By default, the assembler reads top-level `*.yaml` fragments from the sibling checkout at `../langchainplus/.changelog` and the component category map in that directory. It ignores names beginning with `_` or `TEMPLATE`, and resolves each candidate before accepting it so a symlink or traversal cannot escape the fragment root. The fragment schema and category map are upstream inputs; do not recreate or alter them from this repository.
-
-The repository-owned duplicate-prevention state is `scripts/.changelog_published.txt`. The ledger contains fragment **filenames**, ignoring comments and blank lines. A fragment's presence in a sibling `published/` directory does not establish that it shipped. Its header requires the ledger to be committed in the same PR as the corresponding changelog entry and not edited manually.
+The workflow is scheduled for 13:00 UTC on Monday and can also be manually dispatched. Dispatch dates must be supplied as a `since`/`until` pair in `YYYY-MM-DD` form, or omitted together. With no dates, `weekly` chooses the Monday-to-Monday period ending on the most recent Monday. The end is exclusive, so a PR merged on the ending Monday belongs to the next window.
 
 ```mermaid
 flowchart TD
-  Fragments["Sibling fragment YAML"] --> Load["Load and validate fragments"]
-  Ledger["Published filename ledger"] --> Skip["Remove recorded fragments"]
-  Load --> Skip
-  Category["Sibling category map"] --> Render["Group ready entries"]
-  Skip --> Gate{"Eligible to publish"}
-  Gate -->|"ready"| Render
-  Gate -->|"held"| Eppo["Check Eppo rollout"]
-  Eppo -->|"fully rolled out"| Render
-  Eppo -->|"otherwise"| Held["Report and exclude"]
-  Render --> Block["Print Update block"]
-  Block --> Review["Review and paste into Cloud changelog"]
-  Review --> Record{"Run with --record"}
-  Record --> Commit["Write sorted ledger and commit together"]
+  Trigger["Schedule or manual dispatch"] --> Window["Validate and select weekly window"]
+  Window --> Collect["Collect merged feat and fix PRs"]
+  Collect --> Classify["Classify customer relevance"]
+  Classify --> Coverage{"At least 90 percent classified"}
+  Coverage -->|"no"| Halt["Stop without changes"]
+  Coverage -->|"yes"| Rollout["Load rollout state and held ledger"]
+  Rollout --> Safeguard["Hold or exclude unsafe entries"]
+  Safeguard --> Render["Render Cloud and Fleet blocks"]
+  Render --> Mode{"Write mode"}
+  Mode -->|"no"| Summary["Candidate entries in job summary"]
+  Mode -->|"yes"| Review["Update outputs and open review PR"]
 ```
 
-This is the Cloud/Fleet publication lifecycle. Printing a block, pasting it, opening a PR, and merging remain human-controlled steps; `--record` only advances the local duplicate-prevention record for fragments rendered in that invocation.
+*The weekly command separates proposal generation from the write-mode state transition and review pull request.*
 
-A valid fragment has a nonempty `title`, `body`, and `components`, plus `status: ready` or `status: held`; held entries also require `flag`. Invalid fragments are reported and excluded. After ledger filtering, the first fragment component that appears in the category map selects its section and optional group. Unmapped entries go in `Other`; sections preserve map order and ungrouped bullets precede named groups.
-
-### Eligibility and the Eppo boundary
-
-`ready` fragments render immediately. A `held` fragment remains excluded unless its named Eppo flag is fully rolled out. With no `EPPO_API_KEY`, it is reported as held rather than promoted.
-
-When the environment variable is present, the script makes read-only GET requests to the fixed HTTPS `https://eppo.cloud/api/v1` host. A flag qualifies only when all of these conditions hold:
-
-1. A production environment is active.
-2. Its first non-targeted, non-archived catch-all allocation has full exposure (`1` or `100`).
-3. That allocation has exactly one variation with nonzero weight.
-4. For a Boolean flag, that variation is the `true` variation.
-
-Targeted allocations do not establish general availability because unmatched users fall through to the catch-all allocation. A missing flag is an error, not a publish. Lookup failures warn and keep held fragments out. The flag index reads one API page; if an envelope reports more flags than it returns, the script warns that a later-page flag can be reported as missing rather than silently qualifying it.
-
-> **Credential boundary:** Provide `EPPO_API_KEY` only through the process environment. Do not put it in a fragment, committed file, or command-line argument. The CLI has no token option and sends the environment value only as `X-Eppo-Token` to the fixed Eppo host. Possession of this credential determines only whether held entries can be evaluated; it does not publish a changelog.
-
-### Render and record procedure
-
-The renderer emits one Mintlify `<Update>` block. Its default label covers the current Monday-through-Friday week, while `--week-label` and `--rss-date` override the label and RSS date independently. The RSS title is `<date> - LangSmith Cloud update`. Each eligible fragment becomes a bullet; if `docs_link` is present and the body has no Markdown link, the renderer appends `Learn more`.
-
-Run from the repository root. A normal invocation is a dry run: it writes a paste candidate to stdout and does not change the ledger.
+The normal command is:
 
 ```bash
-uv run python scripts/assemble_changelog.py
-uv run python scripts/assemble_changelog.py --week-label "June 15-19, 2026"
+uv run python scripts/changelog_pipeline.py weekly --out /tmp/changelog
+uv run python scripts/changelog_pipeline.py weekly --out /tmp/changelog --since 2026-10-05 --until 2026-10-12 --write
 ```
 
-Review rendered wording, grouping, and links, together with `HELD`, `ERROR`, `INVALID`, and already-published reports on stderr. Paste the reviewed block into the Cloud tab in `src/langsmith/changelog.mdx`; no assembler mode performs that edit.
+The first form produces local cache and review artifacts without changing repository targets or the ledger. `--write` is the mutation boundary: it persists the recalculated encrypted ledger and inserts non-empty blocks before the existing newest `<Update>` blocks. Before it does any work, write mode returns successfully if either target already contains the week label; this prevents a merged week from being inserted twice.
 
-Only after the exact block is ready for the documentation PR, record the rendered filenames and commit the ledger edit in the **same** PR:
+Collection lists merged `feat` and `fix` PRs from `langchain-ai/langchainplus` in the half-open window. Cherry-picks and backports are discarded before model processing. Per-PR records cached under `--out` bound body and diff sizes; diffs exclude changelog fragments, lockfiles, snapshots, and similar low-signal files, prefer source before tests, and record files omitted by the budget. Cached PRs, classifications, grouping, and writing results let a stopped run resume rather than repeat successful calls.
+
+A model-key preflight runs before collection when the API path is configured, so an invalid key fails once instead of causing a per-PR failure. Haiku classifies PRs as `announce`, `minor`, or `internal` from concrete customer-visible diff evidence. The run fails rather than silently producing a partial proposal if fewer than 90% of collected records classify.
+
+## Curation, rendering, and model boundary
+
+For announce-tier work, Sonnet groups PRs that ship the same change and assigns `highlight`, `change`, `fix`, or `drop`; every PR is expected to be in one group. Highlights are written with Sonnet, while other entries are written with Haiku. The renderer emits independent Cloud and Fleet `<Update>` blocks, puts ranked highlights and change sections first, and caps each product's fixes at 20 inside an accordion. The grouping policy also drops cosmetic, limited-rollout, operational, and otherwise non-public changes.
+
+PR titles, bodies, paths, and diffs are untrusted model input. The prompts say to ignore instructions embedded in those materials. The API uses a closed JSON schema; the fallback CLI disables tools and setting sources, disables session persistence, and runs in an empty temporary directory so repository context is not implicitly available. Refusal, truncation, malformed structured output, or a per-item model error cannot become a publishable entry.
+
+Before rendering, the pipeline applies approved product-name replacements and escapes MDX-sensitive characters outside code spans. Entries that expose internal identifiers, ticket-like IDs, or flag keys go through a rewrite pass and are checked again; failed, still-leaking, or dropped rewrites are excluded. A classifier-detected unrolled Eppo flag, or overlap in both code area and topic with a held PR, moves the affected group to held state. Partial-rollout language and uncheckable gate signals are excluded rather than softened into a general-availability claim.
+
+## Held-state lifecycle and rollout gate
+
+`scripts/.changelog_held.json.enc` is a durable PR-number-to-metadata ledger for unreleased work. It is sensitive pipeline state, not a changelog input for manual editing. Fernet encryption requires `CHANGELOG_STATE_KEY`; missing, invalid, or incorrect keys fail closed, and the encrypted file is never written in plaintext. A legacy plaintext sibling is read during migration, merged into the encrypted ledger, and deleted only after a successful encrypted write. Deterministic PR-number and field ordering keeps state diffs stable.
+
+For announce-tier PRs, a standalone `Flag: <key>` declaration in the PR description wins over a legacy `.changelog` fragment; `Flag: none` declares no gate. Parsing ignores examples in fenced code, comments, quotations, and indented code. A declared unknown or conflicting flag is not published. Held work is released only after Eppo reports its flag fully rolled out; missing flags, conflicting declarations, and flags archived before full rollout are removed without publication, while pending flags remain held. If a now-released PR cannot be recollected, it stays held for a later retry.
+
+An Eppo flag is fully rolled out only when an active production environment has a catch-all allocation with full traffic exposure and one served variation. For Boolean flags, that variation must be the enabled (`true`) variation. Targeted-only, partial, split, inactive, or false-serving allocations therefore do not authorize publication.
+
+## Privacy, operations, and review
+
+The detailed run report can name private PRs and unreleased work, so it remains under `--out` and is never posted by the public-repository workflow. A dry run deliberately omits `--write` and publishes only the generated candidate entries from `mock.mdx` to the Actions job summary. A normal PR body contains aggregate counts and the final Vale output, not the detailed report. Vale is non-blocking; it is review input, not publication approval.
+
+The Actions job has a 90-minute timeout and serializes the `changelog-weekly` concurrency group without cancelling an active run. It uses a GitHub App token for branch/PR writes and passes read access to upstream PRs, Anthropic gateway configuration, Eppo access, and the state key through secrets. Keep credential values and private PR/report content out of logs, fixtures, commands, documentation, and review text.
+
+Before running a non-dry proposal, the workflow checks that its date-based `changelog/weekly-<UTC-date>` branch can be pushed. If an existing branch includes commits not authored by `github-actions[bot]`, it skips rather than force-overwriting human work. Otherwise it runs Vale and checks only the two generated targets plus held-state paths. No output or state diff is a successful no-op. A change force-pushes the dated branch and creates or updates its PR against `main`; a same-day rerun updates the existing PR body.
+
+Reviewers should assess public wording and links, aggregate counts, encrypted-state diff, and Vale results. The review PR is the human publication gate. For general CI trust boundaries and trusted-writer guidance, see [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md).
+
+## Separate self-hosted artifact
+
+`selfhosted` accepts a whitespace-separated file of Helm-release PR numbers, reuses cached PR/classification data when requested, collects and classifies eligible `feat`/`fix` work, then groups it into upgrade, change, fix, or dropped material. It writes `release.mdx` and a review file under `--out`, filtering generated lines with internal names or ticket IDs. It does not insert content into a self-hosted changelog target.
+
+## Validation and safe changes
+
+Run the deterministic focused suite after changing this pipeline:
 
 ```bash
-uv run python scripts/assemble_changelog.py --week-label "June 15-19, 2026" --record
+make test TEST_FILE=tests/unit_tests/test_changelog_pipeline.py
 ```
 
-`--record` unions rendered filenames with the ledger, keeps comment lines, and rewrites names sorted and unique. It does not record held, invalid, errored, or already-recorded fragments. An overridden `--ledger` is resolved inside the repository root; a symlink or traversal outside the checkout is refused.
-
-Two non-default modes have distinct effects:
-
-```bash
-uv run python scripts/assemble_changelog.py --check-flag my-eppo-flag-key
-uv run python scripts/assemble_changelog.py --promote
-```
-
-`--check-flag` requires the environment token, prints the selected flag JSON and rollout verdict, and exits without assembling a weekly block. `--promote` rewrites each qualifying held fragment to `status: ready` in the **sibling** fragment checkout. Use it only when that upstream state change is intended and review it separately. Neither command edits or publishes the Cloud changelog.
-
-### Coverage audit
-
-`scripts/audit_changelog_coverage.py` is a separate reconciliation backstop, not part of assembly. It queries merged PRs in `langchain-ai/langchainplus` through authenticated, read-only `gh` commands over a contiguous date window (14 days by default), narrowing searches to seven-day subwindows to avoid GitHub's result cap. It reports candidate user-facing `feat` and `fix` PRs that lack either a fragment in the PR diff or a matching `pr:` field; a human dispositions borderline items through an ignore file. It deliberately over-reports rather than silently dropping potential user-facing changes.
-
-## Self-hosted changelog release notes and navigation
-
-Self-hosted notes are authored directly as `<Update>` blocks in `src/langsmith/self-hosted-changelog.mdx`. The current structure includes tagged stable and preview releases, version details, release-specific changes, and Helm-chart download links. For example, the stable `langsmith-0.17.0` release is presented alongside stable patch releases and preview release candidates. This is a different release cadence and source of truth from the weekly Cloud/Fleet fragment workflow.
-
-`src/changelog-navigation.js` enhances only `/langsmith/self-hosted-changelog`. On that route, it selects visible `h2` elements whose rendered IDs match exactly `langsmith-<major>-<minor>-0`: stable minor-release chapters. Patches, release candidates, categories, and hidden headings are intentionally excluded. It marks selected headings and builds a **Minor releases** link index at the start of `#content`; when `#content-side-layout` exists, it also builds a sidebar index. Without that layout, the inline index is explicitly a fallback.
-
-A `MutationObserver` watches path and DOM changes, while `requestAnimationFrame` coalesces bursts into one enhancement pass. A heading-ID signature avoids rebuilding unchanged indexes. When there are no eligible visible headings, generated indexes are removed. Leaving the self-hosted route also removes generated heading classes. The stylesheet supplies the chapter hierarchy, responsive inline/sidebar behavior, keyboard focus styling, and dark-mode colors; on wide layouts, it hides the non-fallback inline duplicate when a sidebar is available.
-
-## Validation and safe change guidance
-
-Run the focused test for the boundary changed:
-
-```bash
-make test TEST_FILE=tests/unit_tests/test_assemble_changelog.py
-node --test tests/changelog-navigation.test.js
-```
-
-The Python test uses temporary fragment and ledger files. It covers comment/blank-line parsing, a missing ledger, sorted de-duplicated recording, skipping recorded fragments, no recording without `--record`, and refusal of an out-of-repository ledger path. It does not prove the sibling fragment set, live Eppo state, or a manually pasted MDX block.
-
-The Node test runs the navigation script in a minimal DOM. It covers exact stable-minor and visible-heading selection, sidebar and inline fallback mounting, animation-frame coalescing, no-op updates for unchanged headings, route cleanup, and filter-driven removal/recreation. It does not prove Mintlify's production DOM or rendered CSS.
-
-For a change to public MDX, headings, navigation styling, anchors, or the generated documentation tree, also run the rendered-site check in [Testing Overview](/openwiki/testing/test-overview.md), such as `make broken-links-with-anchors`. See [CLI Tools](/openwiki/operations/cli-tools.md) for build and preview behavior, [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md) for general CI boundaries, and [Quickstart](/openwiki/quickstart.md) for local setup.
-
-## Safe publication checklist
-
-1. Ensure the sibling `langchainplus` checkout is available; run the assembler without `--record`.
-2. Fix or defer invalid fragments upstream. Do not bypass a held entry merely because it names a flag.
-3. If eligibility is uncertain, use `--check-flag` with an environment-provided token; never disclose the token.
-4. Review the candidate and stderr reports, then paste the reviewed block into `src/langsmith/changelog.mdx`.
-5. Run the matching `--record` command, inspect the sorted ledger diff, and commit it with the MDX update in one PR.
-6. Run the focused Python test for assembler or ledger changes, the Node test for self-hosted navigation changes, and a rendered-site check for public MDX, heading, or CSS changes.
+The suite uses no-network helpers and doubles to cover weekly labels and windows, strict structured-output schemas, API response failures, `Flag:` parsing, collection filtering, rendering and insertion order, guarded rewrites, encrypted-state failure and migration, and Eppo rollout semantics. It does not exercise live GitHub, Anthropic, Eppo, Actions secrets, branch/PR creation, or rendered-site behavior; those boundaries need operational review. See [Testing Overview](/openwiki/testing/test-overview.md) for the test boundary and [Local Development Workflow](/openwiki/workflows/local-development.md) for the repository toolchain.

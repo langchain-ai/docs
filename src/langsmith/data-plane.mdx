@@ -50,21 +50,15 @@ This section describes various features of the data plane. For platform-specific
 
 ### Autoscaling
 
-[Dedicated type](/langsmith/cloud-platform-features#deployment-types) deployments automatically scale across containers. Scaling is based on 3 metrics:
+On LangSmith Cloud, [Dedicated deployments](/langsmith/cloud-platform-features#scaling) autoscale separate API server and queue worker pools. Serverless deployments scale between zero and one replica.
 
-1. CPU utilization
-2. Memory utilization
-3. Number of pending (in progress) [runs](/langsmith/runs)
+On self-hosted data planes, autoscaling depends on the installed operator version and configuration. The current operator uses CPU for HPA scaling. With KEDA enabled, separate queue workers also scale on pending and running [runs](/langsmith/runs), using whichever metric requires more replicas. Neither path uses memory as a scaling trigger.
 
-For CPU utilization, the autoscaler targets 75% utilization. This means the autoscaler will scale the number of containers up or down to ensure that CPU utilization is at or near 75%. For memory utilization, the autoscaler targets 75% utilization as well.
+The CPU target is 50% of the CPU limit: `queue_cpu_limit` for queue workers and `cpu_limit` for API servers. The CPU request does not affect the target. For example, `queue_cpu: 0.3` with `queue_cpu_limit: 1.8` gives queue workers a target of 900m per pod. The KEDA backlog target is 75% of the configured jobs per worker, rounded down to at least 1.
 
-For number of pending runs, the autoscaler targets 10 pending runs. For example, if the current number of containers is 1, but the number of pending runs is 20, the autoscaler will scale up the deployment to 2 containers (20 pending runs / 2 containers = 10 pending runs per container).
+To lower a CPU request without changing when the deployment scales, send both the request and the limit in the `resource_spec`. If you omit the limit, it defaults to 2x the request, so lowering the request also lowers the scaling target. See [Resource spec](/langsmith/api-ref-control-plane#resource-spec).
 
-Each metric is computed independently and the autoscaler will determine the scaling action based on the metric that results in the largest number of containers.
-
-These metrics don't all apply to every container type. [Queue workers](/langsmith/agent-server#runtime-architecture) scale on pending run count—when the backlog grows, more workers spin up to drain it. [API servers](/langsmith/agent-server#runtime-architecture) scale on CPU and memory, responding to client request volume. This means a spike in run submissions won't slow down read operations like fetching thread state. For self-hosted configuration details, see [Configure Agent Server for scale](/langsmith/agent-server-scale).
-
-Scale down actions are delayed for 30 minutes before any action is taken. In other words, if the autoscaler decides to scale down a deployment, it will first wait for 30 minutes before scaling down. After 30 minutes, the metrics are recomputed and the deployment will scale down if the recomputed metrics result in a lower number of containers than the current number. Otherwise, the deployment remains scaled up. This "cool down" period ensures that deployments do not scale up and down too frequently.
+Scale-down behavior depends on the autoscaler and operator version. For self-hosted configuration details, see [Configure Agent Server for scale](/langsmith/agent-server-scale).
 
 ### MongoDB checkpointing
 

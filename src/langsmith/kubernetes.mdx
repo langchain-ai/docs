@@ -158,6 +158,67 @@ For the minimum supported version of each datastore, refer to [Minimum versions 
 
 3. If you use external datastores, add their connection details.
 
+### Configure a signing JWKS
+
+Self-hosted LangSmith uses an Ed25519 JSON Web Key Set (JWKS) to sign tokens for its OAuth Authorization Server and LLM auth proxy. Configuring this key enables self-hosted OAuth login, including `langsmith auth login` and Remote MCP authentication, and allows LangSmith to sign requests sent through an LLM auth proxy.
+
+The JWKS contains a private key. Store it in a Kubernetes Secret and keep it stable across upgrades. LangSmith derives the public key and serves it from `/.well-known/jwks.json`, so clients such as the LLM auth proxy can verify tokens without receiving the private key.
+
+<Note>
+The Helm configuration in this section requires LangSmith chart version 0.16.0 or later.
+</Note>
+
+Generate an Ed25519 key with [step CLI](https://smallstep.com/docs/step-cli/installation/) or your internal key-management process. RSA keys are rejected.
+
+```shell
+TMPDIR_KEYS="$(mktemp -d)"
+step crypto jwk create "$TMPDIR_KEYS/pub.json" "$TMPDIR_KEYS/priv.json" \
+  --kty OKP --crv Ed25519 --no-password --insecure
+SIGNING_JWKS=$(jq -c '{keys: [.]}' "$TMPDIR_KEYS/priv.json")
+```
+
+`step crypto jwk create` sets `use` to `sig`, `alg` to `EdDSA`, and `kid` to the key's thumbprint. If you generate the key another way, give the first key a nonempty `kid`. [Sandbox service URLs](/langsmith/enable-self-hosted-sandboxes#optional-enable-service-urls) require it.
+
+Choose one of the following storage options:
+
+- **Chart-managed Secret**: Set `config.signingJwks` in your LangSmith `langsmith_config.yaml`. The chart stores the value in its managed Kubernetes Secret.
+
+  ```yaml
+  config:
+    signingJwks: |
+      {"keys":[...]}
+  ```
+
+- **Existing Secret**: If your installation already uses `config.existingSecretName`, add the generated JWKS to that Secret under the exact key `langsmith_signing_jwks`:
+
+  ```yaml
+  # Add this key to the existing chart-wide Kubernetes Secret.
+  stringData:
+    langsmith_signing_jwks: |
+      {"keys":[...]}
+  ```
+
+  ```yaml
+  config:
+    existingSecretName: "langsmith-secrets"
+  ```
+
+  `config.existingSecretName` replaces the chart-managed Secret for the entire LangSmith installation. Do not point it to a JWKS-only Secret. Preserve all existing keys, including `langsmith_license_key` and `api_key_salt`. For the complete Secret structure, see [Use an existing Secret for your installation](/langsmith/self-host-using-an-existing-secret).
+
+<Warning>
+Starting with chart version 0.16.0, the chart owns `LANGSMITH_SIGNING_JWKS`. When upgrading from an earlier chart version, remove this environment variable from `commonEnv` and `platformBackend.deployment.extraEnv`. Setting it there causes a duplicate environment-variable error. If you previously loaded it from a separate Secret, such as `langsmith-signing-jwks`, move the value into the chart configuration and remove that reference. Configure it through `config.signingJwks` or the `langsmith_signing_jwks` key in `config.existingSecretName` instead.
+</Warning>
+
+Apply the Helm release after configuring the JWKS. If you update an externally managed Secret without changing the Helm values, restart the platform-backend pods so they load the new environment variable.
+
+Request the public JWKS from your LangSmith installation to verify the configuration:
+
+```bash
+curl https://<your-langsmith-host>/.well-known/jwks.json
+```
+
+The response contains the public verification key and does not include the private `d` field.
+
 ## Deploy to Kubernetes
 
 1. Verify that you can connect to your Kubernetes cluster. Install into an empty namespace.
@@ -197,6 +258,10 @@ For the minimum supported version of each datastore, refer to [Minimum versions 
 
    * Replace `<namespace>` with the namespace you want to deploy LangSmith to.
    * Replace `<version>` with the version of LangSmith you want to install from the previous step. Most users should install the latest version available.
+
+   <Note>
+   The latest stable chart is on the v17 line (`0.17.x`). Values written for the v16 line can fail to render on v17. If you are upgrading an existing v16 installation rather than installing a new one, follow [Upgrade from v16 to v17](/langsmith/self-host-upgrades#upgrade-from-v16-to-v17) first.
+   </Note>
 
    <Note>
    The namespace specified with `-n <namespace>` must already exist before running this command. If it does not exist, either create it first with `kubectl create namespace <namespace>`, or add the `--create-namespace` flag to the helm command above.

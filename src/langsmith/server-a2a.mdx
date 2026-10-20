@@ -36,7 +36,7 @@ The envelope varies by method, not by family: `SendMessage` wraps the task in `r
 
 | v1.0 name | v0.3 name | Supported |
 |---|---|---|
-| `SendMessage` | `message/send` | Yes |
+| `SendMessage` | `message/send` | Yes, blocking by default. See [Return before the run finishes](#return-before-the-run-finishes) |
 | `SendStreamingMessage` | `message/stream` | Yes — Server-Sent Events |
 | `GetTask` | `tasks/get` | Yes |
 | `CancelTask` | `tasks/cancel` | Yes |
@@ -50,6 +50,38 @@ Exactly four v0.3 names are accepted: `message/send`, `message/stream`, `tasks/g
 `tasks/resubscribe` — returns `-32601 Method not found`.
 
 Only the JSON-RPC binding is available. gRPC and HTTP+JSON are not implemented.
+
+### Return before the run finishes
+
+By default, `SendMessage` holds the request open until the run finishes. To get the task back as
+soon as the run is created, set `returnImmediately` to `true` in `configuration`:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "1",
+  "method": "SendMessage",
+  "params": {
+    "message": {
+      "role": "ROLE_USER",
+      "parts": [{"text": "hello"}],
+      "messageId": "message-1"
+    },
+    "configuration": {"returnImmediately": true}
+  }
+}
+```
+
+The response is a task in `TASK_STATE_SUBMITTED` or `TASK_STATE_WORKING`, with no artifacts. Poll
+`GetTask` with the returned `id` until the state is terminal or `TASK_STATE_INPUT_REQUIRED`. A
+completed task carries the agent's reply in `artifacts`, the same parts a blocking `SendMessage`
+returns.
+
+- **`returnImmediately`**: The v1.0 flag. Takes precedence when both flags are sent.
+- **`blocking`**: The v0.3 flag. `"blocking": false` behaves like `"returnImmediately": true`.
+
+Each flag must be a boolean or `null`, and `null` counts as unset. Any other value returns `-32602`
+before a run is created.
 
 ### Task history in responses
 
@@ -127,6 +159,38 @@ context — send the `contextId` alone. A message naming a terminal task is reje
 and a `taskId` minted by another agent is rejected with `-32001`.
 </Warning>
 
+### Interrupts
+
+When the graph calls `interrupt()`, the task moves to `TASK_STATE_INPUT_REQUIRED` and carries an
+artifact named `Interrupt`. The artifact holds one `DataPart` per pending interrupt:
+
+```json
+{
+  "name": "Interrupt",
+  "description": "Agent requires input to continue",
+  "parts": [
+    {
+      "kind": "data",
+      "data": {
+        "id": "<interruptId>",
+        "value": "<value passed to interrupt()>",
+        "response_schema": "<JSON Schema for the resume value>"
+      }
+    }
+  ]
+}
+```
+
+`response_schema` appears only when the graph passes one to `interrupt()`.
+
+To resume, send a message with the interrupted task's `taskId` and `contextId`. Put the resume
+value in a `DataPart` under a `resume` key, such as `{"data": {"resume": true}}`, or send a text
+part, which is used as the resume value as is. Send at most one `resume` `DataPart`. More than one
+returns `-32602`.
+
+If the task is not waiting on input, a `resume` `DataPart` returns `-32602`, but a text part is
+treated as an ordinary message rather than a resume value.
+
 ## Agent card discovery
 
 Each assistant automatically exposes an A2A Agent Card that describes its capabilities and provides the information needed for other agents to connect. You can retrieve the agent card for any assistant using:
@@ -136,6 +200,8 @@ GET /.well-known/agent-card.json?assistant_id={assistant_id}
 ```
 
 The agent card includes the assistant's name, description, available skills, supported input/output modes, and the A2A endpoint URL for communication.
+
+To serve a card when the request omits `assistant_id`, set the [`DEFAULT_A2A_ASSISTANT_ID`](/langsmith/env-var-self-hosted) environment variable. If the agent card URLs show an internal host, set `LANGGRAPH_API_URL` to your deployment's public URL.
 
 ## Optional capabilities
 
@@ -168,13 +234,24 @@ re-encoded as standard base64.
 
 ### A2UI v0.9
 
-Opt in per assistant:
+A2UI is off by default. Turn it on for every assistant in a deployment with an environment
+variable:
+
+```bash
+A2A_A2UI_ENABLED=true
+```
+
+Or opt in per assistant:
 
 ```json
 { "metadata": { "a2a": { "a2ui": true } } }
 ```
 
-The card then advertises the extension and appends the canonical MIME type to both mode lists:
+The per-assistant `a2ui` value wins over `A2A_A2UI_ENABLED`, so you can also turn A2UI off for one
+assistant in an enabled deployment. Each run records the setting it started with, so `GetTask` and
+`ListTasks` render an existing task the same way after you change it.
+
+When A2UI is enabled, the card advertises the extension and appends the canonical MIME type to both mode lists:
 
 ```json
 "capabilities": {
@@ -194,11 +271,46 @@ The card then advertises the extension and appends the canonical MIME type to bo
 }
 ```
 
-A client activates it by listing the URI in `message.extensions`. Payloads are validated in both
-directions against the v0.9 schemas, and A2UI parts are preserved in `message/send`, `tasks/get`
-and the final `message/stream` artifact. Responses carry
-`metadata.mimeType: "application/a2ui+json"`. `application/json+a2ui` is accepted as an alias on
-input.
+A client activates the extension per request by sending its URI in the `A2A-Extensions` header.
+The legacy `X-A2A-Extensions` header also works:
+
+```txt
+A2A-Extensions: https://a2ui.org/a2a-extension/a2ui/v0.9
+```
+
+The server reads A2UI client capabilities and the client data model from `params.message.metadata`
+(`a2uiClientCapabilities` and `a2uiClientDataModel`), the location the A2UI v0.9 schema defines.
+Capabilities use the tagged shape, such as `{"v0.9": {"supportedCatalogIds": [...]}}`. A flat
+capabilities object is rejected.
+
+An A2UI `DataPart` holds either one A2UI message object or an array of messages, with
+`metadata.mimeType` set to an A2UI MIME type:
+
+- **`application/json+a2ui`**: The canonical type. The card advertises it, and responses use it by
+  default.
+- **`application/a2ui+json`**: Accepted on input. When a request uses it, responses for that task
+  echo it back, including later `GetTask` reads.
+
+Payloads are validated in both directions against the v0.9 schemas. An invalid payload from the
+client returns `-32602`. An invalid payload in the agent's reply fails the request with `-32603`.
+A2UI parts are preserved in `SendMessage`, `GetTask`, and the final `SendStreamingMessage` artifact.
+
+The server publishes A2UI output only when the assistant has A2UI enabled and the client sent the
+extension header. Otherwise, it drops A2UI blocks from the agent's output and returns the rest of
+the reply, rather than failing the request.
+
+Client input is stricter. An A2UI `DataPart` sent to an assistant without A2UI enabled, or sent
+without the extension header, returns `-32602`.
+
+To publish a tool's result as A2UI, list the tool names on the deployment. The tool's result must
+be A2UI JSON:
+
+```bash
+A2A_A2UI_TOOL_CALL_RESULTS=generative_ui_tool,another_tool
+```
+
+Listed tool results are sent as A2UI `DataPart`s only when A2UI is active for the request. Error
+results and results that fail validation are dropped.
 
 ### Filter tool results
 
@@ -220,16 +332,14 @@ Unset means all tool results are published. The filter applies to both task hist
 | Tool-result `DataPart`s | `0.12.2` |
 | `A2A_ALLOWED_TOOL_CALL_RESULTS` | `0.12.4` |
 | Outbound `FilePart`, configurable card modes | `0.13.0` |
-| A2UI v0.9 | `0.15.0` |
+| A2UI v0.9, `A2A_A2UI_ENABLED`, `A2A_A2UI_TOOL_CALL_RESULTS` | `0.15.0` |
 | `historyScope` | `0.15.0` |
+| `response_schema` in interrupt artifacts | `0.16.0` |
+| `returnImmediately` and `blocking` on `SendMessage` | `0.18.0` |
 
 ```bash
-pip install "langgraph-api>=0.13.0"
+pip install "langgraph-api>=0.16.0"
 ```
-
-A2UI v0.9 and `historyScope` landed after the `0.14.0` release candidates were cut, so they arrive
-in `0.15.0`. That version is not published as a stable release yet — check
-`capabilities.extensions` on the agent card before relying on `historyScope`.
 
 Your graph's state must include a `messages` key to accept A2A text and file parts. An assistant
 whose input schema has no `messages` field is rejected with an explanatory error.
@@ -305,7 +415,7 @@ async def call_model(state: State, runtime: Runtime[Context]) -> Dict[str, Any]:
     try:
         # Make OpenAI API call
         response = await client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-5.4-mini",
             messages=openai_messages,
             max_tokens=100,
             temperature=0.7

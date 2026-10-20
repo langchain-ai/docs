@@ -1,5 +1,5 @@
 # Files
 
-- [Builder Tests](builder-tests.md) - Focused, offline tests for DocumentationBuilder routing, Markdown preprocessing, shared inputs, snippets, source containment, and generated build-output invariants. Covers when an output assertion is sufficient and when to add a built-site check.
-- [Conditional Rendering Tests](conditional-rendering.md) - Test guidance for the build-time `:::python` and `:::js` renderer, including its regex fence semantics, scoped autolinks, code-fence boundary, and language-specific artifacts.
-- [Testing Overview](test-overview.md) - Change-oriented guidance for deterministic tests, rendered documentation, credentialed code samples, remote checks, and CI boundaries. Explains sample-runner concurrency, rate-limit outcomes, and optional trace publication.
+- [Builder Tests](builder-tests.md) - Focused tests for DocumentationBuilder routing, source transformation, shared assets, snippets, and failure boundaries. Use isolated source and build trees to assert emitted artifacts and their final content.
+- [Conditional Rendering Tests](conditional-rendering.md) - Test build-time selection of Python and JavaScript Markdown branches, scoped autolinks, and language-specific page and snippet artifacts. Covers preprocessing order and focused suites for conditional content and link transformations.
+- [Testing and Validation Overview](test-overview.md) - Change-oriented validation guidance for deterministic tests, generated documentation, credentialed samples, remote onboarding checks, and trusted scheduled automation. Choose the narrowest boundary that proves a change, then add the boundary-specific checks it requires.
