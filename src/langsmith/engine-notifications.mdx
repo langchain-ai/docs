@@ -69,6 +69,50 @@ Each Slack message includes the issue title, description, and severity, a **View
 
 Slack destinations use the configured Slack app to post messages. They do not send the [webhook payload](#webhook-payload-reference), so webhook signing secrets and custom headers do not apply.
 
+### Mention a coding agent
+
+A Slack destination can mention a coding agent's Slack bot, such as [Open SWE](https://github.com/langchain-ai/open-swe), in the thread of an Engine notification. The agent receives your instruction and Engine's fix prompt for the issue, so it can start working on the issue from Slack. The mention does not change Engine's own fix for the issue.
+
+To mention a coding agent:
+
+<Steps>
+  <Step title="Add the agent to the channel">
+    In Slack, add the coding agent's bot to the destination's channel. The agent does not see the mention unless it is a member of the channel.
+  </Step>
+  <Step title="Choose the agent">
+    On the **Engine** page, click **Configure Engine**. Under **Notifications**, add a Slack destination or open an existing one, and choose a channel. Under **Mention agent on new issues**, select the agent. The list shows the active bots in the channel's Slack workspace. To use a bot that is not listed, enter its Slack user ID in the search box and select the **Use** option for that ID. LangSmith checks that the ID belongs to an active bot in that workspace when you save.
+  </Step>
+  <Step title="(Optional) Write a message">
+    Under **Message to the agent**, enter the instruction that follows the mention, up to 1,000 characters. If you leave it empty, the reply uses `Investigate this issue and open a fix if needed.`
+  </Step>
+  <Step title="Save the destination">
+    Click **Add** for a new destination or **Save** for an existing one.
+  </Step>
+</Steps>
+
+To stop mentioning the agent, select **None** under **Mention agent on new issues** and save.
+
+The agent is mentioned only in reply to a message the destination posts, so the destination's **Notify when** and **Minimum issue severity** settings decide which issues get a mention. Where the mention appears depends on the selected event types:
+
+| **Notify when** selection | Where the agent is mentioned |
+| --- | --- |
+| **Issue created**, without **Fix PR ready** | In the thread of each new issue's message. |
+| **Issue created** and **Fix PR ready** | In the issue's thread, after the **Fix PR ready** reply. |
+| **Fix PR ready**, without **Issue created** | In the thread of the **Fix PR ready** message. |
+| Neither **Issue created** nor **Fix PR ready** | The agent is not mentioned. |
+
+With **Fix PR ready** selected, the agent is mentioned once per issue. A later fix pull request for the same issue within 30 days does not mention the agent again.
+
+The reply contains:
+
+- **Mention**: The agent's Slack bot, followed by your message.
+- **Fix prompt**: Engine's fix prompt for the issue, when the issue has one. Prompts longer than 12,000 characters are truncated, and the full prompt stays on the issue in LangSmith.
+- **Issue marker**: A `<!-- langsmith-issue {"id":"<issue-id>"} -->` comment, with an instruction to include it in the pull request body.
+
+The reply's message text carries the full content, for agents that read only a message's text and not its formatted blocks.
+
+When the agent opens a pull request with the issue marker in its body, in a repository [connected to Engine](/langsmith/engine-repositories), Engine links that pull request to the issue as a fix. The marker must be in the body when the pull request is opened. Adding it in a later edit does not link the pull request.
+
 ## Create Jira work items
 
 The **Jira** destination sends Engine events to a Jira Automation incoming webhook. Configure a Jira rule to turn new Engine issues into Jira work items. LangSmith sends the [webhook payload](#webhook-payload-reference) with the `X-Automation-Webhook-Token` header. Jira destinations use this token for authentication and do not have an HMAC signing secret.
