@@ -64,7 +64,7 @@ This skill runs in GitHub Actions with **no human in the loop**. Do **not** ask 
 
 3. Add a downloads-table row in the matching `src/snippets/oss/*-*-downloads.mdx` with a real `data-sort-value` (not `N/A` when a count is known). Match existing badge markup. For vectorstores/chat, map capability notes to the same ✅/❌ spans neighboring rows use.
 
-4. Add an alphabetical `all_providers` card in `src/oss/python/integrations/providers/all_providers.mdx` and/or the JS providers page when applicable. Use `icon="link"` unless a provider icon already exists. Description = issue `provider_description` (trim only).
+4. Add an alphabetical `all_providers` card in `src/oss/python/integrations/providers/all_providers.mdx` and/or the JS providers page when applicable. Use `icon="link"` unless a provider icon already exists. For the card body, use issue `provider_description` after trimming whitespace. If that text is longer than **160 characters**, rewrite it to one factual sentence of at most 160 characters before writing the card. Keep product and component names; drop marketing, feature lists, and second sentences. Do not invent capabilities that are not in the original text.
 
 5. Append `packages.yml` when there is a public LangChain-related package and public `owner/repo`. Ensure a trailing newline before appending. Omit `path: .`. Quote `js: "n/a"` when there is no JS package.
 

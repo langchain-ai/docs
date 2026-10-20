@@ -232,13 +232,19 @@ Schedule declarations are extracted at compile time. Keep schedule configuration
 
 ## Test schedules locally
 
-`mda dev` compiles `schedules/` and lists each schedule in its startup banner, but it does not provision them. Schedules run only on a deployment.
+:::python
+`mda dev` creates a cron job on the local server for each schedule in `schedules/`, so schedules fire locally as they do on a deployment. When `schedules/` changes, `mda dev` deletes and recreates them. Pass `--no-schedules` to stop schedules from firing while you iterate.
 
-<Warning>
-Schedules never fire under `mda dev`. The local server reports no error, so a schedule that is listed at startup is still inactive.
-</Warning>
+<Note>
+Local schedules require `managed-deepagents>=0.9.3`. Earlier versions list schedules at startup but do not run them.
+</Note>
+:::
+
+:::js
+The TypeScript dev server does not run cron jobs. `mda dev` lists each schedule at startup and warns that schedules are not active locally.
 
 To test the agent behavior a schedule triggers, send the schedule's `prompt` or `input` to the agent directly in local Studio. To test the schedule itself, deploy the project to a development deployment.
+:::
 
 ## Deploy schedules
 
@@ -469,6 +475,21 @@ await runtime.schedules!.delete(item.id, { owner });
 `update` accepts `cron`, `at`, `timezone`, `prompt`, `input`, `paused`, and `metadata`. The channel and the thread choice are fixed at creation. `list` hides expired one-time schedules unless you pass `includeExpired: true`. For the agent owner, `list` and `get` also return the schedules in `schedules/`, which you change in code.
 :::
 
+### Schedule limits
+
+Each owner can have at most 20 runtime schedules per agent. Paused schedules count. Expired one-time schedules and schedules in `schedules/` do not count. A create or update past the limit fails with `Schedule limit reached`.
+
+To change the limit, set these variables in the deployment environment:
+
+| Variable | Limit for |
+| --- | --- |
+| `MDA_MAX_AGENT_SCHEDULES` | Schedules owned by the agent |
+| `MDA_MAX_USER_SCHEDULES` | Schedules owned by each user |
+
+<Note>
+Schedule limits require `managed-deepagents>=0.9.3`.
+</Note>
+
 ## Troubleshoot schedules
 
 :::python
@@ -484,7 +505,15 @@ await runtime.schedules!.delete(item.id, { owner });
 - `schedule is not static`: Replace computed values with literals or top-level literal constants.
 - `failed to create cron for schedule`: Open the deployment URL in LangSmith and confirm the deployed Agent Server is healthy.
 - `Invalid thread ID: must be a UUID (HTTP 422)`: A persistent schedule declares a thread ID that is not a UUID. Replace it with the UUID of an existing thread. See [Choose thread behavior](#choose-thread-behavior).
-- **A schedule does not run during local development**: `mda dev` does not provision schedules. See [Test schedules locally](#test-schedules-locally).
+- `Schedule limit reached`: The owner has reached the runtime schedule limit. Delete a schedule, or raise the limit. See [Schedule limits](#schedule-limits).
+
+:::python
+- **A schedule does not run during local development**: Confirm that you did not pass `--no-schedules` to `mda dev`. See [Test schedules locally](#test-schedules-locally).
+:::
+
+:::js
+- **A schedule does not run during local development**: The TypeScript dev server does not run schedules. See [Test schedules locally](#test-schedules-locally).
+:::
 
 ## Next steps
 

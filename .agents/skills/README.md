@@ -22,7 +22,8 @@ make skills
 That symlinks each skill into `.claude/skills/`, so the skills stay live as the
 tree changes. The target is idempotent, leaves any personal skills already in
 that directory alone, and removes links whose source is gone. Run it again after
-pulling if a skill was added or renamed.
+pulling if a skill was added or renamed, and once in each new git worktree: a
+worktree starts without `.claude/`, so it has no links until you run it there.
 
 For an agent that uses some other path, the [`skills`
 CLI](https://github.com/vercel-labs/skills) knows the mapping:

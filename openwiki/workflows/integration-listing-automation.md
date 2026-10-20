@@ -5,7 +5,7 @@ description: Explains how hosted-guide metadata, external listing metadata, and 
 tags: [integrations, automation, documentation, metadata, ci]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-14T08:21:39.311Z
+    at: 2026-10-20T08:20:37.912Z
 sources:
   - id: openwiki-source-8bdd8b6031ea08044f515d8c
     resource: repo://.agents/skills/submit-integration/SKILL.md
@@ -41,7 +41,7 @@ sources:
     resource: repo://src/oss/python/integrations/providers/all_providers.mdx
   - id: openwiki-source-7be0fdefc402d868b9f2fdca
     resource: repo://tests/unit_tests/test_refresh_integration_downloads.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-14T08:21:39.311Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-20T08:20:37.912Z" }
 ---
 
 # Integration Listing Automation
@@ -158,9 +158,33 @@ External contributors should use the Integration listing issue form, not a manua
 
 For a non-bot external author, the PR workflow detects added integration files (excluding `TEMPLATE.mdx`) or a change to the external-listing YAML and applies the `integration` label. It evaluates each newly added MDX file as eligible only when its frontmatter says `featured: true` or its declared PyPI/npm package can be fetched and verified at 50,000 monthly downloads. If any added MDX file is eligible, the workflow does not redirect or close the PR. A PR that only changes external-listing YAML, or whose new MDX files are not eligible, is redirected to the issue form with one marker-protected comment and is closed when open. A failed frontmatter or download verification fails the workflow before this closure path; it does not treat an unverifiable guide as eligible. Internal members and configured internal bots are not redirected by this workflow.
 
-The issue workflow is separate. Applying `integration-run` invokes it only when the triggering actor has `admin`, `maintain`, or `write` permission; issue creation alone cannot start it. A non-cancelling per-issue concurrency group and the `integration-automation` label avoid duplicate processing. The parser maps recognized issue-form headings to JSON and validates required fields and language/package combinations without evaluating the supplied values. Parse errors are reported on the issue. The workflow passes the structured fields to the agent as untrusted literal metadata; the agent must leave edits uncommitted and must not push, create a PR, or comment.
+### Maintainer-authorized issue lifecycle
 
-A blocker file, failed agent, or no diff yields an issue comment rather than a PR. When edits exist, the workflow creates `integration/issue-<number>` with review checks for eligibility, URL/provider card, and generated surfaces; it then links and mentions the PR on the source issue.
+The issue workflow is separate. An `integration-run` label event is eligible to proceed only when the actor has `admin`, `maintain`, or `write` permission; otherwise the workflow removes that label and tells the author that a maintainer must apply it. A manual `workflow_dispatch` run is also permission-checked. Issue creation alone cannot start the privileged agent. A non-cancelling per-issue concurrency group serializes attempts, and the `integration-automation` label causes already-marked issues to be skipped.
+
+```mermaid
+flowchart TD
+    Submitted["Published package issue form"] --> Label["Maintainer applies integration-run"]
+    Label --> Authorize{"Actor has write level permission"}
+    Authorize -- No --> Decline["Remove label and comment"]
+    Authorize -- Yes --> Seen{"Already marked integration-automation"}
+    Seen -- Yes --> Skip["Skip duplicate processing"]
+    Seen -- No --> Parse["Parse structured issue fields"]
+    Parse --> Valid{"Required fields and package rule valid"}
+    Valid -- No --> ParseError["Comment parse errors"]
+    Valid -- Yes --> Mark["Add in progress label and comment"]
+    Mark --> Agent["Run Deep Agents skill"]
+    Agent --> Outcome{"Blocker failure or no diff"}
+    Outcome -- Yes --> Feedback["Comment outcome and retry guidance"]
+    Outcome -- No --> CreatePR["Create integration issue PR"]
+    CreatePR --> Link["Link PR on issue and mention reviewers"]
+```
+
+This flow shows that authorization and parsing happen before the agent receives untrusted metadata, while GitHub feedback and PR creation are workflow-owned steps after it returns.
+
+The parser maps recognized issue-form headings to JSON and validates required fields and language/package combinations without evaluating the supplied values. Parse errors are reported on the issue. The workflow passes the structured fields to the agent as untrusted literal metadata; the agent must leave edits uncommitted and must not push, create a PR, or comment.
+
+A blocker file, failed agent, or no diff yields an issue comment rather than a PR; failed-agent and no-change feedback explains that a maintainer can remove `integration-automation` and reapply `integration-run` to retry. When edits exist, the workflow creates `integration/issue-<number>` with review checks for eligibility, URL/provider card, and generated surfaces; it then links and mentions the PR on the source issue.
 
 ## Safe change procedure
 
@@ -183,5 +207,5 @@ A blocker file, failed agent, or no diff yields an issue comment rather than a P
 
 - [Source Directory Map](/openwiki/architecture/source-map.md)
 - [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md)
-- [Adding Pages](/openwiki/operations/adding-pages.md)
+- [Quickstart](/openwiki/quickstart.md)
 - [Testing overview](/openwiki/testing/test-overview.md)
