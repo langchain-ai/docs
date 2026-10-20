@@ -603,6 +603,10 @@ existing `docs_url` values in `scripts/data/integration_external_docs.yaml`:
 - **Rename**: different live third-party GitHub `owner/repo` found → update
   `packages.yml` (and listing hrefs that used the old URL). Never auto-retarget
   into `langchain-ai/*`.
+- **Docs URL redirect**: an external `docs_url` that permanently redirects (HTTP
+  301 or 308) → update that `docs_url` and matching listing hrefs (for example
+  `hashlock.markets/docs` → `docs.hashlock.markets`). Temporary redirects
+  (302/307) are left alone.
 - **Delist**: no live GitHub, GitLab, or partner-docs home → remove the package
   from `packages.yml`, matching external YAML rows, downloads-table rows, and the
   `all_providers` card when no other package shares the provider key

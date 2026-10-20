@@ -19,6 +19,8 @@ Policy (1A):
   package: ``packages.yml``, matching external YAML rows, downloads-table rows,
   and the ``all_providers`` card when no other remaining package shares the
   same provider key (``name_short``).
+- If an external ``docs_url`` permanently redirects (HTTP 301 or 308) to a
+  different URL, update that ``docs_url`` and matching listing hrefs.
 
 Usage (from repo root):
 
@@ -119,6 +121,16 @@ class PackageFinding:
     removed_docs_urls: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class DocsUrlFix:
+    """A permanent docs URL redirect to apply across listing surfaces."""
+
+    old_url: str
+    new_url: str
+    status_code: int
+    sources: tuple[str, ...]
+
+
 HttpGet = Callable[[str], requests.Response]
 
 
@@ -173,6 +185,125 @@ def is_github_or_gitlab_url(url: str) -> bool:
     """Whether ``url`` points at GitHub or GitLab (handled as VCS, not docs)."""
     host = urlparse(url).netloc.casefold().removeprefix("www.")
     return host in {"github.com", "gitlab.com"}
+
+
+_PERMANENT_REDIRECTS = frozenset({301, 308})
+
+
+def normalize_docs_url(url: str) -> str:
+    """Normalize a docs URL for comparison while preserving the final path shape."""
+    return url.strip()
+
+
+def urls_equivalent(left: str, right: str) -> bool:
+    """Compare docs URLs ignoring a trailing slash difference."""
+    return left.rstrip("/").casefold() == right.rstrip("/").casefold()
+
+
+def resolve_permanent_redirect(url: str, get: HttpGet) -> Optional[tuple[str, int]]:
+    """Return ``(final_url, status)`` when ``url`` permanently redirects elsewhere.
+
+    Only HTTP 301 and 308 count. Temporary redirects (302/307) are ignored so the
+    script does not chase short-lived CDN or A/B locations.
+    """
+    try:
+        response = get(url)
+    except requests.RequestException:
+        return None
+    history = list(getattr(response, "history", None) or [])
+    permanent = [hop for hop in history if int(hop.status_code) in _PERMANENT_REDIRECTS]
+    if not permanent:
+        return None
+    final = normalize_docs_url(str(getattr(response, "url", "") or ""))
+    if not final.startswith(("http://", "https://")):
+        return None
+    if urls_equivalent(final, url):
+        return None
+    if is_registry_page(final):
+        return None
+    return final, int(permanent[0].status_code)
+
+
+def collect_unique_docs_urls(path: Path) -> dict[str, list[str]]:
+    """Map each unique external ``docs_url`` to package labels that use it."""
+    yaml = _yaml_loader()
+    data = yaml.load(path.read_text(encoding="utf-8")) or {}
+    mapping: dict[str, list[str]] = {}
+    if not isinstance(data, dict):
+        return mapping
+    for language, components in data.items():
+        if not isinstance(components, dict):
+            continue
+        for component, items in components.items():
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                docs_url = item.get("docs_url")
+                if not isinstance(docs_url, str) or not docs_url.strip():
+                    continue
+                label = str(item.get("name") or item.get("pypi") or item.get("npm") or "?")
+                mapping.setdefault(docs_url.strip(), []).append(
+                    f"{language}/{component}/{label}"
+                )
+    return mapping
+
+
+def scan_docs_url_redirects(
+    docs_urls: dict[str, list[str]],
+    *,
+    get: HttpGet,
+    sleep_s: float = 0.0,
+) -> list[DocsUrlFix]:
+    """Find permanent redirects among external docs URLs."""
+    fixes: list[DocsUrlFix] = []
+    for old_url, sources in sorted(docs_urls.items()):
+        resolved = resolve_permanent_redirect(old_url, get)
+        if sleep_s:
+            time.sleep(sleep_s)
+        if not resolved:
+            continue
+        new_url, status = resolved
+        fixes.append(
+            DocsUrlFix(
+                old_url=old_url,
+                new_url=new_url,
+                status_code=status,
+                sources=tuple(sources),
+            )
+        )
+    return fixes
+
+
+def rewrite_docs_urls(text: str, replacements: dict[str, str]) -> str:
+    """Replace old docs URLs with their redirect targets."""
+    updated = text
+    # Longer keys first so prefixed URLs rewrite cleanly.
+    for old, new in sorted(replacements.items(), key=lambda kv: len(kv[0]), reverse=True):
+        updated = updated.replace(old, new)
+    return updated
+
+
+def apply_docs_url_fixes_to_external(
+    data: dict[str, Any], replacements: dict[str, str]
+) -> int:
+    """Update ``docs_url`` fields in external YAML. Returns number of edits."""
+    changed = 0
+    for _language, components in data.items():
+        if not isinstance(components, dict):
+            continue
+        for _component, items in components.items():
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                docs_url = item.get("docs_url")
+                if isinstance(docs_url, str) and docs_url in replacements:
+                    item["docs_url"] = replacements[docs_url]
+                    changed += 1
+    return changed
 
 
 def normalize_repo_slug(repo: str) -> str:
@@ -709,7 +840,10 @@ def remove_provider_cards(
     return "".join(out), removed_titles
 
 
-def render_evidence(findings: list[PackageFinding]) -> str:
+def render_evidence(
+    findings: list[PackageFinding],
+    docs_fixes: Optional[list[DocsUrlFix]] = None,
+) -> str:
     """Build the markdown evidence table for the draft PR body."""
     lines = [
         "## Integration repo check",
@@ -738,6 +872,26 @@ def render_evidence(findings: list[PackageFinding]) -> str:
             lines.append(
                 f"| `{finding.name}` | `{finding.repo}` | `{finding.new_repo}` | "
                 f"{finding.detail} |"
+            )
+        lines.append("")
+
+    docs_fixes = docs_fixes or []
+    if docs_fixes:
+        lines.extend(
+            [
+                "### Docs URL redirects applied",
+                "",
+                "| Old URL | New URL | Status | Sources |",
+                "| --- | --- | --- | --- |",
+            ]
+        )
+        for fix in docs_fixes:
+            sources = ", ".join(f"`{s}`" for s in fix.sources[:5])
+            if len(fix.sources) > 5:
+                sources += f" (+{len(fix.sources) - 5} more)"
+            lines.append(
+                f"| `{fix.old_url}` | `{fix.new_url}` | {fix.status_code} | "
+                f"{sources} |"
             )
         lines.append("")
 
@@ -796,10 +950,13 @@ def render_evidence(findings: list[PackageFinding]) -> str:
             "",
             "- Auto-fix when PyPI, npm, or an existing `docs_url` points at a "
             "different live third-party GitHub repository.",
-            "- Delist when the recorded GitHub repo is gone and no live "
-            "GitHub/GitLab alternate is found (marketing docs sites do not count).",
-            "- Leave alone (attention) when a live GitLab project remains, or "
-            "when the only alternate is a first-party `langchain-ai/*` repo.",
+            "- Auto-update external `docs_url` values that permanently redirect "
+            "(HTTP 301 or 308).",
+            "- Delist when the recorded GitHub repo is gone and no live GitHub, "
+            "GitLab, or partner-docs alternate is found.",
+            "- Leave alone (attention) when a live GitLab project or partner docs "
+            "homepage remains, or when the only alternate is first-party "
+            "`langchain-ai/*`.",
             "- Remove the `all_providers` card only when no other package shares "
             "the provider key (`name_short`).",
             "",
@@ -815,9 +972,10 @@ def apply_changes(
     *,
     repo_root: Path,
     findings: list[PackageFinding],
+    docs_fixes: Optional[list[DocsUrlFix]] = None,
     write: bool,
 ) -> dict[str, Any]:
-    """Apply fix/delist mutations when ``write`` is true."""
+    """Apply fix/delist/docs-redirect mutations when ``write`` is true."""
     yaml = _yaml_loader()
     packages_path = repo_root / "packages.yml"
     external_path = repo_root / "scripts" / "data" / "integration_external_docs.yaml"
@@ -836,12 +994,24 @@ def apply_changes(
 
     summary: dict[str, Any] = {
         "fixes": [],
+        "docs_url_fixes": [],
         "delisted": [],
         "external_removed": [],
         "downloads_rows_removed": 0,
         "cards_removed": [],
         "files_changed": [],
     }
+    docs_fixes = list(docs_fixes or [])
+    docs_replacements = {fix.old_url: fix.new_url for fix in docs_fixes}
+    summary["docs_url_fixes"] = [
+        {
+            "old": fix.old_url,
+            "new": fix.new_url,
+            "status": fix.status_code,
+            "sources": list(fix.sources),
+        }
+        for fix in docs_fixes
+    ]
 
     fixes = apply_repo_fixes(packages, findings)
     summary["fixes"] = [
@@ -859,6 +1029,11 @@ def apply_changes(
     packages_data["packages"] = packages
 
     external_data = yaml.load(external_path.read_text(encoding="utf-8")) or {}
+    docs_url_edits = 0
+    if docs_replacements:
+        docs_url_edits = apply_docs_url_fixes_to_external(
+            external_data, docs_replacements
+        )
     pypi_names = set(delist_names)
     npm_names = {f.npm for f in delist_findings if f.npm}
     external_removed = remove_external_entries(
@@ -872,6 +1047,8 @@ def apply_changes(
     providers_text = all_providers_path.read_text(encoding="utf-8")
     if repo_replacements:
         providers_text = rewrite_github_urls(providers_text, repo_replacements)
+    if docs_replacements:
+        providers_text = rewrite_docs_urls(providers_text, docs_replacements)
     providers_text, cards = remove_provider_cards(
         providers_text,
         delisted=delist_findings,
@@ -892,11 +1069,11 @@ def apply_changes(
     downloads_updates: list[tuple[Path, str]] = []
     for path in sorted((repo_root / "src" / "snippets" / "oss").glob("*-downloads.mdx")):
         original = path.read_text(encoding="utf-8")
-        updated = (
-            rewrite_github_urls(original, repo_replacements)
-            if repo_replacements
-            else original
-        )
+        updated = original
+        if repo_replacements:
+            updated = rewrite_github_urls(updated, repo_replacements)
+        if docs_replacements:
+            updated = rewrite_docs_urls(updated, docs_replacements)
         updated, count = remove_downloads_rows(updated, markers)
         downloads_removed += count
         if updated != original:
@@ -906,10 +1083,14 @@ def apply_changes(
     original_providers = all_providers_path.read_text(encoding="utf-8")
     providers_changed = providers_text != original_providers
     packages_changed = bool(fixes or delist_names)
-    external_changed = bool(external_removed)
+    external_changed = bool(external_removed or docs_url_edits)
 
     if write and (
-        packages_changed or external_changed or providers_changed or downloads_updates
+        packages_changed
+        or external_changed
+        or providers_changed
+        or downloads_updates
+        or docs_replacements
     ):
         if packages_changed:
             with packages_path.open("w", encoding="utf-8") as handle:
@@ -962,20 +1143,31 @@ def run(
         get=get,
         sleep_s=sleep_s,
     )
-    evidence = render_evidence(findings)
+    docs_url_map = collect_unique_docs_urls(
+        repo_root / "scripts" / "data" / "integration_external_docs.yaml"
+    )
+    docs_fixes = scan_docs_url_redirects(
+        docs_url_map, get=get, sleep_s=sleep_s
+    )
+    evidence = render_evidence(findings, docs_fixes=docs_fixes)
     if evidence_path:
         evidence_path.write_text(evidence, encoding="utf-8")
 
     actionable = [f for f in findings if f.disposition in {"fix", "delist"}]
     print(evidence)
-    if not actionable:
+    if not actionable and not docs_fixes:
         return 0
 
-    summary = apply_changes(repo_root=repo_root, findings=findings, write=write)
+    summary = apply_changes(
+        repo_root=repo_root,
+        findings=findings,
+        docs_fixes=docs_fixes,
+        write=write,
+    )
     print(json.dumps(summary, indent=2, sort_keys=True))
     if not write:
         print(
-            "Dry-run only. Re-run with --write to apply fix/delist changes.",
+            "Dry-run only. Re-run with --write to apply fix/delist/docs-url changes.",
             file=sys.stderr,
         )
     return 0
