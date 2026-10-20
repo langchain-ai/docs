@@ -1,8 +1,11 @@
 ---
 type: authoring workflow
-title: Versioned Content Workflow
+title: Changing Versioned Content Safely
 description: Change shared and language-specific documentation without breaking emitted routes, conditional content, scoped links, snippets, navigation, redirects, or validation.
 tags: [versioning, documentation, conditional-rendering, navigation, snippets]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-20T08:20:37.912Z
 sources:
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
@@ -24,15 +27,12 @@ sources:
     resource: repo://src/langsmith/managed-deep-agents-runtime.mdx
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-16T08:20:25.784Z
-generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-20T08:20:37.912Z" }
 ---
 
-# Versioned Content Workflow
+# Changing Versioned Content Safely
 
-Complete a versioned-content change by preserving four separate contracts: authored source ownership, emitted routes, navigation, and redirects. `src/docs.json` does not cause the builder to emit a page; an emitted page is not automatically navigable or reachable from a retired public URL. Author under `src/`; `build/` is regenerated output and must not be edited.
+A versioned-content change is complete only when four contracts agree: authored source ownership, emitted routes, navigation, and redirects. `src/docs.json` does not cause the builder to emit a page; an emitted page is not automatically navigable or reachable from a retired public URL. Author under `src/`; `build/` is regenerated output and must not be edited.
 
 ```mermaid
 flowchart TD
@@ -51,7 +51,7 @@ flowchart TD
     Configure --> Verify["Build and inspect artifacts"]
 ```
 
-This flow separates the builder's source-to-artifact decisions from the independently maintained navigation and compatibility decisions.
+This flow separates the builder's source-to-artifact decisions from independently maintained navigation and compatibility decisions.
 
 ## 1. Select the source owner before editing
 
@@ -208,7 +208,6 @@ When changing build behavior, add a focused regression to `tests/unit_tests/test
 
 ## See also
 
-- [Source Map](/openwiki/architecture/source-map.md)
 - [Versioned Documentation and Routes](/openwiki/concepts/versioning.md)
 - [Adding and Maintaining Documentation Pages](/openwiki/operations/adding-pages.md)
 - [Cross-References and Links](/openwiki/operations/cross-references.md)

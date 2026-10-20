@@ -1,11 +1,8 @@
 ---
 type: integration
-title: Mintlify Integration
-description: Mintlify renders the repository's generated documentation tree and creates selected deployment-time artifacts for docs.langchain.com. This page explains configuration, local and hosted validation, previews, exports, and the boundary of repository ownership.
+title: Mintlify Integration and Link Validation
+description: Mintlify renders the repository's generated documentation tree and creates selected deployment-time artifacts for docs.langchain.com. This page explains its configuration, generated-output boundary, local link validation and exclusions, OpenAPI behavior, previews, and exports.
 tags: [mintlify, documentation, navigation, openapi, deployment]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-16T08:20:25.784Z
 sources:
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
@@ -37,10 +34,13 @@ sources:
     resource: repo://src/docs.json
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-16T08:20:25.784Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-20T08:20:37.912Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-20T08:20:37.912Z
 ---
 
-# Mintlify Integration
+# Mintlify Integration and Link Validation
 
 Mintlify renders the generated documentation tree from `/build/` for [docs.langchain.com](https://docs.langchain.com). The repository owns content in `src/`, the builder, and the reproducible handoff; Mintlify owns serving, rendering behavior, and deployment-generated artifacts. Edit `src/` and `/src/docs.json`, never `/build/`, a preview branch, or an endpoint page Mintlify creates from an OpenAPI input.
 
@@ -83,7 +83,7 @@ make broken-links-with-anchors
 make check-openapi
 ```
 
-Both link targets rebuild first and run `mint broken-links` in `build/`; they enable redirect checking, and the latter additionally enables anchors. The filter removes all standalone snippet sections because snippets' rewritten language-prefixed links resolve only when imported, deployment-time OpenAPI routes, several legacy relative paths, and—only in anchor mode—two known SmithDB migration anchors. The Make target fails only when filtered output still has an indented link entry. Unit tests cover the filtering boundary; the reusable CI workflow uses Node 22 and runs the anchor target plus `make check-openapi`.
+Both link targets rebuild first and run `mint broken-links` in `build/`; they enable redirect checking, and the latter additionally enables anchors. The filter removes complete standalone snippet sections because snippets' rewritten language-prefixed links resolve only when imported; it also removes deployment-time OpenAPI routes and known legacy relative-path reports. Only anchor mode additionally removes the three exact SmithDB migration anchors and the exact imported `n_jobs_per_worker` anchor. The Make target fails only when filtered output still has an indented link entry. Unit tests cover both the section-level exclusion and the narrow anchor boundary; the reusable CI workflow uses Node 22 and runs the anchor target plus `make check-openapi`.
 
 `make check-openapi` runs `mint openapi-check langsmith/agent-server-openapi.json` after building. It validates only the Agent Server source, not the remote Control Plane input or the committed LangSmith REST input.
 
@@ -126,5 +126,6 @@ Mintlify generates `llms.txt` and, when required, nested `/_llms/` indexes only 
 - [Build system](/openwiki/architecture/build-system.md) — generated-tree lifecycle and ownership.
 - [Source map](/openwiki/architecture/source-map.md) — source-to-output route mapping.
 - [Reference documentation](/openwiki/integrations/reference-docs.md) — API-reference boundaries.
-- [Test overview](/openwiki/testing/test-overview.md) — validation entry points.
+- [CLI tools](/openwiki/operations/cli-tools.md) — command-line validation entry points.
+- [Cross-references](/openwiki/operations/cross-references.md) — link and redirect maintenance.
 - [Local development](/openwiki/workflows/local-development.md) — developer setup and watch workflow.

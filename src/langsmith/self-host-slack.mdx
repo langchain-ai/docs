@@ -1,12 +1,43 @@
 ---
-title: Connect self-hosted LangSmith to Slack
+title: Connect self-hosted and BYOC LangSmith to Slack
 sidebarTitle: Slack
-description: Configure your own Slack app for Engine and alert notifications on self-hosted LangSmith.
+description: Configure your own Slack app for Engine and alert notifications on self-hosted LangSmith or a BYOC data plane.
 ---
 
-Self-hosted LangSmith uses a Slack app that your operator creates and configures. The operator is the person who manages your LangSmith deployment. The deployment exchanges OAuth codes and sends [Engine notifications](/langsmith/engine-notifications) and [alert notifications](/langsmith/alerts) directly to Slack. LangSmith stores the app credentials and encrypted workspace bot tokens in your deployment.
+LangSmith sends [Engine notifications](/langsmith/engine-notifications) and [alert notifications](/langsmith/alerts) to Slack through a Slack app that you create. Complete this setup once per self-hosted installation or BYOC data plane. Users then [connect a Slack workspace](#connect-a-slack-workspace) with that app, without supplying app credentials themselves.
 
-If Slack is not configured on your instance, contact your operator. This notice appears in organization settings and in the **Slack** tab under each Engine project's **Notifications** settings. The operator follows the setup instructions below. After setup, users connect a workspace through Slack authorization without supplying app credentials themselves.
+- **BYOC**: An Organization Admin saves the app's credentials in the LangSmith UI. See [Create your Slack app on BYOC](#create-your-slack-app-on-byoc).
+- **Self-hosted**: An operator configures the app's credentials in the deployment. See [Create your Slack app on self-hosted](#create-your-slack-app-on-self-hosted).
+
+<a id="configure-the-slack-app-on-byoc"></a>
+
+## Create your Slack app on BYOC
+
+On a BYOC data plane, you create the Slack app and save its credentials in your organization settings. You do not set environment variables or Helm values. The app and its workspace connections apply only to the selected data plane. Other data planes and LangSmith Cloud are unaffected.
+
+Configuring the app requires the `organization:manage` permission in the organization that owns the data plane.
+
+To configure the app:
+
+1. In LangSmith, go to **Settings** > **General Settings** > **Slack**, and select your data plane.
+2. Click **Configure Slack App**. The **Set up Slack App** dialog opens.
+3. Check the **Callback URL**. It defaults to `https://<data-plane-host>/v1/platform/slack/callback`. If your data plane uses a custom ingress, update the URL before you copy the manifest. The URL must use HTTPS and have no query string or fragment.
+4. Click **Copy Slack App manifest**, then click **Create App in Slack**. In Slack, select **Create New App** > **From a manifest**, paste the manifest into the **JSON** tab, and create and install the app. The manifest already contains your callback URL.
+5. In the new Slack app, open **Basic Information** > **App Credentials**. Copy the **Client ID** and **Client Secret** into the dialog, then save. Use the Client ID, not the App ID or Signing Secret.
+
+LangSmith stores the credentials encrypted and does not display them again. To change them later, click **Edit or replace Slack App**. To remove them, click **Delete configuration**.
+
+After you save the app, [connect a Slack workspace](#connect-a-slack-workspace). Connecting a workspace requires the `organization:integrations:manage` permission.
+
+{/* Release prerequisite: the BYOC Slack app UI ships with langchainplus branch romain/slack-app-setup-ui. Confirm the save button label and the minimum data plane version before publishing. */}
+
+<a id="create-your-slack-app"></a>
+
+## Create your Slack app on self-hosted
+
+On self-hosted LangSmith, your operator creates the Slack app and configures it in the deployment. The operator is the person who manages your LangSmith deployment. The deployment exchanges OAuth codes and sends notifications directly to Slack. LangSmith stores the app credentials and encrypted workspace bot tokens in your deployment.
+
+If Slack is not configured on your instance, contact your operator. This notice appears in organization settings and in the **Slack** tab under each Engine project's **Notifications** settings. The operator follows the setup instructions below.
 
 <Note>
 This connection requires LangSmith self-hosted v0.17 or later.
@@ -18,8 +49,6 @@ Before starting, make sure you have:
 - **Slack access:** Permission to create and install an app in the Slack workspace that receives notifications. Obtain administrator approval if your workspace restricts app installation.
 - **LangSmith access:** The `organization:manage` permission to connect or disconnect a Slack workspace. An organization administrator can complete this step after the operator configures the deployment.
 - **Network access:** Backend HTTPS access to Slack and browser access to your deployment's HTTPS callback. See [Allow network access](#allow-network-access).
-
-## Create your Slack app
 
 Your operator creates one Slack app for the deployment. An [app manifest](https://docs.slack.dev/reference/app-manifest/) is a JSON configuration that creates the bot and sets its permissions. Users reuse this app when connecting a workspace; they do not create an app for each user or project.
 
@@ -75,9 +104,9 @@ The manifest contains configuration, not credentials. Slack generates the app cr
 
 Keep token rotation disabled. The integration stores bot tokens and does not refresh rotating tokens. Leave Socket Mode disabled; Event Subscriptions and an app-level token are not required for notification delivery.
 
-Creating or installing the app in Slack does not connect it to LangSmith. Complete [Connect a Slack workspace](#connect-a-slack-workspace) after configuring the deployment. LangSmith obtains and stores the workspace bot token through that authorization flow; you do not copy a bot token into the deployment.
+Creating or installing the app in Slack does not connect it to LangSmith. Complete [Connect a Slack workspace](#connect-a-slack-workspace) after you [configure the deployment](#configure-your-deployment). LangSmith obtains and stores the workspace bot token through that authorization flow; you do not copy a bot token into the deployment.
 
-## Configure your deployment
+### Configure your deployment
 
 Configure these variables on the LangSmith platform backend using your deployment's [environment variable configuration](/langsmith/self-host-environment-variables):
 
@@ -152,7 +181,7 @@ The backend checks that the app credentials are present and the callback URL is 
 
 Changing or removing app credentials does not delete stored workspace connections or notification destinations. Previously stored bot tokens can continue delivering notifications. To stop delivery, disconnect the workspace or delete its notification destinations.
 
-## Allow network access
+### Allow network access
 
 For this integration, allow the following connections:
 

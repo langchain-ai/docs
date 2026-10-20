@@ -513,11 +513,13 @@ Reserve "the platform" for LangSmith. LangChain is the open agent engineering ec
 2. Add the page to the component's index page (`src/oss/javascript/integrations/<component>/index.mdx`); only edit `src/docs.json` when creating a brand-new component group
 3. If the provider has an overview page at `src/oss/javascript/integrations/providers/<provider>.mdx`, add or update a section there linking to the new page (`/oss/integrations/<component>/<provider>`)
 
-**Beta callouts on agent-based workspace pages:** every page in the
+**Availability callouts on agent-based workspace pages:** every page in the
 `Agent-based workspaces` group opens with the shared
-`/snippets/langsmith/agent-beta-note.mdx` callout, placed after the page's
-opening definition and before the first `##` heading. Do not hand-write a
-per-page variant, and do not add a page-level `tag` on top of the group tag.
+`/snippets/langsmith/agent-availability-note.mdx` callout, placed after the
+page's opening definition and before the first `##` heading. Do not hand-write
+a per-page variant. Agent-based workspaces are available on LangSmith Cloud
+and not on self-hosted, so do not label them beta or add a `Beta` tag to the
+group or its pages.
 
 **Add a reusable snippet:**
 
@@ -591,6 +593,37 @@ Notes:
 - Without `--write`, the script prints the table to stdout for inspection.
 - After regenerating, commit only `src/snippets/langsmith/mda-oauth-catalog.mdx`. Do not edit
   that snippet by hand.
+
+### Check integration repo links
+
+`scripts/check_integration_repos.py` scans every third-party `repo:` in `packages.yml`
+against GitHub. When a repo is 404, it looks for a live alternate on PyPI, npm, and
+existing `docs_url` values in `scripts/data/integration_external_docs.yaml`:
+
+- **Rename**: different live third-party GitHub `owner/repo` found → update
+  `packages.yml` (and listing hrefs that used the old URL). Never auto-retarget
+  into `langchain-ai/*`.
+- **Docs URL redirect**: an external `docs_url` that permanently redirects (HTTP
+  301 or 308) → update that `docs_url` and matching listing hrefs (for example
+  `hashlock.markets/docs` → `docs.hashlock.markets`). Temporary redirects
+  (302/307) are left alone.
+- **Delist**: no live GitHub, GitLab, or partner-docs home → remove the package
+  from `packages.yml`, matching external YAML rows, downloads-table rows, and the
+  `all_providers` card when no other package shares the provider key
+  (`name_short`).
+- **Attention only**: a live GitLab project or partner docs/homepage remains (for
+  example Writer's `dev.writer.com` when GitHub is gone), or the only alternate
+  is first-party → do not change listings; report in the evidence table.
+- **Skipped**: first-party `langchain-ai/*` packages.
+
+```bash
+export GITHUB_TOKEN="$(gh auth token)"
+uv run python scripts/check_integration_repos.py
+uv run python scripts/check_integration_repos.py --write --evidence /tmp/evidence.md
+```
+
+The weekly workflow `.github/workflows/check-integration-repos.yml` runs this with
+`--write` and opens or updates a standing **draft** PR on `chore/dead-integration-repos`.
 
 ## Pre-commit linting
 

@@ -286,7 +286,8 @@ The checkpointer includes several optimizations for low-latency reads:
 - **Raw BYTEA**: Uses psycopg3 binary protocol instead of hex-encoding blobs in SQL
 - **Prepared statements**: `prepare_threshold` defaults to 5 and can be changed in `from_conn_string`
 - **Concurrent setup**: `setup()` is safe to run from several processes at once
-- **Connection resilience**: For long-running services, pass a `psycopg_pool` connection pool rather than a single connection. One connection cannot recover once it drops, and that includes `from_conn_string(..., pipeline=True)`
+- **Connection pools (v0.4.1+)**: For long-running services, pass a `psycopg_pool` connection pool rather than a single connection. A saver on a pool runs operations concurrently, each on its own pooled connection, so one saver can serve many agents; set the pool's `max_size` for the number of agents running at once. A saver on a single connection runs one operation at a time, and it cannot recover once that connection drops, which includes `from_conn_string(..., pipeline=True)`
+- **Atomic writes (v0.4.1+)**: A checkpoint write with several statements goes to the database as one batch, so a write that is cancelled partway saves nothing. It still takes one round trip
 
 ### Multi-tenancy
 
@@ -340,7 +341,7 @@ engine = CockroachDBEngine.from_connection_string(
 )
 ```
 
-The vector store and chat history inherit the engine's policy. The checkpointers accept `retry_policy` too; give them a `psycopg_pool` connection pool so dropped connections are replaced.
+The vector store and chat history inherit the engine's policy. The checkpointers accept `retry_policy` too; give them a `psycopg_pool` connection pool so dropped connections are replaced. Since v0.4.1, a pooled checkpointer also retries whenever `psycopg` reports its connection broken, which covers TLS connections that drop on CockroachDB Cloud.
 
 ## Why CockroachDB for AI applications?
 
