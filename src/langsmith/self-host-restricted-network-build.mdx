@@ -20,7 +20,6 @@ Collect the following from your platform team before you start:
 - **PyPI repository URL**: The internal index that proxies or hosts Python packages, written as `<PYPI_INDEX_URL>` on this page. For example, `https://pypi.example.internal/simple`.
 - **Container registry**: The registry host, plus the port if it has one, written as `<DOCKER_REGISTRY>`. It must hold a mirror of the Agent Server base image. See [Additional images for Agent Server builds](/langsmith/self-host-mirroring-images#additional-images-for-agent-server-builds).
 - **npm registry URL (JavaScript only)**: The internal registry that proxies or hosts npm packages, written as `<NPM_REGISTRY_URL>`. For example, `https://npm.example.internal`. Leave off the trailing slash, because Corepack appends paths to it.
-- **Python build mirror (optional)**: A mirror of the `python-build-standalone` GitHub releases, written as `<PYTHON_MIRROR_URL>`. You need it only if the OS repositories do not provide the Python version your project requires.
 - **CA bundle**: The path to the PEM file for your internal certificate authority (CA), written as `<CA_BUNDLE_PATH>`. Internal registries usually serve certificates signed by your organization's own CA, which operating systems and tools do not trust by default.
 - **Root access**: Whether you have `sudo` on the build machine. Without sudo, use the per-user file locations on this page. Ask the platform team to install OS packages and the CA.
 - **Python versions**: Which versions the OS package repositories provide.
@@ -95,31 +94,13 @@ To trust only the internal CA, set `SSL_CERT_FILE=<CA_BUNDLE_PATH>` in place of 
 
 ## Provide the Python interpreter
 
-When a project requires a Python version that is not on the machine, uv downloads one from the `python-build-standalone` releases on GitHub. On a restricted network, that download retries with no clear error. `UV_PYTHON_DOWNLOADS=never` from [Configure uv](#configure-uv) makes a missing interpreter fail immediately instead.
-
-Install the interpreter from the OS repositories. If they do not provide the version you need, install it from an internal mirror instead.
-
-### Install Python from the OS repositories
-
-Install the version your project requires with the OS package manager. For example, on RHEL-family distributions:
+The Agent Server image ships its own Python. The build machine needs Python 3.10 or later only to run pip, uv, and the LangGraph CLI. Install it from the OS repositories, for example on RHEL-family distributions:
 
 ```bash
 sudo dnf install python3.12
 ```
 
-uv finds the interpreter on `PATH`. Keep `UV_PYTHON_DOWNLOADS=never`.
-
-### Install Python from an internal mirror
-
-The mirror must keep the GitHub release layout, `<release-tag>/<archive-name>`. Allow explicit installs only, so uv still never downloads on its own:
-
-```bash
-export UV_PYTHON_INSTALL_MIRROR="<PYTHON_MIRROR_URL>"
-export UV_PYTHON_DOWNLOADS=manual
-uv python install 3.12
-```
-
-With `manual`, `uv python install` downloads from the mirror, and every other command fails immediately when the interpreter is missing. Put both `export` lines in your shell profile in place of `UV_PYTHON_DOWNLOADS=never`. For details, see uv's [Installing Python](https://docs.astral.sh/uv/guides/install-python/) guide.
+uv finds the interpreter on `PATH`. Keep `UV_PYTHON_DOWNLOADS=never`: without it, uv tries to download a missing interpreter from GitHub and retries with no clear error. If the OS repositories do not provide a supported version, see uv's [Installing Python](https://docs.astral.sh/uv/guides/install-python/) guide.
 
 ## Build the Agent Server image
 
