@@ -291,6 +291,42 @@ Replace `(your-registry)` with your registry URL. The template variables (`${ser
 
 Once configured, you will need to update your LangSmith installation. You can follow our upgrade guide here: [Upgrading LangSmith](/langsmith/self-host-upgrades). If your upgrade is successful, your LangSmith instance should now be using the mirrored images from your Docker registry.
 
+## Additional images for Agent Server builds
+
+The [LangGraph CLI](/langsmith/cli) builds each Agent Server image on top of a public base image. When your build machine cannot reach Docker Hub, mirror the base image and point `base_image` in `langgraph.json` at the mirror. For the rest of the build setup, see [Build Agent Server images on a restricted network](/langsmith/self-host-restricted-network-build).
+
+The base image repository depends on the project language:
+
+- **Python**: `langchain/langgraph-api`
+- **JavaScript**: `langchain/langgraphjs-api`
+
+The CLI picks the tag from `langgraph.json`, so mirror the tag that matches your configuration:
+
+| `langgraph.json` settings | Python tag | JavaScript tag |
+|---------------------------|------------|----------------|
+| `python_version` or `node_version` only | `3.12` | `20` |
+| With `api_version` | `0.8.1-py3.12` | `0.8.1-node20` |
+| With `image_distro` | Append `-wolfi` or `-bookworm`, for example `3.12-wolfi` | Append `-wolfi` or `-bookworm`, for example `20-wolfi` |
+
+To mirror a base image:
+
+```bash
+docker pull langchain/langgraph-api:3.12
+docker tag langchain/langgraph-api:3.12 <your-registry>/langchain/langgraph-api:3.12
+docker push <your-registry>/langchain/langgraph-api:3.12
+```
+
+Then set `base_image` to the mirrored repository without a tag:
+
+```json
+{
+  "base_image": "<your-registry>/langchain/langgraph-api"
+}
+```
+
+- The CLI appends the tag itself, so a `base_image` value that includes a tag produces an invalid image reference.
+- Set `api_version` to an exact version such as `0.8.1`. A version range makes the CLI query pypi.org at build time to resolve it.
+
 ## Verifying image signatures
 
 <Note>
