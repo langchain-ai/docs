@@ -20,10 +20,10 @@ sources:
     resource: repo://src/docs.json
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-20T08:20:37.912Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-21T08:20:13.723Z" }
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-20T08:20:37.912Z
+    at: 2026-10-21T08:20:13.723Z
 ---
 
 # LangSmith OpenAPI Refresh
@@ -106,7 +106,7 @@ This maintains at most one outstanding refresh PR instead of creating a daily qu
 
 A disallowed fetch hostname raises `ValueError`; a network, TLS, timeout, or JSON-decoding failure prevents a candidate from being produced. The workflow shell uses `set -euo pipefail`, so checkout, push, or PR failures stop the step. A no-diff result is a successful no-op, not a failed refresh.
 
-There is no repository command that proves Mintlify rendered every LangSmith REST endpoint page. `make check-openapi` currently validates only the Agent Server specification. The normal link checks pass Mint output through `scripts/filter_mint_broken_links.py`, which explicitly removes reports containing `/langsmith/smith-api` because that route family is generated at deployment rather than present in the local build. Inspect a Mintlify preview or deployed site for the rendered REST endpoint surface; use the processor command to verify transformation and the refresh PR to verify the candidate change.
+There is no repository command that proves Mintlify rendered every LangSmith REST endpoint page. `make check-openapi` currently validates only the Agent Server specification, not the committed LangSmith REST input. The normal link checks pass Mint output through `scripts/filter_mint_broken_links.py`, which explicitly removes reports containing `/langsmith/smith-api` because that route family is generated at deployment rather than present in the local build. Inspect a Mintlify preview or deployed site for the rendered REST endpoint surface; use the processor command to verify transformation and the refresh PR to verify the candidate change.
 
 ### Focused test boundary
 

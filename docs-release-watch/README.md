@@ -128,6 +128,19 @@ Runs in two phases:
 
 Release notes are secondary leads. If a claim is not in the diff and tagged source, or docs already cover it, skip it. Never claim a ticket or PR without a tool-returned URL.
 
+## Linear status sync
+
+The agent does not poll PR status. After it opens a draft PR whose `## Linear` section includes `Closes [DOC-N](<issue url>)`, GitHub Actions updates the Linear issue:
+
+| PR event | Linear status (preferred name / type) |
+| --- | --- |
+| Opened or converted to draft | In Progress (`started`) |
+| Ready for review | In Review (`started`) |
+| Merged | Done (`completed`) |
+| Closed without merge | Canceled (`canceled`) |
+
+Implementation: `scripts/sync_linear_issue_from_pr.py` and `.github/workflows/sync-linear-issue-from-pr.yml` (uses repo secret `LINEAR_API_KEY`).
+
 ## Safety
 
 - `.env` is gitignored and never archived into the deployment bundle.
