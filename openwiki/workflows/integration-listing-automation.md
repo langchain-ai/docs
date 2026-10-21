@@ -1,14 +1,16 @@
 ---
 type: integration listing workflow
 title: Integration Listing Automation
-description: Explains how hosted-guide metadata, external listing metadata, and package records produce public integration tables and the Python provider overview. Covers eligibility, URL validation, generated-output ownership, scheduled refreshes, and the maintainer-authorized issue intake flow.
+description: Explains how integration metadata produces public tables and provider listings, including scheduled download refreshes and third-party repository-health remediation. Covers eligibility, URL validation, generated-output ownership, draft review PRs, and maintainer-authorized intake.
 tags: [integrations, automation, documentation, metadata, ci]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-20T08:20:37.912Z
+    at: 2026-10-21T08:20:13.723Z
 sources:
   - id: openwiki-source-8bdd8b6031ea08044f515d8c
     resource: repo://.agents/skills/submit-integration/SKILL.md
+  - id: openwiki-source-67b847f2c6d57526390e4981
+    resource: repo://.github/workflows/check-integration-repos.yml
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
   - id: openwiki-source-1ca506cf29eca9b87a087220
@@ -21,6 +23,8 @@ sources:
     resource: repo://packages.yml
   - id: openwiki-source-0539c4d1a36abb10d1ed2fa9
     resource: repo://pipeline/tools/partner_pkg_table.py
+  - id: openwiki-source-bbd7fe20e2563e842ee80a78
+    resource: repo://scripts/check_integration_repos.py
   - id: openwiki-source-0d19fa2f26e6485d05a6b929
     resource: repo://scripts/data/integration_external_docs.yaml
   - id: openwiki-source-250d64a0be85992104c0f95b
@@ -41,7 +45,7 @@ sources:
     resource: repo://src/oss/python/integrations/providers/all_providers.mdx
   - id: openwiki-source-7be0fdefc402d868b9f2fdca
     resource: repo://tests/unit_tests/test_refresh_integration_downloads.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-20T08:20:37.912Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-21T08:20:13.723Z" }
 ---
 
 # Integration Listing Automation
@@ -151,6 +155,60 @@ This shows the privilege boundary: generation has read-only contents permission,
 The artifact handoff is intentionally narrow: only `packages.yml`, the Python provider overview, and generated `*-downloads.mdx` and `*-featured.mdx` snippets reach the write-capable job. It exits when those tracked paths have no diff; otherwise it creates a timestamped `chore/update-package-downloads-…` branch, opens a PR, and enables squash auto-merge.
 
 The same run flags external integrations at the 50,000-download threshold for hosted-doc follow-up. The flagger accepts `--threshold`; it is a dry run unless both `LINEAR_API_KEY` and `LINEAR_TEAM_KEY` are configured. Before it creates a Linear issue, it searches a stable title fragment that excludes the changing download count, avoiding duplicate open work.
+
+## Third-party repository-health scan
+
+The independent **Check integration repos** workflow runs at 09:15 UTC on Monday or by manual dispatch. It has write and pull-request permissions because its output can repair or remove records, unlike the read-only generation stage of the download refresh. It runs `scripts/check_integration_repos.py --write --evidence "$RUNNER_TEMP/evidence.md"`; the evidence report is both appended to the Actions job summary and used as the eventual draft PR body.
+
+The scan deliberately considers only a package's `packages.yml` `repo` field as the health target. It skips every `langchain-ai/*` first-party repository rather than attempting to repair or delist it. Empty or malformed repository values, request failures, and uncertain live alternatives are **attention**, not destructive changes. The scanner preserves YAML quoting and tolerates duplicate YAML keys so a bad merge does not prevent the scheduled scan from reporting other findings.
+
+### Evidence and dispositions
+
+For a third-party GitHub `owner/repo`, a reachable GitHub response is **ok**. When it is missing, the scanner gathers candidate evidence from PyPI `project_urls` and home page, the npm `repository` field when the package declares `js`, and external-listing `docs_url` entries associated with either the PyPI or npm package name. It deduplicates candidates before choosing a disposition.
+
+```mermaid
+flowchart TD
+    Start["Third-party packages.yml repo"] --> First{"langchain-ai owner"}
+    First -- Yes --> Skip["Skip first-party package"]
+    First -- No --> Live{"Recorded GitHub repo reachable"}
+    Live -- Yes --> Good["Keep record"]
+    Live -- No --> Evidence["Check PyPI npm and external docs"]
+    Evidence --> Alternate{"Live third-party GitHub alternate"}
+    Alternate -- Yes --> Repair["Repair repo and matching links"]
+    Alternate -- No --> Preserve{"Live GitLab or partner docs"}
+    Preserve -- Yes --> Attention["Report for maintainer attention"]
+    Preserve -- No --> Delist["Coordinate full delist in draft PR"]
+```
+
+This is the decision boundary for a dead third-party GitHub repository; a missing GitHub page alone is never sufficient to delist a package.
+
+| Outcome | Condition | Mutation |
+| --- | --- | --- |
+| Safe repair | A different live third-party GitHub repository is corroborated by PyPI, npm, or external docs; this also covers a live normalized `owner//repo` typo. | Update `packages.yml` `repo` and replace matching GitHub URLs in the Python provider cards and generated download snippets. The checker never auto-retargets to `langchain-ai/*`. |
+| Permanent URL repair | A unique external `docs_url` completes an HTTP 301 or 308 redirect to a different non-registry HTTP(S) URL. Temporary 302/307 redirects are ignored. | Update the external YAML `docs_url` and matching href text in the Python provider cards and generated download snippets. |
+| Attention | The GitHub repo is gone but a live GitLab project, live partner documentation/home page, or only a first-party GitHub alternate remains; malformed/missing repo data and request errors also land here. Registry pages and the known dead GitHub URL do not count as a partner-docs home. | No listing change; the evidence report identifies it for maintainer review. |
+| Full delist | No live third-party GitHub, GitLab, or partner-docs alternate can be found. | Remove the package and related listing surfaces together, but only in the reviewed draft PR. |
+
+Permanent redirects and verified alternate homes therefore have distinct handling: a 301/308 repairs the listing URL itself, while a live GitLab or partner site prevents automatic delisting but does not silently rewrite `repo`. A verified third-party GitHub replacement is the only alternate that auto-repairs the GitHub repository field.
+
+### Coordinated delist and listing invariants
+
+A full delist removes the package from `packages.yml`, external YAML rows whose `pypi` or `npm` matches the removed package, and Markdown rows in every `src/snippets/oss/*-downloads.mdx` that reference its PyPI, Pepy, npm, or dead-GitHub marker. It also removes a matching card from the **Python** `all_providers.mdx` catalog only if no remaining package has the same normalized provider key (`name_short`). This avoids removing a shared provider card when another package still represents that provider. Repo and permanent-docs repairs similarly rewrite matching Python cards and download-table URLs, keeping authored listing links and current generated snippets aligned.
+
+The script scans external documentation URLs separately from package findings, so a permanent redirect can be repaired even if no package repository needs a change. It prints its Markdown evidence on every run. With no actionable repo repair, delist, or docs redirect it exits successfully without mutations; without `--write` it reports the proposed summary and explicitly remains a dry run.
+
+### Draft PR lifecycle and operation
+
+Destructive changes remain reviewable. When the workflow detects a working-tree diff, it snapshots only changed paths, restores a clean checkout, then either checks out the existing open `chore/dead-integration-repos` branch or creates it from `main`. It reapplies the snapshot, commits, and creates or updates one **draft** PR titled `chore: fix or delist integrations with dead GitHub repos`. Later scans append commits to that same open PR and replace its body with fresh evidence; they do not auto-merge it. If no diff remains after restoration, no commit or PR is created.
+
+Run a local inspection first, then opt into mutations only after reviewing the evidence:
+
+```bash
+uv run python scripts/check_integration_repos.py
+uv run python scripts/check_integration_repos.py --write --evidence /tmp/evidence.md
+```
+
+Review every proposed full delist, the candidate source noted in the evidence, all coordinated files, and regenerated-table implications before merging the draft. The health checker directly edits existing snippets to keep the listing consistent at removal time; subsequently running the normal generators is the safe way to verify that metadata-derived output remains stable.
 
 ## External contribution and issue intake policy
 

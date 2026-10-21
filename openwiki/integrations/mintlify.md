@@ -34,15 +34,15 @@ sources:
     resource: repo://src/docs.json
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-20T08:20:37.912Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-21T08:20:13.723Z" }
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-20T08:20:37.912Z
+    at: 2026-10-21T08:20:13.723Z
 ---
 
 # Mintlify Integration and Link Validation
 
-Mintlify renders the generated documentation tree from `/build/` for [docs.langchain.com](https://docs.langchain.com). The repository owns content in `src/`, the builder, and the reproducible handoff; Mintlify owns serving, rendering behavior, and deployment-generated artifacts. Edit `src/` and `/src/docs.json`, never `/build/`, a preview branch, or an endpoint page Mintlify creates from an OpenAPI input.
+Mintlify renders the generated documentation tree from `/build/` for [docs.langchain.com](https://docs.langchain.com). The repository owns content in `src/`, the builder, and the reproducible handoff; Mintlify owns serving, rendering behavior, and deployment-generated artifacts. Edit `src/` and `/src/docs.json`, never `/build/`, a preview branch, or an endpoint page Mintlify creates from an OpenAPI input. A full builder run deletes and recreates `build/` before producing its language-specific, language-agnostic, and shared output, so that directory has no durable authoring state.
 
 ```mermaid
 flowchart TD

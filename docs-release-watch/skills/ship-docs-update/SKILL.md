@@ -52,7 +52,7 @@ Each item needs `path` plus `symbol` or `quote`. Empty evidence is rejected.
 3. Create the draft PR with `create_draft_docs_pr`:
    - Branch: `docs/<product>-<version>-<feature-slug>`
    - Title matches the issue scope
-   - Body links the Linear issue URL and names the triggering release
+   - Body must include a `## Linear` section with `Closes [DOC-N](<issue url>)` (markdown hyperlink). A GitHub Action syncs Linear status from that line (draft open → In Progress, ready for review → In Review, merged → Done, closed unmerged → Canceled), so the `Closes DOC-N` link is required.
    - Pass the same `evidence_json`
    - Pass `product` so language-fence validation uses the registry scope (`python` / `js` / `shared`)
    - `files_json` is a JSON array of `{ "path": "...", "old_content": "...", "new_content": "..." }`
@@ -68,7 +68,7 @@ Each item needs `path` plus `symbol` or `quote`. Empty evidence is rejected.
 - Triggered by <product> <release tag>
 
 ## Linear
-<issue url>
+Closes [DOC-<number>](<issue url>)
 
 ## Source evidence
 - Repo: `<owner>/<repo>`
