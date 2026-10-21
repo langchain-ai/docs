@@ -171,34 +171,23 @@ If backups are present, copy them to external storage (for example, S3), then cl
 
 ## SmithDB retention cleanup
 
-Retention cleanup removes [SmithDB](/langsmith/self-host-smithdb) run segments once every run in them has expired, which reclaims the metastore and object storage space they still occupy. A cleanup buffer keeps those segments for a set time past the retention period before cleanup removes them.
+To prevent file bloat, [SmithDB](/langsmith/self-host-smithdb) retention cleanup removes the files of run segments whose runs have all expired once they pass the `longlived` retention period (see [TTL configuration precedence](#ttl-configuration-precedence)). This limits how long stats remain available past that period.
 
 <Note>
-SmithDB retention cleanup requires LangSmith 0.18 (Helm chart `0.18.0` or later). Earlier releases do not include core segment cleanup, so these settings have no effect on them.
+Retention cleanup runs on LangSmith 0.18 (Helm chart `0.18.0`) and later. Earlier releases do not include core segment cleanup.
 </Note>
 
-Retention cleanup is off by default. When it is on, SmithDB compaction soft deletes a fully expired segment once its most recently inserted run is older than the `longlived` retention period plus the buffer. Segment cleanup and object garbage collection then remove the segment's metadata and files. The `longlived` period resolves as described in [TTL configuration precedence](#ttl-configuration-precedence).
+To keep stats available longer, set `SMITHDB_COMPACTION__EXPIRY_CYCLE__RETENTION_CLEANUP_BUFFER`. Cleanup adds the buffer to the `longlived` period before it removes files. The buffer accepts a duration such as `30d` or `720h`, up to 36,500 days, and defaults to `0s`.
 
-Two environment variables on the SmithDB compaction service control cleanup:
-
-- **`SMITHDB_COMPACTION__EXPIRY_CYCLE__RETENTION_CLEANUP_ENABLED`**: Set to `true` to turn on retention cleanup. Defaults to `false`.
-- **`SMITHDB_COMPACTION__EXPIRY_CYCLE__RETENTION_CLEANUP_BUFFER`**: Extra time past the `longlived` retention period before a fully expired segment can be cleaned up. Accepts a duration such as `30d` or `720h`, up to 36,500 days. Defaults to `0s`, which makes a segment eligible as soon as the retention period ends.
-
-For example, with the default 400-day `longlived` period and a `30d` buffer, a fully expired segment becomes eligible for cleanup 430 days after its most recent run was inserted.
-
-To turn on retention cleanup with a buffer, set both variables on the compaction deployment:
+For example, with the default 400-day `longlived` period and a `30d` buffer, a segment becomes eligible for cleanup 430 days after its most recent run was inserted.
 
 ```yaml Helm
 smithdb:
   compaction:
     deployment:
       extraEnv:
-        - name: SMITHDB_COMPACTION__EXPIRY_CYCLE__RETENTION_CLEANUP_ENABLED
-          value: "true"
         - name: SMITHDB_COMPACTION__EXPIRY_CYCLE__RETENTION_CLEANUP_BUFFER
           value: "30d"
 ```
 
-If SmithDB runs as a single `smithdb all` pod (see [Choose a deployment mode](/langsmith/self-host-smithdb-scale#choose-a-deployment-mode)), set the same variables under `smithdb.single.deployment.extraEnv` instead.
-
-To track cleanup progress, watch the `compaction_retention_segments_deleted` counter, which counts the fully expired segments that retention cleanup has soft deleted. For the other metrics to watch on each SmithDB component, see the [SmithDB metrics reference](/langsmith/self-host-smithdb-metrics).
+For a single-pod SmithDB deployment, set the variable under `smithdb.single.deployment.extraEnv` instead.
