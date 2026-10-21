@@ -35,6 +35,33 @@ module "byoiam" {
 }
 ```
 
+### Use custom IAM names
+
+By default, the module names its resources with a `byoc-smith-` prefix. If your organization enforces an IAM naming convention, such as a mandatory prefix, override the names with these inputs:
+
+- **`role_names`**: A map of custom role names, keyed by role purpose. The keys match the module's `role_names` output, such as `eks-cluster-role` or `workload-iam-role`. Roles you omit keep their default names.
+- **`karpenter_instance_profile_name`**: A custom name for the Karpenter node instance profile.
+- **`karpenter_controller_policy_name`**: A custom name for the Karpenter controller policy.
+
+Each role name must be unique and at most 64 characters.
+
+```hcl
+module "byoiam" {
+  source = "github.com/langchain-ai/terraform//modules/byoc/aws/byoiam?ref=main"
+
+  regions                  = ["us-east-1"]
+  permissions_boundary_arn = "arn:aws:iam::<account-id>:policy/<boundary>"
+  role_names = {
+    eks-cluster-role        = "ACME-langsmith-eks-cluster"
+    postgres-setup-iam-role = "ACME-langsmith-postgres-setup"
+  }
+  karpenter_instance_profile_name  = "ACME-langsmith-karpenter-node"
+  karpenter_controller_policy_name = "ACME-langsmith-karpenter-controller"
+}
+```
+
+Retain the `role_names` and `karpenter_instance_profile_name` outputs. You enter them when you [create the data plane](#deploy-the-data-plane-with-existing-roles).
+
 ## Remove IAM management permissions from the provisioning role
 
 The [`langsmith-byoc-role` Terraform module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/aws/langsmith-byoc-role) creates the cross-account role LangChain assumes to manage your data plane.
@@ -43,7 +70,21 @@ After creating the IAM resources, configure the provisioning role:
 
 1. Copy the external ID using the button next to the **Data Planes** header in **Settings > Data Planes**. Pass it to the role module as `external_id`. The role's trust policy must use this value in its `ExternalId` condition.
 2. Set `allow_iam_management_permissions = false` in your `langsmith-byoc-role` module configuration.
-3. Review and apply the Terraform changes. Retain the `crossplane_role_arn` output for data plane creation.
+3. Pass the `byoiam` module outputs to the role module, as shown in the following snippet.
+4. Review and apply the Terraform changes. Retain the `crossplane_role_arn` output for data plane creation.
+
+```hcl
+byoiam_role_arns                       = values(module.byoiam.role_arns)
+byoiam_instance_profile_name           = module.byoiam.karpenter_instance_profile_name
+byoiam_karpenter_controller_policy_arn = module.byoiam.karpenter_controller_policy_arn
+```
+
+The provisioning role's default permissions match only the default `byoc-smith-` names. With [custom IAM names](#use-custom-iam-names), these inputs are required. They grant read and `iam:PassRole` access on the exact ARNs. With default names, they are redundant but harmless.
+
+The role module also accepts naming and boundary inputs:
+
+- **`break_glass_role_name`**: A custom name for the break-glass role. The default is `LangSmithBYOCBreakGlass`. If you change it, share the `break_glass_role_arn` output with LangChain.
+- **`permissions_boundary_arn`**: A permissions boundary for the provisioning and break-glass roles. Confirm that the boundary allows the actions in the module's policies.
 
 Setting `allow_iam_management_permissions = false` changes the role's permissions:
 
@@ -67,7 +108,9 @@ To deploy the data plane:
 1. Go to **Settings > Data Planes** and create a data plane.
 2. Supply the name, AWS region, network configuration, and load balancer access described in [BYOC onboarding](/langsmith/byoc-onboarding). Choose a region included in the module's `regions` input.
 3. Use the provisioning role's `crossplane_role_arn` output for the **AWS IAM role ARN**.
-4. Select **Use existing IAM roles** before submitting the request.
+4. Select **Use existing IAM roles**.
+5. If you set [custom IAM names](#use-custom-iam-names), enter the `role_names` and `karpenter_instance_profile_name` outputs from the `byoiam` module.
+6. Submit the request.
 
 Continue with provisioning and private connectivity in the onboarding guide.
 
