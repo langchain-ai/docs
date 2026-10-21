@@ -5,10 +5,12 @@ description: Maps the documentation sources, build pipeline, automation, tests, 
 tags: [documentation, build, automation, repository]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-20T08:20:37.912Z
+    at: 2026-10-21T08:20:13.723Z
 sources:
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
+  - id: openwiki-source-67b847f2c6d57526390e4981
+    resource: repo://.github/workflows/check-integration-repos.yml
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
   - id: openwiki-source-f2608d0d515da097485b6ec5
@@ -43,6 +45,8 @@ sources:
     resource: repo://pyproject.toml
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
+  - id: openwiki-source-bbd7fe20e2563e842ee80a78
+    resource: repo://scripts/check_integration_repos.py
   - id: openwiki-source-fd0cb9d6fca56bf4963559e9
     resource: repo://scripts/extract_code_snippets.py
   - id: openwiki-source-560bf24db9566b97ee19e383
@@ -53,7 +57,7 @@ sources:
     resource: repo://src/docs.json
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-20T08:20:37.912Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-21T08:20:13.723Z" }
 ---
 
 This repository produces the Mintlify site at `docs.langchain.com`; it does not produce the separate API-reference site at `reference.langchain.com`. The durable documentation inputs live primarily under `src/`. `build/` is a disposable deployment artifact: the builder removes and recreates it, and Mintlify deploys from it. Never edit `build/`; change its owning source and regenerate it.
@@ -81,7 +85,7 @@ This shows the publication boundary: authored content and configuration are tran
 | Site identity, navigation, redirects, and deployed OpenAPI sections | `src/docs.json` | Reader-visible menus, route compatibility, and API-reference declarations | Add or move a page with its explicit navigation and redirects. |
 | Route layout and source transformation | `pipeline/` | Language-specific and unversioned build routes; preprocessed MDX | Change routing or preprocessing with focused pipeline tests. |
 | Contributor commands | `Makefile`, `pyproject.toml` | `make` tasks and the installed `docs` CLI | Keep command wrappers aligned with the Python pipeline. |
-| Package catalogue and generated integration displays | `packages.yml`, generators in `pipeline/tools/` and `scripts/` | Provider overview and integration-download snippets | Change metadata or generator, then regenerate; do not hand-edit generated files. |
+| Package catalogue, generated integration displays, and repository liveness | `packages.yml`, generators in `pipeline/tools/` and `scripts/`, scheduled integration check | Provider overview, integration-download snippets, and repair or delist PRs | Change metadata or generator, then regenerate; let the liveness automation make its scoped repairs rather than hand-editing its derived listings. |
 | Release-driven docs maintenance agent | `docs-release-watch/` | Draft PRs and Linear tickets for eligible product releases | Maintain its product registry, skills, schedules, and tools as one deployed project. |
 | Verification and publication | `tests/`, `.github/workflows/` | Unit tests, link checks, generated-file checks, and production publication | Choose the workflow that owns the invariant rather than treating CI as one monolith. |
 
@@ -120,6 +124,8 @@ For verification, use the generated site rather than raw `src/`: `make broken-li
 
 The weekly package-download workflow refreshes download metadata, regenerates the provider overview and integration download snippets, uploads those outputs between jobs, and opens an automated PR only when the tracked files differ. This means download numbers and derived tables are a coordinated update, not independent documentation edits.
 
+A separate Monday liveness workflow scans third-party GitHub homes recorded in `packages.yml`. When a home is gone, the checker can adopt a live third-party GitHub replacement evidenced by PyPI, npm, or external documentation, and it can update permanent external-documentation redirects. It does not auto-adopt a first-party replacement or delist an integration with a live GitLab project or partner documentation; it fully delists only when no live source-control or partner-docs home remains, removing related external-listing rows and unshared provider cards. The workflow runs with `--write`, reports its evidence, and creates or appends to one standing draft PR on `chore/dead-integration-repos` only when the working tree changed.
+
 ## Automation projects and CI entrypoints
 
 `docs-release-watch/` is a nested Managed Deep Agent project, operationally separate from the documentation build. Its registry maps each watched product to release tags, source paths, documentation paths, language scope, skill, and persistent tracking location. On its Monday, Wednesday, and Friday schedules it considers eligible releases from seven to thirty days old. A read-only research subagent establishes release-diff and source evidence and checks existing coverage before the shipping agent may create one Linear ticket and one draft PR per feature. Credentials stay in ignored environment configuration and memory retains tracking URLs rather than secrets.
@@ -132,7 +138,7 @@ The primary repository CI entrypoint is `.github/workflows/ci.yml`, which invoke
 2. **Route or language behavior:** change `pipeline/`, retain source-tree safety, and extend focused `tests/unit_tests/` coverage before rebuilding.
 3. **Reusable prose or UI:** change `src/snippets/`; use the language-aware import behavior rather than maintaining copied fragments.
 4. **Runnable example:** edit and test `src/code-samples/`, run `make code-snippets`, and commit the regenerated snippet MDX—not the ignored extraction intermediate.
-5. **Package listing or download display:** change `packages.yml` or the responsible generator and regenerate the corresponding overview/snippets.
+5. **Package listing or download display:** change `packages.yml` or the responsible generator and regenerate the corresponding overview/snippets. For a stale third-party repository, use the integration-repository checker’s policy and review its draft PR rather than applying an unscoped listing edit.
 6. **OpenAPI endpoint reference:** change the declaration or specification pipeline; never create endpoint MDX for deployment-generated pages.
 7. **Validation or deployment behavior:** locate the workflow that invokes the relevant `make` target. Preserve the distinction between CI validation and the `main`-to-`prod` publication path.
 

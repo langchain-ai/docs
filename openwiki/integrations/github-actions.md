@@ -1,11 +1,11 @@
 ---
 type: CI automation and trust boundaries
 title: GitHub Actions and CI Automation
-description: Describes repository CI, event trust boundaries, and review-gated GitHub Actions writers. Covers maintainer-gated integration submissions, weekly changelog proposals, credentials, concurrency, and human review.
+description: Describes repository CI, event trust boundaries, review-gated GitHub Actions writers, and scheduled metadata maintenance. Covers integration-repository liveness scanning, generated evidence, standing PRs, and relationships among metadata generators.
 tags: [github-actions, ci, automation, security, testing]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-20T08:20:37.912Z
+    at: 2026-10-21T08:20:13.723Z
 sources:
   - id: openwiki-source-1e075575622e1a77a3dc46e6
     resource: repo://.github/pull_request_template.md
@@ -17,6 +17,8 @@ sources:
     resource: repo://.github/workflows/_test.yml
   - id: openwiki-source-5e9ca8e4c3cab7d91998bc9e
     resource: repo://.github/workflows/changelog-weekly.yml
+  - id: openwiki-source-67b847f2c6d57526390e4981
+    resource: repo://.github/workflows/check-integration-repos.yml
   - id: openwiki-source-75c7744a0e664440f0552945
     resource: repo://.github/workflows/check-onboarding-models.yml
   - id: openwiki-source-164e2da859b5277df81c7d94
@@ -37,11 +39,13 @@ sources:
     resource: repo://docs-release-watch/instructions.md
   - id: openwiki-source-12c8fb32a02de9dce773720f
     resource: repo://docs-release-watch/README.md
+  - id: openwiki-source-bbd7fe20e2563e842ee80a78
+    resource: repo://scripts/check_integration_repos.py
   - id: openwiki-source-819e9af046c9d9b8116a3da7
     resource: repo://scripts/check_onboarding_models.py
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-20T08:20:37.912Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-21T08:20:13.723Z" }
 ---
 
 ## Trust boundaries
@@ -152,6 +156,34 @@ The workflow keeps its private pipeline report out of public repository surfaces
 `update-package-downloads.yml` runs Sundays at 23:59 UTC or manually. Its first job is read-only: it refreshes package counts only when their download timestamp is older than 24 hours, regenerates provider and integration download surfaces, and hands candidate files to a second job in a one-day artifact. The second job alone has contents and pull-request write permission; it exits successfully on no candidate diff or creates a timestamped PR and enables squash auto-merge when there is one.
 
 Hosted-documentation candidate detection creates Linear issues only when both the required issue-service credential and team configuration are available; otherwise it deliberately detects candidates in dry-run mode. It uses the default 50,000 monthly-download threshold and does not create a duplicate while a matching Linear issue remains open.
+
+### Weekly integration-repository liveness scan
+
+`check-integration-repos.yml` runs Mondays at 09:15 UTC or by manual dispatch. It is a trusted scheduled writer with a 45-minute limit and only `contents: write` and `pull-requests: write` permissions. It checks out shallow history, installs Python 3.13 through the repository uv action, then runs `scripts/check_integration_repos.py --write --evidence "$RUNNER_TEMP/evidence.md"` with the workflow token. The token is used at the external-network boundary for authenticated GitHub API repository checks; the checker also makes outbound requests to GitHub, PyPI, npm, GitLab, and partner documentation URLs. Its inputs are external metadata and remote HTTP results, so a successful scan is a proposed maintenance change, not an authorization to remove a listing from the published catalogue.
+
+The checker skips `langchain-ai/*` package homes. For a dead third-party GitHub `repo`, it can normalize a live malformed slug or adopt a different live **third-party** GitHub home evidenced by PyPI project URLs, the npm repository field, or existing external `docs_url` metadata. It also updates external documentation URLs only for permanent HTTP `301` or `308` redirects. A live GitLab project, live partner documentation/homepage, invalid or missing repository metadata, request failure, or first-party replacement is reported as attention rather than delisted. Only when no live GitHub, GitLab, or partner-docs alternative is found does it propose a full delist.
+
+A write-mode delist removes the package from `packages.yml`, matching external-listing rows, generated download-table rows, and an `all_providers.mdx` card only if no remaining package shares its normalized provider key. Repository and permanent-redirect fixes are also propagated to matching listing links. The script always renders a Markdown evidence report: applied renames, URL redirects, proposed full delists, unchanged attention cases, and errors. The workflow appends that report to the job summary and uses it as the PR body, so reviewers have the observed basis and exceptions beside the proposed diff.
+
+```mermaid
+flowchart TD
+  Trigger["Monday schedule or manual dispatch"] --> Scan["Scan packages and external metadata"]
+  Scan --> Check["Check repository and docs homes"]
+  Check --> Decision{"Disposition"}
+  Decision -->|"live or attention"| Evidence["Record evidence without mutation"]
+  Decision -->|"fix or delist"| Write["Apply scoped metadata and listing changes"]
+  Evidence --> Changed{"Working tree changed"}
+  Write --> Changed
+  Changed -->|"no"| Stop["Exit without a PR"]
+  Changed -->|"yes"| Branch["Restore changes on standing branch"]
+  Branch --> Draft["Create or append draft review PR"]
+```
+
+*The liveness scan records evidence for every actionable decision, but only a changed working tree reaches the single standing draft PR.*
+
+The workflow first snapshots changed files, restores a clean tree, then either checks out the open `chore/dead-integration-repos` branch or creates it from the initial checkout. It reapplies the snapshot, exits if no diff remains, and commits all resulting files. An existing open PR receives an appended commit and refreshed evidence body; otherwise the workflow force-pushes the unreferenced standing branch and creates a draft PR against `main`. It does **not** enable auto-merge. Maintainers must review evidence and every removal, especially delists, before marking the PR ready and merging. Use a dry run without `--write` to inspect the report when changing classification policy, and review focused generator validation for any touched metadata surface.
+
+This scan complements rather than replaces `update-package-downloads.yml`. The download workflow refreshes counts and regenerates derived tables on its artifact-mediated path; the liveness workflow repairs or removes stale package/listing metadata and may edit generated table rows only as part of a delist. After either workflow changes shared integration metadata, review the affected provider overview and snippets and retain CI's generated-overview check. See [Integration Listing Automation](/openwiki/workflows/integration-listing-automation.md) for source ownership and generator behavior, and [LangSmith OpenAPI Refresh](/openwiki/workflows/langsmith-openapi-refresh.md) for the analogous single-standing-PR pattern for a different generated artifact.
 
 `openwiki-update.yml` runs daily at 08:00 UTC and can be dispatched manually. It performs a full-history checkout so `openwiki code --update` can compare the current revision with the revision it last documented. Repository-scoped provider, source-connector, and optional tracing credentials are supplied only to the generator; the PR creation step is restricted to `openwiki`, `AGENTS.md`, and its own workflow file on the fixed `openwiki/update` branch. Review the resulting `docs: update OpenWiki` PR like any other generated change.
 
