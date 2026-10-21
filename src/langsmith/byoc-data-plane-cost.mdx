@@ -1,7 +1,7 @@
 ---
 title: AWS data plane cost estimate
 sidebarTitle: Cost estimate
-description: Rough AWS cost of a LangSmith BYOC data plane, with a ClickHouse footprint and SmithDB node, metastore, and storage estimates.
+description: Rough AWS cost of a LangSmith BYOC data plane running SmithDB, with a legacy estimate for data planes created with ClickHouse.
 icon: brand-aws
 ---
 
@@ -16,27 +16,11 @@ Scaling capacity for any resource can be lowered when required, as long as the d
 </Note>
 
 <Tabs>
-  <Tab title="ClickHouse">
-    ClickHouse can also run as a single node instead of a replicated cluster. That lowers monthly cost but reduces fault tolerance.
-
-    | Area | Rough monthly estimate | Notes |
-    | --- | --- | --- |
-    | RDS PostgreSQL | \$100–\$150 | `db.t4g.medium`, Multi-AZ, 50 GB starting storage. |
-    | ElastiCache Redis | \$140–\$280 | Lower end without read replicas. Higher end if read replicas are enabled. |
-    | EKS control plane | ~\$75 | One EKS cluster at standard hourly pricing. |
-    | System node group | ~\$210 | 3 `m6i.large` on-demand nodes. |
-    | Application, ClickHouse, and ZooKeeper worker nodes | \$1,000–\$1,500 | LangSmith pods and ClickHouse pods. |
-    | EBS volumes | \$200–\$350 | ClickHouse, ZooKeeper, node volumes, and gp3 performance settings. |
-    | Networking | \$150–\$300 | NAT gateways, load balancers, PrivateLink or VPC endpoints, and low-volume data processing. |
-    | S3, Secrets Manager, CloudWatch | \$50–\$200 | Low-volume baseline. Grows with trace payloads, logs, and retention. |
-
-    Estimated monthly total: **\$1,925–\$3,065**
-  </Tab>
   <Tab title="SmithDB">
-    By default, SmithDB runs the Small tier from [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale): about 10 runs per second and 10 queries per second. LangSmith increases that tier as tracing volume requires it.
+    New data planes run SmithDB only, with no ClickHouse or ZooKeeper. By default, SmithDB runs the Small tier from [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale): about 10 runs per second and 10 queries per second. LangSmith increases that tier as tracing volume requires it.
 
     <Warning>
-    After the SmithDB migration, ClickHouse and ZooKeeper are scaled down. If cost is a concern, ClickHouse can be turned off. That lowers monthly cost but reduces reliability, because there is no ClickHouse fallback.
+    On data planes created with ClickHouse, ClickHouse and ZooKeeper are scaled down after the SmithDB migration. If cost is a concern, ClickHouse can be turned off. That lowers monthly cost but reduces reliability, because there is no ClickHouse fallback.
     </Warning>
 
     | Area | Rough monthly estimate | Notes |
@@ -45,8 +29,8 @@ Scaling capacity for any resource can be lowered when required, as long as the d
     | ElastiCache Redis | \$140–\$280 | Lower end without read replicas. Higher end if read replicas are enabled. |
     | EKS control plane | ~\$75 | One EKS cluster at standard hourly pricing. |
     | System node group | ~\$210 | 3 `m6i.large` on-demand nodes. |
-    | Application, ClickHouse, and ZooKeeper worker nodes | \$650 | Scaled down ClickHouse costs. |
-    | EBS volumes | \$200–\$350 | ClickHouse, ZooKeeper, node volumes, and gp3 performance settings. Lower once those volumes shrink. |
+    | Application, ClickHouse, and ZooKeeper worker nodes | \$650 | Scaled down ClickHouse costs on data planes created with ClickHouse. New data planes run no ClickHouse or ZooKeeper nodes. |
+    | EBS volumes | \$200–\$350 | Node volumes and gp3 performance settings, plus ClickHouse and ZooKeeper volumes on data planes created with ClickHouse. Lower once those volumes shrink. |
     | Networking | \$150–\$300 | NAT gateways, load balancers, PrivateLink or VPC endpoints, and low-volume data processing. |
     | S3, Secrets Manager, CloudWatch | \$50–\$200 | Low-volume baseline. Grows with trace payloads, logs, and retention. |
     | SmithDB compute | \$1,550 | 2 x `m7gd.4xlarge` across two availability zones, plus a 100 GiB gp3 boot volume on each node. |
@@ -63,8 +47,28 @@ Scaling capacity for any resource can be lowered when required, as long as the d
     | 50 KB | \$15 per year | \$368 per year |
     | 200 KB | \$52 per year | \$1,472 per year |
 
-    A [ClickHouse backfill](/langsmith/self-host-smithdb-migrate) needs an extra `m7gd.4xlarge` for the migration job at about **\$24 per day**. That cost stops when the backfill finishes (Job finishes in a few days depending on tracing volume).
+    On data planes created with ClickHouse, a [ClickHouse backfill](/langsmith/self-host-smithdb-migrate) needs an extra `m7gd.4xlarge` for the migration job at about **\$24 per day**. That cost stops when the backfill finishes (Job finishes in a few days depending on tracing volume).
 
     See [Prepare SmithDB supporting infrastructure](/langsmith/self-host-smithdb-infrastructure) for details of SmithDB infrastructure.
+  </Tab>
+  <Tab title="ClickHouse (deprecated)">
+    <Warning>
+    ClickHouse is deprecated, and support ends in LangSmith v0.19. New data planes run SmithDB only. This estimate applies to data planes created with ClickHouse that have not yet migrated to SmithDB.
+    </Warning>
+
+    ClickHouse can also run as a single node instead of a replicated cluster. That lowers monthly cost but reduces fault tolerance.
+
+    | Area | Rough monthly estimate | Notes |
+    | --- | --- | --- |
+    | RDS PostgreSQL | \$100–\$150 | `db.t4g.medium`, Multi-AZ, 50 GB starting storage. |
+    | ElastiCache Redis | \$140–\$280 | Lower end without read replicas. Higher end if read replicas are enabled. |
+    | EKS control plane | ~\$75 | One EKS cluster at standard hourly pricing. |
+    | System node group | ~\$210 | 3 `m6i.large` on-demand nodes. |
+    | Application, ClickHouse, and ZooKeeper worker nodes | \$1,000–\$1,500 | LangSmith pods and ClickHouse pods. |
+    | EBS volumes | \$200–\$350 | ClickHouse, ZooKeeper, node volumes, and gp3 performance settings. |
+    | Networking | \$150–\$300 | NAT gateways, load balancers, PrivateLink or VPC endpoints, and low-volume data processing. |
+    | S3, Secrets Manager, CloudWatch | \$50–\$200 | Low-volume baseline. Grows with trace payloads, logs, and retention. |
+
+    Estimated monthly total: **\$1,925–\$3,065**
   </Tab>
 </Tabs>
