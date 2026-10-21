@@ -3,9 +3,6 @@ type: integration boundary
 title: Reference Documentation Boundaries
 description: Separates the externally generated SDK API reference from this repository's Mintlify OpenAPI sections. Explains ownership, specification lifecycles, local validation boundaries, and filtered link-check results.
 tags: [api-reference, openapi, cross-references, mintlify, langsmith]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-20T08:20:37.912Z
 sources:
   - id: openwiki-source-759309714d08144a07e1b2e0
     resource: repo://.github/ISSUE_TEMPLATE/04-reference-docs.yml
@@ -44,6 +41,9 @@ sources:
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
 generated: { by: "openwiki/0.4.3", at: "2026-10-20T08:20:37.912Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-21T08:20:13.723Z
 ---
 
 # Reference Documentation Boundaries

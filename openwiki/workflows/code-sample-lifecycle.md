@@ -1,11 +1,11 @@
 ---
 type: documentation workflow
 title: Code Sample Lifecycle
-description: How maintained executable code samples are tested, extracted into MDX snippets, and optionally refreshed with public LangSmith trace links. Covers authoring rules, shared language dependencies, generation, and CI maintenance.
+description: How executable documentation samples are authored, run, extracted into MDX, and optionally refreshed with public LangSmith trace links. Covers shared dependencies, multi-language execution, generation, tracing, and CI maintenance.
 tags: [code-samples, documentation, mdx, testing, tracing, ci]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-20T08:20:37.912Z
+    at: 2026-10-21T08:20:13.723Z
 sources:
   - id: openwiki-source-ddbddbe474c8dc57119458d7
     resource: repo://.agents/skills/docs-code-samples/SKILL.md
@@ -35,7 +35,7 @@ sources:
     resource: repo://src/code-samples/package.json
   - id: openwiki-source-b68d7bad2afd9a38e8c331d5
     resource: repo://tests/unit_tests/test_generate_code_snippet_mdx.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-20T08:20:37.912Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-21T08:20:13.723Z" }
 ---
 
 ## Ownership and lifecycle
@@ -67,7 +67,7 @@ Prefer one source file for related snippets on a page, with shared helpers and t
 
 ## Execute samples and manage dependencies
 
-For a focused check, pass a space-separated explicit file list:
+For a focused live check, pass a space-separated explicit file list:
 
 ```bash
 make test-code-samples FILES="src/code-samples/deepagents/skills-tools-resolver.ts"
@@ -77,7 +77,7 @@ The runner warns and omits missing, unsupported, or out-of-tree `FILES` entries.
 
 It runs Python as `uv run python` from the repository; TypeScript as `npx tsx`, Go as `go run`, and shell as `bash` from `src/code-samples/`; Java and Kotlin run as single-file JBang scripts pinned to Java 21. Each child inherits the parent environment. The default timeout is 1,200 seconds and `CODE_SAMPLE_TIMEOUT_SECONDS` overrides it.
 
-Dependencies are owned at the shared language boundary, not per source example. Python uses the repository `uv` project. TypeScript uses `src/code-samples/package.json` and its committed lockfile; the Make targets install that package before TypeScript execution. Go runs from the same directory so `src/code-samples/go.mod` resolves shared Go dependencies. Update the relevant shared manifest and lockfile when changing a sample's dependency.
+Dependencies are owned at the shared language boundary, not per source example. Python uses the repository `uv` project. TypeScript uses `src/code-samples/package.json` and its committed lockfile; the Make targets install that package before TypeScript execution. The manifest declares the shared sample packages, including `deepagents`, and `tsx` is the TypeScript execution tool; the lockfile records the resolved graph. Go runs from the same directory so `src/code-samples/go.mod` resolves shared Go dependencies. Update the relevant shared manifest and lockfile when changing a sample's dependency.
 
 The runner uses four workers by default; `CODE_SAMPLE_JOBS` configures the count. Per-group locks serialize only the `evaluate-rag-` and `experiment-runs-query-` path families, protecting shared LangSmith fixtures while unrelated samples remain concurrent. A nonzero exit, missing executable, or timeout fails a sample. Recognized LangSmith rate limits instead receive up to five attempts by default, with a linear 30-second base delay capped at 120 seconds. `CODE_SAMPLE_RATE_LIMIT_ATTEMPTS` and `CODE_SAMPLE_RATE_LIMIT_DELAY_SECONDS` override that policy; an exhausted 429 is reported as skipped rather than failed.
 
@@ -98,6 +98,12 @@ A partial extraction replaces intermediates only for selected source stems. Rend
 The generator emits language fences and recognizes optional initial presentation directives: `:codegroup-tab:` supplies a Mintlify CodeGroup tab title and `:codegroup-fence-mods:` supplies fence modifiers. For eligible Python and TypeScript routable model strings, it expands the first eligible model ID and matching repeated occurrences into seven provider variants: Google, OpenAI, Anthropic, OpenRouter, Fireworks, Baseten, and Ollama. `KEEP MODEL` preserves the next model occurrence. Embedding model IDs and models passed to provider-specific embedding or chat constructors are deliberately excluded because substituting a `provider:model` value there would make the sample non-runnable.
 
 Provider syntax is language-specific. TypeScript examples use `google:` and `googleSearch`; Python examples use `google_genai:`. Generator tests reject incompatible Google spellings and require declared and resolved `@langchain/google` versions of at least 0.2.6, protecting Gemini examples that mix built-in and function tools.
+
+For generator logic or these TypeScript dependency invariants, run the deterministic focused test before regenerating output:
+
+```bash
+make test TEST_FILE=tests/unit_tests/test_generate_code_snippet_mdx.py
+```
 
 ## Optional public trace publication
 
@@ -140,11 +146,13 @@ The sample step continues after errors so trace refresh can proceed when failure
 3. Keep reader-visible code executable; use remove regions for fixtures, assertions, cleanup, and non-reader-facing harness code.
 4. Update the appropriate shared dependency manifest and lockfile with any dependency change.
 5. Run `make test-code-samples FILES="…"`, then run `make code-snippets`; use `CODE_SNIPPET_SOURCES` only for focused iteration.
-6. Review generated output, remembering that partial extraction leaves unrelated intermediates in place.
-7. Refresh traces only for an unambiguous single-snippet source and only with intended credentials and publication approval.
+6. Run `make test TEST_FILE=tests/unit_tests/test_generate_code_snippet_mdx.py` when changing rendering, Google provider conventions, or the shared TypeScript dependency floor.
+7. Review generated output, remembering that partial extraction leaves unrelated intermediates in place.
+8. Refresh traces only for an unambiguous single-snippet source and only with intended credentials and publication approval.
 
 ## Related pages
 
-- [NPM snippets](/openwiki/integrations/npm-snippets.md)
-- [Testing Overview](/openwiki/testing/test-overview.md)
+- [Repository Source Map](/openwiki/architecture/source-map.md)
+- [Local Tooling and Commands](/openwiki/operations/cli-tools.md)
+- [Testing and Validation Overview](/openwiki/testing/test-overview.md)
 - [Local development](/openwiki/workflows/local-development.md)

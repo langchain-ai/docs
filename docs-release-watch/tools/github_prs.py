@@ -223,8 +223,9 @@ async def create_draft_docs_pr(
 
     Args:
         title: Pull request title for one feature only.
-        body: Pull request body. Include the Linear issue URL. A Source
-            evidence section is appended from evidence_json when missing.
+        body: Pull request body. Include Closes [DOC-N](linear-url) under a
+            Linear heading so CI can sync status. A Source evidence section
+            is appended from evidence_json when missing.
         branch_name: New branch name to create from the base branch.
         files_json: JSON array of {path, old_content, new_content}.
             old_content must match the base branch exactly (empty string for
@@ -328,8 +329,5 @@ async def create_draft_docs_pr(
             "commit_sha": commit["sha"],
             "evidence": evidence,
             "evidence_verified": verification,
-            "edit_validation": edit_summary,
-            "language_scope": scope or "shared",
-            "product": product.strip() or None,
         }
     )
