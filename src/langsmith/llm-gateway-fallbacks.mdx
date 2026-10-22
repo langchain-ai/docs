@@ -7,7 +7,9 @@ import LLMGatewayBetaNote from '/snippets/langsmith/llm-gateway-beta-note.mdx';
 
 <LLMGatewayBetaNote />
 
-Model fallbacks retry a request against one or more backup models when the primary model returns a configured error, such as a rate limit or provider outage. Define the fallback order once in LangSmith, then continue using the standard LLM Gateway endpoint and model ID in your application.
+Model fallbacks in the LLM Gateway allow you to retry a request against one or more backup models when the primary model returns a configured error, such as a rate limit or provider outage.
+
+Define the fallback order once in LangSmith, and then continue using the standard LLM Gateway endpoint and model ID in your application.
 
 ## How it works
 
@@ -15,18 +17,23 @@ A fallback chain has:
 
 - **A primary model**: the provider and model that trigger the chain when a request fails.
 - **One to five fallbacks**: an ordered list of direct provider models or saved [model configurations](/langsmith/model-configurations).
-- **Triggers**: the upstream HTTP status codes that move the request to the next model. For example, use `429` for rate limits, or `500`, `502`, `503`, and `504` for provider errors.
+- **Triggers**: the HTTP status codes that move the request to the next model. The defaults cover common timeout, rate-limit, and server errors, such as `408`, `429`, `500`, and `503`. They do not include `424`, which the gateway returns when a model has no provider key in the workspace. Add `424` to let the chain skip a fallback without a key. A primary model without a key returns `424` without trying the chain.
+- **A first-output timeout**: how long each attempt can wait before the gateway moves to the next model. It is on by default at 120 seconds, and each attempt gets a fresh timer. Streaming requests wait for the first output, while non-streaming requests wait for response headers.
 
-For each request, the gateway:
+{/* VERIFY with Eng: primary-without-key behavior observed on dev 2026-10-22 (W9 D3), including after a delay. Confirm it is intended before GA. */}
 
-1. Calls the primary model selected by the request's provider-prefixed model ID.
-1. If the request fails with a configured trigger status or a transport error, loads the matching fallback chain.
-1. Calls each fallback in order until one succeeds, returns a status that does not trigger another fallback, or the chain is exhausted.
-1. Returns the final response in the API format used by the client.
+For each request:
+
+1. The gateway calls the primary model selected by the request's provider-prefixed model ID.
+1. If the request fails with a configured trigger status, times out, or hits a transport error, the gateway loads the matching fallback chain.
+1. The gateway calls each fallback in order until one succeeds, returns a status that does not trigger another fallback, or the chain is exhausted.
+1. The gateway returns the final response in the API format used by the client.
 
 Fallbacks can use a different provider and API format than the primary model. The gateway translates requests and responses between [supported API formats](/langsmith/llm-gateway-api-formats), so an Anthropic primary can fall back to an OpenAI model without client-side changes.
 
 Each attempt is traced and counted against [spend policies](/langsmith/llm-gateway-spend-policies) separately. A request that uses two fallbacks records three model calls: the primary attempt and two fallback attempts.
+
+{/* VERIFY: per-attempt traces for real (not simulated) fallbacks are untested. W9 D3 could not force a real primary failure, because a primary without a key does not enter the chain. */}
 
 ## Create a fallback chain
 
@@ -36,71 +43,49 @@ Creating and managing fallback chains requires `organization:gateway:manage` per
 
 To create a fallback chain:
 
-1. Go to **LLM Gateway** and select the **Model Fallbacks** tab.
+1. Go to **LLM Gateway**, and select the **Model Fallbacks** tab.
 1. Click **Create fallback chain**.
 1. Select the **Workspace** where the chain applies.
 1. Select the primary provider and model. Requests to this provider-prefixed model ID use the chain when the primary attempt fails.
 1. Under **Fallbacks**, add one to five backup models in the order the gateway should try them. Choose a provider and model directly, select an existing model configuration, or create a custom model configuration.
-1. Under **Configure fallback triggers (advanced)**, review the HTTP status codes that should trigger the next fallback. Add or remove status codes as needed.
+1. Under **Configure fallback triggers (advanced)**, review the HTTP status codes that trigger the next fallback. To add a status code, type it in the field, and select it from the list.
+1. (Optional) In the same section, adjust the **First output timeout per model (seconds)**, or turn off **Time to first output** to remove the timeout.
 1. Click **Create chain**.
 
+<Tip>
 A provider and model can have one fallback chain in each workspace. To change its behavior, edit the existing chain.
+</Tip>
 
 ## Make a call
 
-Call the standard LLM Gateway endpoint with the primary provider-prefixed model ID. You do not need a route-specific URL or additional request fields:
+Call the standard LLM Gateway endpoint with the primary model's provider-prefixed ID. You do not need a route-specific URL or additional request fields. This example uses the base URL and API key set in the [quickstart](/langsmith/llm-gateway-quickstart#send-a-request-from-your-code):
 
-<CodeGroup>
-
-```bash Cloud
-curl https://gateway.smith.langchain.com/v1/chat/completions \
+```bash
+curl "$LANGSMITH_GATEWAY_BASE_URL/chat/completions" \
     -H "Authorization: Bearer $LANGSMITH_API_KEY" \
     -H "Content-Type: application/json" \
-    -d '{"model":"anthropic/claude-opus-5","messages":[{"role":"user","content":"Hello!"}]}'
+    -d '{"model":"<PRIMARY_MODEL_ID>","messages":[{"role":"user","content":"Hello!"}]}'
 ```
 
-```bash BYOC
-curl https://<data_plane_host>/gateway/v1/chat/completions \
-    -H "Authorization: Bearer $LANGSMITH_API_KEY" \
-    -H "Content-Type: application/json" \
-    -d '{"model":"anthropic/claude-opus-5","messages":[{"role":"user","content":"Hello!"}]}'
-```
-
-</CodeGroup>
-
-The gateway applies the fallback chain configured for `anthropic/claude-opus-5` in the API key's workspace. If no chain matches, the gateway returns the primary model's response without attempting a fallback.
+The gateway applies the fallback chain configured for `<PRIMARY_MODEL_ID>` in the API key's workspace. If no chain matches, the gateway returns the primary model's response without attempting a fallback.
 
 ## Test a chain in the Simulator
 
-The Simulator sends a real request through a fallback chain while simulating how each model in the chain behaves, so you can check the chain's routing and added latency before a provider fails in production.
+The Simulator sends a request through a fallback chain while simulating how each model in the chain behaves, so you can check the chain's routing and added latency before a provider fails in production.
 
 To test a chain:
 
-1. Go to **LLM Gateway** and select the **Model Fallbacks** tab.
-1. On the chain's row, click **Open in Simulator**. The **Simulator** tab opens with the chain's primary model selected. The link appears only on enabled chains whose primary is a provider model, not a model configuration.
-1. Under **Simulate provider behaviour**, choose a behavior for each model in the chain:
-    - **Healthy**: the model responds normally.
-    - **Timeout**: the model times out after 5 seconds, or sooner if the chain's own timeout is shorter.
-    - **Rate limit**: the model returns `429`.
-    - **Outage**: the model returns `503`.
+1. Go to **LLM Gateway**, and select the **Model Fallbacks** tab.
+1. On the chain's row, click **Open in Simulator →**.
+1. Under **Simulate provider behaviour**, choose a behavior for each model in the chain (Healthy, Timeout, Rate limit, or Outage).
 1. Click **Run request**.
 
-The results list each attempt with its outcome and duration, followed by the number of **Fallback hops**, the **Latency added** by failed attempts, and the **Tokens** used. The response shows which model served the request.
+The results show which model served the request, then list each attempt with its status and duration. Below the attempts are the number of **Fallback hops**, the **Latency added** by failed attempts, and the request's total **Tokens**. **View trace** opens the trace of the attempt that served the request.
 
 Keep the following in mind when testing:
 
-- **Healthy attempts are real requests.** The provider bills them like any other call, and spend policies count them.
-- **Simulated failures cost no tokens.** To approximate network latency, the gateway calls a provider endpoint that does not generate tokens.
-- **Errors outside the simulation still surface.** If a model in the chain has no provider key in the workspace, its attempt returns `424`, as it would in production.
-- **Only some requests are simulated.** Simulation covers non-streaming requests on LangSmith Cloud. System One, Decisions, and ScaleDown requests have no fallback chain to simulate.
-
-{/* VERIFY W9: walk all four behaviors; confirm Outage returns 503 and Rate limit 429 in the attempt labels, and the "Fallback hops", "Latency added", "Tokens" labels (GatewaySimulationResults.tsx). Cloud-only and non-streaming come from the PM audit (F1), not re-read here. */}
-
-### Fall back when a provider key is missing
-
-A missing provider key returns `424`, which is not one of the default trigger statuses. To let a chain skip a provider that has no key in the workspace, edit the chain, add `424` under **Configure fallback triggers (advanced)**, and save it.
-
-{/* VERIFY W9: confirm the default trigger list in the chain editor (the recording adds 424 from "the different HTTP statuses that we will support fallbacks for"). */}
+- **Simulated failures send no inference request.** To approximate network latency, the gateway calls a provider endpoint that does not generate tokens. Simulated failures have no trace.
+- **Errors outside the simulation still surface.** If a fallback has no provider key in the workspace, its attempt returns `424`, as it would in production. If the primary has no key, the Simulator asks you to add one before it runs the chain.
 
 ## Set fallbacks for a prompt
 
