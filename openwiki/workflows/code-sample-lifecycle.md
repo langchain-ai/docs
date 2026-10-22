@@ -3,9 +3,6 @@ type: documentation workflow
 title: Code Sample Lifecycle
 description: How executable documentation samples are authored, run, extracted into MDX, and optionally refreshed with public LangSmith trace links. Covers shared dependencies, multi-language execution, generation, tracing, and CI maintenance.
 tags: [code-samples, documentation, mdx, testing, tracing, ci]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-21T08:20:13.723Z
 sources:
   - id: openwiki-source-ddbddbe474c8dc57119458d7
     resource: repo://.agents/skills/docs-code-samples/SKILL.md
@@ -35,7 +32,10 @@ sources:
     resource: repo://src/code-samples/package.json
   - id: openwiki-source-b68d7bad2afd9a38e8c331d5
     resource: repo://tests/unit_tests/test_generate_code_snippet_mdx.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-21T08:20:13.723Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-22T08:20:38.024Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-22T08:20:38.024Z
 ---
 
 ## Ownership and lifecycle
@@ -77,7 +77,7 @@ The runner warns and omits missing, unsupported, or out-of-tree `FILES` entries.
 
 It runs Python as `uv run python` from the repository; TypeScript as `npx tsx`, Go as `go run`, and shell as `bash` from `src/code-samples/`; Java and Kotlin run as single-file JBang scripts pinned to Java 21. Each child inherits the parent environment. The default timeout is 1,200 seconds and `CODE_SAMPLE_TIMEOUT_SECONDS` overrides it.
 
-Dependencies are owned at the shared language boundary, not per source example. Python uses the repository `uv` project. TypeScript uses `src/code-samples/package.json` and its committed lockfile; the Make targets install that package before TypeScript execution. The manifest declares the shared sample packages, including `deepagents`, and `tsx` is the TypeScript execution tool; the lockfile records the resolved graph. Go runs from the same directory so `src/code-samples/go.mod` resolves shared Go dependencies. Update the relevant shared manifest and lockfile when changing a sample's dependency.
+Dependencies are owned at the shared language boundary, not per source example. Python uses the repository `uv` project. TypeScript uses `src/code-samples/package.json` and its committed lockfile; the Make targets install that package before TypeScript execution. The current shared manifest declares `deepagents` `^1.15.0`, `langchain` `^1.5.18`, `langsmith` `^0.10.13`, and `@langchain/google` `^0.2.7`, with `tsx` `^4.19.0` as the execution tool. The lockfile resolves the same root dependency graph, including `@langchain/google` 0.2.7. Go runs from the same directory so `src/code-samples/go.mod` resolves shared Go dependencies. Update the relevant shared manifest and lockfile together when changing a sample's dependency.
 
 The runner uses four workers by default; `CODE_SAMPLE_JOBS` configures the count. Per-group locks serialize only the `evaluate-rag-` and `experiment-runs-query-` path families, protecting shared LangSmith fixtures while unrelated samples remain concurrent. A nonzero exit, missing executable, or timeout fails a sample. Recognized LangSmith rate limits instead receive up to five attempts by default, with a linear 30-second base delay capped at 120 seconds. `CODE_SAMPLE_RATE_LIMIT_ATTEMPTS` and `CODE_SAMPLE_RATE_LIMIT_DELAY_SECONDS` override that policy; an exhausted 429 is reported as skipped rather than failed.
 
@@ -153,6 +153,7 @@ The sample step continues after errors so trace refresh can proceed when failure
 ## Related pages
 
 - [Repository Source Map](/openwiki/architecture/source-map.md)
+- [GitHub Actions and CI Automation](/openwiki/integrations/github-actions.md)
 - [Local Tooling and Commands](/openwiki/operations/cli-tools.md)
 - [Testing and Validation Overview](/openwiki/testing/test-overview.md)
 - [Local development](/openwiki/workflows/local-development.md)

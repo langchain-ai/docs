@@ -3,6 +3,9 @@ type: documentation route model
 title: Language Variants and Route Ownership
 description: Explains how source ownership produces Python and JavaScript documentation routes, including unversioned product exceptions and Managed Deep Agents. Covers conditional selection, link rewriting, navigation, redirects, and route-validation boundaries.
 tags: [documentation-pipeline, routes, language-versioning, redirects]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-22T08:20:38.024Z
 sources:
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
@@ -15,9 +18,6 @@ sources:
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
 generated: { by: "openwiki/0.4.3", at: "2026-10-20T08:20:37.912Z" }
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-20T08:20:37.912Z
 ---
 
 # Language Variants and Route Ownership

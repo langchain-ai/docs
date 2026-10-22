@@ -5,7 +5,7 @@ description: Explains how integration metadata produces public tables and provid
 tags: [integrations, automation, documentation, metadata, ci]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-21T08:20:13.723Z
+    at: 2026-10-22T08:20:38.024Z
 sources:
   - id: openwiki-source-8bdd8b6031ea08044f515d8c
     resource: repo://.agents/skills/submit-integration/SKILL.md
@@ -37,6 +37,8 @@ sources:
     resource: repo://scripts/refresh_integration_downloads.py
   - id: openwiki-source-1f06ff54a6b42441ba3f34c3
     resource: repo://src/oss/contributing/publish-langchain.mdx
+  - id: openwiki-source-bc7bdc5b7919c25e973a0854
+    resource: repo://src/oss/javascript/integrations/providers/all_providers.mdx
   - id: openwiki-source-4d9644891221cf29cff85bfb
     resource: repo://src/oss/python/integrations/chat/index.mdx
   - id: openwiki-source-40800c01aa5ea143782c9738
@@ -45,7 +47,7 @@ sources:
     resource: repo://src/oss/python/integrations/providers/all_providers.mdx
   - id: openwiki-source-7be0fdefc402d868b9f2fdca
     resource: repo://tests/unit_tests/test_refresh_integration_downloads.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-21T08:20:13.723Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-22T08:20:38.024Z" }
 ---
 
 # Integration Listing Automation
@@ -61,7 +63,7 @@ A package with at least 50,000 monthly PyPI or npm downloads, as verified by the
 | `scripts/data/integration_external_docs.yaml` | External rows grouped by language and component: display name, registry package, `docs_url`, and applicable component metadata | Add, correct, or remove the external row. Prefer partner docs, then a public repository, then the registry page. |
 | Hosted integration MDX frontmatter | `integration:` metadata found below `src/oss/{python,javascript}/integrations/` | Correct hosted-guide metadata, not the rendered table. |
 | `packages.yml` | LangChain package and repository records, download data, and maintainer-only `highlight` | Correct package metadata. `highlight` bypasses the provider-overview download filter and sorts before ordinary packages. |
-| `src/oss/{python,javascript}/integrations/providers/all_providers.mdx` | Authored provider-card catalogs | Maintain cards as discovery content. The Python catalog is also an input to provider-overview link resolution; a matching card may supply an external provider destination. |
+| `src/oss/{python,javascript}/integrations/providers/all_providers.mdx` | Authored provider-card catalogs | Maintain cards as discovery content. Both catalogs are authored indexes; only the Python catalog is consulted by the provider-overview generator, where a matching card may supply an external provider destination. |
 
 External YAML is the canonical metadata source for external language/component rows. The table generator merges those rows with hosted `integration:` frontmatter. An external row needs a display `name` and a safe `docs_url`; `pypi` or `npm` supplies download data when available. It links the displayed name to `docs_url`, whereas a hosted row links to its LangChain route.
 

@@ -3,9 +3,6 @@ type: operations reference
 title: Local Tooling and Commands
 description: Install and operate the local Python pipeline, Make targets, Mintlify checks, Vale prose linting, and executable documentation samples. Use this guide to select safe source, generated-site, and focused validation commands.
 tags: [cli, make, documentation, code-samples, operations]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-21T08:20:13.723Z
 sources:
   - id: openwiki-source-9c06bd9d7d25770709e07c7c
     resource: repo://.mise.toml
@@ -13,6 +10,8 @@ sources:
     resource: repo://.vale.ini
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
+  - id: openwiki-source-5b54a58d1b51cd490b0e7162
+    resource: repo://package.json
   - id: openwiki-source-6e6efa1569f158fcdb678ef0
     resource: repo://pipeline/cli.py
   - id: openwiki-source-41f7c907e42a5efd3b3405cd
@@ -45,9 +44,14 @@ sources:
     resource: repo://scripts/test_code_samples.py
   - id: openwiki-source-2b3973f7b179794fb4534f89
     resource: repo://src/code-samples/go.mod
+  - id: openwiki-source-2d6fb565fec243c560da8729
+    resource: repo://src/code-samples/package-lock.json
   - id: openwiki-source-e0401fc6d5f2a13d30455bd9
     resource: repo://src/code-samples/package.json
-generated: { by: "openwiki/0.4.3", at: "2026-10-21T08:20:13.723Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-22T08:20:38.024Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-22T08:20:38.024Z
 ---
 
 # Local Tooling and Commands
@@ -173,7 +177,9 @@ flowchart TD
 
 ### Dependencies and generation
 
-`make test-code-samples` installs the shared Node dependencies in `src/code-samples/package.json` when that file exists. That manifest supplies `tsx` and the TypeScript sample ecosystem, including LangChain, LangGraph, LangSmith, provider integrations, and related runtime packages. Python samples run against the root uv project; Go samples resolve the shared `src/code-samples/go.mod`; Java and Kotlin samples use JBang with Java 21. Update the relevant shared dependency manifest and lockfile when an example gains a dependency rather than adding a per-sample installation step.
+`src/code-samples/package.json` is the **separate shared dependency manifest for TypeScript samples**; it is not the root-site `package.json`. Its committed `src/code-samples/package-lock.json` (lockfile version 3) records the resolved dependency graph. `make test-code-samples` and `make update-code-sample-traces` run `npm install --silent` in that directory before execution, and TypeScript samples run there through `npx tsx` so those dependencies resolve from the code-samples package.
+
+The manifest supplies `tsx` plus the shared TypeScript ecosystem: LangChain, LangGraph, LangSmith, provider and MCP integrations, Deep Agents, and supporting runtime packages. When a TypeScript example needs a package, add it to `src/code-samples/package.json` and commit the corresponding `src/code-samples/package-lock.json` update; do not add a per-sample install step or put sample-only dependencies in the root-site manifest. Python samples instead run against the root uv project, Go samples resolve the shared `src/code-samples/go.mod`, and Java and Kotlin samples use JBang with Java 21.
 
 `make code-snippets` extracts marked regions from supported Python, TypeScript, Java, Kotlin, Go, and shell sources under `src/code-samples/` into `src/code-samples-generated/`, then generates importable MDX in `src/snippets/code-samples/`. A full extraction removes earlier supported intermediate files. Set `CODE_SNIPPET_SOURCES` to a space-separated list of existing supported paths below `src/code-samples/` to refresh only selected source stems; missing, out-of-tree, and unsupported selections fail.
 
