@@ -201,7 +201,7 @@ If you're creating a custom LangGraph graph, make sure that the graph has a [sta
 
 ## Forked subagents
 
-By default, a subagent runs with `mode: "isolated"`: it sees only the task description you give it and has no memory of the conversation that led up to the delegation. A **forked subagent** (`mode: "fork"`) inherits the parent's full conversation history and exact system prompt instead.
+By default, a subagent runs with `mode: "isolated"`: it sees only the task description you give it and has no memory of the conversation that led up to the delegation. A **forked subagent** (`mode: "fork"`) inherits the parent's conversation history and state instead.
 
 Use forked subagents when the subagent's task is to continue the work the parent already started, like a worker agent that picks up a fix the parent has already diagnosed, or a subagent that drafts the postmortem for an incident investigation. Since forking is a mode you set on the subagent itself, that's a decision you make when you define it.
 
@@ -250,6 +250,8 @@ Set `mode: "fork"` on a @[`SubAgent`] (the default is `mode: "isolated"`). You c
 
 Forks inherit the custom middleware passed to the parent's `create_deep_agent`. Middleware in the subagent's `middleware` list replaces an inherited instance with the same `.name`. Other instances are added to the subagent's default middleware stack.
 
+By default, the fork inherits all tools passed to the parent. Set `tools` to replace those tools, not add to them. For example, a list containing one tool replaces the inherited list with that one tool. Filesystem and other middleware-provided tools are added separately.
+
 `skills` is rejected if provided. `system_prompt` is appended to the parent's inherited prompt as an addendum. Leave it unset unless you need fork-only instructions.
 
 A `wrap_model_call` hook receives the fork's inherited prompt through `request.system_message`. It can rewrite the fork's outgoing request with `request.override(system_message=...)` without changing the parent's prompt. This differs from `system_prompt`, which appends instructions.
@@ -275,7 +277,11 @@ Additional middleware or appended instructions do not necessarily prevent reuse 
 Set `mode: "fork"` on a @[`SubAgent`] (the default is `mode: "isolated"`). You can configure these @[`SubAgent`] fields:
 `name`, `description`, `tools`, `model`, `middleware`, `interruptOn`, `permissions`, and `responseFormat`.
 
-`skills` is rejected if provided. `systemPrompt` is allowed and is appended to the parent's inherited prompt as an addendum, but doing so typically breaks the prompt cache, so leave it unset unless you have a specific need for fork-only instructions.
+The fork inherits the parent's skills; setting `skills` is not supported.
+
+Leave `systemPrompt` unset to use the parent's prompt. If set, its instructions are appended to the parent's prompt, shortening the shared prefix available for prompt caching across providers. Consequently, setting a fork-specific system prompt is not recommended unless the fork needs additional instructions.
+
+By default, the fork inherits all tools passed to the parent. Set `tools` to replace those tools, not add to them. For example, a list containing one tool replaces the inherited list with that one tool. Filesystem and other middleware-provided tools are added separately.
 
 <ForkedSubagentsBasicJs />
 :::
@@ -332,7 +338,7 @@ A fork does not get a fresh task description. It gets the parent's own conversat
 ```
 :::
 
-A fork can reuse cached portions of the parent's matching prompt prefix. Changes to the system prompt or tool definitions can reduce that reuse, including changes made by middleware you add or override on the subagent. Diverging conversation history can also reduce cache reuse.
+A fork can reuse the parent's prompt cache for the matching prefix of their requests. Changing the system prompt, tools, or earlier messages shortens that shared prefix across providers. Leave the fork's configuration unchanged to maximize reuse, though cache hits are not guaranteed.
 
 A @[`CompiledSubAgent`] supports `mode: "fork"` too, though it keeps its own system prompt since the graph is already built.
 
@@ -342,8 +348,8 @@ Compare isolated and forked modes along these dimensions:
 
 | Dimension | Isolated (default) | Forked |
 |-----------|---------------------|--------|
-| **Context** | Only the task description you pass in | The parent's full conversation history and system prompt |
-| **System prompt and skills** | You set them on the subagent | Skills not settable; system prompt appends to the parent's (breaks caching, so usually left unset) |
+| **Context** | Only the task description you pass in | The parent's conversation history and state |
+| **System prompt and skills** | You set them on the subagent | Skills not settable; system prompt is appended to the parent's base prompt (breaks caching, so usually left unset) |
 | **Calling other subagents** | Can use the `task` tool | Cannot use `task`; must finish the work itself |
 | **Best for** | Focused work that needs little prior context | Continuing an investigation the parent has already started |
 

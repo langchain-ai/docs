@@ -1,0 +1,62 @@
+---
+# Keep Linear DOC issue status aligned with the linked docs PR.
+# Used by docs-release-watch handoffs (PR body: Closes [DOC-N](<linear url>)).
+
+name: Sync Linear issue from PR
+
+permissions:
+  contents: read
+  pull-requests: read
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - converted_to_draft
+      - ready_for_review
+      - closed
+
+jobs:
+  sync-linear:
+    name: Update Linear status
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Same-repo PRs only (fork PRs do not receive LINEAR_API_KEY).
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python 3.13 + uv
+        uses: "./.github/actions/uv_setup"
+        with:
+          python-version: "3.13"
+
+      - name: Sync Linear issue state from PR
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_STATE: ${{ github.event.pull_request.state }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
+          PR_MERGED: ${{ github.event.pull_request.merged }}
+        run: |
+          set -euo pipefail
+          if [ -z "${LINEAR_API_KEY}" ]; then
+            echo "LINEAR_API_KEY unset; skipping Linear sync"
+            exit 0
+          fi
+
+          # Title/body/state come from env (avoids argv size and quoting issues).
+          uv run python scripts/sync_linear_issue_from_pr.py --json \
+            | tee "$RUNNER_TEMP/linear-sync.json"
+
+          {
+            echo "## Linear sync"
+            echo ""
+            echo '```json'
+            cat "$RUNNER_TEMP/linear-sync.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

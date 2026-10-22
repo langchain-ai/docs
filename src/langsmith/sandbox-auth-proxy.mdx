@@ -31,12 +31,16 @@ The same `proxy_config` that injects credentials also controls which destination
 
 - **Access control applies to every outbound TCP connection**, HTTP or not.
 - **HTTPS to a host matched by a rule or callback is decrypted by the proxy** so it can inject headers; sandboxes trust the proxy's CA. HTTPS to unmatched hosts and every non-HTTP connection, including PostgreSQL, SSH, and Redis, passes through unchanged. Ports 80 and 443 are reserved for HTTP and TLS; a non-HTTP protocol on either port does not work.
-- **Address destinations by hostname.** A direct raw TCP connection to a literal IP address on a non-HTTP port is dropped, even when that IP is on an `allow_list`. HTTPS to a literal IP is dropped too, because the proxy needs a hostname in the TLS handshake. Only cleartext HTTP on port 80 works against a literal IP.
+- **Use hostnames for direct connections by default.** Raw TCP to a public literal IP requires an explicitly matching IP or CIDR entry in `allow_list` and is unavailable in deny-list mode. HTTPS to a literal IP is dropped because the proxy needs a hostname in the TLS handshake. Cleartext HTTP on port 80 can use a literal IP.
 - **Only TCP leaves the sandbox.** UDP (including QUIC) and ICMP are dropped.
 
 ### Default egress posture
 
 With no `access_control`, **every hostname is reachable on every TCP port**, unless your organization is on [restricted egress](#organization-level-restricted-egress). The only exception is hosts that resolve to private, loopback, or cloud-metadata addresses, which the proxy refuses to dial. For a sandbox created with `access_delegation`, your LangSmith API host is exempt from the private-address check, so a self-hosted install whose hostname resolves to a private address, such as an internal load balancer, can still serve delegated requests. No other private destination is opened, and loopback and cloud-metadata addresses stay blocked. On a self-hosted installation, an `allow_list` entry that matches a private destination also opens it; see [Reach private services directly](/langsmith/self-host-sandbox-egress-proxy#reach-private-services-directly). Add an `access_control` to restrict this.
+
+- **HTTP and HTTPS (ports 80 and 443) to any hostname are allowed.** Outbound HTTP(S) is transparently routed through the proxy, where your `rules` and `callbacks` inject credentials.
+- **Raw TCP to hostnames is allowed.** Connections to non-HTTP ports, such as databases (`psql` or `dbt` on 5432), SSH (22), and Redis (6379), pass through without protocol interception.
+- **Raw TCP to a literal public IP address requires an explicit IP or CIDR entry in an `allow_list`.** Private, reserved, loopback, link-local, and cloud-metadata destinations remain subject to SSRF protections; see the self-hosted and delegation exceptions above.
 
 To allow HTTP and HTTPS to any host while blocking every other port, use a port-qualified allow list. `*` matches every hostname:
 
@@ -59,12 +63,16 @@ Add an `access_control` object to `proxy_config` with **either** an `allow_list`
 | Mode | Behavior |
 |------|----------|
 | `allow_list` | **Default-deny.** Only listed destinations are reachable, on any protocol. List every host the sandbox needs, including the HTTP(S) hosts your `rules` and `callbacks` target. |
-| `deny_list` | **Default-allow.** Every destination is reachable, on any protocol, except those listed. |
+| `deny_list` | **Default-allow for hostnames.** Hostname-based HTTP, HTTPS, and raw TCP remain reachable except where a matching entry blocks them. You cannot use direct IP connections in deny-list mode, even when the destination IP does not match a deny-list entry. |
 
-Both lists apply to HTTP, HTTPS, and raw TCP alike. Neither mode distinguishes protocols; use a port suffix to restrict an entry to one port.
+<Note>
+To enable raw TCP to a literal public IP address, use allow-list mode and allow the IP on every port or on a specific port, such as `8.8.8.8` or `8.8.8.8:53`. A containing CIDR also allows every port in that range. Hostname, glob, and regex entries do not authorize applications that connect to a literal IP address.
+</Note>
+
+Access-control entries are evaluated for HTTP, HTTPS, and raw TCP connections to hostnames alike. Use a port suffix to restrict an entry to one port. Direct IP connections require allow-list mode and an explicit IP or CIDR entry.
 
 <Warning>
-A `deny_list` only blocks the hosts you list. `{"deny_list": ["example.com"]}` blocks `example.com` on every port and leaves every other host reachable on every port, including DNS, SSH, and database ports. To turn off raw TCP everywhere, use an `allow_list` such as `["*:80", "*:443"]`.
+A `deny_list` only blocks the hostnames you list. `{"deny_list": ["example.com"]}` blocks `example.com` on every port and leaves every other hostname reachable on every port, including DNS, SSH, and database ports. To turn off raw TCP everywhere, use an `allow_list` such as `["*:80", "*:443"]`.
 </Warning>
 
 ### Pattern syntax
@@ -73,14 +81,14 @@ Each `allow_list`/`deny_list` entry uses the following forms:
 
 | Pattern | Meaning |
 |---------|---------|
-| `host` | Bare host → **every port**. |
-| `host:PORT` | Host on exactly `PORT`. `db.example.com:5432` covers only 5432; add another entry for any other port. |
+| `host` | Bare host on every port. |
+| `host:PORT` | Host on exactly `PORT`. `:22` grants only 22, not 80 or 443. List the host separately if you need other ports. |
 | `*.example.com` | Glob (RFC 1034-style). The apex (`example.com`) is **not** included. May carry a port. |
 | `~regex` | Regex matched against the hostname, every port. No port suffix is parsed. |
-| `1.2.3.4` / `[::1]` | Literal IP. May carry a port: `1.2.3.4:443`, `[::1]:22`. |
-| `10.0.0.0/8` | CIDR. Cannot carry a port. |
+| `1.2.3.4` / `1.2.3.4:443` / `[::1]` / `[::1]:22` | Literal IP, optionally qualified by a port. |
+| `10.0.0.0/8` | CIDR. Cannot carry a port. Private and reserved destinations remain blocked by SSRF protections. |
 
-Matching is on the destination exactly as the sandbox addressed it. A hostname entry matches requests made to that hostname; an IP or CIDR entry matches requests made to a literal IP address. Neither is resolved: `deny_list: ["203.0.113.0/24"]` does not block `foo.example.com` even when it resolves into that range, and `allow_list: ["203.0.113.7"]` does not allow it either. Because raw TCP and HTTPS to a literal IP are dropped before access control runs (see [How egress works](#how-egress-works)), IP and CIDR entries only ever affect cleartext HTTP requests on port 80 that name the IP directly.
+Matching is on the destination exactly as the sandbox addressed it. A hostname entry matches requests made to that hostname; an IP or CIDR entry matches requests made to a literal IP address. Neither is resolved: `deny_list: ["203.0.113.0/24"]` does not block `foo.example.com` even when it resolves into that range, and `allow_list: ["203.0.113.7"]` does not allow it either. In allow-list mode, an IP or CIDR entry also permits raw TCP to a matching public literal IP. Direct IP connections are unavailable in deny-list mode, and HTTPS to a literal IP is dropped because the proxy needs a hostname in the TLS handshake. Cleartext HTTP on port 80 can use a literal IP when allowed by the active access control.
 
 Entries that do not parse—`example.com:abc`, `example.com:99999`, or a CIDR with a port—are rejected when the sandbox is created or updated.
 
