@@ -47,9 +47,9 @@ To use your own providers:
       <Tab title="Amazon Bedrock">
         An AWS access key ID and secret access key, with an optional session token, or a Bedrock API key (bearer token). Optionally, an AWS region.
 
-        Engine uses the Bedrock Mantle API by default, regardless of credential type. To use native Bedrock Runtime instead, see [Use Bedrock Runtime](#use-bedrock-runtime).
+        Engine uses the Bedrock Mantle API. To use Bedrock Runtime instead, see [Use Bedrock Runtime](#use-bedrock-runtime).
 
-        Enable access to the required models in the selected AWS account and region. For Mantle, grant the calling identity Mantle inference and model-subscription permissions. See [AmazonBedrockMantleInferenceAccess](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AmazonBedrockMantleInferenceAccess.html) for the required actions.
+        Enable access to the required models in the selected AWS account and region. Grant the calling identity Mantle inference and model-subscription permissions. See [AmazonBedrockMantleInferenceAccess](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AmazonBedrockMantleInferenceAccess.html) for the required actions.
 
         If no region is saved, Engine uses `us-east-1`, including with workload identity. It does not inherit the EKS cluster's region.
 
@@ -94,44 +94,31 @@ If Engine runs fail after you save:
 
 ## Use Bedrock Runtime
 
-Engine can call native Amazon Bedrock Runtime instead of Mantle. This lets you select a system inference profile with processing regions approved for your deployment. API selection is independent of whether you use saved credentials or cloud identity.
+To have Engine call Amazon Bedrock Runtime instead of Mantle, set two environment variables on both Engine workloads:
 
-<Note>
-The Runtime option is included in [langsmith-0.17.0-rc.65](/langsmith/self-hosted-changelog#langsmith-0-17-0-rc-65), with LangSmith application version `0.17.29`. Confirm that your installed Engine image supports this option. Engine's model requirements follow `images.engineInsightsAgentImage.tag`.
-</Note>
+```yaml
+engineInsightsAgent:
+  apiServer:
+    deployment:
+      extraEnv:
+        - name: ENGINE_BEDROCK_API
+          value: "runtime"
+        - name: ENGINE_BEDROCK_INFERENCE_PROFILE
+          value: "<system-inference-profile-id>"
+  queue:
+    deployment:
+      extraEnv:
+        - name: ENGINE_BEDROCK_API
+          value: "runtime"
+        - name: ENGINE_BEDROCK_INFERENCE_PROFILE
+          value: "<system-inference-profile-id>"
+```
 
-Engine requires a system inference profile ID in the form `<scope>.anthropic.<engine-claude-model-id>`. The model ID must exactly match Engine's Claude model, and the scope must be `us`, `eu`, `apac`, or `global`. Choose a profile available in your AWS region and approved for your processing regions. Engine does not choose a global profile automatically.
+Set `ENGINE_BEDROCK_INFERENCE_PROFILE` to a system inference profile ID for Engine's Claude model, such as `us.anthropic.<model-id>`. Supported prefixes are `us.`, `eu.`, `apac.`, and `global.`. Profile ARNs and application inference profiles are not supported.
 
-Engine does not accept profile ARNs or application inference profile IDs. [AWS application inference profiles](https://docs.aws.amazon.com/bedrock/latest/userguide/cost-mgmt-application-inference-profiles.html) support cost-allocation tags, but Engine's Runtime option does not support those profiles.
+Grant the calling identity Bedrock Runtime access to that profile. Then apply the Helm values, restart both deployments, and run [**Test connection**](#test-a-provider). If an Engine upgrade changes its Claude model, update the profile ID.
 
-To use Runtime on self-hosted LangSmith:
-
-1. Set both environment variables on the API server and queue of the shared Engine and Insights deployment. Replace `<approved-system-inference-profile-id>` with the system profile ID matching your installed Engine's model:
-
-   ```yaml
-   engineInsightsAgent:
-     apiServer:
-       deployment:
-         extraEnv:
-           - name: ENGINE_BEDROCK_API
-             value: "runtime"
-           - name: ENGINE_BEDROCK_INFERENCE_PROFILE
-             value: "<approved-system-inference-profile-id>"
-     queue:
-       deployment:
-         extraEnv:
-           - name: ENGINE_BEDROCK_API
-             value: "runtime"
-           - name: ENGINE_BEDROCK_INFERENCE_PROFILE
-             value: "<approved-system-inference-profile-id>"
-   ```
-
-2. Grant the calling identity access to the selected profile and its models through Bedrock Runtime. Mantle permissions alone do not grant Runtime access. Allow network access to `bedrock-runtime.<region>.amazonaws.com` rather than the Mantle endpoint.
-3. Apply the Helm values and restart both deployments. Under **Settings > Engine > Model providers**, select Amazon Bedrock and run [**Test connection**](#test-a-provider).
-
-After an Engine upgrade that changes its Claude model, update the configured profile to match and test again. To return to Mantle, set `ENGINE_BEDROCK_API` to `mantle` on both workloads.
-
-On BYOC, contact LangChain to configure these deployment settings.
+On BYOC, contact LangChain to make this change.
 
 ## Use cloud identity for your model providers
 
@@ -315,8 +302,8 @@ Engine calls each provider's standard API hostname from the `standalone-insights
 
 | **Provider** | **Hostname Engine calls** | **Private connection** |
 | --- | --- | --- |
-| Amazon Bedrock (default Mantle API) | `bedrock-mantle.<region>.api.aws` | An interface VPC endpoint for `com.amazonaws.<region>.bedrock-mantle`, with private DNS enabled or a Route 53 private hosted zone for the hostname |
-| Amazon Bedrock (Runtime option) | `bedrock-runtime.<region>.amazonaws.com` | An interface VPC endpoint for `com.amazonaws.<region>.bedrock-runtime`, with private DNS enabled |
+| Amazon Bedrock (Mantle) | `bedrock-mantle.<region>.api.aws` | An interface VPC endpoint for `com.amazonaws.<region>.bedrock-mantle`, with private DNS enabled or a Route 53 private hosted zone for the hostname |
+| Amazon Bedrock (Runtime) | `bedrock-runtime.<region>.amazonaws.com` | An interface VPC endpoint for `com.amazonaws.<region>.bedrock-runtime`, with private DNS enabled |
 | Google Vertex AI | `<region>-aiplatform.googleapis.com`, or `aiplatform.googleapis.com` for the global region | Private Service Connect for Google APIs, with private DNS for `googleapis.com` |
 | Azure AI Foundry | `<resource>.openai.azure.com` and `<resource>.services.ai.azure.com` | A private endpoint for the Foundry resource, with its private DNS zones |
 | Anthropic, OpenAI | `api.anthropic.com`, `api.openai.com` | Not available. These providers need public egress. |
