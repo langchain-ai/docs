@@ -1,6 +1,10 @@
 ---
 title: SAP HANA Cloud Vector Engine
+integration:
+  name: SAP HANA Cloud Vector Engine
+  npm: '@sap/hana-langchain'
 ---
+
 
 >[SAP HANA Cloud Vector Engine](https://help.sap.com/docs/hana-cloud-database/sap-hana-cloud-sap-hana-database-vector-engine-guide/sap-hana-cloud-sap-hana-database-vector-engine-guide) is a vector store fully integrated into the `SAP HANA Cloud` database.
 
@@ -75,6 +79,8 @@ const internalEmbeddings = new HanaInternalEmbeddings({
 const internalEmbeddings = new HanaInternalEmbeddings({
   internalEmbeddingModelId:
     process.env.HANA_DB_EMBEDDING_REMOTE_MODEL_ID || "YOUR_EMBEDDING_MODEL_ID",
+  remoteSourceSchema:
+    process.env.HANA_DB_EMBEDDING_REMOTE_SOURCE_SCHEMA || "YOUR_REMOTE_SOURCE_SCHEMA_NAME",
   remoteSource:
     process.env.HANA_DB_EMBEDDING_REMOTE_SOURCE || "YOUR_REMOTE_SOURCE_NAME",
 });
@@ -106,11 +112,8 @@ We can add items to our vector store by using the `addDocuments` function.
 
 ```typescript
 import { Document } from "@langchain/core/documents";
-
-await db.addDocuments([
-  new Document({ pageContent: "Hello world" }),
-  new Document({ pageContent: "Other docs"})
-]);
+const docs = [new Document({ pageContent: "Some text" }), new Document({ pageContent: "Other docs" })];
+await db.addDocuments(docs);
 ```
 
 Add documents with metadata
@@ -120,6 +123,16 @@ await db.addDocuments([
   { pageContent: "foo", metadata: { start: 100, end: 150, docName: "foo.txt", quality: "bad" } },
   { pageContent: "bar", metadata: { start: 200, end: 250, docName: "bar.txt", quality: "good" } },
 ]);
+```
+
+Add documents with map merge insertion
+
+> Note `useMapMerge` is only allowed for `HanaInternalEmbeddings` instances.
+
+```typescript
+// A useMapMerge flag can be supplied in the options for faster insertion
+// map merge only works with internal Embeddings
+await db.addDocuments(docs, { useMapMerge: true });
 ```
 
 ### Delete items from vector store
@@ -242,21 +255,21 @@ The default index name will be: "\<TABLE_NAME>_idx"
 
 In addition to the basic value-based filtering capabilities, it is possible to use more advanced filtering. The table below shows the available filter operators.
 
-| Operator | Semantic |
-|----------|---------|
-| `$eq` | Equality (==) |
-| `$ne` | Inequality (!=) |
-| `$lt` | Less than (&lt;) |
-| `$lte` | Less than or equal (&lt;=) |
-| `$gt` | Greater than (&gt;) |
-| `$gte` | Greater than or equal (&gt;=) |
-| `$in` | Contained in a set of given values (in) |
-| `$nin` | Not contained in a set of given values (not in) |
-| `$between` | Between the range of two boundary values |
-| `$like` | Text equality based on the "LIKE" semantics in SQL (using "%" as wildcard) |
-| `$contains` | Filters documents containing a specific keyword |
-| `$and` | Logical "and", supporting two or more operands |
-| `$or` | Logical "or", supporting two or more operands |
+| Operator | Semantic                 | Supported data types for Operands |
+|----------|-------------------------|-----------------------------------|
+| `$eq`    | Equality (==)           | number, string, boolean, DateValue, null      |
+| `$ne`    | Inequality (!=)         | number, string, boolean, DateValue, null     |
+| `$lt`    | Less than (&lt;)           | number, string, DateValue         |
+| `$lte`   | Less than or equal (&lt;=) | number, string, DateValue         |
+| `$gt`    | Greater than (>)        | number, string, DateValue       |
+| `$gte`   | Greater than or equal (>=) | number, string, DateValue        |
+| `$in`    | Contained in a set of given values  (in)    | Array of same values of type (number, string, boolean, DateValue) |
+| `$nin`   | Not contained in a set of given values  (not in)  | Array of same values of type (number, string, boolean, DateValue) |
+| `$between` | Between the range of two boundary values | Array of 2 values of (number, string, DateValue) |
+| `$like`  | Text equality based on the "LIKE" semantics in SQL (using "%" as wildcard)  | string |
+| `$contains` | Filters documents containing a specific keyword | non-empty string |
+| `$and`   | Logical "and", supporting two or more operands | list(Filter) |
+| `$or`    | Logical "or", supporting two or more operands | list(Filter) |
 
 ```typescript
 const docs: Document[] = [
@@ -497,6 +510,221 @@ Filter: {"$or":[{"id":1},{"id":2},{"id":3}]}
 Filter: {"$and":[{"$or":[{"id":1},{"id":2}]},{"height":{"$gte":5.0}}]}
 { name: 'Adam Smith', is_active: true, id: 1, height: 10 }
 { name: 'Bob Johnson', is_active: false, id: 2, height: 5.7 }
+```
+
+## Reranking results
+
+Results of a similarity search can be reranked by passing a `rerank_config` dictionary to the `similaritySearch` methods. The reranking is performed using SAP HANA's `CROSS_ENCODE` function with Cross Encoding models.
+
+The `rerank_config` dictionary supports the following fields:
+
+- **`query`** *(string, required)* — The query text to use for reranking. If not provided, the original similarity search query will be used.
+
+- **`modelId`** *(string, required)* — The model ID for the cross-encoding model to use for reranking.
+
+- **`topN`** *(number, optional)* — The number of top results to return after reranking. Defaults to 3.
+
+- **`rankFields`** *(string[], optional)* — List of metadata fields to include in reranking. When specified, these fields are concatenated with the content for scoring.
+
+> **Note:** Ensure NLP is enabled in your SAP HANA Cloud instance to use reranking functionality. For more details, see [SAP HANA Database Additional Features](https://help.sap.com/docs/hana-cloud/sap-hana-cloud-administration-guide/sap-hana-database-additional-features?version=hanacloud).
+
+```typescript
+// Prepare sample documents with metadata
+const docs = [
+    new Document({
+        pageContent: "Python is a programming language",
+        metadata: { category: "programming", difficulty: "beginner" },
+    }),
+    new Document({
+        pageContent: "Machine learning uses algorithms to learn patterns",
+        metadata: { category: "AI", difficulty: "intermediate" },
+    }),
+    new Document({
+        pageContent: "Neural networks are inspired by the human brain",
+        metadata: { category: "AI", difficulty: "advanced" },
+    }),
+];
+
+// Initialize embeddings
+const embeddings = new OpenAIEmbeddings();
+
+const args: HanaDBArgs = {
+  connection: client,
+  tableName: "testReranking",
+};
+
+// Create a LangChain VectorStore interface for the HANA database and specify the table (collection) to use in args.
+const vectorStore = new HanaDB(embeddings, args);
+// need to initialize once an instance is created.
+await vectorStore.initialize();
+// Delete already existing documents from the table
+await vectorStore.delete({ filter: {} });
+await vectorStore.addDocuments(docs);
+```
+
+### Basic reranking
+
+Perform a similarity search with reranking using the `rerankConfig` parameter:
+
+```typescript
+const rerankConfig: RerankConfigOptions = {
+  modelId: process.env.HANA_DB_RERANKING_MODEL_ID || "SAP_CER.20250701",
+  topN: 2,
+}
+
+const docsReranked = await vectorStore.similaritySearch("AI Technology", 3, undefined, undefined, rerankConfig);
+console.log("Reranked Results:");
+docsReranked.forEach((doc) => {
+  console.log("-".repeat(80));
+  console.log(`Content: ${doc.pageContent}`);
+  console.log("Metadata:", doc.metadata);
+});
+```
+
+```text
+Reranked Results:
+--------------------------------------------------------------------------------
+Content: Machine learning uses algorithms to learn patterns
+Metadata: { category: 'AI', difficulty: 'intermediate' }
+--------------------------------------------------------------------------------
+Content: Python is a programming language
+Metadata: { category: 'programming', difficulty: 'beginner' }
+```
+
+### Reranking with metadata fields
+
+Use `rankFields` to include metadata in the reranking process. This is useful when metadata contains relevant information that should influence the ranking:
+
+```typescript
+const rerankConfigWithFields: RerankConfigOptions = {
+  query: "beginner AI Concepts",
+  modelId: process.env.HANA_DB_RERANKING_MODEL_ID || "SAP_CER.20250701",
+  topN: 2,
+  rankFields: ["category", "difficulty"],
+};
+
+const docsRerankedwithFields = await vectorStore.similaritySearch("learning algorithm", 3, undefined, undefined, rerankConfigWithFields);
+console.log("Reranked results with metadata fields:");
+docsRerankedwithFields.forEach((doc) => {
+  console.log("-".repeat(80));
+  console.log(`Content: ${doc.pageContent}`);
+  console.log("Metadata:", doc.metadata);
+});
+```
+
+```text
+Reranked results with metadata fields:
+--------------------------------------------------------------------------------
+Content: Neural networks are inspired by the human brain
+Metadata: { category: 'AI', difficulty: 'advanced' }
+--------------------------------------------------------------------------------
+Content: Machine learning uses algorithms to learn patterns
+Metadata: { category: 'AI', difficulty: 'intermediate' }
+```
+
+### Reranking with scores
+
+Use `similaritySearchWithScore` to get the reranking scores along with the documents:
+
+```typescript
+const rerankConfigWithScores: RerankConfigOptions = {
+  modelId: process.env.HANA_DB_RERANKING_MODEL_ID || "SAP_CER.20250701",
+  topN: 3,
+};
+
+const docsRerankedwithScores = await vectorStore.similaritySearchWithScore("neural network architecture", 3, undefined, undefined, rerankConfigWithScores);
+console.log("Reranked results with scores:");
+docsRerankedwithScores.forEach(([doc, score]) => {
+  console.log("-".repeat(80));
+  console.log("Score:", score.toFixed(4));
+  console.log(`Content: ${doc.pageContent}`);
+});
+```
+
+```text
+Reranked results with scores:
+--------------------------------------------------------------------------------
+Score: 0.0435
+Content: Neural networks are inspired by the human brain
+--------------------------------------------------------------------------------
+Score: 0.0146
+Content: Python is a programming language
+--------------------------------------------------------------------------------
+Score: 0.0145
+Content: Machine learning uses algorithms to learn patterns
+```
+
+### Standalone reranking with HanaReranker
+
+For more control over the reranking process, you can use the `HanaReranker` class directly as a document compressor. This is useful when you want to rerank documents from any source, not just from a similarity search:
+
+```typescript
+import { HanaReranker, RerankConfigOptions } from "@sap/hana-langchain";
+
+// Documents to rerank (can come from any source)
+const docsToCompress = [
+  new Document({
+    pageContent: "Python programming basics",
+  }),
+  new Document({
+    pageContent: "Advanced machine learning techniques",
+  }),
+  new Document({
+    pageContent: "Introduction to neural networks",
+  }),
+  new Document({
+    pageContent: "Deep learning applications",
+  }),
+  new Document({
+    pageContent: "Reinforcement learning strategies",
+  }),
+  new Document({
+    pageContent: "Natural language processing techniques",
+  }),
+];
+const reranker = new HanaReranker(client, process.env.HANA_DB_RERANKING_MODEL_ID || "SAP_CER.20250701");
+await reranker.initialize();
+
+// Rerank documents based on a query using compress_documents (returns top Math.min(5, documents.length))
+// Reranking scores will be added to the metadata of each document under the key "relevance_score"
+const compressedDocs = await reranker.compressDocuments(docsToCompress, "AI and deep learning");
+
+console.log("Reranked documents:");
+compressedDocs.forEach((doc) => {
+  console.log("-".repeat(80));
+  console.log(`Content: ${doc.pageContent}`);
+  console.log(`Relevance score: ${doc.metadata?.relevance_score?.toFixed(4)}`);
+});
+
+// Or use the rerank method for more control over topN
+const rerankedDocs = await reranker.rerank(docsToCompress, "machine learning", 2);
+console.log("Top 2 reranked results:");
+rerankedDocs.forEach(([idx, score, doc]) => {
+  console.log(`  [${idx}] Score: ${score.toFixed(4)} - ${doc?.pageContent}`);
+});
+```
+
+```text
+Compressed documents:
+--------------------------------------------------------------------------------
+Content: Deep learning applications
+Relevance score: 0.2188
+--------------------------------------------------------------------------------
+Content: Advanced machine learning techniques
+Relevance score: 0.0748
+--------------------------------------------------------------------------------
+Content: Introduction to neural networks
+Relevance score: 0.0079
+--------------------------------------------------------------------------------
+Content: Natural language processing techniques
+Relevance score: 0.0040
+--------------------------------------------------------------------------------
+Content: Reinforcement learning strategies
+Relevance score: 0.0036
+
+Top 2 reranked results:
+  [1] Score: 0.4351 - Advanced machine learning techniques
+  [3] Score: 0.0342 - Deep learning applications
 ```
 
 ## Usage for retrieval-augmented generation

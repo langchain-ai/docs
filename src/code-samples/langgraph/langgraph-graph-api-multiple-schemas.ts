@@ -30,15 +30,16 @@ const graph = new StateGraph({
     return { foo: state.userInput + " name" };
   })
   .addNode("node2", (state) => {
-    // Read from OverallState, write to PrivateState
+    // Read from OverallState, write to the private bar channel
     return { bar: state.foo + " is" };
   })
   .addNode(
     "node3",
     (state) => {
-      // Read from PrivateState, write to OutputState
+      // Read from the private bar channel, write to OutputState
       return { graphOutput: state.bar + " Lance" };
     },
+    // This input schema declares what node3 reads and registers bar as a graph channel.
     { input: PrivateState },
   )
   .addEdge(START, "node1")

@@ -2,7 +2,7 @@
 ///usr/bin/env jbang "$0" "$@" ; exit $?
 //JAVA 21
 //KOTLIN 2.2.0
-//DEPS com.langchain.smith:langsmith-java:0.1.0-beta.18
+//DEPS com.langchain.smith:langsmith-java:0.1.0-beta.22
 
 // :snippet-start: traces-query-filters-after-kt
 // :codegroup-tab: After
@@ -26,8 +26,8 @@ val project = client.sessions().list(
     SessionListParams.builder().name("default").limit(1L).build()
 ).items().first()
 
-val minStart = OffsetDateTime.parse("2026-07-01T00:00:00Z")
-val maxStart = OffsetDateTime.parse("2026-07-31T23:59:59Z")
+val maxStart = OffsetDateTime.now()
+val minStart = maxStart.minusMonths(1)
 
 // trace_filter is implicitly root-run-only — no is_root needed.
 val errorTraces = client.traces().query(

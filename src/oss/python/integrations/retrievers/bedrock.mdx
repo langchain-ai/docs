@@ -1,15 +1,23 @@
 ---
-title: "Bedrock (knowledge bases) integration"
-description: "Integrate with the Bedrock (knowledge bases) retriever using LangChain Python."
+title: Bedrock (knowledge bases) integration
+description: Integrate with the Bedrock (knowledge bases) retriever using LangChain Python.
+integration:
+  name: AmazonKnowledgeBasesRetriever
+  pypi: langchain-aws
+  self_host: false
+  cloud_offering: true
+  package_md: '[`langchain-aws`](https://reference.langchain.com/python/langchain-aws/retrievers/bedrock/AmazonKnowledgeBasesRetriever)'
 ---
 
-This guide will help you get started with the AWS Knowledge Bases [retriever](/oss/langchain/retrieval).
+This guide will help you get started with the AWS Knowledge Bases [retriever](/oss/deepagents/retrieval).
 
 [Knowledge Bases for Amazon Bedrock](https://aws.amazon.com/bedrock/knowledge-bases/) is an Amazon Web Services (AWS) offering which lets you quickly build RAG applications by using your private data to customize FM response.
 
-Implementing `RAG` requires organizations to perform several cumbersome steps to convert data into embeddings (vectors), store the embeddings in a specialized vector database, and build custom integrations into the database to search and retrieve text relevant to the user’s query. This can be time-consuming and inefficient.
+Implementing `RAG` requires organizations to perform several cumbersome steps to convert data into embeddings (vectors), store the embeddings in a specialized vector database, and build custom integrations into the database to search and retrieve text relevant to the user's query. This can be time-consuming and inefficient.
 
 With `Knowledge Bases for Amazon Bedrock`, simply point to the location of your data in `Amazon S3`, and `Knowledge Bases for Amazon Bedrock` takes care of the entire ingestion workflow into your vector database. If you do not have an existing vector database, Amazon Bedrock creates an Amazon OpenSearch Serverless vector store for you. For retrievals, use the LangChain - Amazon Bedrock integration via the Retrieve API to retrieve relevant results for a user query from knowledge bases.
+
+**Amazon Bedrock now also offers [Managed Knowledge Bases](https://docs.aws.amazon.com/bedrock/latest/userguide/kb-build-managed.html)**, which handle embedding, storage, and retrieval automatically—no external vector store needed. See the [Managed Knowledge Base](#managed-knowledge-base) section below.
 
 ### Integration details
 
@@ -31,12 +39,16 @@ os.environ["LANGSMITH_TRACING"] = "true"
 This retriever lives in the `langchain-aws` package:
 
 ```python
-pip install -qU langchain-aws
+pip install -qU "langchain-aws>=1.6.3"
 ```
+
+**SDK requirement:** Managed search and agentic retrieval require `langchain-aws>=1.6.3`, which installs `boto3>=1.43.32`.
 
 ## Instantiation
 
-Now we can instantiate our retriever:
+### Vector Knowledge Base
+
+For traditional vector-based knowledge bases (with OpenSearch Serverless, Pinecone, etc.):
 
 ```python
 from langchain_aws.retrievers import AmazonKnowledgeBasesRetriever
@@ -46,6 +58,40 @@ retriever = AmazonKnowledgeBasesRetriever(
     retrieval_config={"vectorSearchConfiguration": {"numberOfResults": 4}},
 )
 ```
+
+### Managed Knowledge Base
+
+For [Managed Knowledge Bases](https://docs.aws.amazon.com/bedrock/latest/userguide/kb-build-managed.html) (recommended—no vector store needed):
+
+```python
+from langchain_aws.retrievers import AmazonKnowledgeBasesRetriever
+
+retriever = AmazonKnowledgeBasesRetriever(
+    knowledge_base_id="YOUR_MANAGED_KB_ID",
+    retrieval_config={"managedSearchConfiguration": {"numberOfResults": 4}},
+)
+```
+
+Managed knowledge bases handle embedding, chunking, storage, and retrieval automatically. They also support managed reranking for improved result quality.
+
+### Agentic Retrieval
+
+For complex queries that benefit from query decomposition and managed reranking, use the standalone `agentic_retrieve` helper:
+
+```python
+from langchain_aws.retrievers import agentic_retrieve
+
+result = agentic_retrieve(
+    knowledge_base_id="YOUR_MANAGED_KB_ID",
+    query="What are the differences between S3 storage classes?",
+    region_name="us-west-2",
+)
+
+for doc in result["results"]:
+    print(doc["content"]["text"])
+```
+
+Agentic retrieval uses `AgenticRetrieveStream` which performs intelligent query decomposition and managed reranking. It requires `langchain-aws>=1.6.3` and only works with managed knowledge bases.
 
 ## Usage
 
@@ -58,20 +104,45 @@ retriever.invoke(query)
 ## Use within a chain
 
 ```python
-from botocore.client import Config
-from langchain_classic.chains import RetrievalQA
-from langchain_aws import Bedrock
+from langchain_aws import ChatBedrock
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
 
-model_kwargs_claude = {"temperature": 0, "top_k": 10, "max_tokens_to_sample": 3000}
+llm = ChatBedrock(model_id="anthropic.claude-sonnet-4-20250514-v1:0")
 
-llm = Bedrock(model_id="anthropic.claude-v2", model_kwargs=model_kwargs_claude)
-
-qa = RetrievalQA.from_chain_type(
-    llm=llm, retriever=retriever, return_source_documents=True
+prompt = ChatPromptTemplate.from_template(
+    "Answer the question based on the context:\n\nContext: {context}\n\nQuestion: {question}"
 )
 
-qa(query)
+chain = (
+    {"context": retriever, "question": RunnablePassthrough()}
+    | prompt
+    | llm
+    | StrOutputParser()
+)
+
+chain.invoke("What are the key features?")
 ```
+
+## Required IAM Permissions
+
+```json
+{
+  "Effect": "Allow",
+  "Action": [
+    "bedrock:Retrieve",
+    "bedrock:AgenticRetrieveStream"
+  ],
+  "Resource": "arn:aws:bedrock:<region>:<account-id>:knowledge-base/<kb-id>"
+}
+```
+
+## Resources
+
+- [Build a Managed Knowledge Base](https://docs.aws.amazon.com/bedrock/latest/userguide/kb-build-managed.html)
+- [Retrieve API](https://docs.aws.amazon.com/bedrock/latest/userguide/kb-test-retrieve.html)
+- [Agentic Retrieval](https://docs.aws.amazon.com/bedrock/latest/userguide/kb-test-agentic-retrieve.html)
 
 ---
 

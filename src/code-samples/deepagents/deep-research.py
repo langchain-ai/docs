@@ -223,6 +223,7 @@ Your role is to coordinate research by delegating tasks from your TODO list to s
 from datetime import datetime
 
 from deepagents import create_deep_agent
+from langchain.agents.middleware import TodoListMiddleware
 from langchain.chat_models import init_chat_model
 
 max_concurrent_research_units = 3
@@ -256,6 +257,7 @@ agent = create_deep_agent(
     tools=[tavily_search],
     system_prompt=INSTRUCTIONS,
     subagents=[research_sub_agent],
+    middleware=[TodoListMiddleware()],
 )
 # :snippet-end:
 

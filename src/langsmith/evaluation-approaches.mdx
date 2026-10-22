@@ -12,7 +12,7 @@ Below, we will discuss evaluation of a few popular types of LLM applications.
 
 ![Tool use](/langsmith/images/tool-use.png)
 
-Below is a tool-calling agent in [LangGraph](https://langchain-ai.github.io/langgraph/tutorials/introduction/). The `assistant node` is an LLM that determines whether to invoke a tool based upon the input. The `tool condition` sees if a tool was selected by the `assistant node` and, if so, routes to the `tool node`. The `tool node` executes the tool and returns the output as a tool message to the `assistant node`. This loop continues until as long as the `assistant node` selects a tool. If no tool is selected, then the agent directly returns the LLM response.
+Below is a tool-calling agent in [LangGraph](https://langchain-ai.github.io/langgraph/tutorials/introduction/). The `assistant node` is an LLM that determines whether to invoke a tool based upon the input. The `tool condition` sees if a tool was selected by the `assistant node` and, if so, routes to the `tool node`. The `tool node` executes the tool and returns the output as a tool message to the `assistant node`. This loop continues as long as the `assistant node` selects a tool. If no tool is selected, then the agent directly returns the LLM response.
 
 ![Agent](/langsmith/images/langgraph-agent.png)
 
@@ -24,7 +24,7 @@ This sets up three general types of agent evaluations that users are often inter
 
 ![Agent-eval](/langsmith/images/agent-eval.png)
 
-Below we will cover what these are, the components (inputs, outputs, evaluators) needed for each one, and when you should consider this. Note that you likely will want to do multiple (if not all!) of these types of evaluations - they are not mutually exclusive!
+The following sections cover what these are, the components (inputs, outputs, evaluators) needed for each one, and when you should consider this. Common use cases often use multiple or all of these types of evaluations; they are not mutually exclusive.
 
 ### Evaluating an agent's final response
 
@@ -34,7 +34,7 @@ The inputs should be the user input and (optionally) a list of tools. In some ca
 
 The output should be the agent's final response.
 
-The evaluator varies depending on the task you are asking the agent to do. Many agents perform a relatively complex set of steps and the output a final text response. Similar to RAG, LLM-as-judge evaluators are often effective for evaluation in these cases because they can assess whether the agent got a job done directly from the text response.
+The evaluator varies depending on the task you are asking the agent to do. Many agents perform a relatively complex set of steps and then output a final text response. Similar to RAG, LLM-as-judge evaluators are often effective for evaluation in these cases because they can assess whether the agent got a job done directly from the text response.
 
 However, there are several downsides to this type of evaluation. First, it usually takes a while to run. Second, you are not evaluating anything that happens inside the agent, so it can be hard to debug when failures occur. Third, it can sometimes be hard to define appropriate evaluation metrics.
 
@@ -60,42 +60,37 @@ The outputs are a list of tool calls, which can be formulated as an "exact" traj
 
 The evaluator here is some function over the steps taken. Assessing the "exact" trajectory can use a single binary score that confirms an exact match for each tool name in the sequence. This is simple, but has some flaws. Sometimes there can be multiple correct paths. This evaluation also does not capture the difference between a trajectory being off by a single step versus being completely wrong.
 
-To address these flaws, evaluation metrics can focused on the number of "incorrect" steps taken, which better accounts for trajectories that are close versus ones that deviate significantly. Evaluation metrics can also focus on whether all of the expected tools are called in any order.
+To address these flaws, evaluation metrics can focus on the number of "incorrect" steps taken, which better accounts for trajectories that are close versus ones that deviate significantly. Evaluation metrics can also focus on whether all of the expected tools are called in any order.
 
-However, none of these approaches evaluate the input to the tools; they only focus on the tools selected. In order to account for this, another evaluation technique is to pass the full agent's trajectory (along with a reference trajectory) as a set of messages (e.g., all LLM responses and tool calls) an LLM-as-judge. This can evaluate the complete behavior of the agent, but it is the most challenging reference to compile (luckily, using a framework like LangGraph can help with this!). Another downside is that evaluation metrics can be somewhat tricky to come up with.
+However, none of these approaches evaluate the input to the tools; they only focus on the tools selected. In order to account for this, another evaluation technique is to pass the full agent's trajectory (along with a reference trajectory) as a set of messages (e.g., all LLM responses and tool calls) to an LLM-as-judge. This can evaluate the complete behavior of the agent, but it is the most challenging reference to compile. This is where using a framework like LangGraph can help. Another downside is that evaluation metrics can be somewhat tricky to come up with.
 
-## Retrieval augmented generation (RAG)
+## Evaluate RAG applications
 
-Retrieval Augmented Generation (RAG) is a powerful technique that involves retrieving relevant documents based on a user's input and passing them to a language model for processing. RAG enables AI applications to generate more informed and context-aware responses by leveraging external knowledge.
+[Retrieval-augmented generation (RAG)](https://github.com/langchain-ai/rag-from-scratch) retrieves documents for a user input and passes them to a model so the response can use external knowledge. For a step-by-step walkthrough, see [Evaluate a RAG application](/langsmith/evaluate-rag-tutorial).
 
-<Info>
-For a comprehensive review of RAG concepts, see our [`RAG From Scratch` series](https://github.com/langchain-ai/rag-from-scratch).
-</Info>
+### Choose a dataset
 
-### Dataset
+When you evaluate RAG applications, start by deciding whether you have a reference answer for each example:
 
-When evaluating RAG applications, a key consideration is whether you have (or can easily obtain) reference answers for each input question. Reference answers serve as ground truth for assessing the correctness of the generated responses. However, even in the absence of reference answers, various evaluations can still be performed using reference-free RAG evaluation prompts (examples provided below).
+- **With reference answers**: Use them as ground truth to score answer correctness.
+- **Without reference answers**: Use reference-free prompts that check document relevance, answer faithfulness, and helpfulness (see [RAG evaluation summary](#rag-evaluation-summary)).
 
-### Evaluator
+### Choose evaluators
 
-`LLM-as-judge` is a commonly used evaluator for RAG because it's an effective way to evaluate factual accuracy or consistency between texts.
+LLM-as-judge evaluators work well for RAG because they can score factual accuracy and consistency between texts.
 
 ![rag-types.png](/langsmith/images/rag-types.png)
 
-When evaluating RAG applications, you can have evaluators that require reference outputs and those that don't:
+You can use two kinds of evaluators:
 
-1. **Require reference output**: Compare the RAG chain's generated answer or retrievals against a reference answer (or retrievals) to assess its correctness.
-2. **Don't require reference output**: Perform self-consistency checks using prompts that don't require a reference answer (represented by orange, green, and red in the above figure).
+- **Reference-based**: Compare the generated answer or retrieved documents to a reference answer or reference retrievals.
+- **Reference-free**: Run self-consistency checks that do not need a reference answer (orange, green, and red in the figure above).
 
-### Applying RAG evaluation
+### Choose an evaluation mode
 
-When applying RAG evaluation, consider the following approaches:
-
-1. `Offline evaluation`: Use offline evaluation for any prompts that rely on a reference answer. This is most commonly used for RAG answer correctness evaluation, where the reference is a ground truth (correct) answer.
-
-2. `Online evaluation`: Employ online evaluation for any reference-free prompts. This allows you to assess the RAG application's performance in real-time scenarios.
-
-3. `Pairwise evaluation`: Utilize pairwise evaluation to compare answers produced by different RAG chains. This evaluation focuses on user-specified criteria (e.g., answer format or style) rather than correctness, which can be evaluated using self-consistency or a ground truth reference.
+- **Offline**: Use when the prompt needs a reference answer, most often for answer correctness.
+- **Online**: Use for reference-free prompts so you can score live traffic.
+- **Pairwise**: Compare answers from different RAG chains on criteria such as format or style. Use self-consistency or a reference answer for correctness instead.
 
 ### RAG evaluation summary
 

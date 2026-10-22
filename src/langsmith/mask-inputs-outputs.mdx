@@ -479,7 +479,7 @@ def recursive_anonymize(data, depth=10):
 
 openai_client = wrap_openai(openai.Client())
 
-# Initialize the LangSmith @[Client] with the anonymization functions
+# Initialize the LangSmith Client with the anonymization functions
 langsmith_client = Client(
     hide_inputs=recursive_anonymize, hide_outputs=recursive_anonymize
 )
@@ -589,7 +589,7 @@ def presidio_anonymize(data):
 
 openai_client = wrap_openai(openai.Client())
 
-# initialize the langsmith @[Client] with the anonymization functions
+# initialize the langsmith Client with the anonymization functions
 langsmith_client = Client(
   hide_inputs=presidio_anonymize, hide_outputs=presidio_anonymize
 )
@@ -621,10 +621,14 @@ The non-anonymized run will look like this in LangSmith: ![Non-anonymized run](/
 ### Amazon Comprehend
 
 <Info>
-The implementation below provides a general example of how to anonymize sensitive information in messages exchanged between a user and an LLM. It is not exhaustive and does not account for all cases. Test any implementation thoroughly before using it in production.
+The implementation below provides a general example of how to anonymize sensitive information using Amazon Comprehend. It is not exhaustive and does not account for all run shapes or content types. Test any implementation thoroughly before using it in production.
 </Info>
 
-Comprehend is a natural language processing service that can detect personally identifiable information. The implementation below uses Comprehend to anonymize inputs and outputs before they are sent to LangSmith. For up to date information, please refer to Comprehend's [official documentation](https://docs.aws.amazon.com/comprehend/latest/APIReference/API_DetectPiiEntities.html).
+Comprehend is a natural language processing service that can detect personally identifiable information. The implementation below uses Comprehend's [`DetectPiiEntities`](https://docs.aws.amazon.com/comprehend/latest/APIReference/API_DetectPiiEntities.html) API to anonymize inputs and outputs before they are sent to LangSmith.
+
+<Warning>
+Amazon Comprehend does **not** provide a batch PII endpoint. `detect_pii_entities` processes one document per call, and `batch_detect_entities` detects generic entities (people, places, organizations) — it is not a PII-specific API. To process many documents, either call `detect_pii_entities` in a loop (shown below) or use the asynchronous [`start_pii_entities_detection_job`](https://docs.aws.amazon.com/comprehend/latest/APIReference/API_StartPiiEntitiesDetectionJob.html) on documents in S3.
+</Warning>
 
 To use Comprehend, install [boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/quickstart.html):
 
@@ -652,113 +656,110 @@ uv add openai
 
 You will need to set up credentials in AWS and authenticate using the AWS CLI. Follow the [AWS Comprehend setup instructions](https://docs.aws.amazon.com/comprehend/latest/dg/setting-up.html).
 
+The example below walks the entire input/output payload recursively and runs every string through Comprehend. Walking the payload (rather than only inspecting `data["messages"]` or `data["choices"][0]["message"]`) ensures PII is scrubbed across spans of all shapes — not just chat-completion-shaped runs.
+
 ```python
 import openai
 import boto3
 from langsmith import Client
 from langsmith.wrappers import wrap_openai
 
-comprehend = boto3.client('comprehend', region_name='us-east-1')
+comprehend = boto3.client("comprehend", region_name="us-east-1")
 
-def redact_pii_entities(text, entities):
-    """
-    Redact PII entities in the text based on the detected entities.
-    Args:
-        text (str): The original text containing PII.
-        entities (list): A list of detected PII entities.
-    Returns:
-        str: The text with PII entities redacted.
-    """
-    sorted_entities = sorted(entities, key=lambda x: x['BeginOffset'], reverse=True)
-    redacted_text = text
-    for entity in sorted_entities:
-        begin = entity['BeginOffset']
-        end = entity['EndOffset']
-        entity_type = entity['Type']
-        # Define the redaction placeholder based on entity type
-        placeholder = f"[{entity_type}]"
-        # Replace the PII in the text with the placeholder
-        redacted_text = redacted_text[:begin] + placeholder + redacted_text[end:]
-    return redacted_text
+# Skip strings shorter than this — Comprehend rarely finds PII in them
+# and skipping reduces API calls significantly.
+MIN_LENGTH_FOR_DETECTION = 3
+# Comprehend's per-call text limit is 100 KB of UTF-8.
+MAX_BYTES_PER_CALL = 100_000
 
-def detect_pii(text):
-    """
-    Detect PII entities in the given text using AWS Comprehend.
-    Args:
-        text (str): The text to analyze.
-    Returns:
-        list: A list of detected PII entities.
-    """
+def redact_pii_entities(text: str, entities: list) -> str:
+    """Replace each detected entity with `[TYPE]`, working back-to-front to preserve offsets."""
+    for entity in sorted(entities, key=lambda e: e["BeginOffset"], reverse=True):
+        begin, end = entity["BeginOffset"], entity["EndOffset"]
+        text = text[:begin] + f"[{entity['Type']}]" + text[end:]
+    return text
+
+def detect_and_redact(text: str) -> str:
+    """Detect PII in `text` with Comprehend and return the redacted version."""
+    if not text or len(text) < MIN_LENGTH_FOR_DETECTION:
+        return text
+    if len(text.encode("utf-8")) > MAX_BYTES_PER_CALL:
+        # Skip oversized strings — chunk them yourself if you need to redact them.
+        return text
     try:
-        response = comprehend.detect_pii_entities(
-            Text=text,
-            LanguageCode='en',
-        )
-        entities = response.get('Entities', [])
-        return entities
+        response = comprehend.detect_pii_entities(Text=text, LanguageCode="en")
     except Exception as e:
-        print(f"Error detecting PII: {e}")
-        return []
+        print(f"Comprehend error: {e}")
+        return text
+    entities = response.get("Entities", [])
+    return redact_pii_entities(text, entities) if entities else text
 
-def comprehend_anonymize(data):
+def comprehend_anonymize(data, depth: int = 10):
     """
-    Anonymize sensitive information sent by the user or returned by the model.
-    Args:
-        data (any): The input data to be anonymized.
-    Returns:
-        any: The anonymized data.
+    Recursively walk a payload and redact PII in every string we find.
+    This works on arbitrary run shapes — chat messages, tool inputs/outputs,
+    retrieval results, custom run types, etc.
     """
-    message_list = (
-        data.get('messages') or [data.get('choices', [{}])[0].get('message')]
-    )
-    if not message_list or not all(isinstance(msg, dict) and msg for msg in message_list):
+    if depth == 0:
         return data
-
-    for message in message_list:
-        content = message.get('content', '')
-        if not content.strip():
-            print("Empty content detected. Skipping anonymization.")
-            continue
-
-        entities = detect_pii(content)
-        if entities:
-            anonymized_text = redact_pii_entities(content, entities)
-            message['content'] = anonymized_text
-        else:
-            print("No PII detected. Content remains unchanged.")
-
+    if isinstance(data, dict):
+        return {k: comprehend_anonymize(v, depth - 1) for k, v in data.items()}
+    if isinstance(data, list):
+        return [comprehend_anonymize(item, depth - 1) for item in data]
+    if isinstance(data, str):
+        return detect_and_redact(data)
     return data
 
 openai_client = wrap_openai(openai.Client())
 
-# initialize the langsmith @[Client] with the anonymization functions
+# initialize the langsmith Client with the anonymization functions
 langsmith_client = Client(
-  hide_inputs=comprehend_anonymize, hide_outputs=comprehend_anonymize
+    hide_inputs=comprehend_anonymize, hide_outputs=comprehend_anonymize
 )
 
 # The trace produced will have its metadata present, but the inputs and outputs will be anonymized
 response_with_anonymization = openai_client.chat.completions.create(
-  model="gpt-5.4-mini",
-  messages=[
-      {"role": "system", "content": "You are a helpful assistant."},
-      {"role": "user", "content": "My name is Slim Shady, call me at 313-666-7440 or email me at real.slim.shady@gmail.com"},
-  ],
-  langsmith_extra={"client": langsmith_client},
+    model="gpt-5.4-mini",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "My name is Slim Shady, call me at 313-666-7440 or email me at real.slim.shady@gmail.com"},
+    ],
+    langsmith_extra={"client": langsmith_client},
 )
 
 # The trace produced will not have anonymized inputs and outputs
 response_without_anonymization = openai_client.chat.completions.create(
-  model="gpt-5.4-mini",
-  messages=[
-      {"role": "system", "content": "You are a helpful assistant."},
-      {"role": "user", "content": "My name is Slim Shady, call me at 313-666-7440 or email me at real.slim.shady@gmail.com"},
-  ],
+    model="gpt-5.4-mini",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "My name is Slim Shady, call me at 313-666-7440 or email me at real.slim.shady@gmail.com"},
+    ],
 )
 ```
+
+<Note>
+Because `comprehend_anonymize` issues one Comprehend API call per string it encounters, it can become rate-limit-bound on high-throughput traces. For higher throughput, use the [batch processing approach below](#batch-processing-for-high-throughput-masking), or pre-filter with [`contains_pii_entities`](https://docs.aws.amazon.com/comprehend/latest/APIReference/API_ContainsPiiEntities.html) and only call `detect_pii_entities` when PII is present.
+</Note>
 
 The anonymized run will look like this in LangSmith: ![Anonymized run](/langsmith/images/aws-comprehend-anonymized.png)
 
 The non-anonymized run will look like this in LangSmith: ![Non-anonymized run](/langsmith/images/aws-comprehend-not-anonymized.png)
+
+#### Using `create_anonymizer` with Comprehend
+
+If you prefer LangSmith's built-in [`create_anonymizer`](#rule-based-masking-of-inputs-and-outputs) helper (which already handles the recursive walk and integrates cleanly with `langchain` agent middleware), you can pass a Comprehend-backed callable to it instead of writing the walk yourself:
+
+```python
+from langsmith import Client
+from langsmith.anonymizer import create_anonymizer
+
+def comprehend_replacer(value: str, path: list) -> str:
+    return detect_and_redact(value)
+
+client = Client(anonymizer=create_anonymizer(comprehend_replacer))
+```
+
+This gives you the same redaction behavior as `comprehend_anonymize` above with less boilerplate, and is the recommended approach when you also use `create_anonymizer` elsewhere in your stack.
 
 ### Batch processing for high-throughput masking
 
@@ -809,7 +810,11 @@ Each run dict in the batch is either a create operation (with `inputs`, sent whe
 }
 ```
 
-The following example uses Comprehend's [`batch_detect_entities` endpoint](https://docs.aws.amazon.com/comprehend/latest/APIReference/API_BatchDetectEntities.html), which accepts up to 25 texts per call. With the per-run approach (`hide_inputs`) you would make one API call per run. Here, all message texts across the entire buffer are gathered first, then sent to Comprehend in chunks of 25, which results in significantly fewer API calls at high throughput.
+<Warning>
+Amazon Comprehend does **not** have a batch PII endpoint. `batch_detect_entities` detects generic entities (people, places, organizations), not PII, and is not a drop-in replacement for `detect_pii_entities`. The batch optimization below comes from deduplicating identical strings across runs and from amortizing per-run buffering overhead — not from a single bulk API call. If you need true bulk PII detection, run the asynchronous [`start_pii_entities_detection_job`](https://docs.aws.amazon.com/comprehend/latest/APIReference/API_StartPiiEntitiesDetectionJob.html) over documents in S3 outside of the tracing path.
+</Warning>
+
+The following example collects every string across the entire buffer, deduplicates them, and calls Comprehend's [`detect_pii_entities`](https://docs.aws.amazon.com/comprehend/latest/APIReference/API_DetectPiiEntities.html) endpoint once per unique string. For traffic that repeats common prompts, system messages, or tool inputs, this can drastically reduce the number of Comprehend calls compared to a per-run approach. The example walks the full payload recursively so it works for any run shape — chat messages, tool inputs/outputs, retriever spans, etc.
 
 ```python
 import boto3
@@ -817,44 +822,53 @@ from langsmith import Client, traceable
 
 comprehend = boto3.client("comprehend", region_name="us-east-1")
 
+MIN_LENGTH_FOR_DETECTION = 3
+MAX_BYTES_PER_CALL = 100_000
+
 def redact_entities(text: str, entities: list) -> str:
     for entity in sorted(entities, key=lambda e: e["BeginOffset"], reverse=True):
         placeholder = f"[{entity['Type']}]"
         text = text[:entity["BeginOffset"]] + placeholder + text[entity["EndOffset"]:]
     return text
 
+def detect_and_redact(text: str) -> str:
+    if len(text) < MIN_LENGTH_FOR_DETECTION:
+        return text
+    if len(text.encode("utf-8")) > MAX_BYTES_PER_CALL:
+        return text
+    try:
+        response = comprehend.detect_pii_entities(Text=text, LanguageCode="en")
+    except Exception as e:
+        print(f"Comprehend error: {e}")
+        return text
+    entities = response.get("Entities", [])
+    return redact_entities(text, entities) if entities else text
+
+def _redact_in_place(data, cache: dict, depth: int = 10):
+    """Recursively redact every string in `data`, using `cache` to dedupe API calls."""
+    if depth == 0:
+        return data
+    if isinstance(data, dict):
+        return {k: _redact_in_place(v, cache, depth - 1) for k, v in data.items()}
+    if isinstance(data, list):
+        return [_redact_in_place(item, cache, depth - 1) for item in data]
+    if isinstance(data, str):
+        if data not in cache:
+            cache[data] = detect_and_redact(data)
+        return cache[data]
+    return data
+
 def comprehend_anonymize_batch(runs: list[dict]) -> list[dict]:
-    # Collect all message texts and remember where they came from.
+    # One shared cache per buffer flush. Identical strings (e.g. the same
+    # system prompt repeated across runs) only hit Comprehend once.
     # Note: the same run ID may appear twice — once as a create (with inputs)
     # and once as an update (with outputs).
-    locations = []  # (run_idx, field, msg_idx)
-    texts = []
-    for run_idx, run in enumerate(runs):
+    cache: dict[str, str] = {}
+    for run in runs:
         for field in ("inputs", "outputs"):
             data = run.get(field)
-            if not isinstance(data, dict):
-                continue
-            for msg_idx, message in enumerate(data.get("messages") or []):
-                content = message.get("content", "")
-                if content.strip():
-                    locations.append((run_idx, field, msg_idx))
-                    texts.append(content)
-
-    # Send all texts to Comprehend in batches of 25 (API limit).
-    # For 1000 ops (~500 runs) with 2 messages each: 40 API calls instead of 1000.
-    redacted_texts = []
-    for i in range(0, len(texts), 25):
-        chunk = texts[i : i + 25]
-        response = comprehend.batch_detect_entities(
-            TextList=chunk, LanguageCode="en"
-        )
-        for text, result in zip(chunk, response["ResultList"]):
-            redacted_texts.append(redact_entities(text, result.get("Entities", [])))
-
-    # Write redacted text back into the run dicts
-    for (run_idx, field, msg_idx), redacted in zip(locations, redacted_texts):
-        runs[run_idx][field]["messages"][msg_idx]["content"] = redacted
-
+            if isinstance(data, (dict, list)):
+                run[field] = _redact_in_place(data, cache)
     return runs
 
 client = Client(

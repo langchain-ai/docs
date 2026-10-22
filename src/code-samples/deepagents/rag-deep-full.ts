@@ -7,6 +7,7 @@ if (!process.env.OPENAI_API_KEY) {
 
 // :snippet-start: rag-deep-full-js
 import "dotenv/config";
+import { uuid7 } from "langsmith";
 
 import { Document } from "@langchain/core/documents";
 import { HumanMessage } from "@langchain/core/messages";
@@ -24,7 +25,7 @@ const DOC_PATHS = [
   "oss/javascript/deepagents/rag",
   "oss/javascript/langchain/tools",
   "oss/javascript/langchain/models",
-  "oss/javascript/langchain/retrieval",
+  "oss/javascript/deepagents/retrieval",
   "oss/javascript/langchain/knowledge-base",
   "oss/javascript/langchain/middleware",
   "oss/javascript/deepagents/overview",
@@ -79,7 +80,7 @@ const backend = new StateBackend();
 const searchDocumentation = tool(
   async ({ query }) => {
     const retrievedDocs = await vectorStore.similaritySearch(query, 4);
-    const batchId = crypto.randomUUID().slice(0, 8);
+    const batchId = uuid7().slice(0, 8);
     const uploads: Array<[string, Uint8Array]> = [];
     const savedPaths: string[] = [];
     const encoder = new TextEncoder();
@@ -166,7 +167,7 @@ const chunkAnalystSubagent = {
 };
 
 const agent = createDeepAgent({
-  model: "google-genai:gemini-3.5-flash",
+  model: "anthropic:claude-sonnet-4-6",
   tools: [searchDocumentation],
   backend,
   systemPrompt: instructions,
