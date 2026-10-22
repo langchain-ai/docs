@@ -7,7 +7,7 @@
 #
 # Once a docs-team member (the `# docs-team:` line in OWNERS) is assigned,
 # requested, or has reviewed, the PR has an owner: this workflow then
-# requests no one and posts nothing.
+# makes only the opt-in `# auto-request` requests and posts nothing.
 
 name: PR Welcome Comment
 
@@ -107,10 +107,12 @@ jobs:
               rules.push({ pattern, owners, autoRequest });
             }
 
-            // --- Stop if a docs-team member already owns the review ---
+            // --- Check whether a docs-team member already owns the review ---
             // Re-fetch the PR: on ready_for_review, the payload can predate
             // assignments and requests made while it was a draft. The author
-            // does not count; an owner reviews someone else's PR.
+            // does not count; an owner reviews someone else's PR. Opt-in
+            // auto-requests still run on an owned PR; everything after them
+            // is skipped.
             const { data: current } = await github.rest.pulls.get({
               owner, repo, pull_number: pr.number
             });
@@ -126,13 +128,12 @@ jobs:
               docsTeam.has(login.toLowerCase()) &&
               login.toLowerCase() !== author.toLowerCase()
             ))];
-            if (reviewOwners.length > 0) {
-              console.log(
-                `PR #${pr.number} already owned by ${reviewOwners.map(u => '@' + u).join(', ')}; ` +
-                'skipping review requests and welcome comment'
-              );
-              return;
-            }
+            // Anyone already requested or who has reviewed is not requested
+            // again, so leaving draft twice does not re-notify them.
+            const alreadyInvolved = new Set([
+              ...(current.requested_reviewers || []).map(r => r.login),
+              ...reviews.map(r => r.user && r.user.login),
+            ].filter(Boolean).map(l => l.toLowerCase()));
 
             // Last matching rule wins (same as GitHub CODEOWNERS behavior)
             function matchRule(filepath) {
@@ -225,8 +226,10 @@ jobs:
             }
 
             // --- Auto-request opted-in reviewers (any PR author) ---
-            if (autoRequestReviewers.size > 0) {
-              const reviewers = [...autoRequestReviewers];
+            const autoReviewers = [...autoRequestReviewers]
+              .filter(u => !alreadyInvolved.has(u.toLowerCase()));
+            if (autoReviewers.length > 0) {
+              const reviewers = autoReviewers;
               try {
                 await github.rest.pulls.requestReviewers({
                   owner, repo,
@@ -237,6 +240,15 @@ jobs:
               } catch (error) {
                 console.log(`Failed to auto-request reviewers ${reviewers.join(', ')}: ${error.message}`);
               }
+            }
+
+            // --- Stop if a docs-team member already owns the review ---
+            if (reviewOwners.length > 0) {
+              console.log(
+                `PR #${pr.number} already owned by ${reviewOwners.map(u => '@' + u).join(', ')}; ` +
+                'skipping docs-team review requests and welcome comment'
+              );
+              return;
             }
 
             if (productOwners.size === 0) {
