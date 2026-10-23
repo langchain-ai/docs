@@ -4,6 +4,7 @@ sidebarTitle: Cursor
 description: Capture Cursor agent turns, tool calls, model metadata, token usage, attachments, and subagents in LangSmith.
 ---
 
+import CodingAgentManagedSettings from '/snippets/langsmith/coding-agent-managed-settings.mdx';
 import CodingAgentSecretRedaction from '/snippets/langsmith/coding-agent-secret-redaction.mdx';
 
 Trace [Cursor](https://cursor.com/) agent sessions in LangSmith using [Cursor hooks](https://cursor.com/docs/agent/hooks). Each turn becomes one trace, grouped into a thread per Cursor conversation, which captures prompts, model responses, tool calls, token usage, and subagent activity. Use the traces to debug agent behavior, audit tool calls, track token spend per turn, and compare Cursor runs.
@@ -15,8 +16,8 @@ The plugin source is available at [`langchain-ai/langsmith-cursor-plugins`](http
 Before setting up tracing, ensure you have:
 
 - [Cursor](https://cursor.com/) installed.
-- [Node.js](https://nodejs.org/) 22.13 or later. The hooks use the built-in `node:sqlite` module to recover attachments from Cursor's local database.
-- A [LangSmith API key](/langsmith/create-account-api-key).
+- A [LangSmith CLI sign-in](#sign-in-with-the-langsmith-cli) or a [LangSmith API key](/langsmith/create-account-api-key).
+- [Node.js](https://nodejs.org/) 22.13 or later on Windows and Linux, since the hooks use its built-in `node:sqlite` module to recover attachments. On macOS, the plugin runs its own build and does not need Node.js.
 
 ## Install and enable the plugin
 
@@ -32,33 +33,9 @@ This is the recommended path: it installs the hooks with no clone or build step,
 Fully restart Cursor after installing so it reloads `hooks.json`.
 </Warning>
 
-### Alternative: install from a local clone
-
-Install the hooks from a local clone of [`langsmith-cursor-plugins`](https://github.com/langchain-ai/langsmith-cursor-plugins). This writes `~/.cursor/hooks.json` for all Cursor projects:
-
-```bash
-node scripts/install.mjs
-```
-
-To scope the hooks to a single project instead, run the installer from the project directory:
-
-```bash
-node scripts/install.mjs --project
-```
-
-To preview the hook configuration without writing it, run:
-
-```bash
-node scripts/install.mjs --print
-```
-
-The installer merges its entries with any existing `hooks.json`. The committed `bundle/` means these commands run without `pnpm install` or `pnpm build` — those are only needed when contributing changes to the TypeScript source.
-
-Restart Cursor after installing so it reloads `hooks.json`.
-
 ## Configure tracing
 
-Tracing is disabled until both `enabled` (or `TRACE_TO_LANGSMITH=true`) and an API key are set. Configure credentials with [environment variables](#environment-variables), a [JSON config file](#config-file), or both.
+Tracing is disabled until both `enabled` (or `TRACE_TO_LANGSMITH=true`) and an API key or [CLI sign-in](#sign-in-with-the-langsmith-cli) are set. Configure credentials with [environment variables](#environment-variables), a [JSON config file](#config-file), or both.
 
 ### Environment variables
 
@@ -76,8 +53,8 @@ Every `LANGSMITH_CURSOR_*` variable also accepts the shorter `LANGSMITH_*` form.
 | `LANGSMITH_CURSOR_REDACT_EXTRA` | - | JSON array of extra `{ pattern, replace }` redaction rules. |
 | `LANGSMITH_CURSOR_ATTACHMENTS` | `true` | Set to `"false"` to disable attachment enrichment. |
 | `LANGSMITH_CURSOR_DB_PATH` | platform default | Override the Cursor `state.vscdb` path used for attachments. |
-| `LANGSMITH_CURSOR_STATE_FILE` | `~/.cursor/langsmith-state.json` | Override the on-disk event-buffer state file. |
-| `LANGSMITH_CURSOR_LOG_FILE` | `~/.cursor/langsmith-hook.log` | Override the hook log file. |
+| `LANGSMITH_CURSOR_STATE_FILE` | `~/.cursor/langsmith_state.json` | Override the on-disk event-buffer state file. |
+| `LANGSMITH_CURSOR_LOG_FILE` | `~/.cursor/langsmith_hook.log` | Override the hook log file. |
 | `LANGSMITH_CURSOR_DEBUG` | `false` | Set to `"true"` to enable verbose hook logging. |
 
 Add the variables to your shell configuration file (`~/.zshrc`, `~/.bashrc`, or `~/.bash_profile`):
@@ -91,8 +68,10 @@ export LANGSMITH_CURSOR_PROJECT="cursor"
 To verify hook activity, tail the log file:
 
 ```bash
-tail -f ~/.cursor/langsmith-hook.log
+tail -f ~/.cursor/langsmith_hook.log
 ```
+
+Uploads run in a background process that writes to `~/.cursor/langsmith_engine/worker.log`.
 
 ### Config file
 
@@ -119,8 +98,39 @@ Use `~/.cursor/langsmith.json` for global defaults or `./.cursor/langsmith.json`
 | `redact_extra_rules` | `LANGSMITH_CURSOR_REDACT_EXTRA`, `LANGSMITH_REDACT_EXTRA` | - | Extra `{ pattern, replace }` rules applied after the built-in ones. |
 | `attachments` | `LANGSMITH_CURSOR_ATTACHMENTS` | `true` | Set to `false` to skip enriching turns with image and file attachment bytes from Cursor's local database. |
 | `cursor_db_path` | `LANGSMITH_CURSOR_DB_PATH` | platform default | Override the Cursor `state.vscdb` path used for attachments. |
+| `defaultMuted` | `LANGSMITH_CURSOR_DEFAULT_MUTED` | `false` | Set to `true` to start every new conversation [muted](#mute-a-conversation). |
+| `system_prompt` | `LANGSMITH_CURSOR_SYSTEM_PROMPT` | `true` | Set to `false` to leave the system prompt out of traces. |
+| `strict_auth` | `LANGSMITH_CURSOR_STRICT_AUTH` | `false` | Set to `true` to hold back prompts until your credentials work. |
 
 Keep config files that include API keys out of version control.
+
+## Sign in with the LangSmith CLI
+
+Run `langsmith auth login` to sign in with the LangSmith CLI. The plugin then uploads traces with your sign-in instead of an API key. If more than one credential is set, the plugin uses the first one it finds in this order:
+
+1. The plugin's own key, from `LANGSMITH_CURSOR_API_KEY` or `api_key` in a config file.
+2. Your LangSmith CLI sign-in (OAuth).
+3. A generic `LANGSMITH_API_KEY` or `LANGCHAIN_API_KEY` from your shell.
+
+### Handle an expired sign-in
+
+When your sign-in expires or your API key is rejected, tracing pauses but your prompts still go through. Because Cursor cannot show a message without stopping the prompt, the plugin writes the reason to `~/.cursor/langsmith_hook.log` instead. The log also notes when `api_url` points to a different server than your sign-in, which prevents the sign-in from being used.
+
+### Require a working sign-in
+
+Strict auth makes sure every prompt is traced, but the setting is off by default. When strict auth is on, Cursor holds back every prompt with a **LangSmith tracing is paused** message until you sign in again or fix your API key, including when no credentials are set at all. To turn it on, set `strict_auth` to `true` in a config file or set `LANGSMITH_CURSOR_STRICT_AUTH` to `"true"`. Strict auth has no effect while tracing is off.
+
+## Mute a conversation
+
+Muting keeps a conversation's structure in LangSmith but leaves out its content. To mute a conversation, send `langsmith-tracing:mute` on its own in Cursor's agent chat without a slash, and send `langsmith-tracing:unmute` to restore full tracing. Wait for the acknowledgment before you send anything sensitive.
+
+A muted trace keeps timing, run names, model and tool names, and token counts, but leaves out prompts, replies, tool arguments and results, attachments, and error text. The setting persists across restarts and does not affect earlier uploads. To start every new conversation muted, set `defaultMuted` to `true`. A mute or unmute sent within a conversation still takes precedence over this default.
+
+## Lock settings for your organization
+
+<CodingAgentManagedSettings />
+
+Cursor can also lock `attachments` and `system_prompt`. If the managed file is broken or not owned by root, the plugin explains why in the hook log and in its reply to `langsmith-tracing:mute` or `langsmith-tracing:unmute`.
 
 ## Secret redaction
 
@@ -155,6 +165,7 @@ The plugin listens to Cursor hooks and assembles one trace per agent turn:
 - **Token usage**: per-turn `usage_metadata` on the model run.
 - **Model and provider**: `ls_model_name` and `ls_provider`, normalized from Cursor's model label to a canonical provider id (for example, `claude-4.6-sonnet` becomes `claude-sonnet-4-6`). Auto mode reports `default` with provider `cursor`.
 - **Tool calls**: tool runs for both successful calls and failures, with inputs and outputs.
+- **Skills**: one `Skill` tool run for each skill file the agent reads.
 - **Attachments**: image and file attachments recovered from Cursor's local database and rendered inline on the user message. Set `attachments` to `false` to skip this step.
 - **Subagents**: each subagent appears as a nested chain run with its own tool calls underneath, linked to the parent turn.
 
@@ -168,16 +179,7 @@ The plugin uploads Cursor conversation data, including prompts, model responses,
 
 ### Trace metadata
 
-Every run carries the shared `coding-agent-v1` metadata contract on `run.extra.metadata`, which lets traces from any coding agent (Claude Code, Codex, Cursor) be identified and grouped with the same stable keys.
-
-| Scope | Keys |
-| --- | --- |
-| Always present | `ls_agent_type` (`"root"`, `"subagent"`, `"middleware"`, or `"compaction"`), `ls_agent_purpose` (`"coding"`), `ls_integration` (`"cursor"`), `ls_agent_runtime` (`"Cursor"`), `ls_trace_schema_version` (`"coding-agent-v1"`), `thread_id` (= Cursor's `conversation_id`). |
-| Present where known | `ls_integration_version`, `ls_agent_runtime_version` (Cursor's `cursor_version`), `turn_id` (= Cursor's `generation_id`), `turn_number`, `repository_url`, `repository_provider`, `repository_name`, `git_branch`, `git_commit_sha`, `cwd`. |
-| Contextual | `local_username`, `user_email` (provisional). |
-| Subagent runs only | `ls_subagent_id`, `ls_subagent_type`. |
-| Tool runs only | `ls_tool_name` (only emitted when the run name differs from the native tool name). |
-| Model and tool runs only | `ls_provider`, `ls_model_name`, `ls_invocation_params`, `usage_metadata`. |
+Every run carries the shared [coding agent metadata contract](/langsmith/coding-agent-metadata-contract), so you can filter and group Cursor traces with the same keys as traces from Claude Code and Codex.
 
 Cursor's hooks do not expose stable sources for `user_id`, `sandbox_type`, or `approval_policy`, so those keys are omitted.
 
@@ -189,6 +191,7 @@ Open the configured LangSmith project (default `cursor`) and complete a Cursor t
 Cursor Turn N (chain)
 ├── <provider> (llm)   model and provider, token usage, assistant text
 ├── Read / Shell / ... (tool)
+├── Skill (tool)       one per skill file the agent read
 └── Task (tool)        subagent (type and task)
 ```
 
@@ -203,8 +206,8 @@ To group related turns, filter on `thread_id` in the **Threads** tab of the proj
 If traces do not appear in LangSmith:
 
 - Confirm `TRACE_TO_LANGSMITH=true` or `"enabled": true` is set in a config file the Cursor process can see.
-- Confirm `LANGSMITH_CURSOR_API_KEY` or `LANGSMITH_API_KEY` is set and valid.
+- Confirm `LANGSMITH_CURSOR_API_KEY` or `LANGSMITH_API_KEY` is set and valid, or that `langsmith auth login` succeeded.
 - Confirm Cursor was fully restarted after the hooks were installed.
-- Tail the hook log for errors: `tail -f ~/.cursor/langsmith-hook.log`.
+- Tail the hook log for errors: `tail -f ~/.cursor/langsmith_hook.log`. A line saying tracing is paused means the plugin cannot upload with your current credentials. Run `langsmith auth login` to sign in again, or replace the rejected API key.
 - Enable verbose logging with `LANGSMITH_CURSOR_DEBUG=true` and re-check the log.
 - If runs land in the wrong project, set `LANGSMITH_CURSOR_PROJECT` or the `project` config key.

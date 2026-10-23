@@ -4,6 +4,7 @@ sidebarTitle: OpenAI Codex
 description: Capture OpenAI Codex agent turns, tool calls, model metadata, and subagent threads in LangSmith.
 ---
 
+import CodingAgentManagedSettings from '/snippets/langsmith/coding-agent-managed-settings.mdx';
 import CodingAgentSecretRedaction from '/snippets/langsmith/coding-agent-secret-redaction.mdx';
 
 The [`langsmith-codex-plugins`](https://github.com/langchain-ai/langsmith-codex-plugins) marketplace ships a tracing plugin that sends [OpenAI Codex](https://developers.openai.com/codex) session data to LangSmith. Use it to inspect agent turns, model metadata, token usage, tool calls, and subagent threads from your Codex workflows.
@@ -12,9 +13,9 @@ The [`langsmith-codex-plugins`](https://github.com/langchain-ai/langsmith-codex-
 
 Before setting up tracing, ensure you have:
 
-- [Node.js](https://nodejs.org/) 22.x or later.
 - [Codex CLI](https://developers.openai.com/codex/quickstart?setup=cli) v0.153.4 or later, with synchronous `UserPromptSubmit` plugin hooks enabled and trusted.
-- A [LangSmith API key](/langsmith/create-account-api-key).
+- A [LangSmith CLI sign-in](#sign-in-with-the-langsmith-cli) or a [LangSmith API key](/langsmith/create-account-api-key).
+- [Node.js](https://nodejs.org/) 22.x or later on Windows and Linux. On macOS, the plugin runs its own build and does not need Node.js.
 
 ## Install and enable the plugin
 
@@ -87,8 +88,43 @@ Use `<project>/.codex/langsmith.json` for project-level settings or `~/.codex/la
 | `replicas` | `LANGSMITH_CODEX_RUNS_ENDPOINTS`, `LANGSMITH_RUNS_ENDPOINTS` | - | Additional LangSmith destinations to replicate traces to. |
 | `redact` | `LANGSMITH_CODEX_REDACT`, `LANGSMITH_REDACT` | `true` | Set to `false` to disable [secret redaction](#secret-redaction). |
 | `redact_extra_rules` | `LANGSMITH_CODEX_REDACT_EXTRA`, `LANGSMITH_REDACT_EXTRA` | - | Extra `{ pattern, replace }` rules applied after the built-in ones. |
+| `defaultMuted` | `LANGSMITH_CODEX_DEFAULT_MUTED` | `false` | Set to `true` to start every thread [muted](#mute-a-thread). |
+| `notice_cooldown` | `LANGSMITH_CODEX_NOTICE_COOLDOWN` | `2` | Minutes between repeated notices, or `off` to silence them. |
+| `strict_auth` | `LANGSMITH_CODEX_STRICT_AUTH` | `false` | Set to `true` to refuse prompts until your credentials work. |
 
 Keep config files that include API keys out of version control.
+
+## Sign in with the LangSmith CLI
+
+Run `langsmith auth login` to sign in with the LangSmith CLI. The plugin then uploads traces with your sign-in instead of an API key. If more than one credential is set, the plugin uses the first one it finds in this order:
+
+1. The plugin's own key, from `LANGSMITH_CODEX_API_KEY` or `api_key` in a config file.
+2. Your LangSmith CLI sign-in (OAuth).
+3. A generic `LANGSMITH_API_KEY` or `LANGCHAIN_API_KEY` from your shell.
+
+### Handle an expired sign-in
+
+When your sign-in expires, your API key is rejected, or you sign out, tracing pauses but your prompts still go through. Codex shows a **LangSmith tracing is paused** notice in the chat at most once every 2 minutes. To change this interval, set `notice_cooldown` in a config file or `LANGSMITH_CODEX_NOTICE_COOLDOWN` to a number of minutes, or set it to `off` to turn notices off.
+
+### Require a working sign-in
+
+Strict auth makes sure every prompt is traced, but the setting is off by default. When strict auth is on, Codex refuses every prompt until you sign in again or fix your API key, including when no credentials are set at all. To turn it on, set `strict_auth` to `true` in a config file or set `LANGSMITH_CODEX_STRICT_AUTH` to `"true"`. Strict auth has no effect while tracing is off.
+
+<Warning>
+Strict auth also blocks `codex exec` runs. Leave it off for automated runs unless a failed sign-in should stop the job.
+</Warning>
+
+## Mute a thread
+
+Muting keeps a thread's structure in LangSmith but leaves out its content. To mute a thread, send `langsmith-tracing:mute` as an ordinary message without a leading slash, and send `langsmith-tracing:unmute` to restore full tracing. Muting takes effect from the next turn, so wait for the confirmation before you send anything sensitive.
+
+A muted turn keeps its structure, timing, identifiers, and token counts, while messages, tool arguments, and results are replaced with a placeholder. Muting does not delete earlier uploads. A thread you mute or unmute by hand keeps that choice even when `defaultMuted` is set.
+
+## Lock settings for your organization
+
+<CodingAgentManagedSettings />
+
+If the managed file is broken or not owned by root, tracing stops and Codex explains why in the chat.
 
 ## Trace to multiple destinations
 
@@ -158,7 +194,7 @@ The plugin redacts detected secrets from run inputs, outputs, errors, and metada
 
 <CodingAgentSecretRedaction />
 
-To turn redaction off, set `LANGSMITH_CODEX_REDACT` to `false`, `0`, `no`, or `off`, or set `"redact": false` in a config file. Values are trimmed and compared case-insensitively.
+To turn redaction off, set `LANGSMITH_CODEX_REDACT` to `false`, `0`, `no`, or `off`, or set `"redact": false` in a config file.
 
 To redact additional patterns, set `LANGSMITH_CODEX_REDACT_EXTRA` to a JSON array of `{ "pattern": ..., "replace": ... }` rules, or set `redact_extra_rules` in a config file. Each `pattern` is a regular expression string, applied globally and case-sensitively. `replace` is optional and falls back to `[redacted]`. Extra rules run after the built-in ones.
 
@@ -185,7 +221,7 @@ Each LLM run includes:
 
 Tool calls (function calls, shell calls, computer calls, file reads, web searches) are included with their inputs and outputs. Subagent threads are resolved and uploaded as nested child runs under the parent turn.
 
-Interrupted turns where the user cancels mid-response are still uploaded once the session completes.
+A turn you cancel mid-response is still uploaded.
 
 ## View traces in LangSmith
 
@@ -201,6 +237,7 @@ If traces do not appear in LangSmith:
 
 - Confirm the tracing plugin is enabled in `config.toml` and its hooks are trusted (`/hooks`). `[features] hooks` is on by default, so set it only to undo a local override.
 - Confirm `TRACE_TO_LANGSMITH=true` is visible to the Codex process.
-- Confirm `LANGSMITH_CODEX_API_KEY` or `LANGSMITH_API_KEY` is set and valid.
+- Confirm `LANGSMITH_CODEX_API_KEY` or `LANGSMITH_API_KEY` is set and valid, or that `langsmith auth login` succeeded.
+- If Codex shows a **LangSmith tracing is paused** notice, run `langsmith auth login` again or replace the rejected key.
 - If runs land in the wrong project, set `LANGSMITH_CODEX_PROJECT` or the `project` config key.
 - If a custom endpoint is not used, set `LANGSMITH_CODEX_ENDPOINT` or the `api_url` config key.
