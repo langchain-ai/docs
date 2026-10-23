@@ -7,14 +7,17 @@ import LLMGatewayBetaNote from '/snippets/langsmith/llm-gateway-beta-note.mdx';
 
 <LLMGatewayBetaNote />
 
-A rate limit policy restricts how many **requests** or **tokens** a subject can consume through the [LLM Gateway](/langsmith/llm-gateway) in a short rolling time window. The gateway enforces the limit in real time and blocks any request that would push the subject past it, returning a `429` response with a `Retry-After` header:
+A rate limit policy restricts how many **requests** or **tokens** a subject can consume through the [LLM Gateway](/langsmith/llm-gateway) in a short rolling time window. The gateway enforces the limit in real time and blocks any request that would push the subject past it, returning a `429` response with a `Retry-After` header and a body that names the blocking policy:
 
-```
-API Error: 429 request blocked by gateway policies: Dev Team Rate Limit
-Retry-After: 42
+```json
+{"type":"error","error":{"message":"request blocked by gateway policies: Dev Team Rate Limit"}}
 ```
 
 The `Retry-After` value is the number of seconds until the current window resets. Clients should honor this header and back off before retrying.
+
+A blocked request never reaches the provider, so it does not trigger a [fallback chain](/langsmith/llm-gateway-fallbacks), even though `429` is a default fallback trigger.
+
+{/* VERIFY with Eng: "rolling" window (here and in the description). Observed 2026-10-23 on dev: 1 request/minute policy, request 1 at 15:52:07, request 2 blocked with retry-after 53, which resets exactly at 15:53:00. That suggests a fixed clock-aligned minute, not a rolling one. Also unverified: whether token limits block before or after the call (spend caps are enforced on recorded spend and can overshoot). */}
 
 Rate limit policies and [spend cap policies](/langsmith/llm-gateway-spend-policies) are complementary and can be applied together—spend caps for cost control, rate limits for throughput and traffic control.
 
