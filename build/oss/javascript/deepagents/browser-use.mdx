@@ -1,0 +1,316 @@
+---
+title: Browser use
+description: Give a deep agent a browser so it can take actions on websites and test web apps end to end.
+---
+
+Browser use gives a deep agent a browser that it controls through tools. The agent opens pages, reads what renders, clicks, types, and takes screenshots. Use it for work that happens on the web:
+
+- **Actions with no public API**: Book a restaurant reservation, complete a checkout, or research a topic by following links across sites.
+- **End-to-end testing**: QA a web app through its UI. [Open SWE](https://github.com/langchain-ai/open-swe), LangChain's open-source coding agent, gets a browser in each thread so it can open the app it changed and check the change in the UI.
+
+To add a browser to a managed agent, see [Browser use in Managed Deep Agents](/langsmith/javascript/managed-deep-agents-browser-use).
+
+## Choose a browser and tools
+
+An agent needs two components to use the web:
+
+| Component | Options |
+| --- | --- |
+| A browser | <ul><li><strong>Local</strong>: Chrome or Chromium on your machine or in a <a href="/oss/javascript/deepagents/sandboxes">sandbox</a>. Reaches apps on its own <code>localhost</code> and needs no provider account. You install and update Chrome yourself.</li><li><strong>Remote</strong>: A cloud browser from a provider such as <a href="https://www.browserbase.com">Browserbase</a>. Isolated from your machine, needs an API key, and cannot reach <code>localhost</code> on your machine or in your sandbox.</li></ul> |
+| Browser tools | [Stagehand v4](https://docs.stagehand.dev/v4/integrations/agent-frameworks/deep-agents) (recommended), [Playwright MCP](https://github.com/microsoft/playwright-mcp), or the [agent-browser](https://github.com/vercel-labs/agent-browser) CLI. |
+
+
+### Stagehand tools
+
+Stagehand's Deep Agents integration runs an MCP server that keeps one browser open for the whole session. It exposes three tools:
+
+| Tool | Description |
+| --- | --- |
+| `snapshot` | Reads the active page's accessibility tree and labels interactive elements with IDs. |
+| `run` | Acts on the page with a batch of snapshot actions (`click`, `hover`, `fill`, `type`, `press`, `select`) or with JavaScript that uses Playwright-style `page`, `context`, and `browser` objects. |
+| `screenshot` | Captures the rendered page as a PNG or JPEG. |
+
+An element ID is valid only for the latest snapshot of the active page, so the agent takes a new snapshot after it navigates.
+
+The MCP server runs in Python, but Python and JavaScript agents can both use its tools. The examples below connect to the same server through their language's MCP adapter.
+
+
+
+### Other browser tools
+
+- **[Playwright MCP](https://github.com/microsoft/playwright-mcp)**: An MCP server from Microsoft that exposes Playwright browser actions. Connect it the same way as the Stagehand server below, with `npx @playwright/mcp@latest` as the command. See [Model Context Protocol](/oss/javascript/langchain/mcp).
+- **[agent-browser](https://github.com/vercel-labs/agent-browser)**: A browser CLI from Vercel Labs. Install it in a [sandbox](/oss/javascript/deepagents/sandboxes), and the agent runs commands such as `agent-browser open` and `agent-browser snapshot` through the `execute` tool.
+
+## Use Stagehand with Browserbase
+
+This example gives a deep agent Stagehand tools that drive a Browserbase browser. The agent and the Stagehand MCP server run on your machine. The browser runs on Browserbase.
+
+Stagehand ships the integration in its GitHub repository, rather than as a standalone adapter package. The MCP server runs in its own Python environment. The agent starts the server and connects to it over stdio.
+
+The server is a Python project, so this setup needs [uv](https://docs.astral.sh/uv/) even when the agent is written in JavaScript.
+
+
+To build the agent:
+
+<Steps>
+<Step title="Install the Stagehand MCP server">
+
+This step requires [uv](https://docs.astral.sh/uv/).
+
+```bash
+git clone https://github.com/browserbase/stagehand.git
+cd stagehand/packages/integrations/deepagents
+uv sync --locked
+```
+
+Note the absolute path to `packages/integrations/deepagents`. The agent uses it to start the server.
+
+</Step>
+<Step title="Install the agent packages">
+
+
+
+```bash
+npm install deepagents @langchain/mcp-adapters@^2.0.1 @langchain/openai
+```
+
+
+</Step>
+<Step title="Set your API keys">
+
+```bash
+export OPENAI_API_KEY="your-openai-api-key"
+export BROWSERBASE_API_KEY="your-browserbase-api-key"
+```
+
+</Step>
+<Step title="Create and run the agent">
+
+Set `STAGEHAND_DIR` to the path from the first step:
+
+
+
+```ts
+import { MCPAdapter } from "@langchain/mcp-adapters";
+import { createDeepAgent } from "deepagents";
+
+const STAGEHAND_DIR = "/path/to/stagehand/packages/integrations/deepagents";
+
+const serverEnv = Object.fromEntries(
+  Object.entries(process.env).filter(
+    ([name, value]) =>
+      value && (name.startsWith("STAGEHAND_") || name.startsWith("BROWSERBASE_")),
+  ),
+) as Record<string, string>;
+serverEnv.STAGEHAND_BROWSER = "browserbase";
+
+const SYSTEM_PROMPT = `You control one persistent browser through three tools:
+- browser_snapshot: read the active page and get bracketed element IDs.
+- browser_run: send snapshot actions, or JavaScript that uses the Playwright-shaped page API.
+- browser_screenshot: look at the rendered page.
+
+Snapshot IDs are valid only for the latest snapshot of the active page.
+Snapshot again after navigation or stale IDs. Do not launch another browser.`;
+
+const adapter = new MCPAdapter({
+  servers: {
+    browser: {
+      mode: "legacy",
+      command: "uv",
+      args: ["run", "--project", STAGEHAND_DIR, "--locked", "stagehand-deepagents-mcp"],
+      env: serverEnv,
+    },
+  },
+});
+
+try {
+  const tools = await adapter.listTools();
+  const agent = createDeepAgent({
+    model: "openai:gpt-5.5-2026-04-23",
+    tools,
+    systemPrompt: SYSTEM_PROMPT,
+  });
+  const result = await agent.invoke({
+    messages: [
+      {
+        role: "user",
+        content:
+          "On opentable.com, find a table for two in San Francisco this Friday " +
+          "at 7 PM. Stop before confirming, and report the restaurant, time, and booking link.",
+      },
+    ],
+  });
+  console.log(result.messages.at(-1)?.contentBlocks);
+} finally {
+  await adapter.close();
+}
+```
+
+By default, the adapter prefixes each tool name with the server name, so the agent sees `browser_run`, `browser_snapshot`, and `browser_screenshot`. Set `prefixToolNameWithServerName: false` if you want the unprefixed names `run`, `snapshot`, and `screenshot` instead. Update the system prompt and `interruptOn` keys to match your tool names.
+
+
+</Step>
+</Steps>
+
+The server receives the forwarded `STAGEHAND_*` and `BROWSERBASE_*` variables, plus the MCP client's safe defaults such as `PATH` and `HOME`. Your model API key stays in the agent process.
+
+<Warning>
+Keep the adapter open for the whole agent run. The browser lives in the server process. The open adapter holds one connection to that process, so every tool call in the run uses the same browser.
+</Warning>
+
+<Tip>
+Snapshots can be long. To keep them out of the main agent's context, give the browser tools to a [subagent](/oss/javascript/deepagents/subagents) and let the main agent delegate browser tasks to it.
+</Tip>
+
+### Require approval before actions
+
+`snapshot` and `screenshot` only read the page. `run` navigates, clicks, types, and submits forms, including the final step of a booking. To review each `run` call before it executes, add the tool to `interrupt_on` and give the agent a checkpointer:
+
+
+
+```ts
+import { MemorySaver } from "@langchain/langgraph";
+
+const agent = createDeepAgent({
+  model: "openai:gpt-5.5-2026-04-23",
+  tools,
+  systemPrompt: SYSTEM_PROMPT,
+  interruptOn: { browser_run: true },
+  checkpointer: new MemorySaver(),
+});
+```
+
+Use the prefixed name, `browser_run`, as the key. The agent pauses before each `browser_run` call so you can approve, edit, or reject it.
+
+
+Invoke the agent with a `thread_id` and resume it on the same thread. For the full loop, see [Handle interrupts](/oss/javascript/deepagents/human-in-the-loop#handle-interrupts).
+
+## Test an app with Chrome in a LangSmith sandbox
+
+This example covers end-to-end testing: after a coding agent changes an app, an agent opens the app in a browser and checks the change. Open SWE gets its browser from [Managed Deep Agents](/langsmith/javascript/managed-deep-agents-browser-use). The steps below build the same check with a LangSmith sandbox.
+
+A [LangSmith sandbox](/langsmith/sandboxes) runs your app and Chrome together, so the browser can open the app at `localhost`. The agent runs on your machine and uses the `LangSmithSandbox` backend for filesystem access and an `execute` tool.
+
+This example uses agent-browser through `execute`, rather than MCP. Each CLI call reuses the named `qa` browser session inside the sandbox. You do not need a Browserbase account or a Docker daemon on your machine.
+
+### Prepare the sandbox snapshot
+
+A [snapshot](/langsmith/sandbox-snapshots) contains the filesystem and dependencies for new sandboxes. Create one containing your app, its dependencies, Node.js, and curl. During snapshot setup, install agent-browser and Chrome for Testing:
+
+```bash
+npm install -g agent-browser@latest
+agent-browser install --with-deps
+```
+
+Run installation as the same user that runs the browser. The Linux dependency installer requires permission to install system packages. Capture the prepared filesystem as a snapshot and keep its ID. For snapshot creation and capture, see [Create a snapshot from a running sandbox](/langsmith/sandbox-snapshots#capture-a-snapshot-from-a-running-sandbox).
+
+Set these variables on the machine that runs the agent:
+
+```bash
+export LANGSMITH_API_KEY="your-langsmith-api-key"
+export OPENAI_API_KEY="your-openai-api-key"
+export QA_SNAPSHOT_ID="your-prepared-snapshot-id"
+export QA_START_COMMAND="cd /app && npm run dev -- --host 0.0.0.0 --port 3000"
+```
+
+Replace `QA_START_COMMAND` with your app's start command. The examples expect it to serve port `3000` inside the sandbox.
+
+### Create the QA agent
+
+The code starts the app, waits for it to respond, and opens the browser. The agent then interacts with the UI through `execute`. Download screenshots before cleanup: deleting the sandbox deletes its files.
+
+
+
+Install the host-side packages. The LangSmith version range matches this Deep Agents backend; `ws` supports nonblocking app startup:
+
+```bash
+npm install deepagents@^1.15.1 langsmith@^0.9.0 @langchain/openai ws
+```
+
+```ts
+import { writeFile } from "node:fs/promises";
+
+import { createDeepAgent, LangSmithSandbox } from "deepagents";
+import { SandboxClient } from "langsmith/sandbox";
+
+const client = new SandboxClient();
+const sandbox = await client.createSandbox(process.env.QA_SNAPSHOT_ID!);
+const backend = new LangSmithSandbox({ sandbox });
+
+try {
+  const app = await sandbox.run(process.env.QA_START_COMMAND!, {
+    wait: false,
+    timeout: 0,
+    idleTimeout: -1,
+  });
+  for (const command of [
+    "curl --fail --retry 20 --retry-connrefused --retry-delay 1 " +
+      "--retry-max-time 30 http://127.0.0.1:3000",
+    'agent-browser --session qa --args "--no-sandbox" open http://127.0.0.1:3000',
+  ]) {
+    const response = await backend.execute(command);
+    if (response.exitCode !== 0) throw new Error(response.output);
+  }
+
+  const agent = createDeepAgent({
+    model: "openai:gpt-5.5-2026-04-23",
+    backend,
+    systemPrompt:
+      "Test the app through its UI using execute and agent-browser. " +
+      "Use agent-browser --session qa for every browser command. " +
+      "Use snapshot -i to inspect controls, then click or fill them. " +
+      "Take a new snapshot after page changes. Do not edit the app " +
+      "or alter its state by executing JavaScript. Save a screenshot " +
+      "to /tmp/qa.png before reporting observed results and failures.",
+  });
+  const result = await agent.invoke({
+    messages: [{
+      role: "user",
+      content: "Sign up as qa@example.com and confirm that the dashboard loads.",
+    }],
+  });
+  console.log(result.messages.at(-1)?.contentBlocks);
+  const [image] = await backend.downloadFiles(["/tmp/qa.png"]);
+  if (image.error || !image.content) throw new Error(image.error ?? "No screenshot");
+  await writeFile("qa.png", image.content);
+} finally {
+  await backend.close();
+}
+```
+
+`backend.close()` deletes the wrapped JavaScript sandbox, so no additional `client.deleteSandbox()` call is needed.
+
+
+The examples disable Chrome's internal sandbox with `--no-sandbox` for root-run sandbox images. The disposable LangSmith sandbox supplies the outer isolation boundary. For images that support Chrome's internal sandbox, omit that flag.
+
+The screenshot is an artifact downloaded to your machine, not an image automatically shown to the model. For model-visible images, see [Multimodal inputs](/oss/javascript/deepagents/multimodal). Use independent assertions for deterministic test results: an agent's report and its instructions are not a security boundary.
+
+## Secure browser sessions
+
+Code that runs in the browser can use any account the session is signed in to and any site the browser can reach. Before you give an agent a browser:
+
+- For Stagehand, use Browserbase as the isolation boundary for untrusted tasks. `run` executes model-authored JavaScript inside the browser. See Stagehand's [security boundary](https://docs.stagehand.dev/v4/integrations/agent-frameworks/overview#security-boundary).
+- For the [sandbox QA path](#test-an-app-with-chrome-in-a-langsmith-sandbox), the LangSmith sandbox is the isolation boundary. The disposable sandbox isolates Chrome and the app from your machine.
+- Use test accounts and test payment methods for checkout and form flows, and [require approval](#require-approval-before-actions) before any action that commits a purchase.
+- Treat page content as untrusted input. A page can contain text written to redirect the agent.
+- Pass the browser server only the credentials it needs.
+
+## See also
+
+
+- [Browser use in Managed Deep Agents](/langsmith/javascript/managed-deep-agents-browser-use)
+- [Sandboxes](/oss/javascript/deepagents/sandboxes)
+- [Human-in-the-loop](/oss/javascript/deepagents/human-in-the-loop)
+- [Model Context Protocol (MCP)](/oss/javascript/langchain/mcp)
+- [Stagehand Deep Agents documentation](https://docs.stagehand.dev/v4/integrations/agent-frameworks/deep-agents)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/deepagents/browser-use.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
