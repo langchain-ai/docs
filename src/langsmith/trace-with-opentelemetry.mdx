@@ -64,7 +64,7 @@ If you're using LangChain or LangGraph, use the built-in integration to trace yo
    </CodeGroup>
 
    <Info>
-   Requires Python SDK version `langsmith>=0.3.18`. We recommend `langsmith>=0.4.25` to benefit from important OpenTelemetry fixes.
+   Agent addressing requires LangSmith Python SDK v0.14.9 or later. Install the latest LangChain and LangSmith packages.
    </Info>
 
 2. In your LangChain/LangGraph App, enable the OpenTelemetry integration by setting the `LANGSMITH_OTEL_ENABLED` environment variable:
@@ -76,6 +76,8 @@ If you're using LangChain or LangGraph, use the built-in integration to trace yo
    LANGSMITH_TRACING=true
    LANGSMITH_ENDPOINT=https://api.smith.langchain.com
    LANGSMITH_API_KEY=<your_langsmith_api_key>
+   LANGSMITH_AGENT_ID="<your-agent-id>"
+   LANGSMITH_AGENT_ENVIRONMENT="production"
    # For LangSmith API keys linked to multiple workspaces, set the LANGSMITH_WORKSPACE_ID environment variable to specify which workspace to use.
    ```
 
@@ -135,13 +137,13 @@ For non-LangChain applications or custom instrumentation, you can trace your app
    If you're self-hosting LangSmith, replace the base endpoint with your LangSmith api endpoint and append `/api/v1`. For example: `OTEL_EXPORTER_OTLP_ENDPOINT=https://ai-company.com/api/v1/otel`
    </Note>
 
-   Set the existing environment project name for an agent-based workspace, or the tracing project name for a project-based workspace:
+   For an agent-based workspace, set the registered agent identifier and environment in the exporter headers:
 
    <CodeGroup>
 
    ```bash Shell
    OTEL_EXPORTER_OTLP_ENDPOINT=https://api.smith.langchain.com/otel
-   OTEL_EXPORTER_OTLP_HEADERS="x-api-key=<your langsmith api key>,Langsmith-Project=<project name>"
+   OTEL_EXPORTER_OTLP_HEADERS="x-api-key=<your langsmith api key>,Langsmith-Agent-Id=<your-agent-id>,Langsmith-Agent-Environment=production"
    ```
 
    </CodeGroup>
@@ -494,7 +496,7 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
 # Configure LangSmith OpenTelemetry export (no OTEL env vars or headers needed)
-configure(project_name="adk-otel-demo")
+configure()
 
 
 async def main():
@@ -727,7 +729,8 @@ For more advanced scenarios, you can use the OpenTelemetry Collector to fan out 
        traces_endpoint: https://api.smith.langchain.com/otel/v1/traces
        headers:
          x-api-key: ${env:LANGSMITH_API_KEY}
-         Langsmith-Project: my_project
+         Langsmith-Agent-Id: "<your-agent-id>"
+         Langsmith-Agent-Environment: production
      otlphttp/other_provider:
        traces_endpoint: https://otel.your-provider.com/v1/traces
        headers:
@@ -821,7 +824,11 @@ from langchain_core.prompts import ChatPromptTemplate
 provider = TracerProvider()
 otlp_exporter = OTLPSpanExporter(
     endpoint="https://api.smith.langchain.com/otel/v1/traces",
-    headers={"x-api-key": os.getenv("LANGSMITH_API_KEY"), "Langsmith-Project": "my_project"}
+    headers={
+        "x-api-key": os.getenv("LANGSMITH_API_KEY"),
+        "Langsmith-Agent-Id": os.environ["LANGSMITH_AGENT_ID"],
+        "Langsmith-Agent-Environment": os.environ["LANGSMITH_AGENT_ENVIRONMENT"],
+    }
 )
 processor = BatchSpanProcessor(otlp_exporter)
 provider.add_span_processor(processor)

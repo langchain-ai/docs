@@ -45,9 +45,9 @@ uv add langsmith langchain langchain-anthropic langchainhub emoji
 import getpass
 import os
 
-# Set the project name to whichever project you'd like to be testing against
-project_name = "Tweet Writing Task"
-os.environ["LANGSMITH_PROJECT"] = project_name
+# Select the registered agent whose production traces you want to test against
+os.environ["LANGSMITH_AGENT_ID"] = "<your-agent-id>"
+os.environ["LANGSMITH_AGENT_ENVIRONMENT"] = "production"
 os.environ["LANGSMITH_TRACING"] = "true"
 
 if not os.environ.get("LANGSMITH_API_KEY"):
@@ -132,13 +132,16 @@ The first step is to generate a dataset based on the production *inputs*. Then c
 You can select the runs to backtest on using the `filter` argument of `list_runs`. The `filter` argument uses the LangSmith [trace query syntax](/langsmith/trace-query-syntax) to select runs.
 
 ```python
+import asyncio
 from datetime import datetime, timedelta, timezone
-from langsmith import uuid7
-from langsmith import Client
+
+from langsmith import Client, agent_address, uuid7
 from langsmith.beta import convert_runs_to_test
 
 # Fetch the runs we want to convert to a dataset/experiment
 client = Client()
+address = agent_address(os.environ["LANGSMITH_AGENT_ID"], os.environ["LANGSMITH_AGENT_ENVIRONMENT"])
+project = asyncio.run(client.sessions.resolve(**address))
 
 # How we are sampling runs to include in our dataset
 end_time = datetime.now(tz=timezone.utc)
@@ -146,7 +149,7 @@ start_time = end_time - timedelta(days=1)
 run_filter = f'and(gt(start_time, "{start_time.isoformat()}"), lt(end_time, "{end_time.isoformat()}"))'
 prod_runs = list(
     client.list_runs(
-        project_name=project_name,
+        project_id=project.session_id,
         is_root=True,
         filter=run_filter,
     )

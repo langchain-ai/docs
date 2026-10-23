@@ -268,10 +268,11 @@ Linking [user feedback](/langsmith/attach-user-feedback) to specific traces lets
 <CodeGroup>
 
 ```python Python
+import asyncio  # [!code highlight]
 import os  # [!code highlight]
 
 from openai import OpenAI
-from langsmith import traceable, Client, uuid7  # [!code highlight]
+from langsmith import Client, agent_address, traceable, uuid7  # [!code highlight]
 from langsmith.wrappers import wrap_openai
 
 client = wrap_openai(OpenAI())
@@ -310,8 +311,11 @@ if __name__ == "__main__":
     )  # [!code highlight]
     ls_client = Client()  # [!code highlight]
     # Feedback requires the UUID of the tracing project that owns the run  # [!code highlight]
-    project_name = os.environ["LANGSMITH_PROJECT"]  # [!code highlight]
-    session_id = ls_client.read_project(project_name=project_name).id  # [!code highlight]
+    address = agent_address(  # [!code highlight]
+        os.environ["LANGSMITH_AGENT_ID"], os.environ["LANGSMITH_AGENT_ENVIRONMENT"]  # [!code highlight]
+    )  # [!code highlight]
+    project = asyncio.run(ls_client.sessions.resolve(**address))  # [!code highlight]
+    session_id = project.session_id  # [!code highlight]
     ls_client.create_feedback(  # [!code highlight]
         run_id, key="user-score", score=1.0, session_id=session_id  # [!code highlight]
     )  # [!code highlight]
@@ -321,7 +325,7 @@ if __name__ == "__main__":
 import OpenAI from "openai";
 import { wrapOpenAI } from "langsmith/wrappers";
 import { traceable, getCurrentRunTree } from "langsmith/traceable"; // [!code highlight]
-import { Client } from "langsmith"; // [!code highlight]
+import { AgentAddress, Client } from "langsmith"; // [!code highlight]
 
 const client = wrapOpenAI(new OpenAI());
 
@@ -336,12 +340,10 @@ function retriever(query: string): string[] {
 }
 
 let capturedRunId: string; // [!code highlight]
-let capturedProjectName: string; // [!code highlight]
 
 const supportBot = traceable(async function supportBot(question: string): Promise<string> {
     const runTree = getCurrentRunTree(); // [!code highlight]
     capturedRunId = runTree.id; // [!code highlight]
-    capturedProjectName = runTree.project_name; // [!code highlight]
     const context = retriever(question);
     const systemMessage =
         "You are a helpful customer support agent. " +
@@ -361,9 +363,10 @@ const supportBot = traceable(async function supportBot(question: string): Promis
     await supportBot("How many users can I have on the Starter plan?"); // [!code highlight]
     const lsClient = new Client(); // [!code highlight]
     // Feedback requires the UUID of the tracing project that owns the run // [!code highlight]
-    const { id: sessionId } = await lsClient.readProject({ // [!code highlight]
-        projectName: capturedProjectName, // [!code highlight]
-    }); // [!code highlight]
+    const address = new AgentAddress( // [!code highlight]
+        process.env.LANGSMITH_AGENT_ID!, process.env.LANGSMITH_AGENT_ENVIRONMENT! // [!code highlight]
+    ); // [!code highlight]
+    const { session_id: sessionId } = await lsClient.sessions.resolve(address); // [!code highlight]
     await lsClient.createFeedback({ // [!code highlight]
         runId: capturedRunId, // [!code highlight]
         sessionId, // [!code highlight]
@@ -379,6 +382,8 @@ const supportBot = traceable(async function supportBot(question: string): Promis
 <Note>
 In production, these two pieces would live in separate locations: the `support_bot` call with `run_id` stays in your app, and `create_feedback` moves to whichever endpoint receives user feedback (for example, a `/feedback` API route). The `run_id` is passed from one to the other so the feedback can be linked to the correct trace. Because feedback also requires the project UUID, pass `session_id` alongside the `run_id`.
 </Note>
+
+In a project-based workspace, look up the project UUID with `read_project` / `readProject` instead of resolving an agent address. See [Find an agent's project](/langsmith/resolve-an-agent) for address resolution requirements.
 
 The feedback appears in the **Feedback** tab when you inspect the run in the UI. You can then filter runs by feedback score using the filtering controls in the **Runs** table.
 

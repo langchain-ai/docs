@@ -15,11 +15,12 @@ In this example, we will build a bot that classify GitHub issues based on their 
 
 ## Getting started
 
-To get started, we will first set it up so that we send all traces to a specific project. We can do this by setting an environment variable:
+Register the classifier agent, then configure its identifier and environment:
 
 ```python
 import os
-os.environ["LANGSMITH_PROJECT"] = "classifier"
+os.environ["LANGSMITH_AGENT_ID"] = "<your-agent-id>"
+os.environ["LANGSMITH_AGENT_ENVIRONMENT"] = "production"
 ```
 
 We can then create our initial application. This will be a really simple function that just takes in a GitHub issue title and tries to label it.
@@ -79,13 +80,18 @@ Here's how we can attach feedback after. We can collect feedback in two forms.
 First, we can collect "positive" feedback - this is for examples that the model got right.
 
 ```python
+import asyncio
+from langsmith import agent_address
+
 ls_client = Client()
 run_id = uuid7()
 topic_classifier(
     "fix bug in LCEL",
     langsmith_extra={"run_id": run_id})
 # Resolve the UUID of the project that owns the trace
-session_id = ls_client.create_project(project_name="classifier", upsert=True).id
+address = agent_address(os.environ["LANGSMITH_AGENT_ID"], os.environ["LANGSMITH_AGENT_ENVIRONMENT"])
+project = asyncio.run(ls_client.sessions.resolve(**address))
+session_id = project.session_id
 ls_client.create_feedback(
     run_id,
     key="user-score",
@@ -97,12 +103,17 @@ ls_client.create_feedback(
 Next, we can focus on collecting feedback that corresponds to a "correction" to the generation. In this example the model will classify it as a bug, whereas I really want this to be classified as documentation.
 
 ```python
+import asyncio
+from langsmith import agent_address
+
 ls_client = Client()
 run_id = uuid7()
 topic_classifier(
     "fix bug in documentation",
     langsmith_extra={"run_id": run_id})
-session_id = ls_client.create_project(project_name="classifier", upsert=True).id
+address = agent_address(os.environ["LANGSMITH_AGENT_ID"], os.environ["LANGSMITH_AGENT_ENVIRONMENT"])
+project = asyncio.run(ls_client.sessions.resolve(**address))
+session_id = project.session_id
 ls_client.create_feedback(
     run_id,
     key="correction",
@@ -188,6 +199,9 @@ def topic_classifier(
 If now run the application with a similar input as before, we can see that it correctly learns that anything related to docs (even if a bug) should be classified as `documentation`
 
 ```python
+import asyncio
+from langsmith import agent_address
+
 ls_client = Client()
 run_id = uuid7()
 topic_classifier(
@@ -217,6 +231,9 @@ def find_similar(examples, topic, k=5):
 We can then use that in the application
 
 ```python
+import asyncio
+from langsmith import agent_address
+
 ls_client = Client()
 
 def create_example_string(examples):

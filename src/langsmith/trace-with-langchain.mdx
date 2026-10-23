@@ -44,7 +44,8 @@ pnpm add @langchain/openai @langchain/core
 ```bash wrap
 export LANGSMITH_TRACING=true
 export LANGSMITH_API_KEY=<your-api-key>
-export LANGSMITH_PROJECT="<environment-project-name>"
+export LANGSMITH_AGENT_ID="<your-agent-id>"
+export LANGSMITH_AGENT_ENVIRONMENT="production"
 # This example uses OpenAI, but you can use any LLM provider of choice
 export OPENAI_API_KEY=<your-openai-api-key>
 # For LangSmith API keys linked to multiple workspaces, set the LANGSMITH_WORKSPACE_ID environment variable to specify which workspace to use.
@@ -119,7 +120,7 @@ await chain.invoke({ question: question, context: context });
 
 ### 3. View your trace
 
-By default, the trace will be logged to the project with the name `default`.
+Open the registered agent in LangSmith and select its **Production** environment to view the trace.
 
 ## Trace selectively
 
@@ -162,51 +163,13 @@ await chain.invoke(
 
 </CodeGroup>
 
-## Log to a specific project
+## Select an agent and environment
 
-In an agent-based workspace, use an existing environment project. Replace every destination below, including overrides in code, with a project selected during setup.
+Use `LANGSMITH_AGENT_ID` and `LANGSMITH_AGENT_ENVIRONMENT` to select the registered agent and environment. For per-request routing, pass an agent address in code. See [Log traces to an agent](/langsmith/log-traces-to-agent).
 
-### Statically
-
-As mentioned in the [tracing conceptual guide](/langsmith/observability-concepts) LangSmith uses the concept of a Project to group traces. If left unspecified, the tracer project is set to default. You can set the `LANGSMITH_PROJECT` environment variable to configure a custom project name for an entire application run. This should be done before executing your application.
-
-```bash
-export LANGSMITH_PROJECT="<environment-project-name>"
-```
-
-<Warning>
-The `LANGSMITH_PROJECT` flag is only supported in JS SDK 0.2.16 or later, use `LANGCHAIN_PROJECT` instead if you are using an older version.
-</Warning>
-
-### Dynamically
-
-This largely builds off of the [previous section](#trace-selectively) and allows you to set the project name for a specific `LangChainTracer` instance or as parameters to the `tracing_context` context manager in Python.
-
-<CodeGroup>
-
-```python Python
-# You can set the project name using the project_name parameter.
-import langsmith as ls
-
-with ls.tracing_context(project_name="My Project", enabled=True):
-    chain.invoke({"question": "Am I using a context manager?", "context": "I'm using a context manager"})
-```
-
-```typescript TypeScript
-// You can set the project name for a specific tracer instance:
-import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
-
-const tracer = new LangChainTracer({ projectName: "My Project" });
-await chain.invoke(
-  {
-    question: "Am I using a callback?",
-    context: "I'm using a callback"
-  },
-  { callbacks: [tracer] }
-);
-```
-
-</CodeGroup>
+<Accordion title="Project-based workspaces and self-hosted LangSmith">
+Set `LANGSMITH_PROJECT` to the tracing project name instead of setting the agent variables. For integrations that only accept project names in an agent-based workspace, use the [existing environment project](/langsmith/create-an-agent#use-an-environment-project).
+</Accordion>
 
 ## Add metadata and tags to traces
 
@@ -501,12 +464,13 @@ try {
 
 ## Trace without setting environment variables
 
-As mentioned in other guides, the following environment variables allow you to configure tracing enabled, the api endpoint, the api key, and the tracing project:
+As mentioned in other guides, the following environment variables allow you to configure tracing enabled, the api endpoint, the api key, and the tracing destination:
 
 * `LANGSMITH_TRACING`
 * `LANGSMITH_API_KEY`
 * `LANGSMITH_ENDPOINT`
-* `LANGSMITH_PROJECT`
+* `LANGSMITH_AGENT_ID`
+* `LANGSMITH_AGENT_ENVIRONMENT`
 
 However, in some environments, it is not possible to set environment variables. In these cases, you can set the tracing configuration programmatically.
 
@@ -523,14 +487,14 @@ client = ls.Client(
     api_url="https://api.smith.langchain.com",  # Self-hosted, GCP EU (`eu.api...`), GCP APAC (`apac.api...`), or AWS US (`aws.api...`) as needed
 )
 
-# You can pass the client and project_name to the tracing_context
-with ls.tracing_context(client=client, project_name="test-no-env", enabled=True):
+# You can pass the client and agent address to the tracing_context
+with ls.tracing_context(client=client, address=ls.agent_address("<your-agent-id>", "production"), enabled=True):
     chain.invoke({"question": "Am I using a callback?", "context": "I'm using a callback"})
 ```
 
 ```typescript TypeScript
 import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
-import { Client } from "langsmith";
+import { AgentAddress, Client } from "langsmith";
 
 // You can create a client instance with an api key and api url
 const client = new Client(
@@ -540,8 +504,8 @@ const client = new Client(
     }
 );
 
-// You can pass the client and project_name to the LangChainTracer instance
-const tracer = new LangChainTracer({client, projectName: "test-no-env"});
+// You can pass the client and agent address to the LangChainTracer instance
+const tracer = new LangChainTracer({client, address: new AgentAddress("<your-agent-id>", "production")});
 await chain.invoke(
   {
     question: "Am I using a callback?",
@@ -621,7 +585,7 @@ This will produce the following trace tree: ![Trace tree python interop](/langsm
 
 ### Tracing LangChain objects inside `traceable` (JS only)
 
-Starting with `langchain@0.2.x`, LangChain objects are traced automatically when used inside `@traceable` functions, inheriting the client, tags, metadata and project name of the traceable function.
+Starting with `langchain@0.2.x`, LangChain objects are traced automatically when used inside `@traceable` functions, inheriting the client, tags, metadata, and tracing destination of the traceable function.
 
 For older versions of LangChain below `0.2.x`, you will need to manually pass an instance `LangChainTracer` created from the tracing context found in `@traceable`.
 

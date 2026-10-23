@@ -30,6 +30,8 @@ The following example creates a trace with two child runs, then logs feedback ag
 <CodeGroup>
 
 ```python Python
+import asyncio
+
 from langsmith import Client, trace, traceable
 
 @traceable
@@ -51,7 +53,11 @@ with trace(name="foobar", inputs=inputs) as root_run:
     child_runs = root_run.child_runs
 
 # Resolve the UUID of the project that owns the trace
-session_id = client.read_project(project_name=root_run.session_name).id
+if root_run.address is not None:
+    project = asyncio.run(client.sessions.resolve(**root_run.address))
+    session_id = project.session_id
+else:
+    session_id = client.read_project(project_name=root_run.session_name).id
 
 # Provide feedback for a trace (a.k.a. a root run)
 client.create_feedback(
@@ -76,14 +82,15 @@ client.create_feedback(
 ```
 
 ```typescript TypeScript
-import { Client } from "langsmith";
+import { AgentAddress, Client } from "langsmith";
 const client = new Client();
 
     // ... Run your application and get the run_id...
     // This information can be the result of a user-facing feedback form
 
 // Resolve the UUID of the project that owns the trace
-const { id: sessionId } = await client.readProject({ projectName: "<environment-project-name>" });
+const address = new AgentAddress("<your-agent-id>", "production");
+const { session_id: sessionId } = await client.sessions.resolve(address);
 
 await client.createFeedback({
     runId,
@@ -95,6 +102,8 @@ await client.createFeedback({
 ```
 
 </CodeGroup>
+
+For project-based traces, use `readProject` with the existing project name to get its ID instead of resolving an agent address. For resolution requirements, see [Find an agent's project](/langsmith/resolve-an-agent).
 
 You can even log feedback for in-progress runs using @[`create_feedback()`][create_feedback] / [`createFeedback`](https://reference.langchain.com/javascript/classes/langsmith.client.Client.html#createfeedback). See [Access the current run (span) within a traced function](/langsmith/access-current-span) for how to get the run ID of an in-progress run.
 

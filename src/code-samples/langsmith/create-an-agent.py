@@ -86,8 +86,7 @@ agent = client.agents.create(
     name="Support agent",
     source_type="EXTERNAL",
 )
-production = next(env for env in agent.environments if env.environment == "PRODUCTION")
-print(production.tracer_session_name)
+print(agent.id)  # Use as LANGSMITH_AGENT_ID
 # :snippet-end:
 
 # :snippet-start: agent-environment-project-py
