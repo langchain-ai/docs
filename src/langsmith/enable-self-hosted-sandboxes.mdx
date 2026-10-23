@@ -463,6 +463,27 @@ Service URLs also require an Ed25519 private JWKS with a nonempty `kid` on its f
 
 Service URLs are required to [build and edit custom apps with chat](/langsmith/custom-apps#configure-self-hosted-chat), even though they are optional for other sandbox workflows.
 
+## Optional: enable workload identity
+
+[Workload identity](/langsmith/sandbox-auth-proxy#use-workload-identity-for-cloud-access) lets sandbox proxy rules and mounts reach AWS, Google Cloud, and Azure with short-lived federated credentials instead of stored cloud keys. It is off until your signing JWKS contains an RSA key. Without one, LangSmith rejects federated rules and the UI does not offer **AWS IAM role** authentication.
+
+To enable workload identity:
+
+1. Upgrade LangSmith, including every `sandbox-host`, to a release with workload identity support before you add the key. A host without that support cannot apply Google Cloud federated rules, and a sandbox that relies on one fails to boot. Azure proxy rules, federated or static, and Azure Blob mounts also require upgraded hosts.
+2. Generate an RSA private key with RS256, at least 2048 bits, and a `kid`. For example, with the `step` CLI:
+
+    ```bash
+    step crypto jwk create /dev/null workload_priv.json \
+      --kty RSA --size 2048 --alg RS256 --use sig --kid workload-<date> --no-password --insecure -f
+    ```
+
+3. Append the key after the existing Ed25519 key in `config.signingJwks` or the `langsmith_signing_jwks` key of your [existing LangSmith app Secret](/langsmith/self-host-using-an-existing-secret). Keep the Ed25519 key first: it still signs LangSmith's own tokens. The first RSA key signs workload identity tokens.
+4. Upgrade the release so the platform backend loads the new key set.
+
+The issuer that clouds trust is your LangSmith URL followed by `/api`, such as `https://langsmith.example.com/api`. If you set `config.basePath`, the issuer includes it: `https://langsmith.example.com/<basePath>/api`. AWS, Google Cloud, and Microsoft Entra ID fetch the issuer's discovery document and JWKS when they verify a token, so these endpoints must be reachable from the internet. A Google workload identity provider can instead hold an uploaded copy of the JWKS. If you rotate the RSA key, update any uploaded copy.
+
+If the first RSA key is invalid, workload identity stays off and the platform backend logs `workload identity disabled` at startup.
+
 ## Optional: route egress through a forward proxy
 
 Set `sandboxes.authProxy.httpProxy` when Sandboxes must reach the internet through a corporate HTTP or HTTPS forward proxy.
