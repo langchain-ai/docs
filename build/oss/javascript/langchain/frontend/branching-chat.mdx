@@ -178,7 +178,7 @@ function MessageWithForkControls({
 
         stream.submit(
           { messages: [{ type: "human", content: editedText }] },
-          { forkFrom: { checkpointId } }
+          { forkFrom: checkpointId }
         );
       }}
     >
@@ -202,7 +202,7 @@ fork point for edits and regenerations.
 To edit a user message and fork the conversation:
 
 1. Get `parentCheckpointId` from the message's metadata
-2. Submit the edited message with `forkFrom: { checkpointId }`
+2. Submit the edited message with `forkFrom: checkpointId`
 3. The agent re-runs from that point
 
 ```ts
@@ -218,7 +218,7 @@ function handleEdit(
     {
       messages: [{ type: "human", content: newText }],
     },
-    { forkFrom: { checkpointId: metadata.parentCheckpointId } }
+    { forkFrom: metadata.parentCheckpointId }
   );
 }
 ```
@@ -232,8 +232,8 @@ After the edit:
 
 To regenerate an AI response without changing the input:
 
-1. Get the `parent_checkpoint` from the AI message's metadata
-2. Submit with empty input and `forkFrom: { checkpointId }`
+1. Get `parentCheckpointId` from the AI message's metadata
+2. Submit with `undefined` input and `forkFrom: checkpointId`
 3. The agent produces a fresh response from that point
 
 ```ts
@@ -244,12 +244,19 @@ function handleRegenerate(
   if (!metadata?.parentCheckpointId) return;
 
   stream.submit(undefined, {
-    forkFrom: { checkpointId: metadata.parentCheckpointId },
+    forkFrom: metadata.parentCheckpointId,
   });
 }
 ```
 
-Each regeneration creates a new path for the AI message at that position.
+The SDK converts `undefined` input to `null` to continue from the checkpoint
+without supplying new input. An empty object (`{}`) supplies new input instead.
+Each regeneration creates a new path in the same thread.
+
+<Warning>
+Regeneration can re-execute downstream tools and API calls. It does not reverse
+external effects from the original run. Check those effects before regenerating.
+</Warning>
 
 <Tip>
 Regeneration is useful for non-deterministic agents. Since LLM outputs vary
@@ -259,7 +266,8 @@ different responses.
 
 ## How branching works under the hood
 
-LangGraph persists every state transition as a **checkpoint**. When you submit
+LangGraph persists state at super-step boundaries as **checkpoints**. Nodes
+that run in parallel in one super-step share a checkpoint boundary. When you submit
 with `forkFrom`, the backend starts a new execution path from that point instead
 of appending to the current conversation. The result is a tree structure:
 
@@ -277,7 +285,9 @@ User: "Tell me about JSX" (edited from branch A)
 
 Each path is persisted in the checkpoint store. Use
 `stream.client.threads.getHistory(threadId)` when you want to build a separate
-timeline view across checkpoints.
+timeline view across checkpoints. History is newest first and defaults to 10
+entries. Use each state's `parent_checkpoint` to reconstruct ancestry; list
+position alone does not identify a branch.
 
 ## Best practices
 
