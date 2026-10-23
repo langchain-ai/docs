@@ -1,7 +1,7 @@
 ---
-title: Trace an LLM application tutorial
+title: Trace an agent
 sidebarTitle: Tutorial
-description: Add LangSmith observability to an LLM application across prototyping, beta testing, and production.
+description: Add LangSmith observability to an agent across prototyping, beta testing, and production.
 icon: "school"
 ---
 
@@ -11,12 +11,12 @@ In this tutorial, you will build a customer support chatbot using retrieval-augm
 
 By the end, you will know how to:
 
-- Trace individual LLM calls and full application pipelines.
+- Trace individual LLM calls and full agent pipelines.
 - Collect and query user feedback.
 - Log metadata and use it for filtering and A/B testing.
 - Use monitoring dashboards to track production performance.
 
-The application will retrieve relevant documentation snippets and use them to answer user questions. The retriever is mocked in this tutorial; in a real application you would replace it with a vector search or similar.
+The agent will retrieve relevant documentation snippets and use them to answer user questions. The retriever is mocked in this tutorial; in a real agent you would replace it with a vector search or similar.
 
 ## Prerequisites
 
@@ -148,7 +148,7 @@ Calling `support_bot("How many users can I have on the Starter plan?")` produces
 
 ### Trace the whole pipeline
 
-Tracing the LLM call is useful, but tracing the full pipeline (including retrieval) gives you a complete overview of your application's behavior. Add @[`@traceable`] (Python) or [`traceable`](https://reference.langchain.com/javascript/langsmith/traceable) (TypeScript) to the main function:
+Tracing the LLM call is useful, but tracing the full pipeline (including retrieval) gives you a complete overview of your agent's behavior. Add @[`@traceable`] (Python) or [`traceable`](https://reference.langchain.com/javascript/langsmith/traceable) (TypeScript) to the main function:
 
 <CodeGroup>
 
@@ -234,21 +234,21 @@ Calling `support_bot("How many users can I have on the Starter plan?")` now prod
 <img
     className="block dark:hidden"
     src="/langsmith/images/trace-whole-pipeline.png"
-    alt="LangSmith UI showing a trace with an outer application span and a nested LLM call span."
+    alt="LangSmith UI showing a trace with an outer agent span and a nested LLM call span."
 />
 
 <img
     className="hidden dark:block"
     src="/langsmith/images/trace-whole-pipeline-dark.png"
-    alt="LangSmith UI showing a trace with an outer application span and a nested LLM call span."
+    alt="LangSmith UI showing a trace with an outer agent span and a nested LLM call span."
 />
 
 ### Check your traces from the terminal
 
-If you installed the [LangSmith CLI](/langsmith/langsmith-cli), list recent traces for your project without opening the UI:
+If you installed the [LangSmith CLI](/langsmith/langsmith-cli), list recent traces for your agent environment without opening the UI. The CLI's `--project` option takes the environment's [`tracer_session_name`](/langsmith/create-an-agent#use-an-environment-project):
 
 ```bash
-langsmith trace list --project <your-project> --limit 5
+langsmith trace list --project "<environment-tracer-session-name>" --limit 5
 ```
 
 To view the full run hierarchy and inputs/outputs for a specific trace:
@@ -310,12 +310,12 @@ if __name__ == "__main__":
         langsmith_extra={"run_id": run_id},  # [!code highlight]
     )  # [!code highlight]
     ls_client = Client()  # [!code highlight]
-    # Feedback requires the UUID of the tracing project that owns the run  # [!code highlight]
+    # Feedback requires the session_id for the agent environment  # [!code highlight]
     address = agent_address(  # [!code highlight]
         os.environ["LANGSMITH_AGENT_ID"], os.environ["LANGSMITH_AGENT_ENVIRONMENT"]  # [!code highlight]
     )  # [!code highlight]
-    project = asyncio.run(ls_client.sessions.resolve(**address))  # [!code highlight]
-    session_id = project.session_id  # [!code highlight]
+    resolved = asyncio.run(ls_client.sessions.resolve(**address))  # [!code highlight]
+    session_id = resolved.session_id  # [!code highlight]
     ls_client.create_feedback(  # [!code highlight]
         run_id, key="user-score", score=1.0, session_id=session_id  # [!code highlight]
     )  # [!code highlight]
@@ -362,7 +362,7 @@ const supportBot = traceable(async function supportBot(question: string): Promis
 (async () => {
     await supportBot("How many users can I have on the Starter plan?"); // [!code highlight]
     const lsClient = new Client(); // [!code highlight]
-    // Feedback requires the UUID of the tracing project that owns the run // [!code highlight]
+    // Feedback requires the session_id for the agent environment // [!code highlight]
     const address = new AgentAddress( // [!code highlight]
         process.env.LANGSMITH_AGENT_ID!, process.env.LANGSMITH_AGENT_ENVIRONMENT! // [!code highlight]
     ); // [!code highlight]
@@ -380,10 +380,10 @@ const supportBot = traceable(async function supportBot(question: string): Promis
 </CodeGroup>
 
 <Note>
-In production, these two pieces would live in separate locations: the `support_bot` call with `run_id` stays in your app, and `create_feedback` moves to whichever endpoint receives user feedback (for example, a `/feedback` API route). The `run_id` is passed from one to the other so the feedback can be linked to the correct trace. Because feedback also requires the project UUID, pass `session_id` alongside the `run_id`.
+In production, these two pieces would live in separate locations: the `support_bot` call with `run_id` stays in your agent code, and `create_feedback` moves to whichever endpoint receives user feedback (for example, a `/feedback` API route). The `run_id` is passed from one to the other so the feedback can be linked to the correct trace. Because feedback also requires the environment's trace-storage UUID, pass `session_id` alongside the `run_id`.
 </Note>
 
-In a project-based workspace, look up the project UUID with `read_project` / `readProject` instead of resolving an agent address. See [Find an agent's project](/langsmith/resolve-an-agent) for address resolution requirements.
+In a project-based workspace, look up the project UUID with `read_project` / `readProject` instead of resolving an agent address. See [Resolve an agent environment](/langsmith/resolve-an-agent) for address resolution requirements.
 
 The feedback appears in the **Feedback** tab when you inspect the run in the UI. You can then filter runs by feedback score using the filtering controls in the **Runs** table.
 
@@ -487,7 +487,7 @@ With strong observability in place, you can confidently ship to production. In p
 
 ### Monitoring
 
-In the UI sidebar, select **Monitoring**, then choose a tracing project from the dropdown at the top left. In an [agent-based workspace](/langsmith/agents), **Monitoring** requires an agent, and the dropdown lists one dashboard per [environment](/langsmith/agent-environments) under **Environments**. Charts display key metrics for the project over time, including trace count, latency, error rate, feedback scores, and costs. For more on available metrics and chart configuration, refer to [Dashboards](/langsmith/dashboards).
+Select your agent, then select **Monitoring** in the sidebar. Choose the [environment](/langsmith/agent-environments) under **Environments**. Charts display metrics for that environment over time, including trace count, latency, error rate, feedback scores, and costs. For more on available metrics and chart configuration, refer to [Dashboards](/langsmith/dashboards).
 
 <img
     className="block dark:hidden"
@@ -527,7 +527,7 @@ When a monitoring chart shows something unexpected, click a data point to freeze
 
 ## Conclusion
 
-In this tutorial, you added LangSmith observability to an application across its full development lifecycle. The same tracing setup that helps you iterate quickly during prototyping will continue to provide value in production. You'll have visibility into individual traces and aggregate performance trends.
+In this tutorial, you added LangSmith observability to an agent across its full development lifecycle. The same tracing setup that helps you iterate quickly during prototyping will continue to provide value in production. You'll have visibility into individual traces and aggregate performance trends.
 
 For more, see:
 

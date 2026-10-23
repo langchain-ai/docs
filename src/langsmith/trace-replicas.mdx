@@ -1,22 +1,22 @@
 ---
 title: Write traces to multiple destinations with replicas
 sidebarTitle: Trace replicas
-description: Send every trace to multiple projects or workspaces at the same time using replicas, configured by environment variable or at runtime.
+description: Send every trace to multiple agent environments or workspaces at the same time using replicas, configured by environment variable or at runtime.
 ---
 
 import ProjectTracingCompatibility from '/snippets/langsmith/project-tracing-compatibility.mdx';
 
-Replicas let you send every trace to multiple projects or workspaces at the same time. Where [dynamic routing](/langsmith/conditional-tracing#customize-tracing-configuration-per-request) sends each trace to one destination, replicas duplicate the trace to all configured destinations in parallel.
+Replicas let you send every trace to multiple agent environments or workspaces at the same time. Where [dynamic routing](/langsmith/conditional-tracing#customize-tracing-configuration-per-request) sends each trace to one destination, replicas duplicate the trace to all configured destinations in parallel.
 
 Use replicas to:
 
-- Mirror production traces into a staging or personal project for debugging.
-- Write to multiple workspaces for multi-tenant isolation without changing any application code.
-- Send traces to the same server under different projects, with per-replica metadata overrides.
+- Mirror production traces into a Staging environment or a personal workspace for debugging.
+- Write to multiple workspaces for multi-tenant isolation without changing any agent code.
+- Send traces to the same server for different agent environments, with per-replica metadata overrides.
 
 <ProjectTracingCompatibility />
 
-Provision every destination before enabling routing, including each replica and tenant workspace. Replace the project names below with those existing environment projects.
+Provision every destination before enabling routing, including each replica and tenant workspace. Set each replica's `project_name` or `projectName` to its destination environment's `tracer_session_name`.
 
 ## Configure replicas via environment variable
 
@@ -35,8 +35,8 @@ Set the `LANGSMITH_RUNS_ENDPOINTS` environment variable to a JSON value. Two for
 
     ```bash
     export LANGSMITH_RUNS_ENDPOINTS='[
-    {"api_url": "https://api.smith.langchain.com", "api_key": "ls__key1", "project_name": "project-prod"},
-    {"api_url": "https://api.smith.langchain.com", "api_key": "ls__key2", "project_name": "project-staging"}
+    {"api_url": "https://api.smith.langchain.com", "api_key": "ls__key1", "project_name": "<production-tracer-session-name>"},
+    {"api_url": "https://api.smith.langchain.com", "api_key": "ls__key2", "project_name": "<staging-tracer-session-name>"}
     ]'
     ```
 
@@ -56,19 +56,19 @@ from langsmith.run_trees import WriteReplica, ApiKeyAuth
 
 @traceable
 def my_pipeline(query: str) -> str:
-    # Your application logic here
+    # Your agent logic here
     return f"Answer to: {query}"
 
 replicas = [
     WriteReplica(
         api_url="https://api.smith.langchain.com",
         auth=ApiKeyAuth(api_key="ls__key_workspace_a"),
-        project_name="project-prod",
+        project_name="<production-tracer-session-name>",
     ),
     WriteReplica(
         api_url="https://api.smith.langchain.com",
         auth=ApiKeyAuth(api_key="ls__key_workspace_b"),
-        project_name="project-staging",
+        project_name="<staging-tracer-session-name>",
         # Optionally override fields on the replicated run
         updates={"metadata": {"environment": "staging"}},
     ),
@@ -83,7 +83,7 @@ import { traceable } from "langsmith/traceable";
 
 const myPipeline = traceable(
   async (query: string): Promise<string> => {
-    // Your application logic here
+    // Your agent logic here
     return `Answer to: ${query}`;
   },
   {
@@ -92,12 +92,12 @@ const myPipeline = traceable(
       {
         apiUrl: "https://api.smith.langchain.com",
         apiKey: "ls__key_workspace_a",
-        projectName: "project-prod",
+        projectName: "<production-tracer-session-name>",
       },
       {
         apiUrl: "https://api.smith.langchain.com",
         apiKey: "ls__key_workspace_b",
-        projectName: "project-staging",
+        projectName: "<staging-tracer-session-name>",
         // Optionally override fields on the replicated run
         updates: { metadata: { environment: "staging" } },
       },
@@ -116,7 +116,9 @@ You can also use the `updates` field to merge additional fields (such as [metada
 Auth does not propagate in distributed traces. When a trace spans multiple services, LangSmith forwards replica `project_name` and `updates` to downstream services automatically, but not API keys or credentials. Each service must configure its own credentials for replica destinations.
 </Warning>
 
-## Replicate within the same server (project-only replicas)
+<a id="replicate-within-the-same-server-project-only-replicas"></a>
+
+## Replicate between environments on the same server
 
 If all your replicas use the same LangSmith server, you can omit `api_url` and `auth` and specify only a `project_name`. The SDK reuses the default client credentials:
 
@@ -132,8 +134,8 @@ def my_pipeline(query: str) -> str:
 
 with tracing_context(
     replicas=[
-        WriteReplica(project_name="project-prod"),
-        WriteReplica(project_name="project-staging", updates={"metadata": {"env": "staging"}}),
+        WriteReplica(project_name="<production-tracer-session-name>"),
+        WriteReplica(project_name="<staging-tracer-session-name>", updates={"metadata": {"env": "staging"}}),
     ]
 ):
     my_pipeline("What is LangSmith?")
@@ -147,8 +149,8 @@ const myPipeline = traceable(
   {
     name: "my_pipeline",
     replicas: [
-      { projectName: "project-prod" },
-      { projectName: "project-staging", updates: { metadata: { env: "staging" } } },
+      { projectName: "<production-tracer-session-name>" },
+      { projectName: "<staging-tracer-session-name>", updates: { metadata: { env: "staging" } } },
     ],
   }
 );
@@ -162,7 +164,7 @@ await myPipeline("What is LangSmith?");
 
 When you use replicas, each replica receives a copy of every run. To submit feedback for a run on a specific replica, you need that replica's run ID. In Python SDK 0.10.8 or later and JS SDK 0.8.5 or later, you can designate one replica as the **primary** and use `compute_run_id_for_secondary_replica` to deterministically calculate the run IDs for all other replicas.
 
-The **primary** replica keeps the original run ID unchanged. Each **secondary** replica receives a deterministic run ID derived from the original run ID and the secondary replica's project name. Use `compute_run_id_for_secondary_replica(original_run_id, project_name)` to compute the secondary run ID and pass it when calling `create_feedback`. Both SDKs raise an error if the run ID is not a UUID v7, or if the project name is empty.
+The **primary** replica keeps the original run ID unchanged. Each **secondary** replica receives a deterministic run ID derived from the original run ID and the secondary destination's `tracer_session_name`. Use `compute_run_id_for_secondary_replica(original_run_id, project_name)` to compute the secondary run ID and pass it when calling `create_feedback`. Both SDKs raise an error if the run ID is not a UUID v7, or if `project_name` is empty.
 
 <CodeGroup>
 
@@ -178,7 +180,7 @@ primary_client = Client(api_key="primary-key")
 secondary_client = Client(api_key="secondary-key")
 
 primary_project = "production"
-secondary_project = "backup-project"
+secondary_project = "<replica-tracer-session-name>"
 
 with tracing_context(
     replicas=[
@@ -203,7 +205,7 @@ secondary_run_id = compute_run_id_for_secondary_replica(
     secondary_project,
 )
 
-# Each replica has its own project; resolve the corresponding project UUIDs
+# Each destination has its own session_id; resolve it for feedback
 primary_session_id = primary_client.read_project(project_name=primary_project).id
 secondary_session_id = secondary_client.read_project(project_name=secondary_project).id
 
@@ -233,7 +235,7 @@ const primaryClient = new Client({ apiKey: "primary-key" });
 const secondaryClient = new Client({ apiKey: "secondary-key" });
 
 const primaryProject = "production";
-const secondaryProject = "backup-project";
+const secondaryProject = "<replica-tracer-session-name>";
 
 let primaryRunId: string | undefined;
 
@@ -269,7 +271,7 @@ if (primaryRunId) {
     secondaryProject
   );
 
-  // Each replica has its own project; resolve the corresponding project UUIDs
+  // Each destination has its own session_id; resolve it for feedback
   const { id: primarySessionId } = await primaryClient.createProject({
     projectName: primaryProject,
     upsert: true,
@@ -305,7 +307,7 @@ The `compute_run_id_for_secondary_replica` / `computeRunIdForSecondaryReplica` h
 
 ## Route between LangSmith and OpenTelemetry destinations
 
-You can decide at runtime whether a given invocation sends traces to LangSmith, to an OpenTelemetry (OTel) backend, or to both, without redeploying or modifying application logic. This is useful when you want to toggle between observability backends per environment, or even per request, making the decision at runtime.
+You can decide at runtime whether a given invocation sends traces to LangSmith, to an OpenTelemetry (OTel) backend, or to both, without redeploying or modifying agent logic. This is useful when you want to toggle between observability backends per environment, or even per request, making the decision at runtime.
 
 Set the tracing mode using the `tracing_mode` constructor argument or the `LANGSMITH_TRACING_MODE` environment variable. Both accept the same values; an explicit `tracing_mode` argument always takes precedence over the env var:
 
