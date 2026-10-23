@@ -16,7 +16,7 @@ Define the fallback order once in LangSmith, and then continue using the standar
 A fallback chain has:
 
 - **A primary model**: the provider and model that trigger the chain when a request fails.
-- **One to five fallbacks**: an ordered list of direct provider models or saved [model configurations](/langsmith/model-configurations).
+- **One to five fallbacks**: an ordered list of provider models or saved [model configurations](/langsmith/model-configurations). A provider model uses the workspace's secret for that provider, or Gateway Credits for eligible hosted models.
 - **Triggers**: the HTTP status codes that move the request to the next model. The defaults cover common timeout, rate-limit, and server errors, such as `408`, `429`, `500`, and `503`. They do not include `424`, which the gateway returns when a model has no provider key in the workspace. Add `424` to let the chain skip a fallback without a key. A primary model without a key returns `424` without trying the chain.
 - **A first-output timeout**: how long each attempt can wait before the gateway moves to the next model. It is on by default at 120 seconds, and each attempt gets a fresh timer. Streaming requests wait for the first output, while non-streaming requests wait for response headers.
 
@@ -69,6 +69,8 @@ curl "$LANGSMITH_GATEWAY_BASE_URL/chat/completions" \
 
 The gateway applies the fallback chain configured for `<PRIMARY_MODEL_ID>` in the API key's workspace. If no chain matches, the gateway returns the primary model's response without attempting a fallback.
 
+{/* VERIFY with Eng: do chains also apply to direct model access paths (/anthropic, /openai/v1, ...)? The timeout help text mentions "direct model passthrough requests", and changelog.mdx:922 says translation covers "unified and direct provider endpoints". If yes, say so here and link /langsmith/llm-gateway-direct-model-access. */}
+
 ## Test a chain in the Simulator
 
 The Simulator sends a request through a fallback chain while simulating how each model in the chain behaves, so you can check the chain's routing and added latency before a provider fails in production.
@@ -109,17 +111,6 @@ To configure fallbacks for a prompt:
 Invoke the pulled prompt with its saved model to send requests through the gateway and apply the configuration's fallback chain. Pulling only the prompt template does not include the model configuration.
 
 The fallback chain belongs to the model configuration, not the prompt itself. Prompts that reference the same configuration share its fallbacks. Use a separate configuration for each prompt that needs different fallback behavior.
-
-## Choose fallback candidates
-
-You can add two types of fallback candidates:
-
-- **Direct provider model**: select a supported gateway provider and model. This option uses the workspace's secret for that provider, or Gateway Credits for eligible hosted models.
-- **Model configuration**: select a saved [model configuration](/langsmith/llm-gateway-model-configurations). Use this option for a custom OpenAI-compatible or Anthropic endpoint, a custom model name, or configuration-specific parameters.
-
-A fallback chain can use model configurations from its selected workspace or organization. If both scopes contain a configuration with the same name, LLM Gateway uses the workspace-scoped configuration, including for the primary model.
-
-For example, configure `anthropic/claude-opus-5` as the primary model, `openai/gpt-5.4-mini` as the first fallback, and a saved OpenAI-compatible model configuration as the second fallback. The application continues to request `anthropic/claude-opus-5`; the gateway selects and translates fallback calls when needed.
 
 ## See also
 
