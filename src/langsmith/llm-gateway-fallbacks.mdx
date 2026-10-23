@@ -22,6 +22,8 @@ A fallback chain has:
 
 {/* VERIFY with Eng: primary-without-key behavior observed on dev 2026-10-22 (W9 D3), including after a delay. Confirm it is intended before GA. */}
 
+{/* VERIFY with Eng: rate limit policies return 429 when they block a request (llm-gateway-rate-limit-policies.mdx:10), and 429 is a default trigger. Does a gateway policy block enter the chain, or only a provider 429? If policies block before the primary call, say so here. */}
+
 For each request:
 
 1. The gateway calls the primary model selected by the request's provider-prefixed model ID.
@@ -91,29 +93,27 @@ Keep the following in mind when testing:
 
 ## Set fallbacks for a prompt
 
-To give a prompt its own fallback chain, route it through a saved model configuration. The prompt references the configuration by name, while the gateway manages its fallback chain.
+A [prompt](/langsmith/prompt-engineering-concepts#prompts-in-langsmith) saved in LangSmith stores a model selection with its template, so your application can pull and run both together. A fallback chain applies to every request for its primary model in its workspace.
 
-Creating the configuration requires workspace admin permissions. Creating the fallback chain requires `organization:gateway:manage` permission.
+To give one prompt fallback behavior that differs from other traffic to the same model, point the prompt at its own saved [model configuration](/langsmith/llm-gateway-model-configurations), and make that configuration the chain's primary. The prompt calls the configuration as `custom/<name>`, and the gateway applies the configuration's chain.
 
 To configure fallbacks for a prompt:
 
-1. [Create a model configuration](/langsmith/model-configurations#create-a-configuration) pointing to the provider and model you want the prompt to use.
-1. [Create a fallback chain](#create-a-fallback-chain) in the same workspace. Select your saved configuration as the primary model, rather than selecting its underlying provider and model directly. Add the backup models, configure the triggers, and save the chain.
-1. [Create a prompt](/langsmith/create-a-prompt) in the Playground. Open **Model Configuration**, select **LangSmith Gateway** as the **Provider**, and enter `custom/<my_config_name>` in the **Model** field. Replace `<my_config_name>` with the saved configuration's name, without angle brackets. You can type the value even if it is not listed. Click **Apply**.
+1. In **Settings** > **Model configurations**, [create a model configuration](/langsmith/model-configurations#create-a-configuration) for the provider and model you want the prompt to use. Note the configuration's name, `<config_name>`, which the next two steps use. An organization-scoped configuration reads the provider key from organization secrets, so if the key is a workspace secret, create a workspace configuration.
+1. [Create a fallback chain](#create-a-fallback-chain) in the same workspace. For the primary model, select your configuration from the **Model configurations** section at the end of the model list, rather than its underlying provider and model. The chain's primary model is `custom/<config_name>`, separate from any chain on the underlying model.
+1. [Create a prompt](/langsmith/create-a-prompt) in the Playground. Click the current model's name to open **Model Configuration**, and select **LangSmith Gateway** as the **Provider**. Type `custom/<config_name>` in the **Model** field, and click **Apply**. Click **Start** to check that the prompt runs. Click **Save**, and name the prompt.
+1. In your application, [pull the prompt with its model](/langsmith/manage-prompts-programmatically#pull-a-prompt). In Python, set `include_model=True` when calling `client.pull_prompt`.
 
-    <img
-      src="/images/llm-gateway-prompt-model-configuration.png"
-      alt="Model Configuration dialog with LangSmith Gateway selected as the provider and custom/<my_config_name> entered in the Model field."
-    />
+    {/* VERIFY with Eng: walkthrough on dev 2026-10-23 needed langchain-openai installed and OPENAI_API_KEY set to the LangSmith API key, because the pulled model is a ChatOpenAI client. changelog.mdx:703 says the manifest references a LANGSMITH_GATEWAY_API_KEY secret. Which variable is intended? Document the answer on manage-prompts-programmatically, not here. */}
 
-1. **Save** the prompt, then [pull it with its model](/langsmith/manage-prompts-programmatically#pull-a-prompt). In Python, set `include_model=True` when calling `client.pull_prompt` so the saved Gateway model configuration is included.
+Invoking the pulled prompt sends requests through the gateway, which applies the configuration's fallback chain. Pulling only the prompt template does not include the model configuration.
 
-Invoke the pulled prompt with its saved model to send requests through the gateway and apply the configuration's fallback chain. Pulling only the prompt template does not include the model configuration.
-
-The fallback chain belongs to the model configuration, not the prompt itself. Prompts that reference the same configuration share its fallbacks. Use a separate configuration for each prompt that needs different fallback behavior.
+<Tip>
+The fallback chain belongs to the model configuration, not the prompt itself. Prompts that reference the same configuration share its fallbacks.
+</Tip>
 
 ## See also
 
-- [API formats](/langsmith/llm-gateway-api-formats): review supported request formats and translation behavior.
+- [Add provider secrets](/langsmith/llm-gateway-admin-setup#1-add-provider-secrets): give each model in a chain a provider key.
+- [Monitor LLM Gateway spend](/langsmith/llm-gateway-monitoring): review the cost of primary and fallback attempts by model.
 - [Spend policies](/langsmith/llm-gateway-spend-policies): apply cost limits alongside fallback routing.
-- [Custom model configurations](/langsmith/llm-gateway-model-configurations): call a saved configuration through the gateway with `custom/<name>`.
