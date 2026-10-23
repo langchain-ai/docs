@@ -4,8 +4,6 @@ sidebarTitle: Redact sensitive data with OTEL
 description: Use an OpenTelemetry collector to redact sensitive data from traces before they land in LangSmith.
 ---
 
-import OtlpAgentAddressing from '/snippets/langsmith/otlp-agent-addressing-note.mdx';
-
 [LangChain](/langsmith/trace-with-langchain), [LangGraph](/langsmith/trace-with-langgraph), and [Deep Agents](/langsmith/trace-deep-agents) applications support [OpenTelemetry-based tracing](/langsmith/trace-with-opentelemetry). Instead of sending traces directly to LangSmith, you can route them through an OpenTelemetry collector you control, apply redaction rules to strip sensitive fields, and forward the sanitized traces to LangSmith.
 
 Traces flow from your application to the collector over OTLP/HTTP. The collector runs a transform processor that redacts sensitive span attributes, such as prompt inputs and model completions, before forwarding the sanitized spans to the LangSmith API.
@@ -40,8 +38,6 @@ OTEL_EXPORTER_OTLP_ENDPOINT="http://<my-otel-collector-endpoint>:4318"
 ```
 
 For more on `LANGSMITH_PROJECT`, refer to [Log traces to a specific project](/langsmith/log-traces-to-project).
-
-<OtlpAgentAddressing />
 
 ## Configure the collector
 
@@ -80,6 +76,26 @@ service:
       processors: [transform/redact]
       exporters: [otlphttp/langsmith]
 ```
+
+### Send traces to an agent
+
+To send traces to an agent and an environment instead of a project, change the collector's exporter, not your application. The collector sends its own headers to LangSmith and does not forward the headers your application sends by default. In the `otlphttp/langsmith` exporter, replace `Langsmith-Project` with both agent headers:
+
+```yaml
+exporters:
+  otlphttp/langsmith:
+    traces_endpoint: "https://api.smith.langchain.com/otel/v1/traces"
+    headers:
+      x-api-key: "${env:LANGSMITH_API_KEY}"
+      Langsmith-Agent-Id: "${env:LANGSMITH_AGENT_ID}"
+      Langsmith-Agent-Environment: "${env:LANGSMITH_AGENT_ENVIRONMENT}"
+      x-Tenant-Id: "${env:LANGSMITH_TENANT_ID}" # Required if API key is not scoped to a specific workspace
+```
+
+- **`Langsmith-Agent-Id`**: The identifier of the agent. It must be 1 to 63 lowercase letters, digits, or hyphens, start with a letter, and end with a letter or digit.
+- **`Langsmith-Agent-Environment`**: The environment the traces belong to. One of `local`, `development`, `staging`, or `production`.
+
+Send both headers or neither. LangSmith rejects a request that sets one without the other, or that sets either alongside `Langsmith-Project`, with a `400` error. The headers apply to every span the exporter sends, so to send traces to several agents, define one exporter for each agent. For how sending traces to an agent works, see [Log traces to an agent](/langsmith/log-traces-to-agent).
 
 ## Trace with LangChain, LangGraph, or Deep Agents
 
