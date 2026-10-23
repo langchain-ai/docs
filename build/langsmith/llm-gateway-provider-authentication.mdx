@@ -1,0 +1,144 @@
+---
+title: Provider authentication
+description: Choose how the LLM Gateway authenticates to each model provider, add provider keys as workspace secrets, and debug provider credential errors.
+---
+
+import LLMGatewayBetaNote from '/snippets/python/langsmith/llm-gateway-beta-note.mdx';
+
+<LLMGatewayBetaNote />
+
+Provider authentication is the credential the [LLM Gateway](/langsmith/llm-gateway) uses to call a model provider on your behalf. Because LangSmith holds that credential, developers and agents never need a copy of a provider key. This is the second of two layers: callers first [authenticate to the gateway](/langsmith/llm-gateway-authentication) with a LangSmith API key, which this page does not cover.
+
+## Choose a credential source
+
+Each request uses one of these credential sources. Each source has a different billing owner:
+
+| Source | Who holds the credential | Who bills the call | Set up |
+| --- | --- | --- | --- |
+| Your provider key | LangSmith, as a workspace secret | The provider, on your account | [Add a provider key](#add-a-provider-key) |
+| [Gateway Credits](/langsmith/llm-gateway-credits) | LangChain | LangSmith, on your LangSmith account | No provider credential |
+| [Model configuration](/langsmith/llm-gateway-model-configurations) (`custom/<name>`) | LangSmith, as the secret the configuration names | The provider, on your account | Create the configuration |
+| [Claude subscription](/langsmith/llm-gateway-coding-agents#use-claude-subscription-oauth) | The user's Claude Code login, sent with each request | Anthropic, on the user's subscription | Claude Code only |
+
+The gateway picks the source from the request:
+
+- **Model ID**: a Gateway Credits slug uses Gateway Credits. A `<provider>/<model>` ID uses your provider key for that provider. A `custom/<name>` ID uses the configuration's secret.
+- **Claude subscription**: when a request carries an Anthropic OAuth token, the gateway forwards it to Anthropic and does not load the workspace's `ANTHROPIC_API_KEY`.
+
+[Spend limits](/langsmith/llm-gateway-spend-policies) do not apply to Claude subscription calls, and these calls are left out of spend totals. Rate limit, model access, and data policies still apply.
+
+Gateway policies hold only while every call goes through the gateway. A developer who has a provider key can call the provider directly and bypass them, so keep provider keys in LangSmith and out of developer environments.
+
+## Add a provider key
+
+The gateway reads provider keys from the secrets of the workspace that the caller's API key belongs to. Each workspace that calls a provider needs its own copy of that provider's key. For `<provider>/<model>` calls, the gateway does not fall back to organization secrets. Organization secrets apply only to [organization-scoped model configurations](/langsmith/llm-gateway-model-configurations).
+
+To add a provider key:
+
+1. In LangSmith, select the workspace that calls the provider.
+1. Go to **Settings > Integrations > Provider secrets**.
+1. Add a secret, and select the provider. The provider selector fills in the secret name.
+1. Enter the provider key as the value, and save.
+
+If a workspace has no key for a provider, the Simulator marks that provider's models **Needs key** and prompts for one before it runs a request.
+
+{/* VERIFY X9: which roles can add provider secrets. Test: as a user without admin rights, try to save a bogus secret value. */}
+{/* VERIFY W4: the Simulator's Needs key prompt saves a workspace secret (very likely, per X11). Test with a bogus value in a workspace with no secrets. */}
+
+The gateway reads these secret names:
+
+| Provider | Secret name |
+| --- | --- |
+| Anthropic | `ANTHROPIC_API_KEY` |
+| AWS Bedrock | `AWS_BEARER_TOKEN_BEDROCK` |
+| Azure Foundry | `AZURE_FOUNDRY_API_KEY` and `AZURE_FOUNDRY_RESOURCE_NAME`. For Entra ID, see [Configure Azure Foundry](#configure-azure-foundry). |
+| Baseten | `BASETEN_API_KEY` |
+| Fireworks | `FIREWORKS_API_KEY` |
+| Gemini Enterprise Agent Platform | `VERTEX_SERVICE_ACCOUNT_JSON` |
+| Google Gemini | `GOOGLE_API_KEY` |
+| OpenAI | `OPENAI_API_KEY` |
+| ScaleDown | `SCALEDOWN_API_KEY` |
+| TypeSafe | `TYPESAFE_API_KEY` |
+| xAI | `XAI_API_KEY` |
+
+{/* FOLLOW-UP Phase 4: Bedrock alternatives (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, AWS_IAM_ROLE_ARN, AWS_BEDROCK_REGION) and the Vertex name GOOGLE_VERTEX_AI_WEB_CREDENTIALS go in per-provider sections, with the methods each supports. */}
+
+## Configure Azure Foundry
+
+Azure Foundry supports either an API key or a Microsoft Entra ID service principal. Service principal authentication lets you use resources that [disable local authentication](https://learn.microsoft.com/en-us/azure/ai-services/disable-local-auth).
+
+Both methods require `AZURE_FOUNDRY_RESOURCE_NAME`. Set it to the Azure resource name, not a URL or deployment name. The gateway sends requests to `<resource-name>.openai.azure.com` in the Azure public cloud.
+
+For API key authentication, add `AZURE_FOUNDRY_API_KEY` and `AZURE_FOUNDRY_RESOURCE_NAME` through the Azure Foundry provider form, as described in [Add a provider key](#add-a-provider-key).
+
+### Use an Entra ID service principal
+
+To use an Entra ID service principal instead of an API key:
+
+1. Deploy a model on a Foundry resource, or use an existing deployment. Record the resource name and the deployment name. Use the deployment name as the `model` value in requests.
+1. [Register an application](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app) in Microsoft Entra ID, or use an existing app registration. Record its directory (tenant) ID and application (client) ID.
+1. [Add a client secret](https://learn.microsoft.com/en-us/entra/identity-platform/how-to-add-credentials) to the app registration. Record the secret's value, not its ID.
+1. On the Foundry resource, not a project inside it, [assign the app's service principal](https://learn.microsoft.com/en-us/azure/foundry/concepts/rbac-foundry) the `Foundry User` role (formerly `Azure AI User`). The generic `Owner`, `Contributor`, and `Reader` roles do not [grant permission to call models](https://learn.microsoft.com/en-us/azure/foundry/concepts/rbac-foundry#permissions-for-each-built-in-role).
+1. In LangSmith, select the workspace that routes Azure requests. Go to **Settings > Integrations > Provider secrets** and add each of the following as a custom secret:
+
+   | Secret name | Value |
+   | --- | --- |
+   | `AZURE_FOUNDRY_RESOURCE_NAME` | Azure resource name. |
+   | `AZURE_TENANT_ID` | Directory (tenant) ID. |
+   | `AZURE_CLIENT_ID` | Application (client) ID. |
+   | `AZURE_CLIENT_SECRET` | Client secret value. |
+
+   Select **Custom** in the provider selector to enter each secret's name and value. The Azure Foundry provider form only exposes API key authentication.
+
+1. Remove `AZURE_FOUNDRY_API_KEY` from the workspace if it is set. An API key takes precedence over service principal credentials, even when the resource disables API key authentication.
+
+All three Entra ID secrets are required. The gateway obtains and refreshes Azure access tokens automatically. Users continue to authenticate to the gateway with their LangSmith API key, not the Azure credentials.
+
+This method uses a client secret. It does not use managed identity or workload identity federation. Client secrets expire, so update `AZURE_CLIENT_SECRET` when you rotate the secret in Entra ID.
+
+### Verify the setup
+
+After you [grant gateway access](/langsmith/llm-gateway-authentication#grant-permission-to-call-the-gateway), send a test request through the gateway with your LangSmith API key:
+
+```bash
+curl https://gateway.smith.langchain.com/azure/v1/chat/completions \
+  --header "Authorization: Bearer $LANGSMITH_API_KEY" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "model": "<deployment-name>",
+    "messages": [{"role": "user", "content": "Say hello"}]
+  }'
+```
+
+A `chat.completion` response confirms the setup. For other Cloud regions, replace the hostname with your [regional gateway](/langsmith/llm-gateway-how-it-works#use-a-regional-gateway).
+
+If Azure returns `PermissionDenied`, confirm that the `Foundry User` role is assigned on the Foundry resource, not a project. A new role assignment can take [up to 10 minutes](https://learn.microsoft.com/en-us/azure/role-based-access-control/troubleshooting#symptom---role-assignment-changes-are-not-being-detected) to take effect.
+
+## Debug provider credentials
+
+The gateway passes provider errors through to the caller, so most credential problems show up as the provider's own error. To narrow one down:
+
+- **Check which providers the workspace can reach.** [`GET /v1/models`](/langsmith/llm-gateway-api-formats#list-models) lists `<provider>/<model>` IDs only for providers that have a key in the caller's workspace.
+- **A `424` naming a secret**, such as `Required workspace secret "XAI_API_KEY" is missing.`, means the workspace has no key for that provider. Add it to the workspace the caller's API key belongs to.
+- **An error that shows a masked provider key**, such as OpenAI's `Incorrect API key provided: sk-...`, means the stored key is invalid or revoked. Replace the secret.
+- **Anthropic's `invalid x-api-key`** means either the stored Anthropic key is invalid, or the client sent the request straight to Anthropic without the gateway base URL. If the base URL points at the gateway, replace the stored key.
+
+For errors from the caller's LangSmith API key, such as `401` and `403`, see [Fix authentication errors](/langsmith/llm-gateway-authentication#fix-authentication-errors).
+
+## See also
+
+- [Authenticate to the LLM Gateway](/langsmith/llm-gateway-authentication): choose and send the LangSmith API key that callers use.
+- [Set up the LLM Gateway](/langsmith/llm-gateway-admin-setup): set up provider keys, permissions, and policies for your organization.
+- [Direct model access](/langsmith/llm-gateway-direct-model-access): call provider APIs through provider-specific gateway paths.
+- [Self-hosted LLM Gateway](/langsmith/llm-gateway-self-hosted): enable the gateway on self-hosted LangSmith.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/llm-gateway-provider-authentication.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
