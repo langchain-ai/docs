@@ -1,0 +1,159 @@
+---
+title: Create an agent
+sidebarTitle: Create an agent
+description: Register an agent before tracing, choose its identifier, and configure an environment with the UI, Python SDK, or REST API.
+icon: "plus"
+---
+
+import CreateAgentPy from '/snippets/python/code-samples/create-agent-py.mdx';
+import AgentEnvironmentProjectPy from '/snippets/python/code-samples/agent-environment-project-py.mdx';
+import AgentAvailabilityNote from '/snippets/python/langsmith/agent-availability-note.mdx';
+
+Creating an [agent](/langsmith/agents) in LangSmith gives it an identifier and [environments](/langsmith/agent-environments) for its traces. Create it once, then use its identifier and an environment to send traces from your code.
+
+If your agent runs outside LangSmith, first create its record in LangSmith using the UI, SDK, or API. This record organizes its traces; your code still runs where you host it. Framework functions such as LangChain `create_agent` build the agent that runs in your code. You also need to create its record in LangSmith.
+
+<AgentAvailabilityNote />
+
+## Compare the four routes
+
+An agent can be created in four ways, which differ in how the identifier is set and which environments the agent starts with:
+
+| Method | What you do | Identifier | Environments at creation |
+| --- | --- | --- | --- |
+| [Build tab](/langsmith/build-an-agent) | Build and run an agent inside LangSmith | Generated for you | Production alone |
+| [UI](#name-an-agent-traced-from-outside-langsmith) | Create an agent record by entering its name and ID in LangSmith | You set it | All four |
+| [SDK or API](#create-an-agent-programmatically) | Create an agent record with an SDK call or API request | You set it | All four |
+| [Deploying a project](/langsmith/deploy-to-agent-environment) | Deploy your agent code to LangSmith | The agent ID you pass, or derived from the deployment name | All four |
+
+Not every agent can have a [deployment](/langsmith/deployment). An agent created by deploying a project has a deployment from the start. An agent created with the SDK or API, by the Observability option in the [**New Agent** panel](#start-from-the-new-agent-panel), or by the **Create a new agent** dialog has no deployment at first, but you can [deploy to it](/langsmith/deploy-to-agent-environment) later. An agent built in the UI cannot have a deployment, because it runs on a Studio runtime. After a deployment, the agent's Overview shows a **Deployments** section.
+
+An agent created through the Build tab gains its other environments the first time a trace is addressed to one. For what the four are, see [Agent environments](/langsmith/agent-environments#environment-names).
+
+When LangSmith builds or deploys an agent through these flows, it handles registration. Reuse that agent for tracing; do not create a separate external agent for the same deployment.
+
+## Identifier rules
+
+An identifier is 1 to 63 characters, using lowercase letters, digits, and hyphens. It must start with a letter and end with a letter or digit, so `support-agent` and `billing-v2` are valid. Anything else is rejected.
+
+The rules apply wherever you supply the value: in the **Agent ID** field, in SDK and API creation requests, and in the agent ID you deploy to. The Build tab generates an identifier instead. A deployment without an agent ID derives one from the deployment name, appending a suffix when that value is already taken, so a deployed agent can end up with an identifier close to the deployment name rather than equal to it.
+
+An identifier cannot be changed after the agent is created. The display name can. For which value is which, see [Identifiers and display names](/langsmith/agents#identifiers-and-display-names).
+
+## Start from the New Agent panel
+
+Four controls open the **New Agent** panel: **+ Agent** above the agent list, **+ Create new agent** and **Trace existing agent** on a creation card at the end of the list, also titled **New Agent**, and the **+** button beside the search box in the agent switcher, which shows a **New agent** tooltip on hover. **Trace existing agent** opens the panel on the Observability option, and the other three open it on its grid of options. An **All options** button returns to the grid.
+
+The panel hands off to four flows. Only Observability creates the agent inside the panel:
+
+- **Builder** ("Build and configure inside LangSmith"): Leaves the panel for the **Build** tab, where submitting the form creates the agent. See [Build an agent in the UI](/langsmith/build-an-agent).
+- **Managed Deep Agent** ("Build locally and deploy"): The agent is created when you deploy. See [Managed Deep Agents](/langsmith/python/managed-deep-agents-overview). This route requires a paid plan.
+- **Open Source** ("Build an agent with our open source frameworks"): Build your agent with [LangChain](/oss/python/langchain/overview), then create its LangSmith record using the UI or API below.
+- **Observability** ("Trace an existing agent"): Name the agent in the panel, and LangSmith creates it and opens its tracing page, which holds the setup steps. See the [tracing quickstart](/langsmith/observability-quickstart).
+
+## Name an agent traced from outside LangSmith
+
+Creating an external agent in the UI requires permission to create projects. To register it, name it in either of two places:
+
+- The Observability option in the **New Agent** panel.
+- The **Create a new agent** dialog, opened from **+ New agent** below the agent list on Tracing when no agent is selected.
+
+Both take an **Agent name** and, in its own field, an **Agent ID**, with a note that the ID is used in URLs and API calls and cannot be changed later. Both require permission to create projects. The agent switcher has the same **+** button, beside its search box, for users with the same permission, wherever the switcher appears, and it opens the **New Agent** panel rather than the dialog.
+
+After creation, configure your code to [send traces to the agent and environment](/langsmith/log-traces-to-agent). For integrations that only accept project names, use an [environment project](#use-an-environment-project).
+
+## Create an agent programmatically
+
+The agent creation API creates an agent record in LangSmith with all four environments. Call it once before sending traces, rather than each time your agent runs.
+
+Use a [personal access token or service key](/langsmith/create-account-api-key) with the [`projects:create` permission](/langsmith/organization-workspace-operations#projects). A tracing key cannot call the agent creation API. After creating the agent, your code can use a tracing key to submit traces.
+
+Set `LANGSMITH_API_KEY` to the setup credential. Set `LANGSMITH_WORKSPACE_ID` to the target workspace ID, and `LANGSMITH_ENDPOINT` to your [region's API URL](/langsmith/create-account-api-key#configure-the-sdk).
+
+<Tabs>
+  <Tab title="Python">
+    Install LangSmith v0.14.12 or later:
+
+    ```bash
+    pip install -U "langsmith>=0.14.12"
+    ```
+
+    Create the agent and print its identifier:
+
+    <CreateAgentPy />
+  </Tab>
+  <Tab title="REST">
+    Use the REST API from any language to register the agent. Include `source_type: "EXTERNAL"`:
+
+    ```bash
+    curl --fail-with-body --request POST "$LANGSMITH_ENDPOINT/api/v1/agents" \
+      --header "x-api-key: $LANGSMITH_API_KEY" \
+      --header "x-tenant-id: $LANGSMITH_WORKSPACE_ID" \
+      --header "Content-Type: application/json" \
+      --data '{"id":"support-agent","name":"Support agent","source_type":"EXTERNAL"}'
+    ```
+  </Tab>
+</Tabs>
+
+`id` is the immutable agent identifier. `name` is its editable display name. The creation response includes `environments`, with each environment's `tracer_session_name` and `tracer_session_id`.
+
+If the identifier already exists, creation returns `409`. Reuse the existing agent after checking its identity, or choose another identifier. Keep creation in your setup step. Retrieve an existing agent when your code needs its configuration.
+
+## Configure tracing for the agent
+
+Use the agent identifier and environment as the tracing destination:
+
+```bash
+export LANGSMITH_TRACING=true
+export LANGSMITH_API_KEY="<your-tracing-api-key>"
+export LANGSMITH_AGENT_ID="support-agent"
+export LANGSMITH_AGENT_ENVIRONMENT="production"
+```
+
+Use the identifier returned by creation, not the display name. Remove project destination variables (`LANGSMITH_PROJECT`, `LANGCHAIN_PROJECT`, and `LANGCHAIN_SESSION`) from the environment where your code runs. For SDK versions and code-based configuration, see [Log traces to an agent](/langsmith/log-traces-to-agent).
+
+## Use an environment project
+
+This compatibility option is for integrations that only accept project names. Prefer agent addressing when the integration supports it. Each environment has a tracing project that these integrations can use as their destination.
+
+Retrieve the agent with a credential that can read its environment projects. With the Python SDK:
+
+<AgentEnvironmentProjectPy />
+
+With REST, call `GET /api/v1/agents/support-agent` using the same authentication headers as the creation request. In `environments`, select `PRODUCTION`, `STAGING`, `DEVELOPMENT`, or `LOCAL` and read its `tracer_session_name` or `tracer_session_id`.
+
+Copy the returned project name into your integration's destination setting:
+
+```bash
+export LANGSMITH_PROJECT="<environment-project-name>"
+```
+
+Use the returned value rather than deriving it from the agent ID or display name. For example, an integration may call this setting `project_name`, `projectName`, `LANGCHAIN_PROJECT`, or `Langsmith-Project`. Replace every example destination, including overrides in code and replica destinations, with an existing environment project in the target workspace.
+
+If the SDK supports [agent addressing](/langsmith/log-traces-to-agent), set `LANGSMITH_AGENT_ID` and `LANGSMITH_AGENT_ENVIRONMENT` instead. Do not combine those variables with project destination variables.
+
+## Troubleshoot setup
+
+- **Creation returns `403`**: Use a PAT or service key with permission to create projects in the target workspace. Tracing keys cannot register agents.
+- **Tracing reports a missing agent**: Create the agent first, then retry tracing with its exact identifier and environment.
+- **Creation returns `409`**: The identifier is already in use. Archived agents also retain their identifiers.
+- **Traces appear in the wrong place**: Check the workspace, region, environment, and any project overrides in code. A display name is not an agent identifier or a project name.
+
+## See also
+
+- [Agents](/langsmith/agents)
+- [Agent environments](/langsmith/agent-environments)
+- [Build an agent in the UI](/langsmith/build-an-agent)
+- [Deploy to an agent environment](/langsmith/deploy-to-agent-environment)
+- [Log traces to an agent](/langsmith/log-traces-to-agent)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/create-an-agent.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
