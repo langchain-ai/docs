@@ -594,6 +594,32 @@ Notes:
 - After regenerating, commit only `src/snippets/langsmith/mda-oauth-catalog.mdx`. Do not edit
   that snippet by hand.
 
+### Update the egress IP inventory
+
+The LangSmith and LangSmith Deployment egress IP tables on `/langsmith/cloud` and
+`/langsmith/cloud-platform-features` are generated from
+`src/langsmith/egress-ip-addresses.json` by `scripts/generate_egress_ip_tables.py`. The JSON is
+also published as-is at `/langsmith/egress-ip-addresses.json` for customers to poll.
+
+Each address has a service (`langsmith` or `langsmith-deployment`), cloud (`gcp` or `aws`),
+customer region (`us`, `eu`, or `apac`), IPv4 `/32` CIDR, and status. Use `reserved` for
+allocated addresses that are not attached, and `active` for addresses already in use. Customers
+must allowlist both statuses. Publish new reserves before using them, and mark consumed reserves
+`active`. Remove an address only after it stops carrying traffic and has been released.
+
+```bash
+uv run python scripts/generate_egress_ip_tables.py           # rewrite the version and both tables
+uv run python scripts/generate_egress_ip_tables.py --check   # fail if anything is stale
+```
+
+Notes:
+
+- Commit the JSON and both generated pages together. Do not edit the generated tables or the
+  `version` field by hand.
+- `make test` runs the same `--check` on the committed files, so CI fails on drift.
+- After deployment, verify the changes at
+  [the public JSON](https://docs.langchain.com/langsmith/egress-ip-addresses.json).
+
 ### Check integration repo links
 
 `scripts/check_integration_repos.py` scans every third-party `repo:` in `packages.yml`
