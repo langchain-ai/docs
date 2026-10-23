@@ -588,6 +588,39 @@ Declarative subagents defined via `subagents=` do not inherit the main agent's m
 :::
 
 :::js
+Pass a middleware instance whose `.name` matches an entry in the [Deep Agents stack](#deep-agents-stack), such as @[`SummarizationMiddleware`], to replace that built-in instance in place instead of appending a duplicate. Any middleware you pass whose `.name` does **not** match a built-in entry is not replaced, it lands after the last core middleware entry and before the profile, prompt-caching, and memory. See [Full stack](#full-stack) for the complete ordering.
+
+```js
+import {
+  createDeepAgent,
+  createSummarizationMiddleware,
+  StateBackend,
+} from "deepagents";
+
+const backend = new StateBackend();
+const model = "openai:gpt-5.5";
+
+const customSummarization = createSummarizationMiddleware({
+  model,
+  backend,
+  summaryPrompt: "Your custom summary prompt here.",
+});
+
+const agent = createDeepAgent({
+  model,
+  middleware: [customSummarization], // replaces the default SummarizationMiddleware
+});
+```
+
+<Note>
+An override **replaces** the default middleware instance, it is not merged with it. That means your replacement must be fully configured with any settings it needs. This is especially important for `FilesystemMiddleware`: if you override it, you must pass the `backend` (and `permissions`, if applicable) directly to `createFilesystemMiddleware`, since it will not inherit the `backend` and `permissions` passed to `createDeepAgent`. To restrict the available filesystem tools, pass a `tools` allowlist to your custom @[`FilesystemMiddleware`] instance; see [Virtual filesystem access](/oss/deepagents/overview#virtual-filesystem-access).
+</Note>
+
+The general-purpose subagent, which Deep Agents adds automatically, inherits overrides for its default middleware from the main agent, without carrying over middleware that is specific to the main agent.
+
+Declarative subagents defined via `subagents` do not inherit the main agent's middleware customization. Pass the override directly in that subagent's own [`middleware`](/oss/deepagents/subagents#subagent-dictionary-based) field to apply it there; that field is matched against the [synchronous subagent stack](#synchronous-subagent-stack), the same way `middleware` is matched against the main agent's.
+
+#### Examples
 
 <AccordionGroup>
     <Accordion title="Keep binary file content out of checkpointed history" icon="database">
@@ -621,7 +654,6 @@ Declarative subagents defined via `subagents=` do not inherit the main agent's m
         For more information, see [Offload binary content](/oss/deepagents/backends#offload-binary-content).
     </Accordion>
 </AccordionGroup>
-
 :::
 
 ### Interpreters
