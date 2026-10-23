@@ -4,7 +4,7 @@ okf_version: "0.2"
 
 # Files
 
-- [Repository Wiki Quickstart](quickstart.md) - Route a documentation or tooling change to its durable owner, relevant workflow, and proportionate validation. Use this map to distinguish authored inputs from generated, deployment-owned, and externally owned surfaces.
+- [Repository Wiki Quickstart](quickstart.md) - Route documentation, generated artifacts, automation, and API-reference work to the durable owner and choose proportionate local validation. Distinguish the Mintlify documentation build from externally generated SDK reference documentation.
 
 # Directories
 
