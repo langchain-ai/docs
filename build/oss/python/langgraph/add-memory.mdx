@@ -771,6 +771,193 @@ with PostgresStore.from_conn_string(DB_URI) as store:  # [!code highlight]
 </Accordion>
 
 <Accordion title="Example: using MongoDB store">
+  ```
+  pip install -U langgraph-store-mongodb langgraph-checkpoint-mongodb
+  ```
+
+    <Tip>
+    Semantic search with `query` needs MongoDB Vector Search (`$vectorSearch`), which runs on [MongoDB Atlas](https://www.mongodb.com/docs/atlas/) or on self-managed MongoDB with [Search and Vector Search](https://www.mongodb.com/docs/search/self-managed/current/) (`mongot`). A plain `mongod` without `mongot` is not enough. Pass `index_config` from `create_vector_index_config` when you open the store. Index creation can exceed the default 15 second wait, so set `auto_index_timeout` higher on first run. For Atlas cluster setup, see [this guide](https://www.mongodb.com/docs/guides/atlas/cluster/). For vector index setup and an agent-focused walkthrough, see [long-term memory with MongoDB Atlas](/oss/python/integrations/memory/mongodb-long-term-memory).
+    </Tip>
+
+    <Tabs>
+        <Tab title="Async">
+      ```python
+      import os
+      from collections.abc import Sequence
+      from dataclasses import dataclass
+      from uuid import uuid4
+
+      from langchain.chat_models import init_chat_model
+      from langgraph.checkpoint.mongodb import MongoDBSaver  # [!code highlight]
+      from langgraph.graph import StateGraph, MessagesState, START
+      from langgraph.runtime import Runtime  # [!code highlight]
+      from langgraph.store.mongodb import MongoDBStore, create_vector_index_config  # [!code highlight]
+
+      model = init_chat_model(model="claude-haiku-4-5-20251001")
+
+      def embed(texts: Sequence[str]) -> list[list[float]]:
+          # Replace with an embeddings model or LangChain Embeddings instance
+          return [[1.0, 2.0] for _ in texts]
+
+      @dataclass
+      class Context:
+          user_id: str
+
+      async def call_model(  # [!code highlight]
+          state: MessagesState,
+          runtime: Runtime[Context],  # [!code highlight]
+      ):
+          user_id = runtime.context.user_id  # [!code highlight]
+          namespace = ("memories", user_id)
+          memories = await runtime.store.asearch(namespace, query=str(state["messages"][-1].content))  # [!code highlight]
+          info = "\n".join([d.value["data"] for d in memories])
+          system_msg = f"You are a helpful assistant talking to the user. User info: {info}"
+
+          # Store new memories if the user asks the model to remember
+          last_message = state["messages"][-1]
+          if "remember" in last_message.content.lower():
+              memory = "User name is Bob"
+              await runtime.store.aput(namespace, str(uuid4()), {"data": memory})  # [!code highlight]
+
+          response = await model.ainvoke(
+              [{"role": "system", "content": system_msg}] + state["messages"]
+          )
+          return {"messages": response}
+
+      MONGODB_ATLAS_URI = os.environ["MONGODB_ATLAS_URI"]
+      index_config = create_vector_index_config(embed=embed, dims=2, fields=["data"])  # [!code highlight]
+
+      with (
+          MongoDBStore.from_conn_string(  # [!code highlight]
+              MONGODB_ATLAS_URI,
+              index_config=index_config,  # [!code highlight]
+              auto_index_timeout=120,
+          ) as store,
+          MongoDBSaver.from_conn_string(MONGODB_ATLAS_URI) as checkpointer,
+      ):
+          builder = StateGraph(MessagesState, context_schema=Context)  # [!code highlight]
+          builder.add_node(call_model)
+          builder.add_edge(START, "call_model")
+
+          graph = builder.compile(
+              checkpointer=checkpointer,
+              store=store,  # [!code highlight]
+          )
+
+          import asyncio
+
+          async def run():
+              config = {"configurable": {"thread_id": "1"}}
+              stream = await graph.astream_events(
+                  {"messages": [{"role": "user", "content": "Hi! Remember: my name is Bob"}]},
+                  config,
+                  version="v3",
+                  context=Context(user_id="1"),  # [!code highlight]
+              )
+              async for snapshot in stream.values:
+                  snapshot["messages"][-1].pretty_print()
+
+              config = {"configurable": {"thread_id": "2"}}
+              stream = await graph.astream_events(
+                  {"messages": [{"role": "user", "content": "what is my name?"}]},
+                  config,
+                  version="v3",
+                  context=Context(user_id="1"),  # [!code highlight]
+              )
+              async for snapshot in stream.values:
+                  snapshot["messages"][-1].pretty_print()
+
+          asyncio.run(run())
+```
+        </Tab>
+        <Tab title="Sync">
+      ```python
+      import os
+      from collections.abc import Sequence
+      from dataclasses import dataclass
+      from uuid import uuid4
+
+      from langchain.chat_models import init_chat_model
+      from langgraph.checkpoint.mongodb import MongoDBSaver  # [!code highlight]
+      from langgraph.graph import StateGraph, MessagesState, START
+      from langgraph.runtime import Runtime  # [!code highlight]
+      from langgraph.store.mongodb import MongoDBStore, create_vector_index_config  # [!code highlight]
+
+      model = init_chat_model(model="claude-haiku-4-5-20251001")
+
+      def embed(texts: Sequence[str]) -> list[list[float]]:
+          # Replace with an embeddings model or LangChain Embeddings instance
+          return [[1.0, 2.0] for _ in texts]
+
+      @dataclass
+      class Context:
+          user_id: str
+
+      def call_model(  # [!code highlight]
+          state: MessagesState,
+          runtime: Runtime[Context],  # [!code highlight]
+      ):
+          user_id = runtime.context.user_id  # [!code highlight]
+          namespace = ("memories", user_id)
+          memories = runtime.store.search(namespace, query=str(state["messages"][-1].content))  # [!code highlight]
+          info = "\n".join([d.value["data"] for d in memories])
+          system_msg = f"You are a helpful assistant talking to the user. User info: {info}"
+
+          # Store new memories if the user asks the model to remember
+          last_message = state["messages"][-1]
+          if "remember" in last_message.content.lower():
+              memory = "User name is Bob"
+              runtime.store.put(namespace, str(uuid4()), {"data": memory})  # [!code highlight]
+
+          response = model.invoke(
+              [{"role": "system", "content": system_msg}] + state["messages"]
+          )
+          return {"messages": response}
+
+      MONGODB_ATLAS_URI = os.environ["MONGODB_ATLAS_URI"]
+      index_config = create_vector_index_config(embed=embed, dims=2, fields=["data"])  # [!code highlight]
+
+      with (
+          MongoDBStore.from_conn_string(  # [!code highlight]
+              MONGODB_ATLAS_URI,
+              index_config=index_config,  # [!code highlight]
+              auto_index_timeout=120,
+          ) as store,
+          MongoDBSaver.from_conn_string(MONGODB_ATLAS_URI) as checkpointer,
+      ):
+          builder = StateGraph(MessagesState, context_schema=Context)  # [!code highlight]
+          builder.add_node(call_model)
+          builder.add_edge(START, "call_model")
+
+          graph = builder.compile(
+              checkpointer=checkpointer,
+              store=store,  # [!code highlight]
+          )
+
+          config = {"configurable": {"thread_id": "1"}}
+          stream = graph.stream_events(
+              {"messages": [{"role": "user", "content": "Hi! Remember: my name is Bob"}]},
+              config,
+              version="v3",
+              context=Context(user_id="1"),  # [!code highlight]
+          )
+          for snapshot in stream.values:
+              snapshot["messages"][-1].pretty_print()
+
+          config = {"configurable": {"thread_id": "2"}}
+          stream = graph.stream_events(
+              {"messages": [{"role": "user", "content": "what is my name?"}]},
+              config,
+              version="v3",
+              context=Context(user_id="1"),  # [!code highlight]
+          )
+          for snapshot in stream.values:
+              snapshot["messages"][-1].pretty_print()
+```
+        </Tab>
+    </Tabs>
+
+
 
 </Accordion>
 
