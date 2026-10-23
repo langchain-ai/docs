@@ -148,7 +148,7 @@ The full webhook payload contains the following fields:
 | `run_id` | `string` (UUID) | Unique identifier for the run. |
 | `thread_id` | `string` (UUID) | Identifier for the thread the run belongs to. |
 | `assistant_id` | `string` | Identifier for the assistant that executed the run. |
-| `status` | `string` | Final status of the run (e.g., `"success"`, `"error"`). |
+| `status` | `string` | Final status of the run: `"success"`, `"error"`, `"timeout"`, `"interrupted"`, or `"rollback"`. See [Status values](#status-values) below. |
 | `created_at` | `string` (datetime) | Timestamp when the run was created. |
 | `updated_at` | `string` (datetime) | Timestamp when the run was last updated. |
 | `run_started_at` | `string` (datetime) | Timestamp when the run began executing. |
@@ -158,7 +158,7 @@ The full webhook payload contains the following fields:
 | `kwargs` | `JSON object` | Run input, configuration, and other invocation parameters. |
 | `values` | `JSON object` | The state values from the latest checkpoint of the thread. Only present for stateful runs. |
 | `multitask_strategy` | `string` | The multitask strategy used for the run. |
-| `error` | `JSON object \| null` | Present only if the run failed. Contains `error` (error type) and `message` (detail) fields. |
+| `error` | `JSON object \| null` | Present only if the run ended with an exception (any status other than `"success"`). Contains `error` (error type) and `message` (detail) fields. |
 
 Example payload:
 
@@ -190,7 +190,7 @@ Example payload:
 }
 ```
 
-When a run fails, the `error` field contains details about the failure:
+When a run times out, the `status` field is `"timeout"` and the `error` field contains details about the failure:
 
 ```json
 {
@@ -200,6 +200,22 @@ When a run fails, the `error` field contains details about the failure:
   }
 }
 ```
+
+## Status values
+
+The `status` field takes one of five values:
+
+| Value | When it is sent |
+|-------|----------------|
+| `"success"` | The run completed normally. Also sent when a run pauses at an [`interrupt()`](https://reference.langchain.com/python/langgraph/types/interrupt) call waiting for human input. The pending interrupt is not visible in the payload, so read the thread state to detect it. |
+| `"error"` | The run raised an unhandled exception. The `error` field in the payload contains the error type and message. |
+| `"timeout"` | The run exceeded the background job timeout, set by the `BG_JOB_TIMEOUT_SECS` environment variable (default 86400 seconds). |
+| `"interrupted"` | The run was cancelled while executing, either by a `multitask_strategy: "interrupt"` policy that preempted it for a newer run, or by a `runs.cancel` call with the default `interrupt` action. |
+| `"rollback"` | The run was cancelled while executing and its checkpoints were deleted, either by a `multitask_strategy: "rollback"` policy or by a `runs.cancel` call with `action="rollback"`. The `values` field is `null`. |
+
+A run that is cancelled while still pending never starts executing, so the server sends no webhook for it.
+
+A single thread can receive more than one webhook call. For example, if a new run preempts an in-flight run, the server sends an `"interrupted"` webhook for the preempted run and a separate webhook for the new run when it finishes.
 
 ## Secure webhooks
 
@@ -289,8 +305,24 @@ Available options:
 | `allowed_domains` | Hostname allowlist. Supports wildcards for subdomains (e.g., `*.mycompany.com`). |
 | `require_https` | Reject `http://` URLs when `true`. |
 | `allowed_ports` | Explicit port allowlist. Defaults to 443 (https) and 80 (http). |
-| `disable_loopback` | Disallow relative URLs (internal loopback calls) when `true`. |
+| `disable_loopback` | Disallow loopback addresses and relative URLs when `true`. Defaults to `true` in `langgraph-api` 0.10.0 or later. |
 | `max_url_length` | Maximum permitted URL length in characters. |
+
+Because `disable_loopback` defaults to `true`, webhooks to `localhost`, `127.0.0.1`, `host.docker.internal`, or a relative URL are rejected. This commonly affects a local receiver used with `langgraph dev`. To allow them, set `disable_loopback` to `false`:
+
+```json
+{
+  "webhooks": {
+    "url": {
+      "disable_loopback": false
+    }
+  }
+}
+```
+
+<Note>
+The server also applies an SSRF policy that blocks requests to cloud-metadata endpoints (such as `169.254.169.254`) and cluster-internal hosts by default. The `disable_loopback` option adds control over loopback and relative URLs on top of this baseline. Hosts that match an `allowed_domains` entry skip these SSRF checks.
+</Note>
 
 ## Disable webhooks
 
