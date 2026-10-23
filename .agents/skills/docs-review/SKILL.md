@@ -73,14 +73,9 @@ going further.
 
 ## Step 2. Run Vale
 
-In the main checkout, `make lint_prose FILES="<files>"` is enough. Vale's binary
-is gitignored, so a fresh worktree does not have it and `make lint_prose` there
-fails with `.bin/vale: No such file or directory`. From a worktree, call the main
-checkout's binary by path so it picks up `.vale.ini`:
-
-```bash
-cd <worktree> && <main-checkout>/.bin/vale --glob='!**/node_modules/**' <files>
-```
+Run `make lint_prose FILES="<files>"`, in the main checkout or a worktree alike.
+The target installs the Vale version pinned in `.mise.toml` into `.bin/vale` when
+it is missing, so a fresh worktree needs no setup beyond network access.
 
 Vale is deterministic and CI blocks on it, so its output is not a judgment call.
 Report every violation with its file and line. If invoked with `--fix`, correct
@@ -91,7 +86,7 @@ difference rather than the raw count:
 
 ```bash
 git show origin/main:<file> > <scratch>/base-<name>
-<main-checkout>/.bin/vale <scratch>/base-<name>
+make lint_prose FILES="<scratch>/base-<name>"
 ```
 
 A file that already failed on `main` carries pre-existing debt the author did

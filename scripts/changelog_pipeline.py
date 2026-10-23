@@ -237,7 +237,17 @@ TITLE_TAG_RE = re.compile(r"\[[^\]]*\]|\(#\d+\)|\b[A-Z]{2,}-\d+\b")
 LEAK_RE = re.compile(
     r"\b[\w./-]+\.(py|ts|tsx|go|rs|sql)\b"  # file paths
     r"|\b(smith-[a-z-]+|langchainplus|host-backend|core-server|core-api|beacon)\b"  # services, repos
-    r"|\beppo\b|\bfeature flag\b",
+    r"|\beppo\b|\bfeature flag\b"
+    r"|\b(langdev|supabase|dev stack)\b"  # LangChain's own developer tooling
+    r"|\b(staging|prod) control planes?\b",  # LangChain's own environments
+    re.IGNORECASE,
+)
+# An entry that says only some workspaces have the change describes something most
+# readers cannot use yet. It is left out, not rewritten: dropping the phrase would
+# announce it as available.
+ROLLOUT_RE = re.compile(
+    r"\blimited rollout\b|\boff by default until\b|\benabled per workspace\b"
+    r"|\b(is|are) enabled for your (workspace|organization)\b",
     re.IGNORECASE,
 )
 # Case-sensitive, and not a model name such as GPT-6.
@@ -916,7 +926,11 @@ place each group in one layer:
   not load. These go in a collapsed list, one fix per line.
 - drop: everything else. Cosmetic fixes, layout and copy tweaks, small affordances,
   edge cases few customers hit, fixes inside features customers cannot reach yet,
-  easter eggs, and changes only staff see. Dropped groups are not published.
+  easter eggs, and changes only staff see. Also drop LangChain's own developer
+  tooling and test environments, changes that reach only some workspaces (a
+  limited rollout, or off until LangChain turns it on), operational paths that
+  LangChain staff run on a customer's behalf, and security hardening with nothing
+  for the customer to do. Dropped groups are not published.
 
 Fixes are only for generally available features. A fix to a feature in the
 <beta_features> list is dropped; a new capability in a beta feature can still be
@@ -966,8 +980,13 @@ ENTRY_RULES = """Rules:
 - Never restate a PR title. Write from the diffs and descriptions.
 - Never mention internal names: services, repositories, file paths, functions, classes,
   database tables, ticket IDs, feature flag keys, or staff-only tools.
+- Never mention LangChain's own environments (staging, prod) or the infrastructure
+  behind Cloud, such as its caches, queues, and databases. Say what the customer sees.
+- Write as the product, not as LangChain staff: "your endpoint", not "the customer's side".
 - Public identifiers a customer types or sees are fine: UI labels in bold, API routes,
   SDK and MCP parameters, Helm values, and environment variables in backticks.
+- Put every identifier in backticks: API fields, parameters, enum values, permission
+  names, CLI flags, header names, and model IDs. Bold is for UI labels only.
 - No marketing words ("powerful", "seamless", "exciting").
 - No contractions: write "cannot", "does not", "is not".
 - Separate UI navigation steps with " > ", never an arrow: **Settings** > **Model pricing**.
@@ -1108,6 +1127,12 @@ def _text_reasons(group: dict, flags: dict) -> list[str]:
         reasons.append(f"internal name: {m.group(0)}")
     reasons += [f"names flag key {k}" for k in flags if len(k) >= 8 and k in text]
     return reasons
+
+
+def _rollout_reasons(group: dict) -> list[str]:
+    """Why an entry cannot publish at all: it says only some workspaces have the change."""
+    text = f"{group.get('title', '')} {group.get('entry', '')}"
+    return [f"partial rollout: {m.group(0)}" for m in ROLLOUT_RE.finditer(text)]
 
 
 def _gating_flags(
@@ -1645,6 +1670,8 @@ def cmd_mock(args: argparse.Namespace) -> None:
         # A flag missing from Eppo or a conflicting declaration cannot be checked.
         if unknown := [why for _, why in gates]:
             excluded.append((g, text + unknown))
+        elif rollout := _rollout_reasons(g):
+            excluded.append((g, text + rollout))
         elif text:
             to_fix.append((g, text))
         else:
@@ -2534,6 +2561,28 @@ def _insert_update(path: Path, block: str) -> None:
     path.write_text(text[:marker] + block.rstrip() + "\n\n" + text[marker:])
 
 
+def _preflight_model() -> None:
+    """Fail before collecting when the model key is rejected.
+
+    A bad key otherwise surfaces only after collection, as one error per PR.
+    """
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        return
+    schema = {
+        "type": "object",
+        "properties": {"ok": {"type": "boolean"}},
+        "required": ["ok"],
+    }
+    try:
+        _claude_api("Reply with ok set to true.", schema, "ping", PASS1_MODEL)
+    except Exception as exc:  # any failure here stops the run
+        msg = (
+            "Model preflight failed; check ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL, "
+            f"and ANTHROPIC_CUSTOM_HEADERS: {str(exc)[:300]}"
+        )
+        raise SystemExit(msg) from exc
+
+
 def cmd_weekly(args: argparse.Namespace) -> None:
     if bool(args.since) != bool(args.until):
         raise SystemExit("Pass both --since and --until, or neither")
@@ -2554,6 +2603,7 @@ def cmd_weekly(args: argparse.Namespace) -> None:
     out = _out_dir(args.out)
     common = {"out": str(out), "since": since.isoformat(), "until": until.isoformat()}
     print(f"Window {since}..{until}", file=sys.stderr)
+    _preflight_model()
 
     cmd_collect(argparse.Namespace(**common, workers=8))
     cmd_classify(

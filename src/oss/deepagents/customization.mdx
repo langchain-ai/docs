@@ -252,6 +252,7 @@ With only a `model` (no other optional arguments), the main agent typically incl
 4. @[`PatchToolCallsMiddleware`]
 5. **Prompt caching** middleware (added for supported providers; no-ops elsewhere)
 6. **Harness profile extras** and **excluded-tool filtering**, if the resolved model profile defines them
+7. @[`UnsupportedContentMiddleware`]
 :::
 
 #### Full stack
@@ -299,6 +300,7 @@ From first to last:
 
 11. `HumanInTheLoopMiddleware`: Only when you pass `interruptOn`. Pauses for human approval or input at configured tool calls.
 12. **Excluded-tool filtering**: When the harness profile lists excluded tools, middleware removes those tools from the agent.
+13. @[`UnsupportedContentMiddleware`]: Rewrites unsupported multimodal content in requests with a text placeholder.
 
 :::
 
@@ -585,6 +587,75 @@ Declarative subagents defined via `subagents=` do not inherit the main agent's m
 </AccordionGroup>
 :::
 
+:::js
+Pass a middleware instance whose `.name` matches an entry in the [Deep Agents stack](#deep-agents-stack), such as @[`SummarizationMiddleware`], to replace that built-in instance in place instead of appending a duplicate. Any middleware you pass whose `.name` does **not** match a built-in entry is not replaced, it lands after the last core middleware entry and before the profile, prompt-caching, and memory. See [Full stack](#full-stack) for the complete ordering.
+
+```js
+import {
+  createDeepAgent,
+  createSummarizationMiddleware,
+  StateBackend,
+} from "deepagents";
+
+const backend = new StateBackend();
+const model = "openai:gpt-5.5";
+
+const customSummarization = createSummarizationMiddleware({
+  model,
+  backend,
+  summaryPrompt: "Your custom summary prompt here.",
+});
+
+const agent = createDeepAgent({
+  model,
+  middleware: [customSummarization], // replaces the default SummarizationMiddleware
+});
+```
+
+<Note>
+An override **replaces** the default middleware instance, it is not merged with it. That means your replacement must be fully configured with any settings it needs. This is especially important for `FilesystemMiddleware`: if you override it, you must pass the `backend` (and `permissions`, if applicable) directly to `createFilesystemMiddleware`, since it will not inherit the `backend` and `permissions` passed to `createDeepAgent`. To restrict the available filesystem tools, pass a `tools` allowlist to your custom @[`FilesystemMiddleware`] instance; see [Virtual filesystem access](/oss/deepagents/overview#virtual-filesystem-access).
+</Note>
+
+The general-purpose subagent, which Deep Agents adds automatically, inherits overrides for its default middleware from the main agent, without carrying over middleware that is specific to the main agent.
+
+Declarative subagents defined via `subagents` do not inherit the main agent's middleware customization. Pass the override directly in that subagent's own [`middleware`](/oss/deepagents/subagents#subagent-dictionary-based) field to apply it there; that field is matched against the [synchronous subagent stack](#synchronous-subagent-stack), the same way `middleware` is matched against the main agent's.
+
+#### Examples
+
+<AccordionGroup>
+    <Accordion title="Keep binary file content out of checkpointed history" icon="database">
+        Override @[`FilesystemMiddleware`] with `offloadBinaryContent: true` to store binary `read_file` payloads and inline `HumanMessage` media on the backend under `/blobs` instead of in checkpointed message history. State keeps a small reference; model requests are rehydrated from a per-run cache or the backend. This keeps checkpoint size small when the agent reads many binary files across turns.
+
+        <Note>
+        Binary content offloading requires `deepagents>=1.14.2`. Use a backend that stores blobs outside graph state, such as a sandbox or `FilesystemBackend`. Offloading has no effect when `/blobs` routes to `StateBackend`. Pass the same `backend` to `createFilesystemMiddleware` that you pass to `createDeepAgent`.
+        </Note>
+
+        ```js
+        import {
+          createDeepAgent,
+          createFilesystemMiddleware,
+          FilesystemBackend,
+        } from "deepagents";
+
+        const backend = new FilesystemBackend({
+          rootDir: "/path/to/project",
+          virtualMode: true,
+        });
+
+        const agent = createDeepAgent({
+          model: "anthropic:claude-sonnet-4-6",
+          backend,
+          middleware: [
+            createFilesystemMiddleware({ backend, offloadBinaryContent: true }),
+          ],
+        });
+        ```
+
+        For more information, see [Offload binary content](/oss/deepagents/backends#offload-binary-content).
+    </Accordion>
+</AccordionGroup>
+:::
+
 ### Interpreters
 
 Use [interpreters](/oss/deepagents/interpreters) to add an `eval` tool that runs JavaScript in a scoped QuickJS runtime. Interpreters are useful when the agent needs to compose tools programmatically, batch work, handle errors in code, or transform structured data without a full shell environment.
@@ -838,6 +909,7 @@ When the model generates the structured data, it's captured, validated, and retu
 :::
 :::js
 You can set a desired structured output schema by passing it as the `responseFormat` argument to the call to `createDeepAgent()`.
+Wrap the schema in a strategy such as `toolStrategy()` or `providerStrategy()` from `langchain`.
 When the model generates the structured data, it's captured, validated, and returned in the 'structuredResponse' key of the agent's state.
 
 <CustomizationStructuredOutputJs />
@@ -859,4 +931,3 @@ For more information and examples, see [response format](/oss/langchain/structur
 `createDeepAgent` pre-assembles a middleware stack on top of `createAgent`. To build a fully custom agent—choosing exactly which capabilities to include—see [Configure the harness](/oss/langchain/agents#configure-the-harness).
 
 :::
-

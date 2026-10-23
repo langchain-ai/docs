@@ -1,0 +1,154 @@
+---
+# Weekly scan of packages.yml repo: links. Auto-fixes GitHub renames confirmed
+# by PyPI/npm/docs_url, and drafts a PR that fully delists third-party packages
+# with no live VCS home. Skips langchain-ai/* first-party packages.
+#
+# Standing draft PR on chore/dead-integration-repos (deduped while open).
+
+name: Check integration repos
+
+on:
+  schedule:
+    # Mondays at 09:15 UTC (after onboarding-model check).
+    - cron: "15 9 * * 1"
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    name: Scan packages.yml repo links
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # The App token pushes the branch and opens the PR. A PR or push made with
+      # GITHUB_TOKEN leaves its pull_request workflows waiting for manual approval.
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0
+        with:
+          app-id: ${{ secrets.ORG_MEMBERSHIP_APP_ID }}
+          private-key: ${{ secrets.ORG_MEMBERSHIP_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Set up Python 3.13 + uv
+        uses: "./.github/actions/uv_setup"
+        with:
+          python-version: "3.13"
+
+      - name: Check and apply repo fixes / delists
+        id: scan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          uv run python scripts/check_integration_repos.py \
+            --write \
+            --evidence "$RUNNER_TEMP/evidence.md"
+          {
+            echo "has_changes=false"
+            if git status --porcelain | grep -q .; then
+              echo "has_changes=true"
+            fi
+          } >> "$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/evidence.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open or update the standing draft PR
+        if: steps.scan.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+
+          BRANCH_NAME="chore/dead-integration-repos"
+
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Snapshot the working tree, restore a clean index, then rebuild the
+          # standing branch the same way the OpenAPI refresh workflow does.
+          CHANGED_FILES="$(git status --porcelain | awk '{print $2}')"
+          mkdir -p "$RUNNER_TEMP/integration-repos-snapshot"
+          while IFS= read -r path; do
+            [ -z "$path" ] && continue
+            mkdir -p "$RUNNER_TEMP/integration-repos-snapshot/$(dirname "$path")"
+            cp "$path" "$RUNNER_TEMP/integration-repos-snapshot/$path"
+          done <<< "$CHANGED_FILES"
+          git checkout -- .
+          git clean -fd
+
+          PR_NUMBER="$(gh pr list --head "$BRANCH_NAME" --state open \
+            --json number --jq '.[0].number // empty')"
+
+          if [ -n "$PR_NUMBER" ]; then
+            echo "Found open PR #$PR_NUMBER on $BRANCH_NAME; appending to it"
+            git fetch --depth=1 origin \
+              "$BRANCH_NAME:refs/remotes/origin/$BRANCH_NAME"
+            git checkout -B "$BRANCH_NAME" "origin/$BRANCH_NAME"
+          else
+            echo "No open PR on $BRANCH_NAME; starting a new one from main"
+            git checkout -B "$BRANCH_NAME"
+          fi
+
+          while IFS= read -r path; do
+            [ -z "$path" ] && continue
+            mkdir -p "$(dirname "$path")"
+            cp "$RUNNER_TEMP/integration-repos-snapshot/$path" "$path"
+          done <<< "$CHANGED_FILES"
+
+          if git diff --quiet && [ -z "$(git ls-files --others --exclude-standard)" ]; then
+            echo "No changes to commit after restoring onto $BRANCH_NAME"
+            exit 0
+          fi
+
+          git add -A
+          git commit -m "$(cat <<EOF
+          chore: fix or delist integrations with dead GitHub repos
+
+          Automated weekly scan of packages.yml repo links. Renames confirmed
+          by PyPI/npm/docs_url are applied; packages with no live VCS home are
+          fully delisted. First-party langchain-ai packages are skipped.
+
+          Scanned $(date -u +"%Y-%m-%d %H:%M UTC").
+          EOF
+          )"
+
+          if [ -n "$PR_NUMBER" ]; then
+            git push origin "$BRANCH_NAME"
+            # Refresh the PR body with the latest evidence table.
+            {
+              cat "$RUNNER_TEMP/evidence.md"
+              echo
+              echo "Later scans append a commit to this draft PR while it stays open."
+              echo
+              echo "🤖 Draft PR from \`.github/workflows/check-integration-repos.yml\`"
+            } > "$RUNNER_TEMP/pr-body.md"
+            gh pr edit "$PR_NUMBER" --body-file "$RUNNER_TEMP/pr-body.md"
+            echo "Appended a commit to draft PR #$PR_NUMBER" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          git push --force origin "$BRANCH_NAME"
+
+          {
+            cat "$RUNNER_TEMP/evidence.md"
+            echo
+            echo "Later scans append a commit to this draft PR while it stays open."
+            echo
+            echo "🤖 Draft PR from \`.github/workflows/check-integration-repos.yml\`"
+          } > "$RUNNER_TEMP/pr-body.md"
+
+          gh pr create \
+            --draft \
+            --title "chore: fix or delist integrations with dead GitHub repos" \
+            --body-file "$RUNNER_TEMP/pr-body.md" \
+            --base main \
+            --head "$BRANCH_NAME"
+
+          echo "Opened a new draft PR" >> "$GITHUB_STEP_SUMMARY"
