@@ -1,0 +1,103 @@
+---
+title: Authenticate to the LLM Gateway
+sidebarTitle: Authenticate to the gateway
+description: Choose a LangSmith API key for LLM Gateway requests, grant it permission to call the gateway, send it from your client, and fix authentication errors.
+---
+
+import LLMGatewayBetaNote from '/snippets/langsmith/llm-gateway-beta-note.mdx';
+
+<LLMGatewayBetaNote />
+
+Every request to the [LLM Gateway](/langsmith/llm-gateway) authenticates with a LangSmith API key, never with a model provider's key. This page covers which key to use, the permission it needs, and how each client sends it.
+
+## Understand the two layers
+
+A gateway request passes two separate authentication checks:
+
+- **Your client to the gateway**: your code sends a LangSmith API key, which starts with `lsv2_`. The gateway checks the key's permissions, then applies your organization's policies.
+- **The gateway to the provider**: the gateway calls the model provider with a credential stored in LangSmith, usually a provider API key saved as a workspace secret. Your code never holds this credential. For the credential types each provider accepts, see [Provider authentication](/langsmith/llm-gateway-provider-authentication).
+
+## Choose a key type
+
+Two kinds of [LangSmith API key](/langsmith/create-account-api-key) can call the gateway:
+
+- **[Personal access token (PAT)](/langsmith/administration-overview#personal-access-tokens-pats)**: prefixed `lsv2_pt_`. A PAT carries the permissions of the user who created it. The Simulator's **Create Gateway Key** button creates a PAT.
+- **[Service key](/langsmith/administration-overview#service-keys)**: prefixed `lsv2_sk_`. A service key belongs to the organization rather than a user. On the [Enterprise plan](/langsmith/pricing-plans), you can assign a service key its own workspace role.
+
+<Tip>
+The key type changes how [spend limits](/langsmith/llm-gateway-spend-policies) apply. A user-scoped spend limit applies to requests made with that user's PATs. It does not apply to requests made with a service key, even one the same user created. To cap a service key, create a spend limit scoped to that API key.
+</Tip>
+
+{/* VERIFY X3: no recommendation between PAT and service key until Eng or PM answers. How Usage attributes service-key spend is open (Eng finding 5). */}
+
+## Grant permission to call the gateway
+
+To call the gateway, an API key needs both `gateway:invoke` and `workspaces:read` in the workspace it belongs to. A PAT has these permissions when its user's role does.
+
+Which roles include them depends on your plan:
+
+- **Plans without [workspace roles](/langsmith/rbac#workspace-roles)**: every user has the Workspace Admin role, which includes both permissions. No setup is needed.
+- **Enterprise plan**: the Workspace Admin role includes both permissions. The built-in Workspace Editor and Workspace Viewer roles include neither, and built-in roles cannot be edited. To grant gateway access without full admin rights, create a [custom role](/langsmith/rbac#custom-roles) with `gateway:invoke` and `workspaces:read`, and assign it to the users who call the gateway.
+
+For a service key with its own role, grant the same two permissions to that role. A service key whose role lacks `gateway:invoke` gets a `403` with `missing permission gateway:invoke`.
+
+## Use a workspace-scoped key
+
+Use a LangSmith API key scoped to one workspace. That workspace determines which provider secrets the gateway reads, which policies apply, and where traces land. For a PAT, this is the key's default workspace. A key created in the Simulator belongs to the workspace that was open when you created it. Organization-scoped keys are not supported for gateway requests.
+
+{/* VERIFY X10: org-scoped keys with X-Tenant-Id are untested. Keep "not supported" until Eng answers. */}
+
+## Send the key
+
+The gateway accepts the key in any of these headers:
+
+- `Authorization: Bearer <key>`
+- `X-Api-Key: <key>`
+- `X-Goog-Api-Key: <key>`
+
+Each client sends its API key in one of these headers, so you set the key where the client expects its provider key:
+
+| Client | Where to set the LangSmith API key | Header the client sends |
+| --- | --- | --- |
+| cURL or any HTTP client | The header itself | `Authorization: Bearer` |
+| OpenAI SDK, Codex | `api_key` or `OPENAI_API_KEY` | `Authorization: Bearer` |
+| Anthropic SDK, Claude Code | `api_key` or `ANTHROPIC_API_KEY` | `X-Api-Key` |
+| Google Gen AI SDK, Gemini CLI | `api_key` or `GEMINI_API_KEY` | `X-Goog-Api-Key` |
+
+Claude Code with a [Claude subscription](/langsmith/llm-gateway-coding-agents#use-claude-subscription-oauth) is the exception: its `Authorization` header carries the Anthropic OAuth token, so it sends the LangSmith API key in `X-Api-Key` through `ANTHROPIC_CUSTOM_HEADERS`.
+
+For base URLs and request examples, see [API formats](/langsmith/llm-gateway-api-formats) and [Direct model access](/langsmith/llm-gateway-direct-model-access).
+
+## Set environment variables
+
+[LangChain](/oss/langchain/overview) chat models and [Deep Agents](/oss/deepagents/overview) read the key from the environment:
+
+- `LANGSMITH_API_KEY`: the LangSmith API key, also used for tracing.
+- `LANGSMITH_GATEWAY`: set to `true` to send supported chat models through the gateway. For details, see [Direct model access](/langsmith/llm-gateway-direct-model-access#configure-langchain-and-deep-agents).
+- `LANGSMITH_GATEWAY_API_KEY`: an override for gateway requests when they need a different key from `LANGSMITH_API_KEY`. It must meet the same requirements: workspace-scoped, with `gateway:invoke`.
+
+{/* VERIFY X13: whether Deep Agents Code needs LANGSMITH_GATEWAY_API_KEY rather than LANGSMITH_API_KEY. Test by running dcode with only LANGSMITH_API_KEY set. */}
+
+## Fix authentication errors
+
+| Status and response | Cause | Fix |
+| --- | --- | --- |
+| `401` with `{"error":"Unauthorized"}` | The request reached the gateway without a LangSmith API key, for example with a provider key (`sk-...`) in its place. | Send your LangSmith API key in place of the provider key. |
+| `401` from the provider, such as OpenAI's `Incorrect API key provided: lsv2_pt_***` or Anthropic's `invalid x-api-key` | The client sent your LangSmith API key straight to the provider, because it is not using the gateway base URL. | Set the client's base URL to the gateway. |
+| `403` with `{"error":"Forbidden"}` | The LangSmith API key is invalid or expired. Keys created in the Simulator expire after 10 days. | Create a new key. |
+| `403` with `missing permission gateway:invoke` | The key's role lacks `gateway:invoke`. | Ask an admin to [grant the permission](#grant-permission-to-call-the-gateway). |
+| `424` with `Required workspace secret "<SECRET_NAME>" is missing.` | The [key's workspace](#use-a-workspace-scoped-key) has no credential for the provider in the model ID. | Add the provider key to the workspace, for example in the Simulator, or use a key from a workspace that has one. |
+| An error from the provider that shows a masked `sk-...` key | The provider key stored in LangSmith is invalid or revoked. | Ask a workspace admin to replace the stored provider key. |
+
+An Anthropic `invalid x-api-key` error has two causes: a missing gateway base URL, or an invalid Anthropic key stored in LangSmith. If your base URL already points at the gateway, check the stored key.
+
+Requests that a policy blocks return `402` for a [spend limit](/langsmith/llm-gateway-spend-policies) and `429` for a [rate limit](/langsmith/llm-gateway-rate-limit-policies). The response body names the policy, for example `{"type":"error","error":{"message":"request blocked by gateway policies: <POLICY_NAME>"}}`.
+
+{/* VERIFY W12 part 3: an expired key returning the same 403 as an invalid one is inferred. Only a fabricated lsv2_ key was tested (2026-10-22). Confirmed 2026-10-23: base URL unset gives OpenAI 401 with a masked lsv2_pt_ key and Anthropic 401 "invalid x-api-key"; a fake sk- key sent to the gateway gives 401 {"error":"Unauthorized"}. */}
+{/* FOLLOW-UP Eng finding 2: error bodies on /v1/chat/completions use four shapes, so this table quotes messages rather than full bodies for 424. Eng finding 7: an invalid lsv2_ key gets 403, a key without the lsv2_ prefix gets 401. */}
+
+## See also
+
+- [Provider authentication](/langsmith/llm-gateway-provider-authentication): store the credentials the gateway uses to call each provider.
+- [Set up the LLM Gateway](/langsmith/llm-gateway-admin-setup): set up provider keys, permissions, and policies for your organization.
+- [Create a LangSmith API key](/langsmith/create-account-api-key): create a PAT or service key.
