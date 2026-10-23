@@ -283,7 +283,7 @@ From first to last:
 
 :::js
 
-1. @[`FilesystemMiddleware`]: Handles file system operations such as reading, writing, and navigating directories. When you pass `permissions`, filesystem permissions enforcement is included here so it can evaluate every tool the agent might call. Set `offloadBinaryContent: true` to write binary `read_file` payloads and inline `HumanMessage` media to the backend under `/blobs`, replacing them in checkpointed message history with a small reference; model requests are rehydrated from a per-run cache or the backend. When a binary `read_file` result causes a provider rejection, `FilesystemMiddleware` also retries once with the content replaced and persists the swap to state.
+1. @[`FilesystemMiddleware`]: Handles file system operations such as reading, writing, and navigating directories. When you pass `permissions`, filesystem permissions enforcement is included here so it can evaluate every tool the agent might call.
 2. @[`SubAgentMiddleware`]: Only when at least one synchronous subagent is available. Spawns and coordinates subagents for delegating tasks. Included in the [bare stack](#bare-stack) because the general-purpose subagent is auto-added by default; omit it by disabling that subagent and passing no synchronous `subagents`. See [Running without subagents](/oss/deepagents/subagents#running-without-subagents).
 3. @[`SummarizationMiddleware`]: Condenses message history to stay within context limits when conversations grow long (via @[createSummarizationMiddleware]).
 4. @[`PatchToolCallsMiddleware`]: Repairs dangling tool calls in message history when a run resumes after an interruption or receives malformed tool-call arguments. Runs **before** Anthropic prompt caching and the tail stack below.
@@ -441,8 +441,8 @@ Declarative subagents defined via `subagents=` do not inherit the main agent's m
         from deepagents.backends import StateBackend
         from deepagents.middleware import SummarizationMiddleware
 
-        backend = StateBackend();
-        model = "anthropic:claude-sonnet-4-6";
+        backend = StateBackend()
+        model = "anthropic:claude-sonnet-4-6"
 
         agent = create_deep_agent(
             model=model,
@@ -591,29 +591,34 @@ Declarative subagents defined via `subagents=` do not inherit the main agent's m
 
 <AccordionGroup>
     <Accordion title="Keep binary file content out of checkpointed history" icon="database">
-        Override @[`FilesystemMiddleware`] with `offloadBinaryContent: true` to write binary `read_file` payloads and inline `HumanMessage` media to the backend under `/blobs` instead of storing them in checkpointed message history. In state, each payload is replaced with a small reference; model requests are rehydrated from a per-run cache or the backend on demand. This keeps checkpoint size small when the agent reads many binary files across turns.
+        Override @[`FilesystemMiddleware`] with `offloadBinaryContent: true` to store binary `read_file` payloads and inline `HumanMessage` media on the backend under `/blobs` instead of in checkpointed message history. State keeps a small reference; model requests are rehydrated from a per-run cache or the backend. This keeps checkpoint size small when the agent reads many binary files across turns.
 
         <Note>
-        You must pass the same `backend` instance to your `FilesystemMiddleware` override that you pass to `createDeepAgent`. The middleware writes blobs to that backend and reads them back during rehydration.
+        Binary content offloading requires `deepagents>=1.14.2`. Use a backend that stores blobs outside graph state, such as a sandbox or `FilesystemBackend`. Offloading has no effect when `/blobs` routes to `StateBackend`. Pass the same `backend` to `createFilesystemMiddleware` that you pass to `createDeepAgent`.
         </Note>
 
         ```js
-        import { createDeepAgent } from "deepagents";
-        import { StateBackend } from "deepagents/backends";
-        import { FilesystemMiddleware } from "deepagents/middleware";
+        import {
+          createDeepAgent,
+          createFilesystemMiddleware,
+          FilesystemBackend,
+        } from "deepagents";
 
-        const backend = new StateBackend();
+        const backend = new FilesystemBackend({
+          rootDir: "/path/to/project",
+          virtualMode: true,
+        });
 
         const agent = createDeepAgent({
           model: "anthropic:claude-sonnet-4-6",
           backend,
           middleware: [
-            new FilesystemMiddleware({ backend, offloadBinaryContent: true }),
+            createFilesystemMiddleware({ backend, offloadBinaryContent: true }),
           ],
         });
         ```
 
-        When a binary `read_file` result causes a provider rejection, `FilesystemMiddleware` also retries once with the content replaced and persists the swap to state, so a single unsupported file does not block subsequent turns.
+        For more information, see [Offload binary content](/oss/deepagents/backends#offload-binary-content).
     </Accordion>
 </AccordionGroup>
 
