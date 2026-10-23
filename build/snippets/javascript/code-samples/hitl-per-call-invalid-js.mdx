@@ -1,0 +1,30 @@
+```ts
+const writeFileInterrupt = (result.__interrupt__ ?? [])
+  .filter(isToolApprovalInterrupt)
+  .find((interrupt) => interrupt.value.name === "write_file")!;
+const args: Record<string, string> = { path: "archive/orders_2024.csv" };
+const edit = { type: "edit", edited_action: { name: "write_file", args } };
+
+try {
+  await agent.invoke(
+    new Command({ resume: { [writeFileInterrupt.id]: edit } }),
+    config,
+  );
+} catch (error) {
+  // The middleware wraps the error; its `cause` lists what failed
+  if (!(error instanceof Error && error.cause instanceof z.core.$ZodError)) {
+    throw error;
+  }
+  for (const issue of error.cause.issues) {
+    console.log(`${issue.path.join(".")} ${issue.message}`);
+  }
+}
+// > edited_action.args.content Invalid input: expected string, received undefined
+
+// Nothing was saved, so answer the same interrupt again
+args.content = "id,total\n1,20\n";
+result = await agent.invoke(
+  new Command({ resume: { [writeFileInterrupt.id]: edit } }),
+  config,
+);
+```
