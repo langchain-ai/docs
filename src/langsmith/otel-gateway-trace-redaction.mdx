@@ -4,15 +4,17 @@ sidebarTitle: Redact sensitive data with OTEL
 description: Use an OpenTelemetry collector to redact sensitive data from traces before they land in LangSmith.
 ---
 
+import AgentTracingPrerequisite from '/snippets/langsmith/agent-tracing-prerequisite.mdx';
+
 import OtlpAgentAddressing from '/snippets/langsmith/otlp-agent-addressing-note.mdx';
 
-[LangChain](/langsmith/trace-with-langchain), [LangGraph](/langsmith/trace-with-langgraph), and [Deep Agents](/langsmith/trace-deep-agents) applications support [OpenTelemetry-based tracing](/langsmith/trace-with-opentelemetry). Instead of sending traces directly to LangSmith, you can route them through an OpenTelemetry collector you control, apply redaction rules to strip sensitive fields, and forward the sanitized traces to LangSmith.
+Agents built with [LangChain](/langsmith/trace-with-langchain), [LangGraph](/langsmith/trace-with-langgraph), or [Deep Agents](/langsmith/trace-deep-agents) support [OpenTelemetry-based tracing](/langsmith/trace-with-opentelemetry). Instead of sending traces directly to LangSmith, you can route them through an OpenTelemetry collector you control, apply redaction rules to strip sensitive fields, and forward the sanitized traces to LangSmith.
 
-Traces flow from your application to the collector over OTLP/HTTP. The collector runs a transform processor that redacts sensitive span attributes, such as prompt inputs and model completions, before forwarding the sanitized spans to the LangSmith API.
+Traces flow from your agent to the collector over OTLP/HTTP. The collector runs a transform processor that redacts sensitive span attributes, such as prompt inputs and model completions, before forwarding the sanitized spans to the LangSmith API.
 
 ```mermaid
 flowchart TD
-    A["Application<br/>(LangChain / LangGraph / Deep Agents)"]
+    A["Agent code<br/>(LangChain / LangGraph / Deep Agents)"]
 
     subgraph collector[":4318"]
         B["Receiver<br/>OTLP/HTTP"]
@@ -27,6 +29,8 @@ flowchart TD
     D -->|"OTLP/HTTP"| E
 ```
 
+<AgentTracingPrerequisite />
+
 ## Prerequisites
 
 Both of the following approaches require the following environment variables. Set `OTEL_EXPORTER_OTLP_ENDPOINT` to the address of your collector:
@@ -35,17 +39,18 @@ Both of the following approaches require the following environment variables. Se
 LANGSMITH_OTEL_ENABLED="true"
 LANGSMITH_TRACING="true"
 LANGSMITH_OTEL_ONLY="true"
-LANGSMITH_PROJECT="my-project"
+LANGSMITH_AGENT_ID="<your-agent-id>"
+LANGSMITH_AGENT_ENVIRONMENT="production"
 OTEL_EXPORTER_OTLP_ENDPOINT="http://<my-otel-collector-endpoint>:4318"
 ```
 
-For more on `LANGSMITH_PROJECT`, refer to [Log traces to a specific project](/langsmith/log-traces-to-project).
+For destination configuration, refer to [Log traces to an agent](/langsmith/log-traces-to-agent).
 
 <OtlpAgentAddressing />
 
 ## Configure the collector
 
-Both approaches also require an OpenTelemetry collector running as an intermediary between your application and LangSmith. The following configuration sets up an OTLP receiver on port `4318`, a transform processor that redacts the `gen_ai.prompt` and `gen_ai.completion` span attributes, and an exporter that forwards the sanitized traces to the LangSmith API:
+Both approaches also require an OpenTelemetry collector running as an intermediary between your agent and LangSmith. The following configuration sets up an OTLP receiver on port `4318`, a transform processor that redacts the `gen_ai.prompt` and `gen_ai.completion` span attributes, and an exporter that forwards the sanitized traces to the LangSmith API:
 
 ```yaml
 receivers:
@@ -69,7 +74,8 @@ exporters:
     traces_endpoint: "https://api.smith.langchain.com/otel/v1/traces"
     headers:
       x-api-key: "${env:LANGSMITH_API_KEY}"
-      Langsmith-Project: "${env:LANGSMITH_PROJECT}"
+      Langsmith-Agent-Id: "${env:LANGSMITH_AGENT_ID}"
+      Langsmith-Agent-Environment: "${env:LANGSMITH_AGENT_ENVIRONMENT}"
       x-Tenant-Id: "${env:LANGSMITH_TENANT_ID}" # Required if API key is not scoped to a specific workspace
 
 
@@ -83,7 +89,7 @@ service:
 
 ## Trace with LangChain, LangGraph, or Deep Agents
 
-Use this approach if your application already uses [LangChain](/langsmith/trace-with-langchain), [LangGraph](/langsmith/trace-with-langgraph), or [Deep Agents](/langsmith/trace-deep-agents). The tracing integration handles span creation automatically based on your environment variables, so no additional instrumentation code is required:
+Use this approach if your agent already uses [LangChain](/langsmith/trace-with-langchain), [LangGraph](/langsmith/trace-with-langgraph), or [Deep Agents](/langsmith/trace-deep-agents). The tracing integration handles span creation automatically based on your environment variables, so no additional instrumentation code is required:
 
 ```python
 from langchain.agents import create_agent
@@ -118,7 +124,7 @@ print(result["messages"][-1].content)
 
 ## Trace with the OpenTelemetry SDK directly
 
-Use this approach if you need programmatic control over the tracer provider and exporter. For example, to set per-request project names or configure custom headers at runtime. You configure the provider explicitly in code rather than relying on environment variables alone:
+Use this approach if you need programmatic control over the tracer provider and exporter. For example, to set agent destinations or configure custom headers at runtime. You configure the provider explicitly in code rather than relying on environment variables alone:
 
 ```python
 import os
@@ -131,7 +137,8 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 
-project_name = os.environ["LANGSMITH_PROJECT"]
+agent_id = os.environ["LANGSMITH_AGENT_ID"]
+agent_environment = os.environ["LANGSMITH_AGENT_ENVIRONMENT"]
 otlp_endpoint = os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"]
 
 
@@ -140,7 +147,10 @@ provider.add_span_processor(
    BatchSpanProcessor(
        OTLPSpanExporter(
            endpoint=otlp_endpoint+"/v1/traces",
-           headers={"Langsmith-Project": project_name},
+           headers={
+               "Langsmith-Agent-Id": agent_id,
+               "Langsmith-Agent-Environment": agent_environment,
+           },
        )
    )
 )
