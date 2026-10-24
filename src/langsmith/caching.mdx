@@ -4,9 +4,14 @@ sidebarTitle: Caching
 description: Cache values server-side in your agent deployment using stale-while-revalidate and key-value cache APIs.
 ---
 
-[Agent Server](/langsmith/agent-server) includes a built-in cache you can use inside your deployed graphs. Call `swr` with a key and a loader function, and the server caches the result, revalidates stale entries in the background, and returns fresh data on every read.
+Agents deployed on [Agent Server](/langsmith/agent-server) often call external services—config stores, auth providers, feature-flag systems—that return data you don't need to re-fetch on every invocation. The built-in cache lets you store those results server-side so subsequent runs read from memory instead of making redundant network calls.
 
-All cache APIs are **server-side only** and require the LangGraph Agent Server runtime. Values must be JSON-serializable.
+The cache exposes two layers:
+
+- **`swr`**: stale-while-revalidate. Pass a key and an async loader; the server caches the result, serves it on future reads, and revalidates in the background when the entry goes stale. Use this for most caching needs.
+- **`cache_get` / `cache_set`**: low-level key-value API for when you need manual control over reads and writes.
+
+All cache APIs are server-side only and require the Agent Server runtime. Values must be JSON-serializable.
 
 <Note>
 `swr` requires Agent Server runtime **v0.7.79** or later and is currently in **[beta](/langsmith/release-stages)**.
@@ -20,13 +25,17 @@ Pass a key and an async loader function. `swr` returns the cached value if avail
 ```python
 from langgraph_sdk.cache import swr
 
-result = await swr("config:global", load_config)
-config_data = result.value
+async def fetch_config() -> dict:
+    """Call your config service, database, or external API."""
+    ...
+
+result = await swr("config:global", fetch_config)
+config = result.value
 ```
 
-On the first call, `swr` awaits `load_config()` and caches the result. On subsequent calls, it returns the cached value instantly and revalidates in the background.
+On the first call, `swr` awaits `fetch_config()` and caches the result. On subsequent calls, it returns the cached value instantly and revalidates in the background.
 
-## Configure freshness
+## Control freshness and expiry
 
 Control how long cached values are considered fresh and when they expire:
 
@@ -36,7 +45,7 @@ from langgraph_sdk.cache import swr
 
 result = await swr(
     "config:global",
-    load_config,
+    fetch_config,  # async loader defined above
     fresh_for=timedelta(minutes=5),
     max_age=timedelta(hours=1),
 )
@@ -56,6 +65,65 @@ result = await swr(
 | **Stale** | `fresh_for <= age < max_age` | Returns cached value immediately, triggers background refresh. |
 | **Expired** | `age >= max_age` | Awaits `loader()`, stores result, returns it. |
 
+## Inspect and update cached values
+
+`swr` returns an `SWRResult` object with the value and cache status:
+
+```python
+result = await swr("config:global", fetch_config)
+
+result.value   # the cached or freshly loaded value
+result.status  # "miss" | "fresh" | "stale" | "expired"
+
+# Update the cached value directly
+await result.mutate({"model": "gpt-4o-mini", "temperature": 0.5})
+
+# Or force revalidation by calling the loader again
+await result.mutate()
+```
+
+`.status` tells you whether the value came from cache or was freshly loaded. Call `.mutate(new_value)` to replace the cached entry, or `.mutate()` with no arguments to force the loader to run again.
+
+## Cache auth credentials
+
+Cache credential validation in a [custom auth handler](/langsmith/custom-auth) to avoid hitting your identity provider on every request:
+
+```python
+from datetime import timedelta
+
+import httpx
+from langgraph_sdk import Auth
+from langgraph_sdk.cache import swr
+
+auth = Auth()
+http_client = httpx.AsyncClient()
+
+async def validate_token(token: str) -> dict:
+    """Validate a bearer token against your identity provider."""
+    resp = await http_client.get(
+        "https://idp.example.com/userinfo",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+@auth.authenticate
+async def authenticate(headers: dict) -> Auth.types.MinimalUserDict:
+    token = (headers.get(b"authorization") or b"").decode()
+    if not token:
+        raise Auth.exceptions.HTTPException(status_code=401, detail="Missing token")
+
+    result = await swr(
+        f"auth:token:{token}",
+        lambda: validate_token(token),
+        fresh_for=timedelta(minutes=5),
+        max_age=timedelta(hours=1),
+    )
+    return result.value
+```
+
+With this setup, the server returns the cached user for 5 minutes without contacting the identity provider. After that, it revalidates in the background for up to 1 hour. After 1 hour, the next request blocks until `validate_token` completes.
+
 ## Use with Pydantic models
 
 Pass a `model` parameter to automatically serialize and deserialize Pydantic models:
@@ -69,61 +137,20 @@ class UserProfile(BaseModel):
     email: str
     role: str
 
+async def fetch_profile(user_id: str) -> dict:
+    """Fetch a user profile from your user service."""
+    ...
+
+user_id = "user-123"
 result = await swr(
     f"profile:{user_id}",
     lambda: fetch_profile(user_id),
     model=UserProfile,
 )
-profile: UserProfile = result.value  # deserialized automatically
+profile: UserProfile = result.value  # deserialized as UserProfile
 ```
 
 `swr` calls `model_dump(mode="json")` before storing and `model.model_validate()` when reading back.
-
-## Cache auth credentials
-
-You can cache credential validation in a [custom auth handler](/langsmith/custom-auth) to avoid hitting your identity provider on every request:
-
-```python
-from datetime import timedelta
-from langgraph_sdk import Auth
-from langgraph_sdk.cache import swr
-
-auth = Auth()
-
-@auth.authenticate
-async def authenticate(headers: dict) -> Auth.types.MinimalUserDict:
-    token = (headers.get(b"authorization") or b"").decode()
-    if not token:
-        raise Auth.exceptions.HTTPException(status_code=401, detail="Missing token")
-
-    result = await swr(
-        f"auth:token:{token}",
-        lambda: validate_and_fetch_user(token),
-        fresh_for=timedelta(minutes=5),
-        max_age=timedelta(hours=1),
-    )
-    return result.value
-```
-
-With this setup, the server returns the cached user for 5 minutes without revalidation, then revalidates in the background for up to 1 hour. After 1 hour, the next request blocks until `validate_and_fetch_user` completes.
-
-## Inspect cache status
-
-`swr` returns an `SWRResult` object with the value and cache status:
-
-```python
-result = await swr("my-key", my_loader)
-
-result.value   # the cached or freshly loaded value
-result.status  # "miss" | "fresh" | "stale" | "expired"
-```
-
-Call `.mutate()` to update the cached value or force a revalidation:
-
-```python
-await result.mutate(new_value)  # update the cache with a new value
-await result.mutate()           # force revalidation by calling the loader
-```
 
 ## Low-level cache API
 
@@ -133,11 +160,16 @@ For simple get/set caching without revalidation, use `cache_get` and `cache_set`
 from datetime import timedelta
 from langgraph_sdk.cache import cache_get, cache_set
 
-value = await cache_get("my-key")
+async def compute_embeddings(text: str) -> list[float]:
+    """Call an embeddings API or run an expensive computation."""
+    ...
+
+key = "embeddings:doc-42"
+value = await cache_get(key)
 
 if value is None:
-    value = await expensive_computation()
-    await cache_set("my-key", value, ttl=timedelta(hours=1))
+    value = await compute_embeddings("hello world")
+    await cache_set(key, value, ttl=timedelta(hours=1))
 ```
 
 ### `cache_get`
@@ -164,4 +196,4 @@ async def cache_set(key: str, value: Any, *, ttl: timedelta | None = None) -> No
 
 - [Add custom authentication](/langsmith/custom-auth) to your deployment.
 - [Add custom lifespan events](/langsmith/custom-lifespan) to initialize resources at server startup.
-- Learn about the [agent server architecture](/langsmith/agent-server).
+- Learn about the [Agent Server architecture](/langsmith/agent-server).
