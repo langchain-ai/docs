@@ -1,0 +1,224 @@
+---
+title: LLM Gateway trace metadata reference
+sidebarTitle: Trace metadata reference
+description: Reference for the gateway metadata keys on LLM Gateway runs, and how to export them with Bulk Export to measure outcomes, latency, tokens, and cost.
+---
+
+import LLMGatewayBetaNote from '/snippets/langsmith/llm-gateway-beta-note.mdx';
+
+<LLMGatewayBetaNote />
+
+The LLM Gateway traces each request to the `gateway` [tracing project](/langsmith/observability-concepts#trace-containers) in the caller's workspace. Each run carries `gateway.*` metadata keys that describe the request's outcome, routing, latency, token usage, and pricing. Use these keys to filter runs in the UI, or export them with [Bulk Export](/langsmith/data-export) to build your own reports.
+
+The keys are stored flat in the run's metadata. A key such as `gateway.request.outcome` contains dots but is not nested. Numbers and booleans keep their JSON type, and `gateway.request.attempt_details` is a JSON array encoded as a string.
+
+## Understand gateway runs
+
+A request produces one or more runs:
+
+- **Attempt runs**: one run for each provider call. A request that falls back to another model has one attempt run per model it called.
+- **Refusal runs**: one run named `gateway.blocked`, `gateway.rejected`, or `gateway.fallback_exhausted` when the request did not get a provider response. These runs carry metadata only, with no inputs or outputs.
+
+Exactly one run per request has `gateway.request.final` set to `true`. When a provider returned the response the caller received, including an error response, it is that attempt. For a blocked, rejected, or `fallback_exhausted` request, it is the refusal run. Count requests, and compute request-level latency, from runs where `gateway.request.final` is `true`. Token and cost sums are correct across all runs, because each attempt reports only its own usage.
+
+The gateway does not retry a model and does not wait between [fallback](/langsmith/llm-gateway-fallbacks) candidates. When a candidate fails with a trigger status, the gateway calls the next candidate immediately. A candidate that recently returned `429` is in cooldown and is skipped without a call.
+
+The gateway does not trace a request that fails authentication, because the request has no workspace.
+
+## Request keys
+
+These keys describe the whole request. Attempt runs carry them with the same values on every attempt in the request, except where noted.
+
+| Key | Type | Description |
+| --- | --- | --- |
+| `gateway.request.id` | string | Identifier shared by every run for one request. Use it to group fallback attempts. |
+| `gateway.request.final` | boolean | `true` on the one run that represents the request. |
+| `gateway.request.outcome` | string | How the request ended. Refer to [Outcome values](#outcome-values). Set on the final run only. |
+| `gateway.request.error_source` | string | Who caused a failed request: `request`, `upstream`, or `internal`. Set on the final run of a failed request only. |
+| `gateway.request.error_reason` | string | Why the gateway blocked or rejected the request. Refer to [Reason values](#reason-values). Set on the final run only. |
+| `gateway.request.requested_model` | string | Model the caller requested. For a fallback chain, the model of the first candidate. |
+| `gateway.request.requested_provider` | string | Provider of the requested model, such as `openai` or `anthropic`. |
+| `gateway.request.requested_model_config` | string | Name of the requested [model configuration](/langsmith/llm-gateway-model-configurations), when the first candidate is one. |
+| `gateway.request.served_model` | string | Model that returned the response. Not set when no model served the request. |
+| `gateway.request.served_provider` | string | Provider that returned the response. Not set when no model served the request. |
+| `gateway.request.route_config` | string | Route configuration name, for requests sent to a route. |
+| `gateway.request.strategy` | string | Routing strategy of the route configuration. |
+| `gateway.request.candidate_count` | integer | Number of candidates in the fallback chain or route. |
+| `gateway.request.fallback_used` | boolean | `true` when a candidate other than the first served the request. |
+| `gateway.request.attempt_details` | JSON string | Every candidate the gateway tried or skipped, including candidates that have no attempt run. Set on the final run only. Refer to [Attempt details](#attempt-details). |
+| `gateway.request.total_ms` | integer | Time from the request's arrival to the end of the response sent to the caller, in milliseconds. |
+| `gateway.request.overhead_ms` | integer | Time the gateway added to the request: `gateway.request.total_ms` minus the time spent in provider calls. |
+| `gateway.request.fallback_overhead_ms` | integer | Gateway time spent selecting fallback candidates. Included in `gateway.request.overhead_ms`. Always `0` for routes. |
+| `gateway.request.failed_attempts` | integer | Number of provider calls in the request that failed before this attempt started. Attempt runs only. |
+| `gateway.request.failed_attempts_ms` | integer | Time spent in those failed provider calls, in milliseconds. Attempt runs only. |
+| `gateway.request.unpriced_attempts` | integer | Number of attempts in the request whose model has no price. Attempt runs only. |
+
+`gateway.provider` is the provider path the request was sent to. For a model configuration, it is the configuration's path rather than the underlying provider. Use `gateway.request.requested_provider` and `gateway.request.served_provider` to compare providers.
+
+## Attempt keys
+
+These keys describe one provider call and appear on attempt runs only.
+
+| Key | Type | Description |
+| --- | --- | --- |
+| `gateway.attempt.candidate` | integer | Position of this attempt in its model's fallback chain, starting at `1`. |
+| `gateway.attempt.route_candidate` | integer | Position of this attempt's candidate in the route, for requests sent to a route. |
+| `gateway.attempt.number` | integer | Order of this run among the request's attempt runs, starting at `1`. Skipped candidates have no run, so this can differ from `gateway.attempt.candidate`. |
+| `gateway.attempt.provider_id` | string | Provider that handled this attempt, such as `openai` or `openai_compatible`. |
+| `gateway.attempt.outcome` | string | `success` for the attempt that served the request. `upstream_error` for an attempt that failed and fell back. |
+| `gateway.attempt.error_source` | string | Who caused a failed attempt: `upstream`, `request`, or `internal`. |
+| `gateway.attempt.upstream_error_source` | string | How a failed attempt failed. Refer to [Upstream error values](#upstream-error-values). |
+| `gateway.attempt.upstream_status_code` | integer | HTTP status code the provider returned, when it returned an error status. |
+| `gateway.attempt.duration_ms` | integer | Duration of the attempt's run, in milliseconds. |
+| `gateway.attempt.ttft_ms` | integer | Time to the first token, in milliseconds. For a streaming OpenAI, Anthropic, or Gemini response, the time to the first streamed content. For a successful non-streaming response, equal to `gateway.attempt.duration_ms`. Not set for failed attempts. |
+| `gateway.attempt.overhead_ms` | integer | Gateway time before this attempt's provider call, such as authentication, policy checks, and data policy scans. |
+| `gateway.attempt.priced` | boolean | `true` when the attempt's model and token usage matched a price. Refer to [Find unpriced models](#find-unpriced-models). |
+
+## Usage keys
+
+These keys split an attempt's token usage by type. They appear on attempt runs that reported usage.
+
+| Key | Type | Description |
+| --- | --- | --- |
+| `gateway.usage.input_tokens` | integer | Input tokens, including cached tokens. |
+| `gateway.usage.output_tokens` | integer | Output tokens. |
+| `gateway.usage.cache_read_tokens` | integer | Input tokens read from the provider's prompt cache. |
+| `gateway.usage.cache_creation_tokens` | integer | Input tokens written to the provider's prompt cache. |
+| `gateway.usage.cache_creation_5m_tokens` | integer | Cache writes with a 5-minute lifetime. Anthropic only. |
+| `gateway.usage.cache_creation_1h_tokens` | integer | Cache writes with a 1-hour lifetime. Anthropic only. |
+| `gateway.usage.uncached_input_tokens` | integer | Input tokens minus cache reads and cache writes. |
+| `gateway.usage.cache_hit` | boolean | `true` when `gateway.usage.cache_read_tokens` is greater than `0`. |
+
+Cache counts come from the usage the provider reports to LangSmith. A provider that does not report cache usage shows `0`.
+
+## Caller keys
+
+These keys identify the caller and appear on every gateway run, including refusal runs.
+
+| Key | Description |
+| --- | --- |
+| `gateway.organization_id` | Organization ID. |
+| `gateway.workspace_id` | Workspace ID. |
+| `gateway.workspace_handle` | Workspace handle. |
+| `gateway.user_id` | LangSmith user ID of the caller. |
+| `gateway.api_key_id` | ID of the LangSmith API key that made the request. Not set for other authentication methods, such as a Claude subscription. |
+| `gateway.api_key_short` | Shortened form of the API key. |
+| `gateway.auth_mode` | Authentication method of the request. |
+| `gateway.credential_source` | How the provider call was paid for, such as a workspace secret or Gateway Credits. Not set on runs for requests that never selected a provider. |
+| `gateway.user_agent` | `User-Agent` header of the request. |
+
+Request headers prefixed with `X-Gateway-`, and keys in the `X-Gateway-Metadata` JSON header, also appear as `gateway.*` keys. The gateway lowercases the name and replaces each character other than a letter, digit, or underscore with `_`. For example, `X-Gateway-Customer-Id` appears as `gateway.customer_id`. Refer to [Header policies](/langsmith/llm-gateway-header-policies).
+
+## Policy keys
+
+These keys list the [policies](/langsmith/llm-gateway-spend-policies) that applied to the request. Each value is a comma-separated list.
+
+| Key | Description |
+| --- | --- |
+| `gateway.policy.matched_ids`, `gateway.policy.matched_names` | Policies that applied to the request. |
+| `gateway.policy.passed_ids`, `gateway.policy.passed_names` | Applied policies that allowed the request. |
+| `gateway.policy.violated_ids`, `gateway.policy.violated_names` | Applied policies that blocked, redacted, or otherwise acted on the request. |
+| `gateway.policy.matched_rules`, `gateway.policy.passed_rules`, `gateway.policy.violated_rules` | Data policy rules, by ID, grouped the same way. |
+
+Refusal runs for blocked requests also carry the details of the limit that blocked the request:
+
+| Key | Description |
+| --- | --- |
+| `gateway.request.blocking_policy_ids`, `gateway.request.blocking_policy_names` | Policies you created that blocked the request. The built-in rate limit for LangChain-hosted models is not listed. To count denials by policy name, including the built-in limit, group by `gateway.policy.violated_names`. |
+| `gateway.request.scopes` | Scopes of the blocking policies: `organization`, `workspace`, `user`, `api_key`, or `custom_header`. |
+| `gateway.request.limit_source` | `gateway_policy` for a policy limit, or `prepaid_credit_balance` for a [Gateway Credits](/langsmith/llm-gateway-credits) balance. |
+| `gateway.request.limit_dimensions` | Dimensions of the limit that was reached. |
+| `gateway.request.limit_windows` | Time windows of the limit that was reached. |
+| `gateway.request.retry_after_seconds` | Seconds until the caller can retry, when the gateway returned a `Retry-After` header. |
+
+## Attempt details
+
+`gateway.request.attempt_details` is a JSON array with one entry per candidate in the fallback chain or route. It includes candidates that have no attempt run, such as a candidate skipped for cooldown or a call that failed before the provider responded.
+
+| Field | Description |
+| --- | --- |
+| `candidate` | Position of the candidate, starting at `1`. For a route, the position in the route. |
+| `model` | Model configured for the candidate. |
+| `provider` | Provider of the candidate, such as `openai`. |
+| `model_config_name` | Model configuration of the candidate, when it is one. |
+| `duration_ms` | Time from sending the call to receiving response headers or failing, in milliseconds. Omitted for a skipped candidate. |
+| `status_code` | HTTP status the provider returned. Omitted when no response arrived. |
+| `fallback_trigger` | Why the gateway moved to the next candidate: `status_code`, `transport_error`, `timeout`, or `cooldown`. Omitted for the candidate that served the request and for the last candidate. |
+| `transport_error` | `true` when the candidate returned no HTTP response. |
+| `timed_out` | `true` when the candidate's configured timeout elapsed. |
+| `first_stream_content_timed_out` | `true` when the timeout elapsed while waiting for the first streamed content. |
+| `error_source` | Who caused a candidate that returned no HTTP response: `request`, `upstream`, or `internal`. |
+| `model_candidate` | For a route candidate that uses a model configuration with its own fallback chain: the position, in that chain, of the attempt the route received. |
+| `served_model`, `served_provider` | For the same route candidate: the model and provider that served it. |
+
+`duration_ms` ends when response headers arrive, not when the response body finishes. For attempts that have a run, use the run's duration or `gateway.attempt.duration_ms` instead.
+
+To match an attempt run with its entry, join `gateway.attempt.candidate` to `candidate`, not `gateway.attempt.number`. For a route, join `gateway.attempt.route_candidate` to `candidate`.
+
+A chain with more than about 15 attempts can exceed the gateway's response metadata size limit. The gateway then keeps only the first, serving, and last entries in `gateway.request.attempt_details`.
+
+## Values
+
+### Outcome values
+
+| `gateway.request.outcome` | Meaning |
+| --- | --- |
+| `success` | A provider returned a successful response. |
+| `upstream_error` | The provider returned an error, and no fallback served the request. When every candidate in a chain fails, this is the outcome if the last candidate returned an HTTP error status. |
+| `blocked` | A policy, limit, or data policy prevented the request from reaching a provider. |
+| `rejected` | The gateway could not route the request, for example because the model or path is not supported. |
+| `fallback_exhausted` | A fallback chain or route ran, and its last candidate returned no HTTP response, for example because of a timeout or connection error. |
+
+### Reason values
+
+`gateway.request.error_reason` is set for `blocked` and `rejected` requests:
+
+- `blocked`: `policy`, `rate_limit`, `spend_limit`, `spend_limit_check_unavailable`, `guard_timeout`.
+- `rejected`: `unsupported_path`, `invalid_model`, `routing_failed`, `malformed_model_route`, `unsupported_provider`, `translation_failed`, `body_read_failed`, `body_too_large`.
+
+A provider rate limit is not a gateway block. It appears as `gateway.attempt.upstream_status_code` `429` on the attempt, or as a `cooldown` trigger in `gateway.request.attempt_details`.
+
+### Upstream error values
+
+`gateway.attempt.upstream_error_source` is `provider_response` when the provider returned an error status. When the call failed before a status arrived, the value describes the failure, such as `provider_timeout`, `network`, `provider_connection_closed`, or `client_disconnect`. For an earlier attempt that fell back, the value is `provider_timeout` or `transport_error`.
+
+## Filter on outcome, not run status
+
+Refusal runs, and attempt runs traced without inputs and outputs, can show a successful run status even when the request failed. Filter gateway runs on `gateway.request.outcome` or `gateway.attempt.outcome` instead of run status.
+
+## Find unpriced models
+
+`gateway.attempt.priced` is set only on attempts that reported token usage. It is missing on failed calls without usage. To find unpriced models, filter on `gateway.attempt.priced` equal to `false`, and group by `ls_model_name`. Do not treat a missing key as unpriced.
+
+For calls paid with [Gateway Credits](/langsmith/llm-gateway-credits), `gateway.attempt.priced` uses the standard model prices. The run's cost columns include your workspace's custom model prices, so the two can disagree when a custom price applies.
+
+## Export gateway metadata
+
+To export gateway runs for your own reporting, create a [Bulk Export](/langsmith/data-export) job for the `gateway` project. Copy the project ID from the `gateway` project in the [**Tracing Projects** list](https://smith.langchain.com), and add a [filter](/langsmith/trace-query-syntax#filter-query-language) to narrow the runs.
+
+For example, this job exports every blocked request in January:
+
+```bash
+curl --request POST \
+  --url 'https://api.smith.langchain.com/api/v1/bulk-exports' \
+  --header 'Content-Type: application/json' \
+  --header 'X-API-Key: YOUR_API_KEY' \
+  --header 'X-Tenant-Id: YOUR_WORKSPACE_ID' \
+  --data '{
+    "bulk_export_destination_id": "your_destination_id",
+    "session_id": "gateway_project_uuid",
+    "start_time": "2026-01-01T00:00:00Z",
+    "end_time": "2026-02-01T00:00:00Z",
+    "format_version": "v2_beta",
+    "filter": "and(eq(metadata_key, \"gateway.request.outcome\"), eq(metadata_value, \"blocked\"))"
+  }'
+```
+
+Each exported run's `extra` column is a JSON string. Parse it, then read the keys from `extra.metadata`. Parse `gateway.request.attempt_details` again to read its entries.
+
+## See also
+
+- [Monitor LLM Gateway spend](/langsmith/llm-gateway-monitoring)
+- [Model fallbacks](/langsmith/llm-gateway-fallbacks)
+- [Bulk Export](/langsmith/data-export)
+- [Filter query language](/langsmith/trace-query-syntax)
