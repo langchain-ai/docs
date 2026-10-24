@@ -9,6 +9,8 @@ The Model Context Protocol (MCP) is an open protocol for describing tools and da
 
 The MCP endpoint is available at `/mcp` on [Agent Server](/langsmith/agent-server).
 
+Agent Server supports MCP protocol revisions `2024-11-05` through `2026-07-28`. On `2026-07-28`, each request carries its own protocol metadata, so clients connect without an `initialize` handshake. When an agent pauses for input, Agent Server asks the client for it. For more information, see [Human-in-the-loop over MCP](/langsmith/server-mcp-elicitation).
+
 Managed Deep Agents deployments run on Agent Server, so they expose the same `/mcp` endpoint. For Managed Deep Agents URL discovery and identity headers, see [Connect MCP clients to a managed deep agent](/langsmith/managed-deep-agents-mcp-endpoint).
 
 You can set up [custom authentication middleware](/langsmith/custom-auth) to authenticate a user with an MCP server to get access to user-scoped tools within your LangSmith deployment.
@@ -179,6 +181,8 @@ with this configuration:
 * **Tool description**: The agent's description.
 * **Tool input schema**: The agent's input schema.
 
+The tool returns the agent's final output as JSON text. When a run fails, the result is an error whose text gives the exception type and message, separated by a colon.
+
 ### Setting name and description
 
 You can set the name and description of your agent in `langgraph.json`:
@@ -281,11 +285,13 @@ _This can also be done by [rebuilding your graph at runtime](/langsmith/graph-re
 
 ## Session behavior
 
-The current LangGraph MCP implementation does not support sessions. Each `/mcp` request is stateless and independent.
+The MCP endpoint does not use sessions. Each `/mcp` request is independent. A tool call that pauses for input keeps its state on the server between requests, linked by `requestState`. For more information, see [Human-in-the-loop over MCP](/langsmith/server-mcp-elicitation).
 
 ## Authentication
 
 The `/mcp` endpoint uses the same authentication as the rest of the LangGraph API. Refer to the [authentication guide](/langsmith/auth) for setup details.
+
+Requests on protocol revision `2026-07-28` that include an `Origin` header, such as requests from a browser, must come from an allowed origin. Agent Server reads the allowed origins from `allow_origins` or `allow_origin_regex` in the [`http.cors` configuration](/langsmith/cli#customizing-http-middleware-and-headers), or from the `CORS_ALLOW_ORIGINS` environment variable. A wildcard (`*`) does not allow any origin on this endpoint. Agent Server rejects a request from any other origin with HTTP 403.
 
 ## Disable MCP
 
