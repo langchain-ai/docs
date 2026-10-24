@@ -13,6 +13,7 @@ By default, LangSmith stores run inputs, outputs, errors, manifests, extras, and
 - [Amazon S3 (AWS)](#amazon-s3)
 - [Google Cloud Storage (GCP)](#google-cloud-storage)
 - [Azure Blob Storage](#azure-blob-storage)
+- [Neon Object Storage](#neon-object-storage)
 
 For complete cloud-specific setup and architecture guides, see [AWS](/langsmith/aws-self-hosted), [GCP](/langsmith/gcp-self-hosted), or [Azure](/langsmith/azure-self-hosted).
 </Tip>
@@ -30,6 +31,7 @@ Native GCS blob storage engine support (using `engine: "GCS"`) is available in H
   * [Amazon S3](https://aws.amazon.com/s3/)
   * [Google Cloud Storage (GCS)](https://cloud.google.com/storage?hl=en)
   * [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs)
+  * [Neon Object Storage](https://neon.com/docs/storage/get-started) (S3-compatible)
 
 * A bucket/directory in your blob storage to store the data. We highly recommend creating a separate bucket/directory for LangSmith data.
   * **If you are using TTLs**, you will need to set up a lifecycle policy to delete old data. For more information, see [configuring TTLs](/langsmith/self-host-ttl). These policies should mirror the TTLs you have set in your LangSmith configuration, or you may experience data loss. See [TTL configuration for blob storage](#ttl-configuration) for how to set up the lifecycle rules.
@@ -42,6 +44,7 @@ Native GCS blob storage engine support (using `engine: "GCS"`) is available in H
   * This will be the URL that LangSmith uses to access your blob storage system
   * For Amazon S3, this will be the URL of the S3 endpoint. Something like: `https://s3.amazonaws.com` or `https://s3.us-west-1.amazonaws.com` if using a regional endpoint.
   * For Google Cloud Storage, this will be the URL of the GCS endpoint. Something like: `https://storage.googleapis.com`
+  * For Neon Object Storage, this is the storage endpoint of your Neon branch. Something like: `https://br-cool-darkness-a1b2c3d4.storage.c-1.us-east-2.aws.neon.tech`
 
 ## Authentication
 
@@ -140,6 +143,44 @@ Some deployments may need further customization of the connection configuration 
 </Note>
 
   </Tab>
+  <Tab title="Neon">
+
+### Neon Object Storage
+
+[Neon Object Storage](https://neon.com/docs/storage/get-started) is S3-compatible object storage attached to a Neon branch. LangSmith connects to it with the `S3` engine and an access key and secret key.
+
+To set up Neon Object Storage for LangSmith:
+
+1. Create a private bucket on your Neon branch, for example `langsmith`. For more information, see [Neon buckets](https://neon.com/docs/storage/buckets).
+2. Create a credential with both the `storage:read` and `storage:write` scopes. LangSmith reads, writes, and deletes objects, so it needs both scopes:
+
+    ```bash
+    neon credentials create --scope storage:read --scope storage:write --name langsmith-blob-storage
+    ```
+
+3. Use the credential's `token_id` (starts with `nak_live_`) as `accessKey` and its `s3_secret_access_key` (starts with `nsk_live_`) as `accessKeySecret`. For more information, see [Neon Object Storage authentication](https://neon.com/docs/storage/authentication).
+4. Use the branch's storage endpoint as `apiURL`. In the Neon Console, click **Connect** and open the **Storage** tab to find it as `AWS_ENDPOINT_URL_S3`.
+5. Set `s3UsePathStyle: true` in your [configuration](#configuration):
+
+    ```yaml
+    config:
+      blobStorage:
+        enabled: true
+        engine: "S3"
+        bucketName: "langsmith"
+        apiURL: "https://br-cool-darkness-a1b2c3d4.storage.c-1.us-east-2.aws.neon.tech"
+        accessKey: "nak_live_..."
+        accessKeySecret: "nsk_live_..."
+        s3UsePathStyle: true
+    ```
+
+<Warning>
+Neon Object Storage serves buckets at path-style URLs only (`<apiURL>/<bucket>/<key>`). Without `s3UsePathStyle: true`, LangSmith sends requests to `<bucket>.<endpoint>`, which fail TLS verification because the Neon certificate does not cover that hostname. `s3UsePathStyle` requires Helm chart version 0.12.4 or later.
+</Warning>
+
+Neon does not run lifecycle rules, so plan how to expire data before you enable [TTLs](#ttl-configuration). For more information, see [Neon Object Storage lifecycle rules](#neon-object-storage-lifecycle-rules).
+
+  </Tab>
 </Tabs>
 
 ## CH search
@@ -160,6 +201,7 @@ config:
     apiURL: "Your connection url"
     accessKey: "Your access key" # Optional. Only required if using S3 access key and secret key
     accessKeySecret: "Your access key secret" # Optional. Only required if using access key and secret key
+    s3UsePathStyle: false # Optional. Set to true for S3-compatible services that require path-style URLs, such as Neon Object Storage or MinIO
     # The following blob storage configuration values are for Azure and require blobStorage.engine = "Azure". Omit otherwise.
     azureStorageAccountName: "Your storage account name" # Optional. Only required if using storage account and access key.
     azureStorageAccountKey: "Your storage account access key" # Optional. Only required if using storage account and access key.
@@ -326,6 +368,15 @@ rule {
 ```
 
   </Tab>
+  <Tab title="Neon">
+
+Neon Object Storage does not run lifecycle rules. Add each custom prefix to `RULES` in your [cleanup job](#neon-object-storage-lifecycle-rules):
+
+```python
+RULES = {"ttl_s/": 14, "ttl_l/": 400, "ttl_90d/": 90, "ttl_180d/": 180}
+```
+
+  </Tab>
 </Tabs>
 
 If you have customized the TTLs in your LangSmith configuration, you will need to adjust the TTLs in your blob storage configuration to match.
@@ -443,5 +494,15 @@ resource "azurerm_storage_management_policy" "example" {
 }
 ```
 
+  </Tab>
+  <Tab title="Neon">
+
+### Neon Object Storage lifecycle rules
+
+<Warning>
+Neon Object Storage accepts and stores lifecycle configurations, but does not run expiration rules. Objects under the `ttl_s/`, `ttl_l/`, and `ttl_XXd/` prefixes are not deleted automatically, so blob data outlives the TTLs configured in LangSmith. For more information, see [Neon Object Storage troubleshooting](https://neon.com/docs/storage/troubleshooting).
+</Warning>
+
+To enforce TTLs, run a scheduled job (for example, a Kubernetes CronJob) that deletes objects older than each prefix's TTL.
   </Tab>
 </Tabs>
