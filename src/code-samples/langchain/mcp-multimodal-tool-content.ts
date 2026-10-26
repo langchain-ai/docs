@@ -9,7 +9,7 @@ async function accessMultimodalToolContent(): Promise<void> {
   const { MultiServerMCPClient } = await import("@langchain/mcp-adapters");
   const client = new MultiServerMCPClient({});
   const tools = await client.getTools();
-  const agent = createAgent({ model: "claude-sonnet-4-6", tools });
+  const agent = createAgent({ model: "claude-sonnet-5", tools });
 
   const result = await agent.invoke({
     messages: [
@@ -31,8 +31,8 @@ async function accessMultimodalToolContent(): Promise<void> {
           console.log(`Text: ${block.text}`); // [!code highlight]
         } else if (block.type === "image") {
           // [!code highlight]
-          console.log(`Image URL: ${block.url}`); // [!code highlight]
-          console.log(`Image base64: ${block.base64?.slice(0, 50)}...`); // [!code highlight]
+          console.log(`Image MIME type: ${block.mimeType}`); // [!code highlight]
+          console.log(`Image data: ${String(block.data).slice(0, 50)}...`); // [!code highlight]
         }
       }
     }

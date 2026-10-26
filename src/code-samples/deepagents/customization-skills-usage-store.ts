@@ -21,7 +21,7 @@ await backend.uploadFiles([
 
 // KEEP MODEL
 const agent = await createDeepAgent({
-  model: "google-genai:gemini-3.1-pro-preview",
+  model: "anthropic:claude-sonnet-4-6",
   backend,
   store,
   checkpointer,

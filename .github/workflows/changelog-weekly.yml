@@ -1,0 +1,189 @@
+---
+name: Weekly changelog
+
+# Writes the weekly LangSmith Cloud and Fleet changelog from merged langchainplus PRs
+# and opens a PR for review. Replaces the fragment-based Fleet agent.
+
+on:
+  schedule:
+    # Mondays at 13:00 UTC, for the week that ended that Monday.
+    - cron: "0 13 * * 1"
+  workflow_dispatch:
+    inputs:
+      since:
+        description: "Window start (YYYY-MM-DD). Leave empty for the week that ended on the last Monday."
+        required: false
+      until:
+        description: "Window end (YYYY-MM-DD). Set together with since."
+        required: false
+      dry_run:
+        description: "Write the entries to the run summary instead of opening a PR."
+        type: boolean
+        default: false
+
+concurrency:
+  group: changelog-weekly
+  cancel-in-progress: false
+
+jobs:
+  weekly:
+    name: Write the weekly changelog
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    # The App token pushes the branch and opens the PR. A PR opened with GITHUB_TOKEN
+    # never triggers the pull_request workflows, so CI would not run on it.
+    permissions:
+      contents: read
+    env:
+      BOT_EMAIL: github-actions[bot]@users.noreply.github.com
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.ORG_MEMBERSHIP_APP_ID }}
+          private-key: ${{ secrets.ORG_MEMBERSHIP_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Check the branch
+        id: branch
+        if: ${{ inputs.dry_run != true }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          BRANCH="changelog/weekly-$(date -u +%Y-%m-%d)"
+          echo "BRANCH=$BRANCH" >> "$GITHUB_ENV"
+          # Fail now, not after the pipeline, if the App cannot push.
+          git push --dry-run --force origin "HEAD:refs/heads/$BRANCH"
+          # A same-day rerun force-pushes the branch. Skip it when anyone but this job
+          # has pushed there, so their edits are not overwritten.
+          if git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null; then
+            OTHERS="$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$BRANCH" \
+              --jq '.commits[].commit.author.email' | grep -vxF "$BOT_EMAIL" || true)"
+            if [ -n "$OTHERS" ]; then
+              echo "::warning::$BRANCH has commits from someone else; skipping this run"
+              echo "Skipped: $BRANCH has commits from someone else. Delete the branch to regenerate this week, or edit its PR instead." >> "$GITHUB_STEP_SUMMARY"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Set up Python 3.13 + uv
+        uses: "./.github/actions/uv_setup"
+        with:
+          python-version: "3.13"
+
+      - name: Validate the window
+        env:
+          SINCE: ${{ inputs.since }}
+          UNTIL: ${{ inputs.until }}
+        run: |
+          set -euo pipefail
+          for value in "$SINCE" "$UNTIL"; do
+            if [ -n "$value" ] && ! [[ "$value" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+              echo "::error::Dates must be YYYY-MM-DD, got '$value'"
+              exit 1
+            fi
+          done
+          if { [ -n "$SINCE" ] && [ -z "$UNTIL" ]; } || { [ -z "$SINCE" ] && [ -n "$UNTIL" ]; }; then
+            echo "::error::Set both since and until, or neither"
+            exit 1
+          fi
+
+      - name: Run the pipeline
+        if: ${{ steps.branch.outputs.skip != 'true' }}
+        env:
+          # Read-only access to langchainplus PRs.
+          GH_TOKEN: ${{ secrets.LANGCHAINPLUS_READ_TOKEN }}
+          # The repo's Anthropic key is a gateway key; it needs the gateway URL and headers.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+          ANTHROPIC_CUSTOM_HEADERS: ${{ secrets.ANTHROPIC_CUSTOM_HEADERS }}
+          EPPO_API_KEY: ${{ secrets.EPPO_API_KEY }}
+          # Decrypts and encrypts the held list.
+          CHANGELOG_STATE_KEY: ${{ secrets.CHANGELOG_STATE_KEY }}
+          SINCE: ${{ inputs.since }}
+          UNTIL: ${{ inputs.until }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          args=(--out "$RUNNER_TEMP/changelog")
+          if [ -n "$SINCE" ]; then args+=(--since "$SINCE" --until "$UNTIL"); fi
+          if [ "$DRY_RUN" != "true" ]; then args+=(--write); fi
+          uv run python scripts/changelog_pipeline.py weekly "${args[@]}" \
+            > "$RUNNER_TEMP/report-path.txt"
+          # This repository is public: the summary shows only what would publish. The
+          # run report names private PRs and unreleased work, so it is never shown.
+          if [ "$DRY_RUN" = "true" ]; then
+            REPORT="$(tail -n 1 "$RUNNER_TEMP/report-path.txt")"
+            {
+              echo "## Entries"
+              echo
+              echo '```mdx'
+              cat "$(dirname "$REPORT")/mock.mdx"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Lint the entries
+        if: ${{ inputs.dry_run != true && steps.branch.outputs.skip != 'true' }}
+        id: vale
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          make lint_prose FILES="src/langsmith/changelog.mdx src/snippets/langsmith/fleet-changelog.mdx" \
+            2>&1 | sed 's/\x1b\[[0-9;]*m//g' | tee "$RUNNER_TEMP/vale.txt"
+
+      - name: Open the PR
+        if: ${{ inputs.dry_run != true && steps.branch.outputs.skip != 'true' }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          # Also catches a week with no entries that still changes the held list.
+          # The glob also matches a plaintext held list, should one come back from an
+          # old branch: the job folds it into the encrypted list and deletes it.
+          STATE=(src/langsmith/changelog.mdx src/snippets/langsmith/fleet-changelog.mdx
+            'scripts/.changelog_held.json*')
+          if [ -z "$(git status --porcelain -- "${STATE[@]}")" ]; then
+            echo "No changes this week" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          REPORT="$(tail -n 1 "$RUNNER_TEMP/report-path.txt")"
+          WEEK="$(cat "$(dirname "$REPORT")/label.txt")"
+
+          # Counts only: this repository is public, and the run report names private
+          # PRs and unreleased work.
+          {
+            echo "Weekly LangSmith Cloud and Fleet changelog for **${WEEK}**, generated by \`scripts/changelog_pipeline.py weekly\` from merged langchainplus PRs."
+            echo
+            echo "Entries behind a flag that is not rolled out are held and publish once it is. Entries that named something internal were rewritten and checked again. Anything the job could not check is left out. Edit the changelog files directly to change wording."
+            echo
+            cat "$(dirname "$REPORT")/summary.md"
+            echo
+            echo "## Vale"
+            echo
+            echo '```text'
+            tail -n 40 "$RUNNER_TEMP/vale.txt" || true
+            echo '```'
+          } > "$RUNNER_TEMP/pr-body.md"
+
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "$BOT_EMAIL"
+          git checkout -B "$BRANCH"
+          git add -A -- "${STATE[@]}"
+          git commit -m "docs(langsmith): weekly changelog for ${WEEK}"
+          git push --force origin "$BRANCH"
+          # A rerun on the same day force-pushes the same branch, which already has a PR.
+          EXISTING="$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$EXISTING" ]; then
+            gh pr edit "$EXISTING" --body-file "$RUNNER_TEMP/pr-body.md"
+          else
+            gh pr create --base main --head "$BRANCH" \
+              --title "docs(langsmith): weekly changelog for ${WEEK}" \
+              --body-file "$RUNNER_TEMP/pr-body.md"
+          fi

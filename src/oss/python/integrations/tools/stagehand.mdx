@@ -50,14 +50,15 @@ export BROWSERBASE_API_KEY="bb_live_..."  # required for Browserbase
 
 ## Use with a Deep Agent
 
-The integration's MCP server (`stagehand-deepagents-mcp`) is launched over stdio by `MultiServerMCPClient`. Use `load_mcp_tools` to get the tools and pass them directly to `create_deep_agent` — no manual tool definitions needed:
+The integration's MCP server (`stagehand-deepagents-mcp`) is launched over stdio by @[`MCPAdapter`]. Use `list_tools()` to discover the tools and pass them to `create_deep_agent` — no manual tool definitions needed:
 
 ```python
 import asyncio
+import os
+
 import dotenv
-from langchain_mcp_adapters.client import MultiServerMCPClient
-from langchain_mcp_adapters.tools import load_mcp_tools
 from deepagents import create_deep_agent
+from langchain.mcp import MCPAdapter
 
 dotenv.load_dotenv()
 
@@ -71,23 +72,23 @@ Snapshot IDs are valid only for the latest snapshot of the active page.
 Snapshot again after navigation or stale IDs. Do not launch another browser.
 """
 
-client = MultiServerMCPClient(
-    {
+CONFIG = {
+    "mcpServers": {
         "stagehand_browser": {
-            "transport": "stdio",
             "command": "uv",
             "args": ["run", "--project", ".", "--locked", "stagehand-deepagents-mcp"],
             "env": {
-                k: v for k, v in __import__("os").environ.items()
+                k: v for k, v in os.environ.items()
                 if k.startswith(("STAGEHAND_", "BROWSERBASE_")) and v
             },
         }
     }
-)
+}
+
 
 async def main():
-    async with client.session("stagehand_browser") as session:
-        tools = await load_mcp_tools(session)
+    async with MCPAdapter(CONFIG) as adapter:
+        tools = await adapter.list_tools()
         agent = create_deep_agent(
             model="openai:gpt-4o",
             tools=tools,
@@ -98,11 +99,12 @@ async def main():
         })
     print(result["messages"][-1].content)
 
+
 asyncio.run(main())
 ```
 
 <Warning>
-  Keep one persistent `ClientSession` for the duration of your agent run. Stateless tool loading (e.g. `MultiServerMCPClient.get_tools()`) starts a new stdio process per call and loses the browser and snapshot IDs.
+  Keep the @[`MCPAdapter`] context manager open for the duration of the agent run. The browser session and snapshot IDs are tied to the underlying stdio process — closing the adapter ends the session.
 </Warning>
 
 ## Server configuration
