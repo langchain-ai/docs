@@ -61,6 +61,8 @@ HIDDEN_TAGS: set[str] = {
     "fleet usage",
     "fleet_webhooks",
     "skills",
+    # Product feedback collection (agent-facing, not documented publicly)
+    "productfeedback",
     # Internal / infra
     "beacon",
     "nps",

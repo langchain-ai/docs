@@ -44,6 +44,12 @@ For advanced CORS configuration, see [how to add custom CORS configuration](/lan
 
 Defaults to `*` (all origins).
 
+## `DEFAULT_A2A_ASSISTANT_ID`
+
+Set `DEFAULT_A2A_ASSISTANT_ID` to the ID of the assistant whose [agent card](/langsmith/server-a2a#agent-card-discovery) the server returns from `/.well-known/agent-card.json` when the request has no `assistant_id` query parameter.
+
+If it is not set, requests to `/.well-known/agent-card.json` without an `assistant_id` query parameter return a `400` error. The `/a2a/{assistant_id}` endpoints take the assistant ID from the path and ignore this variable.
+
 ## Supported Datadog environment variables {#dd_api_key}
 
 Set these environment variables or secrets on the deployment to send Agent Server traces and logs to Datadog. Every variable takes effect only when `DD_API_KEY` is set, which wraps the application process in Datadog's [`ddtrace-run`](https://ddtrace.readthedocs.io/en/stable/installation_quickstart.html) tracer and log-collection agent.
@@ -63,6 +69,28 @@ For the full set of tracing options, see the [`DD_*` environment variables](http
 <Note>
 Enabling `DD_API_KEY` (and thus `ddtrace-run`) can override or interfere with other auto-instrumentation solutions (such as OpenTelemetry) that you may have instrumented into your application code.
 </Note>
+
+## `LANGGRAPH_AES_KEY` and `LANGGRAPH_AES_JSON_KEYS`
+
+Set `LANGGRAPH_AES_KEY` to a 16, 24, or 32-byte key to encrypt checkpoints at rest. Set `LANGGRAPH_AES_JSON_KEYS` to a comma-separated list of JSON keys to also encrypt wherever they appear in thread, assistant, run, cron, and store data. `LANGGRAPH_AES_JSON_KEYS` requires `LANGGRAPH_AES_KEY`.
+
+For setup and key rotation, see [Configure AES encryption at rest](/langsmith/aes-encryption).
+
+## `LANGGRAPH_API_URL`
+
+Set `LANGGRAPH_API_URL` to the URL that clients use to reach the deployment. The server uses it as:
+
+- The base URL in [A2A agent cards](/langsmith/server-a2a#agent-card-discovery).
+- The `servers` entry in the OpenAPI spec served at `/openapi.json`.
+- The `langgraph_api_url` key in each run's metadata.
+
+If it is not set, the server builds agent card URLs from the incoming request. Set it when clients reach the server through a different host, such as a reverse proxy.
+
+## `LANGGRAPH_DEFAULT_RECURSION_LIMIT`
+
+Set `LANGGRAPH_DEFAULT_RECURSION_LIMIT` to the default [recursion limit](/oss/langgraph/graph-api#recursion-limit) for runs: the maximum number of supersteps a graph executes before it raises an error. A `recursion_limit` passed in a run's config overrides it.
+
+Defaults to `10011`.
 
 ## `LANGGRAPH_POSTGRES_POOL_MAX_SIZE`
 
@@ -169,11 +197,17 @@ OTel APM tracing was added in Agent Server version `0.5.32` and is currently in 
 
 ## `LS_MONGODB_URI`
 
-MongoDB connection URI for the MongoDB checkpointer backend.
+MongoDB connection URI for the MongoDB checkpointer backend. If `LS_MONGODB_URI` is not set, the server reads `MONGODB_URI`.
 
 The URI must point to a replica set member or `mongos` router and must include the database name in the path.
 
 See [Configure checkpointer backend](/langsmith/configure-checkpointer) for details.
+
+## `LSD_CACHE_PACKAGES_DISTRIBUTIONS`
+
+When `LSD_CACHE_PACKAGES_DISTRIBUTIONS` is `true`, the server caches the result of `importlib.metadata.packages_distributions()` once per process. Some packages call that function many times at import time, which slows graph loading, especially when Datadog tracing (`ddtrace`) is enabled. Set it to `false` if your deployment installs or removes packages at runtime.
+
+Defaults to `true`.
 
 ## `REDIS_KEY_PREFIX`
 
@@ -185,6 +219,15 @@ This environment variable is supported in API Server version 0.1.9 and above.
 Specify a prefix for Redis keys. This allows multiple Agent Server instances to share the same Redis instance by using different key prefixes.
 
 Defaults to `''`.
+
+## `REDIS_URI_CUSTOM`
+
+<Info>
+**Only for Hybrid and Self-Hosted**
+Custom Redis instances are only available for [Hybrid](/langsmith/hybrid) and [Self-Hosted](/langsmith/self-hosted) deployments.
+</Info>
+
+Specify `REDIS_URI_CUSTOM` to use a custom Redis instance. The value of `REDIS_URI_CUSTOM` must be a valid [Redis connection URI](https://redis.readthedocs.io/en/stable/connections.html#redis.Redis.from_url).
 
 ## `REDIS_MAX_CONNECTIONS`
 
@@ -200,7 +243,7 @@ Time-to-live in seconds for resumable stream data in Redis.
 
 When a run is created and the output is streamed, the stream can be configured to be resumable (e.g. `stream_resumable=True`). If a stream is resumable, output from the stream is temporarily stored in Redis. The TTL for this data can be configured by setting `RESUMABLE_STREAM_TTL_SECONDS`.
 
-See the @[Python][RunsClient.stream] and [JS/TS](https://langchain-ai.github.io/langgraphjs/reference/classes/sdk_client.RunsClient.html#stream) SDKs for more details on how to implement resumable streams.
+See the @[Python][RunsClient.stream] and [JS/TS](https://reference.langchain.com/javascript/langchain-langgraph-sdk/client/RunsClient) SDKs for more details on how to implement resumable streams.
 
 Defaults to `120` seconds.
 

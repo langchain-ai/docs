@@ -1,0 +1,65 @@
+---
+title: Custom model configurations
+description: Call saved model configurations through the LLM Gateway to reach custom endpoints and use them in fallback chains.
+---
+
+import LLMGatewayBetaNote from '/snippets/langsmith/llm-gateway-beta-note.mdx';
+
+<LLMGatewayBetaNote />
+
+[Model configurations](/langsmith/model-configurations) are named, reusable definitions that pair a provider and model with credentials and settings. The LLM Gateway can route a request through a saved configuration when you set the model ID to `custom/<name>`. Use a configuration to reach an endpoint that a provider-prefixed model ID cannot address, such as a custom OpenAI-compatible endpoint.
+
+## Understand what the gateway uses
+
+A bring-your-own-key gateway call normally targets a model with a provider-prefixed ID such as `openai/gpt-5.4-mini`. When the model ID is `custom/<name>`, the gateway reads the following from the saved configuration instead:
+
+- **Provider and model**: The gateway sends the configuration's model name upstream, replacing the `custom/<name>` value in the request body.
+- **API key secret**: The gateway authenticates to the provider with the workspace secret named in the configuration.
+- **Connection settings**: The base URL, the OpenAI provider API (Chat Completions or Responses), and the Vertex AI project and location, where the provider uses them.
+
+The gateway ignores generation parameters saved on the configuration, such as temperature, top P, and max output tokens. Pass these in each API request instead.
+
+Workspace admins create configurations under **Settings** > **Model configurations**. For the steps, see [Create a configuration](/langsmith/model-configurations#create-a-configuration).
+
+## Call a configuration through the gateway
+
+Use `custom/<name>` as the model ID in any standard gateway request, replacing `<name>` with the configuration's exact name as shown in **Settings** > **Model configurations**:
+
+<CodeGroup>
+
+```bash Cloud
+curl https://gateway.smith.langchain.com/v1/responses \
+    -H "Authorization: Bearer $LANGSMITH_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"model":"custom/my-openai-config","input":"Hello!"}'
+```
+
+```bash BYOC
+curl https://<data_plane_host>/gateway/v1/responses \
+    -H "Authorization: Bearer $LANGSMITH_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"model":"custom/my-openai-config","input":"Hello!"}'
+```
+
+</CodeGroup>
+
+The gateway looks up the configuration by name in the API key's workspace, including [organization-scoped configurations](/langsmith/model-configurations#organization-scoped-model-configurations), routes the request to the configured provider and endpoint, and returns the response in the [API format](/langsmith/llm-gateway-api-formats) the client used.
+
+Saved configurations do not appear in the `GET /v1/models` list, so share configuration names with developers directly.
+
+If a [model access policy](/langsmith/llm-gateway-model-access-policies#allow-saved-model-configurations) applies to the request, the policy must allow saved model configurations, or the gateway returns a `403` response.
+
+## Use a configuration in a fallback chain
+
+A [fallback chain](/langsmith/llm-gateway-fallbacks) can use a saved configuration in two places:
+
+- **As the primary model**: Select the configuration as the chain's primary model. Requests to `custom/<name>` then fail over to the chain's backup models.
+- **As a fallback candidate**: Add the configuration as one of the backup models. Requests to the chain's primary model ID can then fail over to the configuration's endpoint.
+
+To give a Playground prompt its own fallback behavior, set the prompt's model to `custom/<name>` and attach a chain to that configuration. For the steps, see [Set fallbacks for a prompt](/langsmith/llm-gateway-fallbacks#set-fallbacks-for-a-prompt).
+
+## See also
+
+- [Manage model configurations](/langsmith/model-configurations): create, edit, and delete configurations; configure OAuth client credentials; manage organization-scoped configurations.
+- [Model fallbacks](/langsmith/llm-gateway-fallbacks): retry failed requests against backup models and configurations.
+- [API formats](/langsmith/llm-gateway-api-formats): supported request and response formats, model ID syntax, and translation behavior.
