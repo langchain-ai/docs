@@ -1,11 +1,11 @@
 ---
 type: documentation pipeline
-title: Preprocessing and Link Resolution
-description: Build-time transformations that turn authored Markdown and MDX into language-specific documentation artifacts. Covers scoped cross-references, CTA attribution, conditional content, output-time route rewrites, and strict cross-reference validation.
+title: Markdown Preprocessing and Cross-References
+description: Build-time Markdown and MDX transformations for scoped API references, CTA attribution, language branches, and route-aware output. Documents fence and escape invariants plus strict source cross-reference validation.
 tags: [build, markdown, preprocessing, cross-references, language-versioning, api-reference]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-20T08:20:37.912Z
+    at: 2026-10-23T08:20:30.474Z
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
@@ -29,12 +29,12 @@ sources:
     resource: repo://tests/unit_tests/test_handle_auto_links.py
   - id: openwiki-source-5255204fc494ae04cd6ba685
     resource: repo://tests/unit_tests/test_utm_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-19T08:25:25.748Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-23T08:20:30.474Z" }
 ---
 
-## Overview
+# Markdown Preprocessing and Cross-References
 
-`DocumentationBuilder` transforms source Markdown and MDX while writing build artifacts; these steps do not edit the source files under `src/`. This lets one shared page produce Python and JavaScript variants without authors manually qualifying every API reference, route, snippet import, or CTA.
+`DocumentationBuilder` transforms source Markdown and MDX while writing build artifacts; it does not edit source files under `src/`. The pipeline lets one shared page produce Python and JavaScript variants without authors manually qualifying every API reference, route, snippet import, or CTA.
 
 For a regular Markdown file, `preprocess_markdown()` resolves scoped cross-references, decorates eligible LangSmith CTA links, and renders conditional language blocks. The builder then scopes snippet imports, rewrites routes, appends an eligible source footer, and writes the artifact.
 
