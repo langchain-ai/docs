@@ -186,7 +186,7 @@ Both values must equal the control plane's. Find them in the LangSmith app Secre
 
 | Value | With the chart-managed Secret | With `config.existingSecretName` |
 | --- | --- | --- |
-| Service-auth secret | Key `sandbox_service_auth_secret`, set from `sandboxes.serviceAuth.secret`, or from `config.apiKeySalt` when that is empty | The key that `sandboxes.serviceAuth.secretKey` names, or `api_key_salt` when it is empty |
+| Service-auth secret | Key `sandbox_service_auth_secret`, set from `sandboxes.serviceAuth.secret` | The key that `sandboxes.serviceAuth.secretKey` names |
 | Callback signing JWK | Key `sandbox_callback_signing_jwk`, set from `sandboxes.callbackSigningJwk` | Key `sandbox_callback_signing_jwk` |
 
 With `separateCluster`, the Helm install notes of the `langsmith` release print the key names for your configuration.
@@ -209,9 +209,9 @@ Avoid committing this file to version control. If an external secret manager sup
 Copy only these two values. Never copy the whole LangSmith app Secret into the sandbox cluster.
 </Warning>
 
-By default, the control plane uses `api_key_salt` as the sandbox service-auth secret. That value also salts LangSmith API keys and signs other service calls. For a new separate-cluster installation, give Sandboxes their own value from the start, for example one generated with `openssl rand -hex 32`:
+The service-auth secret must be its own random value. Do not reuse `api_key_salt`: that value also salts LangSmith API keys and signs other LangSmith service calls, so it must not leave the LangSmith cluster. With `separateCluster`, the `langsmith` chart refuses to render without a dedicated value. Generate one, for example with `openssl rand -hex 32`, and set it on the control plane:
 
-- **Chart-managed Secret**: Set `sandboxes.serviceAuth.secret`.
+- **Chart-managed Secret**: Set `sandboxes.serviceAuth.secret`. It must differ from `config.apiKeySalt`.
 - **`config.existingSecretName`**: Add a key with the new value to your Secret, and name it in `sandboxes.serviceAuth.secretKey`.
 
 Do not change the value of `api_key_salt` itself: that invalidates every existing API key. To change the service-auth value of a running installation, follow [Rotate the service-auth secret](#rotate-the-service-auth-secret).
@@ -237,9 +237,10 @@ Install the `langsmith` release first, then the `langsmith-sandbox` release. The
     sandboxes:
       enabled: true
       deploymentMode: separateCluster
-      # For a new installation, a dedicated service-auth value:
-      # serviceAuth:
-      #   secret: "<random-secret>"
+      # Required: a dedicated service-auth value, never api_key_salt. With
+      # config.existingSecretName, set serviceAuth.secretKey to its key instead.
+      serviceAuth:
+        secret: "<random-secret>"
       # Only when you use the host ingress:
       # hostIngressEndpoint: "https://sandbox-hosts.example.com"
     ```
@@ -437,13 +438,13 @@ To move a `sameCluster` installation to `separateCluster`, switch the `langsmith
 
 <Steps>
   <Step title="Prepare the sandbox cluster">
-    Meet the [requirements](#check-the-requirements) and open the [network paths](#configure-the-network). The sandbox cluster must reach the existing JuiceFS Redis and bucket, and have the storage grants for them. Create the [runtime Secret](#create-the-runtime-secret) with the service-auth secret and callback signing JWK the control plane uses today.
+    Meet the [requirements](#check-the-requirements) and open the [network paths](#configure-the-network). The sandbox cluster must reach the existing JuiceFS Redis and bucket, and have the storage grants for them. Create the [runtime Secret](#create-the-runtime-secret) with a dedicated service-auth secret and the callback signing JWK the control plane uses today. If the control plane still uses `api_key_salt` as its service-auth secret, generate a new value. If it already uses a dedicated value, keep that one.
   </Step>
   <Step title="Copy the proxy CA">
     Sandboxes that resume from saved memory keep trusting the egress proxy CA they started with. To keep auth proxy credential injection working for them, run the new runtime with the same CA. Copy the proxy CA Secret (`smithbox-proxy-ca` by default, with keys `tls.crt` and `tls.key`) into the sandbox namespace, and set `proxyCa.mode: existingSecret` and `proxyCa.existingSecretName` in the runtime values. Copy it before the next step, which deletes a CA Secret that the `langsmith` chart generated.
   </Step>
   <Step title="Switch the LangSmith release">
-    Set `sandboxes.deploymentMode: separateCluster` and upgrade the `langsmith` release. Keep `sandboxes.clusterName` unchanged. The release removes the embedded `sandbox-host` Deployment, and each host suspends its Sandboxes as it shuts down. Wait until the old host pods are gone:
+    Set `sandboxes.deploymentMode: separateCluster`, set the same dedicated service-auth secret as in the runtime Secret (`sandboxes.serviceAuth.secret`, or a key named in `sandboxes.serviceAuth.secretKey`), and upgrade the `langsmith` release. Keep `sandboxes.clusterName` unchanged. The release removes the embedded `sandbox-host` Deployment, and each host suspends its Sandboxes as it shuts down. Wait until the old host pods are gone:
 
     ```bash
     kubectl --context <langsmith-context> -n <langsmith-namespace> wait --for=delete pod \
