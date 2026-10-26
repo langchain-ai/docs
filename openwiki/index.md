@@ -4,7 +4,7 @@ okf_version: "0.2"
 
 # Files
 
-- [Repository Wiki Quickstart](quickstart.md) - Route documentation, generated artifacts, automation, and API-reference work to the durable owner and choose proportionate local validation. Distinguish the Mintlify documentation build from externally generated SDK reference documentation.
+- [Repository Wiki Quickstart](quickstart.md) - Route documentation, generated artifacts, automation, preview deployment, and API-reference work to the durable owner. Choose validation that covers the changed boundary without treating generated output as source.
 
 # Directories
 
