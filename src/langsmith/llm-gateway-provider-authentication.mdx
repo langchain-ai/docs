@@ -52,18 +52,56 @@ The gateway reads these secret names:
 | Provider | Secret name |
 | --- | --- |
 | Anthropic | `ANTHROPIC_API_KEY` |
-| AWS Bedrock | `AWS_BEARER_TOKEN_BEDROCK` |
+| AWS Bedrock | `AWS_IAM_ROLE_ARN`, access keys, or `AWS_BEARER_TOKEN_BEDROCK`. See [Configure Amazon Bedrock](#configure-amazon-bedrock). |
 | Azure Foundry | `AZURE_FOUNDRY_API_KEY` and `AZURE_FOUNDRY_RESOURCE_NAME`. For Entra ID, see [Configure Azure Foundry](#configure-azure-foundry). |
 | Baseten | `BASETEN_API_KEY` |
 | Fireworks | `FIREWORKS_API_KEY` |
-| Gemini Enterprise Agent Platform | `VERTEX_SERVICE_ACCOUNT_JSON` |
+| Gemini Enterprise Agent Platform | `GOOGLE_VERTEX_AI_WEB_CREDENTIALS`. See [Configure Gemini Enterprise Agent Platform](#configure-gemini-enterprise-agent-platform). |
 | Google Gemini | `GOOGLE_API_KEY` |
 | OpenAI | `OPENAI_API_KEY` |
 | ScaleDown | `SCALEDOWN_API_KEY` |
 | TypeSafe | `TYPESAFE_API_KEY` |
 | xAI | `XAI_API_KEY` |
 
-{/* FOLLOW-UP Phase 4: Bedrock alternatives (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, AWS_IAM_ROLE_ARN, AWS_BEDROCK_REGION) and the Vertex name GOOGLE_VERTEX_AI_WEB_CREDENTIALS go in per-provider sections, with the methods each supports. */}
+## Configure Amazon Bedrock
+
+Amazon Bedrock supports three credential methods, each available in the provider form:
+
+| Method | Secrets | Notes |
+| --- | --- | --- |
+| IAM role (recommended) | `AWS_IAM_ROLE_ARN` | The gateway assumes the role and uses short-lived credentials, so LangSmith stores no long-lived AWS secret. |
+| AWS credentials | `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, plus `AWS_SESSION_TOKEN` for temporary credentials | Both keys are required. Temporary credentials stop working when they expire. |
+| Bearer token | `AWS_BEARER_TOKEN_BEDROCK` | An [Amazon Bedrock API key](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html). |
+
+On self-hosted LangSmith, the gateway can also use the AWS credentials of its own pod, such as an IAM role for the `agent-gateway` service account, when the workspace has no Bedrock secrets. Set the role annotation in `agentGateway.serviceAccount.annotations` in your Helm values.
+
+{/* VERIFY X14: whether BYOC data planes get the ambient-credential path (it requires IS_SELF_HOSTED=true, which the self-hosted Helm chart sets; BYOC not checked), and whether the trust policy the IAM role form shows (LangSmith's Playground AWS account) is the principal the Cloud gateway assumes the role from. Source: langchainplus smith-go/gateway/bedrock.go bedrockProvideTokenForEndpoint; smith-frontend/src/components/AWSIAMInstructions.tsx. */}
+
+If a workspace has secrets for more than one method, the gateway uses the first it finds in this order: bearer token, IAM role, AWS credentials, then, on self-hosted, the pod's credentials.
+
+Every method also reads an optional `AWS_BEDROCK_REGION`, which defaults to `us-east-1`. Set it to a bare Region name, not a URL. When it is unset and the model ID is a [cross-Region inference profile](https://docs.aws.amazon.com/bedrock/latest/userguide/cross-region-inference.html), such as one starting with `eu.`, the gateway uses a Region in that profile's geography.
+
+### Use an IAM role
+
+To let the gateway assume an IAM role:
+
+1. In AWS, create an IAM role with permission to invoke the Bedrock models you use.
+1. In LangSmith, select the workspace that calls Bedrock. Go to **Settings > Integrations > Provider secrets** and click **+ Secret**.
+1. Under **Provider**, select **Amazon Bedrock**, then select the **IAM role** method. Enter the role ARN and, optionally, the AWS Region.
+1. Copy the example trust policy that the form shows, and add it to the role in AWS. The policy lets LangSmith's AWS account assume the role, and requires your workspace ID as the external ID.
+1. Click **Save**.
+
+On self-hosted LangSmith, the gateway assumes the role with its pod's own AWS credentials, so the role's trust policy must allow that identity instead.
+
+The gateway limits each session to Bedrock actions, even if the role allows more. Sessions last one hour, and the gateway renews them automatically. In AWS CloudTrail, the session name is `langsmith-gw-` followed by the workspace ID.
+
+### Verify the Bedrock setup
+
+Send a test request with a `bedrock/<model-id>` model ID, using a model ID from your Bedrock console. These errors point to the credential:
+
+- **`400` with `bedrock credentials not found`**: the workspace has no Bedrock secrets. Bedrock returns a `400` here, not the `424` other providers return for a missing key.
+- **`400` with `incomplete AWS access-key credentials`**: one of `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` is missing.
+- **`403` with `STS denied AssumeRole for the configured Bedrock role`**: the role's trust policy does not allow LangSmith, or its external ID is not the workspace ID.
 
 ## Configure Azure Foundry
 
@@ -116,6 +154,25 @@ A `chat.completion` response confirms the setup. For other Cloud regions, replac
 
 If Azure returns `PermissionDenied`, confirm that the `Foundry User` role is assigned on the Foundry resource, not a project. A new role assignment can take [up to 10 minutes](https://learn.microsoft.com/en-us/azure/role-based-access-control/troubleshooting#symptom---role-assignment-changes-are-not-being-detected) to take effect.
 
+## Configure Gemini Enterprise Agent Platform
+
+Gemini Enterprise Agent Platform, listed as **Google Vertex AI** in the provider form, authenticates with a Google Cloud service account key in JSON format. The gateway exchanges the key for short-lived access tokens. It does not support workload identity federation, Application Default Credentials, or other external account credentials. A credential file whose `type` is not `service_account` returns a `400`.
+
+To add the service account key:
+
+1. In Google Cloud, [create a service account key](https://cloud.google.com/iam/docs/keys-create-delete) for a service account that can call the models you use.
+1. In LangSmith, select the workspace that calls the provider. Go to **Settings > Integrations > Provider secrets** and click **+ Secret**.
+1. Under **Provider**, select **Google Vertex AI**. Paste the key's JSON contents as the value, and click **Save**.
+
+The form saves the key as `GOOGLE_VERTEX_AI_WEB_CREDENTIALS`, the same secret the [Playground](/langsmith/managing-model-configurations) uses. The gateway also reads `VERTEX_SERVICE_ACCOUNT_JSON`, and uses it first when both are set.
+
+The gateway reads two optional custom secrets:
+
+- **`VERTEX_PROJECT`**: the Google Cloud project to call. Defaults to the `project_id` in the key.
+- **`VERTEX_LOCATION`**: `global` or a Google Cloud region, such as `us-central1`. Defaults to `global`.
+
+On self-hosted LangSmith, [GKE workload identity](/langsmith/self-host-gke-vertex-ai-workload-identity) covers the Playground, Chat, and Insights, not the gateway. The gateway still needs a service account key.
+
 ## Fix provider credential errors
 
 The gateway passes provider errors through to the caller, so most credential problems show up as the provider's own status code and error body. The `X-LangSmith-Gateway-Metadata` response header tells the two apart: for a provider error, it includes `"outcome":"upstream_error"` and `"upstream_error_source":"provider_response"`, with the provider's status in `upstream_status_code`.
@@ -127,6 +184,8 @@ To see which providers the caller's workspace can reach, call [`GET /v1/models`]
 | `424` with `Required workspace secret "<SECRET_NAME>" is missing.` | The workspace that the caller's API key belongs to has no key for the provider in the model ID. | [Add the provider key](#add-a-provider-key) to that workspace, or use an API key from a workspace that has one. |
 | An API key error from the provider, such as OpenAI's `Incorrect API key provided: sk-...`, or a `400` from xAI with `Incorrect API key provided.` | The provider key stored in LangSmith is invalid or revoked. | Replace the stored provider key. |
 | Anthropic's `invalid x-api-key`, with the client's base URL set to the gateway | The stored Anthropic key is invalid or revoked. | Replace the stored `ANTHROPIC_API_KEY`. |
+
+Amazon Bedrock and Gemini Enterprise Agent Platform return a `400` naming the missing credentials instead of a `424`. See [Verify the Bedrock setup](#verify-the-bedrock-setup).
 
 For errors from the caller's LangSmith API key, such as `401` and `403`, or an `invalid x-api-key` from a client that bypasses the gateway, see [Fix authentication errors](/langsmith/llm-gateway-authentication#fix-authentication-errors).
 
