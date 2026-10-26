@@ -51,7 +51,7 @@ import CustomizationStructuredOutputPy from '/snippets/code-samples/customizatio
 import CustomizationStructuredOutputJs from '/snippets/code-samples/customization-structured-output-js.mdx';
 import CustomizationOverviewPy from '/snippets/code-samples/customization-overview-py.mdx';
 import CustomizationOverviewJs from '/snippets/code-samples/customization-overview-js.mdx';
-import CustomizationMcpPy from '/snippets/code-samples/customization-mcp-py.mdx';
+import CustomizationMcpPy from '/snippets/code-samples/deepagents-mcp-tools-py.mdx';
 import CustomizationMcpJs from '/snippets/code-samples/customization-mcp-js.mdx';
 import CustomizationGpSubagentProfilePy from '/snippets/code-samples/customization-gp-subagent-profile-py.mdx';
 
@@ -154,10 +154,10 @@ In addition to [built-in tools](/oss/deepagents/overview#execution-environment) 
 </Tip>
 
 :::python
-Install `langchain-mcp-adapters` to connect to MCP servers:
+Install LangChain with the `mcp` extra to connect to MCP servers:
 
 ```bash
-pip install langchain-mcp-adapters
+pip install "langchain[mcp]"
 ```
 
 <CustomizationMcpPy />
@@ -217,7 +217,7 @@ Pass middleware to the `middleware` argument of `create_deep_agent`. Each instan
 :::
 
 :::js
-Pass middleware to the `middleware` argument of `createDeepAgent`. Custom middleware is appended after @[`PatchToolCallsMiddleware`] in the [Deep Agents stack](#deep-agents-stack).
+Pass middleware to the `middleware` argument of `createDeepAgent`. Each instance is merged into the [Deep Agents stack](#deep-agents-stack) by its `.name`. An instance whose name matches a built-in entry replaces that entry in place. Anything else is inserted after @[`PatchToolCallsMiddleware`].
 :::
 
 ### Deep Agents stack
@@ -252,6 +252,7 @@ With only a `model` (no other optional arguments), the main agent typically incl
 4. @[`PatchToolCallsMiddleware`]
 5. **Prompt caching** middleware (added for supported providers; no-ops elsewhere)
 6. **Harness profile extras** and **excluded-tool filtering**, if the resolved model profile defines them
+7. @[`UnsupportedContentMiddleware`]
 :::
 
 #### Full stack
@@ -260,45 +261,46 @@ From first to last:
 
 :::python
 
-1. @[`SkillsMiddleware`]: Only when you pass `skills`. Injected **before** filesystem middleware so skill metadata is available before file tools run.
-2. @[`FilesystemMiddleware`]: Handles file system operations such as reading, writing, and navigating directories. When you pass `permissions`, filesystem permissions enforcement is included here so it can evaluate every tool the agent might call.
-3. @[`SubAgentMiddleware`]: Only when at least one synchronous subagent is available. Spawns and coordinates subagents for delegating tasks. Included in the [bare stack](#bare-stack) because the general-purpose subagent is auto-added by default; omit it by disabling that subagent and passing no synchronous `subagents`. See [Running without subagents](/oss/deepagents/subagents#running-without-subagents).
-4. @[`SummarizationMiddleware`]: Condenses message history to stay within context limits when conversations grow long (via @[create_summarization_middleware]).
-5. @[`PatchToolCallsMiddleware`]: Repairs dangling tool calls in message history when a run resumes after an interruption or receives malformed tool-call arguments. Runs **before** Anthropic prompt caching and the tail stack below.
-6. @[`AsyncSubAgentMiddleware`]: Only when you configure async subagents.
-7. **Your middleware argument**: Optional middleware you pass as the `middleware` argument is merged after Patch but before the rest of the stack. An instance whose `.name` matches one of the built-in entries above replaces that instance in place instead of duplicating it; anything else lands here. See [Override a default middleware instance](#override-a-default-middleware-instance).
-8. **Harness profile extras**: Provider-specific middleware from the resolved model profile, if any.
-9. **Excluded-tool filtering**: When the harness profile lists excluded tools, middleware removes those tools from the agent.
-10. **Prompt caching** (@[`AnthropicPromptCachingMiddleware`] and @[`BedrockPromptCachingMiddleware`]): Both are always registered and run **after** Patch and after your middleware so the cached prefix matches what is actually sent to the model. Each no-ops on models it does not support (`unsupported_model_behavior="ignore"`), so the Anthropic middleware applies on Anthropic models and the Bedrock middleware on AWS Bedrock models with cache support.
-11. @[`MemoryMiddleware`]: Only when you pass `memory`.
+1. @[`FilesystemMiddleware`]: Handles file system operations such as reading, writing, and navigating directories. When you pass `permissions`, filesystem permissions enforcement is included here so it can evaluate every tool the agent might call.
+2. @[`SubAgentMiddleware`]: Only when at least one synchronous subagent is available. Spawns and coordinates subagents for delegating tasks. Included in the [bare stack](#bare-stack) because the general-purpose subagent is auto-added by default; omit it by disabling that subagent and passing no synchronous `subagents`. See [Running without subagents](/oss/deepagents/subagents#running-without-subagents).
+3. @[`SummarizationMiddleware`]: Condenses message history to stay within context limits when conversations grow long (via @[create_summarization_middleware]).
+4. @[`PatchToolCallsMiddleware`]: Repairs dangling tool calls in message history when a run resumes after an interruption or receives malformed tool-call arguments. Runs **before** Anthropic prompt caching and the tail stack below.
+5. @[`AsyncSubAgentMiddleware`]: Only when you configure async subagents.
+6. **Your middleware argument**: Optional middleware you pass as the `middleware` argument is merged after Patch but before the rest of the stack. An instance whose `.name` matches one of the built-in entries above replaces that instance in place instead of duplicating it; anything else lands here. See [Override a default middleware instance](#override-a-default-middleware-instance).
+7. **Harness profile extras**: Provider-specific middleware from the resolved model profile, if any.
+8. @[`SkillsMiddleware`]: Only when you pass `skills`. Runs after your middleware and directly before prompt caching, so it sees the summarized conversation and the model that is actually called. Passing a middleware named `SkillsMiddleware` replaces it in place.
+9. **Prompt caching** (@[`AnthropicPromptCachingMiddleware`] and @[`BedrockPromptCachingMiddleware`]): Both are always registered and run **after** Patch and after your middleware so the cached prefix matches what is actually sent to the model. Each no-ops on models it does not support (`unsupported_model_behavior="ignore"`), so the Anthropic middleware applies on Anthropic models and the Bedrock middleware on AWS Bedrock models with cache support.
+10. @[`MemoryMiddleware`]: Only when you pass `memory`.
 
     <Note>
     `MemoryMiddleware` is placed **after** profile extras and the prompt caching middleware so updates to injected memory are less likely to invalidate the cache prefix. The same ordering concern is called out in the `create_deep_agent` implementation comments.
     </Note>
 
-12. `HumanInTheLoopMiddleware`: Only when you pass `interrupt_on`. Pauses for human approval or input at configured tool calls.
+11. `HumanInTheLoopMiddleware`: Only when you pass `interrupt_on`. Pauses for human approval or input at configured tool calls.
+12. **Excluded-tool filtering**: When the harness profile lists excluded tools, middleware removes those tools from the agent.
 
 :::
 
 :::js
 
-1. @[`SkillsMiddleware`]: Only when you pass `skills`. Injected **before** filesystem middleware so skill metadata is available before file tools run.
-2. @[`FilesystemMiddleware`]: Handles file system operations such as reading, writing, and navigating directories. When you pass `permissions`, filesystem permissions enforcement is included here so it can evaluate every tool the agent might call.
-3. @[`SubAgentMiddleware`]: Only when at least one synchronous subagent is available. Spawns and coordinates subagents for delegating tasks. Included in the [bare stack](#bare-stack) because the general-purpose subagent is auto-added by default; omit it by disabling that subagent and passing no synchronous `subagents`. See [Running without subagents](/oss/deepagents/subagents#running-without-subagents).
-4. @[`SummarizationMiddleware`]: Condenses message history to stay within context limits when conversations grow long (via @[createSummarizationMiddleware]).
-5. @[`PatchToolCallsMiddleware`]: Repairs dangling tool calls in message history when a run resumes after an interruption or receives malformed tool-call arguments. Runs **before** Anthropic prompt caching and the tail stack below.
-6. @[`AsyncSubAgentMiddleware`]: Only when you configure async subagents.
-7. **Your middleware argument**: Optional middleware you pass as the `middleware` argument is appended here (after Patch, before the tail stack).
-8. **Harness profile extras**: Provider-specific middleware from the resolved model profile, if any.
-9. **Excluded-tool filtering**: When the harness profile lists excluded tools, middleware removes those tools from the agent.
-10. **Prompt caching** (@[`AnthropicPromptCachingMiddleware`] and @[`BedrockPromptCachingMiddleware`]): Added automatically for Anthropic models and Amazon Bedrock Converse models, respectively. Both run **after** Patch and after your middleware so the cached prefix matches what is actually sent to the model.
-11. @[`MemoryMiddleware`]: Only when you pass `memory`.
+1. @[`FilesystemMiddleware`]: Handles file system operations such as reading, writing, and navigating directories. When you pass `permissions`, filesystem permissions enforcement is included here so it can evaluate every tool the agent might call.
+2. @[`SubAgentMiddleware`]: Only when at least one synchronous subagent is available. Spawns and coordinates subagents for delegating tasks. Included in the [bare stack](#bare-stack) because the general-purpose subagent is auto-added by default; omit it by disabling that subagent and passing no synchronous `subagents`. See [Running without subagents](/oss/deepagents/subagents#running-without-subagents).
+3. @[`SummarizationMiddleware`]: Condenses message history to stay within context limits when conversations grow long (via @[createSummarizationMiddleware]).
+4. @[`PatchToolCallsMiddleware`]: Repairs dangling tool calls in message history when a run resumes after an interruption or receives malformed tool-call arguments. Runs **before** Anthropic prompt caching and the tail stack below.
+5. @[`AsyncSubAgentMiddleware`]: Only when you configure async subagents.
+6. **Your middleware argument**: Optional middleware you pass as the `middleware` argument is merged after Patch but before the rest of the stack. An instance whose `.name` matches a built-in entry replaces that entry in place instead of duplicating it. Anything else lands here.
+7. **Harness profile extras**: Provider-specific middleware from the resolved model profile, if any.
+8. @[`SkillsMiddleware`]: Only when you pass `skills`, or pass a `createSkillsMiddleware` instance in `middleware`. Either way, it runs after your middleware and directly before prompt caching, so it sees the summarized conversation and the model that is actually called.
+9. **Prompt caching** (@[`AnthropicPromptCachingMiddleware`] and @[`BedrockPromptCachingMiddleware`]): Added automatically for Anthropic models and Amazon Bedrock Converse models, respectively. Both run **after** Patch and after your middleware so the cached prefix matches what is actually sent to the model.
+10. @[`MemoryMiddleware`]: Only when you pass `memory`.
 
     <Note>
     `MemoryMiddleware` is placed **after** profile extras and the prompt caching middleware so updates to injected memory are less likely to invalidate the cache prefix. The same ordering concern is called out in the `createDeepAgent` implementation comments.
     </Note>
 
-12. `HumanInTheLoopMiddleware`: Only when you pass `interruptOn`. Pauses for human approval or input at configured tool calls.
+11. `HumanInTheLoopMiddleware`: Only when you pass `interruptOn`. Pauses for human approval or input at configured tool calls.
+12. **Excluded-tool filtering**: When the harness profile lists excluded tools, middleware removes those tools from the agent.
+13. @[`UnsupportedContentMiddleware`]: Rewrites unsupported multimodal content in requests with a text placeholder.
 
 :::
 
@@ -306,10 +308,7 @@ From first to last:
 
 :::python
 
-The built-in **general-purpose** subagent and each declarative synchronous `SubAgent` graph use a stack that `create_deep_agent` builds in code. It matches the main agent in broad shape (filesystem, summarization, Patch, profile extras, Anthropic and Bedrock caching, optional permissions) but differs in two ways:
-
-- **Skills run after** @[`PatchToolCallsMiddleware`] on these inner agents (on the main agent, skills run **before** filesystem middleware when `skills` is set).
-- There is **no** @[`SubAgentMiddleware`] inside a subagent graph (only the parent agent exposes the `task` tool).
+The built-in **general-purpose** subagent and each declarative synchronous `SubAgent` graph use a stack that `create_deep_agent` builds in code. It matches the main agent in broad shape (filesystem, summarization, Patch, profile extras, skills, Anthropic and Bedrock caching, optional permissions), except that there is **no** @[`SubAgentMiddleware`] inside a subagent graph (only the parent agent exposes the `task` tool).
 
 When a declarative subagent sets `interrupt_on`, that value is forwarded to `create_agent` for the subagent, which wires up human-in-the-loop handling for the configured tool calls.
 
@@ -317,10 +316,7 @@ When a declarative subagent sets `interrupt_on`, that value is forwarded to `cre
 
 :::js
 
-The built-in **general-purpose** subagent and each declarative synchronous `SubAgent` graph use a stack that `createDeepAgent` builds in code. It matches the main agent in broad shape (filesystem, summarization, Patch, profile extras, Anthropic and Bedrock caching, optional permissions) but differs in two ways:
-
-- **Skills run after** @[`PatchToolCallsMiddleware`] on these inner agents (on the main agent, skills run **before** filesystem middleware when `skills` is set).
-- There is **no** @[`SubAgentMiddleware`] inside a subagent graph (only the parent agent exposes the `task` tool).
+The built-in **general-purpose** subagent and each declarative synchronous `SubAgent` graph use a stack that `createDeepAgent` builds in code. It matches the main agent in broad shape (filesystem, summarization, Patch, profile extras, skills, Anthropic and Bedrock caching, optional permissions), except that there is **no** @[`SubAgentMiddleware`] inside a subagent graph (only the parent agent exposes the `task` tool).
 
 When a declarative subagent sets `interruptOn`, that value is forwarded to `createAgent` for the subagent, which wires up human-in-the-loop handling for the configured tool calls.
 
@@ -502,6 +498,160 @@ Declarative subagents defined via `subagents=` do not inherit the main agent's m
         ```
 
         See [Restricting filesystem tools](/oss/deepagents/overview#virtual-filesystem-access) for more details.
+    </Accordion>
+    <Accordion title="Customize how the skill catalog appears in the system prompt" icon="template">
+        Override @[`SkillsMiddleware`] with a custom `system_prompt=` template to control how
+        the auto-generated skill catalog is framed — for example, to add surrounding context,
+        reorder sections, or place routing hints (priorities, category bias) in the same
+        block as the catalog. The template must include the `{skills_locations}`,
+        `{skills_list}`, and `{skills_load_warnings}` slots, which the middleware substitutes
+        on every turn — so the catalog stays in sync automatically as skills are added,
+        renamed, or removed.
+
+        The example below places routing hints alongside the catalog:
+
+        ```python
+        from deepagents import create_deep_agent
+        from deepagents.backends.filesystem import FilesystemBackend
+        from deepagents.middleware.skills import SkillsMiddleware
+
+        backend = FilesystemBackend(root_dir="/path/to/skills")
+
+        custom_skills_prompt = """## Skills
+
+        Routing hints:
+        - For research topics → prefer arxiv-search first
+        - For general questions → use web-research
+        - For LangGraph documentation → langgraph-docs
+
+        {skills_locations}
+
+        {skills_list}
+
+        {skills_load_warnings}
+        """
+
+        agent = create_deep_agent(
+            model="anthropic:claude-sonnet-4-6",
+            middleware=[
+                SkillsMiddleware(
+                    backend=backend,
+                    sources=["/path/to/skills"],
+                    system_prompt=custom_skills_prompt,
+                ),
+            ],
+        )
+        ```
+
+        Do not also pass `skills=` to `create_deep_agent` in this case: the override instance
+        already owns `backend` and `sources`. Any missing slot (`{skills_locations}`,
+        `{skills_list}`, `{skills_load_warnings}`) raises `ValueError` at construction time.
+    </Accordion>
+    <Accordion title="Suppress the auto-generated skill catalog" icon="eye-off">
+        Override @[`SkillsMiddleware`] with `system_prompt=None` to load skills without
+        appending a skills section to the system prompt at all. Skills remain in
+        `state["skills_metadata"]` and skill files stay reachable through the filesystem
+        tools, so callers who prefer to write their own description block (for example, a
+        compact hand-written routing summary) in `create_deep_agent(system_prompt=...)` can
+        add exactly the guidance they need without the built-in one.
+
+        ```python
+        from deepagents import create_deep_agent
+        from deepagents.backends.filesystem import FilesystemBackend
+        from deepagents.middleware.skills import SkillsMiddleware
+
+        backend = FilesystemBackend(root_dir="/path/to/skills")
+
+        agent = create_deep_agent(
+            model="anthropic:claude-sonnet-4-6",
+            system_prompt="""You are a research assistant.
+
+        Skills (read the SKILL.md file when relevant):
+        - /path/to/skills/arxiv-search/SKILL.md — papers
+        - /path/to/skills/web-research/SKILL.md — general web lookups
+        - /path/to/skills/langgraph-docs/SKILL.md — LangGraph documentation
+        """,
+            middleware=[
+                SkillsMiddleware(
+                    backend=backend,
+                    sources=["/path/to/skills"],
+                    system_prompt=None,
+                ),
+            ],
+        )
+        ```
+
+        Skill names, paths, and any hand-written hints in `create_deep_agent`'s `system_prompt`
+        are the caller's responsibility to keep in sync when skills change.
+    </Accordion>
+</AccordionGroup>
+:::
+
+:::js
+Pass a middleware instance whose `.name` matches an entry in the [Deep Agents stack](#deep-agents-stack), such as @[`SummarizationMiddleware`], to replace that built-in instance in place instead of appending a duplicate. Any middleware you pass whose `.name` does **not** match a built-in entry is not replaced, it lands after the last core middleware entry and before the profile, prompt-caching, and memory. See [Full stack](#full-stack) for the complete ordering.
+
+```js
+import {
+  createDeepAgent,
+  createSummarizationMiddleware,
+  StateBackend,
+} from "deepagents";
+
+const backend = new StateBackend();
+const model = "openai:gpt-5.5";
+
+const customSummarization = createSummarizationMiddleware({
+  model,
+  backend,
+  summaryPrompt: "Your custom summary prompt here.",
+});
+
+const agent = createDeepAgent({
+  model,
+  middleware: [customSummarization], // replaces the default SummarizationMiddleware
+});
+```
+
+<Note>
+An override **replaces** the default middleware instance, it is not merged with it. That means your replacement must be fully configured with any settings it needs. This is especially important for `FilesystemMiddleware`: if you override it, you must pass the `backend` (and `permissions`, if applicable) directly to `createFilesystemMiddleware`, since it will not inherit the `backend` and `permissions` passed to `createDeepAgent`. To restrict the available filesystem tools, pass a `tools` allowlist to your custom @[`FilesystemMiddleware`] instance; see [Virtual filesystem access](/oss/deepagents/overview#virtual-filesystem-access).
+</Note>
+
+The general-purpose subagent, which Deep Agents adds automatically, inherits overrides for its default middleware from the main agent, without carrying over middleware that is specific to the main agent.
+
+Declarative subagents defined via `subagents` do not inherit the main agent's middleware customization. Pass the override directly in that subagent's own [`middleware`](/oss/deepagents/subagents#subagent-dictionary-based) field to apply it there; that field is matched against the [synchronous subagent stack](#synchronous-subagent-stack), the same way `middleware` is matched against the main agent's.
+
+#### Examples
+
+<AccordionGroup>
+    <Accordion title="Keep binary file content out of checkpointed history" icon="database">
+        Override @[`FilesystemMiddleware`] with `offloadBinaryContent: true` to store binary `read_file` payloads and inline `HumanMessage` media on the backend under `/blobs` instead of in checkpointed message history. State keeps a small reference; model requests are rehydrated from a per-run cache or the backend. This keeps checkpoint size small when the agent reads many binary files across turns.
+
+        <Note>
+        Binary content offloading requires `deepagents>=1.14.2`. Use a backend that stores blobs outside graph state, such as a sandbox or `FilesystemBackend`. Offloading has no effect when `/blobs` routes to `StateBackend`. Pass the same `backend` to `createFilesystemMiddleware` that you pass to `createDeepAgent`.
+        </Note>
+
+        ```js
+        import {
+          createDeepAgent,
+          createFilesystemMiddleware,
+          FilesystemBackend,
+        } from "deepagents";
+
+        const backend = new FilesystemBackend({
+          rootDir: "/path/to/project",
+          virtualMode: true,
+        });
+
+        const agent = createDeepAgent({
+          model: "anthropic:claude-sonnet-4-6",
+          backend,
+          middleware: [
+            createFilesystemMiddleware({ backend, offloadBinaryContent: true }),
+          ],
+        });
+        ```
+
+        For more information, see [Offload binary content](/oss/deepagents/backends#offload-binary-content).
     </Accordion>
 </AccordionGroup>
 :::
@@ -759,6 +909,7 @@ When the model generates the structured data, it's captured, validated, and retu
 :::
 :::js
 You can set a desired structured output schema by passing it as the `responseFormat` argument to the call to `createDeepAgent()`.
+Wrap the schema in a strategy such as `toolStrategy()` or `providerStrategy()` from `langchain`.
 When the model generates the structured data, it's captured, validated, and returned in the 'structuredResponse' key of the agent's state.
 
 <CustomizationStructuredOutputJs />
@@ -780,4 +931,3 @@ For more information and examples, see [response format](/oss/langchain/structur
 `createDeepAgent` pre-assembles a middleware stack on top of `createAgent`. To build a fully custom agent—choosing exactly which capabilities to include—see [Configure the harness](/oss/langchain/agents#configure-the-harness).
 
 :::
-

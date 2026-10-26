@@ -73,7 +73,7 @@ class State(TypedDict):
     extra_field: int
 ```
 
-This state tracks a list of [message](https://python.langchain.com/docs/concepts/messages/) objects, as well as an extra integer field.
+This state tracks a list of [message](/oss/langchain/messages) objects, as well as an extra integer field.
 :::
 
 :::js
@@ -87,7 +87,7 @@ const State = new StateSchema({
 });
 ```
 
-This state tracks a list of [message](https://js.langchain.com/docs/concepts/messages/) objects, as well as an extra integer field.
+This state tracks a list of [message](/oss/langchain/messages) objects, as well as an extra integer field.
 :::
 
 ### Update state
@@ -212,7 +212,7 @@ Note that:
 * We receive the entire state in the invocation result.
 
 :::python
-For convenience, we frequently inspect the content of [message objects](https://python.langchain.com/docs/concepts/messages/) via pretty-print:
+For convenience, we frequently inspect the content of [message objects](/oss/langchain/messages) via pretty-print:
 
 ```python
 for message in result["messages"]:
@@ -230,7 +230,7 @@ Hello!
 :::
 
 :::js
-For convenience, we frequently inspect the content of [message objects](https://js.langchain.com/docs/concepts/messages/) via logging:
+For convenience, we frequently inspect the content of [message objects](/oss/langchain/messages) via logging:
 
 ```typescript
 for (const message of result.messages) {
@@ -352,7 +352,7 @@ ai: Hello!
 In practice, there are additional considerations for updating lists of messages:
 
 * We may wish to update an existing message in the state.
-* We may want to accept short-hands for [message formats](/oss/langgraph/graph-api#using-messages-in-your-graph), such as [OpenAI format](https://python.langchain.com/docs/concepts/messages/#openai-format).
+* We may want to accept short-hands for [message formats](/oss/langgraph/graph-api#using-messages-in-your-graph), such as [OpenAI format](/oss/langchain/messages#message-content).
 
 LangGraph includes a built-in reducer @[`add_messages`] that handles these considerations:
 
@@ -388,7 +388,7 @@ Hi
 Hello!
 ```
 
-This is a versatile representation of state for applications involving [chat models](https://python.langchain.com/docs/concepts/chat_models/). LangGraph includes a prebuilt `MessagesState` for convenience, so that we can have:
+This is a versatile representation of state for applications involving [chat models](/oss/langchain/models). LangGraph includes a prebuilt `MessagesState` for convenience, so that we can have:
 
 ```python
 from langgraph.graph import MessagesState
@@ -404,7 +404,7 @@ class State(MessagesState):
 In practice, there are additional considerations for updating lists of messages:
 
 * We may wish to update an existing message in the state.
-* We may want to accept short-hands for [message formats](/oss/langgraph/graph-api#using-messages-in-your-graph), such as [OpenAI format](https://python.langchain.com/docs/concepts/messages/#openai-format).
+* We may want to accept short-hands for [message formats](/oss/langgraph/graph-api#using-messages-in-your-graph), such as [OpenAI format](/oss/langchain/messages#message-content).
 
 LangGraph includes the built-in `MessagesValue` that handles these considerations:
 
@@ -443,7 +443,7 @@ human: Hi
 ai: Hello!
 ```
 
-This is a versatile representation of state for applications involving [chat models](https://js.langchain.com/docs/concepts/chat_models/). LangGraph includes the prebuilt `MessagesValue` for convenience, so that we can have:
+This is a versatile representation of state for applications involving [chat models](/oss/langchain/models). LangGraph includes the prebuilt `MessagesValue` for convenience, so that we can have:
 
 ```typescript
 import { StateSchema, MessagesValue } from "@langchain/langgraph";
@@ -505,6 +505,71 @@ def replace_messages(state: State):
 
 <Warning>
 When nodes execute in parallel, only one node can use `Overwrite` on the same state key in a given super-step. If multiple nodes attempt to overwrite the same key in the same super-step, an `InvalidUpdateError` will be raised.
+</Warning>
+:::
+
+:::js
+### Bypass reducers with `Overwrite`
+
+In some cases, you may want to bypass a reducer and directly overwrite a state value. LangGraph provides the `Overwrite` type for this purpose. When a node returns a value wrapped with `Overwrite`, the reducer is bypassed and the channel is set directly to that value.
+
+This is useful when you want to reset or replace accumulated state rather than merge it with existing values.
+
+```typescript
+import {
+  END,
+  Overwrite,
+  ReducedValue,
+  START,
+  StateGraph,
+  StateSchema,
+} from "@langchain/langgraph";
+import { z } from "zod/v4";
+
+const State = new StateSchema({
+  messages: new ReducedValue(
+    z.array(z.string()).default(() => []),
+    {
+      reducer: (current: string[], update: string[]) => current.concat(update),
+    },
+  ),
+});
+
+const addMessage = () => {
+  return { messages: ["first message"] };
+};
+
+const replaceMessages = () => {
+  // Bypass the reducer and replace the entire messages list
+  return { messages: new Overwrite(["replacement message"]) };
+};
+
+const graph = new StateGraph(State)
+  .addNode("add_message", addMessage)
+  .addNode("replace_messages", replaceMessages)
+  .addEdge(START, "add_message")
+  .addEdge("add_message", "replace_messages")
+  .addEdge("replace_messages", END)
+  .compile();
+
+const result = await graph.invoke({ messages: ["initial"] });
+console.log(result.messages);
+```
+
+```
+["replacement message"]
+```
+
+You can also use JSON format with the special key `"__overwrite__"`:
+
+```typescript
+const replaceMessages = () => {
+  return { messages: { __overwrite__: ["replacement message"] } };
+};
+```
+
+<Warning>
+When nodes execute in parallel, only one node can use `Overwrite` on the same state key in a given super-step. If multiple nodes attempt to overwrite the same key in the same super-step, an `InvalidUpdateError` is raised.
 </Warning>
 :::
 
@@ -1454,7 +1519,7 @@ In addition, for exceptions from popular http request libraries such as `request
 :::
 
 :::js
-To configure a retry policy, pass the `retryPolicy` parameter to the [`addNode`](https://reference.langchain.com/javascript/classes/_langchain_langgraph.index.Graph.html#addnode). The `retryPolicy` parameter takes in a `RetryPolicy` object. Below we instantiate a `RetryPolicy` object with the default parameters and associate it with a node:
+To configure a retry policy, pass the `retryPolicy` parameter to the [`addNode`](https://reference.langchain.com/javascript/langchain-langgraph/index/Graph). The `retryPolicy` parameter takes in a `RetryPolicy` object. Below we instantiate a `RetryPolicy` object with the default parameters and associate it with a node:
 
 ```typescript
 import { RetryPolicy } from "@langchain/langgraph";
@@ -2407,7 +2472,7 @@ Importantly, updates from a parallel superstep may not be ordered consistently. 
   If you have error-prone (perhaps want to handle flakey API calls), LangGraph provides two ways to address this:
 
   1. You can write regular python code within your node to catch and handle exceptions.
-  2. You can set a **[retry_policy](https://langchain-ai.github.io/langgraph/reference/types/#langgraph.types.RetryPolicy)** to direct the graph to retry nodes that raise certain types of exceptions. Only failing branches are retried, so you needn't worry about performing redundant work.
+  2. You can set a **[`RetryPolicy`](https://reference.langchain.com/python/langgraph/types)** to direct the graph to retry nodes that raise certain types of exceptions. Only failing branches are retried, so you needn't worry about performing redundant work.
 
   Together, these let you perform parallel execution and fully control exception handling.
 </Accordion>
@@ -2415,10 +2480,10 @@ Importantly, updates from a parallel superstep may not be ordered consistently. 
 :::python
 <Tip>
 **Set max concurrency**
-You can control the maximum number of concurrent tasks by setting `max_concurrency` in the [configuration](https://reference.langchain.com/python/langchain-core/runnables/config/RunnableConfig) when invoking the graph.
+You can control the maximum number of concurrent tasks by setting `max_concurrency` in the [configuration](https://reference.langchain.com/python/langchain-core/runnables/config/RunnableConfig) when invoking the graph. `max_concurrency` is a standalone config key, so set it at the top level of the config rather than inside `configurable`.
 
 ```python
-graph.invoke({"value_1": "c"}, {"configurable": {"max_concurrency": 10}})
+graph.invoke({"value_1": "c"}, {"max_concurrency": 10})
 ```
 </Tip>
 :::
@@ -2426,10 +2491,10 @@ graph.invoke({"value_1": "c"}, {"configurable": {"max_concurrency": 10}})
 :::js
 <Tip>
 **Set max concurrency**
-You can control the maximum number of concurrent tasks by setting `max_concurrency` in the [configuration](https://reference.langchain.com/javascript/interfaces/_langchain_langgraph.index.LangGraphRunnableConfig.html) when invoking the graph.
+You can control the maximum number of concurrent tasks by setting `maxConcurrency` in the [configuration](https://reference.langchain.com/javascript/langchain-langgraph/index/LangGraphRunnableConfig) when invoking the graph. `maxConcurrency` is a standalone config key, so set it at the top level of the config rather than inside `configurable`.
 
 ```typescript
-const result = await graph.invoke({ value1: "c" }, {configurable: {max_concurrency: 10}});
+const result = await graph.invoke({ value1: "c" }, { maxConcurrency: 10 });
 ```
 </Tip>
 :::
@@ -2508,6 +2573,18 @@ Adding "D" to ['A', 'B', 'C', 'B_2']
 ```
 
 In the above example, nodes `"b"` and `"c"` are executed concurrently in the same superstep. We set `defer=True` on node `d` so it will not execute until all pending tasks are finished. In this case, this means that `"d"` waits to execute until the entire `"b"` branch is finished.
+
+When every branch always runs, you can wait with a list-form edge instead of `defer=True`. `add_edge` also accepts a list of start nodes. This is not shorthand for separate `add_edge` calls; the two forms behave differently:
+
+```python
+builder.add_edge(["b_2", "c"], "d")  # d runs once, after both b_2 and c complete
+```
+
+- **A list of start nodes** runs `d` once, after all of the listed nodes have completed. If one of them never runs (for example, a conditional edge does not select its branch), `d` never runs and no error is raised. State updates from branches that did complete remain in the graph state, but `d` does not consume them.
+- **Separate edges** run `d` once per superstep in which any incoming branch completes. With branches of equal length, that is a single run; with branches of different lengths, `d` runs more than once.
+- **Separate edges with `defer=True`** (the pattern in the example above) run `d` once, after every selected branch has completed, whether the fan-out selected all of the branches or only some of them.
+
+`defer=True` postpones the node until no tasks are pending anywhere in the graph, not only in the branches that feed it. A `Send` addressed to the node still invokes it separately.
 :::
 
 ### Conditional branching
@@ -2578,7 +2655,7 @@ Adding "C" to ['A']
 :::
 
 :::js
-If your fan-out should vary at runtime based on the state, you can use [`addConditionalEdges`](https://reference.langchain.com/javascript/classes/_langchain_langgraph.index.StateGraph.html#addconditionaledges) to select one or more paths using the graph state. See example below, where node `a` generates a state update that determines the following node.
+If your fan-out should vary at runtime based on the state, you can use [`addConditionalEdges`](https://reference.langchain.com/javascript/langchain-langgraph/index/StateGraph) to select one or more paths using the graph state. See example below, where node `a` generates a state update that determines the following node.
 
 ```typescript
 import { StateGraph, StateSchema, ReducedValue, GraphNode, ConditionalEdgeRouter, START, END } from "@langchain/langgraph";
@@ -3208,7 +3285,7 @@ Recursion Error
   4. Node A
   5. ...
 
-  We have a loop of four supersteps, where nodes C and D are executed concurrently.
+  We have a loop of four supersteps, where nodes C and D are executed concurrently. The list-form edge waits for both `"c"` and `"d"` before returning to `"a"`. For how list-form edges differ from separate edges into the same node, see [Defer node execution](#defer-node-execution).
 
   Invoking the graph as before, we see that we complete two full "laps" before hitting the termination condition:
 
@@ -3261,7 +3338,7 @@ To convert a `sync` implementation of the graph to an `async` implementation, yo
 2. Update the code inside to use `await` appropriately.
 3. Invoke the graph with `.ainvoke` or `.astream` as desired.
 
-Because many LangChain objects implement the [Runnable Protocol](https://python.langchain.com/docs/expression_language/interface/) which has `async` variants of all the `sync` methods it's typically fairly quick to upgrade a `sync` graph to an `async` graph.
+Because many LangChain objects implement the [Runnable Protocol](https://reference.langchain.com/python/langchain-core/runnables/base/Runnable) which has `async` variants of all the `sync` methods it's typically fairly quick to upgrade a `sync` graph to an `async` graph.
 
 See example below. To demonstrate async invocations of underlying LLMs, we will include a chat model:
 
@@ -3699,7 +3776,7 @@ If you are using tools that update state via @[`Command`], we recommend using pr
 
 Here we demonstrate how to visualize the graphs you create.
 
-You can visualize any arbitrary [Graph](https://langchain-ai.github.io/langgraph/reference/graphs/), including [StateGraph](https://langchain-ai.github.io/langgraph/reference/graphs/#langgraph.graph.state.StateGraph).
+You can visualize any arbitrary [Graph](https://reference.langchain.com/python/langgraph/graphs/), including @[`StateGraph`].
 
 :::python
 Let's have some fun by drawing fractals :).

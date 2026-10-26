@@ -1,6 +1,7 @@
 """Update downloads count in packages.yml from pepy.tech badge numbers."""
 
 import re
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -15,6 +16,16 @@ yaml.width = 4096  # Prevent line wrapping
 PACKAGE_YML = Path(__file__).parents[1] / "packages.yml"
 
 
+def _parse_badge_count(raw: str) -> int:
+    """Parse pepy badge text like '1.2k', '3.4M', or '12,345' into an int."""
+    latest = raw.replace(",", "")
+    if latest.endswith(("k", "K")):
+        return int(float(latest[:-1]) * 1_000)
+    if latest.endswith(("m", "M")):
+        return int(float(latest[:-1]) * 1_000_000)
+    return int(float(latest))
+
+
 def _get_downloads(p: dict) -> int:
     """Get downloads count from pepy.tech badge SVG.
 
@@ -22,30 +33,32 @@ def _get_downloads(p: dict) -> int:
         p: Package dict from packages.yml
 
     Returns:
-        Downloads count as int.
+        Downloads count as int. Returns 0 when pepy has not indexed the
+        package yet (HTTP 404), which is common for newly published packages.
 
     Raises:
-        requests.RequestException: If HTTP request fails.
+        requests.RequestException: If the HTTP request fails for a reason
+            other than a missing package badge.
     """
-    url = f"https://pepy.tech/badge/{p['name']}/month"
+    name = p["name"]
+    url = f"https://pepy.tech/badge/{name}/month"
     try:
         response = requests.get(url, timeout=10)
+        if response.status_code == 404:
+            print(
+                f"warn: pepy badge not found for {name}; recording 0 downloads",
+                file=sys.stderr,
+            )
+            return 0
         response.raise_for_status()
         svg = response.text
     except requests.RequestException as e:
-        msg = f"Failed to fetch downloads for {p['name']}: {e}"
+        msg = f"Failed to fetch downloads for {name}: {e}"
         raise requests.RequestException(msg) from e
 
     texts = re.findall(r"<text[^>]*>([^<]+)</text>", svg)
     latest = texts[-1].strip() if texts else "0"
-
-    # Parse "1.2k", "3.4M", "12,345" -> int
-    latest = latest.replace(",", "")
-    if latest.endswith(("k", "K")):
-        return int(float(latest[:-1]) * 1_000)
-    if latest.endswith(("m", "M")):
-        return int(float(latest[:-1]) * 1_000_000)
-    return int(float(latest))
+    return _parse_badge_count(latest)
 
 
 current_datetime = datetime.now(UTC)

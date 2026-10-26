@@ -4,6 +4,10 @@
 # NOTE: This uses `pull_request_target` so it has write access to
 # comment on PRs from forks. The script only reads OWNERS from
 # the base branch and lists changed files — no untrusted code is executed.
+#
+# Once a docs-team member (the `# docs-team:` line in OWNERS) is assigned,
+# requested, or has reviewed, the PR has an owner: this workflow then
+# makes only the opt-in `# auto-request` requests and posts nothing.
 
 name: PR Welcome Comment
 
@@ -51,9 +55,20 @@ jobs:
             // requests every owner on the rule; the scoped form requests only
             // the listed subset.
             const rules = [];
+            const docsTeam = new Set();
             for (const rawLine of ownersContent.split('\n')) {
               const trimmed = rawLine.trim();
               if (!trimmed) continue;
+
+              // "# docs-team: @a @b" names the docs writers whose review
+              // ownership stops further automatic requests.
+              const teamMatch = trimmed.match(/^#\s*docs-team:\s*(.*)$/i);
+              if (teamMatch) {
+                for (const t of teamMatch[1].split(/[\s,]+/)) {
+                  if (t.startsWith('@')) docsTeam.add(t.slice(1).toLowerCase());
+                }
+                continue;
+              }
 
               const hashIdx = trimmed.indexOf('#');
               const ruleText = (hashIdx === -1 ? trimmed : trimmed.slice(0, hashIdx)).trim();
@@ -92,6 +107,34 @@ jobs:
               rules.push({ pattern, owners, autoRequest });
             }
 
+            // --- Check whether a docs-team member already owns the review ---
+            // Re-fetch the PR: on ready_for_review, the payload can predate
+            // assignments and requests made while it was a draft. The author
+            // does not count; an owner reviews someone else's PR. Opt-in
+            // auto-requests still run on an owned PR; everything after them
+            // is skipped.
+            const { data: current } = await github.rest.pulls.get({
+              owner, repo, pull_number: pr.number
+            });
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              owner, repo, pull_number: pr.number, per_page: 100
+            });
+            const reviewOwners = [...new Set([
+              ...(current.assignees || []).map(a => a.login),
+              ...(current.requested_reviewers || []).map(r => r.login),
+              ...reviews.map(r => r.user && r.user.login),
+            ].filter(login =>
+              login &&
+              docsTeam.has(login.toLowerCase()) &&
+              login.toLowerCase() !== author.toLowerCase()
+            ))];
+            // Anyone already requested or who has reviewed is not requested
+            // again, so leaving draft twice does not re-notify them.
+            const alreadyInvolved = new Set([
+              ...(current.requested_reviewers || []).map(r => r.login),
+              ...reviews.map(r => r.user && r.user.login),
+            ].filter(Boolean).map(l => l.toLowerCase()));
+
             // Last matching rule wins (same as GitHub CODEOWNERS behavior)
             function matchRule(filepath) {
               let matched = null;
@@ -119,6 +162,11 @@ jobs:
             function getProductName(filepath) {
               const map = [
                 ['src/langsmith/fleet/', 'LangSmith Fleet'],
+                ['src/langsmith/managed-deep-agents', 'Managed Deep Agents'],
+                ['src/langsmith/images/mda-', 'Managed Deep Agents'],
+                ['src/snippets/langsmith/managed-deep-agents', 'Managed Deep Agents'],
+                ['src/snippets/langsmith/mda-', 'Managed Deep Agents'],
+                ['src/snippets/code-samples/mda-', 'Managed Deep Agents'],
                 ['src/langsmith/', 'LangSmith'],
                 ['src/oss/deepagents/', 'Deep Agents'],
                 ['src/oss/langgraph/', 'LangGraph'],
@@ -140,6 +188,9 @@ jobs:
 
             // --- Group by product, merging owners across files ---
             const productOwners = new Map();
+            // Bot PRs request one owner per area (the rule's first owner)
+            // rather than every owner listed for it.
+            const primaryOwners = new Set();
             const autoRequestReviewers = new Set();
             let authorIsOwner = false;
             for (const file of files) {
@@ -171,11 +222,14 @@ jobs:
               for (const o of ownerNames) {
                 productOwners.get(product).add(o);
               }
+              primaryOwners.add(ownerNames[0]);
             }
 
             // --- Auto-request opted-in reviewers (any PR author) ---
-            if (autoRequestReviewers.size > 0) {
-              const reviewers = [...autoRequestReviewers];
+            const autoReviewers = [...autoRequestReviewers]
+              .filter(u => !alreadyInvolved.has(u.toLowerCase()));
+            if (autoReviewers.length > 0) {
+              const reviewers = autoReviewers;
               try {
                 await github.rest.pulls.requestReviewers({
                   owner, repo,
@@ -186,6 +240,15 @@ jobs:
               } catch (error) {
                 console.log(`Failed to auto-request reviewers ${reviewers.join(', ')}: ${error.message}`);
               }
+            }
+
+            // --- Stop if a docs-team member already owns the review ---
+            if (reviewOwners.length > 0) {
+              console.log(
+                `PR #${pr.number} already owned by ${reviewOwners.map(u => '@' + u).join(', ')}; ` +
+                'skipping docs-team review requests and welcome comment'
+              );
+              return;
             }
 
             if (productOwners.size === 0) {
@@ -205,16 +268,12 @@ jobs:
               if (changelogPatterns.some(p => pr.title.includes(p))) {
                 reviewers = ['lnhsingh'];
               } else {
-                const fromOwners = [...new Set(
-                  [...productOwners.values()].flatMap(s => [...s])
-                )];
-                const reviewerSet = new Set(fromOwners);
+                const reviewerSet = new Set();
 
                 // Some bots name the humans who should review in the PR
                 // body. Each parser below extracts those reviewers from the
-                // PR. A bot with a parser skips the lnhsingh fallback and
-                // uses whatever its parser returns; any other bot falls back
-                // to lnhsingh.
+                // PR. When a parser returns anyone, only those reviewers are
+                // requested; otherwise each changed area's first owner is.
                 const botReviewerParsers = {
                   // open-swe names the triggering user by display name in an
                   // "Opened collaboratively by <Name> and open-swe." line;
@@ -265,8 +324,9 @@ jobs:
                 const parseBotReviewers = botReviewerParsers[author];
                 if (parseBotReviewers) {
                   for (const u of await parseBotReviewers()) reviewerSet.add(u);
-                } else {
-                  reviewerSet.add('lnhsingh');
+                }
+                if (reviewerSet.size === 0) {
+                  for (const u of primaryOwners) reviewerSet.add(u);
                 }
 
                 reviewers = [...reviewerSet];
@@ -294,11 +354,23 @@ jobs:
               return mentions.slice(0, -1).join(', ') + `, or ${mentions[mentions.length - 1]}`;
             }
 
+            // ready_for_review fires each time a PR leaves draft, so post
+            // the welcome comment once.
+            const marker = '<!-- pr-welcome-comment -->';
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: pr.number, per_page: 100
+            });
+            if (comments.some(c => c.user?.type === 'Bot' && c.body?.includes(marker))) {
+              console.log(`Welcome comment already posted on PR #${pr.number}`);
+              return;
+            }
+
             const areas = [...productOwners.entries()];
             const lines = areas.map(([product, owners]) =>
               `- ${formatOwners(owners)} (${product})`
             );
             const body = [
+              marker,
               `Thanks for opening a docs PR, @${author}! When it's ready for review, please add the relevant reviewers:\n`,
               lines.join('\n')
             ].join('\n');

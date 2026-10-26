@@ -13,7 +13,6 @@ if not os.environ.get("OPENAI_API_KEY"):
 import requests
 from langchain_core.documents import Document
 from langchain_core.vectorstores import InMemoryVectorStore
-from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 DOCS_BASE = "https://docs.langchain.com"
@@ -74,6 +73,8 @@ print(f"Split documentation into {len(all_splits)} chunks.")
 # :snippet-end:
 
 # :remove-start:
+from langchain_openai import OpenAIEmbeddings
+
 embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 vector_store = InMemoryVectorStore(embedding=embeddings)
 # :remove-end:
@@ -84,8 +85,7 @@ print(f"Indexed {len(all_splits)} chunks.")
 # :snippet-end:
 
 # :snippet-start: rag-deep-search-tool-py
-import uuid
-
+from langchain_core.utils.uuid import uuid7
 from deepagents.backends import StateBackend
 from langchain.tools import tool
 
@@ -103,7 +103,7 @@ def search_documentation(query: str) -> str:
         File paths where retrieved chunks were saved under /retrieved/.
     """
     retrieved_docs = vector_store.similarity_search(query, k=4)
-    batch_id = uuid.uuid4().hex[:8]
+    batch_id = uuid7().hex[:8]
     uploads: list[tuple[str, bytes]] = []
     saved_paths: list[str] = []
 

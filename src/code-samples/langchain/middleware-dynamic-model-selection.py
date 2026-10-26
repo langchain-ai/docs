@@ -48,7 +48,13 @@ class DynamicModelMiddleware(AgentMiddleware):
 # :snippet-end:
 
 # :remove-start:
+import os
 from itertools import cycle
+
+# LangSmith run serialization walks GenericFakeChatModel.messages; with
+# cycle(...) that can hang while posting the run.
+os.environ["LANGSMITH_TRACING"] = "false"
+os.environ["LANGCHAIN_TRACING_V2"] = "false"
 
 from langchain.agents import create_agent
 from langchain.messages import AIMessage
