@@ -185,7 +185,7 @@ If you want to keep a subset of traces for **longer than 180 days** for data col
 In addition to traces, LangSmith charges for deployed agents via LangSmith Deployment. Deployments are billed on the resources they consume:
 
 - **Compute**: Requested vCPU and memory per running replica, measured in LangChain Standard Units (LSU). [Autoscaling](/langsmith/cloud-platform-features#scaling) adds billable replicas. [Serverless](/langsmith/cloud-platform-features#serverless) compute charges stop at scale-down, not when traffic stops. [Dedicated](/langsmith/cloud-platform-features#dedicated) runs continuously.
-- **Database**: Dedicated database vCPU and memory are metered separately in LSU. Database storage and Serverless's shared database are not billed.
+- **Database**: Configured Dedicated database vCPU and memory are metered separately in LSU, even without requests. Runtime autoscaling does not multiply the database charge. Database disk storage and Serverless's shared database are not billed.
 
 Managed Redis is not billed on any deployment type or size.
 
@@ -198,11 +198,25 @@ Usage is converted to LSU at the following rates. One LSU costs $1.00:
 | Database vCPU | 0.177 LSU per vCPU-hour |
 | Database memory | 0.025 LSU per GiB-hour |
 
-For example, an idle [Dedicated Small](/langsmith/cloud-platform-features#sizes) deployment on LangSmith Cloud in GCP has 2 API replicas and 1 queue worker: 3 vCPU and 6 GiB of billable runtime, excluding Redis. Its database adds 1 vCPU and 4 GiB. The hourly cost is:
+Dedicated database costs on LangSmith Cloud in GCP are:
 
-```txt
-3 × 0.0675 + 6 × 0.009 + 1 × 0.177 + 4 × 0.025 = 0.5335 LSU
-```
+| Database size | Capacity | Database cost per hour |
+|---|---|---|
+| Small | 1 vCPU / 4 GiB | 0.277 LSU ($0.277) |
+| Medium | 2 vCPU / 8 GiB | 0.554 LSU ($0.554) |
+| Large | 4 vCPU / 16 GiB | 1.108 LSU ($1.108) |
+
+These costs exclude runtime compute. Compute and database sizes can be [set independently](/langsmith/cloud-platform-features#sizes). Database capacity differs by cloud provider; these examples apply to GCP.
+
+For example, an idle Dedicated Small deployment on GCP has 2 API replicas and 1 queue worker. This is 3 vCPU and 6 GiB of billable runtime, excluding Redis. With a Small database, its hourly cost is:
+
+| Component | Calculation | Cost per hour |
+|---|---|---|
+| Minimum runtime | 3 × 0.0675 + 6 × 0.009 | 0.2565 LSU ($0.2565) |
+| Database | 1 × 0.177 + 4 × 0.025 | 0.277 LSU ($0.277) |
+| Combined minimum | 0.2565 + 0.277 | 0.5335 LSU ($0.5335) |
+
+Autoscaling increases the runtime cost above this minimum. Tracing and other product usage are separate charges.
 
 Usage is sampled every 5 minutes and totaled hourly. Each running billable container is charged for that interval based on requested resources, not actual utilization.
 
