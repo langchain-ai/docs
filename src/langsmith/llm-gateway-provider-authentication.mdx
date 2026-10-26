@@ -34,19 +34,18 @@ The gateway picks the source from the request:
 
 The gateway reads provider keys from the secrets of the workspace that the caller's API key belongs to. Each workspace that calls a provider needs its own copy of that provider's key. For `<provider>/<model>` calls, the gateway does not fall back to organization secrets. Organization secrets apply only to [organization-scoped model configurations](/langsmith/llm-gateway-model-configurations).
 
-Adding a provider key requires the [Workspace Admin](/langsmith/rbac#workspace-admin) role.
+Adding a provider key requires [permission to manage secrets](/langsmith/rbac#workspace-roles) in that workspace. Without it, the **Provider secrets** page hides the add button and asks you to contact a workspace admin.
 
 To add a provider key:
 
 1. In LangSmith, select the workspace that calls the provider.
 1. Go to **Settings > Integrations > Provider secrets**.
-1. Add a secret, and select the provider. The provider selector fills in the secret name.
-1. Enter the provider key as the value, and save.
+1. Click **+ Secret**. Under **Provider**, select the provider, which fills in the secret name.
+1. Enter the provider key as the value, and click **Save**.
 
-If a workspace has no key for a provider, the Simulator marks that provider's models **Needs key** and prompts for one before it runs a request.
+If a workspace has no key for a provider, the Simulator marks that provider's models as **Needs key** and prompts for one before it runs a request. The key you enter there is saved as a secret in the current workspace, the same as the one added on the **Provider secrets** page.
 
-{/* VERIFY X9: the Workspace Admin requirement above is expected, not confirmed. Test: as a user without admin rights, try to save a bogus secret value. */}
-{/* VERIFY W4: the Simulator's Needs key prompt saves a workspace secret (very likely, per X11). Test with a bogus value in a workspace with no secrets. */}
+LangSmith does not check a provider key when you save it. A wrong key shows up as the provider's error on the first request.
 
 The gateway reads these secret names:
 
@@ -119,12 +118,14 @@ If Azure returns `PermissionDenied`, confirm that the `Foundry User` role is ass
 
 ## Fix provider credential errors
 
-The gateway passes provider errors through to the caller, so most credential problems show up as the provider's own error. To see which providers the caller's workspace can reach, call [`GET /v1/models`](/langsmith/llm-gateway-api-formats#list-models). It lists `<provider>/<model>` IDs only for providers that have a key in that workspace.
+The gateway passes provider errors through to the caller, so most credential problems show up as the provider's own status code and error body. The `X-LangSmith-Gateway-Metadata` response header tells the two apart: for a provider error, it includes `"outcome":"upstream_error"` and `"upstream_error_source":"provider_response"`, with the provider's status in `upstream_status_code`.
+
+To see which providers the caller's workspace can reach, call [`GET /v1/models`](/langsmith/llm-gateway-api-formats#list-models). It lists `<provider>/<model>` IDs only for providers that have a key in that workspace.
 
 | Status and response | Cause | Fix |
 | --- | --- | --- |
 | `424` with `Required workspace secret "<SECRET_NAME>" is missing.` | The workspace that the caller's API key belongs to has no key for the provider in the model ID. | [Add the provider key](#add-a-provider-key) to that workspace, or use an API key from a workspace that has one. |
-| An error from the provider that shows a masked key, such as OpenAI's `Incorrect API key provided: sk-...` | The provider key stored in LangSmith is invalid or revoked. | Replace the stored provider key. |
+| An API key error from the provider, such as OpenAI's `Incorrect API key provided: sk-...`, or a `400` from xAI with `Incorrect API key provided.` | The provider key stored in LangSmith is invalid or revoked. | Replace the stored provider key. |
 | Anthropic's `invalid x-api-key`, with the client's base URL set to the gateway | The stored Anthropic key is invalid or revoked. | Replace the stored `ANTHROPIC_API_KEY`. |
 
 For errors from the caller's LangSmith API key, such as `401` and `403`, or an `invalid x-api-key` from a client that bypasses the gateway, see [Fix authentication errors](/langsmith/llm-gateway-authentication#fix-authentication-errors).
