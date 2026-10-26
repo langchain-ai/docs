@@ -5,7 +5,7 @@ description: How the Python pipeline turns authored source files into the dispos
 tags: [build-system, documentation-pipeline, mintlify, preprocessing, content-routing]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-20T08:20:37.912Z
+    at: 2026-10-23T08:20:30.474Z
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
@@ -31,7 +31,9 @@ sources:
     resource: repo://README.md
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-19T08:25:25.748Z" }
+  - id: openwiki-source-16b92823fdcb07d686f2e27f
+    resource: repo://tests/unit_tests/test_watcher.py
+generated: { by: "openwiki/0.4.3", at: "2026-10-23T08:20:30.474Z" }
 ---
 
 # Documentation Build System
@@ -40,7 +42,7 @@ generated: { by: "openwiki/0.4.3", at: "2026-10-19T08:25:25.748Z" }
 
 ## Entrypoints and full-build lifecycle
 
-`make build` installs npm dependencies and runs `uv run pipeline build`. The packaged `docs` console script points to `pipeline.cli:main`; the CLI includes `build` and asynchronous `dev` commands, dispatches coroutine handlers with `asyncio`, and returns integer command results as its process exit status. The build handler requires `src/`, constructs `DocumentationBuilder(src, build)`, and runs `build_all()`; a missing source directory returns exit code 1.
+`make build` installs npm dependencies and runs `uv run pipeline build`. The packaged `docs` console script points to `pipeline.cli:main`. Its CLI dispatches synchronous and asynchronous handlers and returns integer command results as process exit status; it provides `build`, `dev`, `mv`, `migrate`, and `migrate-docusaurus`. The build handler requires `src/`, constructs `DocumentationBuilder(src, build)`, and runs `build_all()`; a missing source directory returns exit code 1.
 
 ```mermaid
 flowchart TD
@@ -116,7 +118,7 @@ For an offline artifact, `make export` requires an installed Mint CLI with `mint
 
 Whole-tree collection rejects symlinks, including symlinks to regular files, and accepts only regular files whose resolved paths stay under the requested source root. This prevents a committed link from bringing host paths into generated artifacts.
 
-Focused builder tests cover language-routing exceptions, language-aware OSS and snippet links, Managed Deep Agents dual routes, source-snippet copies, and symlink rejection. Extend observable output tests when changing routing, rewriting, shared-file policy, or overlay precedence.
+Focused builder tests cover language-routing exceptions, language-aware OSS and snippet links, Managed Deep Agents dual routes, source-snippet copies, and symlink rejection. The watcher unit tests focus on filtering editor backup and temporary filenames. Extend observable output tests when changing routing, rewriting, shared-file policy, or overlay precedence.
 
 ## Related pages
 
