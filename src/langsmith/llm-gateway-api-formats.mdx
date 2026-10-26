@@ -111,6 +111,14 @@ curl https://gateway.smith.langchain.com/v1/models \
 
 Pass an ID exactly as shown. The list omits providers without a configured provider key and models that your [model access policies](/langsmith/llm-gateway-model-access-policies) block. Saved model configurations do not appear in the list.
 
+## Read response metadata
+
+The gateway adds an `X-LangSmith-Gateway-Metadata` header to its responses. The header is a JSON object that describes how the gateway handled the request, such as the provider and model it called and whether a policy blocked the request. It contains no credentials or prompt and response content.
+
+To tell a gateway decision from a provider error, read two fields: `outcome` says how the request ended, such as `success`, `blocked`, or `upstream_error`, and `error_source` says whether a failure came from the caller (`request`), the provider (`upstream`), or the gateway (`internal`). When a [fallback chain](/langsmith/llm-gateway-fallbacks#investigate-fallback-attempts) runs, the header also lists each attempt.
+
+LangChain chat models in Python (`langchain-openai>=1.6.7` or `langchain-anthropic>=1.7.5`) attach the header to the model's run, so with [tracing](/langsmith/observability) on, the same details appear in the run's **Gateway** section.
+
 ## Fix request errors
 
 | Status or symptom | Meaning |
@@ -118,6 +126,8 @@ Pass an ID exactly as shown. The list omits providers without a configured provi
 | `400 Bad Request` | The request is malformed, the model ID is unavailable or incorrectly formatted, or the request cannot be translated. |
 | `429 Too Many Requests` | A gateway [rate limit policy](/langsmith/llm-gateway-rate-limit-policies) or an upstream provider rate limit was reached. |
 | No models with a provider prefix appear in `GET /v1/models` | The provider may not be configured or may not have returned a model catalog. |
+
+To tell whether the gateway or the provider returned an error, read the `outcome` and `error_source` fields in the [response metadata](#read-response-metadata).
 
 <Tip>
 For `401` and `403` errors, see [Fix authentication errors](/langsmith/llm-gateway-authentication#fix-authentication-errors). For `424` errors, see [Fix provider credential errors](/langsmith/llm-gateway-provider-authentication#fix-provider-credential-errors).
