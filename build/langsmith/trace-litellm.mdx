@@ -1,15 +1,19 @@
 ---
-title: Trace LiteLLM applications
+title: Trace with LiteLLM
 sidebarTitle: LiteLLM
 ---
 
-[LiteLLM](https://www.litellm.ai/) provides a unified interface for calling LLM providers using a consistent OpenAI-compatible API. It can be used either as a [Python SDK](https://docs.litellm.ai/docs/#litellm-python-sdk) embedded directly in your application, or as a [proxy server](https://docs.litellm.ai/docs/simple_proxy) that exposes an OpenAI-compatible endpoint for client applications.
+import AgentTracingPrerequisite from '/snippets/python/langsmith/agent-tracing-prerequisite.mdx';
+
+[LiteLLM](https://www.litellm.ai/) provides a unified interface for calling LLM providers using a consistent OpenAI-compatible API. It can be used either as a [Python SDK](https://docs.litellm.ai/docs/#litellm-python-sdk) embedded directly in your agent, or as a [proxy server](https://docs.litellm.ai/docs/simple_proxy) that exposes an OpenAI-compatible endpoint for client code.
 
 This guide shows you how to trace LiteLLM calls with LangSmith using:
 
-- The [LangSmith SDK](#use-langsmith_tracing-and-traceable) (`@traceable`) for application-level tracing.
+- The [LangSmith SDK](#use-langsmith_tracing-and-traceable) (`@traceable`) for agent-level tracing.
 - [LiteLLM’s built-in langsmith callback](#log-litellm-call-with-the-langsmith-callback) for model-level logging.
 - The [LiteLLM Proxy](#use-the-litellm-proxy) for gateway-level tracing.
+
+<AgentTracingPrerequisite />
 
 ## Installation
 
@@ -33,8 +37,8 @@ The examples in this guide use OpenAI models, but you can install the necessary 
 
 LiteLLM supports two ways to send traces to LangSmith, which operate at different layers:
 
-- [LangSmith SDK tracing](#use-langsmith_tracing-and-traceable) with `LANGSMITH_TRACING=true` enables application-level tracing via the LangSmith SDK. This is useful when you want to trace broader business logic, multi-step pipelines, or spans created with `@traceable`.
-- LiteLLM’s built-in [`langsmith` callback](#log-litellm-call-with-the-langsmith-callback) logs model calls directly from LiteLLM. This is recommended when you want to trace LiteLLM requests specifically, or run async applications.
+- [LangSmith SDK tracing](#use-langsmith_tracing-and-traceable) with `LANGSMITH_TRACING=true` enables agent-level tracing via the LangSmith SDK. This is useful when you want to trace broader business logic, multi-step pipelines, or spans created with `@traceable`.
+- LiteLLM’s built-in [`langsmith` callback](#log-litellm-call-with-the-langsmith-callback) logs model calls directly from LiteLLM. This is recommended when you want to trace LiteLLM requests specifically, or run async agents.
 
 <Note>
 Avoid enabling LiteLLM's `langsmith` callback and LangSmith tracing for the same LiteLLM calls, as this can result in duplicate traces.
@@ -48,7 +52,8 @@ You can use `LANGSMITH_TRACING=true` together with `@traceable` for predictable 
 
     ```bash
     export LANGSMITH_API_KEY="your_api_key"
-    export LANGSMITH_PROJECT="litellm-integration"
+    export LANGSMITH_AGENT_ID="<your-agent-id>"
+    export LANGSMITH_AGENT_ENVIRONMENT="production"
     export LANGSMITH_TRACING="true"
     ```
     Create LangSmith [API keys](/langsmith/create-account-api-key) in the [LangSmith UI](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=langsmith-trace-litellm).
@@ -90,7 +95,7 @@ You can use `LANGSMITH_TRACING=true` together with `@traceable` for predictable 
     - Records the function's return value as the run output.
     - Captures timing, errors, and nested spans (if any).
 
-    In this example, the `messages` argument becomes the trace input, and the returned assistant message object becomes the trace output. The LiteLLM call itself runs normally—`@traceable` wraps it with observability rather than modifying its behavior. This approach traces your application logic, not just the model call.
+    In this example, the `messages` argument becomes the trace input, and the returned assistant message object becomes the trace output. The LiteLLM call itself runs normally—`@traceable` wraps it with observability rather than modifying its behavior. This approach traces your agent logic, not just the model call.
 
     <Tip>
     For more general examples using `@traceable`, refer to the [Custom instrumentation](/langsmith/annotate-code#use-@traceable-/-traceable) page.
@@ -98,12 +103,14 @@ You can use `LANGSMITH_TRACING=true` together with `@traceable` for predictable 
 
 ### Log LiteLLM call with the `langsmith` callback
 
+This callback uses a legacy destination setting. Set it to the agent environment's [`tracer_session_name`](/langsmith/create-an-agent#use-an-environment-project). Use the SDK tracing approach above for agent addressing.
+
 LiteLLM can send traces directly to LangSmith using its built-in [callback system](https://docs.litellm.ai/docs/observability/callbacks). This is useful when running LiteLLM inside an async Python service and you want LiteLLM itself to emit model-level logs.
 
 LiteLLM callbacks run in an asynchronous environment. When making asynchronous calls with `litellm.acompletion()`, you can enable the `langsmith` callback to log successful model calls.
 
 <Tip>
-This approach is best suited for async applications. For simple synchronous scripts, use the `@traceable` method shown in the [previous section](#use-langsmith_tracing-and-traceable).
+This approach is best suited for async agents. For simple synchronous scripts, use the `@traceable` method shown in the [previous section](#use-langsmith_tracing-and-traceable).
 </Tip>
 
 1. Set the following environment variables:
@@ -182,7 +189,7 @@ The LiteLLM proxy runs as a standalone server and exposes an OpenAI-compatible A
     ```
 
     <Note>
-    The LiteLLM proxy runs as a separate service. If you enable LangSmith tracing at the proxy level, you must configure `LANGSMITH_API_KEY` and related environment variables in the proxy’s runtime environment. These settings are not shared with your application process.
+    The LiteLLM proxy runs as a separate service. If you enable LangSmith tracing at the proxy level, you must configure `LANGSMITH_API_KEY` and related environment variables in the proxy’s runtime environment. These settings are not shared with your process.
     </Note>
 
 1. Start the proxy:
@@ -191,9 +198,9 @@ The LiteLLM proxy runs as a standalone server and exposes an OpenAI-compatible A
     litellm --config config.yaml
     ```
 
-    By default, the proxy runs at `http://localhost:4000/v1`. Your application calls it using any OpenAI-compatible client (Python, JavaScript, curl, etc.).
+    By default, the proxy runs at `http://localhost:4000/v1`. Your agent calls it using any OpenAI-compatible client (Python, JavaScript, curl, etc.).
 
-    With `callbacks: ["langsmith"]` enabled, the proxy sends model request and response data directly to LangSmith. No tracing configuration is required in the client application.
+    With `callbacks: ["langsmith"]` enabled, the proxy sends model request and response data directly to LangSmith. No tracing configuration is required in the client code.
 
 1. Call the proxy from another terminal window:
 

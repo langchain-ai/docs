@@ -1,11 +1,15 @@
 ---
-title: Trace LangChain applications (Python and JS/TS)
+title: Trace LangChain agents (Python and JS/TS)
 sidebarTitle: LangChain
 ---
 
+import AgentTracingPrerequisite from '/snippets/python/langsmith/agent-tracing-prerequisite.mdx';
+
 import SaasRegionUrls from '/snippets/python/langsmith/saas-region-urls.mdx';
 
-LangSmith integrates seamlessly with LangChain (Python and JavaScript), the popular open-source framework for building LLM applications.
+LangSmith integrates seamlessly with LangChain (Python and JavaScript), the popular open-source framework for building agents.
+
+<AgentTracingPrerequisite />
 
 ## Installation
 
@@ -40,6 +44,8 @@ pnpm add @langchain/openai @langchain/core
 ```bash wrap
 export LANGSMITH_TRACING=true
 export LANGSMITH_API_KEY=<your-api-key>
+export LANGSMITH_AGENT_ID="<your-agent-id>"
+export LANGSMITH_AGENT_ENVIRONMENT="production"
 # This example uses OpenAI, but you can use any LLM provider of choice
 export OPENAI_API_KEY=<your-openai-api-key>
 # For LangSmith API keys linked to multiple workspaces, set the LANGSMITH_WORKSPACE_ID environment variable to specify which workspace to use.
@@ -114,11 +120,11 @@ await chain.invoke({ question: question, context: context });
 
 ### 3. View your trace
 
-By default, the trace will be logged to the project with the name `default`.
+Open the registered agent in LangSmith and select its **Production** environment to view the trace.
 
 ## Trace selectively
 
-The [previous section](#quick-start) showed how to trace all invocations of a LangChain runnables within your applications by setting a single environment variable. While this is a convenient way to get started, you may want to trace only specific invocations or parts of your application.
+The [previous section](#quick-start) showed how to trace all LangChain runnable invocations in your code by enabling tracing and selecting an agent environment. While this is a convenient way to get started, you may want to trace only specific invocations or parts of your agent.
 
 There are two ways to do this in Python: by manually passing in a `LangChainTracer` instance as a [callback](https://reference.langchain.com/python/langchain_core/callbacks/), or by using the [`tracing_context` context manager](https://reference.langchain.com/python/langsmith/observability/sdk/run_helpers/#langsmith.run_helpers.tracing_context).
 
@@ -157,49 +163,15 @@ await chain.invoke(
 
 </CodeGroup>
 
-## Log to a specific project
+<a id="log-to-a-specific-project"></a>
 
-### Statically
+## Select an agent and environment
 
-As mentioned in the [tracing conceptual guide](/langsmith/observability-concepts) LangSmith uses the concept of a Project to group traces. If left unspecified, the tracer project is set to default. You can set the `LANGSMITH_PROJECT` environment variable to configure a custom project name for an entire application run. This should be done before executing your application.
+Use `LANGSMITH_AGENT_ID` and `LANGSMITH_AGENT_ENVIRONMENT` to select the registered agent and environment. For per-request routing, pass an agent address in code. See [Log traces to an agent](/langsmith/log-traces-to-agent).
 
-```bash
-export LANGSMITH_PROJECT=my-project
-```
-
-<Warning>
-The `LANGSMITH_PROJECT` flag is only supported in JS SDK 0.2.16 or later, use `LANGCHAIN_PROJECT` instead if you are using an older version.
-</Warning>
-
-### Dynamically
-
-This largely builds off of the [previous section](#trace-selectively) and allows you to set the project name for a specific `LangChainTracer` instance or as parameters to the `tracing_context` context manager in Python.
-
-<CodeGroup>
-
-```python Python
-# You can set the project name using the project_name parameter.
-import langsmith as ls
-
-with ls.tracing_context(project_name="My Project", enabled=True):
-    chain.invoke({"question": "Am I using a context manager?", "context": "I'm using a context manager"})
-```
-
-```typescript TypeScript
-// You can set the project name for a specific tracer instance:
-import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
-
-const tracer = new LangChainTracer({ projectName: "My Project" });
-await chain.invoke(
-  {
-    question: "Am I using a callback?",
-    context: "I'm using a callback"
-  },
-  { callbacks: [tracer] }
-);
-```
-
-</CodeGroup>
+<Accordion title="Project-based workspaces and self-hosted LangSmith">
+Set `LANGSMITH_PROJECT` to the tracing project name instead of setting the agent variables. For integrations that require `project_name` in an agent-based workspace, use the environment's [`tracer_session_name`](/langsmith/create-an-agent#use-an-environment-project) as a compatibility value.
+</Accordion>
 
 ## Add metadata and tags to traces
 
@@ -457,11 +429,11 @@ console.log(runId);
 
 ## Ensure all traces are submitted before exiting
 
-In LangChain Python, LangSmith's tracing is done in a background thread to avoid obstructing your production application. This means that your process may end before all traces are successfully posted to LangSmith. This is especially prevalent in a serverless environment, where your VM may be terminated immediately once your chain or agent completes.
+In LangChain Python, LangSmith's tracing is done in a background thread to avoid obstructing your production agent. This means that your process may end before all traces are successfully posted to LangSmith. This is especially prevalent in a serverless environment, where your VM may be terminated immediately once your chain or agent completes.
 
 You can make callbacks synchronous by setting the `LANGCHAIN_CALLBACKS_BACKGROUND` environment variable to `"false"`.
 
-For both languages, LangChain exposes methods to wait for traces to be submitted before exiting your application. Below is an example:
+For both languages, LangChain exposes methods to wait for traces to be submitted before your process exits. Below is an example:
 
 <CodeGroup>
 
@@ -494,12 +466,13 @@ try {
 
 ## Trace without setting environment variables
 
-As mentioned in other guides, the following environment variables allow you to configure tracing enabled, the api endpoint, the api key, and the tracing project:
+As mentioned in other guides, the following environment variables allow you to configure tracing enabled, the api endpoint, the api key, and the tracing destination:
 
 * `LANGSMITH_TRACING`
 * `LANGSMITH_API_KEY`
 * `LANGSMITH_ENDPOINT`
-* `LANGSMITH_PROJECT`
+* `LANGSMITH_AGENT_ID`
+* `LANGSMITH_AGENT_ENVIRONMENT`
 
 However, in some environments, it is not possible to set environment variables. In these cases, you can set the tracing configuration programmatically.
 
@@ -516,14 +489,14 @@ client = ls.Client(
     api_url="https://api.smith.langchain.com",  # Self-hosted, GCP EU (`eu.api...`), GCP APAC (`apac.api...`), or AWS US (`aws.api...`) as needed
 )
 
-# You can pass the client and project_name to the tracing_context
-with ls.tracing_context(client=client, project_name="test-no-env", enabled=True):
+# You can pass the client and agent address to the tracing_context
+with ls.tracing_context(client=client, address=ls.agent_address("<your-agent-id>", "production"), enabled=True):
     chain.invoke({"question": "Am I using a callback?", "context": "I'm using a callback"})
 ```
 
 ```typescript TypeScript
 import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
-import { Client } from "langsmith";
+import { AgentAddress, Client } from "langsmith";
 
 // You can create a client instance with an api key and api url
 const client = new Client(
@@ -533,8 +506,8 @@ const client = new Client(
     }
 );
 
-// You can pass the client and project_name to the LangChainTracer instance
-const tracer = new LangChainTracer({client, projectName: "test-no-env"});
+// You can pass the client and agent address to the LangChainTracer instance
+const tracer = new LangChainTracer({client, address: new AgentAddress("<your-agent-id>", "production")});
 await chain.invoke(
   {
     question: "Am I using a callback?",
@@ -548,7 +521,7 @@ await chain.invoke(
 
 ## Distributed tracing with LangChain (Python)
 
-LangSmith supports distributed tracing with LangChain Python. This allows you to link runs (spans) across different services and applications. The principles are similar to the [distributed tracing guide](/langsmith/distributed-tracing) for the LangSmith SDK.
+LangSmith supports distributed tracing with LangChain Python. This allows you to link runs (spans) across different services and agents. The principles are similar to the [distributed tracing guide](/langsmith/distributed-tracing) for the LangSmith SDK.
 
 ```python
 import langsmith
@@ -577,7 +550,7 @@ parent_chain.invoke({"test": 1})
 
 ## Interoperability between LangChain (Python) and LangSmith SDK
 
-If you are using LangChain for part of your application and the LangSmith SDK (see [Custom instrumentation](/langsmith/annotate-code)) for other parts, you can still trace the entire application seamlessly.
+If you are using LangChain for part of your agent and the LangSmith SDK (see [Custom instrumentation](/langsmith/annotate-code)) for other parts, you can still trace the entire agent seamlessly.
 
 LangChain objects will be traced when invoked within a `traceable` function and be bound as a child run of the `traceable` function.
 
@@ -614,7 +587,7 @@ This will produce the following trace tree: ![Trace tree python interop](/langsm
 
 ### Tracing LangChain objects inside `traceable` (JS only)
 
-Starting with `langchain@0.2.x`, LangChain objects are traced automatically when used inside `@traceable` functions, inheriting the client, tags, metadata and project name of the traceable function.
+Starting with `langchain@0.2.x`, LangChain objects are traced automatically when used inside `@traceable` functions, inheriting the client, tags, metadata, and tracing destination of the traceable function.
 
 For older versions of LangChain below `0.2.x`, you will need to manually pass an instance `LangChainTracer` created from the tracing context found in `@traceable`.
 

@@ -3,29 +3,35 @@ title: Log user feedback using the SDK
 sidebarTitle: Log user feedback using the SDK
 ---
 
-LangSmith makes it easy to attach [feedback](/langsmith/observability-concepts#feedback) to [traces](/langsmith/observability-concepts#traces). This feedback can come from users, annotators, automated evaluators, and so on, which is crucial for monitoring and evaluating applications.
+import AgentTracingPrerequisite from '/snippets/python/langsmith/agent-tracing-prerequisite.mdx';
+
+LangSmith makes it easy to attach [feedback](/langsmith/observability-concepts#feedback) to [traces](/langsmith/observability-concepts#traces). This feedback can come from users, annotators, automated evaluators, and so on, which is crucial for monitoring and evaluating agents.
 
 This page details how to log feedback using the [SDK](/langsmith/reference). For the structure of feedback objects, refer to [Feedback data format](/langsmith/feedback-data-format).
+
+<AgentTracingPrerequisite />
 
 ## Use `create_feedback()` / `createFeedback`
 
 <Info>
 **Child runs**
 You can attach user feedback to **any** child run of a trace, not just the trace (root run) itself.
-This is useful for critiquing specific steps of the LLM application, such as the retrieval step or generation step of a RAG pipeline.
+This is useful for critiquing specific steps of the agent, such as the retrieval step or generation step of a RAG pipeline.
 </Info>
 
 <Tip>
 **Non-blocking creation (Python only)**
 The Python client will automatically background feedback creation if you pass `trace_id=` to [`create_feedback()`](https://reference.langchain.com/python/langsmith/client/Client/create_feedback).
-This is essential for low-latency environments, where you want to make sure your application isn't blocked on feedback creation.
+This is essential for low-latency environments, where you want to make sure your agent isn't blocked on feedback creation.
 </Tip>
 
-The following example creates a trace with two child runs, then logs feedback against the root run and against one of the child runs. The TypeScript snippet shows the equivalent `createFeedback` call shape, assuming a `runId` is already available from your application.
+The following example creates a trace with two child runs, then logs feedback against the root run and against one of the child runs. The TypeScript snippet shows the equivalent `createFeedback` call shape, assuming a `runId` is already available from your agent.
 
 <CodeGroup>
 
 ```python Python
+import asyncio
+
 from langsmith import Client, trace, traceable
 
 @traceable
@@ -46,8 +52,12 @@ with trace(name="foobar", inputs=inputs) as root_run:
     trace_id = root_run.id
     child_runs = root_run.child_runs
 
-# Resolve the UUID of the project that owns the trace
-session_id = client.create_project(project_name=root_run.session_name, upsert=True).id
+# Resolve the session_id for the agent environment
+if root_run.address is not None:
+    resolved = asyncio.run(client.sessions.resolve(**root_run.address))
+    session_id = resolved.session_id
+else:
+    session_id = client.read_project(project_name=root_run.session_name).id
 
 # Provide feedback for a trace (a.k.a. a root run)
 client.create_feedback(
@@ -72,14 +82,15 @@ client.create_feedback(
 ```
 
 ```typescript TypeScript
-import { Client } from "langsmith";
+import { AgentAddress, Client } from "langsmith";
 const client = new Client();
 
-    // ... Run your application and get the run_id...
+    // ... Run your agent and get the run_id...
     // This information can be the result of a user-facing feedback form
 
-// Resolve the UUID of the project that owns the trace
-const { id: sessionId } = await client.createProject({ projectName: "default", upsert: true });
+// Resolve the session_id for the agent environment
+const address = new AgentAddress("<your-agent-id>", "production");
+const { session_id: sessionId } = await client.sessions.resolve(address);
 
 await client.createFeedback({
     runId,
@@ -92,9 +103,13 @@ await client.createFeedback({
 
 </CodeGroup>
 
+For project-based traces, use `readProject` with the existing project name to get its ID instead of resolving an agent address. For resolution requirements, see [Resolve an agent environment](/langsmith/resolve-an-agent).
+
 You can even log feedback for in-progress runs using [`create_feedback()`](https://reference.langchain.com/python/langsmith/client/Client/create_feedback) / [`createFeedback`](https://reference.langchain.com/javascript/classes/langsmith.client.Client.html#createfeedback). See [Access the current run (span) within a traced function](/langsmith/access-current-span) for how to get the run ID of an in-progress run.
 
-## Collect feedback from client-side applications
+<a id="collect-feedback-from-client-side-applications"></a>
+
+## Collect feedback from a user interface
 
 If you need to collect feedback from a browser or other client-side environment without exposing your API key, use **presigned feedback tokens**. These generate a URL scoped to a specific run and feedback key that clients can call directly.
 
