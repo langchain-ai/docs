@@ -1,48 +1,25 @@
 ---
 title: Teams
 sidebarTitle: Teams
-description: Group organization members into teams, then give each team a workspace role and access policies in the workspaces it can access.
+description: Group organization members into teams, then give each team a role and access policies in the workspaces it can access.
 ---
 
-A team is a group of organization members that shares workspace access. Instead of assigning a role to each user in each workspace, you give a team a role once, and every member receives it. Teams build on [role-based access control (RBAC)](/langsmith/rbac) and [attribute-based access control (ABAC)](/langsmith/abac).
+A team is a group of organization members. You can give a team access to several workspaces, with a specific role in each. Team members who belong to those workspaces receive the team's role there. Teams build on [role-based access control (RBAC)](/langsmith/rbac) and [attribute-based access control (ABAC)](/langsmith/abac).
 
 <Note>
 Teams are available for organizations on the [Enterprise plan](https://www.langchain.com/pricing) and for [self-hosted](/langsmith/self-hosted) deployments. [Contact our sales team](https://www.langchain.com/contact-sales) to learn more.
 </Note>
 
-## Team types
-
-LangSmith has two kinds of teams:
-
-- **Organization team**: A team you create in the organization settings. You give it a [workspace role](/langsmith/rbac#workspace-roles) in one or more workspaces, and its members receive that role in each workspace they belong to.
-- **Workspace team**: The part of an organization team that belongs to one workspace. Giving an organization team access to a workspace creates its workspace team there. Removing that access deletes it.
-
-A workspace team lets a workspace's administrators manage access in their workspace without organization-level permissions. It starts with no members. Its members receive only the [access policies](/langsmith/abac) attached to it.
-
-For example, the `Support` organization team has the [Workspace Editor](/langsmith/rbac#workspace-editor) role in `Production`. A [Workspace Admin](/langsmith/rbac#workspace-admin) in `Production` can add more users to the `Support` workspace team there and attach a policy that lets the workspace team's members read projects tagged `Environment=Development`.
-
 ## Access rules
 
-A user's access in a workspace combines these sources:
+In a workspace, a user's permissions are the sum of their own [workspace role](/langsmith/rbac#workspace-roles) and the role of each team they belong to. [Access policies](/langsmith/abac) can come from those roles and from the teams themselves. A matching deny policy applies first and blocks access, whatever the roles allow. For the evaluation order, refer to [How ABAC works with RBAC](/langsmith/abac#how-abac-works-with-rbac).
 
-| Source | What it contributes |
-|--------|--------------------|
-| The user's own workspace role | The role's permissions and access policies. |
-| Organization teams the user belongs to that have access to the workspace | Each team's role in the workspace, that role's access policies, and the team's access policies. |
-| Workspace teams the user belongs to in the workspace | Each workspace team's access policies. |
-
-LangSmith combines the sources as follows:
-
-- **Permissions**: The user holds every permission from their own role and from each team's role.
-- **Access policies**: LangSmith evaluates policies from all sources together. A matching deny policy from any source blocks access, even when another source allows the action. For the evaluation order, refer to [How ABAC works with RBAC](/langsmith/abac#how-abac-works-with-rbac).
-
-A team's access applies only to users who are members of the workspace. Giving a team access does not add anyone to the workspace. To give a team member access, [add the user to the workspace](/langsmith/set-up-hierarchy#set-up-a-workspace) or [sync the team from your identity provider](#sync-team-members-from-your-identity-provider). A team member who joins the workspace later receives the team's role.
+A team's role applies only to members who belong to the workspace. Giving a team access does not add anyone to the workspace. To give a team member access, [add the user to the workspace](/langsmith/set-up-hierarchy#set-up-a-workspace) or [sync the team from your identity provider](#sync-team-members-from-your-identity-provider).
 
 ## Before you begin
 
-- Managing teams in the UI requires [RBAC](/langsmith/rbac) and [ABAC](/langsmith/abac) for the organization. Without ABAC, team access policies cannot be attached and have no effect, but team roles still apply.
-- To attach access policies, [create the policies](/langsmith/abac#managing-access-policies) and [tag your resources](/langsmith/set-up-resource-tags) first.
-- Creating teams and giving them workspace access requires the [Organization Admin](/langsmith/rbac#organization-admin) or [Organization Operator](/langsmith/rbac#organization-operator) role. For the permission each action checks, refer to [Permissions](#permissions).
+- Ensure that [RBAC](/langsmith/rbac) and [ABAC](/langsmith/abac) are enabled for your organization. Without ABAC, team access policies have no effect.
+- On self-hosted deployments, [enable teams](#enable-teams-for-self-hosted-deployments).
 
 ## Enable teams for self-hosted deployments
 
@@ -76,7 +53,7 @@ To create a team:
 1. (Optional) Add members, workspace access, and access policies. Refer to [Edit a team](#edit-a-team).
 1. Click **Create team**.
 
-Team names must be unique in the organization and are case-sensitive.
+Team names are unique across the organization.
 
 ## Edit a team
 
@@ -92,44 +69,48 @@ LangSmith saves the changes together. If one fails, LangSmith keeps the unsaved 
 
 Click **+ Add member** to add organization members. To remove a member, click the remove icon on their row. A removed member loses the access the team gave them.
 
-The section also lists users who belong only to one of the team's workspace teams, with a link to that workspace team.
+The section also lists the team's [workspace-only members](#add-workspace-only-members-and-policies), with a link to the workspace they were added in.
 
 ### Workspaces
 
 Click **+ Grant workspace** and select a workspace to give the team's members a role there. The role defaults to [Workspace Viewer](/langsmith/rbac#workspace-viewer). You can select any built-in or [custom](/langsmith/rbac#custom-roles) workspace role instead, and change it later on the workspace's row.
 
-To remove access, click the remove icon on the workspace's row and type the workspace name to confirm. Removing access deletes the team's workspace team in that workspace, with its members and access policies.
+To remove access, click the remove icon on the workspace's row and type the workspace name to confirm. Removing access also removes the team's workspace-only members and access policies in that workspace.
 
 ### Access policies
 
-Click **+ Attach policy** to attach an [access policy](/langsmith/abac#access-policy-structure). An organization team's policies apply in every workspace the team can access. A workspace team's policies apply only in its workspace.
+Click **+ Attach policy** to attach an [access policy](/langsmith/abac#access-policy-structure). The team's access policies apply to its members in every workspace the team can access.
 
-To limit an organization team's policy to one workspace, attach it through the [API](#manage-teams-with-the-api) with `workspace_id` set. The team must have access to that workspace, and you must be a member of that workspace. The team dialog shows the workspace that such a policy applies in.
+To limit a team's policy to one workspace, attach it through the [API](#manage-teams-with-the-api) with `workspace_id` set. The team must have access to that workspace, and you must be a member of that workspace. The team dialog shows the workspace that such a policy applies in.
 
-## Manage a workspace team
+## Add workspace-only members and policies
 
-Users with the [Workspace Admin](/langsmith/rbac#workspace-admin) role, or a [custom role](/langsmith/rbac#custom-roles) with the workspace teams [permissions](#permissions), manage the workspace teams in their workspace.
+In a workspace a team can access, a [Workspace Admin](/langsmith/rbac#workspace-admin) can add members and access policies to the team for that workspace only. This lets a workspace's administrators manage access in their workspace without organization-level permissions.
 
-To manage a workspace team:
+Workspace-only members do not receive the team's role. They receive only the workspace-only access policies, and only in that workspace. Workspace-only access policies apply only to workspace-only members.
 
-1. Navigate to the workspace's **Settings** > **Teams**.
+For example, the `Support` team has the [Workspace Editor](/langsmith/rbac#workspace-editor) role in `Production`. A Workspace Admin in `Production` can add more users to `Support` for that workspace only, and attach a policy that lets them read projects tagged `Environment=Development`.
+
+To add workspace-only members or policies:
+
+1. Navigate to the workspace's **Settings** > **Teams**. The page lists each team with access to the workspace.
 1. Click a team.
 1. Add or remove members, or attach or detach access policies.
 1. Click **Update team**.
 
-The page lists one workspace team for each organization team with access to the workspace. Each shows its organization team's name, description, members, and access policies as read-only, with a link to the organization team. You can add only users who are members of the workspace.
+You can add only users who are members of the workspace. The team's name, description, members, and access policies appear as read-only.
 
 ## Delete a team
 
 To delete a team, navigate to Organization **Settings** > **Teams**, click the delete icon on the team's row, and type the team name to confirm.
 
-Deleting a team deletes its workspace teams, members, workspace access, and access policy attachments.
+Deleting a team removes its members, workspace access, and access policies, including workspace-only members and policies.
 
 A role that a team uses in a workspace cannot be deleted. Change the team's role or remove its workspace access first.
 
 ## Sync team members from your identity provider
 
-Link an organization team to a group in your identity provider (IdP), and LangSmith sets the team's members from that group. Sync works with [SCIM](/langsmith/user-management#set-up-scim-for-your-organization) and [SSO Groups Sync](/langsmith/user-management#sso-groups-sync-alternative). Workspace teams cannot be synced.
+Link a team to a group in your identity provider (IdP), and LangSmith sets the team's members from that group. Sync works with [SCIM](/langsmith/user-management#set-up-scim-for-your-organization) and [SSO Groups Sync](/langsmith/user-management#sso-groups-sync-alternative). Workspace-only members are not synced.
 
 A group linked to a team does not need to follow the [`LS:` group naming convention](/langsmith/user-management#group-naming-convention). Each IdP group can be linked to only one team in the organization.
 
@@ -154,19 +135,19 @@ To sync a team:
 
 ## Permissions
 
-Each team action checks one permission. Organization teams use organization permissions. Workspace teams use workspace permissions in the team's workspace. `organization:manage` and `workspaces:manage` do not allow these actions.
+The minimum built-in role for each action:
 
-| Action | Organization team | Workspace team |
-|--------|-------------------|----------------|
-| View teams, members, and access policies | `organization:teams:read` | `workspaces:teams:read` |
-| Create, rename, or delete a team | `organization:teams:manage` | Not available |
-| Add or remove members | `organization:teams:manage-members` | `workspaces:teams:manage-members` |
-| Attach or detach access policies | `organization:teams:manage-policies` | `workspaces:teams:manage-policies` |
-| Give, change, or remove workspace access | `organization:teams:manage-grants` | Not available |
+| Action | Minimum built-in role |
+|--------|----------------------|
+| View teams, members, and access policies | [Organization Viewer](/langsmith/rbac#organization-viewer) |
+| Create, rename, or delete a team | [Organization Operator](/langsmith/rbac#organization-operator) |
+| Add or remove members | Organization Operator |
+| Give, change, or remove workspace access | Organization Operator |
+| Attach or detach access policies | Organization Operator |
+| View workspace-only members and policies | [Workspace Viewer](/langsmith/rbac#workspace-viewer) |
+| Add or remove workspace-only members and policies | [Workspace Admin](/langsmith/rbac#workspace-admin) |
 
-To let users manage workspace teams without the Workspace Admin role, add `workspaces:teams:read`, `workspaces:teams:manage-members`, and `workspaces:teams:manage-policies` to a [custom role](/langsmith/rbac#custom-roles). Attaching a policy in the UI also requires `organization:read`, which lists the organization's access policies.
-
-For the built-in roles that hold each permission, refer to [Teams](/langsmith/organization-workspace-operations#teams) and [Workspace teams](/langsmith/organization-workspace-operations#workspace-teams) in the operations reference.
+[Custom roles](/langsmith/rbac#custom-roles) can hold the `workspaces:teams:*` permissions. For the permission each action checks, refer to the [operations reference](/langsmith/organization-workspace-operations#teams).
 
 ## Manage teams with the API
 
