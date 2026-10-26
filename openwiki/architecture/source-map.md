@@ -52,14 +52,18 @@ sources:
     resource: repo://scripts/process_langsmith_openapi.py
   - id: openwiki-source-63d8ba810a7c0181c548a307
     resource: repo://scripts/refresh_integration_downloads.py
+  - id: openwiki-source-381b2039419503f4809ac2df
+    resource: repo://src/code-samples/deepagents/rag-deep.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
+  - id: openwiki-source-3e7f005be053311cf7eb12f1
+    resource: repo://src/snippets/code-samples/rag-deep-index-py.mdx
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-23T08:20:30.474Z
-generated: { by: "openwiki/0.4.3", at: "2026-10-23T08:20:30.474Z" }
+    at: 2026-10-26T08:26:41.390Z
+generated: { by: "openwiki/0.4.3", at: "2026-10-26T08:26:41.390Z" }
 ---
 
 This repository builds the Mintlify site at `docs.langchain.com`. It does **not** build the separately generated `reference.langchain.com` site. The essential maintenance boundary is durable input versus output: `src/` is the authored documentation tree, `src/docs.json` is the Mintlify site contract, and `build/` is disposable deployment output. Never edit `build/`.
@@ -129,7 +133,9 @@ Publication is separate from CI: a `main` push runs `make build`, verifies `buil
 
 ## Samples and integration metadata
 
-`src/code-samples/` is executable source, not a page collection. `make test-code-samples` runs it. `make code-snippets` extracts marked regions into the ignored `src/code-samples-generated/` intermediate and renders the committed display MDX under `src/snippets/code-samples/`. Edit and test the program, then regenerate; do not hand-edit either derived layer.
+`src/code-samples/` is executable source, not a page collection. `make test-code-samples` runs it. `make code-snippets` extracts marked regions into the ignored `src/code-samples-generated/` intermediate and renders the committed display MDX under `src/snippets/code-samples/`. The source is authoritative: for example, `rag-deep.py` marks the `rag-deep-index-py` region, whose rendered counterpart is `src/snippets/code-samples/rag-deep-index-py.mdx`. Edit and test the program, then regenerate; do not hand-edit either derived layer.
+
+Snippet markers intentionally separate runnable setup and assertions from documentation fragments. The extractor recognizes `:snippet-start:` / `:snippet-end:` and removes nested `:remove-start:` / `:remove-end:` regions before the MDX generator formats the extracted language file. The generator supports Python, TypeScript, Java, Kotlin, Go, and shell intermediates and writes the snippet id with the language suffix removed as the MDX filename. A missing closing removal marker is an extraction error, so repair the source markers rather than patching the rendered MDX.
 
 `packages.yml` is package metadata used by generated integration surfaces. Its provider and download metadata feeds the Python provider overview; CI regenerates that overview and rejects manual drift. The weekly package-download workflow refreshes download counts, regenerates the provider overview and integration download/featured snippets, optionally flags qualifying external integrations for hosted docs, and opens a PR only when tracked generated output changed.
 
@@ -150,9 +156,9 @@ The Monday integration-repository workflow runs the liveness checker with `--wri
 ## Related pages
 
 - [Build system](/openwiki/architecture/build-system.md)
+- [Preprocessing](/openwiki/concepts/preprocessing.md)
 - [Versioning](/openwiki/concepts/versioning.md)
 - [Mintlify](/openwiki/integrations/mintlify.md)
-- [Reference docs](/openwiki/integrations/reference-docs.md)
 - [Quickstart](/openwiki/quickstart.md)
+- [Code sample lifecycle](/openwiki/workflows/code-sample-lifecycle.md)
 - [Integration listing automation](/openwiki/workflows/integration-listing-automation.md)
-- [LangSmith OpenAPI refresh](/openwiki/workflows/langsmith-openapi-refresh.md)
