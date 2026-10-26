@@ -12,12 +12,14 @@ sources:
     resource: repo://src/docs.json
   - id: openwiki-source-243c6e17a513bece229a34b9
     resource: repo://src/language-toggle.js
+  - id: openwiki-source-838cde2da1a05c117501b824
+    resource: repo://src/oss/deepagents/async-subagents.mdx
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-23T08:20:30.474Z
-generated: { by: "openwiki/0.4.3", at: "2026-10-23T08:20:30.474Z" }
+    at: 2026-10-26T08:26:41.390Z
+generated: { by: "openwiki/0.4.3", at: "2026-10-26T08:26:41.390Z" }
 ---
 
 # Documentation Route and Language Versioning
@@ -70,7 +72,7 @@ Do not use `build_file()` as the route-shape check for language-owned OSS conten
 
 ## Conditional content and transforms
 
-Shared OSS normally renders once for each target. Use `:::python` and `:::js` for an SDK-specific unit of prose, imports, or examples. Put an entire page in `src/oss/python/` or `src/oss/javascript/` only when it belongs to one language; those directories are ownership boundaries, not menu controls.
+Shared OSS normally renders once for each target. Use `:::python` and `:::js` for an SDK-specific unit of prose, imports, or examples. For example, `src/oss/deepagents/async-subagents.mdx` is projected under Delegation in both Deep Agents tabs while its Python-only implementation details are fenced; a shared source is not evidence that both rendered variants contain identical prose. Put an entire page in `src/oss/python/` or `src/oss/javascript/` only when it belongs to one language; those directories are ownership boundaries, not menu controls.
 
 Conditional rendering recognizes only `:::python` and `:::js`. A matching closed block contributes its contents without fences; a closed supported block for the other language is removed. Escaped `\:::` markers become literal `:::`. Unsupported labels and unclosed blocks remain intact, and an invalid target raises `ValueError`.
 
@@ -111,7 +113,9 @@ Ordinary LangSmith content emits once below `/langsmith/` using Python preproces
 
 The full Managed Deep Agents pass discovers only direct `managed-deep-agents*.mdx` files. A matching `.md` file can be built through the targeted path but is absent from `build_all()`. Use a direct `.mdx` source for a page intended for the published full build.
 
-`docs.json` projects Managed Deep Agents into corresponding Python and TypeScript tabs: Get started, Agent capabilities (including Channels), and Build and deploy. It redirects current unversioned and selected historical Managed Deep Agents URLs to Python routes. No unversioned Managed Deep Agents artifact exists; Python is the compatibility default, not a replacement for the JavaScript variant.
+`docs.json` projects Managed Deep Agents into corresponding Python and TypeScript tabs with the same three groups: **Get started**, **Agent capabilities**, and **Build and deploy**. The current projection includes Identity under Agent capabilities and Custom frontend under Build and deploy in both tabs, alongside the nested Channels group. Their direct `src/langsmith/managed-deep-agents-identity.mdx` and `managed-deep-agents-custom-frontend.mdx` sources therefore produce both language routes and must remain represented in both navigation projections.
+
+Compatibility redirects send the unversioned Managed Deep Agents landing URL, earlier aliases, and the listed unversioned per-page URLs—including Identity and Custom frontend—to the corresponding Python route. No unversioned Managed Deep Agents artifact exists; Python is the compatibility default, not a replacement for the JavaScript variant. A redirect is a public-URL contract only: it does not cause the builder to emit a page or remove the JavaScript route.
 
 ## Change and verify safely
 
