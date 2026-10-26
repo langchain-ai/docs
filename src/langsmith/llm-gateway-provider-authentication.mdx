@@ -1,13 +1,18 @@
 ---
 title: Provider authentication
-description: Choose how the LLM Gateway authenticates to each model provider, add provider keys as workspace secrets, and debug provider credential errors.
+description: Choose how the LLM Gateway authenticates to each model provider, add provider keys as workspace secrets, and fix provider credential errors.
 ---
 
 import LLMGatewayBetaNote from '/snippets/langsmith/llm-gateway-beta-note.mdx';
 
 <LLMGatewayBetaNote />
 
-Provider authentication is the credential the [LLM Gateway](/langsmith/llm-gateway) uses to call a model provider on your behalf. Because LangSmith holds that credential, developers and agents never need a copy of a provider key. This is the second of two layers: callers first [authenticate to the gateway](/langsmith/llm-gateway-authentication) with a LangSmith API key, which this page does not cover.
+Provider authentication is the credential the [LLM Gateway](/langsmith/llm-gateway) uses to call a model provider on your behalf. Because LangSmith holds that credential, developers and agents never need a copy of a provider key.
+
+Each gateway request passes through two layers of authentication:
+
+- The caller [authenticates to the gateway](/langsmith/llm-gateway-authentication) with a LangSmith API key.
+- The gateway then authenticates to the provider with one of the credential sources discussed on this page.
 
 ## Choose a credential source
 
@@ -16,22 +21,20 @@ Each request uses one of these credential sources. Each source has a different b
 | Source | Who holds the credential | Who bills the call | Set up |
 | --- | --- | --- | --- |
 | Your provider key | LangSmith, as a workspace secret | The provider, on your account | [Add a provider key](#add-a-provider-key) |
-| [Gateway Credits](/langsmith/llm-gateway-credits) | LangChain | LangSmith, on your LangSmith account | No provider credential |
 | [Model configuration](/langsmith/llm-gateway-model-configurations) (`custom/<name>`) | LangSmith, as the secret the configuration names | The provider, on your account | Create the configuration |
+| [Gateway Credits](/langsmith/llm-gateway-credits) | LangChain | LangSmith, on your LangSmith account | No provider credential |
 | [Claude subscription](/langsmith/llm-gateway-coding-agents#use-claude-subscription-oauth) | The user's Claude Code login, sent with each request | Anthropic, on the user's subscription | Claude Code only |
 
 The gateway picks the source from the request:
 
-- **Model ID**: a Gateway Credits slug uses Gateway Credits. A `<provider>/<model>` ID uses your provider key for that provider. A `custom/<name>` ID uses the configuration's secret.
+- **Model ID**: a `<provider>/<model>` ID, such as `anthropic/claude-opus-5`, uses your provider key for that provider. A `custom/<name>` ID uses the configuration's secret. A hosted model ID listed on [Gateway Credits](/langsmith/llm-gateway-credits#available-models), such as `moonshotai/kimi-k3`, uses Gateway Credits.
 - **Claude subscription**: when a request carries an Anthropic OAuth token, the gateway forwards it to Anthropic and does not load the workspace's `ANTHROPIC_API_KEY`.
-
-[Spend limits](/langsmith/llm-gateway-spend-policies) do not apply to Claude subscription calls, and these calls are left out of spend totals. Rate limit, model access, and data policies still apply.
-
-Gateway policies hold only while every call goes through the gateway. A developer who has a provider key can call the provider directly and bypass them, so keep provider keys in LangSmith and out of developer environments.
 
 ## Add a provider key
 
 The gateway reads provider keys from the secrets of the workspace that the caller's API key belongs to. Each workspace that calls a provider needs its own copy of that provider's key. For `<provider>/<model>` calls, the gateway does not fall back to organization secrets. Organization secrets apply only to [organization-scoped model configurations](/langsmith/llm-gateway-model-configurations).
+
+Adding a provider key requires the [Workspace Admin](/langsmith/rbac#workspace-admin) role.
 
 To add a provider key:
 
@@ -42,7 +45,7 @@ To add a provider key:
 
 If a workspace has no key for a provider, the Simulator marks that provider's models **Needs key** and prompts for one before it runs a request.
 
-{/* VERIFY X9: which roles can add provider secrets. Test: as a user without admin rights, try to save a bogus secret value. */}
+{/* VERIFY X9: the Workspace Admin requirement above is expected, not confirmed. Test: as a user without admin rights, try to save a bogus secret value. */}
 {/* VERIFY W4: the Simulator's Needs key prompt saves a workspace secret (very likely, per X11). Test with a bogus value in a workspace with no secrets. */}
 
 The gateway reads these secret names:
@@ -114,16 +117,17 @@ A `chat.completion` response confirms the setup. For other Cloud regions, replac
 
 If Azure returns `PermissionDenied`, confirm that the `Foundry User` role is assigned on the Foundry resource, not a project. A new role assignment can take [up to 10 minutes](https://learn.microsoft.com/en-us/azure/role-based-access-control/troubleshooting#symptom---role-assignment-changes-are-not-being-detected) to take effect.
 
-## Debug provider credentials
+## Fix provider credential errors
 
-The gateway passes provider errors through to the caller, so most credential problems show up as the provider's own error. To narrow one down:
+The gateway passes provider errors through to the caller, so most credential problems show up as the provider's own error. To see which providers the caller's workspace can reach, call [`GET /v1/models`](/langsmith/llm-gateway-api-formats#list-models). It lists `<provider>/<model>` IDs only for providers that have a key in that workspace.
 
-- **Check which providers the workspace can reach.** [`GET /v1/models`](/langsmith/llm-gateway-api-formats#list-models) lists `<provider>/<model>` IDs only for providers that have a key in the caller's workspace.
-- **A `424` naming a secret**, such as `Required workspace secret "XAI_API_KEY" is missing.`, means the workspace has no key for that provider. Add it to the workspace the caller's API key belongs to.
-- **An error that shows a masked provider key**, such as OpenAI's `Incorrect API key provided: sk-...`, means the stored key is invalid or revoked. Replace the secret.
-- **Anthropic's `invalid x-api-key`** means either the stored Anthropic key is invalid, or the client sent the request straight to Anthropic without the gateway base URL. If the base URL points at the gateway, replace the stored key.
+| Status and response | Cause | Fix |
+| --- | --- | --- |
+| `424` with `Required workspace secret "<SECRET_NAME>" is missing.` | The workspace that the caller's API key belongs to has no key for the provider in the model ID. | [Add the provider key](#add-a-provider-key) to that workspace, or use an API key from a workspace that has one. |
+| An error from the provider that shows a masked key, such as OpenAI's `Incorrect API key provided: sk-...` | The provider key stored in LangSmith is invalid or revoked. | Replace the stored provider key. |
+| Anthropic's `invalid x-api-key`, with the client's base URL set to the gateway | The stored Anthropic key is invalid or revoked. | Replace the stored `ANTHROPIC_API_KEY`. |
 
-For errors from the caller's LangSmith API key, such as `401` and `403`, see [Fix authentication errors](/langsmith/llm-gateway-authentication#fix-authentication-errors).
+For errors from the caller's LangSmith API key, such as `401` and `403`, or an `invalid x-api-key` from a client that bypasses the gateway, see [Fix authentication errors](/langsmith/llm-gateway-authentication#fix-authentication-errors).
 
 ## See also
 
