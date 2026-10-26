@@ -1,16 +1,20 @@
 ---
 title: Connect Engine to your repository
 sidebarTitle: Connect your repository
-description: Connect your agent's code repository to LangSmith Engine so it can read your source code when investigating issues and propose fixes as pull requests.
+description: Connect your agent's GitHub repositories or GitLab projects to LangSmith Engine so it can read your source code when investigating issues and propose fixes as pull or merge requests.
 ---
 
-Connecting your agent's code repository lets [LangSmith Engine](/langsmith/engine) read your source code when investigating traces, and propose fixes as pull requests. A connection is optional for trace analysis. For what Engine gains from source access and the permissions it uses, see [Why connect GitHub](/langsmith/engine#why-connect-github).
+Connecting your agent's code repository lets [LangSmith Engine](/langsmith/engine) read your source code when investigating traces, and propose fixes as pull requests on GitHub or merge requests on GitLab. A connection is optional for trace analysis. For what Engine gains from source access and the permissions it uses, see [Why connect a repository](/langsmith/engine#why-connect-a-repository).
 
-Engine connects to repositories on GitHub:
+Engine connects to repositories on GitHub and to projects on GitLab. One Engine project can use both.
+
+For GitHub:
 
 - **LangSmith Cloud**: Use the LangChain-managed GitHub App on GitHub.com. Start with [Connect GitHub repositories](#connect-repositories).
 - **Self-hosted LangSmith**: An operator first completes [GitHub configuration for self-hosted](/langsmith/engine-self-hosted-github) for your GitHub instance. Then, workspace users follow the same repository connection steps below.
 - **BYOC**: An Organization Admin first registers a GitHub App and saves it in the LangSmith UI. See [Configure the App on BYOC](/langsmith/engine-self-hosted-github#configure-the-app-on-byoc). Then, workspace users follow the same repository connection steps below.
+
+For GitLab, a workspace admin connects a GitLab account's access token in workspace settings. The steps are the same on LangSmith Cloud, self-hosted LangSmith, and BYOC. Start with [Connect GitLab](#connect-gitlab).
 
 ## GitHub
 
@@ -28,7 +32,7 @@ On GitHub, you need permission to install the App on the repositories you want t
 For Enterprise Managed Users, connect organization-owned repositories. GitHub does not allow this App to be installed on a managed user's personal account. See [Enterprise Managed Users](/langsmith/engine-self-hosted-github#enterprise-managed-users) for the requirements on GitHub.com and `ghe.com`.
 </Note>
 
-For fixes, the repository must permit Engine's branches and draft PRs. Review [Repository policies](#repository-policies) before testing a fix.
+For fixes, the repository must permit Engine's branches and PRs. Review [Repository policies](#repository-policies) before testing a fix.
 
 To connect repositories to an existing Engine project:
 
@@ -48,7 +52,7 @@ For each connected repository:
 - **Branch**: Select the branch Engine should read and use as the base for fixes. Leave it blank to use the repository's default branch.
 - **Subfolder**: Optionally focus Engine on the part of the repository that contains your agent. This setting does not restrict the GitHub App's repository access.
 
-Engine creates fix branches in the connected repository and opens draft pull requests against the selected base branch. Review and merge those pull requests through your usual GitHub process. Engine does not merge them for you.
+Engine creates fix branches in the connected repository and opens pull requests against the selected base branch. In LangSmith v0.17, pull requests open as drafts. Review and merge those pull requests through your usual GitHub process. Engine does not merge them for you.
 
 #### Connect another organization or account
 
@@ -71,14 +75,14 @@ Use a test repository and an Engine project with representative traces. On self-
 To verify the connection:
 
 1. Run an Engine analysis and confirm it can use the repository's source code.
-2. Generate a fix for an issue, inspect its diff, and click **Open PR**. Confirm that **View PR** opens a draft PR on the expected GitHub instance, repository, and base branch.
+2. Generate a fix for an issue, inspect its diff, and click **Open PR**. Confirm that **View PR** opens a PR on the expected GitHub instance, repository, and base branch.
 3. Review and merge the test PR. Confirm the corresponding Engine issue becomes complete.
 
-To create PRs automatically, enable **Open a draft pull request for every fix** in **Code repository** settings.
+To create PRs automatically, enable **Open a pull request for every fix** in **Code repository** settings. In LangSmith v0.17, this setting is labeled **Open a draft pull request for every fix**.
 
 #### Repository policies
 
-Repositories must support draft PRs and allow Engine to push fix branches. Engine does not use a fork-based contribution workflow.
+Repositories must allow Engine to push fix branches. In LangSmith v0.17, they must also support draft PRs. Engine does not use a fork-based contribution workflow.
 
 Engine's Git commits are unsigned. Rules that require signed commits on the fix branch can reject pushes. Branch-name rules, push restrictions, and GHES pre-receive hooks can also reject a fix. In LangSmith v0.17, fix branches use the `issues-agent/` prefix.
 
@@ -98,6 +102,150 @@ Engine does not fetch Git LFS file contents or initialize Git submodules.
 | Authorization succeeds, but the repository cannot be read | Check the App's repository access. On self-hosted LangSmith, also ask your operator to check [GitHub API and sandbox network access](/langsmith/engine-self-hosted-github#allow-network-access). Browser sign-in does not test those connections. |
 | A fix cannot be pushed | Check rules that apply to the new fix branch, including signed-commit requirements, branch restrictions, and pre-receive hooks. See [Repository policies](#repository-policies). |
 
+## GitLab
+
+Engine connects to GitLab with one access token per workspace. The token belongs to a GitLab account, usually a service account, and that account's group and project memberships decide which projects Engine can read, push fix branches to, and open merge requests in. GitLab uses no App: you prepare the account in GitLab, then save its token in LangSmith.
+
+These steps apply to LangSmith Cloud, self-hosted LangSmith, and BYOC.
+
+<Note>
+On self-hosted LangSmith, GitLab requires LangSmith Helm chart version `TODO` or later. An operator also confirms [network access to GitLab](/langsmith/engine-self-hosted-gitlab) before you connect.
+</Note>
+
+{/* TODO: replace `TODO` with the first v0.17 Helm chart release that includes the GitLab backport (langchainplus#53575). */}
+
+### Connect GitLab
+
+Connecting GitLab requires the [Workspace Admin](/langsmith/rbac#workspace-admin) role, or a custom role with the `workspaces:manage` permission. Other workspace members can view the connection and add the projects it reaches to Engine projects.
+
+Your GitLab instance must meet these requirements:
+
+- **Version**: GitLab.com, or a self-managed instance running GitLab 16.10 or later. LangSmith renews the token with GitLab's token self-rotation API, which earlier versions do not have.
+- **URL**: HTTPS on port 443, with no path. GitLab installed under a relative URL root, such as `https://example.com/gitlab`, is not supported.
+- **Network access**: LangSmith must reach the instance, and the instance must deliver webhooks to LangSmith. LangSmith Cloud reaches GitLab over the internet, and refuses GitLab URLs that resolve to private IP addresses. For self-hosted LangSmith and BYOC, see [Configure GitLab for Engine on self-hosted and BYOC](/langsmith/engine-self-hosted-gitlab).
+
+#### Prepare a service account
+
+To prepare the account that Engine acts as:
+
+1. Create a [GitLab service account](https://docs.gitlab.com/user/profile/service_accounts/) for LangSmith. On GitLab.com, a top-level group Owner creates it under the group's **Settings** > **Service accounts**. On GitLab Self-Managed, an administrator creates it by default. Service accounts are available on all GitLab tiers from GitLab 18.11. On earlier Free-tier instances, use a dedicated user account instead.
+2. Add the account to the groups or projects Engine should work in, with the **Maintainer** role. **Developer** is the minimum role, but with it LangSmith cannot register the [merge request webhook](#complete-issues-on-merge), so merging a fix does not complete its issue. Before choosing a role, review [Project policies](#project-policies).
+3. Create a personal access token for the account with the `api` scope. For a service account, a group Owner or administrator creates the token from the **Service accounts** page.
+
+Use the token only for LangSmith. When you save it, LangSmith rotates it, and the value you pasted stops working.
+
+#### Save the connection
+
+To connect GitLab:
+
+1. In LangSmith, go to **Settings** > **Integrations** > **GitLab**.
+2. In **GitLab URL**, enter `https://gitlab.com` or the HTTPS URL of your instance.
+3. In **Access token**, paste the token.
+4. Click **Connect GitLab**.
+
+LangSmith checks the token with GitLab, then rotates it, so that LangSmith holds the only working copy. The page shows the instance and when the token renews. Under **Connection health**, it shows the GitLab version, the token's status, scopes, and expiry, the **Webhook URL**, and the **Last webhook delivery**.
+
+Each workspace has one GitLab connection, to one GitLab instance.
+
+#### Manage the access token
+
+LangSmith stores the token encrypted and manages its lifetime:
+
+- **Renewal**: LangSmith rotates the token halfway through its lifetime. Each rotation requests a one-year token. If the instance sets a shorter maximum lifetime, LangSmith uses the longest of 180, 90, 60, 30, 14, 7, or 2 days that the instance accepts. An instance that limits tokens to one day cannot be connected.
+- **Edit connection**: To replace the token or switch instances, click **Edit connection**, enter the new values, and click **Save connection**. LangSmith revokes the replaced token. After a switch, the GitLab paths in your Engine projects refer to projects on the new instance, and fixes opened on the previous instance are hidden until you switch back.
+- **Disconnect**: Click **Disconnect** to revoke the token. Engine loses access to GitLab projects immediately, including runs in progress. LangSmith's webhooks stay on your projects and work again when you reconnect, but merge requests merged in between do not complete their issues.
+
+Deleting a workspace deletes its GitLab connection without revoking the token. The token expires on its own, or you can revoke it in GitLab.
+
+### Add GitLab projects
+
+Once a workspace admin connects GitLab, any user who can configure Engine in a tracing project can add the projects that the GitLab account can reach.
+
+To add GitLab projects to an Engine project:
+
+1. Open the tracing project or agent environment. In its **Engine** tab, select **Configure Engine**.
+2. Under **Code repository**, search the repository picker by project name or path. GitLab projects are listed under a **GitLab** heading, next to any GitHub repositories. The picker shows the first 20 matching GitLab projects, so refine the search to find others.
+3. Select a project. Engine adds it to the Engine project.
+4. (Optional) Set the project's **Branch** and **Subfolder**. See [Choose the branch and subfolder](#choose-the-branch-and-subfolder).
+5. Repeat for additional projects.
+
+You can also add projects while first setting up Engine, under **Connect your agent's code repository**.
+
+If a project is missing from the picker, add the GitLab account to it with at least the **Developer** role. Until a workspace admin connects GitLab, the picker shows **Connect GitLab** to workspace admins and **Ask a workspace admin to connect GitLab.** to other users.
+
+An Engine project can track GitHub repositories and GitLab projects together. Each path can be tracked from only one host per Engine project. To track a GitLab project with the same path as a tracked GitHub repository, remove the GitHub repository first.
+
+#### Open merge requests
+
+On GitLab, Engine handles fixes the same way it does on GitHub, with merge requests in place of pull requests. Fix controls keep their names, such as **Open PR** and **View PR**.
+
+- **Fix branches**: Engine pushes each fix to a new `langsmith-engine/<id>` branch in the project. In LangSmith v0.17, fix branches use the `issues-agent/` prefix.
+- **Author**: Commits and merge requests are authored by the connected GitLab account, with its GitLab noreply email address.
+- **Merge requests**: Click **Open PR** on an issue to open a merge request against the project's selected branch, or its default branch. Merge requests open ready for review, so pipelines that skip draft merge requests still run. In LangSmith v0.17, they open as drafts.
+- **Automatic merge requests**: **Open a pull request for every fix** in **Code repository** settings also applies to GitLab projects. In LangSmith v0.17, this setting is labeled **Open a draft pull request for every fix**.
+
+Review and merge Engine's merge requests through your usual GitLab process. Engine does not merge them for you.
+
+#### Complete issues on merge
+
+LangSmith registers one merge request webhook on each GitLab project your Engine projects track. When a merge request with an Engine fix merges, the webhook completes the fix's issue. When one closes without merging, Engine records the closure. Registering the webhook requires the **Maintainer** role on the project.
+
+LangSmith creates or repairs the webhook after you connect GitLab, when you add a project, and each time Engine opens a merge request. After you fix what prevents registration, no other step is needed.
+
+If the webhook cannot work, the project's row under **Code repository** shows **Merges in \<project\> won't resolve issues**. Hover the warning icon to see the reason. Engine still reads the project's code and opens merge requests in it.
+
+GitLab delivers the webhook to the **Webhook URL** shown under **Connection health**, so your instance must be able to reach that URL. On self-hosted LangSmith, see [Allow network access](/langsmith/engine-self-hosted-gitlab#allow-network-access).
+
+#### Verify the GitLab connection
+
+Use a test project and an Engine project with representative traces.
+
+To verify the connection:
+
+1. Under **Settings** > **Integrations** > **GitLab**, confirm that **Token status** shows **Accepted by GitLab**.
+2. Add the test project and confirm that its row under **Code repository** shows no warning.
+3. Run an Engine analysis and confirm it can use the project's source code.
+4. Generate a fix for an issue, inspect its diff, and click **Open PR**. Confirm that **View PR** opens a merge request on the expected GitLab instance, project, and target branch.
+5. Review and merge the test merge request. Confirm that the Engine issue becomes complete and that **Last webhook delivery** updates.
+
+#### Project policies
+
+Engine pushes only its own fix branches, but GitLab does not limit the token to them. The account's role and your branch protection decide what the token can change:
+
+- **Developer**: GitLab's default branch protection prevents Developers from pushing to or merging into the default branch. LangSmith cannot register the merge request webhook.
+- **Maintainer**: LangSmith can register the merge request webhook. Maintainers can push to and merge into protected branches that allow Maintainers, which includes the default branch under GitLab's default protection settings.
+
+Add the account only to the projects Engine needs, and protect branches that Engine should not change. Keep your normal review and merge requirements on the target branch.
+
+Push rules can reject Engine's pushes, for example rules that require signed commits, restrict branch names, or check commit author email addresses. As on GitHub, Engine's commits are unsigned, and Engine does not use forks, fetch Git LFS file contents, or initialize Git submodules.
+
+#### GitLab limits
+
+These Engine features are not available for GitLab projects:
+
+- **Fix validation**: [Validating fixes with preview deployments](/langsmith/engine-fix-validation) requires a GitHub repository.
+- **Red Teaming**: [Red Teaming](/langsmith/engine-red-teaming) runs do not clone private GitLab projects. Red Teaming uses read-only repository credentials, and a GitLab access token cannot be limited to read access.
+- **Merge requests opened by other tools**: Engine does not link merge requests opened outside Engine, including by a [coding agent mentioned in Slack](/langsmith/engine-notifications#mention-a-coding-agent).
+- **Linear**: Engine does not track merge requests linked to a [Linear issue](/langsmith/engine-issues#create-a-linear-issue).
+
+#### Troubleshoot GitLab
+
+| Symptom | What to check |
+| --- | --- |
+| **GitLab** does not appear under **Settings** > **Integrations** | Engine must be available to your organization. Personal organizations cannot use Engine. On self-hosted LangSmith, confirm that your Helm chart version supports GitLab and that Engine is enabled. |
+| Connecting fails with "GitLab rejected the access token" | The token is wrong, expired, or revoked. Create a new token. |
+| Connecting fails with "the access token needs the api scope" | Create a token with the `api` scope. |
+| Connecting fails with "LangSmith needs GitLab 16.10 or later" | Upgrade the GitLab instance. |
+| Connecting fails with "Could not reach GitLab" | Check the URL. On LangSmith Cloud, the instance must be reachable from the internet over HTTPS on port 443, at a public IP address. On self-hosted LangSmith, ask your operator to check [network access](/langsmith/engine-self-hosted-gitlab#allow-network-access). |
+| Connecting fails with "the GitLab connection could not be saved" | GitLab rotated the token, but LangSmith could not store the new one, so the token you pasted no longer works. Create a new token and connect again. |
+| The GitLab settings page shows **GitLab rejected the access token** | The token was revoked or expired, or a renewal did not complete. Create a new token, click **Edit connection**, and save it. |
+| The GitLab settings page shows **Token renewal failed** | GitLab refused a scheduled renewal. The banner shows GitLab's reason. The current token keeps working until it expires, and LangSmith retries the renewal. |
+| A project is missing from the picker | Check that the GitLab account has at least the **Developer** role on the project, and refine the search if the picker shows its first 20 matches. |
+| A project row shows **Engine can't access \<project\>** | Give the GitLab account at least the **Developer** role on the project. Engine runs skip the project until then. |
+| A project row shows **Merges in \<project\> won't resolve issues** | Hover the warning icon for the reason, such as a missing **Maintainer** role, merge request events turned off, or GitLab unable to reach the **Webhook URL**. If GitLab disabled the webhook after failed deliveries, re-enable it in the project's webhook settings. See [Complete issues on merge](#complete-issues-on-merge). |
+| Engine settings show **Engine can't access GitLab** | The workspace's GitLab connection has a problem. Click **Open GitLab settings** to see it. |
+| A fix cannot be pushed | Check branch protection and push rules for the new fix branch. See [Project policies](#project-policies). |
+
 <a id="self-hosted"></a>
 <a id="self-hosted-configuration"></a>
 
@@ -105,15 +253,20 @@ Engine does not fetch Git LFS file contents or initialize Git submodules.
 
 On self-hosted LangSmith, an operator registers a GitHub App and configures LangSmith before anyone can connect repositories. See [Configure GitHub for Engine on self-hosted](/langsmith/engine-self-hosted-github).
 
+GitLab needs no deployment configuration. An operator confirms that LangSmith and GitLab can reach each other, then a workspace admin [connects GitLab](#connect-gitlab). See [Configure GitLab for Engine on self-hosted and BYOC](/langsmith/engine-self-hosted-gitlab).
+
 <a id="byoc"></a>
 
 ## BYOC
 
 On a BYOC data plane, an Organization Admin registers a GitHub App and saves its credentials from an Engine project in the LangSmith UI before anyone can connect repositories. See [Configure the App on BYOC](/langsmith/engine-self-hosted-github#configure-the-app-on-byoc).
 
+GitLab needs no data plane configuration. A workspace admin [connects GitLab](#connect-gitlab) the same way as on LangSmith Cloud. See [Connect GitLab on BYOC](/langsmith/engine-self-hosted-gitlab#connect-gitlab-on-byoc).
+
 ## See also
 
 - [Set up Engine](/langsmith/engine-setup): Turn on Engine for a tracing project and select its repositories.
-- [Why connect GitHub](/langsmith/engine#why-connect-github): What Engine gains from source access, and the permissions it uses.
+- [Why connect a repository](/langsmith/engine#why-connect-a-repository): What Engine gains from source access, and the permissions it uses.
 - [Configure GitHub for Engine on self-hosted and BYOC](/langsmith/engine-self-hosted-github): Register and configure the GitHub App on self-hosted LangSmith or a BYOC data plane.
+- [Configure GitLab for Engine on self-hosted and BYOC](/langsmith/engine-self-hosted-gitlab): Prepare network access and certificate trust for GitLab on self-hosted LangSmith or a BYOC data plane.
 - [Engine security](/langsmith/engine-security): How Engine handles your data and repository access.
