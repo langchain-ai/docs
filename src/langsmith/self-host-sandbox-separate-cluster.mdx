@@ -426,6 +426,17 @@ kubectl --context <sandbox-context> -n langsmith-sandbox get pods
 
 Then run the sandbox smoke test in [Verify the installation](/langsmith/enable-self-hosted-sandboxes#verify-the-installation). If creating a sandbox fails with `NoSandboxHostsAvailable`, the control plane has no ready hosts. Check that the sandbox nodes reach `platform.endpoint`, which the hosts use to register, and the other paths in [Configure the network](#configure-the-network).
 
+The same error appears when the two releases hold different service-auth secrets: LangSmith and the sandbox hosts then reject each other's calls. Compare the two values by checksum, without printing them:
+
+```bash
+kubectl --context <langsmith-context> -n <langsmith-namespace> get secret <langsmith-app-secret> \
+  -o jsonpath='{.data.<service-auth-key>}' | base64 -d | openssl dgst -sha256
+kubectl --context <sandbox-context> -n langsmith-sandbox get secret langsmith-sandbox-runtime \
+  -o jsonpath='{.data.sandbox_service_auth_secret}' | base64 -d | openssl dgst -sha256
+```
+
+`<langsmith-app-secret>` is the chart-managed Secret (`langsmith-secrets` for a release named `langsmith`) or your `config.existingSecretName`, and `<service-auth-key>` is `sandbox_service_auth_secret` or the key that `sandboxes.serviceAuth.secretKey` names. The two checksums must match. After you correct a value, restart the Deployments that read it on that side, because Kubernetes does not restart pods when Secret data changes. The previous-secret settings only cover a planned [rotation](#rotate-the-service-auth-secret), not values that drift apart.
+
 ## Run one runtime per installation
 
 Run exactly one `langsmith-sandbox` release for each LangSmith installation, and only while the `langsmith` release uses `sandboxes.deploymentMode: separateCluster`. Two runtimes that report to one installation, including an embedded `sameCluster` runtime and a `langsmith-sandbox` release, merge into one host pool and stop each other's Sandboxes. Running Sandboxes in more than one cluster for the same installation is not supported.
