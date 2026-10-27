@@ -9,7 +9,7 @@ The Model Context Protocol (MCP) is an open protocol for describing tools and da
 
 The MCP endpoint is available at `/mcp` on [Agent Server](/langsmith/agent-server).
 
-Agent Server supports MCP protocol revisions `2024-11-05` through `2026-07-28`. On `2026-07-28`, each request carries its own protocol metadata, so clients connect without an `initialize` handshake. When an agent pauses for input, Agent Server asks the client for it. For more information, see [Human-in-the-loop over MCP](/langsmith/server-mcp-elicitation).
+Agent Server supports MCP protocol revisions `2024-11-05` through `2026-07-28`. Clients on revisions up to `2025-11-25` start with an `initialize` handshake. On `2026-07-28`, each request carries its own protocol metadata, so clients connect without a handshake. When an agent pauses for input, Agent Server asks the client for it. For more information, see [Human-in-the-loop over MCP](/langsmith/server-mcp-elicitation).
 
 Managed Deep Agents deployments run on Agent Server, so they expose the same `/mcp` endpoint. For Managed Deep Agents URL discovery and identity headers, see [Connect MCP clients to a managed deep agent](/langsmith/managed-deep-agents-mcp-endpoint).
 
@@ -177,9 +177,11 @@ Use an MCP-compliant client to connect to the Agent Server. The following exampl
 When deployed, your agent will appear as a tool in the MCP endpoint
 with this configuration:
 
-* **Tool name**: The agent's name.
-* **Tool description**: The agent's description.
+* **Tool name**: The agent's name, with each run of whitespace replaced by `_` and other characters that MCP does not allow in tool names removed.
+* **Tool title**: The agent's name.
+* **Tool description**: The agent's description, or `Tool based on the <name> assistant` when the agent has none.
 * **Tool input schema**: The agent's input schema.
+* **Tool annotations**: `readOnlyHint`, `destructiveHint`, and `idempotentHint` are `false`, and `openWorldHint` is `true`.
 
 The tool returns the agent's final output as JSON text. When a run fails, the result is an error whose text gives the exception type and message, separated by a colon.
 
@@ -285,13 +287,13 @@ _This can also be done by [rebuilding your graph at runtime](/langsmith/graph-re
 
 ## Session behavior
 
-The MCP endpoint does not use sessions. Each `/mcp` request is independent. A tool call that pauses for input keeps its state on the server between requests, linked by `requestState`. For more information, see [Human-in-the-loop over MCP](/langsmith/server-mcp-elicitation).
+The MCP endpoint does not use sessions. Each `/mcp` request is independent, and Agent Server answers it with JSON, not an event stream. The endpoint accepts only `POST` requests. A tool call that pauses for input keeps its state on the server between requests, linked by `requestState`. For more information, see [Human-in-the-loop over MCP](/langsmith/server-mcp-elicitation).
 
 ## Authentication
 
 The `/mcp` endpoint uses the same authentication as the rest of the LangGraph API. Refer to the [authentication guide](/langsmith/auth) for setup details.
 
-Requests on protocol revision `2026-07-28` that include an `Origin` header, such as requests from a browser, must come from an allowed origin. Agent Server reads the allowed origins from `allow_origins` or `allow_origin_regex` in the [`http.cors` configuration](/langsmith/cli#customizing-http-middleware-and-headers), or from the `CORS_ALLOW_ORIGINS` environment variable. A wildcard (`*`) does not allow any origin on this endpoint. Agent Server rejects a request from any other origin with HTTP 403.
+Requests that include an `Origin` header, such as requests from a browser, must come from an allowed origin. Agent Server reads the allowed origins from `allow_origins` or `allow_origin_regex` in the [`http.cors` configuration](/langsmith/cli#customizing-http-middleware-and-headers), or from the `CORS_ALLOW_ORIGINS` environment variable. A wildcard (`*`) does not allow any origin on this endpoint. Origins on `localhost`, `127.0.0.1`, and `[::1]` are always allowed. Agent Server rejects a request from any other origin with HTTP 403.
 
 ## Disable MCP
 
