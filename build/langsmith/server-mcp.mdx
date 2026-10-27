@@ -9,6 +9,12 @@ The Model Context Protocol (MCP) is an open protocol for describing tools and da
 
 The MCP endpoint is available at `/mcp` on [Agent Server](/langsmith/agent-server).
 
+Agent Server supports MCP protocol revisions `2024-11-05` through `2026-07-28`. Clients on revisions up to `2025-11-25` start with an `initialize` handshake. On `2026-07-28`, each request carries its own protocol metadata, in `_meta` and in the `MCP-Protocol-Version` header, so clients connect without a handshake. When an agent pauses for input, Agent Server asks a client that supports elicitation for it. For more information, see [Human-in-the-loop over MCP](/langsmith/server-mcp-elicitation).
+
+<Note>
+The protocol revisions, tool fields, result format, session behavior, and `Origin` check described on this page require `langgraph-api>=0.18.0`.
+</Note>
+
 Managed Deep Agents deployments run on Agent Server, so they expose the same `/mcp` endpoint. For Managed Deep Agents URL discovery and identity headers, see [Connect MCP clients to a managed deep agent](/langsmith/python/managed-deep-agents-mcp-endpoint).
 
 You can set up [custom authentication middleware](/langsmith/custom-auth) to authenticate a user with an MCP server to get access to user-scoped tools within your LangSmith deployment.
@@ -67,6 +73,8 @@ pip install "langgraph-api>=0.2.3" "langgraph-sdk>=0.1.61"
 uv add "langgraph-api>=0.2.3" "langgraph-sdk>=0.1.61"
 ```
 </CodeGroup>
+
+In `langgraph-api` 0.18.0 or later, the endpoint also needs the `mcp` package in the version range that `langgraph-api` requires. Installing `langgraph-api` provides it. If your dependencies pin another version of `mcp`, Agent Server starts without the endpoint and logs `MCP endpoint disabled: the installed MCP SDK is not supported`. The `/info` response then reports `"mcp": false` under `flags`.
 
 ## Usage overview
 
@@ -175,9 +183,17 @@ Use an MCP-compliant client to connect to the Agent Server. The following exampl
 When deployed, your agent will appear as a tool in the MCP endpoint
 with this configuration:
 
-* **Tool name**: The agent's name.
-* **Tool description**: The agent's description.
+* **Tool name**: The agent's name. Agent Server trims it and replaces each run of whitespace with `_`. It also removes characters that MCP does not allow in tool names and cuts the name to 128 characters.
+* **Tool title**: The agent's name.
+* **Tool description**: The agent's description, or `Tool based on the <name> assistant` when the agent has none.
 * **Tool input schema**: The agent's input schema.
+* **Tool annotations**: `readOnlyHint`, `destructiveHint`, and `idempotentHint` are `false`, and `openWorldHint` is `true`.
+
+An agent whose input schema cannot be generated is left out of the tool list.
+
+The tool returns the agent's final output as JSON text. When a run fails, the result is an error whose text gives the exception type and message, separated by a colon.
+
+To set the agent's [runtime context](/oss/python/langgraph/graph-api#runtime-context), add a `context` object to the `tools/call` parameters, next to `arguments`.
 
 ### Setting name and description
 
@@ -281,11 +297,13 @@ _This can also be done by [rebuilding your graph at runtime](/langsmith/graph-re
 
 ## Session behavior
 
-The current LangGraph MCP implementation does not support sessions. Each `/mcp` request is stateless and independent.
+The MCP endpoint does not use sessions. Each `/mcp` request is independent, and Agent Server answers it with JSON, not an event stream. The endpoint accepts only `POST` requests. A tool call that pauses for input keeps its state on the server between requests, linked by `requestState`. For more information, see [Human-in-the-loop over MCP](/langsmith/server-mcp-elicitation).
 
 ## Authentication
 
 The `/mcp` endpoint uses the same authentication as the rest of the LangGraph API. Refer to the [authentication guide](/langsmith/auth) for setup details.
+
+Requests that include an `Origin` header, such as requests from a browser, must come from an allowed origin. Agent Server reads the allowed origins from `allow_origins` or `allow_origin_regex` in the [`http.cors` configuration](/langsmith/cli#customizing-http-middleware-and-headers), or from the `CORS_ALLOW_ORIGINS` environment variable. A wildcard (`*`) does not allow any origin on this endpoint. Agent Server always allows origins on `localhost`, `127.0.0.1`, and `[::1]`, and rejects a request from any other origin with HTTP 403.
 
 ## Disable MCP
 
@@ -301,6 +319,8 @@ To disable the MCP endpoint, set `disable_mcp` to `true` in your `langgraph.json
 ```
 
 This will prevent the server from exposing the `/mcp` endpoint.
+
+The endpoint runs each tool call through the runs API. When `disable_runs` is `true`, every tool call fails with JSON-RPC error `-32602`.
 
 ---
 
