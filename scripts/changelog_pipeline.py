@@ -122,6 +122,7 @@ internal: no customer could notice:
 - Infrastructure, scaling, or performance work with no visible effect.
 - Dependency bumps that fix nothing a customer could see.
 - Scaffolding for a feature no customer can reach yet.
+- Removing an endpoint, setting, or feature that never shipped to customers.
 
 Decide from the diff, not the title. Titles often overstate or understate a change.
 
@@ -242,6 +243,11 @@ LEAK_RE = re.compile(
     r"|\b(staging|prod) control planes?\b",  # LangChain's own environments
     re.IGNORECASE,
 )
+# Case-sensitive: frontend code names, such as useDataGrid and DataGridV2.
+COMPONENT_RE = re.compile(r"\buse[A-Z][A-Za-z]+\b|\b[A-Z][a-z]+(?:[A-Z][a-z]+)+V\d+\b")
+# How Cloud is run, not what its customers see. Cloud and Fleet only: the self-hosted
+# changelog can name the operator's reconciler.
+HOSTING_RE = re.compile(r"\breconciler\b|\bother customers\b", re.IGNORECASE)
 # An entry that says only some workspaces have the change describes something most
 # readers cannot use yet. It is left out, not rewritten: dropping the phrase would
 # announce it as available.
@@ -699,6 +705,13 @@ def _bullets(changelog: Path, labels: list[str]) -> list[str]:
     return bullets
 
 
+def _latest_bullets(changelog: Path, skip: str) -> list[str]:
+    """Bullets of the newest published week, ignoring the week being written."""
+    labels = re.findall(r'<Update label="([^"]+)"', changelog.read_text())
+    latest = next((label for label in labels if label != skip), None)
+    return _bullets(changelog, [latest]) if latest else []
+
+
 def _normalize_title(title: str) -> str:
     return TITLE_TAG_RE.sub("", TITLE_PREFIX_RE.sub("", title)).strip().lower()
 
@@ -930,7 +943,12 @@ place each group in one layer:
   tooling and test environments, changes that reach only some workspaces (a
   limited rollout, or off until LangChain turns it on), operational paths that
   LangChain staff run on a customer's behalf, and security hardening with nothing
-  for the customer to do. Dropped groups are not published.
+  for the customer to do. Also drop capacity limits that only protect LangChain's
+  hosting, and removals of things that never shipped. Dropped groups are not published.
+
+The <recent_entries> list holds last week's published entries. Drop a group that
+announces the same change again. When a group only extends one, keep it, and its
+entry covers only what is new.
 
 Fixes are only for generally available features. A fix to a feature in the
 <beta_features> list is dropped; a new capability in a beta feature can still be
@@ -983,6 +1001,16 @@ ENTRY_RULES = """Rules:
 - Never mention LangChain's own environments (staging, prod) or the infrastructure
   behind Cloud, such as its caches, queues, and databases. Say what the customer sees.
 - Write as the product, not as LangChain staff: "your endpoint", not "the customer's side".
+- Never name UI components, React hooks, or component props, such as a table
+  component or its options. Name what the customer sees: "tables", "the column menu".
+- Leave out what Cloud customers cannot see or set: host-level environment variables,
+  server metrics and logs, control loops, how LangChain rolls out its own images, and
+  how a change protects other customers. A self-hosted setting is fine when operators set it.
+- Describe only what works now. Do not announce a feature together with a note that
+  it fails until something else ships; leave that part out.
+- Qualify every version number with its product: "Agent Server 0.16.2", not "release 0.16.2".
+- Use an Oxford comma in every list of three or more: "timers, labels, and mounts".
+- Keep one idea per sentence. Split a sentence instead of joining clauses with a semicolon.
 - Public identifiers a customer types or sees are fine: UI labels in bold, API routes,
   SDK and MCP parameters, Helm values, and environment variables in backticks.
 - Put every identifier in backticks: API fields, parameters, enum values, permission
@@ -1123,7 +1151,12 @@ def _text_reasons(group: dict, flags: dict) -> list[str]:
     """Why an entry's text cannot publish as written: it names something internal."""
     reasons = []
     text = f"{group.get('title', '')} {group.get('entry', '')}"
-    if m := LEAK_RE.search(text) or TICKET_RE.search(text):
+    if m := (
+        LEAK_RE.search(text)
+        or TICKET_RE.search(text)
+        or COMPONENT_RE.search(text)
+        or HOSTING_RE.search(text)
+    ):
         reasons.append(f"internal name: {m.group(0)}")
     reasons += [f"names flag key {k}" for k in flags if len(k) >= 8 and k in text]
     return reasons
@@ -1558,6 +1591,14 @@ def cmd_mock(args: argparse.Namespace) -> None:
 
     cache = _child(out, f"mock-{since}")
     cache.mkdir(exist_ok=True)
+    week_label = args.label or _week_label(
+        _validate_date(args.since), _validate_date(args.until)
+    )
+    recent = "\n".join(
+        f"- {b}"
+        for path in (CLOUD_CHANGELOG, FLEET_CHANGELOG)
+        for b in _latest_bullets(path, skip=week_label)
+    )
     with tempfile.TemporaryDirectory() as tmp:
         workdir = Path(tmp)
         grouping_path = _child(cache, "groups.json")
@@ -1569,7 +1610,8 @@ def cmd_mock(args: argparse.Namespace) -> None:
             grouping, meta = _claude(
                 GROUP_SYSTEM,
                 GROUP_SCHEMA,
-                f"<beta_features>\n{beta}\n</beta_features>\n<prs>\n{notes}\n</prs>",
+                f"<beta_features>\n{beta}\n</beta_features>\n"
+                f"<recent_entries>\n{recent}\n</recent_entries>\n<prs>\n{notes}\n</prs>",
                 GROUP_MODEL,
                 workdir,
             )
@@ -1598,7 +1640,8 @@ def cmd_mock(args: argparse.Namespace) -> None:
                 retry, meta = _claude(
                     GROUP_SYSTEM,
                     GROUP_SCHEMA,
-                    f"<beta_features>\n{beta}\n</beta_features>\n<prs>\n{notes}\n</prs>",
+                    f"<beta_features>\n{beta}\n</beta_features>\n"
+                    f"<recent_entries>\n{recent}\n</recent_entries>\n<prs>\n{notes}\n</prs>",
                     GROUP_MODEL,
                     workdir,
                 )
