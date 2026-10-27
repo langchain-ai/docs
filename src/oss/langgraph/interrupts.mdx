@@ -1372,6 +1372,8 @@ As an example, you might have an API call to update a record inside of a node. I
 * ✅ Place side effects after @[`interrupt`] calls
 * ✅ Separate side effects into separate nodes when possible
 
+In the post-approval examples below, side effects run only when approval succeeds. If a node fails after committing a side effect but before completing, retrying the node can repeat the effect. Use idempotent operations or deduplicate writes in the external system.
+
 :::python
 <CodeGroup>
 ```python Idempotent operations
@@ -1390,7 +1392,7 @@ def node_a(state: State):
 ```python Side effects after interrupt
 def node_a(state: State):
     # ✅ Good: placing side effect after the interrupt
-    # This ensures it only runs once after approval is received
+    # Approval gates this side effect; retries still need idempotency
     approved = interrupt("Approve this change?")
 
     if approved:
@@ -1410,7 +1412,7 @@ def approval_node(state: State):
 
 def notification_node(state: State):
     # ✅ Good: side effect happens in a separate node
-    # This runs after approval, so it only executes once
+    # Approval gates this side effect; retries still need idempotency
     if (state.approved):
         send_notification(
             user_id=state["user_id"],
@@ -1441,7 +1443,7 @@ const nodeA: GraphNode<typeof State> = async (state) => {
 ```typescript Side effects after interrupt
 const nodeA: GraphNode<typeof State> = async (state) => {
   // ✅ Good: placing side effect after the interrupt
-  // This ensures it only runs once after approval is received
+  // Approval gates this side effect; retries still need idempotency
   const approved = interrupt("Approve this change?");
 
   if (approved) {
@@ -1464,7 +1466,7 @@ const approvalNode: GraphNode<typeof State> = async (state) => {
 
 const notificationNode: GraphNode<typeof State> = async (state) => {
   // ✅ Good: side effect happens in a separate node
-  // This runs after approval, so it only executes once
+  // Approval gates this side effect; retries still need idempotency
   if (state.approved) {
     await sendNotification({
       userId: state.userId,
