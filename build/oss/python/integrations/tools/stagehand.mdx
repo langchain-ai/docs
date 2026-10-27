@@ -1,0 +1,223 @@
+---
+title: Stagehand + Browserbase integration
+description: Integrate with Stagehand and Browserbase browser tools using LangChain Python.
+integration:
+  name: Stagehand
+---
+
+[Stagehand](https://docs.stagehand.dev/v4/first-steps/introduction) is an open-source SDK for browser agents from [Browserbase](/oss/python/integrations/providers/browserbase). The `stagehand-deepagents` package ships `StagehandMiddleware`, which gives an agent one browser that stays open across tool calls, three tools to drive it (`run`, `snapshot`, and `screenshot`), and instructions for those tools in the system prompt. The browser can be local Chrome or a Browserbase session.
+
+For use cases and a sandbox testing setup, see [Browser use](/oss/python/deepagents/browser-use).
+
+## Tools
+
+| Tool | Description |
+|------|-------------|
+| `run` | Acts on the active page. Pass either `code` (JavaScript that uses Playwright-style `page`, `context`, and `browser` objects) or `actions` (a batch of `click`, `hover`, `fill`, `type`, `press`, and `select` operations on snapshot IDs). |
+| `snapshot` | Captures the active page's accessibility tree and assigns the bracketed IDs that `run` actions use. Each call replaces the previous IDs. |
+| `screenshot` | Captures the active page as a PNG or JPEG. Accepts optional `fullPage`, `type`, and `quality` arguments. Use `quality` only with JPEG. |
+
+These are the two input shapes for `run`:
+
+<CodeGroup>
+```json JavaScript
+{ "code": "await page.goto('https://example.com'); return await page.title();" }
+```
+
+```json Snapshot actions
+{ "actions": [{ "op": "click", "id": "1-42" }] }
+```
+</CodeGroup>
+
+Use an ID from the latest `snapshot` response instead of the illustrative `1-42` value.
+
+## Setup
+
+Install Deep Agents, the Stagehand middleware, and a model integration:
+
+<CodeGroup>
+```bash pip
+pip install deepagents stagehand-deepagents langchain-openai
+```
+
+```bash uv
+uv add deepagents stagehand-deepagents langchain-openai
+```
+</CodeGroup>
+
+Set your model provider's API key, and a Browserbase API key to run the browser on Browserbase:
+
+```bash
+export OPENAI_API_KEY="your-openai-api-key"
+export BROWSERBASE_API_KEY="your-browserbase-api-key"
+```
+
+## Use with a deep agent
+
+Add `StagehandMiddleware` to the agent's middleware:
+
+```python
+import asyncio
+
+from deepagents import create_deep_agent
+from stagehand_deepagents import StagehandMiddleware
+
+agent = create_deep_agent(
+    model="openai:gpt-5.5-2026-04-23",
+    middleware=[StagehandMiddleware(browser="browserbase")],
+)
+
+
+async def main():
+    result = await agent.ainvoke(
+        {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Open news.ycombinator.com, read the top three stories, and summarize each one.",
+                }
+            ]
+        }
+    )
+    print(result["messages"][-1].content_blocks)
+
+
+asyncio.run(main())
+```
+
+The tools are async, so call the agent with `ainvoke` or `astream`. `StagehandMiddleware` works with any agent built with [`create_agent`](https://reference.langchain.com/python/langchain/agents/factory/create_agent), not only deep agents.
+
+Stagehand's upstream examples build the same agent with structured output: [`agent.py`](https://github.com/browserbase/stagehand/blob/main/packages/integrations/deepagents/examples/local/agent.py) summarizes the day's sports events, and [`agents2.py`](https://github.com/browserbase/stagehand/blob/main/packages/integrations/deepagents/examples/local/agents2.py) fills a form with mock data without submitting it.
+
+## Choose the browser
+
+Pass `browser` to pick where the browser runs:
+
+<CodeGroup>
+```python Browserbase
+StagehandMiddleware(browser="browserbase")
+```
+
+```python Local Chrome
+StagehandMiddleware(browser="local", headless=True)
+```
+</CodeGroup>
+
+- **Browserbase**: The middleware starts a Browserbase session with a 1280 × 720 viewport. The browser runs remotely, so it cannot reach `localhost` on your machine or in a sandbox.
+- **Local Chrome**: The middleware discovers installed Google Chrome or Chromium and opens a visible window by default. Pass `headless=True` in environments without a display, such as containers. The browser shares your machine's `localhost`.
+
+To run Chrome next to your app with a LangSmith sandbox backend, see [Test an app with Chrome in a LangSmith sandbox](/oss/python/deepagents/browser-use#test-an-app-with-chrome-in-a-langsmith-sandbox).
+
+### Options
+
+| Option | Environment variable | Default | Purpose |
+|--------|----------------------|---------|---------|
+| `browser` | `STAGEHAND_BROWSER` | `"local"` | `"local"` or `"browserbase"`. |
+| `headless` | `STAGEHAND_HEADLESS` | `False` | Run local Chrome without a window. |
+| `browserbase_api_key` | `BROWSERBASE_API_KEY` | Unset | Required when `browser` is `"browserbase"`. |
+| `start_url` | `STAGEHAND_START_URL` | Unset | Open a URL when the browser starts. |
+| `model` | `STAGEHAND_MODEL` | Unset | Model for Stagehand AI methods called inside `run`. |
+| `model_api_key` | `STAGEHAND_MODEL_API_KEY` | Unset | API key for `model`. |
+| `close_after_run` | | `True` | Close the browser when the agent's run ends. |
+
+An option you don't pass is read from its environment variable.
+
+## Keep the browser between runs
+
+Each thread gets its own browser. It launches on the thread's first browser tool call and closes when the agent's run ends.
+
+To keep the browser and its open pages for the thread's next run, such as in a chat, pass `close_after_run=False` and give the agent a checkpointer. Close the browsers when you're done:
+
+```python
+from langgraph.checkpoint.memory import InMemorySaver
+
+browser = StagehandMiddleware(browser="browserbase", close_after_run=False)
+agent = create_deep_agent(
+    model="openai:gpt-5.5-2026-04-23",
+    middleware=[browser],
+    checkpointer=InMemorySaver(),
+)
+
+config = {"configurable": {"thread_id": "1"}}
+await agent.ainvoke({"messages": [{"role": "user", "content": "Open news.ycombinator.com"}]}, config)
+await agent.ainvoke({"messages": [{"role": "user", "content": "Open the top story"}]}, config)
+
+await browser.aclose()
+```
+
+## Require approval before actions
+
+`snapshot` and `screenshot` only read the page. `run` navigates, clicks, types, and submits forms. To review each `run` call before it executes, add it to `interrupt_on` and give the agent a checkpointer.
+
+Replace `agent` and `main` in the first example with this code:
+
+```python
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import Command
+
+agent = create_deep_agent(
+    model="openai:gpt-5.5-2026-04-23",
+    middleware=[StagehandMiddleware(browser="browserbase")],
+    interrupt_on={"run": True},
+    checkpointer=InMemorySaver(),
+)
+
+
+async def main():
+    config = {"configurable": {"thread_id": "browser-1"}}
+    result = await agent.ainvoke(
+        {"messages": [{"role": "user", "content": "Summarize the top story on news.ycombinator.com."}]},
+        config=config,
+    )
+
+    while result.get("__interrupt__"):
+        responses = {}
+        for pending in result["__interrupt__"]:
+            decisions = []
+            for action in pending.value["action_requests"]:
+                print(action["name"], action["args"])
+                answer = await asyncio.to_thread(input, "Approve this call? [y/N] ")
+                decisions.append(
+                    {"type": "approve"}
+                    if answer.lower() == "y"
+                    else {"type": "reject", "message": "User denied this action. Do not retry it."}
+                )
+            responses[pending.id] = {"decisions": decisions}
+        result = await agent.ainvoke(Command(resume=responses), config=config)
+
+    print(result["messages"][-1].content_blocks)
+```
+
+Each interrupt lists the pending `run` arguments, so you can approve, edit, or reject the call. For conditional approval and the full decision loop, see [Human-in-the-loop](/oss/python/deepagents/human-in-the-loop).
+
+## Security
+
+`run` executes model-authored JavaScript inside the Stagehand browser extension, which runs in the browser. That code can use any account the session is signed in to and any site the browser can reach. Use Browserbase as the isolation boundary for untrusted tasks. See Stagehand's [security boundary](https://docs.stagehand.dev/v4/integrations/agent-frameworks/overview#security-boundary).
+
+## Related resources
+
+<CardGroup cols={2}>
+  <Card title="Browser use guide" icon="world" href="/oss/python/deepagents/browser-use">
+    Use cases, browser choices, and a sandbox testing setup.
+  </Card>
+  <Card title="Integration source and examples" icon="brand-github" href="https://github.com/browserbase/stagehand/tree/main/packages/integrations/deepagents">
+    The middleware, an MCP server for other clients, and runnable agent examples.
+  </Card>
+  <Card title="Stagehand Deep Agents docs" icon="book" href="https://docs.stagehand.dev/v4/integrations/agent-frameworks/deep-agents">
+    Upstream setup, including the Managed Deep Agents example.
+  </Card>
+  <Card title="Browserbase provider page" icon="browser" href="/oss/python/integrations/providers/browserbase">
+    Browserbase setup, plus Search and Fetch tools.
+  </Card>
+</CardGroup>
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/tools/stagehand.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
