@@ -3,10 +3,15 @@ type: operations reference
 title: Local Tooling and Commands
 description: Install and operate the local documentation pipeline, Make targets, Mintlify checks, Vale prose linting, executable samples, and agent-skill links. Select the command layer and validation boundary that match the change.
 tags: [cli, make, documentation, code-samples, operations]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-23T08:20:30.474Z
 sources:
+  - id: openwiki-source-5c124605ed6e394bffee862c
+    resource: repo://.github/workflows/_check-links.yml
+  - id: openwiki-source-4d9cccca7700db7220ec055e
+    resource: repo://.github/workflows/_test.yml
+  - id: openwiki-source-164e2da859b5277df81c7d94
+    resource: repo://.github/workflows/ci.yml
+  - id: openwiki-source-97746d8f3662d803e625550e
+    resource: repo://.github/workflows/test-code-samples.yml
   - id: openwiki-source-9c06bd9d7d25770709e07c7c
     resource: repo://.mise.toml
   - id: openwiki-source-635a4d4537a9628cdea912c0
@@ -49,11 +54,18 @@ sources:
     resource: repo://scripts/test_code_samples.py
   - id: openwiki-source-2b3973f7b179794fb4534f89
     resource: repo://src/code-samples/go.mod
+  - id: openwiki-source-11d4965febd3986495e06a17
+    resource: repo://src/code-samples/langsmith/create-an-agent.py
   - id: openwiki-source-2d6fb565fec243c560da8729
     resource: repo://src/code-samples/package-lock.json
   - id: openwiki-source-e0401fc6d5f2a13d30455bd9
     resource: repo://src/code-samples/package.json
-generated: { by: "openwiki/0.4.3", at: "2026-10-23T08:20:30.474Z" }
+  - id: openwiki-source-1eb6a61d042052ba1402c2eb
+    resource: repo://uv.lock
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-27T08:21:38.674Z
+generated: { by: "openwiki/0.4.3", at: "2026-10-27T08:21:38.674Z" }
 ---
 
 # Local Tooling and Commands
@@ -63,6 +75,8 @@ Author documentation in `src/`, not `build/`. The build directory is disposable 
 ## Install the toolchain
 
 `.mise.toml` defines the local baseline: Node 22, Python 3.13, uv 0.9.26, Vale 3.17.1, prek, and the Mint CLI. Start with `mise trust && mise install` when using mise. Its postinstall hook installs prek's pre-commit and pre-push hooks. Node 22 is intentional because Mintlify does not support Node 25 or newer. The Python project requires Python 3.13 or later, before Python 4, and uv 0.9.26 or later.
+
+The committed `uv.lock` is part of that contract: CI uses frozen, no-sync uv execution after dependency installation, so do not change a Python dependency floor without refreshing its lock resolution and validating the affected command.
 
 For a normal checkout, bootstrap with:
 
@@ -186,9 +200,19 @@ flowchart TD
 
 Python samples instead run against the root uv project, Go samples resolve the shared `src/code-samples/go.mod`, and Java and Kotlin samples use JBang with Java 21.
 
+### Python SDK floor and deterministic agent fixture
+
+The root Python project declares `langsmith>=0.14.12`; the committed lock currently resolves `langsmith` 0.14.12. This is the repository dependency floor for Python samples, including `src/code-samples/langsmith/create-an-agent.py`; it is not a claim about uninspected SDK behavior at other versions. Keep the requirement and lock in sync when changing a sample that needs a newer SDK surface.
+
+That agent-registration source is deliberately executable without creating a live agent: its non-snippet harness starts a loopback HTTP fixture, sets isolated LangSmith environment values, and asserts the request sequence after the two marked snippets run. Use the normal runner to exercise the same root uv environment and sample-selection boundary:
+
+```bash
+make test-code-samples FILES="src/code-samples/langsmith/create-an-agent.py"
+```
+
 `make code-snippets` extracts marked regions from supported Python, TypeScript, Java, Kotlin, Go, and shell sources under `src/code-samples/` into `src/code-samples-generated/`, then generates importable MDX in `src/snippets/code-samples/`. A full extraction removes earlier supported intermediate files. Set `CODE_SNIPPET_SOURCES` to a space-separated list of existing supported paths below `src/code-samples/` to refresh only selected source stems; missing, out-of-tree, and unsupported selections fail.
 
-Generation reads the trace-links manifest and adds a `View example trace` card only for a recorded snippet ID. Review generated MDX after changing source content or markers.
+Generation reads the trace-links manifest and adds a `View example trace` card only for a recorded snippet ID. For Python and TypeScript snippets, it can expand a generic agent `model` value into the configured Deep Agents provider tabs; `KEEP MODEL` leaves the next matching value unchanged, and provider-specific or embedding model values are not tab targets. Review generated MDX after changing source content or markers.
 
 ### Sample execution and traces
 
@@ -207,3 +231,5 @@ Only successful samples attempt trace collection. For an eligible single-snippet
 `uv run python scripts/check_onboarding_models.py` reports rather than edits stale model IDs in configured onboarding snippets. It reads GitHub by default, using `GITHUB_TOKEN` or `GH_TOKEN` when available, or a checkout with `--repo-dir`; it exits 0 when current, 1 for stale IDs, and 2 when its registry or inputs cannot be read.
 
 For a focused change, run only the checks it exercises: a selected `make test`, `make check-cross-refs` for `@[ref]` edits, `make check-legacy-links` for authored external links, `make lint_prose FILES="..."` for prose, targeted sample execution for a runnable example, and `make broken-links-with-anchors` for rendered navigation or link changes. Use `make export-htmltest` when exported-site external-link coverage is needed.
+
+CI's core, lint, and generated-site link jobs use Python 3.13. The reusable test workflow installs the test group and invokes `make test`; the link workflow installs that group, uses Node 22 and Mint, then invokes `make broken-links-with-anchors` and `make check-openapi`. The code-sample workflow uses `make test-code-samples` for all samples or its changed-file selection, and only scheduled or manually dispatched runs regenerate snippets after tracing has updated at least one link. Matching these targets locally exercises the same command boundaries rather than approximating them with raw tool invocations.
