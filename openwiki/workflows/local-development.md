@@ -1,11 +1,11 @@
 ---
 type: workflow guide
-title: Local Development and Validation Workflow
+title: Local Documentation Development
 description: Set up the documentation toolchain, turn authored src changes into a local Mintlify preview, and select proportionate build, lint, test, link, and sample validation. Explains generated-output boundaries and common Mintlify execution failures.
 tags: [local-development, documentation, mintlify, validation, build-system]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-20T08:20:37.912Z
+    at: 2026-10-23T08:20:30.474Z
 sources:
   - id: openwiki-source-9c06bd9d7d25770709e07c7c
     resource: repo://.mise.toml
@@ -31,10 +31,10 @@ sources:
     resource: repo://scripts/test_code_samples.py
   - id: openwiki-source-16b92823fdcb07d686f2e27f
     resource: repo://tests/unit_tests/test_watcher.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-20T08:20:37.912Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-23T08:20:30.474Z" }
 ---
 
-# Local Development and Validation Workflow
+# Local Documentation Development
 
 The contributor loop has a hard boundary: author documentation, navigation, and assets in `src/`; the Python pipeline generates the Mintlify-facing `build/` tree. `build/` is disposable output. Never edit it directly—correct the source or pipeline and regenerate it with a supported Make target.
 
@@ -54,7 +54,11 @@ cd docs
 make install
 ```
 
-`make install` synchronizes all Python dependency groups with `uv sync --all-groups`, installs local npm packages, installs `mint@latest` globally, and links agent skills. A failed global Mint installation is retried up to three times before installation fails. `make skills` links canonical `.agents/skills` directories into `.claude/skills`, retains existing non-symlink entries, and removes stale symlinks; run it again in a new worktree or after adding or renaming a skill.
+`make install` synchronizes all Python dependency groups with `uv sync --all-groups`, installs local npm packages, installs `mint@latest` globally, and links agent skills. A failed global Mint installation is retried up to three times before installation fails.
+
+### Link authoring skills
+
+Task-specific procedures live in canonical `.agents/skills/` directories. Cursor, Codex, GitHub Copilot, Gemini CLI, OpenCode, and Deep Agents use that directory directly, while Claude Code reads `.claude/skills/`. `make install` invokes `make skills` to link each canonical skill into the latter directory. The linking target preserves existing non-symlink entries and removes stale symlinks. Run `make skills` again in a new worktree or after adding or renaming a skill.
 
 The project also installs the Python console command `docs = "pipeline.cli:main"`. If it is not available immediately after setup, relaunch the shell. The Mint command is separately installed; verify it with `mint --version`.
 
@@ -189,4 +193,5 @@ Use this sequence to discard generated state and reconstruct it; do not use clea
 - [Build System Architecture](/openwiki/architecture/build-system.md)
 - [Mintlify Integration](/openwiki/integrations/mintlify.md)
 - [CLI Tools](/openwiki/operations/cli-tools.md)
+- [Repository Wiki Quickstart](/openwiki/quickstart.md)
 - [Testing Overview](/openwiki/testing/test-overview.md)

@@ -1,4 +1,4 @@
-.PHONY: all dev build export htmltest export-htmltest format lint test install install_vale clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples update-code-sample-traces check-cross-refs skills
+.PHONY: all dev build export htmltest export-htmltest format lint test install install_vale clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples update-code-sample-traces check-cross-refs check-legacy-links skills
 
 # Default target
 all: help
@@ -190,6 +190,9 @@ broken-links-with-anchors: build
 		else \
 			echo "✅ No broken links"; \
 		fi
+
+check-legacy-links:
+	@bash scripts/check-legacy-doc-links.sh
 
 check-openapi: build
 	@echo "Checking openapi spec validity"
