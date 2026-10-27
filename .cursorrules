@@ -64,6 +64,6 @@ description: SEO summary, no markdown allowed (no links, backticks, formatting)
 
 ## Syntax
 
-- Language-specific content: `:::python` or `:::js` fences (generates separate Python and TypeScript pages)
+- Language-specific content: `:::python` or `:::js` fences (every shared `src/oss/` page builds both languages; a page listed in only one language nav builds only that language)
 - Code highlighting: `# [!code highlight]`, `# [!code ++]`, `# [!code --]`
 - API reference links: `@[ClassName]` for the first mention of SDK classes or methods
