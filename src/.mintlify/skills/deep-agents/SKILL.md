@@ -12,7 +12,7 @@ metadata:
 
 Deep Agents is the agent harness for complex, multi-step work: planning, a virtual filesystem for context, subagent delegation, and long-term memory. It is built on [LangChain](https://docs.langchain.com/oss/langchain/overview) and the [LangGraph](https://docs.langchain.com/oss/langgraph/overview) runtime.
 
-Start with [Managed Deep Agents](https://docs.langchain.com/langsmith/managed-deep-agents-overview) unless the user needs to self-host. The same Deep Agents harness powers both.
+Start with [Managed Deep Agents](/langsmith/managed-deep-agents-overview): a managed open-source harness for agents that plan, use tools, delegate to subagents, and work over long horizons. Alternatively, for maximum flexibility while using the same Deep Agents harness, use the [Deep Agents SDK](/oss/deepagents/overview#self-host-with-the-sdk) and host agents yourself, or run a custom [LangSmith Deployment](/langsmith/deployment).
 
 ## When to use
 
