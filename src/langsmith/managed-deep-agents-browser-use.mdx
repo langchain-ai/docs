@@ -9,7 +9,7 @@ A browser lets a managed deep agent open websites, fill out forms, and check ren
 For use cases and the browser toolset, see [Browser use](/oss/deepagents/browser-use).
 
 <Note>
-This page documents browser declarations and graph-factory selection planned for the Managed Deep Agents SDK 0.10 release. They are not included in the latest stable SDK release, 0.9.4. Your workspace also needs access to the LangSmith browser beta. Python and TypeScript examples reflect the proposed APIs; human handoff currently has a Python implementation only.
+This page documents browser support on the Managed Deep Agents SDK 0.10 development branch, including declarations, graph-factory selection, and human handoff in Python and TypeScript. These APIs are not included in stable SDK 0.9.5. Your workspace also needs access to the LangSmith browser beta.
 </Note>
 
 ## Declare a browser
@@ -101,13 +101,12 @@ Separate windows do not isolate website accounts. Logging out or switching accou
 
 Finishing an agent run releases the browser client, not the browser or its website login. The idle timeout controls when an inactive browser stops; it is not a logout or permanent-deletion setting. Website sessions can expire, and browser replacement or deletion can remove browser state. Do not rely on a login or an open page remaining available indefinitely.
 
-:::python
 ## Take over the browser and hand it back
 
 Human handoff lets you sign in or handle a page the agent cannot complete on its own. The agent calls `browser_handoff(reason)` to give you control of its thread's browser window.
 
 <Note>
-Human handoff and its client UI are pending browser features, not capabilities of the stable 0.9.4 SDK. The following procedure describes the Python handoff implementation. TypeScript handoff support is not established by the browser declaration examples above.
+Human handoff is implemented for both Python and TypeScript on the 0.10 development branch, not in stable SDK 0.9.5. The client must render the handoff artifact to provide the embedded browser or browser link.
 </Note>
 
 To complete a login and return control:
@@ -115,7 +114,7 @@ To complete a login and return control:
 1. Ask the agent to perform the website task. If login, CAPTCHA, or two-factor authentication requires your input, the agent requests a handoff and explains why.
 2. Use the embedded browser or open the browser link supplied by your client. The proposed Studio interface shows a **The agent needs you in the browser** card with an **Open in new tab** option. Enter credentials directly on the website, not in chat, and complete any required authentication steps.
 3. Click **Hand back** in the browser window when you are finished.
-4. Managed Deep Agents queues a notification run on the same thread. The agent inspects the current page and continues from the resulting state, rather than assuming login succeeded.
+4. A separate watcher run detects that you handed the browser back and queues a notification run on the original conversation. The agent inspects the current page and continues from the resulting state, rather than assuming login succeeded.
 
 <Frame caption="Example handoff request in Slack. This screenshot shows the login instructions and browser link, not the login page or Hand back control.">
   <img width="469" alt="Agent asks the user to sign in through an Open the browser link that lasts 15 minutes" src="https://github.com/user-attachments/assets/2dc39c10-2ff1-4776-9396-b01b31f70991" />
@@ -123,12 +122,11 @@ To complete a login and return control:
 
 While you control the window, the agent's browser tools cannot act on it. Handoff returns immediately, so the agent can perform other work. The link expires after 15 minutes; expiry ends the handoff but does not prove that the website task is complete.
 
-If the thread is already paused on a separate approval or credential interrupt, complete that interrupt through its normal interface. Automatic notification also depends on the running process: after a process restart, send a new message on the thread to continue once you have handed control back.
+The watcher runs as its own graph on a separate thread, rather than as a background task tied to the agent's process. It does not wake a conversation paused on a separate approval or credential interrupt; complete that interrupt through its normal interface. A newer handoff supersedes the previous one. If the watcher cannot start, you can still use the browser and hand it back, then send a new message in the original conversation to continue.
 
 <Warning>
 Keep handoff links private: anyone with a valid link can control the browser. Do not store passwords in prompts, chat messages, or agent-written files. Sign in directly during handoff, and avoid exposing secrets in page content that the agent can later inspect. Browser scope controls session reuse; it is not a password vault.
 </Warning>
-:::
 
 ## Select a browser in a graph factory
 
