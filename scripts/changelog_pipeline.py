@@ -943,12 +943,18 @@ place each group in one layer:
   tooling and test environments, changes that reach only some workspaces (a
   limited rollout, or off until LangChain turns it on), operational paths that
   LangChain staff run on a customer's behalf, and security hardening with nothing
-  for the customer to do. Also drop capacity limits that only protect LangChain's
-  hosting, and removals of things that never shipped. Dropped groups are not published.
+  for the customer to do. Also drop capacity limits that no customer configures or
+  hits, and removals of things that never shipped. Dropped groups are not published.
 
-The <recent_entries> list holds last week's published entries. Drop a group that
-announces the same change again. When a group only extends one, keep it, and its
-entry covers only what is new.
+Never drop a group only because its notes mention infrastructure. Changes for BYOC
+data planes, AWS, Azure, and GCP deployments, and self-hosted installations are for
+customers who read this changelog: keep them. A limit a customer can hit, such as a
+429 response or a cap they can see, is a change. Internal detail in a note is not a
+reason to drop: the entry writer leaves it out.
+
+The <recent_entries> list holds last week's published entries. Drop a group only
+when an entry there already announces the same change. When a group extends one,
+keep it, and its entry covers only what is new.
 
 Fixes are only for generally available features. A fix to a feature in the
 <beta_features> list is dropped; a new capability in a beta feature can still be
@@ -1003,9 +1009,10 @@ ENTRY_RULES = """Rules:
 - Write as the product, not as LangChain staff: "your endpoint", not "the customer's side".
 - Never name UI components, React hooks, or component props, such as a table
   component or its options. Name what the customer sees: "tables", "the column menu".
-- Leave out what Cloud customers cannot see or set: host-level environment variables,
-  server metrics and logs, control loops, how LangChain rolls out its own images, and
-  how a change protects other customers. A self-hosted setting is fine when operators set it.
+- Leave out details no customer can see or set: LangChain's own host settings, server
+  metrics and logs, control loops, how LangChain rolls out its own images, and how a
+  change protects other customers. Keep the change itself, stated as what the customer
+  sees. Settings that BYOC and self-hosted operators set are customer-facing.
 - Describe only what works now. Do not announce a feature together with a note that
   it fails until something else ships; leave that part out.
 - Qualify every version number with its product: "Agent Server 0.16.2", not "release 0.16.2".
@@ -1013,8 +1020,9 @@ ENTRY_RULES = """Rules:
 - Keep one idea per sentence. Split a sentence instead of joining clauses with a semicolon.
 - Public identifiers a customer types or sees are fine: UI labels in bold, API routes,
   SDK and MCP parameters, Helm values, and environment variables in backticks.
-- Put every identifier in backticks: API fields, parameters, enum values, permission
-  names, CLI flags, header names, and model IDs. Bold is for UI labels only.
+- Put every identifier in backticks: API fields, parameters, enum and status values
+  (`needs_connect`), permission names, CLI flags, header names, and model IDs. Bold is
+  for UI labels only.
 - No marketing words ("powerful", "seamless", "exciting").
 - No contractions: write "cannot", "does not", "is not".
 - Separate UI navigation steps with " > ", never an arrow: **Settings** > **Model pricing**.
@@ -1064,7 +1072,8 @@ what the check flagged, and the pull requests behind the line. Choose one action
   otherwise return an empty title.
 - "drop": the line means nothing without the internal term, or it describes
   something Cloud and Fleet customers cannot use, such as configuration only
-  self-hosted operators set. Say why in reason.
+  self-hosted operators set. Say why in reason. A change for BYOC data planes or
+  an AWS, Azure, or GCP deployment is for customers: rewrite it, never drop it.
 
 {ENTRY_RULES}"""
 REWRITE_SCHEMA = {
