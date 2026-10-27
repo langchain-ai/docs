@@ -1,12 +1,12 @@
 ---
-title: Add a browser to Managed Deep Agents
+title: Browser use
 sidebarTitle: Browser use
 description: Configure browser sharing, website logins, and human handoff for a managed deep agent.
 ---
 
-A browser lets a managed deep agent open websites, fill out forms, and check rendered pages. Managed Deep Agents runs the browser and registers its tools, so you do not manage browser infrastructure or supply a Browserbase API key.
+Give a managed deep agent a browser to act on websites without a public API, such as booking a restaurant reservation, or to test an app through its UI after changing its code. The agent can navigate, click, fill forms, and inspect the result. Managed Deep Agents hosts the browser and registers its tools; no Browserbase account is required.
 
-For use cases and the browser toolset, see [Browser use](/oss/deepagents/browser-use).
+Use a direct API when one supports the task. For browser choices and open source setup, see [Browser use with Deep Agents](/oss/deepagents/browser-use).
 
 <Note>
 This page documents browser support on the Managed Deep Agents SDK 0.10 development branch, including declarations, graph-factory selection, and human handoff in Python and TypeScript. These APIs are not included in stable SDK 0.9.5. Your workspace also needs access to the LangSmith browser beta.
@@ -50,26 +50,16 @@ The CLI discovers this root file. Do not put the declaration inside `browser/` o
 | `idleTtlSeconds` | `600` | Seconds of inactivity before the browser stops; accepts integers from `60` through `86400` |
 :::
 
-## Choose a browser scope
+## Choose a scope
 
-Scope determines which conversations reuse a browser. It does not create a new browser for every agent run.
-
-| Scope | Choose it when | Example |
+| Scope | Browser state | Use it for |
 | --- | --- | --- |
-| `"thread"` | Participants in one conversation need a shared browser, separate from other conversations | Collaborate on a reservation or test an app change together |
-| `"user"` | A signed-in person needs the same website accounts across many conversations | Reuse a restaurant-booking login for later requests |
+| `"thread"` (default) | One browser per conversation; authorized participants share it across turns | Multiplayer collaboration, a reservation workflow, or an independent app test |
+| `"user"` | One browser per authenticated person, with a separate window for each thread and shared cookies and logins | Reusing a website login across conversations |
 
-### Share one conversation's browser with thread scope
+Thread scope starts each new conversation without another thread's cookies or logins. Later runs in the same thread reuse its saved state. Starting another thread does not delete the previous browser.
 
-`scope="thread"` is the default. Each thread gets its own browser, with no cookies or logins inherited from another thread. Later runs in the same thread reuse that browser with any saved cookies and logins instead of starting a fresh session on every turn.
-
-Thread scope is useful for multiplayer agents: users authorized to participate in the same thread collaborate on the same browser session. For example, one participant can ask the agent to find a reservation and another can review the selection in that conversation. Use [caller authentication and thread ownership](/langsmith/managed-deep-agents-identity) to control who can participate.
-
-Choose thread scope when a new conversation should start without the previous conversation's browser state. Starting a new thread does not delete the old browser. For end-to-end testing, a coding agent can change an app and then use that thread's browser to click through its signup flow, independently of tests in other threads.
-
-### Reuse website logins with user scope
-
-Set user scope when an authenticated person should reuse website logins across many conversations in the deployment:
+For user scope, change the declaration:
 
 :::python
 ```python browser.py
@@ -87,21 +77,24 @@ export const browser = defineBrowser({ scope: "user", idleTtlSeconds: 600 });
 ```
 :::
 
-Each of the person's threads gets its own window in the shared browser. Navigation in one conversation does not replace the page in another window, but cookies, logins, and other browser state are shared. Signing in to a restaurant-booking site in one thread lets a later thread opened by the same user reuse that login instead of signing in again.
+For example, sign in to a booking site in one conversation, then request another reservation in a new thread. The same user's new window can reuse the login. Other authenticated people get different browsers. User scope follows [verified caller identity](/langsmith/managed-deep-agents-identity), not a name in a prompt; non-person principals use thread scope.
 
-For example, the person can sign in while arranging Friday's reservation in one conversation, then request a different reservation in a new conversation. With user scope, the new window can use the existing website login. With thread scope, the new conversation has a separate browser and needs its own login.
+Shared login state is not account isolation: logging out or switching accounts can affect the person's other threads. Coordinate purchases and bookings across conversations. Finishing a run releases the client, not the login; the idle timeout stops the browser rather than logging out. Website expiry or browser replacement can still invalidate saved state.
 
-User scope uses the [authenticated caller's identity](/langsmith/managed-deep-agents-identity), not a username supplied in a prompt or the website account itself. Different signed-in people get different browsers. Calls without a principal cannot use user scope; non-person principals fall back to thread scope.
+## Browser tools
 
-<Note>
-Separate windows do not isolate website accounts. Logging out or switching accounts can affect other threads that share the browser. Coordinate bookings and purchases rather than treating user scope as a workflow lock.
-</Note>
+Managed Deep Agents includes these tools automatically:
 
-### Understand browser lifetime
+| Tool | What it does |
+| --- | --- |
+| `browser_snapshot` | Reads the active page's accessibility tree and assigns element IDs for interactions |
+| `browser_run` | Navigates and interacts through JavaScript or batches of actions against snapshot IDs |
+| `browser_screenshot` | Captures the page; an optional absolute `path` saves the image to the agent's sandbox |
+| `browser_handoff` | Gives a person control of the window for login, CAPTCHA, or two-factor authentication |
 
-Finishing an agent run releases the browser client, not the browser or its website login. The idle timeout controls when an inactive browser stops; it is not a logout or permanent-deletion setting. Website sessions can expire, and browser replacement or deletion can remove browser state. Do not rely on a login or an open page remaining available indefinitely.
+Take a new snapshot after navigation or when element IDs become stale. Browsing does not require an agent [sandbox](/langsmith/managed-deep-agents-sandboxes); saving screenshot files does.
 
-## Take over the browser and hand it back
+## Hand off the browser
 
 Human handoff lets you sign in or handle a page the agent cannot complete on its own. The agent calls `browser_handoff(reason)` to give you control of its thread's browser window.
 
@@ -128,9 +121,9 @@ The watcher runs as its own graph on a separate thread, rather than as a backgro
 Keep handoff links private: anyone with a valid link can control the browser. Do not store passwords in prompts, chat messages, or agent-written files. Sign in directly during handoff, and avoid exposing secrets in page content that the agent can later inspect. Browser scope controls session reuse; it is not a password vault.
 </Warning>
 
-## Select a browser in a graph factory
+## Configure a graph factory
 
-A [graph factory](/langsmith/managed-deep-agents-agent-definition#select-configuration-per-run) can select the browser configuration for each run:
+Set `browser` explicitly in a [graph factory](/langsmith/managed-deep-agents-agent-definition#select-configuration-per-run) to choose the scope and idle timeout for a run:
 
 :::python
 ```python agent.py
@@ -160,18 +153,7 @@ export function agent(runtime: ManagedServerRuntime) {
 
 Keep the root browser declaration even when the factory selects a different configuration. It enables browser support and installs the deployment's browser dependencies. A factory cannot add a browser without that file.
 
-| Factory selection | Effect for the run |
-| --- | --- |
-| Omit `browser` | Use the root browser declaration |
-| Supply a browser definition | Replace the root configuration with the supplied scope and idle timeout |
-:::python
-| `browser=None` | Disable browser tools for the run |
-:::
-:::js
-| `browser: null` | Disable browser tools for the run |
-:::
-
-The argument takes a browser definition, not a middleware instance. Static agent definitions cannot set `browser` directly; use the root declaration instead.
+To disable browser tools for a run, pass `browser=None` in Python or `browser: null` in TypeScript. Pass a browser definition, not a middleware instance. Static agent definitions configure browser support in the declaration file instead.
 
 ## See also
 
