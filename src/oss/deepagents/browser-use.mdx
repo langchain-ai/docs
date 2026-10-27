@@ -22,7 +22,7 @@ An agent needs two components to use the web:
 
 ### Stagehand tools
 
-Stagehand's Deep Agents integration runs an MCP server that keeps one browser open for the whole session. It exposes three tools:
+Stagehand's Deep Agents integration keeps one browser open for the whole session and exposes three tools:
 
 | Tool | Description |
 | --- | --- |
@@ -32,7 +32,7 @@ Stagehand's Deep Agents integration runs an MCP server that keeps one browser op
 
 An element ID is valid only for the latest snapshot of the active page, so the agent takes a new snapshot after it navigates.
 
-The MCP server runs in Python, but Python and JavaScript agents can both use its tools. The examples below connect to the same server through their language's MCP adapter.
+In Python, `StagehandMiddleware` from the `stagehand-deepagents` package adds the tools to the agent. JavaScript agents connect to Stagehand's MCP server, which serves the same tools.
 
 :::python
 For the full configuration reference, see the [Stagehand integration](/oss/integrations/tools/stagehand).
@@ -40,22 +40,25 @@ For the full configuration reference, see the [Stagehand integration](/oss/integ
 
 ### Other browser tools
 
-- **[Playwright MCP](https://github.com/microsoft/playwright-mcp)**: An MCP server from Microsoft that exposes Playwright browser actions. Connect it the same way as the Stagehand server below, with `npx @playwright/mcp@latest` as the command. See [Model Context Protocol](/oss/langchain/mcp).
+- **[Playwright MCP](https://github.com/microsoft/playwright-mcp)**: An MCP server from Microsoft that exposes Playwright browser actions. Connect it with an MCP adapter, with `npx @playwright/mcp@latest` as the command. See [Model Context Protocol](/oss/langchain/mcp).
 - **[agent-browser](https://github.com/vercel-labs/agent-browser)**: A browser CLI from Vercel Labs. Install it in a [sandbox](/oss/deepagents/sandboxes), and the agent runs commands such as `agent-browser open` and `agent-browser snapshot` through the `execute` tool.
 
-## Use Stagehand with Browserbase
+## Use Stagehand
 
-This example gives a deep agent Stagehand tools that drive a Browserbase browser. The agent and the Stagehand MCP server run on your machine. The browser runs on Browserbase.
+This example gives a deep agent Stagehand tools. The agent runs on your machine.
 
-Stagehand ships the integration in its GitHub repository, rather than as a standalone adapter package. The MCP server runs in its own Python environment. The agent starts the server and connects to it over stdio.
+:::python
+The browser can run on Browserbase or as Chrome on your machine. You choose with one argument.
+:::
 
 :::js
-The server is a Python project, so this setup needs [uv](https://docs.astral.sh/uv/) even when the agent is written in JavaScript.
+The browser runs on Browserbase. The agent starts Stagehand's MCP server and connects to it over stdio. The server is a Python project, so this setup needs [uv](https://docs.astral.sh/uv/) even when the agent is written in JavaScript.
 :::
 
 To build the agent:
 
 <Steps>
+:::js
 <Step title="Install the Stagehand MCP server">
 
 This step requires [uv](https://docs.astral.sh/uv/).
@@ -69,20 +72,17 @@ uv sync --locked
 Note the absolute path to `packages/integrations/deepagents`. The agent uses it to start the server.
 
 </Step>
+:::
 <Step title="Install the agent packages">
 
 :::python
-<Note>
-`MCPAdapter` requires LangChain 1.4.0 or later, with the `mcp` extra. The `langchain.mcp` namespace is in beta.
-</Note>
-
 <CodeGroup>
 ```bash pip
-pip install deepagents "langchain[mcp]>=1.4.0" langchain-openai
+pip install deepagents stagehand-deepagents langchain-openai
 ```
 
 ```bash uv
-uv add deepagents "langchain[mcp]>=1.4.0" langchain-openai
+uv add deepagents stagehand-deepagents langchain-openai
 ```
 </CodeGroup>
 :::
@@ -101,76 +101,60 @@ export OPENAI_API_KEY="your-openai-api-key"
 export BROWSERBASE_API_KEY="your-browserbase-api-key"
 ```
 
+:::python
+A local browser doesn't need `BROWSERBASE_API_KEY`.
+:::
+
 </Step>
 <Step title="Create and run the agent">
-
-Set `STAGEHAND_DIR` to the path from the first step:
 
 :::python
 ```python
 import asyncio
-import os
 
 from deepagents import create_deep_agent
-from langchain.mcp import MCPAdapter
+from stagehand_deepagents import StagehandMiddleware
 
-STAGEHAND_DIR = "/path/to/stagehand/packages/integrations/deepagents"
-
-server_env = {
-    name: value
-    for name, value in os.environ.items()
-    if name.startswith(("STAGEHAND_", "BROWSERBASE_")) and value
-}
-server_env["STAGEHAND_BROWSER"] = "browserbase"
-
-MCP_CONFIG = {
-    "mcpServers": {
-        "browser": {
-            "command": "uv",
-            "args": ["run", "--project", STAGEHAND_DIR, "--locked", "stagehand-deepagents-mcp"],
-            "env": server_env,
-        }
-    }
-}
-
-SYSTEM_PROMPT = """You control one persistent browser through three tools:
-- snapshot: read the active page and get bracketed element IDs.
-- run: send snapshot actions, or JavaScript that uses the Playwright-shaped page API.
-- screenshot: look at the rendered page.
-
-Snapshot IDs are valid only for the latest snapshot of the active page.
-Snapshot again after navigation or stale IDs. Do not launch another browser."""
+agent = create_deep_agent(
+    model="openai:gpt-5.5-2026-04-23",
+    middleware=[StagehandMiddleware(browser="browserbase")],
+)
 
 
 async def main():
-    async with MCPAdapter(MCP_CONFIG) as adapter:
-        tools = await adapter.list_tools()
-        agent = create_deep_agent(
-            model="openai:gpt-5.5-2026-04-23",
-            tools=tools,
-            system_prompt=SYSTEM_PROMPT,
-        )
-        result = await agent.ainvoke(
-            {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": (
-                            "On opentable.com, find a table for two in San Francisco this Friday "
-                            "at 7 PM. Stop before confirming, and report the restaurant, time, and booking link."
-                        ),
-                    }
-                ]
-            }
-        )
+    result = await agent.ainvoke(
+        {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        "On opentable.com, find a table for two in San Francisco this Friday "
+                        "at 7 PM. Stop before confirming, and report the restaurant, time, and booking link."
+                    ),
+                }
+            ]
+        }
+    )
     print(result["messages"][-1].content_blocks)
 
 
 asyncio.run(main())
 ```
+
+The middleware also adds instructions for the tools to the system prompt. The browser closes when the run ends.
+
+To run the browser as Chrome on your machine instead, change one argument:
+
+```python
+StagehandMiddleware(browser="local")  # add headless=True on a machine without a display
+```
+
+A local browser can open apps on your machine's `localhost`. A Browserbase browser can't, but it isolates browsing from your machine. For the other options, see the [Stagehand integration](/oss/integrations/tools/stagehand#choose-the-browser).
 :::
 
 :::js
+Set `STAGEHAND_DIR` to the path from the first step:
+
 ```ts
 import { MCPAdapter } from "@langchain/mcp-adapters";
 import { createDeepAgent } from "deepagents";
@@ -233,11 +217,13 @@ By default, the adapter prefixes each tool name with the server name, so the age
 </Step>
 </Steps>
 
+:::js
 The server receives the forwarded `STAGEHAND_*` and `BROWSERBASE_*` variables, plus the MCP client's safe defaults such as `PATH` and `HOME`. Your model API key stays in the agent process.
 
 <Warning>
 Keep the adapter open for the whole agent run. The browser lives in the server process. The open adapter holds one connection to that process, so every tool call in the run uses the same browser.
 </Warning>
+:::
 
 <Tip>
 Snapshots can be long. To keep them out of the main agent's context, give the browser tools to a [subagent](/oss/deepagents/subagents) and let the main agent delegate browser tasks to it.
