@@ -1,0 +1,125 @@
+---
+title: Stagehand + Browserbase integration
+description: Give a Deep Agent a browser with Stagehand's middleware, on local Chrome or Browserbase.
+integration:
+  name: Stagehand
+---
+
+[Stagehand](https://github.com/browserbase/stagehand) is an open-source SDK for browser agents, backed by [Browserbase](https://browserbase.com). The `stagehand-deepagents` package ships `StagehandMiddleware`, which gives an agent one persistent browser through three tools and adds instructions for them to the system prompt.
+
+## Tools
+
+| Tool | Description |
+|------|-------------|
+| `browser_run` | Run JavaScript against a Playwright-shaped `page`, or click and type by element IDs from the latest snapshot |
+| `browser_snapshot` | Capture the page's accessibility tree, with IDs for elements to act on |
+| `browser_screenshot` | Capture a screenshot of the page for the model to see |
+
+## Setup
+
+<CodeGroup>
+    ```bash pip
+    pip install -U deepagents stagehand-deepagents
+    ```
+    ```bash uv
+    uv add deepagents stagehand-deepagents
+    ```
+</CodeGroup>
+
+To run the browser on Browserbase, set your API key. Local Chrome needs no key.
+
+```bash
+export BROWSERBASE_API_KEY="bb_live_..."
+```
+
+## Use with a Deep Agent
+
+Add the middleware to your agent:
+
+```python
+import asyncio
+
+from deepagents import create_deep_agent
+from stagehand_deepagents import RuntimeConfig, StagehandMiddleware
+
+agent = create_deep_agent(
+    model="anthropic:claude-sonnet-4-6",
+    middleware=[StagehandMiddleware(RuntimeConfig(provider="browserbase"))],
+)
+
+
+async def main() -> None:
+    result = await agent.ainvoke(
+        {"messages": [{"role": "user", "content": "What are the top 3 stories on Hacker News?"}]}
+    )
+    print(result["messages"][-1].text)
+
+
+asyncio.run(main())
+```
+
+The browser tools are async, so call the agent with `ainvoke` or `astream`. `StagehandMiddleware` works with any agent built with [`create_agent`](/oss/python/langchain/agents), not only Deep Agents.
+
+## Choose a browser
+
+`RuntimeConfig` picks where the browser runs:
+
+```python
+# A Browserbase session (reads BROWSERBASE_API_KEY)
+StagehandMiddleware(RuntimeConfig(provider="browserbase"))
+
+# Chrome on this machine
+StagehandMiddleware(RuntimeConfig(provider="local", headless=True))
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `provider` | `"local"` | `"local"` for Chrome on this machine, `"browserbase"` for a Browserbase session |
+| `headless` | `False` | Run local Chrome without a window |
+| `browserbase_api_key` | `BROWSERBASE_API_KEY` | Browserbase API key |
+| `start_url` | `None` | A page to open when the browser starts |
+| `stagehand_model` | `None` | Model for Stagehand's AI methods called from `browser_run` code |
+| `stagehand_model_api_key` | `None` | API key for `stagehand_model` |
+
+`StagehandMiddleware()` with no config reads the same settings from the environment: `STAGEHAND_BROWSER` (`local` or `browserbase`), `STAGEHAND_HEADLESS`, `STAGEHAND_START_URL`, `STAGEHAND_MODEL`, `STAGEHAND_MODEL_API_KEY` and `BROWSERBASE_API_KEY`.
+
+## Browser lifecycle
+
+Each thread gets its own browser. It launches on the thread's first browser tool call and closes when the agent's run ends.
+
+To keep the browser and its open pages between runs on the same thread, such as in a chat, pass `close_after_run=False` and close the browsers yourself when you're done:
+
+```python
+from langgraph.checkpoint.memory import InMemorySaver
+
+browser = StagehandMiddleware(RuntimeConfig(provider="browserbase"), close_after_run=False)
+agent = create_deep_agent(middleware=[browser], checkpointer=InMemorySaver())
+
+config = {"configurable": {"thread_id": "1"}}
+await agent.ainvoke({"messages": [{"role": "user", "content": "Open news.ycombinator.com"}]}, config)
+await agent.ainvoke({"messages": [{"role": "user", "content": "Open the top story"}]}, config)
+
+await browser.aclose()
+```
+
+## Related resources
+
+<CardGroup cols={2}>
+  <Card title="Integration source + examples" icon="brand-github" href="https://github.com/browserbase/stagehand/tree/main/packages/integrations/deepagents">
+    The middleware, an MCP server for other clients, and runnable examples.
+  </Card>
+  <Card title="Browserbase provider page" icon="browser" href="/oss/python/integrations/providers/browserbase">
+    Full Browserbase provider overview and setup.
+  </Card>
+</CardGroup>
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/tools/stagehand.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
