@@ -24,11 +24,13 @@ Start with an [agent project](/langsmith/managed-deep-agents-quickstart) and its
 | `multitaskStrategy` / `multitask_strategy` | Optional. What an event does while its conversation has a run in progress: `enqueue` (default) waits for the run, `interrupt` cancels it and keeps its progress, `rollback` cancels it and discards its progress, and `reject` starts nothing. |
 | `app.repositories` | Optional list of `owner/name` repositories from one owner. Events from other repositories start no run. Defaults to every repository in the App installation. The App token still reaches every repository in the installation, so install the App only where the agent may act. |
 | `app.permissions` | Optional additional `read` or `write` permissions. Managed Deep Agents requests the permissions required by your handlers automatically. |
+| `onReceived` / `on_received` | Optional. Runs as soon as a handled event reaches its thread, such as to [acknowledge it with a reaction](#acknowledge-an-event-with-a-reaction). |
+| `onFinish` / `on_finish` | Optional. Runs once a handled event is done, with the run it started and how that run ended. See [Report how a run ended](#report-how-a-run-ended). |
 
 Handlers receive two arguments and can be synchronous or asynchronous:
 
-- **`event`**: The verified event, including `event.sender`, `event.repository`, and the GitHub data in `event.payload`.
-- **`thread`**: The conversation's thread, with its ID at `thread.id` and the channel name at `thread.channel.name`.
+- **`event`**: The verified event, including `event.sender`, `event.repository`, the GitHub data in `event.payload`, and the handles its text mentions in `event.mentions`.
+- **`thread`**: The conversation's thread, with its ID at `thread.id`, the channel name at `thread.channel.name`, and `thread.interrupted`, which is set only when the channel asks the handler about a thread that waits on a decision. See [Tell people a run waits for input](#tell-people-a-run-waits-for-input).
 
 :::python
 Return a run input to start a run: a nonblank string, a message, state such as `{"messages": [...]}`, or `(input, options)` with `context`, `metadata`, or `webhook` options. Return `None` to skip the event.
@@ -247,28 +249,315 @@ To deploy without a terminal, for example from CI or a coding agent, set `MDA_GI
 
 Open a pull request in a connected repository. Check for the summary comment, then inspect the run and tool calls in [LangSmith Studio](/langsmith/quick-start-studio).
 
-## Customize the workflow
+## Common workflows
 
-### Filter senders
+Most GitHub agents need the same few behaviors: answer only when mentioned, accept only maintainers, acknowledge an event, and say when a run fails or waits. Each takes a few lines in a handler or hook, plus calls to the GitHub API with the App's token.
 
-The channel ignores its own App bot. To restrict other senders, add this optional check at the start of your handler:
+### Call GitHub from handlers and hooks
+
+Handlers and hooks run outside a run, and `connections.get("mda/github-token", ...)` resolves there too. The following helper calls the GitHub API with the App's installation token. The recipes in this section use it:
 
 :::python
 ```python
-if event.sender.login.lower() not in {"your-github-login"}:
-    return None
+import httpx
+from managed_deepagents import connections
+
+
+async def github(method: str, path: str, **kwargs) -> httpx.Response:
+    token = await connections.get("mda/github-token", {"type": "agent"})
+    async with httpx.AsyncClient(base_url="https://api.github.com", timeout=10) as client:
+        response = await client.request(
+            method,
+            path,
+            headers={
+                "Accept": "application/vnd.github+json",
+                "Authorization": f"Bearer {token}",
+            },
+            **kwargs,
+        )
+    response.raise_for_status()
+    return response
 ```
 :::
 
 :::js
 ```ts
-if (!["your-github-login"].includes(event.sender.login.toLowerCase())) {
-  return;
+import { Octokit } from "@octokit/rest";
+import { connections } from "managed-deepagents";
+
+async function github() {
+  const auth = await connections.get("mda/github-token", { type: "agent" });
+  return new Octokit({ auth });
 }
 ```
 :::
 
-Replace `your-github-login` with an allowed username. Without this check, the example accepts new pull requests from any sender except the App bot.
+Handlers usually run before GitHub receives the webhook response, so keep their GitHub calls short. Hooks run in the background.
+
+### Answer only mentions
+
+GitHub sends no event for a mention. Instead, `event.mentions` lists the handles an event's text mentions: the body of a new or edited comment or review, or the title and body of an opened or edited issue or pull request. Other events, such as `labeled` or `synchronize`, list none. Handles are lowercase and include the `@`, such as `@my-agent`. Any text tag counts, even one that is not a GitHub account, and so do team handles such as `@acme/reviewers`. Mentions inside code, quotes, or HTML comments don't count.
+
+:::python
+```python
+def on_comment(event, thread):
+    if "@my-agent" not in event.mentions:
+        return None
+    issue = event.payload["issue"]
+    return f"Answer the comment on #{issue['number']} in {event.repository.full_name}."
+
+
+channel = channels.github(on_event={"issue_comment.created": on_comment})
+```
+:::
+
+:::js
+```ts
+export const channel = channels.github({
+  onEvent: {
+    "issue_comment.created": (event) => {
+      if (!event.mentions.includes("@my-agent")) return;
+      const { fullName } = event.repository;
+      return `Answer the comment on #${event.payload.issue.number} in ${fullName}.`;
+    },
+  },
+});
+```
+:::
+
+`issue_comment` events cover pull request comments too. To answer only on issues, skip events whose `payload.issue.pull_request` is set. For an `edited` event, `event.mentions` lists only the handles the edit added, so editing a comment that already mentioned the agent doesn't mention it again. GitHub's `payload.changes` says what else changed.
+
+### Let only maintainers start runs
+
+The channel ignores its own App bot. To accept only people who maintain the repository, check the `author_association` GitHub sends with each comment, issue, pull request, and review. It needs no API call:
+
+:::python
+```python
+MAINTAINERS = {"OWNER", "MEMBER", "COLLABORATOR"}
+
+
+def on_comment(event, thread):
+    if event.payload["comment"]["author_association"] not in MAINTAINERS:
+        return None
+    ...
+```
+:::
+
+:::js
+```ts
+// GitHub's payload fields beyond the SDK's types are `unknown`.
+const MAINTAINERS = new Set<unknown>(["OWNER", "MEMBER", "COLLABORATOR"]);
+
+export const channel = channels.github({
+  onEvent: {
+    "issue_comment.created": (event) => {
+      if (!MAINTAINERS.has(event.payload.comment.author_association)) return;
+      // ...
+    },
+  },
+});
+```
+:::
+
+`author_association` describes who wrote the comment, issue, or review. For `created` and `opened` events, that is also the sender. For events where someone else acts, such as `issues.labeled`, check the sender's permission on the repository instead:
+
+:::python
+```python
+async def can_write(event) -> bool:
+    repo, login = event.repository.full_name, event.sender.login
+    try:
+        response = await github("GET", f"/repos/{repo}/collaborators/{login}/permission")
+    except httpx.HTTPStatusError:
+        return False
+    return response.json()["permission"] in {"admin", "write"}
+```
+:::
+
+:::js
+```ts
+import type { GitHubEvent } from "managed-deepagents";
+
+async function canWrite(event: GitHubEvent) {
+  const octokit = await github();
+  const response = await octokit.rest.repos
+    .getCollaboratorPermissionLevel({
+      owner: event.repository.owner,
+      repo: event.repository.name,
+      username: event.sender.login,
+    })
+    .catch(() => undefined);
+  return ["admin", "write"].includes(response?.data.permission ?? "none");
+}
+```
+:::
+
+To skip other bots, return early when `event.sender.type` is `Bot`.
+
+### Acknowledge an event with a reaction
+
+People expect a sign that the agent saw their comment, such as a 👀 reaction, long before its first reply. React from `onReceived` (`on_received` in Python). It runs as soon as an event reaches its conversation's thread, while the handler may still wait for a busy conversation's run to finish.
+
+`onReceived` runs for every handled event, including events that the handler then skips and events on a thread that waits on a decision. Apply the same filters as the handler:
+
+:::python
+```python
+async def acknowledge(event, thread):
+    if event.key != "issue_comment.created" or "@my-agent" not in event.mentions:
+        return
+    comment_id = event.payload["comment"]["id"]
+    await github(
+        "POST",
+        f"/repos/{event.repository.full_name}/issues/comments/{comment_id}/reactions",
+        json={"content": "eyes"},
+    )
+
+
+channel = channels.github(
+    on_event={"issue_comment.created": on_comment},
+    on_received=acknowledge,
+)
+```
+:::
+
+:::js
+```ts
+export const channel = channels.github({
+  onEvent: { "issue_comment.created": onComment },
+  onReceived: async (event) => {
+    if (event.key !== "issue_comment.created") return;
+    if (!event.mentions.includes("@my-agent")) return;
+    const octokit = await github();
+    await octokit.rest.reactions.createForIssueComment({
+      owner: event.repository.owner,
+      repo: event.repository.name,
+      comment_id: event.payload.comment.id,
+      content: "eyes",
+    });
+  },
+});
+```
+:::
+
+A failing `onReceived` is logged and doesn't stop the run.
+
+### Tell people a run waits for input
+
+A run can stop on a decision, such as a tool call that requires approval. The App then comments on the issue or pull request with a link to the thread in LangSmith Studio, where someone with access to the workspace makes the decision. You don't need code for this, as long as your handler answers the check described next.
+
+While the thread waits, new events start no run. Each time the thread waits on a decision, whether the event's own run stopped or a new event arrived, the channel calls the event's handler again with `thread.interrupted` set, to decide whether the event gets a comment with the link. Return a run input to post it, or nothing to stay quiet, so the handler's filters, such as a mention check, decide who gets it. No run starts either way, so skip side effects, such as a GitHub call, while `thread.interrupted` is set. Events that aren't about one issue or pull request, such as `push`, get no comment.
+
+To do more, such as labeling the issue, use `onFinish`, as in the next section.
+
+### Report how a run ended
+
+`onFinish` (`on_finish` in Python) runs once each handled event is done, with the event, its thread, and how the event finished. Check the finish's `type`:
+
+- `run`: The event started a run, and `run` says how it ended. Its `status` uses LangGraph's names: `success`, `error`, `timeout`, or `interrupted`, which means the run was cancelled, such as by a newer event.
+- `skipped`: The event started no run, and `reason` says why, such as `ignored` when the handler skipped it or `waiting` when its thread waits on a decision.
+- `failed`: Managed Deep Agents couldn't start the run or lost track of it, and `reason` says which.
+
+Each finish also lists the decisions its thread waits on in `interrupts`. Check `interrupts`, not the run's status, to tell whether the thread waits on a decision.
+
+The following hook comments when a run fails, and labels the issue or pull request when its thread waits on a decision:
+
+:::python
+```python
+async def on_finish(event, thread, finished):
+    subject = event.payload.get("issue") or event.payload.get("pull_request")
+    if subject is None:
+        return
+    path = f"/repos/{event.repository.full_name}/issues/{subject['number']}"
+    if finished["type"] == "run" and finished["run"]["status"] in {"error", "timeout"}:
+        await github("POST", f"{path}/comments", json={"body": "Something went wrong. Try again later."})
+    if finished["interrupts"]:
+        await github("POST", f"{path}/labels", json={"labels": ["needs-input"]})
+
+
+channel = channels.github(
+    on_event={"issue_comment.created": on_comment},
+    on_finish=on_finish,
+)
+```
+:::
+
+:::js
+```ts
+export const channel = channels.github({
+  onEvent: { "issue_comment.created": onComment },
+  onFinish: async (event, thread, finished) => {
+    const payload = event.payload as { issue?: { number: number }; pull_request?: { number: number } };
+    const number = payload.issue?.number ?? payload.pull_request?.number;
+    if (number === undefined) return;
+    const target = { owner: event.repository.owner, repo: event.repository.name, issue_number: number };
+    const octokit = await github();
+    const status = finished.type === "run" ? finished.run.status : undefined;
+    if (status === "error" || status === "timeout") {
+      await octokit.rest.issues.createComment({ ...target, body: "Something went wrong. Try again later." });
+    }
+    if (finished.interrupts.length > 0) {
+      await octokit.rest.issues.addLabels({ ...target, labels: ["needs-input"] });
+    }
+  },
+});
+```
+:::
+
+Issue comment events already give the App write access to issues, so the hook needs no extra permission.
+
+`onFinish` runs in the deployment process that took the event, so a restart while a run is in progress loses it. A run that resumes after a decision in Studio doesn't reach `onFinish` either. To learn reliably when each run ends, use a [completion webhook](#let-your-service-decide-what-starts).
+
+### Let your service decide what starts
+
+If a service of yours already decides what an event should do, such as which repository to work in, what prompt to send, or what token the run gets, make that service the handler. Pass a URL, or a `Request` with headers such as a credential, instead of a function:
+
+:::python
+```python
+import os
+
+import httpx
+from managed_deepagents import channels
+
+backend = httpx.Request(
+    "POST",
+    f"{os.environ['BACKEND_URL']}/github/events",
+    headers={"x-api-key": os.environ["BACKEND_KEY"]},
+)
+
+channel = channels.github(
+    on_event={"issues.opened": backend, "issue_comment.created": backend},
+)
+```
+:::
+
+:::js
+```ts
+const backend = new Request(`${process.env.BACKEND_URL}/github/events`, {
+  headers: { "x-api-key": process.env.BACKEND_KEY! },
+});
+
+export const channel = channels.github({
+  onEvent: { "issues.opened": backend, "issue_comment.created": backend },
+});
+```
+:::
+
+The URL must use `https`, or `http` to `localhost`, and can't contain credentials. The channel calls the service at the same points it would call a handler function, but after GitHub has its webhook response. It POSTs `{"event": ..., "thread": ...}` as JSON:
+
+- `event` has the event's `key` and `deliveryId`, GitHub's `payload`, and the `action`, `repository`, `sender`, and `mentions` a handler gets.
+- `thread` has the thread's `id`, `channel.name`, and `interrupted: true` when the channel asks whether the event gets a [comment with a Studio link](#tell-people-a-run-waits-for-input).
+
+The service answers in one of two ways:
+
+- With `{"input": ..., "context": ..., "metadata": ..., "webhook": ...}` to start that run. Only `input` is required.
+- With JSON `null` or HTTP 204 to start nothing.
+
+The SDK exports the request and answer types, such as `GitHubEndpointRequest` and `EndpointAnswer`, for the service to use. A network error, HTTP 429, or a 5xx status is retried, for up to three attempts. Any other error status, a redirect, an answer that isn't one of the two above, or no answer within 60 seconds starts no run, as a handler that throws does.
+
+If the deployment sets `MDA_SERVICE_SECRET`, each request is signed with [Standard Webhooks](https://www.standardwebhooks.com/) headers (`webhook-id`, `webhook-timestamp`, and `webhook-signature`), so the service can verify it came from your deployment. Retries keep the same `webhook-id`.
+
+Set `webhook` to have the Agent Server POST the finished run, with its status, metadata, and values, to your service. Unlike `onFinish`, the webhook survives deployment restarts.
+
+## Customize the workflow
 
 ### Continue conversations
 
