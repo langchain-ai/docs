@@ -1,7 +1,7 @@
 ---
 title: Build a deep research agent
 sidebarTitle: Deep Research
-description: Build a multi-step web research agent with subagent delegation
+description: Build a multi-step web research agent with subagent delegation using Managed Deep Agents or the Deep Agents SDK
 ---
 
 import DeepResearchToolsPy from '/snippets/code-samples/deep-research-tools-py.mdx';
@@ -19,10 +19,18 @@ import DeepResearchResearcherInstructionsJs from '/snippets/code-samples/deep-re
 import DeepResearchSubagentDelegationInstructionsPy from '/snippets/code-samples/deep-research-subagent-delegation-instructions-py.mdx';
 import DeepResearchSubagentDelegationInstructionsJs from '/snippets/code-samples/deep-research-subagent-delegation-instructions-js.mdx';
 import DeepResearchAgentGeminiPy from '/snippets/code-samples/deep-research-agent-gemini-py.mdx';
+import DeepResearchMdaInstructions from '/snippets/code-samples/deep-research-mda-instructions.mdx';
+import DeepResearchMdaToolsPy from '/snippets/code-samples/deep-research-mda-tools-py.mdx';
+import DeepResearchMdaToolsJs from '/snippets/code-samples/deep-research-mda-tools-js.mdx';
+import DeepResearchMdaAgentClaudePy from '/snippets/code-samples/deep-research-mda-agent-claude-py.mdx';
+import DeepResearchMdaAgentGeminiPy from '/snippets/code-samples/deep-research-mda-agent-gemini-py.mdx';
+import DeepResearchMdaAgentClaudeJs from '/snippets/code-samples/deep-research-mda-agent-claude-js.mdx';
+import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
+import ManagedDeepAgentsPrerequisites from '/snippets/langsmith/managed-deep-agents-prerequisites.mdx';
 
 ## Overview
 
-This guide demonstrates how to build a multi-step web research agent from scratch using [Deep Agents](/oss/deepagents). The agent decomposes research questions into focused tasks, delegates them to specialized sub-agents, and synthesizes findings into a comprehensive report.
+This guide shows how to build a multi-step web research agent with [Deep Agents](/oss/deepagents). The agent decomposes research questions into focused tasks, delegates them to specialized sub-agents, and synthesizes findings into a comprehensive report.
 
 The agent you build will:
 
@@ -31,7 +39,7 @@ The agent you build will:
 1. Assess search results and plan next steps as you gather information
 1. Synthesize findings with proper citations into a final report
 
-The spawned sub-agents will conduct web searches with Tavily, fetching full webpage content for analysis.
+The spawned sub-agents conduct web searches with Tavily, fetching full webpage content for analysis.
 
 ### Key concepts
 
@@ -46,10 +54,225 @@ This tutorial covers:
 API keys for:
 
 - Anthropic (Claude) or Google (Gemini)
-- [Tavily](https://www.tavily.com/) for web search (optional - free tier sufficient)
-- [LangSmith](https://smith.langchain.com) for tracing (optional)
+- [Tavily](https://www.tavily.com/) for web search (optional; free tier is sufficient)
+- [LangSmith](https://smith.langchain.com) for tracing (optional if you are using the SDK; required for Managed Deep Agents)
 
-## Setup
+## Choose your path
+
+This guide shows how to build this agenet with [Managed Deep Agents](/langsmith/managed-deep-agents-overview) and the Deep Agnets SDK. Managed Deep Agents laets you deploy agents without having to manage infrastructure. The Deep Agents SDK, lets you have maximum flexibility while using the same Deep Agents harness and you can host agents yourself, or run a custom [LangSmith Deployment](/langsmith/deployment).
+
+<Tabs>
+<Tab title="Managed Deep Agents">
+
+<ManagedDeepAgentsPublicBetaNote />
+
+### Setup
+
+<ManagedDeepAgentsPrerequisites />
+
+<Steps>
+<Step title="Create the project">
+
+:::python
+```bash
+uvx --from managed-deepagents mda init deep-research
+cd deep-research
+```
+:::
+
+:::js
+<CodeGroup>
+```bash npm
+npx managed-deepagents init deep-research
+cd deep-research
+```
+
+```bash pnpm
+pnpm dlx managed-deepagents init deep-research
+cd deep-research
+```
+
+```bash bun
+bunx managed-deepagents init deep-research
+cd deep-research
+```
+</CodeGroup>
+:::
+
+</Step>
+<Step title="Add API keys">
+
+Add your model provider key, Tavily key, and LangSmith API key to `.env`:
+
+<Tabs>
+<Tab title="Claude">
+```text .env
+ANTHROPIC_API_KEY=<ANTHROPIC_API_KEY>
+TAVILY_API_KEY=<TAVILY_API_KEY>
+LANGSMITH_API_KEY=<LANGSMITH_API_KEY>
+```
+</Tab>
+<Tab title="Gemini">
+```text .env
+GOOGLE_API_KEY=<GOOGLE_API_KEY>
+TAVILY_API_KEY=<TAVILY_API_KEY>
+LANGSMITH_API_KEY=<LANGSMITH_API_KEY>
+```
+</Tab>
+</Tabs>
+
+<Warning>
+Do not commit the `.env` file into version control. It contains secrets.
+</Warning>
+
+</Step>
+<Step title="Install search dependencies">
+
+:::python
+```bash
+uv add tavily-python httpx markdownify
+```
+:::
+
+:::js
+No extra packages are required for the search tool in this tutorial. It uses the built-in `fetch` API and the Tavily HTTP endpoint.
+:::
+
+</Step>
+</Steps>
+
+### Build the agent
+
+<Steps>
+<Step title="Add tools">
+
+Create a custom search tool. The `tavily_search` tool uses Tavily for URL discovery, then fetches full webpage content so the agent can analyze complete sources instead of summaries.
+
+:::python
+Create `tools/search.py`:
+
+<DeepResearchMdaToolsPy />
+:::
+
+:::js
+Create `tools/search.ts`:
+
+<DeepResearchMdaToolsJs />
+:::
+
+</Step>
+<Step title="Add orchestrator instructions">
+
+Put the research workflow and sub-agent coordination guidance in `instructions.md`. Managed Deep Agents loads this file as the orchestrator system prompt:
+
+<DeepResearchMdaInstructions />
+
+When you deploy, Managed Deep Agents syncs these instructions to [Context Hub](/langsmith/managed-deep-agents-context-hub).
+
+</Step>
+<Step title="Create the agent">
+
+You just put the main agent's instructions in `instructions.md`. Replace the scaffolded agent entry with the full file below. It sets the model, tools, the research sub-agent (including that sub-agent's own prompt), and @[`TodoListMiddleware`] so the agent can call `write_todos` for [task planning](/oss/deepagents/overview#task-planning). `name` is required: MDA uses it as the LangGraph assistant ID and the default deployment name.
+
+:::python
+Replace `agent.py`. Choose your provider:
+
+<Tabs>
+<Tab title="Claude">
+<DeepResearchMdaAgentClaudePy />
+</Tab>
+<Tab title="Gemini">
+<DeepResearchMdaAgentGeminiPy />
+</Tab>
+</Tabs>
+:::
+
+:::js
+Replace `agent.ts`:
+
+<DeepResearchMdaAgentClaudeJs />
+:::
+
+</Step>
+</Steps>
+
+### Run the agent
+
+<Steps>
+<Step title="Run locally">
+
+Install dependencies and start the agent:
+
+:::python
+```bash
+uv sync
+uv run mda dev
+```
+:::
+
+:::js
+<CodeGroup>
+```bash npm
+npm install
+npx mda dev
+```
+
+```bash pnpm
+pnpm install
+pnpm exec mda dev
+```
+
+```bash bun
+bun install
+bunx mda dev
+```
+</CodeGroup>
+:::
+
+`mda dev` loads API keys from `.env`, starts a local Agent Server, and opens the agent in LangSmith Studio.
+
+In Studio, send a research question such as:
+
+```txt wrap
+Compare the main approaches to context engineering for AI agents in 2025.
+```
+
+You should see the orchestrator plan with `write_todos`, delegate to the research sub-agent, and write a report. For more information, see [Develop locally with LangSmith Studio](/langsmith/managed-deep-agents-local-development).
+
+</Step>
+<Step title="Deploy (optional)">
+
+:::python
+```bash
+uv run mda deploy
+```
+:::
+
+:::js
+<CodeGroup>
+```bash npm
+npx mda deploy
+```
+
+```bash pnpm
+pnpm exec mda deploy
+```
+
+```bash bun
+bunx mda deploy
+```
+</CodeGroup>
+:::
+
+On success, the CLI prints the deployment dashboard URL. See [Deploy](/langsmith/managed-deep-agents-deploy).
+
+</Step>
+</Steps>
+
+</Tab>
+<Tab title="Deep Agents SDK">
+
+### Setup
 
 :::python
 <Steps>
@@ -165,7 +388,7 @@ export LANGSMITH_API_KEY="your_langsmith_api_key"   # Optional
 </Steps>
 :::
 
-## Build the agent
+### Build the agent
 
 :::python
 Create `agent.py` in your project directory:
@@ -189,17 +412,12 @@ Add the custom search tool. The `tavily_search` tool uses Tavily for URL discove
 :::
 
 </Step>
-<Step title="Add prompts">
+<Step title="Create the agent">
+
+Below the tools, add the prompt constants and then create the agent. The three constants (`RESEARCH_WORKFLOW_INSTRUCTIONS`, `RESEARCHER_INSTRUCTIONS`, and `SUBAGENT_DELEGATION_INSTRUCTIONS`) must live in the same file as the `create_deep_agent` / `createDeepAgent` call. @[`TodoListMiddleware`] is opt-in [task planning](/oss/deepagents/overview#task-planning) so the agent can call `write_todos`.
 
 :::python
-Add the orchestrator workflow and sub-agent prompt templates to `agent.py`:
-:::
-
-:::js
-Add the orchestrator workflow and sub-agent prompt templates to `agent.ts`:
-:::
-
-:::python
+Add the prompts to `agent.py`:
 
 <DeepResearchWorkflowInstructionsPy />
 
@@ -207,42 +425,7 @@ Add the orchestrator workflow and sub-agent prompt templates to `agent.ts`:
 
 <DeepResearchSubagentDelegationInstructionsPy />
 
-:::
-
-:::js
-
-<DeepResearchWorkflowInstructionsJs />
-
-<DeepResearchResearcherInstructionsJs />
-
-<DeepResearchSubagentDelegationInstructionsJs />
-
-:::
-
-</Step>
-<Step title="Enable task planning">
-
-[Task planning](/oss/deepagents/overview#task-planning) is opt-in. The research workflow uses `write_todos` to break questions into focused tasks, so pass @[`TodoListMiddleware`] when you create the agent.
-
-:::python
-```python
-from langchain.agents.middleware import TodoListMiddleware
-```
-:::
-
-:::js
-```typescript
-import { todoListMiddleware } from "langchain";
-```
-:::
-
-You include this middleware in the next step when you create the agent.
-
-</Step>
-<Step title="Create the agent">
-
-:::python
-Add the model initialization and agent creation to `agent.py`. Choose your provider. Include @[`TodoListMiddleware`] so the planning tool is available:
+Then add the model and agent. Choose your provider:
 
 <Tabs>
 <Tab title="Claude">
@@ -255,7 +438,15 @@ Add the model initialization and agent creation to `agent.py`. Choose your provi
 :::
 
 :::js
-Add the model initialization and agent creation to `agent.ts`. Include `todoListMiddleware` so the planning tool is available:
+Add the prompts to `agent.ts`:
+
+<DeepResearchWorkflowInstructionsJs />
+
+<DeepResearchResearcherInstructionsJs />
+
+<DeepResearchSubagentDelegationInstructionsJs />
+
+Then add the model and agent:
 
 <DeepResearchAgentClaudeJs />
 :::
@@ -263,7 +454,7 @@ Add the model initialization and agent creation to `agent.ts`. Include `todoList
 </Step>
 </Steps>
 
-## Run the agent
+### Run the agent
 
 You can run the agent synchronously, meaning it will wait for the full result and then print it, or you can stream updates as they come in.
 
@@ -316,18 +507,20 @@ npx tsx agent.ts
 
 If you set the `LANGSMITH_API_KEY` environment variable before running, you can view the agent's traces in [LangSmith](/langsmith/observability) to debug and monitor multi-step behavior.
 
-## Full code
+### Full code
 
 View the complete [Deep Research example](https://github.com/langchain-ai/deepagents/tree/main/examples/deep_research) on GitHub.
 
+</Tab>
+</Tabs>
+
 ## Next steps
 
-Now that you've built the agent, customize it by changing the prompt constants in your agent file to adjust the workflow, delegation strategy, or researcher behavior.
-You can also tune the delegation limits to allow for more parallel sub-agents or delegation rounds.
+Now that you've built the agent, customize the workflow by editing the orchestrator instructions (Managed Deep Agents: `instructions.md`; SDK: prompt constants in your agent file). You can also tune the delegation limits to allow more parallel sub-agents or delegation rounds.
 
-For more information on the concepts in this tutorial, check out the following resources:
+For more information on the concepts in this tutorial, see:
 
-- [Subagents](/oss/deepagents/subagents): Learn how to configure subagents with different tools and prompts
+- [Subagents](/oss/deepagents/subagents): Configure subagents with different tools and prompts
 - [Customization](/oss/deepagents/customization): Customize models, tools, system prompts, and optional [task planning](/oss/deepagents/overview#task-planning)
 - [LangSmith](/langsmith/observability): Trace research runs and debug multi-step behavior
 - [Deep Research Course](https://academy.langchain.com/courses/deep-research-with-langgraph): Full course on deep research with LangGraph
