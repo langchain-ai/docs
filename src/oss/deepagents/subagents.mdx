@@ -137,7 +137,7 @@ Define subagents as dictionaries matching the @[`SubAgent`] spec with the follow
 | `mode` | `"isolated"` \| `"fork"` | Optional. Context mode. Defaults to `"isolated"`, where the subagent only sees the delegated task. Set to `"fork"` to inherit the parent's conversation and system prompt instead. See [Forked subagents](#forked-subagents). |
 | `tools` | `list[Callable]` | Optional. Tools the subagent can use. Keep this minimal and include only what's needed.<br></br>Inherits from main agent by default. When specified, overrides the inherited tools entirely. |
 | `model` | `str` \| `BaseChatModel` | Optional. Overrides the main agent's model. Omit to use the main agent's model.<br></br>Inherits from main agent by default. You can pass either a model identifier string like `'openai:gpt-5.5'` (using the `'provider:model'` format) or a LangChain chat model object (`init_chat_model("gpt-5.5")` or `ChatOpenAI(model="gpt-5.5")`). |
-| `middleware` | `list[Middleware]` | Optional. Additional middleware for custom behavior, logging, or rate limiting.<br></br>Does not inherit from the main agent. Merged into the [synchronous subagent stack](/oss/deepagents/customization#synchronous-subagent-stack): an instance whose `.name` matches a default replaces it in place, anything else lands after the last core middleware entry and before profile, prompt-caching, and memory. See [Override a default middleware instance](/oss/deepagents/customization#override-a-default-middleware-instance). For example, include a @[`FilesystemMiddleware`] instance with a `tools` allowlist here to restrict the subagent's filesystem tools independently of the main agent. For more information, see the "Restricting filesystem tools" section under [Virtual filesystem access](/oss/deepagents/overview#virtual-filesystem-access). |
+| `middleware` | `list[Middleware]` | Optional. Additional middleware for custom behavior, logging, or rate limiting.<br></br>Isolated subagents do not inherit the main agent's custom middleware. For inheritance and overrides in fork mode, see [Configure a forked subagent](#configure-a-forked-subagent). Merged into the [synchronous subagent stack](/oss/deepagents/customization#synchronous-subagent-stack): an instance whose `.name` matches a default replaces it in place, anything else lands after the last core middleware entry and before profile, prompt-caching, and memory. See [Override a default middleware instance](/oss/deepagents/customization#override-a-default-middleware-instance). For example, include a @[`FilesystemMiddleware`] instance with a `tools` allowlist here to restrict the subagent's filesystem tools independently of the main agent. For more information, see the "Restricting filesystem tools" section under [Virtual filesystem access](/oss/deepagents/overview#virtual-filesystem-access). |
 | `interrupt_on` | `dict[str, bool \| InterruptOnConfig]` | Optional. Configure [human-in-the-loop](/oss/deepagents/human-in-the-loop) for specific tools. Options:`True`, `False`, or an `InterruptOnConfig` with `allowed_decisions`. Requires checkpointer.<br></br>Inherits from main agent by default. Subagent value overrides the default. |
 | `skills` | `list[str]` | Optional. [Skills](/oss/deepagents/skills) source paths. When specified, the subagent loads skills from these directories (for example, `["/skills/researcher/"]`, a container whose subdirectories are skills). This allows subagents to have different skill sets than the main agent.<br></br>Does not inherit from main agent. Only the general-purpose subagent inherits the main agent's skills. When a subagent has skills, it runs its own independent @[`SkillsMiddleware`] instance. Skill state is fully isolated—a subagent's loaded skills are not visible to the parent, and vice versa. |
 | `response_format` | `ResponseFormat` | Optional. [Structured output](/oss/langchain/structured-output) schema for the subagent. When set, the parent receives the subagent's result as JSON instead of free-form text. Accepts Pydantic models, `ToolStrategy(...)`, `ProviderStrategy(...)`, or a raw schema type. See [Structured output](#structured-output). |
@@ -201,7 +201,7 @@ If you're creating a custom LangGraph graph, make sure that the graph has a [sta
 
 ## Forked subagents
 
-By default, a subagent runs with `mode: "isolated"`: it sees only the task description you give it and has no memory of the conversation that led up to the delegation. A **forked subagent** (`mode: "fork"`) inherits the parent's full conversation history and exact system prompt instead.
+By default, a subagent runs with `mode: "isolated"`: it sees only the task description you give it and has no memory of the conversation that led up to the delegation. A **forked subagent** (`mode: "fork"`) inherits the parent's conversation history and state instead.
 
 Use forked subagents when the subagent's task is to continue the work the parent already started, like a worker agent that picks up a fix the parent has already diagnosed, or a subagent that drafts the postmortem for an incident investigation. Since forking is a mode you set on the subagent itself, that's a decision you make when you define it.
 
@@ -245,26 +245,52 @@ graph TD
 ### Configure a forked subagent
 
 :::python
-Set `mode: "fork"` on a @[`SubAgent`] (the default is `mode: "isolated"`). All @[`SubAgent`] fields are available:
+Set `mode: "fork"` on a @[`SubAgent`] (the default is `mode: "isolated"`). You can configure these @[`SubAgent`] fields:
 `name`, `description`, `tools`, `model`, `middleware`, `interrupt_on`, `permissions`, and `response_format`.
 
-`skills` is rejected if provided. `system_prompt` is allowed and is appended to the parent's inherited prompt as an addendum, but doing so typically breaks the prompt cache, so leave it unset unless you have a specific need for fork-only instructions.
+Forks inherit the custom middleware passed to the parent's `create_deep_agent`. Middleware in the subagent's `middleware` list replaces an inherited instance with the same `.name`. Other instances are added to the subagent's default middleware stack.
+
+By default, the fork inherits all tools passed to the parent. Set `tools` to replace those tools, not add to them. For example, a list containing one tool replaces the inherited list with that one tool. Filesystem and other middleware-provided tools are added separately.
+
+`skills` is rejected if provided. `system_prompt` is appended to the parent's inherited prompt as an addendum. Leave it unset unless you need fork-only instructions.
+
+A `wrap_model_call` hook receives the fork's inherited prompt through `request.system_message`. It can rewrite the fork's outgoing request with `request.override(system_message=...)` without changing the parent's prompt. This differs from `system_prompt`, which appends instructions.
+
+Avoid rewriting the shared inherited prefix or changing tool definitions unless you accept reduced cache reuse and potentially higher model costs. For example, this hook fragment prepends text before the inherited prefix, preventing reuse of that prefix:
+
+```python
+from langchain.messages import SystemMessage
+
+rewritten = SystemMessage(content=[
+    {"type": "text", "text": "You are a security auditor.\n"},
+    *request.system_message.content_blocks,
+])
+return handler(request.override(system_message=rewritten))
+```
+
+Additional middleware or appended instructions do not necessarily prevent reuse of an unchanged prefix.
 
 <ForkedSubagentsBasicPy />
 :::
 
 :::js
-Set `mode: "fork"` on a @[`SubAgent`] (the default is `mode: "isolated"`). All @[`SubAgent`] fields are available:
+Set `mode: "fork"` on a @[`SubAgent`] (the default is `mode: "isolated"`). You can configure these @[`SubAgent`] fields:
 `name`, `description`, `tools`, `model`, `middleware`, `interruptOn`, `permissions`, and `responseFormat`.
 
-`skills` is rejected if provided. `systemPrompt` is allowed and is appended to the parent's inherited prompt as an addendum, but doing so typically breaks the prompt cache, so leave it unset unless you have a specific need for fork-only instructions.
+The fork inherits the parent's skills; setting `skills` is not supported.
+
+Leave `systemPrompt` unset to use the parent's prompt. If set, its instructions are appended to the parent's prompt, shortening the shared prefix available for prompt caching across providers. Consequently, setting a fork-specific system prompt is not recommended unless the fork needs additional instructions.
+
+By default, the fork inherits all tools passed to the parent. Set `tools` to replace those tools, not add to them. For example, a list containing one tool replaces the inherited list with that one tool. Filesystem and other middleware-provided tools are added separately.
 
 <ForkedSubagentsBasicJs />
 :::
 
 ### How it works
 
-A fork does not get a fresh task description. It gets the parent's own conversation, with one change: the trailing call that delegated to it is dropped and replaced with a short preamble marking the messages above as a continuation, not a fresh request. When the fork finishes, its answer comes back as a normal tool result, and the parent picks up right where it left off.
+A fork receives the parent's effective conversation history plus the delegated task description. Deep Agents removes the trailing delegation call and appends the task description with a continuation preamble. If the parent has compacted its history, the fork receives that compacted context, not every original message.
+
+Here, forking means inheriting context for delegated work, not copying a persisted thread's checkpoint history. The subagent receives state prepared for its invocation, with parent-only fields excluded. When it finishes, its answer returns as a normal tool result, and the parent continues.
 
 :::python
 ```python
@@ -314,7 +340,7 @@ A fork does not get a fresh task description. It gets the parent's own conversat
 ```
 :::
 
-Reusing the parent's exact prefix also means the fork can reuse the parent's prompt cache instead of starting cold, though tool use that diverges from the parent's will still miss.
+A fork can reuse the parent's prompt cache for the matching prefix of their requests. Changing the system prompt, tools, or earlier messages shortens that shared prefix across providers. Leave the fork's configuration unchanged to maximize reuse, though cache hits are not guaranteed.
 
 A @[`CompiledSubAgent`] supports `mode: "fork"` too, though it keeps its own system prompt since the graph is already built.
 
@@ -324,8 +350,8 @@ Compare isolated and forked modes along these dimensions:
 
 | Dimension | Isolated (default) | Forked |
 |-----------|---------------------|--------|
-| **Context** | Only the task description you pass in | The parent's full conversation history and system prompt |
-| **System prompt and skills** | You set them on the subagent | Skills not settable; system prompt appends to the parent's (breaks caching, so usually left unset) |
+| **Context** | Only the task description you pass in | The parent's effective conversation history and inherited state, plus the task description |
+| **System prompt and skills** | You set them on the subagent | Inherits skills and the parent's base prompt. An optional system prompt appends instructions and can reduce cache reuse. |
 | **Calling other subagents** | Can use the `task` tool | Cannot use `task`; must finish the work itself |
 | **Best for** | Focused work that needs little prior context | Continuing an investigation the parent has already started |
 

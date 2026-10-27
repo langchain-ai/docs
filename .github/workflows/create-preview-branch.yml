@@ -124,10 +124,12 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version: '3.13'
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.13'
 
       - name: Install dependencies
         run: make install
@@ -240,7 +242,9 @@ jobs:
       pull-requests: write
     runs-on: ubuntu-latest
     needs: create-preview
-    if: github.event_name == 'pull_request' && needs.create-preview.result == 'success'
+    if: >-
+      github.event_name == 'pull_request' && needs.create-preview.result == 'success' &&
+      github.actor != 'dependabot[bot]' && github.event.pull_request.user.login != 'dependabot[bot]'
 
     steps:
       - name: Trigger Mintlify preview deployment
@@ -377,7 +381,9 @@ jobs:
 
             const body = lines.join('\n');
 
-            // Remove prior preview comments created by this workflow
+            // Edit the existing preview comment in place rather than posting
+            // a new one: a new comment notifies everyone on the PR on every
+            // push, while an edit notifies no one.
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -385,7 +391,7 @@ jobs:
               per_page: 100,
             });
 
-            const shouldDelete = (commentBody) => {
+            const isPreviewComment = (commentBody) => {
               if (!commentBody) return false;
               return (
                 commentBody.includes(COMMENT_MARKER) ||
@@ -395,8 +401,11 @@ jobs:
               );
             };
 
-            const toDelete = comments.filter(c => c.user?.type === 'Bot' && shouldDelete(c.body));
-            for (const c of toDelete) {
+            const previous = comments.filter(c => c.user?.type === 'Bot' && isPreviewComment(c.body));
+            const [existing, ...duplicates] = previous;
+
+            // Older runs, and older comment formats, can leave extras behind.
+            for (const c of duplicates) {
               await github.rest.issues.deleteComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -404,9 +413,20 @@ jobs:
               });
             }
 
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body,
-            });
+            if (existing) {
+              if (existing.body !== body) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body,
+                });
+              }
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

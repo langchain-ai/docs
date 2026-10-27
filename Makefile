@@ -1,4 +1,4 @@
-.PHONY: all dev build export htmltest export-htmltest format lint test install install_vale clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples update-code-sample-traces check-cross-refs skills
+.PHONY: all dev build export htmltest export-htmltest format lint test install install_vale clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples update-code-sample-traces check-cross-refs check-legacy-links skills
 
 # Default target
 all: help
@@ -124,7 +124,17 @@ install:
 	@echo "Installing all dependencies"
 	uv sync --all-groups
 	npm install
-	npm install -g mint@latest
+	@for attempt in 1 2 3; do \
+		if npm install -g mint@latest; then \
+			break; \
+		elif [ "$$attempt" -eq 3 ]; then \
+			echo "Mintlify CLI installation failed after $$attempt attempts." >&2; \
+			exit 1; \
+		fi; \
+		delay=$$((attempt * 10)); \
+		echo "Mintlify CLI installation failed; retrying in $${delay}s ($$attempt/3)..." >&2; \
+		sleep "$$delay"; \
+	done
 	@$(MAKE) --no-print-directory skills
 	@echo "If the docs command is not available, relaunch your shell so it picks up the docs binary."
 
@@ -181,6 +191,9 @@ broken-links-with-anchors: build
 			echo "✅ No broken links"; \
 		fi
 
+check-legacy-links:
+	@bash scripts/check-legacy-doc-links.sh
+
 check-openapi: build
 	@echo "Checking openapi spec validity"
 	@command -v mint >/dev/null 2>&1 || { echo "Error: mint is not installed. Run 'npm install -g mint@latest'"; exit 1; }
@@ -197,6 +210,8 @@ code-snippets:
 #   make test-code-samples
 #   make test-code-samples FILES="src/code-samples/langchain/return-a-string.py"
 # Set CODE_SAMPLE_JOBS=N (default 4) to run samples concurrently.
+# Samples that share a LangSmith dataset/fixture (evaluate-rag-*,
+# experiment-runs-query-*) stay serialized within their group.
 test-code-samples:
 	@if [ -f src/code-samples/package.json ]; then (cd src/code-samples && npm install --silent); fi
 	@FILES="$(FILES)" PYTHONPATH=$(CURDIR) uv run python scripts/test_code_samples.py
@@ -204,7 +219,9 @@ test-code-samples:
 # Run code samples with LangSmith tracing, update public share links in
 # src/code-samples/trace-links.json, then regenerate snippet MDX so docs show
 # "View example trace" under single-snippet samples that produced an agent run.
-# Multi-snippet source files are skipped until split. Requires LANGSMITH_API_KEY.
+# Each traced sample stamps LANGSMITH_DOCS_SNIPPET=<snippet-id>; collection
+# matches that metadata (no time-window LangGraph fallback). Multi-snippet
+# source files are skipped until split. Requires LANGSMITH_API_KEY.
 #   make update-code-sample-traces
 #   make update-code-sample-traces FILES="src/code-samples/deepagents/overview-quickstart.py"
 update-code-sample-traces:

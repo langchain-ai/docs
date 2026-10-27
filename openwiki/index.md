@@ -4,7 +4,7 @@ okf_version: "0.2"
 
 # Files
 
-- [Quickstart](quickstart.md) - Set up a local documentation preview, identify the durable input for a change, and choose the validation and operational guidance that applies to it.
+- [Repository Wiki Quickstart](quickstart.md) - Route documentation, generated artifacts, automation, preview deployment, and API-reference work to the durable owner. Choose validation that covers the changed boundary without treating generated output as source.
 
 # Directories
 

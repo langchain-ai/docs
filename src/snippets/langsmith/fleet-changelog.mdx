@@ -1,3 +1,82 @@
+<Update label="October 12-19, 2026" rss={{ title: "2026-10-12 - Fleet product update" }}>
+
+## Highlights
+
+- **Connect MCP clients to Fleet agents**: Every Fleet agent is now an MCP server, so clients such as Claude Code and Cursor can hand it a task at `/v1/fleet/agents/{agent_id}/mcp` using your API key and workspace headers. The endpoint exposes `send_message`, `respond_to_interrupt`, `get_thread`, and `cancel_run`, so a client can start a conversation, answer interrupts, check on long runs, and stop a run. The Fleet API reference now documents the endpoint and its request body. [Learn more](/langsmith/fleet/code).
+- **Call Fleet agents over A2A**: Each Fleet agent is now available as an A2A server at `POST /v1/fleet/agents/{agent_id}/a2a`, with an agent card at `GET /v1/fleet/agents/{agent_id}/.well-known/agent-card.json`. Point any A2A client at `/v1/fleet/agents/{agent_id}` as its base URL, and use `SendStreamingMessage` for long-running agents. Messages without a `contextId` start a new Fleet thread, and shared agents see the identity of the person who invokes them. [Learn more](/langsmith/fleet/code).
+
+## Fleet
+
+- Slack agents can now answer follow-up replies in a thread without an @-mention: set `triggerMode` to `thread` when you create the channel, or change an existing Slack channel's mode in place, and the app updates its event subscriptions without being reinstalled. The default for new Slack channels stays `mention`, and existing channels keep their current mode until you change it.
+- Chat models that need an API key now show whether the key is configured, stay visible but disabled when it is missing, and open a **Configure API keys** dialog from the model menu so you can add the key without losing your chat selection.
+- Fleet customers can now fetch estimated USD costs by user and by agent from the new `/v1/fleet/usage/users` and `/v1/fleet/usage/agents` endpoints, with cursor pagination (`page_size` up to 100) and sorting by cost, runs, or first and last use; the endpoints require the `fleet:read-admin-config` permission.
+- Secret MCP servers now show a link to enter your API key when no key is stored, so a tool call returns a sign-in-style link to add it instead of a dead end; the same link also lets you replace a rotated or revoked key, and saved values are sent as their headers on the next request.
+- Free workspaces now create new Fleet agents and Build agents with state storage instead of a sandbox, and new general chats on free plans keep attached files in graph state. Computer access stays available as an upgrade option, and paid plans keep their existing backend choices.
+- The agent configuration panel is now a modal drawer that covers the chat, with **Save changes** always visible in the footer; it closes after a successful save, and closing with unsaved edits asks you to confirm before discarding them.
+- Slack-triggered threads in the web UI now show a Slack card with the sender's name, the message text, and an "Open in Slack" link, instead of the raw channel IDs and user IDs the agent receives. Mentions of users in the message display as their names. Threads created before this change still open with a card, but show the sender's raw ID and no link.
+- Access profiles now live under a new **Computers** item at the end of the Explore section in Fleet, and the old Integrations > Computer links redirect to the new page.
+- Fleet schedules now require a minute interval of at least five minutes, so every-minute and wildcard steps below five such as `*/3` are rejected with a message that suggests `*/5 * * * *`.
+- New Build agents now default to Per-user connections and record trace inputs and outputs, so their runs include request and response payloads unless you turn tracing off.
+- Build generation now requires the selected model's API key. The Generate button stays disabled until the key is saved in the workspace or organization, and existing keys satisfy the requirement without re-entry.
+- Tool kits replace MCP gateways in the Tools page, API routes, and audit events, and existing `/gateways` URLs and `?view=gateways` links keep working. You can now refresh a tool kit's tools on request with `POST /v1/managed-tools/kits/{kit_id}/tool-refresh`.
+- Workspace admins can now create tool credential profiles in **Workspace tools** > **Profiles**, connect OAuth and API-key servers once for a profile, and have agents call those tools by sending the `X-LangSmith-Profile` header instead of acting as a user.
+- The agent builder now always passes your original request to the new agent: when you click **Create agent**, the request is prefilled as the new agent's first message, so you no longer need to restate it.
+- Thread reads that time out now return a 504 Gateway Timeout instead of a generic 500, and threads known to be too large return a 422 immediately instead of timing out again.
+- The Pylon integration now includes a `pylon_get_issue_messages` tool, so agents can read the full message thread on an issue, including customer replies and internal notes, instead of only the opening message.
+- Failed agent runs in Slack now include a footnote under the error message that links to that run's LangSmith trace. The link works for people with access to the workspace, and everyone else in the thread still sees the error as before.
+- Fleet runs in OIDC SSO organizations now receive your identity provider access token, including scheduled and triggered runs with no user present, and the token renews automatically when it expires.
+
+## Fixes and improvements
+
+<Accordion title="Show all fixes">
+
+- Shared agents now name the user who runs them instead of the agent's creator, so the model prompt and run metadata show the invoker's name and email, including for runs started through the SDK proxy.
+- Scheduled Fleet runs no longer fail with expired credentials errors. Each cron run now gets fresh credentials when it starts, so runs created before this fix succeed without being recreated.
+- Subagents paused for approval, a reply, or sign-in now show what they need in Fleet chat, such as "Needs approval", instead of "Failed".
+- Clicking **Input** in the Fleet Studio trace panel no longer clears the selected conversation, and reopening a thread from **Threads** keeps it loaded.
+- Skills you create in chat now stay attached to the conversation after you reopen it, and sharing a skill to the workspace reports success only once the workspace copy is saved, with a clear error when it fails.
+- AI setup now lets self-serve workspaces generate configurations with Fleet models such as Default, Fast, Pro, and Max, so the model picker is no longer empty.
+- Custom MCP servers registered with a trailing slash in their URL now load their tools and send their configured headers, instead of showing "Could not load tools" or dropping every tool as invalid.
+- Connecting an account now disables both the Connect new account button and the Add button until the connection finishes, so repeated clicks no longer create duplicate accounts; both buttons re-enable after a cancelled, failed, or completed connection, and a failed connection now shows a "Failed to connect account" error message.
+- Slack channel setup for agents on AWS now completes instead of returning a 404 error after the agent deploys.
+- Reauthorizing an OAuth connection that was created before login IDs changed no longer fails with a forbidden error; the existing token and agent connection are kept and reauthorization completes for the original user.
+- OAuth providers that use HTTP Basic client authentication now accept client IDs and secrets containing reserved characters such as colons, percent signs, and plus signs, so token requests no longer fail with an invalid client error.
+- Built-in tools such as Parallel and Exa now work with MCP clients that use the 2026-07-28 protocol revision, including Managed Deep Agents in its default auto mode, which previously failed on `tools/list` with a missing `resultType` error.
+
+</Accordion>
+
+</Update>
+
+<Update label="October 5-12, 2026" rss={{ title: "2026-10-05 - Fleet product update" }}>
+
+## Fleet
+
+- Fleet agents can now be called from MCP clients such as Claude Code and Cursor: each agent exposes its own MCP server, so a client can send it a task, continue the conversation, approve or answer its interrupts, check a thread, or cancel a run.
+- Fleet now offers Claude Sonnet 5.5 and Opus 5.5, GPT-6.1 Sol, and Gemini 3.8 Flash as built-in models you can select for your agents.
+- Slack bots from other registered agents can now trigger your agent when the receiving channel enables bot triggers and the message mentions its bot user, and turning bot triggers on or off now takes effect when you redeploy the Slack channel.
+- SharePoint download and upload tools now handle PDFs: `sharepoint_download_file` saves a SharePoint file into your workspace at `/downloads/<filename>`, and `sharepoint_upload_file` accepts workspace files up to 25 MiB as well as text content.
+- Creating an agent with a computer, or starting a thread with one, now returns a clear 403 error explaining that computer access is not enabled for your organization when the setting is off. Agents without a computer continue to save normally.
+- Scheduled agent runs that are rejected for exceeding your monthly quota or weekly spend limit now disable their cron schedule automatically, so they stop retrying until you re-enable them.
+- Slack app setup now works in bring-your-own-cloud (BYOC) workspaces: you can create an agent with a new Slack app using the manual Slack app wizard, and the trigger server's public URL is set to your data-plane URL with `/v1` for the setup flow.
+
+## Fixes and improvements
+
+<Accordion title="Show all fixes">
+
+- Fixed MCP OAuth setup failing with a 403 for users who have only MCP server permissions; you can now discover an MCP server's OAuth provider and bind it to a workspace without deployment permissions.
+- Workspace admins who sign in with OIDC can now list, create, update, and delete workspace secrets, including the secrets used for MCP server headers, instead of getting a 401 error.
+- Saving an agent with linked skills no longer fails with a missing Prompt permission error when you have Fleet skill read access; the agent saves with your Fleet permissions alone.
+- Fixed an issue where Fleet OAuth sign-in redirects failed with a blocked-request error at the callback page; the callback page now loads, so you can complete OAuth sign-in for Fleet.
+- Fleet integrations in customer-hosted (BYOC) workspaces now use the workspace's data plane for OAuth connections and the LangSmith MCP server, instead of falling back to the SaaS endpoint. Existing integration registrations are not migrated, so reconnect any that were created before this change.
+- Configure no longer replaces an agent's saved shared account when a teammate opens the editor. The saved account now stays selected, and teammates see owner guidance when it needs additional permissions.
+- Sharing or importing a skill with a name already used in the workspace now shows a clear message asking you to choose a different name, and chat skill sharing stays open instead of reporting success.
+- Slack invocation now works for agents whose editor access was cleared to no editors. Previously, Slack invocation stopped after acknowledging the event, and it now runs as expected for the owner and users with Can use access.
+- Attaching a personal OAuth token to an agent now requires that you own the token; requests that reference another user's token are rejected with a 400 error and existing connections are left unchanged.
+
+</Accordion>
+
+</Update>
+
 <Update label="September 28-October 5, 2026" rss={{ title: "2026-09-28 - Fleet product update" }}>
 
 ## Fleet

@@ -3,7 +3,11 @@ title: Optimize a classifier
 sidebarTitle: Optimize a classifier
 ---
 
+import AgentTracingPrerequisite from '/snippets/langsmith/agent-tracing-prerequisite.mdx';
+
 This tutorial shows you how to optimize a classifier based on user feedback. Classifiers are great to optimize because its generally pretty simple to collect the desired output, which makes it easy to create few shot examples based on user feedback. That is exactly what we will do in this example.
+
+<AgentTracingPrerequisite />
 
 ## The objective
 
@@ -11,20 +15,19 @@ In this example, we will build a bot that classify GitHub issues based on their 
 
 ## Getting started
 
-To get started, we will first set it up so that we send all traces to a specific project. We can do this by setting an environment variable:
+Register the classifier agent, then configure its identifier and environment:
 
 ```python
 import os
-os.environ["LANGSMITH_PROJECT"] = "classifier"
+os.environ["LANGSMITH_AGENT_ID"] = "<your-agent-id>"
+os.environ["LANGSMITH_AGENT_ENVIRONMENT"] = "production"
 ```
 
-We can then create our initial application. This will be a really simple function that just takes in a GitHub issue title and tries to label it.
+We can then create our initial agent. This will be a really simple function that just takes in a GitHub issue title and tries to label it.
 
 ```python
 import openai
 from langsmith import traceable, Client
-import uuid
-
 client = openai.Client()
 
 available_topics = [
@@ -61,7 +64,7 @@ def topic_classifier(
 
 We can then start to interact with it. When interacting with it, we will generate the LangSmith run id ahead of time and pass that into this function. We do this so we can attach feedback later on.
 
-Here's how we can invoke the application:
+Here's how we can invoke the agent:
 
 ```python
 from langsmith import uuid7
@@ -77,13 +80,18 @@ Here's how we can attach feedback after. We can collect feedback in two forms.
 First, we can collect "positive" feedback - this is for examples that the model got right.
 
 ```python
+import asyncio
+from langsmith import agent_address
+
 ls_client = Client()
 run_id = uuid7()
 topic_classifier(
     "fix bug in LCEL",
     langsmith_extra={"run_id": run_id})
-# Resolve the UUID of the project that owns the trace
-session_id = ls_client.create_project(project_name="classifier", upsert=True).id
+# Resolve the session_id for the agent environment
+address = agent_address(os.environ["LANGSMITH_AGENT_ID"], os.environ["LANGSMITH_AGENT_ENVIRONMENT"])
+resolved = asyncio.run(ls_client.sessions.resolve(**address))
+session_id = resolved.session_id
 ls_client.create_feedback(
     run_id,
     key="user-score",
@@ -95,12 +103,17 @@ ls_client.create_feedback(
 Next, we can focus on collecting feedback that corresponds to a "correction" to the generation. In this example the model will classify it as a bug, whereas I really want this to be classified as documentation.
 
 ```python
+import asyncio
+from langsmith import agent_address
+
 ls_client = Client()
 run_id = uuid7()
 topic_classifier(
     "fix bug in documentation",
     langsmith_extra={"run_id": run_id})
-session_id = ls_client.create_project(project_name="classifier", upsert=True).id
+address = agent_address(os.environ["LANGSMITH_AGENT_ID"], os.environ["LANGSMITH_AGENT_ENVIRONMENT"])
+resolved = asyncio.run(ls_client.sessions.resolve(**address))
+session_id = resolved.session_id
 ls_client.create_feedback(
     run_id,
     key="correction",
@@ -120,7 +133,9 @@ The second will take all runs with a correction and use a webhook to add them to
 
 ![Optimization Positive](/langsmith/images/class-optimization-pos.png)
 
-## Update the application
+<a id="update-the-application"></a>
+
+## Update the agent
 
 We can now update our code to pull down the dataset we are sending runs to. Once we pull it down, we can create a string with the examples in it. We can then put this string as part of the prompt!
 
@@ -183,9 +198,12 @@ def topic_classifier(
     ).choices[0].message.content
 ```
 
-If now run the application with a similar input as before, we can see that it correctly learns that anything related to docs (even if a bug) should be classified as `documentation`
+If now run the agent with a similar input as before, we can see that it correctly learns that anything related to docs (even if a bug) should be classified as `documentation`
 
 ```python
+import asyncio
+from langsmith import agent_address
+
 ls_client = Client()
 run_id = uuid7()
 topic_classifier(
@@ -212,9 +230,12 @@ def find_similar(examples, topic, k=5):
     return examples
 ```
 
-We can then use that in the application
+We can then use that in the agent
 
 ```python
+import asyncio
+from langsmith import agent_address
+
 ls_client = Client()
 
 def create_example_string(examples):

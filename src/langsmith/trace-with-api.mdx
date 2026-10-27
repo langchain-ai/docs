@@ -98,7 +98,7 @@ post_run(child_run_id, "OpenAI Call", "llm", {"messages": messages}, parent_run_
 # Generate a completion
 client = openai.Client()
 chat_completion = client.chat.completions.create(
-    model="gpt-5.4-mini",
+    model="gpt-6-luna",
     messages=messages
 )
 

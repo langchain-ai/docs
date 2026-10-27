@@ -20,7 +20,7 @@ Before enabling SmithDB, provide:
 - A **dedicated object-storage bucket** for SmithDB durable data.
 - **Cache storage** for query, ingestion, and compaction worker: network-attached disks, or local SSD for the best cache performance.
 - Private network connectivity to the database and object store, plus credentials or workload identity for both.
-- If LangSmith uses an HTTP proxy, `NO_PROXY` entries for the IP range assigned to SmithDB pods and the cluster's internal service domain.
+- Network access from LangSmith to SmithDB pod IPs. If LangSmith uses an HTTP proxy or runs in a service mesh, see [Pod network access](#pod-network-access).
 
 ## PostgreSQL metastore
 
@@ -238,8 +238,14 @@ smithdb:
   query:
     deployment:
       resources:
-        requests: { cpu: "4", memory: "8Gi", ephemeral-storage: "200Gi" }
-        limits: { cpu: "4", memory: "8Gi", ephemeral-storage: "200Gi" }
+        requests:
+          cpu: "4"
+          memory: "8Gi"
+          ephemeral-storage: "200Gi"
+        limits:
+          cpu: "4"
+          memory: "8Gi"
+          ephemeral-storage: "200Gi"
       volumes:
         - name: cache
           emptyDir:
@@ -247,8 +253,14 @@ smithdb:
   ingestion:
     deployment:
       resources:
-        requests: { cpu: "4", memory: "8Gi", ephemeral-storage: "100Gi" }
-        limits: { cpu: "4", memory: "8Gi", ephemeral-storage: "100Gi" }
+        requests:
+          cpu: "4"
+          memory: "8Gi"
+          ephemeral-storage: "100Gi"
+        limits:
+          cpu: "4"
+          memory: "8Gi"
+          ephemeral-storage: "100Gi"
       volumes:
         - name: cache
           emptyDir:
@@ -256,8 +268,14 @@ smithdb:
   compactionWorker:
     deployment:
       resources:
-        requests: { cpu: "8", memory: "16Gi", ephemeral-storage: "100Gi" }
-        limits: { cpu: "8", memory: "16Gi", ephemeral-storage: "100Gi" }
+        requests:
+          cpu: "8"
+          memory: "16Gi"
+          ephemeral-storage: "100Gi"
+        limits:
+          cpu: "8"
+          memory: "16Gi"
+          ephemeral-storage: "100Gi"
       volumes:
         - name: cache
           emptyDir:
@@ -1136,3 +1154,67 @@ smithdb:
 
 </Tab>
 </Tabs>
+
+## Pod network access
+
+The SmithDB cluster manager tells clients which ingestion or query pod holds the data they need, and clients connect to that pod by its IP. These connections bypass Kubernetes Services, so the cluster network must allow connections to SmithDB pod IPs.
+
+The following table shows how clients reach each SmithDB component:
+
+| SmithDB component (port) | Clients connect by | Clients |
+|---|---|---|
+| Ingestion (`8082`) | Pod IP | `ingest-queue`, `queue`, and SmithDB query |
+| Query (`8080`) | Pod IP | `platform-backend`, `ingest-queue`, and `queue` |
+| Cluster manager (`8091`) | Service name | LangSmith and SmithDB components |
+| Compaction (`8071`) | Service name | SmithDB compaction worker |
+
+The optional mutations, run rules, and stats query deployments also listen on port `8080`, and clients connect to them by pod IP. Connections by Service name need no extra configuration.
+
+### HTTP proxy
+
+If LangSmith uses an HTTP proxy, add the IP range assigned to SmithDB pods and the cluster's internal service domain to `NO_PROXY`.
+
+### Service mesh
+
+If LangSmith runs in a service mesh, the mesh must forward connections addressed to SmithDB pod IPs on ports `8082` and `8080`. A mesh drops these connections in two cases:
+
+- The mesh only allows traffic to destinations in its service registry, and the SmithDB pods are not registered.
+- The mesh routes the ports by hostname. A connection addressed to a pod IP matches no hostname. Handling the ports as TCP avoids routing by hostname.
+
+<Accordion title="Example: Register SmithDB pods with headless Services">
+
+Meshes that build their service registry from Kubernetes Services register every pod IP behind a [headless Service](https://kubernetes.io/docs/concepts/services-networking/service/#headless-services). The following manifest creates a headless Service for SmithDB ingestion and query. The names assume the Helm release is named `langsmith`.
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: langsmith-smithdb-ingestion-headless
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/component: langsmith-smithdb-ingestion
+  ports:
+    - name: tcp-grpc
+      port: 8082
+      targetPort: grpc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: langsmith-smithdb-query-headless
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/component: langsmith-smithdb-query
+  ports:
+    - name: tcp-grpc
+      port: 8080
+      targetPort: grpc
+```
+
+The `tcp-` prefix in each port name marks the port as TCP for meshes that select the protocol from the port name.
+
+If you enable the mutations, run rules, or stats query deployments, add a Service for each one on port `8080` that selects `langsmith-smithdb-mutations`, `langsmith-smithdb-run-rules`, or `langsmith-smithdb-stats-query`.
+
+</Accordion>

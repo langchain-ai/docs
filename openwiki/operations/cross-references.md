@@ -1,18 +1,16 @@
 ---
 type: operations guide
-title: Cross-References
-description: Author, resolve, and validate scoped semantic @[ref] API-reference links. Covers Python and JavaScript lookup, MCP aliases, link-map ownership, and the separate source and rendered-link checks.
-tags: [documentation, cross-references, api-reference, markdown, validation]
+title: Cross-References and API Links
+description: Author, resolve, validate, and safely maintain scoped API documentation links using the @[...] cross-reference mechanism. Distinguishes source-level semantic-reference validation from rendered-site link checking.
+tags: [documentation, cross-references, api-links, validation]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-02T08:21:54.688Z
+    at: 2026-10-21T08:20:13.723Z
 sources:
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
-  - id: openwiki-source-d0cdf44431684bdedf34705a
-    resource: repo://pipeline/core/builder.py
   - id: openwiki-source-17f3856bce97f37118963062
     resource: repo://pipeline/preprocessors/handle_auto_links.py
   - id: openwiki-source-dca59d03b9433eea9242c2e4
@@ -25,29 +23,18 @@ sources:
     resource: repo://src/oss/langchain/mcp/index.mdx
   - id: openwiki-source-3b99ef795fb96770516215eb
     resource: repo://src/oss/langchain/mcp/tools.mdx
-  - id: openwiki-source-24e5f74f0f40e9bfd381871f
-    resource: repo://tests/unit_tests/test_builder.py
   - id: openwiki-source-2ecfcd33b729fccd843ab705
     resource: repo://tests/unit_tests/test_handle_auto_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-02T08:21:54.688Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-21T08:20:13.723Z" }
 ---
 
-# Cross-References
+# Cross-References and API Links
 
-`@[ref]` is source-level Markdown/MDX syntax for a semantic API-reference link. Rather than hard-coding a destination URL into every page, authors name an API symbol and preprocessing resolves it from the map for the active language scope. This keeps destination ownership in `pipeline/preprocessors/link_map.py` and lets shared content point at different Python and JavaScript reference sites.
+`@[Name]` is source-level Markdown/MDX syntax for an API-reference link. Rather than hard-coding a reference URL in every consumer page, authors use a semantic name and the preprocessing pipeline resolves that name in the active language scope. The link map owns API destinations; use ordinary Markdown or HTML links for documentation-site routes.
 
-## Two complementary checks
+## Author a semantic reference
 
-Cross-reference validation and rendered Mintlify link validation answer different questions:
-
-- `make check-cross-refs` reads authored `.md` and `.mdx` below `src/` and verifies that each symbolic `@[...]` lookup exists in every scope in which that source can be built. It validates the source name against the local map; it does not build the site or follow the final URL.
-- `make broken-links` builds `build/` and runs `mint broken-links --check-redirects` against that rendered tree, after filtering documented exclusions. It checks ordinary rendered links and redirect destinations, but cannot establish whether source-level symbolic references were complete before preprocessing. Use `make broken-links-with-anchors` when anchors also matter.
-
-Run `make check-cross-refs` whenever changing a reference or map entry. Run a Mintlify check when changing ordinary links, routes, redirects, or anchors. A passing check in either category is not a substitute for the other.
-
-## Authoring references
-
-Outside a regular fenced code block, the resolver recognizes these forms:
+Outside a regular fenced code block, use one of these forms:
 
 ```markdown
 Use @[StateGraph] to define a graph.
@@ -57,114 +44,108 @@ Pass @[`StateGraph`] to make code formatting part of the link text.
 
 <!-- openwiki: broken internal link [url] file "url" does not exist. Fix the href or restore the target, then delete this comment. -->
 <!-- openwiki: broken internal link [url] file "url" does not exist. Fix the href or restore the target, then delete this comment. -->
-A successful lookup emits `[title](url)`. The first form uses `StateGraph` as its title, the second uses the supplied title, and the simple backticked form emits ``[`StateGraph`](url)``. A titled reference may wrap its lookup name in backticks, but that does not add backticks to the custom title.
+A successful lookup produces `[title](url)`. The simple form uses the map key as its title, the titled form uses the supplied title, and the backticked simple form produces ``[`StateGraph`](url)``. A backticked lookup key in a titled form selects the same map key but does not add backticks to the supplied title.
 
-Use a backslash when the marker itself must be shown rather than resolved:
+To show the syntax literally, escape the marker:
 
 ```markdown
 Write \@[StateGraph] when documenting the syntax.
 ```
 
-The resolver does not transform an escaped marker, then its final unescape pass removes the backslash. The rendered result is literal `@[StateGraph]`, including when the escaped marker occurs in a fenced code block.
+The resolver leaves an escaped marker unlinked, then removes the escape during its final pass, so readers see literal `@[StateGraph]`.
 
-## Resolution lifecycle and exact scoped lookup
+## Resolution order and language scope
 
-`preprocess_markdown()` determines a target language from its explicit argument, otherwise `TARGET_LANGUAGE`, otherwise `python`. That target is the default reference scope unless a separate `default_scope` is supplied. It resolves references **before** CTA UTM decoration and conditional rendering, because it must read conditional fences before rendering removes non-target branches.
+`preprocess_markdown()` uses its `target_language` argument, then `TARGET_LANGUAGE`, then `python`; unless the caller provides `default_scope`, that target is the initial reference scope. It resolves references before CTA UTM decoration and conditional rendering, while language fences are still available to select a map. Conditional rendering then retains the matching `:::python` or `:::js` block and removes the other supported language block.
 
 ```mermaid
 flowchart TD
-    Input["Source Markdown or MDX"] --> Initial["Start with default scope"]
-    Initial --> Scan["Scan each line"]
-    Scan --> Code{"Code fence"}
-    Code -->|"yes"| Preserve["Keep content unchanged"]
+    Source["Markdown or MDX source"] --> Start["Start with default scope"]
+    Start --> Scan["Scan each line"]
+    Scan --> Code{"Code fence line"}
+    Code -->|"yes"| Preserve["Preserve code content"]
     Code -->|"no"| Conditional{"Conditional fence"}
     Conditional -->|"language"| SetScope["Set active scope"]
-    Conditional -->|"closing"| Reset["Reset default scope"]
-    Conditional -->|"content"| Lookup["Exact scoped map lookup"]
+    Conditional -->|"bare fence"| Reset["Reset default scope"]
+    Conditional -->|"content"| Lookup["Look up exact map key"]
     SetScope --> Scan
     Reset --> Scan
-    Lookup --> Found{"Mapped"}
+    Lookup --> Found{"Mapping found"}
     Found -->|"yes"| Link["Emit Markdown link"]
     Found -->|"no"| Literal["Log and retain marker"]
 ```
 
-This shows the line-oriented resolver before conditional rendering selects content for one language.
+This shows the line-oriented reference pass, which runs before conditional rendering removes language-specific content.
 
-A line matching `:::python` or `:::js` changes the scope for following lines; a bare `:::` resets it to the default. The fence remains for the later conditional-rendering pass. Lookup is an exact dictionary lookup: spelling and case must match the map key. Different maps may intentionally associate the same name with different URLs. Repair a moved API destination in the map rather than replacing semantic references across consumer pages.
+A `:::python` or `:::js` line changes the active scope for following lines; a bare `:::` resets it to the default scope. Scope labels are normalized to lowercase. Use the supported `python` and `js` labels: only those scopes have flattened maps. Keys are exact, including case.
 
-### MCP aliases in Python and JavaScript branches
+Language fences allow the same authored key to resolve to different destinations in each language branch. They also make language-only names safe: add an alias to both maps only when the same unfenced shared content must work in both builds. For example, the maps share `MCPAdapter`, but use `MCPAdapter.list_tools` for Python and `MCPAdapter.listTools` for JavaScript. Place each method reference in its corresponding language fence.
 
-MCP documentation is a representative shared-page case. Both scoped maps define `MCPAdapter`, so @[`MCPAdapter`] can be used in each language branch and resolve to that language's reference site. Method names are deliberately language-specific: use @[`MCPAdapter.list_tools`] in a `:::python` block and @[`MCPAdapter.listTools`] in a `:::js` block. The MCP overview and tools pages follow this pattern alongside `create_agent` and `createAgent` references.
+`global` is not an authoring scope. If it reaches the resolver, it logs an error and falls back to the Python map; a combined global resolver is not implemented.
 
-Do not place a Python-only method alias in an unfenced shared OSS paragraph: the validator requires shared unfenced references to resolve in both maps. Put language-specific API names in their corresponding conditional block. Conversely, adding a common alias to both maps is appropriate only when the same authored semantic name is intended to work in both builds.
+### Fence and failure boundaries
 
-Do not author a `global` scope. If it reaches the resolver, it logs an error and falls back to the Python map; a combined global resolver is not implemented.
+The resolver does not transform markers in code fences that begin with at least three backticks or tildes. Code-fence state takes precedence over conditional fences, so a `:::js`-looking line in an example cannot change the active scope. The implementation toggles state for every matching fence line rather than matching opening and closing delimiters. Keep fences balanced: an unclosed recognized fence leaves the rest of the document untransformed.
 
-### Code-fence boundary
+A missing key is non-fatal during preprocessing. The resolver writes an info-level log with the file, line, name, and active scope, then keeps the original marker in the output. Treat this as a source defect and run the semantic-reference validator rather than relying on a successful build.
 
-The resolver checks for a stripped line beginning with three or more backticks or tildes and toggles an in-code state for every such line. It leaves fence lines and enclosed content unchanged, so a conditional-looking line in a code sample cannot alter the active scope. This is a simple toggle rather than full fence matching: delimiters need not match by character or length, and an unclosed recognized fence prevents resolution for the rest of the file. Keep fences balanced.
+## Maintain the scoped API map
 
-## Link-map ownership and changes
+`pipeline/preprocessors/link_map.py` is the repository-owned registry for semantic API destinations. Each `LINK_MAPS` entry contains a `scope`, a `host`, and a `links` dictionary. At import time, `_enumerate_links()` assembles entries into `SCOPE_LINK_MAPS` by scope and prefixes each relative destination with its entry host. Multiple API hosts can therefore contribute to one language scope, and one key can point to different destinations by language.
 
-`LINK_MAPS` is the editable registry. Each entry supplies a `scope`, a `host`, and a `links` dictionary of author-facing names to paths or URLs. At import time, `_enumerate_links()` combines entries for each supported scope into `SCOPE_LINK_MAPS`: it prefixes a relative value with that entry's host and retains values beginning with `http` as absolute URLs. The resolver reads only the flattened Python or JS map.
+To add or correct a mapping:
 
-To add or correct a destination:
+1. Identify the author-facing key and intended scope or scopes.
+2. Add or correct that exact key in the appropriate `LINK_MAPS` dictionary. Prefer a path relative to the entry's `host`.
+3. For unfenced content in shared `src/oss/`, ensure the key exists in both maps. Otherwise, put a language-specific use in a `:::python` or `:::js` block.
+4. Run `make check-cross-refs`; run focused tests when changing resolver, map, or scope behavior.
 
-1. Determine the API destination and the scope or scopes that should resolve it.
-2. Add the exact symbolic name under the applicable `LINK_MAPS` entry in `pipeline/preprocessors/link_map.py`. Prefer a path relative to that entry's host; use an absolute URL only for a destination outside it.
-3. For an unfenced shared `oss/` page, ensure the name exists in both language maps. If it is language-specific, put the use inside the corresponding `:::python` or `:::js` block.
-4. Run the source validator and focused tests.
+Correct an API move in the map instead of replacing the semantic key across consumer pages. The map is appropriate when the author is naming an SDK/API symbol and this repository owns the stable semantic alias. It is not a route registry: use an ordinary link for a documentation page, redirect, or anchor. For external reference-site ownership and generated API-reference boundaries, see [Reference Documentation Boundaries](/openwiki/integrations/reference-docs.md).
 
-An unresolved reference does not stop preprocessing. `_transform_link()` writes an info-level log with the file path, line, name, and active scope, then leaves the original marker unchanged. This makes a build inspectable, but it is not a successful documentation change.
+## Validate source semantic references
 
-## Source validation gate
+Run:
 
 ```bash
 make check-cross-refs
 ```
 
-The target runs `scripts/check_cross_refs.py`, which recursively scans `.md` and `.mdx` files under `src/`. It reports each unresolved item with source-relative file, line, reference name, and applicable scopes, then exits 1; it exits 0 with no errors. The `check-cross-refs` CI job installs the test dependency group and runs this command.
+This is a **source-level semantic-reference check**, not a rendered-site link check. The target invokes `scripts/check_cross_refs.py` over Markdown and MDX under `src/`. It reports unresolved source-relative file, line, reference name, and applicable scopes, then exits with status 1. CI installs the test dependency group and runs this target.
 
-### Checker scope rules
-
-The checker derives defaults from the source-relative path rather than a build environment:
+The checker derives its default scopes from the source path:
 
 | Location | Required scope for an unfenced reference |
 | --- | --- |
 | `oss/python/` | `python` |
 | `oss/javascript/` | `js` |
-| Other `oss/` content | both `python` and `js` |
+| Other `oss/` content | `python` and `js` |
 | Non-OSS content | `python` |
 
-A `:::python` or `:::js` fence narrows checking to that supported scope. A closing or unsupported conditional fence restores the file's default scopes. Shared unfenced OSS content must resolve in **all** applicable maps—not merely one—because it is built for both variants.
+A `:::python` or `:::js` fence narrows validation to that scope. A bare or unsupported conditional fence restores the path-derived defaults. Therefore, an unfenced reference in shared OSS content must exist in **every** applicable map, not merely one.
 
-The checker reuses the resolver's reference and code-fence patterns. It ignores escaped markers and content inside recognized regular code fences, skips `snippets/code-samples/` and paths containing `node_modules`, and warns then skips files that are not valid UTF-8. An unclosed recognized code fence therefore excludes the rest of that file from validation as well. Put deliberately unknown example markers in a code fence or escape them.
+The checker shares the resolver's reference and code-fence patterns. It skips `snippets/code-samples/`, paths containing `node_modules`, escaped references, and content inside recognized code fences. It warns and skips files that are not valid UTF-8. As with preprocessing, an unclosed recognized code fence excludes the remainder of that file from checking.
 
-## Related build behavior
+## Run the right check
 
-Cross-reference resolution produces an API-reference URL; it is separate from the builder's rewriting of authored site routes. After markdown preprocessing, a language-targeted build rewrites Markdown and HTML links to ordinary absolute `/oss/...` routes as `/oss/python/...` or `/oss/javascript/...`. It does not add a second language segment to an already-prefixed route and keeps `/oss/deepagents/code/...` and `/oss/openwiki/...` language-agnostic. Use `@[Name]` for a mapped API destination and ordinary Markdown links for documentation routes.
+Use `make check-cross-refs` to establish that source `@[Name]` markers have applicable local-map entries. It does not test whether an emitted site route, redirect, anchor, or external destination is reachable.
 
-Shared MDX snippets are processed once per target language and emitted under `build/snippets/python/` and `build/snippets/javascript/`; their `/oss/` links become absolute language-prefixed routes. Versioned pages importing an unprefixed `/snippets/` `.md` or `.mdx` file are redirected to the matching copy, while the original snippet path keeps Python-targeted content for unversioned importers.
+Use `make broken-links` for the separate **rendered-site link check**. It builds the documentation, runs Mintlify over `build/`, and checks redirects; `make broken-links-with-anchors` additionally checks anchors. A passing rendered-site check does not prove that every semantic marker is present in the local scoped map.
 
-## Focused checks and troubleshooting
-
-When changing the resolver, map, fence behavior, route rewriting, snippets, or validator, run:
+For focused coverage after changing resolver, map, or checker behavior, run:
 
 ```bash
-uv run pytest tests/unit_tests/test_handle_auto_links.py tests/unit_tests/test_check_cross_refs.py tests/unit_tests/test_builder.py -vv
+uv run pytest tests/unit_tests/test_handle_auto_links.py tests/unit_tests/test_check_cross_refs.py -vv
 make check-cross-refs
 ```
 
-The resolver tests cover replacement outside fences, preservation inside backtick and tilde fences, conditional-looking text in code, escapes, and unclosed fences. The checker tests cover path and fenced scope selection, shared-OSS all-scope checking, titled and backticked syntax, multiple references on one line, and exclusions. Builder tests cover language route insertion, preserved language-agnostic and already-prefixed routes, and language-specific snippet copies and imports.
+The resolver tests cover replacement, escapes, code-fence protection, conditional-looking content inside code, and unclosed fences. The checker tests cover path-derived scopes, shared-OSS all-scope requirements, titled and backticked forms, multiple references on a line, and exclusions.
 
 | Symptom | Action |
 | --- | --- |
-| Literal `@[Name]` and an info log after preprocessing | Correct the name, select the intended scope, or add the scoped map entry. |
-| Shared OSS reference fails validation | Add the name to both maps or put language-specific use in a language fence. |
-| MCP method reference fails in one branch | Use `MCPAdapter.list_tools` in Python and `MCPAdapter.listTools` in JavaScript, then verify the corresponding map entry. |
-| Example marker linked or failed validation | Escape it as `\@[Name]` or place it in a recognized code fence. |
-| Later markers were not resolved | Look for an unclosed regular code fence earlier in the file. |
-| A name resolves to the wrong destination | Correct the scoped `LINK_MAPS` entry; do not hard-code URLs in consuming pages. |
-| Mintlify passes but a symbolic name fails | Run `make check-cross-refs`; rendered-link checking and map validation are separate gates. |
+| Literal `@[Name]` remains after preprocessing | Correct the exact key, select the intended scope, or add the scoped map entry. |
+| Shared OSS content fails validation | Add a compatible key to both maps, or fence the language-specific use. |
+| Later references are neither resolved nor checked | Locate and close an earlier regular code fence. |
+| A site route or anchor fails while map validation passes | Run the appropriate rendered-site link check and repair the generated-route link or redirect. |
+| Mintlify passes but a symbolic name fails | Run `make check-cross-refs` and repair the map or source name. |
 
-For pipeline ordering and conditional-content semantics, see [Documentation Preprocessing](/openwiki/concepts/preprocessing.md). For versioned route behavior, see [Versioning](/openwiki/concepts/versioning.md). For authoring workflow, see [Adding and Modifying Documentation Pages](/openwiki/operations/adding-pages.md). For the complete test strategy, see [Test Overview](/openwiki/testing/test-overview.md).
+For pipeline order, see [Preprocessing and Link Resolution](/openwiki/concepts/preprocessing.md). For source-family language variants, see [Language Variants and Route Ownership](/openwiki/concepts/versioning.md). When adding a page that uses cross-references, see [Adding and Moving Documentation Pages](/openwiki/operations/adding-pages.md).

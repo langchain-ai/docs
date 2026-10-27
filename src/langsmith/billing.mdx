@@ -184,13 +184,48 @@ If you want to keep a subset of traces for **longer than 180 days** for data col
 
 In addition to traces, LangSmith charges for deployed agents via LangSmith Deployment. Deployments are billed on the resources they consume:
 
-- **Compute**: The vCPU and memory a deployment uses while resources are provisioned, measured in LangChain Standard Units (LSU). A [Serverless](/langsmith/cloud-platform-features#serverless) deployment can [scale to zero (beta)](/langsmith/cloud-platform-features#serverless) after a period of inactivity, so compute charges stop only once it has scaled down. A [Dedicated](/langsmith/cloud-platform-features#dedicated) deployment is always-on and consumes compute continuously.
-- **Storage**: The database storage a deployment uses to persist state, measured in LangChain Standard Units (LSU).
+- **Compute**: Requested vCPU and memory per running replica, measured in LangChain Standard Units (LSU). [Autoscaling](/langsmith/cloud-platform-features#scaling) adds billable replicas. [Serverless](/langsmith/cloud-platform-features#serverless) compute charges stop at scale-down, not when traffic stops. [Dedicated](/langsmith/cloud-platform-features#dedicated) runs continuously.
+- **Database**: Dedicated database charges are based on configured vCPU and memory, including while idle. Runtime autoscaling does not change the database charge. Database disk storage and Serverless's shared database are not billed.
 
-For current LSU rates, and to estimate the cost of a deployment, see the [pricing page](https://www.langchain.com/pricing), which includes a deployment cost calculator.
+Managed Redis is not billed on any deployment type or size.
+
+Usage is converted to LSU at the following rates. One LSU costs $1.00:
+
+| Resource | Rate |
+|---|---|
+| Runtime vCPU | 0.0675 LSU per vCPU-hour |
+| Runtime memory | 0.009 LSU per GiB-hour |
+| Database vCPU | 0.177 LSU per vCPU-hour |
+| Database memory | 0.025 LSU per GiB-hour |
+
+Dedicated database costs on LangSmith Cloud in GCP are:
+
+| Database size | Capacity | Database cost per hour |
+|---|---|---|
+| Small | 1 vCPU / 4 GiB | 0.277 LSU |
+| Medium | 2 vCPU / 8 GiB | 0.554 LSU |
+| Large | 4 vCPU / 16 GiB | 1.108 LSU |
+
+Database capacity differs by cloud provider. These GCP costs exclude runtime compute. Compute and database sizes can be [set independently](/langsmith/cloud-platform-features#sizes).
+
+For example, an idle Dedicated Small deployment on GCP has 2 API replicas and 1 queue worker. This is 3 vCPU and 6 GiB of billable runtime, excluding Redis. With a Small database, its hourly cost is:
+
+| Component | Calculation | Cost per hour |
+|---|---|---|
+| Minimum runtime cost | 3 × 0.0675 + 6 × 0.009 | 0.2565 LSU |
+| Database | 1 × 0.177 + 4 × 0.025 | 0.277 LSU |
+| Minimum total cost | 0.2565 + 0.277 | 0.5335 LSU |
+
+Autoscaling increases the runtime cost above this minimum. Tracing and other product usage are separate charges.
+
+Usage is sampled every 5 minutes and totaled hourly. Each running billable container is charged for that interval based on requested resources, not actual utilization.
+
+[Free Serverless deployments](https://www.langchain.com/pricing) are not billed for any container, at any size or **Scale down after** setting. Dedicated deployments are never free.
+
+To estimate the cost of a deployment, you can also use the deployment cost calculator on the [pricing page](https://www.langchain.com/pricing).
 
 <Note>
-This usage-based model replaces the previous per-run and uptime pricing. Existing customers remain on their current pricing until October 1, 2026, then move to the new model. Scale to zero is available only for deployments on the new pricing. The inactivity window before a Serverless deployment scales to zero may change as the feature rolls out. For questions about the transition, contact support via [support.langchain.com](https://support.langchain.com).
+Usage-based pricing replaced per-run and uptime pricing on October 1, 2026. Scale to zero requires the new pricing. For transition questions, contact [support](https://support.langchain.com).
 </Note>
 
 For high-volume deployment usage, [contact our sales team](https://www.langchain.com/contact-sales) to discuss custom pricing options.

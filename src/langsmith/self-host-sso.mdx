@@ -17,7 +17,7 @@ By default, LangSmith Self-Hosted supports the `Authorization Code` flow with `C
     - Upgrade a `basic` auth installation by removing the [`basic` auth configuration parameters](/langsmith/self-host-basic-auth#configuration) and adding the [OAuth with client secret configuration parameters](#configuration). Users may then log in via OAuth **only**. To maintain access post-upgrade, **you must have access to log in via OAuth using an email address that previously logged in via basic auth.**
 - LangSmith does **not** support:
     - Moving from SSO to `basic` auth mode in self-hosted.
-    - Moving from OAuth Mode with client secret to OAuth mode without a client secret and vice versa.
+    - Moving from OAuth with client secret to OAuth with PKCE. To move from PKCE to client secret, see [Migrate from PKCE to client secret](#migrate-from-pkce-to-client-secret).
     - Having both `basic` auth and OAuth at the same time. Ensure you disable the `basic` auth configuration when enabling OAuth.
 
 ## Prerequisites
@@ -350,7 +350,7 @@ Per-provider SSO Groups Sync settings are stored on the SSO provider record and 
 
 <Tabs>
 <Tab title="UI">
-Once your IdP emits the groups claim, configure SSO Groups Sync from the UI in **Settings** > **Members and roles** > **SSO Configuration** > **SSO Groups Sync**. The claim name configured in the **Groups claim field** must match the claim emitted by your IdP.
+Once your IdP emits the groups claim, configure SSO Groups Sync from the UI: go to **Settings** > **SSO configuration** and scroll to the **SSO Groups Sync** section. The claim name configured in the **Groups claim field** must match the claim emitted by your IdP.
 </Tab>
 <Tab title="API">
 
@@ -459,8 +459,38 @@ If the groups claim is correct but LangSmith does not assign roles, check the to
 We recommend running with a [`Client Secret`](#provider-setup). However, if your IdP does not support this, you can use the `Authorization Code with PKCE` flow.
 
 <Warning>
-The PKCE workflow is **deprecated as of v16** and will be **fully removed in v17**. A migration path from PKCE to OAuth with client secret will be provided. We recommend migrating to the [client secret flow](#provider-setup) as soon as possible.
+The PKCE workflow is **deprecated as of v16** and is scheduled for removal in a future release. [Migrate to the client secret flow](#migrate-from-pkce-to-client-secret) as soon as possible.
 </Warning>
+
+### Migrate from PKCE to client secret
+
+You can switch an installation that uses PKCE to OAuth with client secret on its current chart version. Users keep their accounts, organization and workspace memberships, and API keys, as long as they sign in with the same email address.
+
+To migrate:
+
+1. Upgrade to Helm chart version 0.17.23 (LangSmith 0.17.51) or later. Earlier versions can lock out users whose IdP `sub` claim is their email address.
+1. In your IdP, configure your existing application as a confidential (web) client:
+    - Create a client secret.
+    - Add `https://<host>/api/v1/oauth/custom-oidc/callback` as a redirect URI. The client secret flow requires `https`.
+1. Update your `values.yaml`. Keep the same `oauthClientId` and `oauthIssuerUrl`, set `authType: mixed`, and add the client secret and `hostname`:
+
+    ```yaml Helm
+    config:
+      authType: mixed
+      hostname: https://langsmith.example.com
+      oauth:
+        enabled: true
+        oauthClientId: <YOUR CLIENT ID>
+        oauthClientSecret: <YOUR CLIENT SECRET>
+        oauthIssuerUrl: <YOUR DISCOVERY URL>
+    ```
+
+1. Run `helm upgrade` **without changing the chart version**. Users must sign in again.
+1. Confirm users can sign in, then upgrade LangSmith as a separate `helm upgrade`.
+
+<Note>
+Switch to client secret and upgrade the chart version in separate `helm upgrade` runs. Helm runs the upgrade jobs before it applies the new configuration, so a combined run can fail.
+</Note>
 
 ### Requirements
 
