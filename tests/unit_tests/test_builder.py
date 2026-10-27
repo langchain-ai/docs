@@ -730,25 +730,25 @@ def test_build_file_respects_single_language_nav() -> None:
 def test_directory_nav_entry_owned_by_language_file() -> None:
     """A `<dir>` nav entry skips `<dir>/index` when a language file owns the route.
 
-    oss/javascript/langchain/mcp is the TypeScript-only mcp.mdx, so the shared
-    Python-only langchain/mcp/index must not get a TypeScript copy.
+    oss/javascript/langchain/widgets is the TypeScript-only widgets.mdx, so the
+    shared Python-only langchain/widgets/index must not get a TypeScript copy.
     """
     files = [
         _nav_docs_json(
-            ["oss/python/langchain/mcp/index", "oss/python/langchain/rag/index"],
-            ["oss/javascript/langchain/mcp", "oss/javascript/langchain/rag"],
+            ["oss/python/langchain/widgets/index", "oss/python/langchain/rag/index"],
+            ["oss/javascript/langchain/widgets", "oss/javascript/langchain/rag"],
         ),
-        File(path="oss/langchain/mcp/index.mdx", content=_PAGE),
-        File(path="oss/javascript/langchain/mcp.mdx", content=_PAGE),
+        File(path="oss/langchain/widgets/index.mdx", content=_PAGE),
+        File(path="oss/javascript/langchain/widgets.mdx", content=_PAGE),
         File(path="oss/langchain/rag/index.mdx", content=_PAGE),
     ]
 
     with file_system(files) as fs:
         builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
 
-        assert builder.shared_oss_page_languages(Path("langchain/mcp/index.mdx")) == (
-            "python",
-        )
+        assert builder.shared_oss_page_languages(
+            Path("langchain/widgets/index.mdx")
+        ) == ("python",)
         # No language file owns oss/javascript/langchain/rag, so it counts.
         assert builder.shared_oss_page_languages(Path("langchain/rag/index.mdx")) == (
             "python",

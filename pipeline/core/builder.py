@@ -457,7 +457,7 @@ class DocumentationBuilder:
 
         Keys are language codes ("python", "js"). Values are routes relative to
         ``oss/<language>/`` exactly as docs.json writes them, for example
-        ``langchain/mcp/index``. The result is cached until docs.json changes,
+        ``langchain/rag/index``. The result is cached until docs.json changes,
         so ``docs dev`` picks up navigation edits.
         """
         empty: dict[str, set[str]] = {"python": set(), "js": set()}
@@ -505,8 +505,8 @@ class DocumentationBuilder:
         docs.json may list a directory landing page as ``<dir>`` rather than
         ``<dir>/index``. That form only counts when no language-specific
         ``src/oss/<language>/<dir>.mdx`` exists, because that file owns the
-        route instead (``oss/javascript/langchain/mcp`` is the TypeScript page,
-        not the shared ``langchain/mcp/index``).
+        route instead (``oss/javascript/<dir>`` is then that TypeScript page,
+        not the shared ``<dir>/index``).
         """
         nav = self._oss_nav_routes()[language]
         if route in nav:
@@ -531,7 +531,7 @@ class DocumentationBuilder:
 
         Args:
             oss_relative: Path relative to ``src/oss/``, for example
-                ``langchain/mcp/index.mdx``.
+                ``langchain/rag/index.mdx``.
         """
         both = ("python", "js")
         if oss_relative.suffix not in {".mdx", ".md"}:
