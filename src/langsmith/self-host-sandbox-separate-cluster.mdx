@@ -439,13 +439,33 @@ kubectl --context <sandbox-context> -n langsmith-sandbox get secret langsmith-sa
 
 ## Run one runtime per installation
 
-Run exactly one `langsmith-sandbox` release for each LangSmith installation, and only while the `langsmith` release uses `sandboxes.deploymentMode: separateCluster`. Two runtimes that report to one installation, including an embedded `sameCluster` runtime and a `langsmith-sandbox` release, merge into one host pool and stop each other's Sandboxes. Running Sandboxes in more than one cluster for the same installation is not supported.
+Run exactly one `langsmith-sandbox` release for each LangSmith installation, and only while the `langsmith` release uses `sandboxes.deploymentMode: separateCluster`. Running Sandboxes in more than one cluster for the same installation is not supported.
+
+LangSmith accepts host reports from one sandbox runtime at a time, counting an embedded `sameCluster` runtime as one. While one runtime reports, LangSmith refuses any other: the refused runtime's hosts never join the host pool, and the accepted runtime's Sandboxes keep running. A refused runtime shows up in three places:
+
+- Its elected `sandbox-host` pod stays not ready, so `helm install --wait` and `kubectl rollout status` do not finish.
+- Its `sandbox-host` logs repeat `the platform refused this sandbox runtime because another runtime already reports to the same LangSmith install`, with the error code `sandbox_runtime_conflict`, every 15 seconds.
+- LangSmith logs `refused host report from a second sandbox runtime`, with the instance IDs of the accepted and the refused runtime.
+
+Remove the extra runtime. LangSmith accepts a different runtime once the accepted one has sent no reports for 6 minutes, so after a reinstall or a move to another cluster, the new runtime can wait up to 6 minutes before its hosts join. It continues on its own.
 
 Set `sandboxes.clusterName` only when you first install Sandboxes. Renaming it later hides existing Sandboxes, snapshots, and hosts.
 
+## Watch for a release mismatch
+
+LangSmith compares its own release with the releases that its sandbox hosts report. When they drift apart, it warns [Organization Admins](/langsmith/rbac#organization-admin) and [Organization Operators](/langsmith/rbac#organization-operator) under **Notifications** in the sidebar of the LangSmith UI:
+
+| Warning | When it appears |
+| --- | --- |
+| Sandbox runtime is behind LangSmith | The hosts still run an older release 72 hours after LangSmith first ran a newer one. It appears as an error at once when the hosts are two or more minor versions behind. Hosts that do not report a release count as behind. |
+| Sandbox runtime is newer than LangSmith | Hosts have run a newer release than LangSmith for more than 30 minutes. It appears as an error when that release is a newer minor version. |
+| Sandbox hosts stopped reporting | Hosts reported before, but none reports now. |
+
+No warning appears in the first 15 minutes after LangSmith moves to a new release, while its own rollout finishes. Each warning names the release to install. To act on it, [upgrade](/langsmith/self-host-upgrades#upgrade-separate-sandbox-clusters) the `langsmith-sandbox` release to the chart that pairs with your `langsmith` release, or the `langsmith` release when the hosts are newer. Dismissing a warning hides it for 24 hours, or until the releases change.
+
 ## Move an existing installation to a separate cluster
 
-To move a `sameCluster` installation to `separateCluster`, switch the `langsmith` release first, then install the runtime against the same JuiceFS metadata store and bucket. The reverse order runs two runtimes against one installation. Sandboxes are unavailable between the two steps. Afterwards, existing Sandboxes and snapshots keep working.
+To move a `sameCluster` installation to `separateCluster`, switch the `langsmith` release first, then install the runtime against the same JuiceFS metadata store and bucket. In the reverse order, LangSmith [refuses the new runtime](#run-one-runtime-per-installation) while the embedded one still reports. Sandboxes are unavailable between the two steps. Afterwards, existing Sandboxes and snapshots keep working.
 
 <Steps>
   <Step title="Prepare the sandbox cluster">
@@ -465,7 +485,7 @@ To move a `sameCluster` installation to `separateCluster`, switch the `langsmith
     The label assumes the release name `langsmith`. Use a timeout longer than the hosts' `terminationGracePeriodSeconds`.
   </Step>
   <Step title="Install the runtime">
-    Install `langsmith-sandbox` as in [Install with Helm](#install-with-helm), with `juicefs` settings that point at the same metadata Redis URL, bucket, and `juicefs.name` as before. Then [verify the installation](#verify-the-installation). Stopped Sandboxes start again on the new hosts when a user or API action starts or wakes them.
+    Install `langsmith-sandbox` as in [Install with Helm](#install-with-helm), with `juicefs` settings that point at the same metadata Redis URL, bucket, and `juicefs.name` as before. LangSmith accepts the new runtime once the embedded hosts have been gone for 6 minutes, so one new host can stay not ready until then. Then [verify the installation](#verify-the-installation). Stopped Sandboxes start again on the new hosts when a user or API action starts or wakes them.
   </Step>
 </Steps>
 
