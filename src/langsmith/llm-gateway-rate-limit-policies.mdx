@@ -1,6 +1,6 @@
 ---
 title: Rate limit policies
-description: Limit the number of requests or tokens a user, workspace, or API key can send through the LLM Gateway in a rolling time window.
+description: Limit the number of requests or tokens an organization, workspace, user, or API key can send through the LLM Gateway in a rolling time window.
 ---
 
 import LLMGatewayBetaNote from '/snippets/langsmith/llm-gateway-beta-note.mdx';
@@ -10,7 +10,7 @@ import LLMGatewayBetaNote from '/snippets/langsmith/llm-gateway-beta-note.mdx';
 A rate limit policy restricts how many **requests** or **tokens** a subject can consume through the [LLM Gateway](/langsmith/llm-gateway) in a short rolling time window. The gateway enforces the limit in real time and blocks any request that would push the subject past it, returning a `429` response with a `Retry-After` header and a body that names the blocking policy:
 
 ```json
-{"type":"error","error":{"message":"request blocked by gateway policies: Dev Team Rate Limit"}}
+{"type":"error","error":{"message":"request blocked by gateway policies: <POLICY_NAME>"}}
 ```
 
 The `Retry-After` value is the number of seconds until the current window resets. Clients should honor this header and back off before retrying.
@@ -19,23 +19,26 @@ A blocked request never reaches the provider, so it does not trigger a [fallback
 
 {/* VERIFY with Eng: "rolling" window (here and in the description). Observed 2026-10-23 on dev: 1 request/minute policy, request 1 at 15:52:07, request 2 blocked with retry-after 53, which resets exactly at 15:53:00. That suggests a fixed clock-aligned minute, not a rolling one. Also unverified: whether token limits block before or after the call (spend caps are enforced on recorded spend and can overshoot). */}
 
-Rate limit policies and [spend cap policies](/langsmith/llm-gateway-spend-policies) are complementary and can be applied together—spend caps for cost control, rate limits for throughput and traffic control.
+<Tip>
+Rate limit policies and [spend cap policies](/langsmith/llm-gateway-spend-policies) are complementary and can be applied together: spend caps for cost control, rate limits for throughput and traffic control.
+</Tip>
 
 ## Policy dimensions
 
-Rate limit policies are evaluated for every incoming request. You can set a policy as a default (applying a blanket rate limit to all users, [workspaces](/langsmith/administration-overview#workspaces), or [API keys](/langsmith/create-account-api-key) or as a granular policy (an individual limit or a limit on a group of subjects).
+Rate limit policies are evaluated for every incoming request.
 
 | Subject | What it limits | Example |
 | --- | --- | --- |
+| **Organization** | Requests or tokens across all workspaces in the org | "The entire org cannot send more than 5,000 requests per minute" |
+| **Workspace** | Requests or tokens within a single [workspace](/langsmith/administration-overview#workspaces) or group of workspaces | "The R&D workspace cannot exceed 1,000,000 tokens per hour" |
 | **User** | Requests or tokens from a single user or group of users (resolved from the API key's identity) | "No individual developer can send more than 100 requests per minute" |
-| **Workspace** | Requests or tokens within a single workspace or group of workspaces | "The R&D workspace cannot exceed 1,000,000 tokens per hour" |
-| **API key** | Requests or tokens from a single API key or group of API keys | "The customer support agent keys share a limit of 200 requests per minute" |
+| **API key** | Requests or tokens from a single [API key](/langsmith/create-account-api-key) or group of API keys | "The customer support agent keys share a limit of 200 requests per minute" |
 
 ### Defaults vs. granular policies
 
 Rate limit policies have two modes:
 
-1. **Default policies** apply automatically to every member of a subject dimension. Example: "Every user in this workspace gets a default cap of 100 requests per minute." No need to create a policy per person.
+1. **Default policies** apply automatically to every member of a subject dimension. Example: "Every user in this workspace gets a default cap of 100 requests per minute." There is no need to create a policy per person.
 2. **Granular policies** target a named subject and override the default for that subject only. Example: "The on-call engineer gets 500 requests per minute." Editing the default updates everyone still on it.
 
 ### Independent enforcement
@@ -44,15 +47,15 @@ Each subject is tracked and enforced separately. One user hitting their limit do
 
 ## Limits
 
-A single rate limit policy can enforce **multiple limits at once**. For example, one policy can enforce both *100 requests per minute* and *1,000,000 tokens per hour* simultaneously.
+A single rate limit policy can enforce **multiple limits at once**. For example, one policy can enforce both 100 requests per minute and 1,000,000 tokens per hour simultaneously.
 
 Each limit has three fields:
 
 | Field | Allowed values |
 | --- | --- |
+| **Value** | A positive integer (the cap) |
 | **Metric** | `requests` or `tokens` (total tokens as reported by the provider) |
 | **Window** | `minute` or `hour` |
-| **Value** | A positive integer (the cap) |
 
 Rules:
 
@@ -65,18 +68,17 @@ Rules:
 Creating and managing policies requires `organization:gateway:manage` permission. Organization Admins and Organization Operators have it by default. For what each organization role can do, see [Organization roles](/langsmith/rbac#organization-roles).
 </Warning>
 
-1. Go to **LLM Gateway**.
-1. Click **Create policy**.
-1. Select **Rate limit** as the policy type.
-1. Select the subject scope (user, workspace, or API key).
-1. Add one or more limits, each with a metric, window, and value.
-1. Save.
+1. Go to **LLM Gateway** and select **Rate limiting**.
+1. Click **Create rate limit**.
+1. Select the scope (organization, workspace, user, or API key).
+1. Add one or more limits, each with a value, metric, and window.
+1. Click **Create rate limit**.
 
 Policies take effect immediately.
 
 A rate limit policy can also carry a condition on a custom request header, so traffic from a single subject splits into separate limits by header value. Use this to give each end customer, tenant, or team its own throughput allowance under one API key. For more information, see [Header-based policies](/langsmith/llm-gateway-header-policies).
 
-## Next steps
+## See also
 
 - [Spend policies](/langsmith/llm-gateway-spend-policies): set cost caps alongside rate limits.
 - [Header-based policies](/langsmith/llm-gateway-header-policies): split a limit by a custom request header so each header value gets its own allowance.
