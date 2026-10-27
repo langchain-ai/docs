@@ -1,0 +1,90 @@
+---
+title: EcoTrace
+---
+
+# EcoTrace
+
+[EcoTrace](https://github.com/Zwony/ecotrace) is a lightweight, zero-configuration hardware energy (Joules/kWh), execution latency, and carbon emissions profiler for Python applications and LLM workloads.
+
+Unlike system-wide profilers, EcoTrace uses **process-scoped isolation** (`psutil` and hardware counters including Intel/AMD RAPL, Apple Silicon powermetrics, and NVIDIA NVML), ensuring that your LLM execution metrics are not polluted by background system noise or shared multi-tenant cloud servers.
+
+This guide demonstrates how to monitor the hardware power draw, execution duration, and carbon footprint ($gCO_2$) of your LangChain LLM calls, chains, and agents using `EcoTraceLangChainCallback`.
+
+## Installation
+
+Install the required packages:
+
+```bash
+pip install -U ecotrace langchain-openai
+```
+
+## Quick Start
+
+`EcoTraceLangChainCallback` hooks into `on_llm_start`, `on_chat_model_start`, `on_llm_end`, and `on_llm_error`. Each call is tracked by LangChain's unique `run_id`, ensuring thread-safe independent metrics across sequential, concurrent, and asynchronous runs.
+
+```python
+from langchain_openai import ChatOpenAI
+from ecotrace.callbacks import EcoTraceLangChainCallback
+
+# 1. Initialize the EcoTrace callback handler
+ecotrace_callback = EcoTraceLangChainCallback(
+    project_name="langchain-rag-agent",
+    country_iso_code="US",
+    verbose=True
+)
+
+# 2. Attach the callback to your chat model via execution config
+llm = ChatOpenAI(model="gpt-4o-mini")
+response = llm.invoke(
+    "Explain the concept of green computing in two sentences.",
+    config={"callbacks": [ecotrace_callback]}
+)
+
+# 3. Inspect generated text and recorded hardware metrics
+print(response.content)
+print(f"Total Emissions: {ecotrace_callback.total_emissions_g:.6f} gCO2")
+print(f"Total Duration : {ecotrace_callback.total_duration_s:.2f}s")
+print(f"Detailed Logs  : {ecotrace_callback.records}")
+```
+
+## Batch and Asynchronous Workflows
+
+When using asynchronous execution or `.abatch()`, EcoTrace measures each invocation independently without race conditions:
+
+```python
+import asyncio
+from langchain_openai import ChatOpenAI
+from ecotrace.callbacks import EcoTraceLangChainCallback
+
+cb = EcoTraceLangChainCallback(project_name="batch-pipeline")
+llm = ChatOpenAI(model="gpt-4o-mini")
+
+async def main():
+    prompts = [
+        "What is quantum computing?",
+        "How do transformers work in NLP?",
+        "Define operational carbon footprint."
+    ]
+    
+    # Pass callback in the config dictionary
+    results = await llm.abatch(prompts, config={"callbacks": [cb]})
+    
+    print(f"Processed {len(results)} queries.")
+    print(f"Cumulative Emissions: {cb.total_emissions_g:.6f} gCO2")
+    for record in cb.records:
+        print(f" - {record['model']}: {record['duration_s']:.2f}s | {record['emissions_g']:.6f} gCO2")
+
+asyncio.run(main())
+```
+
+## Audit Trail and CSV Export
+
+For compliance records or environmental reporting (such as EU CSRD audits), you can configure `EcoTraceLangChainCallback` to write an audit trail directly to disk:
+
+```python
+cb = EcoTraceLangChainCallback(
+    project_name="production-rag",
+    output_dir="./audit_logs",
+    output_file="llm_emissions.csv"
+)
+```
