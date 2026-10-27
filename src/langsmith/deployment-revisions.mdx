@@ -44,6 +44,30 @@ When you [create a deployment](/langsmith/deploy-to-cloud), LangSmith creates it
   </Tab>
 </Tabs>
 
+## Update a deployment with active runs
+
+A deployment update gives active background runs time to finish before the old revision shuts down. You do not need to wait for every run to finish before creating a revision.
+
+Once the new revision is healthy, LangSmith sends a shutdown signal to the old revision. The old workers wait for active runs to finish within the shutdown grace period:
+
+- **Runs that finish within the grace period**: Complete on the old revision.
+- **Runs that exceed the grace period**: The server cancels their execution and returns them to `pending` for retry. Workers on the new revision can pick them up.
+- **Stateful runs that retry**: Resume from the last checkpointed step, not from the exact instruction where execution stopped. Retrying is subject to `BG_JOB_MAX_RETRIES`, which defaults to `3`.
+
+The shutdown grace period defaults to `180` seconds. Configure [`BG_JOB_SHUTDOWN_GRACE_PERIOD_SECS`](/langsmith/env-var-cloud#bg_job_shutdown_grace_period_secs) to give longer runs more time to finish. Cloud pod termination imposes an upper bound of approximately one hour, including shutdown cleanup. Do not rely on a longer value to keep old workers running indefinitely.
+
+### Plan a rollout
+
+To prepare an update for long-running agents:
+
+1. Test the new revision before updating production.
+1. Keep graph and state changes compatible with checkpoints from the previous revision. A retried run can execute on the new code.
+1. Make external side effects idempotent. Work after the last checkpoint can execute again during a retry.
+1. Set the shutdown grace period on the currently running revision before a later code rollout needs it. Changing the value only on the incoming revision does not extend the old workers' grace period.
+1. Create the revision, then [monitor the deployment](/langsmith/monitor-deployment) for retries and failures.
+
+For changes that cannot resume existing checkpoints safely, pause new run submissions and let active runs finish before updating the deployment.
+
 ## Interrupt a revision
 
 Interrupt a revision only when it is stuck and prevents you from deploying another revision.
