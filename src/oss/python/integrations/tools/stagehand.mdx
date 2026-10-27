@@ -1,133 +1,112 @@
 ---
 title: Stagehand + Browserbase integration
-description: Integrate with Stagehand and Browserbase browser tools using LangChain Python.
+description: Give a Deep Agent a browser with Stagehand's middleware, on local Chrome or Browserbase.
 integration:
   name: Stagehand
 ---
 
-Stagehand is an open-source SDK for browser agents, backed by [Browserbase](https://browserbase.com)—the complete platform to run agents that use the web like humans. The integration ships a ready-made MCP server that exposes three tools—`run`, `snapshot`, and `screenshot`—directly to your Deep Agent, with no custom tool definitions required.
-
-<Note>
-  Stagehand ships this integration from its own repository. Clone the repo and run the examples from `packages/integrations/deepagents`.
-</Note>
+[Stagehand](https://github.com/browserbase/stagehand) is an open-source SDK for browser agents, backed by [Browserbase](https://browserbase.com). The `stagehand-deepagents` package ships `StagehandMiddleware`, which gives an agent one persistent browser through three tools and adds instructions for them to the system prompt.
 
 ## Tools
 
 | Tool | Description |
 |------|-------------|
-| `run` | Execute JavaScript or snapshot actions against the active browser page |
-| `snapshot` | Inspect the active page and hydrate bracketed element IDs for use in `run` |
-| `screenshot` | Capture a screenshot of the rendered page |
+| `browser_run` | Run JavaScript against a Playwright-shaped `page`, or click and type by element IDs from the latest snapshot |
+| `browser_snapshot` | Capture the page's accessibility tree, with IDs for elements to act on |
+| `browser_screenshot` | Capture a screenshot of the page for the model to see |
 
 ## Setup
 
-### Prerequisites
+<CodeGroup>
+    ```bash pip
+    pip install -U deepagents stagehand-deepagents
+    ```
+    ```bash uv
+    uv add deepagents stagehand-deepagents
+    ```
+</CodeGroup>
 
-- Python 3.11–3.13
-- [uv](https://docs.astral.sh/uv/)
-- A model-provider API key (e.g. `OPENAI_API_KEY`)
-- Local Chrome, or a [Browserbase](https://browserbase.com) API key for a managed remote browser
-
-### Clone and install
-
-```bash
-git clone https://github.com/browserbase/stagehand.git
-cd stagehand/packages/integrations/deepagents
-uv sync --locked
-uv sync --project examples/local --locked
-```
-
-### Environment variables
+To run the browser on Browserbase, set your API key. Local Chrome needs no key.
 
 ```bash
-# Model provider
-export OPENAI_API_KEY="..."
-
-# Browser: local Chrome (default) or Browserbase
-export STAGEHAND_BROWSER="browserbase"    # omit to use local Chrome
-export BROWSERBASE_API_KEY="bb_live_..."  # required for Browserbase
+export BROWSERBASE_API_KEY="bb_live_..."
 ```
 
 ## Use with a Deep Agent
 
-The integration's MCP server (`stagehand-deepagents-mcp`) is launched over stdio by @[`MCPAdapter`]. Use `list_tools()` to discover the tools and pass them to `create_deep_agent` — no manual tool definitions needed:
+Add the middleware to your agent:
 
 ```python
 import asyncio
-import os
 
-import dotenv
 from deepagents import create_deep_agent
-from langchain.mcp import MCPAdapter
+from stagehand_deepagents import RuntimeConfig, StagehandMiddleware
 
-dotenv.load_dotenv()
-
-BROWSER_INSTRUCTIONS = """You control one persistent browser through exactly three tools:
-- snapshot: inspect the active page and hydrate bracketed element IDs.
-- run: provide either snapshot actions or JavaScript using the Playwright-shaped page API.
-- screenshot: inspect the rendered page visually.
-
-Use snapshot actions for simple interactions and run code for multi-step workflows.
-Snapshot IDs are valid only for the latest snapshot of the active page.
-Snapshot again after navigation or stale IDs. Do not launch another browser.
-"""
-
-CONFIG = {
-    "mcpServers": {
-        "stagehand_browser": {
-            "command": "uv",
-            "args": ["run", "--project", ".", "--locked", "stagehand-deepagents-mcp"],
-            "env": {
-                k: v for k, v in os.environ.items()
-                if k.startswith(("STAGEHAND_", "BROWSERBASE_")) and v
-            },
-        }
-    }
-}
+agent = create_deep_agent(
+    model="anthropic:claude-sonnet-4-6",
+    middleware=[StagehandMiddleware(RuntimeConfig(provider="browserbase"))],
+)
 
 
-async def main():
-    async with MCPAdapter(CONFIG) as adapter:
-        tools = await adapter.list_tools()
-        agent = create_deep_agent(
-            model="openai:gpt-4o",
-            tools=tools,
-            system_prompt=BROWSER_INSTRUCTIONS,
-        )
-        result = await agent.ainvoke({
-            "messages": [{"role": "user", "content": "Go find me a summary of all main sports events today"}]
-        })
-    print(result["messages"][-1].content)
+async def main() -> None:
+    result = await agent.ainvoke(
+        {"messages": [{"role": "user", "content": "What are the top 3 stories on Hacker News?"}]}
+    )
+    print(result["messages"][-1].text)
 
 
 asyncio.run(main())
 ```
 
-<Warning>
-  Keep the @[`MCPAdapter`] context manager open for the duration of the agent run. The browser session and snapshot IDs are tied to the underlying stdio process — closing the adapter ends the session.
-</Warning>
+The browser tools are async, so call the agent with `ainvoke` or `astream`. `StagehandMiddleware` works with any agent built with [`create_agent`](/oss/langchain/agents), not only Deep Agents.
 
-## Server configuration
+## Choose a browser
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `STAGEHAND_BROWSER` | `local` | Select `local` or `browserbase` |
-| `STAGEHAND_HEADLESS` | `false` | Run local Chrome headlessly |
-| `STAGEHAND_START_URL` | Unset | URL to open when the server starts |
-| `STAGEHAND_MODEL` | Unset | Optional — model for Stagehand AI methods called inside `run`; inference is provided by default if unset |
-| `STAGEHAND_MODEL_API_KEY` | Unset | Optional — API key for `STAGEHAND_MODEL`; not required when using default inference |
-| `STAGEHAND_RUN_TIMEOUT_MS` | `60000` | Timeout for JavaScript and snapshot-action batches |
-| `BROWSERBASE_API_KEY` | Unset | Required for Browserbase |
+`RuntimeConfig` picks where the browser runs:
 
-<Note>
-  The MCP server and the agent run in separate Python environments. Stagehand requires `websockets>=16.1.1` while the current LangGraph SDK requires `websockets<16` — the stdio transport isolates these dependency sets.
-</Note>
+```python
+# A Browserbase session (reads BROWSERBASE_API_KEY)
+StagehandMiddleware(RuntimeConfig(provider="browserbase"))
+
+# Chrome on this machine
+StagehandMiddleware(RuntimeConfig(provider="local", headless=True))
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `provider` | `"local"` | `"local"` for Chrome on this machine, `"browserbase"` for a Browserbase session |
+| `headless` | `False` | Run local Chrome without a window |
+| `browserbase_api_key` | `BROWSERBASE_API_KEY` | Browserbase API key |
+| `start_url` | `None` | A page to open when the browser starts |
+| `stagehand_model` | `None` | Model for Stagehand's AI methods called from `browser_run` code |
+| `stagehand_model_api_key` | `None` | API key for `stagehand_model` |
+
+`StagehandMiddleware()` with no config reads the same settings from the environment: `STAGEHAND_BROWSER` (`local` or `browserbase`), `STAGEHAND_HEADLESS`, `STAGEHAND_START_URL`, `STAGEHAND_MODEL`, `STAGEHAND_MODEL_API_KEY` and `BROWSERBASE_API_KEY`.
+
+## Browser lifecycle
+
+Each thread gets its own browser. It launches on the thread's first browser tool call and closes when the agent's run ends.
+
+To keep the browser and its open pages between runs on the same thread, such as in a chat, pass `close_after_run=False` and close the browsers yourself when you're done:
+
+```python
+from langgraph.checkpoint.memory import InMemorySaver
+
+browser = StagehandMiddleware(RuntimeConfig(provider="browserbase"), close_after_run=False)
+agent = create_deep_agent(middleware=[browser], checkpointer=InMemorySaver())
+
+config = {"configurable": {"thread_id": "1"}}
+await agent.ainvoke({"messages": [{"role": "user", "content": "Open news.ycombinator.com"}]}, config)
+await agent.ainvoke({"messages": [{"role": "user", "content": "Open the top story"}]}, config)
+
+await browser.aclose()
+```
 
 ## Related resources
 
 <CardGroup cols={2}>
   <Card title="Integration source + examples" icon="brand-github" href="https://github.com/browserbase/stagehand/tree/main/packages/integrations/deepagents">
-    MCP server, managed tools, and runnable agent examples.
+    The middleware, an MCP server for other clients, and runnable examples.
   </Card>
   <Card title="Browserbase provider page" icon="browser" href="/oss/integrations/providers/browserbase">
     Full Browserbase provider overview and setup.
