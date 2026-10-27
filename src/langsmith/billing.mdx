@@ -197,27 +197,29 @@ Managed Redis is not billed on any deployment type or size.
 The following diagram shows which parts of each deployment type are billed. Blue parts are billed. Green parts are not billed:
 
 ```mermaid actions={false}
-%%{init: {"theme":"base","themeVariables":{"fontFamily":"Inter, system-ui, sans-serif","lineColor":"#40668D","primaryColor":"#E5F4FF","primaryTextColor":"#030710","primaryBorderColor":"#006DDD","clusterBkg":"transparent"}}}%%
+%%{init: {"theme":"base","flowchart":{"htmlLabels":true,"nodeSpacing":24,"rankSpacing":16,"padding":14,"subGraphTitleMargin":{"top":6,"bottom":10}},"themeVariables":{"fontFamily":"Inter, system-ui, sans-serif","fontSize":"14px","lineColor":"#40668D","primaryColor":"#E5F4FF","primaryTextColor":"#030710","primaryBorderColor":"#006DDD","clusterBkg":"transparent","edgeLabelBackground":"#FFFFFF"}}}%%
 flowchart LR
-    subgraph dedicated["<b>Dedicated deployment</b>"]
+    subgraph serverless["<b>Serverless</b>"]
         direction TB
-        DApi("<b>API server replicas</b><br/>2 or more, billed")
-        DWorker("<b>Queue worker replicas</b><br/>1 or more, billed")
-        DRedis("<b>Managed Redis</b><br/>Not billed")
-        DDb("<b>Dedicated Postgres database</b><br/>vCPU and memory billed<br/>Disk storage not billed")
+        SRuntime("<div style='width:210px;text-align:left;line-height:1.45'><b>Runtime</b><br/>1 replica<br/>API server and queue worker<br/><b>Billed</b> while running</div>")
+        SDb("<div style='width:210px;text-align:left;line-height:1.45'><b>Shared Postgres database</b><br/>Not billed</div>")
+        SRedis("<div style='width:210px;text-align:left;line-height:1.45'><b>Managed Redis</b><br/>Not billed</div>")
+        SRuntime ~~~ SDb ~~~ SRedis
     end
-    subgraph serverless["<b>Serverless deployment</b>"]
+    subgraph dedicated["<b>Dedicated</b>"]
         direction TB
-        SReplica("<b>1 replica</b><br/>API server and queue worker<br/>Billed while running")
-        SRedis("<b>Managed Redis</b><br/>Not billed")
-        SDb("<b>Shared Postgres database</b><br/>Not billed")
+        DRuntime("<div style='width:210px;text-align:left;line-height:1.45'><b>Runtime</b><br/>2 or more API servers<br/>1 or more queue workers<br/><b>Billed</b> at all times</div>")
+        DDb("<div style='width:210px;text-align:left;line-height:1.45'><b>Dedicated Postgres database</b><br/>vCPU and memory <b>billed</b><br/>Disk storage not billed</div>")
+        DRedis("<div style='width:210px;text-align:left;line-height:1.45'><b>Managed Redis</b><br/>Not billed</div>")
+        DRuntime ~~~ DDb ~~~ DRedis
     end
+    serverless ~~~ dedicated
 
     classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710,rx:10,ry:10
     classDef trigger fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900,rx:10,ry:10
 
-    class SReplica,DApi,DWorker,DDb process
-    class SRedis,SDb,DRedis trigger
+    class SRuntime,DRuntime,DDb process
+    class SDb,SRedis,DRedis trigger
 
     style serverless fill:none,stroke:#40668D,stroke-width:1.5px,stroke-dasharray:5 4
     style dedicated fill:none,stroke:#40668D,stroke-width:1.5px,stroke-dasharray:5 4
@@ -236,18 +238,35 @@ Usage is sampled every 5 minutes and totaled hourly. Each running billable conta
 
 ### Compare sizes and hourly costs
 
-The following table shows the hourly cost of each [size](/langsmith/cloud-platform-features#sizes) on LangSmith Cloud in GCP. For Dedicated deployments, the table assumes the database size matches the compute size:
+The following tables show the hourly cost of each [size](/langsmith/cloud-platform-features#sizes) on LangSmith Cloud in GCP. All costs are in LSU per hour.
 
-| Deployment type and size | Billable runtime | Runtime cost per hour | Database cost per hour | Minimum total per hour | Each added replica |
-|---|---|---|---|---|---|
-| Serverless Small | 0.8 vCPU / 2 GiB | 0.072 LSU | Not billed | 0.072 LSU while running, 0 LSU when scaled down | Does not scale out |
-| Serverless Medium | 4 vCPU / 4 GiB | 0.306 LSU | Not billed | 0.306 LSU while running, 0 LSU when scaled down | Does not scale out |
-| Serverless Large | 8 vCPU / 8 GiB | 0.612 LSU | Not billed | 0.612 LSU while running, 0 LSU when scaled down | Does not scale out |
-| Dedicated Small | 3 vCPU / 6 GiB minimum | 0.2565 LSU minimum | 0.277 LSU | 0.5335 LSU | +0.0855 LSU per hour |
-| Dedicated Medium | 6 vCPU / 12 GiB minimum | 0.513 LSU minimum | 0.554 LSU | 1.067 LSU | +0.171 LSU per hour |
-| Dedicated Large | 12 vCPU / 24 GiB minimum | 1.026 LSU minimum | 1.108 LSU | 2.134 LSU | +0.342 LSU per hour |
+A Serverless deployment is charged only while it runs. A scaled-down Serverless deployment costs 0 LSU. Serverless deployments do not scale out, and their shared database is not billed:
 
-The Dedicated minimum runtime is 2 API server replicas and 1 queue worker. [Autoscaling](/langsmith/cloud-platform-features#scaling) adds API server or queue worker replicas, each at the added replica rate for its size.
+| Serverless size | Billable runtime | Cost while running |
+|---|---|---|
+| Small | 0.8 vCPU / 2 GiB | 0.072 |
+| Medium | 4 vCPU / 4 GiB | 0.306 |
+| Large | 8 vCPU / 8 GiB | 0.612 |
+
+A Dedicated deployment is charged for its minimum runtime and its database at all times. This table assumes the database size matches the compute size:
+
+| Dedicated size | Runtime + database | Minimum total |
+|---|---|---|
+| Small | 0.2565 + 0.277 | 0.5335 |
+| Medium | 0.513 + 0.554 | 1.067 |
+| Large | 1.026 + 1.108 | 2.134 |
+
+<Note>
+The Dedicated minimum runtime is 2 API server replicas and 1 queue worker. [Autoscaling](/langsmith/cloud-platform-features#scaling) adds API server or queue worker replicas. Each added replica costs the added replica rate for its size.
+</Note>
+
+The following table shows the minimum runtime and the added replica rate for each Dedicated size:
+
+| Dedicated size | Minimum runtime | Each added replica |
+|---|---|---|
+| Small | 3 vCPU / 6 GiB | +0.0855 |
+| Medium | 6 vCPU / 12 GiB | +0.171 |
+| Large | 12 vCPU / 24 GiB | +0.342 |
 
 Dedicated database capacity on LangSmith Cloud in GCP is:
 
@@ -258,14 +277,6 @@ Dedicated database capacity on LangSmith Cloud in GCP is:
 | Large | 4 vCPU / 16 GiB | 1.108 LSU |
 
 Database capacity differs by cloud provider. Compute and database sizes can be [set independently](/langsmith/cloud-platform-features#sizes).
-
-For example, the Dedicated Small minimum total is calculated as follows:
-
-| Component | Calculation | Cost per hour |
-|---|---|---|
-| Minimum runtime cost | 3 × 0.0675 + 6 × 0.009 | 0.2565 LSU |
-| Database | 1 × 0.177 + 4 × 0.025 | 0.277 LSU |
-| Minimum total cost | 0.2565 + 0.277 | 0.5335 LSU |
 
 Tracing and other product usage are separate charges.
 
@@ -293,24 +304,24 @@ Deployment charges are based on the compute and database resources that each dep
 The following diagram compares three Dedicated deployments with one Dedicated deployment that runs three graphs:
 
 ```mermaid actions={false}
-%%{init: {"theme":"base","themeVariables":{"fontFamily":"Inter, system-ui, sans-serif","lineColor":"#40668D","primaryColor":"#E5F4FF","primaryTextColor":"#030710","primaryBorderColor":"#006DDD","clusterBkg":"transparent"}}}%%
+%%{init: {"theme":"base","flowchart":{"htmlLabels":true,"nodeSpacing":24,"rankSpacing":36,"padding":14,"subGraphTitleMargin":{"top":6,"bottom":10}},"themeVariables":{"fontFamily":"Inter, system-ui, sans-serif","fontSize":"14px","lineColor":"#40668D","primaryColor":"#E5F4FF","primaryTextColor":"#030710","primaryBorderColor":"#006DDD","clusterBkg":"transparent","edgeLabelBackground":"#FFFFFF"}}}%%
 flowchart TB
     subgraph separate["<b>Before: 3 Dedicated deployments, at least 1.6005 LSU per hour</b>"]
         direction LR
-        A("<b>Agent A</b><br/>2 API servers<br/>1 queue worker<br/>1 database")
-        B("<b>Agent B</b><br/>2 API servers<br/>1 queue worker<br/>1 database")
-        C("<b>Agent C</b><br/>2 API servers<br/>1 queue worker<br/>1 database")
+        A("<div style='width:130px;text-align:left;line-height:1.45'><b>Agent A</b><br/>2 API servers<br/>1 queue worker<br/>1 database</div>")
+        B("<div style='width:130px;text-align:left;line-height:1.45'><b>Agent B</b><br/>2 API servers<br/>1 queue worker<br/>1 database</div>")
+        C("<div style='width:130px;text-align:left;line-height:1.45'><b>Agent C</b><br/>2 API servers<br/>1 queue worker<br/>1 database</div>")
         A ~~~ B ~~~ C
     end
     subgraph shared["<b>After: 1 Dedicated deployment, at least 0.5335 LSU per hour</b>"]
         direction LR
-        Config("<b>langgraph.json</b><br/>agent_a, agent_b, agent_c")
-        Runtime("<b>Shared runtime</b><br/>2 API servers<br/>1 queue worker")
-        Db("<b>Shared database</b><br/>1 database")
+        Config("<div style='width:130px;text-align:left;line-height:1.45'><b>langgraph.json</b><br/>agent_a<br/>agent_b<br/>agent_c</div>")
+        Runtime("<div style='width:130px;text-align:left;line-height:1.45'><b>Shared runtime</b><br/>2 API servers<br/>1 queue worker</div>")
+        Db("<div style='width:130px;text-align:left;line-height:1.45'><b>Shared database</b><br/>1 database</div>")
         Config --> Runtime --> Db
     end
 
-    separate ==> shared
+    separate == "Define all graphs in one langgraph.json" ==> shared
 
     classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710,rx:10,ry:10
     classDef neutral fill:#F2FAFF,stroke:#40668D,stroke-width:2px,color:#2F4B68,rx:10,ry:10
@@ -322,12 +333,15 @@ flowchart TB
     style shared fill:none,stroke:#40668D,stroke-width:1.5px,stroke-dasharray:5 4
 ```
 
-The following table shows the effect of two changes. Monthly costs use 730 hours:
+The following table shows the effect of two changes. Monthly costs use 720 hours:
 
-| Change | Before | After | Monthly savings |
-|---|---|---|---|
-| Shorten **Scale down after** for a Serverless Small deployment that receives requests for 2 hours each weekday, 22 days each month | `1 week` (default): never scales down, 730 billed hours, about 52.56 LSU each month | `1 hour`: about 66 billed hours, about 4.75 LSU each month | About 47.81 LSU |
-| Run 3 agents on Dedicated Small deployments on GCP | 3 deployments: at least 1.6005 LSU per hour, about 1,168 LSU each month | 1 deployment with 3 graphs in `langgraph.json`: at least 0.5335 LSU per hour, about 389 LSU each month | About 779 LSU |
+- **Shorter scale-down time**: A Serverless Small deployment receives requests for 2 hours each weekday, 22 days each month.
+- **Multiple graphs**: Three agents run on Dedicated Small deployments on GCP.
+
+| Change | Before | After |
+|---|---|---|
+| Shorter scale-down time | `1 week` (default): 720 hours, about 51.84 LSU | `1 hour`: about 66 hours, about 4.75 LSU. Saves about 47.09 LSU. |
+| Multiple graphs | 3 deployments: about 1,152 LSU | 1 deployment with 3 graphs: about 384 LSU. Saves about 768 LSU. |
 
 Autoscaling adds runtime cost to both Dedicated setups.
 
