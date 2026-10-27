@@ -10,17 +10,20 @@ metadata:
 
 # Deep Agents
 
-Deep Agents is the easiest way to start building agents powered by LLMs—with built-in capabilities for task planning, file systems for context management, subagent delegation, and long-term memory. It is an "agent harness" built on [LangChain](https://docs.langchain.com/oss/langchain/overview) core building blocks and the [LangGraph](https://docs.langchain.com/oss/langgraph/overview) runtime.
+Deep Agents is the agent harness for complex, multi-step work: planning, a virtual filesystem for context, subagent delegation, and long-term memory. It is built on [LangChain](https://docs.langchain.com/oss/langchain/overview) and the [LangGraph](https://docs.langchain.com/oss/langgraph/overview) runtime.
+
+Start with [Managed Deep Agents](https://docs.langchain.com/langsmith/managed-deep-agents-overview) unless the user needs to self-host. The same Deep Agents harness powers both.
 
 ## When to use
 
 Use Deep Agents when you need to:
-- **Build agents fast** with sensible defaults and minimal configuration
 - **Handle complex, multi-step tasks** that benefit from automatic planning
 - **Manage context** with a built-in virtual filesystem for large inputs
 - **Delegate subtasks** to specialized subagents
 - **Run code safely** in sandboxed execution environments
 - **Use a terminal agent** via Deep Agents Code
+
+Default to Managed Deep Agents for new agents. Use the self-hosted SDK when the user needs to own the backend, store, checkpointer, or Agent Server.
 
 ## When NOT to use
 
@@ -84,14 +87,14 @@ deepagents
 
 ## Key documentation
 
-- [Overview](https://docs.langchain.com/oss/python/deepagents/overview)—What Deep Agents is and how it compares to LangChain and LangGraph
-- [Quickstart](https://docs.langchain.com/oss/python/deepagents/quickstart)—Build your first deep agent
+- [Managed Deep Agents](https://docs.langchain.com/langsmith/managed-deep-agents-overview)—Build deep agents with managed deployment infrastructure
+- [Overview](https://docs.langchain.com/oss/python/deepagents/overview)—Harness overview and Managed vs self-host decision
+- [SDK quickstart](https://docs.langchain.com/oss/python/deepagents/quickstart)—The same deep agents harness, self-hosted
 - [Customization](https://docs.langchain.com/oss/python/deepagents/customization)—Configure models, tools, and behavior
 - [Context engineering](https://docs.langchain.com/oss/python/deepagents/context-engineering)—Manage context for complex tasks
 - [Subagents](https://docs.langchain.com/oss/python/deepagents/subagents)—Delegate work to child agents
 - [Sandboxes](https://docs.langchain.com/oss/python/deepagents/sandboxes)—Run code in isolated environments
 - [Code](https://docs.langchain.com/oss/deepagents/code/overview)—Deep Agents Code, the terminal agent interface
-- [Deploy](https://docs.langchain.com/langsmith/managed-deep-agents-overview)—Deploy to production
 
 ## API reference
 
