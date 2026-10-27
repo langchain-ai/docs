@@ -9,6 +9,7 @@ This page describes how to manage billing for your LangSmith organization:
 - [Track contract usage (Enterprise)](#track-contract-usage-enterprise): View prepaid contract consumption.
 - [Update your information](#update-your-information-paid-plans-only): Modify invoice email addresses, business information, and tax IDs for your organization.
 - [Enforce spend limits](#enforce-spend-limits): Learn how to manage your spend through usage limits and data retention.
+- [LangSmith Deployment billing](#langsmith-deployment-billing): Understand deployment charges, compare sizes and hourly costs, and reduce deployment costs.
 
 ## Set up billing for your account
 
@@ -180,14 +181,47 @@ For example, this is the expected configuration to keep 10% of all traces for ex
 
 If you want to keep a subset of traces for **longer than 180 days** for data collection purposes, you can create another run rule that sends some runs to a dataset of your choosing. A dataset allows you to store the trace inputs and outputs (e.g., as a key-value dataset), and will persist indefinitely, even after the trace gets deleted.
 
-### LangSmith Deployment billing
+### Summary
 
-In addition to traces, LangSmith charges for deployed agents via LangSmith Deployment. Deployments are billed on the resources they consume:
+If you have questions about further managing your spend, please contact support via [support.langchain.com](https://support.langchain.com).
+
+## LangSmith Deployment billing
+
+In addition to traces, LangSmith charges for deployed agents through LangSmith Deployment. Deployments are billed on the resources they consume:
 
 - **Compute**: Requested vCPU and memory per running replica, measured in LangChain Standard Units (LSU). [Autoscaling](/langsmith/cloud-platform-features#scaling) adds billable replicas. [Serverless](/langsmith/cloud-platform-features#serverless) compute charges stop at scale-down, not when traffic stops. [Dedicated](/langsmith/cloud-platform-features#dedicated) runs continuously.
-- **Database**: Dedicated database charges are based on configured vCPU and memory, including while idle. Runtime autoscaling does not change the database charge. Database disk storage and Serverless's shared database are not billed.
+- **Database**: Dedicated database charges are based on configured vCPU and memory, including while idle. Runtime autoscaling does not change the database charge. Database disk storage and the shared Serverless database are not billed.
 
 Managed Redis is not billed on any deployment type or size.
+
+The following diagram shows which parts of each deployment type are billed. Blue parts are billed. Green parts are not billed:
+
+```mermaid actions={false}
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Inter, system-ui, sans-serif","lineColor":"#40668D","primaryColor":"#E5F4FF","primaryTextColor":"#030710","primaryBorderColor":"#006DDD","clusterBkg":"transparent"}}}%%
+flowchart LR
+    subgraph dedicated["<b>Dedicated deployment</b>"]
+        direction TB
+        DApi("<b>API server replicas</b><br/>2 or more, billed")
+        DWorker("<b>Queue worker replicas</b><br/>1 or more, billed")
+        DRedis("<b>Managed Redis</b><br/>Not billed")
+        DDb("<b>Dedicated Postgres database</b><br/>vCPU and memory billed<br/>Disk storage not billed")
+    end
+    subgraph serverless["<b>Serverless deployment</b>"]
+        direction TB
+        SReplica("<b>1 replica</b><br/>API server and queue worker<br/>Billed while running")
+        SRedis("<b>Managed Redis</b><br/>Not billed")
+        SDb("<b>Shared Postgres database</b><br/>Not billed")
+    end
+
+    classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710,rx:10,ry:10
+    classDef trigger fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900,rx:10,ry:10
+
+    class SReplica,DApi,DWorker,DDb process
+    class SRedis,SDb,DRedis trigger
+
+    style serverless fill:none,stroke:#40668D,stroke-width:1.5px,stroke-dasharray:5 4
+    style dedicated fill:none,stroke:#40668D,stroke-width:1.5px,stroke-dasharray:5 4
+```
 
 Usage is converted to LSU at the following rates. One LSU costs $1.00:
 
@@ -198,7 +232,24 @@ Usage is converted to LSU at the following rates. One LSU costs $1.00:
 | Database vCPU | 0.177 LSU per vCPU-hour |
 | Database memory | 0.025 LSU per GiB-hour |
 
-Dedicated database costs on LangSmith Cloud in GCP are:
+Usage is sampled every 5 minutes and totaled hourly. Each running billable container is charged for that interval based on requested resources, not actual utilization.
+
+### Compare sizes and hourly costs
+
+The following table shows the hourly cost of each [size](/langsmith/cloud-platform-features#sizes) on LangSmith Cloud in GCP. For Dedicated deployments, the table assumes the database size matches the compute size:
+
+| Deployment type and size | Billable runtime | Runtime cost per hour | Database cost per hour | Minimum total per hour | Each added replica |
+|---|---|---|---|---|---|
+| Serverless Small | 0.8 vCPU / 2 GiB | 0.072 LSU | Not billed | 0.072 LSU while running, 0 LSU when scaled down | Does not scale out |
+| Serverless Medium | 4 vCPU / 4 GiB | 0.306 LSU | Not billed | 0.306 LSU while running, 0 LSU when scaled down | Does not scale out |
+| Serverless Large | 8 vCPU / 8 GiB | 0.612 LSU | Not billed | 0.612 LSU while running, 0 LSU when scaled down | Does not scale out |
+| Dedicated Small | 3 vCPU / 6 GiB minimum | 0.2565 LSU minimum | 0.277 LSU | 0.5335 LSU | +0.0855 LSU per hour |
+| Dedicated Medium | 6 vCPU / 12 GiB minimum | 0.513 LSU minimum | 0.554 LSU | 1.067 LSU | +0.171 LSU per hour |
+| Dedicated Large | 12 vCPU / 24 GiB minimum | 1.026 LSU minimum | 1.108 LSU | 2.134 LSU | +0.342 LSU per hour |
+
+The Dedicated minimum runtime is 2 API server replicas and 1 queue worker. [Autoscaling](/langsmith/cloud-platform-features#scaling) adds API server or queue worker replicas, each at the added replica rate for its size.
+
+Dedicated database capacity on LangSmith Cloud in GCP is:
 
 | Database size | Capacity | Database cost per hour |
 |---|---|---|
@@ -206,9 +257,9 @@ Dedicated database costs on LangSmith Cloud in GCP are:
 | Medium | 2 vCPU / 8 GiB | 0.554 LSU |
 | Large | 4 vCPU / 16 GiB | 1.108 LSU |
 
-Database capacity differs by cloud provider. These GCP costs exclude runtime compute. Compute and database sizes can be [set independently](/langsmith/cloud-platform-features#sizes).
+Database capacity differs by cloud provider. Compute and database sizes can be [set independently](/langsmith/cloud-platform-features#sizes).
 
-For example, an idle Dedicated Small deployment on GCP has 2 API replicas and 1 queue worker. This is 3 vCPU and 6 GiB of billable runtime, excluding Redis. With a Small database, its hourly cost is:
+For example, the Dedicated Small minimum total is calculated as follows:
 
 | Component | Calculation | Cost per hour |
 |---|---|---|
@@ -216,9 +267,7 @@ For example, an idle Dedicated Small deployment on GCP has 2 API replicas and 1 
 | Database | 1 × 0.177 + 4 × 0.025 | 0.277 LSU |
 | Minimum total cost | 0.2565 + 0.277 | 0.5335 LSU |
 
-Autoscaling increases the runtime cost above this minimum. Tracing and other product usage are separate charges.
-
-Usage is sampled every 5 minutes and totaled hourly. Each running billable container is charged for that interval based on requested resources, not actual utilization.
+Tracing and other product usage are separate charges.
 
 [Free Serverless deployments](https://www.langchain.com/pricing) are available only in the Small size. A free deployment is not billed for any container, at any **Scale down after** setting. Dedicated deployments are never free.
 
@@ -230,7 +279,7 @@ Usage-based pricing replaced per-run and uptime pricing on October 1, 2026. Scal
 
 For high-volume deployment usage, [contact our sales team](https://www.langchain.com/contact-sales) to discuss custom pricing options.
 
-#### Reduce deployment costs
+### Reduce deployment costs
 
 Deployment charges are based on the compute and database resources that each deployment requests. To lower your deployment bill, run fewer deployments, use smaller sizes, and let idle deployments scale down:
 
@@ -241,13 +290,45 @@ Deployment charges are based on the compute and database resources that each dep
 - **Limit preview deployments**: Each [preview deployment](/langsmith/preview-builds) is a separate deployment and is charged like one. Lower **Idle TTL** and **Max concurrent previews** to limit how many preview deployments run, and for how long.
 - **Remove unneeded wake-ups**: A request to a scaled-down Serverless deployment starts it again, including automated health checks. Enabled [cron jobs](/langsmith/cron-jobs) and scheduled runs start the deployment up to 10 minutes before they are due. Remove cron jobs and health checks that you do not need.
 
-For example, a Serverless Small deployment costs 0.072 LSU per hour while it runs. If it receives requests for 2 hours each weekday and scales down after `1 hour`, it runs about 66 hours each month and costs about 4.75 LSU. With the default `1 week` setting, it does not scale down and costs about 52.56 LSU each month.
+The following diagram compares three Dedicated deployments with one Dedicated deployment that runs three graphs:
 
-Three agents on three Dedicated Small deployments on GCP cost at least 1.6005 LSU per hour. The same three agents on one Dedicated Small deployment cost at least 0.5335 LSU per hour. Autoscaling adds runtime cost to both setups.
+```mermaid actions={false}
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Inter, system-ui, sans-serif","lineColor":"#40668D","primaryColor":"#E5F4FF","primaryTextColor":"#030710","primaryBorderColor":"#006DDD","clusterBkg":"transparent"}}}%%
+flowchart TB
+    subgraph separate["<b>Before: 3 Dedicated deployments, at least 1.6005 LSU per hour</b>"]
+        direction LR
+        A("<b>Agent A</b><br/>2 API servers<br/>1 queue worker<br/>1 database")
+        B("<b>Agent B</b><br/>2 API servers<br/>1 queue worker<br/>1 database")
+        C("<b>Agent C</b><br/>2 API servers<br/>1 queue worker<br/>1 database")
+        A ~~~ B ~~~ C
+    end
+    subgraph shared["<b>After: 1 Dedicated deployment, at least 0.5335 LSU per hour</b>"]
+        direction LR
+        Config("<b>langgraph.json</b><br/>agent_a, agent_b, agent_c")
+        Runtime("<b>Shared runtime</b><br/>2 API servers<br/>1 queue worker")
+        Db("<b>Shared database</b><br/>1 database")
+        Config --> Runtime --> Db
+    end
+
+    separate ==> shared
+
+    classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710,rx:10,ry:10
+    classDef neutral fill:#F2FAFF,stroke:#40668D,stroke-width:2px,color:#2F4B68,rx:10,ry:10
+
+    class A,B,C,Runtime,Db process
+    class Config neutral
+
+    style separate fill:none,stroke:#40668D,stroke-width:1.5px,stroke-dasharray:5 4
+    style shared fill:none,stroke:#40668D,stroke-width:1.5px,stroke-dasharray:5 4
+```
+
+The following table shows the effect of two changes. Monthly costs use 730 hours:
+
+| Change | Before | After | Monthly savings |
+|---|---|---|---|
+| Shorten **Scale down after** for a Serverless Small deployment that receives requests for 2 hours each weekday, 22 days each month | `1 week` (default): never scales down, 730 billed hours, about 52.56 LSU each month | `1 hour`: about 66 billed hours, about 4.75 LSU each month | About 47.81 LSU |
+| Run 3 agents on Dedicated Small deployments on GCP | 3 deployments: at least 1.6005 LSU per hour, about 1,168 LSU each month | 1 deployment with 3 graphs in `langgraph.json`: at least 0.5335 LSU per hour, about 389 LSU each month | About 779 LSU |
+
+Autoscaling adds runtime cost to both Dedicated setups.
 
 LangSmith does not support changing the type of a deployment after creation. To move to Serverless, create a new Serverless deployment and copy data from the previous deployment with the [Agent Server API](/langsmith/server-api-ref). You can also contact [support](https://support.langchain.com) for help with the migration.
-
-### Summary
-
-If you have questions about further managing your spend, please contact support via [support.langchain.com](https://support.langchain.com).
-
