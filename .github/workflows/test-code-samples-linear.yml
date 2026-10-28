@@ -3,38 +3,159 @@ name: Test Code Samples Linear Ticket
 
 permissions:
   contents: read
+  # Download the triggering run's per-leg result artifacts.
+  actions: read
 
 # Filed separately so PR runs of "Test Code Samples" do not show a skipped
-# create-linear-ticket check on every pull request.
+# create-linear-tickets check on every pull request.
+#
+# "Test Code Samples" runs one matrix leg per product (oss, langsmith) and
+# uploads a counts-only artifact per leg. This workflow files one Linear
+# ticket per failing leg so an OSS regression and a LangSmith regression
+# land as separate issues instead of one shared "code samples failed".
+#
+# Repository variables (Settings > Secrets and variables > Actions > Variables):
+# - LINEAR_TEAM_KEY: team key such as DOC. Required; the job warns and exits
+#   when it is unset instead of failing.
+# - LINEAR_LABEL_IDS_OSS, LINEAR_LABEL_IDS_LANGSMITH: optional comma-separated
+#   Linear label UUIDs applied to that product's ticket.
 on:
   workflow_run:
     workflows: ["Test Code Samples"]
     types: [completed]
 
 jobs:
-  create-linear-ticket:
+  create-linear-tickets:
     if: >-
       github.event.workflow_run.event == 'schedule' &&
       (github.event.workflow_run.conclusion == 'failure' ||
        github.event.workflow_run.conclusion == 'cancelled')
     runs-on: ubuntu-latest
     steps:
-      - name: Create Linear issue
+      - name: Warn when LINEAR_TEAM_KEY is unset
+        if: vars.LINEAR_TEAM_KEY == ''
+        env:
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          echo "::warning::Repository variable LINEAR_TEAM_KEY is unset; no Linear ticket filed for $RUN_URL"
+          echo "No Linear ticket filed: LINEAR_TEAM_KEY is unset. Failed run: $RUN_URL" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Download per-leg results
+        if: vars.LINEAR_TEAM_KEY != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          mkdir -p results
+          # A run cancelled before any leg uploaded has no artifacts; that is
+          # handled below as a generic ticket rather than an error here.
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'code-sample-results-*' --dir results \
+            || echo "No per-leg result artifacts found for run $RUN_ID"
+          find results -name 'results-*.json' -exec cat {} \; || true
+
+      - name: Decide which tickets to file
+        if: vars.LINEAR_TEAM_KEY != ''
+        id: decide
+        env:
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          # The artifacts are produced by our own workflow, but only numbers and
+          # the fixed outcome word are copied into ticket text, never raw output.
+          any_leg=false
+          for product in oss langsmith; do
+            file=$(find results -name "results-$product.json" | head -n 1)
+            if [[ -z "$file" ]]; then
+              echo "${product}_file=false" >> "$GITHUB_OUTPUT"
+              continue
+            fi
+            any_leg=true
+            outcome=$(jq -r '.outcome // "unknown"' "$file")
+            failures=$(jq -r '.failures // 0' "$file")
+            passed=$(jq -r '.passed // 0' "$file")
+            total=$(jq -r '.total // 0' "$file")
+            rate_limited=$(jq -r '.rate_limited // 0' "$file")
+            case "$outcome" in
+              failure) file_ticket=true; verb="failed" ;;
+              cancelled) file_ticket=true; verb="timed out" ;;
+              *) file_ticket=false; verb="" ;;
+            esac
+            {
+              echo "${product}_file=$file_ticket"
+              echo "${product}_verb=$verb"
+              echo "${product}_failures=$failures"
+              echo "${product}_passed=$passed"
+              echo "${product}_total=$total"
+              echo "${product}_rate_limited=$rate_limited"
+            } >> "$GITHUB_OUTPUT"
+            echo "$product: outcome=$outcome failed=$failures passed=$passed/$total rate_limited=$rate_limited ticket=$file_ticket"
+          done
+          # No leg reported at all: the run died before testing (setup step,
+          # concurrency cancel, or a coverage-check failure). File one generic
+          # ticket so a broken pipeline is still visible.
+          if [[ "$any_leg" == "false" ]]; then
+            echo "generic_file=true" >> "$GITHUB_OUTPUT"
+            if [[ "$RUN_CONCLUSION" == "cancelled" ]]; then
+              echo "generic_verb=was cancelled" >> "$GITHUB_OUTPUT"
+            else
+              echo "generic_verb=failed before any samples ran" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "generic_file=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: File OSS ticket
+        if: vars.LINEAR_TEAM_KEY != '' && steps.decide.outputs.oss_file == 'true'
         uses: ctriolo/action-create-linear-issue@699c7c2f0639181e0eaf5622d2987c6584f48a5a # v0.7
         with:
           linear-api-key: ${{ secrets.LINEAR_API_KEY }}
-          linear-team-key: ${{ secrets.LINEAR_TEAM_KEY }}
-          linear-issue-title: >-
-            ${{ github.event.workflow_run.conclusion == 'cancelled'
-              && 'Weekly code samples test timed out'
-              || 'Weekly code samples test failed' }}
+          linear-team-key: ${{ vars.LINEAR_TEAM_KEY }}
+          linear-issue-label-ids: ${{ vars.LINEAR_LABEL_IDS_OSS }}
+          linear-issue-title: "Monthly OSS code samples test ${{ steps.decide.outputs.oss_verb }}"
           linear-issue-description: |
-            The scheduled weekly test of all code samples in `src/code-samples/` did not complete successfully.
+            The monthly test of the OSS code samples (`src/code-samples/langchain`, `langgraph`, `deepagents`) ${{ steps.decide.outputs.oss_verb }}.
 
-            **Outcome:** ${{ github.event.workflow_run.conclusion == 'cancelled' && 'Timed out before all samples finished. Consider increasing the job timeout or optimizing slow samples.' || 'One or more code samples failed.' }}
+            **Failed:** ${{ steps.decide.outputs.oss_failures }}
+            **Passed:** ${{ steps.decide.outputs.oss_passed }} / ${{ steps.decide.outputs.oss_total }}
+            **Skipped (rate-limited):** ${{ steps.decide.outputs.oss_rate_limited }}
 
             **Workflow run:** ${{ github.event.workflow_run.html_url }}
 
-            Please investigate and fix the failing samples.
+            Open the `test-code-samples (oss)` job for per-sample output. Rerun only this leg with `workflow_dispatch` and `product: oss`.
+          linear-attachment-url: ${{ github.event.workflow_run.html_url }}
+          linear-attachment-title: "Failed workflow run"
+
+      - name: File LangSmith ticket
+        if: vars.LINEAR_TEAM_KEY != '' && steps.decide.outputs.langsmith_file == 'true'
+        uses: ctriolo/action-create-linear-issue@699c7c2f0639181e0eaf5622d2987c6584f48a5a # v0.7
+        with:
+          linear-api-key: ${{ secrets.LINEAR_API_KEY }}
+          linear-team-key: ${{ vars.LINEAR_TEAM_KEY }}
+          linear-issue-label-ids: ${{ vars.LINEAR_LABEL_IDS_LANGSMITH }}
+          linear-issue-title: "Monthly LangSmith code samples test ${{ steps.decide.outputs.langsmith_verb }}"
+          linear-issue-description: |
+            The monthly test of the LangSmith code samples (`src/code-samples/langsmith`) ${{ steps.decide.outputs.langsmith_verb }}.
+
+            **Failed:** ${{ steps.decide.outputs.langsmith_failures }}
+            **Passed:** ${{ steps.decide.outputs.langsmith_passed }} / ${{ steps.decide.outputs.langsmith_total }}
+            **Skipped (rate-limited):** ${{ steps.decide.outputs.langsmith_rate_limited }}
+
+            **Workflow run:** ${{ github.event.workflow_run.html_url }}
+
+            Open the `test-code-samples (langsmith)` job for per-sample output. Rerun only this leg with `workflow_dispatch` and `product: langsmith`.
+          linear-attachment-url: ${{ github.event.workflow_run.html_url }}
+          linear-attachment-title: "Failed workflow run"
+
+      - name: File generic ticket when no leg reported
+        if: vars.LINEAR_TEAM_KEY != '' && steps.decide.outputs.generic_file == 'true'
+        uses: ctriolo/action-create-linear-issue@699c7c2f0639181e0eaf5622d2987c6584f48a5a # v0.7
+        with:
+          linear-api-key: ${{ secrets.LINEAR_API_KEY }}
+          linear-team-key: ${{ vars.LINEAR_TEAM_KEY }}
+          linear-issue-title: "Monthly code samples run ${{ steps.decide.outputs.generic_verb }}"
+          linear-issue-description: |
+            The monthly code samples run ${{ steps.decide.outputs.generic_verb }}, so no per-product results were uploaded. This usually means a setup step or the sample-directory coverage check failed, not a sample.
+
+            **Workflow run:** ${{ github.event.workflow_run.html_url }}
           linear-attachment-url: ${{ github.event.workflow_run.html_url }}
           linear-attachment-title: "Failed workflow run"

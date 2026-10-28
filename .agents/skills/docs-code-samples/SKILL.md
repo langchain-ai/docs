@@ -242,6 +242,8 @@ make test-code-samples
 
 For multiple files: `FILES="path1 path2"`. Fix any failures before proceeding—do not extract snippets until the samples pass.
 
+To run one product's samples, set `CODE_SAMPLE_PATHS` to space-separated directories under `src/code-samples/`, for example `CODE_SAMPLE_PATHS="src/code-samples/langsmith" make test-code-samples`. It also narrows an explicit `FILES` list. CI runs one matrix leg per product this way (`oss` covers `langchain/`, `langgraph/`, and `deepagents/`; `langsmith` covers `langsmith/`), so a failure in one product never turns the other product's check red. A new top-level directory under `src/code-samples/` must be added to a leg in `.github/workflows/test-code-samples.yml`, or the workflow fails its coverage check.
+
 Java files (`.java`) under `src/code-samples/` are run using `jbang`. To keep CI green, Java samples must:
 
 - Print at least one line of output so it's obvious the sample ran
