@@ -11,12 +11,6 @@ on:
       - "src/code-samples/**"
       - ".github/workflows/test-code-samples.yml"
   workflow_dispatch:
-    inputs:
-      product:
-        description: "Which sample set to run"
-        type: choice
-        options: [all, oss, langsmith]
-        default: all
   schedule:
     # Full run + trace refresh on the 1st of each month at 00:00 UTC
     - cron: "0 0 1 * *"
@@ -26,35 +20,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  plan:
-    # GitHub does not expose repository secrets to workflows triggered from fork PRs.
-    # These tests require provider API keys for some samples, so skip on forks.
-    # The test job inherits this skip through `needs`.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false)
-    runs-on: ubuntu-latest
-    outputs:
-      products: ${{ steps.plan.outputs.products }}
-    steps:
-      - name: Choose matrix legs
-        id: plan
-        env:
-          REQUESTED: ${{ github.event.inputs.product || 'all' }}
-        run: |
-          case "$REQUESTED" in
-            oss) echo 'products=["oss"]' >> "$GITHUB_OUTPUT" ;;
-            langsmith) echo 'products=["langsmith"]' >> "$GITHUB_OUTPUT" ;;
-            *) echo 'products=["oss","langsmith"]' >> "$GITHUB_OUTPUT" ;;
-          esac
-
   test-code-samples:
     name: test-code-samples (${{ matrix.product }})
-    needs: plan
+    # GitHub does not expose repository secrets to workflows triggered from fork PRs.
+    # These tests require provider API keys for some samples, so skip on forks.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false)
     runs-on: ubuntu-latest
     strategy:
-      # One product's failures must not cancel the other leg.
+      # One leg per product so a LangSmith failure never turns the OSS check
+      # red, or the other way round. To rerun one leg, re-run its job.
       fail-fast: false
       matrix:
-        product: ${{ fromJSON(needs.plan.outputs.products) }}
+        product: [oss, langsmith]
     # Scheduled and manual runs test all samples; PR runs may touch many files in large refactors.
     # Full runs (~600 samples + optional trace/snippet regen) exceeded 90m in practice.
     timeout-minutes: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 150 || 60 }}
@@ -239,46 +216,6 @@ jobs:
             make test-code-samples FILES="$FILES"
           fi
 
-      - name: Record leg results
-        # Counts only. The Linear ticket workflow reads this artifact to file
-        # one ticket per failing product, so keep raw sample output out of it.
-        if: always() && steps.test.outcome != 'skipped'
-        env:
-          PRODUCT: ${{ matrix.product }}
-          OUTCOME: ${{ steps.test.outcome }}
-          FAILURES: ${{ steps.test.outputs.sample_failures || '0' }}
-          PASSED: ${{ steps.test.outputs.samples_passed || '0' }}
-          TOTAL: ${{ steps.test.outputs.samples_total || '0' }}
-          RATE_LIMITED: ${{ steps.test.outputs.samples_rate_limited || '0' }}
-        run: |
-          mkdir -p code-sample-results
-          jq -n \
-            --arg product "$PRODUCT" \
-            --arg outcome "$OUTCOME" \
-            --argjson failures "$FAILURES" \
-            --argjson passed "$PASSED" \
-            --argjson total "$TOTAL" \
-            --argjson rate_limited "$RATE_LIMITED" \
-            '{product: $product, outcome: $outcome, failures: $failures, passed: $passed, total: $total, rate_limited: $rate_limited}' \
-            > "code-sample-results/results-$PRODUCT.json"
-          cat "code-sample-results/results-$PRODUCT.json"
-          {
-            echo "### Code samples: $PRODUCT"
-            echo ""
-            echo "- Outcome: $OUTCOME"
-            echo "- Passed: $PASSED / $TOTAL"
-            echo "- Failed: $FAILURES"
-            echo "- Skipped (rate-limited): $RATE_LIMITED"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload leg results
-        if: always() && steps.test.outcome != 'skipped'
-        uses: actions/upload-artifact@v4
-        with:
-          name: code-sample-results-${{ matrix.product }}
-          path: code-sample-results/
-          retention-days: 14
-
       - name: Regenerate snippet MDX with trace links
         id: regen_snippets
         if: >-
@@ -317,7 +254,7 @@ jobs:
             fi
           done
           git checkout -- . || true
-          git clean -fd -- src/snippets/code-samples src/code-samples/trace-links.json code-sample-results || true
+          git clean -fd -- src/snippets/code-samples src/code-samples/trace-links.json || true
 
           PR_NUMBER="$(gh pr list --head "$BRANCH_NAME" --state open \
             --json number --jq '.[0].number // empty')"
