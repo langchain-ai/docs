@@ -3,38 +3,106 @@ name: Test Code Samples Linear Ticket
 
 permissions:
   contents: read
+  # Read the triggering run's job list.
+  actions: read
 
 # Filed separately so PR runs of "Test Code Samples" do not show a skipped
-# create-linear-ticket check on every pull request.
+# create-linear-tickets check on every pull request.
+#
+# "Test Code Samples" runs one matrix leg per product, oss and langsmith.
+# This workflow files one Linear ticket per failed leg so an OSS regression
+# and a LangSmith regression land as separate issues.
+#
+# Needs the LINEAR_TEAM_KEY repository variable (a team key such as DOC;
+# Settings > Secrets and variables > Actions > Variables). The job warns and
+# files nothing when it is unset, instead of failing.
 on:
   workflow_run:
     workflows: ["Test Code Samples"]
     types: [completed]
 
 jobs:
-  create-linear-ticket:
+  create-linear-tickets:
     if: >-
       github.event.workflow_run.event == 'schedule' &&
       (github.event.workflow_run.conclusion == 'failure' ||
        github.event.workflow_run.conclusion == 'cancelled')
     runs-on: ubuntu-latest
     steps:
-      - name: Create Linear issue
+      - name: Warn when LINEAR_TEAM_KEY is unset
+        if: vars.LINEAR_TEAM_KEY == ''
+        env:
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          echo "::warning::Repository variable LINEAR_TEAM_KEY is unset; no Linear ticket filed for $RUN_URL"
+
+      - name: Find the failed legs
+        if: vars.LINEAR_TEAM_KEY != ''
+        id: legs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          # Only fixed product names are written to outputs; job text is not.
+          jobs=$(gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --json jobs \
+            --jq '.jobs[] | select(.conclusion != "success") | .name')
+          echo "Jobs that did not succeed:"
+          echo "$jobs"
+          for product in oss langsmith; do
+            if grep -qF "test-code-samples ($product)" <<< "$jobs"; then
+              echo "$product=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "$product=false" >> "$GITHUB_OUTPUT"
+            fi
+          done
+          if grep -qF "test-code-samples (" <<< "$jobs"; then
+            echo "any_leg=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "any_leg=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: File OSS ticket
+        if: vars.LINEAR_TEAM_KEY != '' && steps.legs.outputs.oss == 'true'
         uses: ctriolo/action-create-linear-issue@699c7c2f0639181e0eaf5622d2987c6584f48a5a # v0.7
         with:
           linear-api-key: ${{ secrets.LINEAR_API_KEY }}
-          linear-team-key: ${{ secrets.LINEAR_TEAM_KEY }}
-          linear-issue-title: >-
-            ${{ github.event.workflow_run.conclusion == 'cancelled'
-              && 'Weekly code samples test timed out'
-              || 'Weekly code samples test failed' }}
+          linear-team-key: ${{ vars.LINEAR_TEAM_KEY }}
+          linear-issue-title: "Monthly OSS code samples test failed"
           linear-issue-description: |
-            The scheduled weekly test of all code samples in `src/code-samples/` did not complete successfully.
-
-            **Outcome:** ${{ github.event.workflow_run.conclusion == 'cancelled' && 'Timed out before all samples finished. Consider increasing the job timeout or optimizing slow samples.' || 'One or more code samples failed.' }}
+            The monthly test of the OSS code samples (`src/code-samples/langchain`, `langgraph`, `deepagents`) did not pass.
 
             **Workflow run:** ${{ github.event.workflow_run.html_url }}
 
-            Please investigate and fix the failing samples.
+            Open the `test-code-samples (oss)` job for per-sample output. Re-run that job alone to retry this leg.
+          linear-attachment-url: ${{ github.event.workflow_run.html_url }}
+          linear-attachment-title: "Failed workflow run"
+
+      - name: File LangSmith ticket
+        if: vars.LINEAR_TEAM_KEY != '' && steps.legs.outputs.langsmith == 'true'
+        uses: ctriolo/action-create-linear-issue@699c7c2f0639181e0eaf5622d2987c6584f48a5a # v0.7
+        with:
+          linear-api-key: ${{ secrets.LINEAR_API_KEY }}
+          linear-team-key: ${{ vars.LINEAR_TEAM_KEY }}
+          linear-issue-title: "Monthly LangSmith code samples test failed"
+          linear-issue-description: |
+            The monthly test of the LangSmith code samples (`src/code-samples/langsmith`) did not pass.
+
+            **Workflow run:** ${{ github.event.workflow_run.html_url }}
+
+            Open the `test-code-samples (langsmith)` job for per-sample output. Re-run that job alone to retry this leg.
+          linear-attachment-url: ${{ github.event.workflow_run.html_url }}
+          linear-attachment-title: "Failed workflow run"
+
+      - name: File a generic ticket when no leg ran
+        if: vars.LINEAR_TEAM_KEY != '' && steps.legs.outputs.any_leg == 'false'
+        uses: ctriolo/action-create-linear-issue@699c7c2f0639181e0eaf5622d2987c6584f48a5a # v0.7
+        with:
+          linear-api-key: ${{ secrets.LINEAR_API_KEY }}
+          linear-team-key: ${{ vars.LINEAR_TEAM_KEY }}
+          linear-issue-title: "Monthly code samples run did not complete"
+          linear-issue-description: |
+            The monthly code samples run ended as `${{ github.event.workflow_run.conclusion }}` before any product leg reported, so this is a pipeline problem rather than a sample failure.
+
+            **Workflow run:** ${{ github.event.workflow_run.html_url }}
           linear-attachment-url: ${{ github.event.workflow_run.html_url }}
           linear-attachment-title: "Failed workflow run"
