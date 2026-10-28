@@ -9,7 +9,7 @@ This reference explains LangSmith's Attribute-Based Access Control (ABAC) system
 ABAC (Attribute-Based Access Control) is an Enterprise feature for managing fine-grained access control. If you are interested in this feature, [contact our sales team](https://www.langchain.com/contact-sales). Other plans default to using the Admin role for all users.
 </Note>
 
-ABAC complements [Role-Based Access Control (RBAC)](/langsmith/rbac) by adding tag-based conditions to access decisions. While RBAC grants blanket permissions based on a user's role (e.g., "can read all projects"), ABAC lets you restrict or grant access based on resource tags (e.g., "can only read projects tagged with Environment=Development").
+ABAC complements [Role-Based Access Control (RBAC)](/langsmith/rbac) by adding tag-based conditions to access decisions. While RBAC grants blanket permissions based on a user's role (e.g., "can read all projects"), ABAC lets you restrict or grant access based on resource tags (e.g., "can only read projects tagged with Environment=Development"). Within a project, ABAC can also restrict which traces a user can read based on root run metadata. For details, refer to [Control trace access with root run metadata](#control-trace-access-with-root-run-metadata).
 
 <Note>
 Roles and resource tags can be managed via the UI or API. ABAC policies are configurable via the [API](https://api.smith.langchain.com/docs#/access_policies). Once configured, policies are automatically enforced in both the API and the UI.
@@ -18,7 +18,7 @@ Roles and resource tags can be managed via the UI or API. ABAC policies are conf
 ## Before you begin
 
 * [Set up resource tags](/langsmith/set-up-resource-tags) in your workspace.
-* ABAC currently only supports `resource_tag_key` as an `attribute_name` in policies, for evaluating against resource tags. No other attributes are supported yet.
+* ABAC supports two values for `attribute_name` in policies: `resource_tag_key`, which evaluates resource tags, and `root_run_metadata`, which evaluates the root run metadata of each trace in a project.
 
 ## Enable ABAC for self-hosted deployments
 
@@ -121,10 +121,12 @@ Cloning copies examples from a source dataset to a target dataset. The `datasets
 #### Conditions
 
 Each condition in the `conditions` array specifies:
-- **`attribute_name`** - Currently only `resource_tag_key` is supported
-- **`attribute_key`** - The tag key to match (e.g., `Environment`, `Team`)
+- **`attribute_name`** - `resource_tag_key` to match resource tags, or `root_run_metadata` to match root run metadata
+- **`attribute_key`** - The tag key or metadata key to match (e.g., `Environment`, `Team`)
 - **`operator`** - The comparison operator
 - **`attribute_value`** - The value to compare against
+
+The operators below apply to `resource_tag_key` conditions. `root_run_metadata` conditions support only `equals`. For their rules, refer to [Control trace access with root run metadata](#control-trace-access-with-root-run-metadata).
 
 #### Operators
 
@@ -197,6 +199,40 @@ Access policies are managed via the LangSmith API by [Organization Admins](/lang
 ## Control access to run inputs and outputs
 
 `runs:read` controls whether a user can see a run. `runs:read-inputs` and `runs:read-outputs` control whether they can see its inputs and outputs. Access policies for these permissions use `resource_type: "project"` and are evaluated against each run's parent project, so you can hide inputs, outputs, or both in some projects while leaving other projects in the workspace unchanged. RBAC and ABAC combine for these permissions the same way they do for any other permission. For more details, refer to [How ABAC works with RBAC](#how-abac-works-with-rbac).
+
+## Control trace access with root run metadata
+
+A `root_run_metadata` condition limits which traces a user can read in a project, based on a key in each trace's root run metadata. Use it to hide some traces in a project, or to show users only the traces labeled for them, without moving traces into separate projects.
+
+A `root_run_metadata` condition is valid only in a condition group with `permission: "runs:read"` and `resource_type: "project"`. It accepts the following fields:
+
+- **`attribute_key`**: A top-level key in the root run metadata. Nested keys are not supported, so the key cannot contain `.`.
+- **`operator`**: `equals` only. The match is case sensitive.
+- **`attribute_value`**: The value to match, or the placeholder `${user.ls_user_id}`. The placeholder matches the LangSmith user ID of the user making the request.
+
+Neither `attribute_key` nor `attribute_value` can contain a double quote or a backslash, and each is limited to 255 bytes. A value that starts with `${` must be exactly `${user.ls_user_id}`.
+
+A condition group can combine `root_run_metadata` conditions with `resource_tag_key` conditions. The tag conditions select the projects the group applies to, and the metadata conditions select the traces in those projects. All conditions in a group must match.
+
+Conditions evaluate only the root run, so all runs in a trace are visible or hidden together. To make a trace match a policy, set the metadata key on the root run when you trace it. For how to add metadata, refer to [Add metadata and tags to traces](/langsmith/add-metadata-tags).
+
+### How metadata conditions combine with RBAC
+
+Metadata conditions follow the same precedence as other policies: deny policies apply first, then RBAC, then allow policies.
+
+- **Deny policies**: A deny policy with metadata conditions hides the matching traces instead of blocking the whole project. The user keeps access to the other traces in the project. When several deny policies apply, a trace that matches any of them is hidden.
+- **Allow policies**: An allow policy with metadata conditions grants `runs:read` on the matching traces only. When several allow policies apply, the user can read a trace that matches any of them.
+- **RBAC**: If the user's role grants `runs:read`, the user can read every trace that a deny policy does not hide, and allow policies have no effect. To limit a role to the traces an allow policy matches, remove `runs:read` from the role.
+
+If a request has no associated LangSmith user ID, a condition that uses `${user.ls_user_id}` does not match.
+
+### Responses under metadata conditions
+
+When metadata conditions apply to a user in a project, LangSmith filters that user's reads in the project to the traces they can see:
+
+- Run lists, trace lists, and run analytics omit hidden traces.
+- Requesting a hidden trace or one of its runs by ID returns `404 Not Found`. This includes downloading the trace and opening its messages or trajectory.
+- The project list omits run and feedback statistics for the project.
 
 ## Example scenarios
 
@@ -346,6 +382,77 @@ Let users keep browsing runs in projects that contain PII, but hide the runs' in
 }
 ```
 
+### 7. Hide traces by root run metadata
+
+Hide traces whose root run has `source` set to `customer`, in every project. Users whose role grants `runs:read` still see all other traces:
+
+```json
+{
+  "name": "Hide Customer Traces",
+  "effect": "deny",
+  "condition_groups": [{
+    "permission": "runs:read",
+    "resource_type": "project",
+    "conditions": [{
+      "attribute_name": "root_run_metadata",
+      "attribute_key": "source",
+      "operator": "equals",
+      "attribute_value": "customer"
+    }]
+  }]
+}
+```
+
+### 8. Show users only the traces labeled for them
+
+Show each user only the traces whose root run has `allowed_ls_user_id` set to that user's LangSmith user ID. Attach this policy to a role that does not grant `runs:read`, because RBAC permissions take precedence over allow policies:
+
+```json
+{
+  "name": "Traces Labeled for the Caller",
+  "effect": "allow",
+  "condition_groups": [{
+    "permission": "runs:read",
+    "resource_type": "project",
+    "conditions": [{
+      "attribute_name": "root_run_metadata",
+      "attribute_key": "allowed_ls_user_id",
+      "operator": "equals",
+      "attribute_value": "${user.ls_user_id}"
+    }]
+  }]
+}
+```
+
+### 9. Team traces in production projects
+
+Grant access to traces whose root run has `team` set to `payments`, only in projects tagged `Environment=prod`. The tag condition selects the projects, and the metadata condition selects the traces in them:
+
+```json
+{
+  "name": "Payments Traces in Prod",
+  "effect": "allow",
+  "condition_groups": [{
+    "permission": "runs:read",
+    "resource_type": "project",
+    "conditions": [
+      {
+        "attribute_name": "resource_tag_key",
+        "attribute_key": "Environment",
+        "operator": "equals",
+        "attribute_value": "prod"
+      },
+      {
+        "attribute_name": "root_run_metadata",
+        "attribute_key": "team",
+        "operator": "equals",
+        "attribute_value": "payments"
+      }
+    ]
+  }]
+}
+```
+
 ## Tag resources at creation time
 
 When ABAC policies are active, resources are access-controlled based on their tags. To make sure a resource is protected as soon as it is created, you can supply tags directly in the creation request using the `tag_value_ids` parameter.
@@ -377,6 +484,14 @@ If you rely on the LangSmith SDK to auto-create tracing projects during trace in
 - Check that the user's role grants `runs:read-inputs` and `runs:read-outputs`, or that an allow policy grants them for the run's project
 - Check for a deny policy on `runs:read-inputs` or `runs:read-outputs` that matches the project's tags
 - Message and trajectory views return `403 Forbidden` unless both permissions are granted
+
+**Traces missing or returning `404 Not Found`?**
+- Check for a deny policy with a `root_run_metadata` condition that matches the trace's root run metadata
+- If the user's access comes from an allow policy with `root_run_metadata` conditions, check that the root run has the metadata key and the exact value, including case
+- Conditions match top-level keys on the root run only, not metadata on child runs
+
+**Threads, sharing, or experiment comparison returning `403 Forbidden`?**
+- These surfaces are unavailable in any project where `root_run_metadata` conditions apply to the user. For the full list, refer to [Responses under metadata conditions](#responses-under-metadata-conditions)
 
 **Policy not taking effect?**
 - Confirm the policy is attached to the correct role
