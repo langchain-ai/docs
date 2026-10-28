@@ -16,7 +16,7 @@ Every gateway-proxied call is traced to a project named `gateway` in the [worksp
 
 ### Open the Traces tab
 
-To view gateway requests, go to **LLM Gateway** and select the **Traces** tab. The Simulator's **View trace** button opens its request in this tab. On the Developer plan, open the `gateway` tracing project in your workspace instead.
+To view gateway requests, go to **LLM Gateway** and select the **Traces** tab. The Simulator's **View trace** button opens its request in this tab, and the **View traces** button in a **Usage** detailed view opens the traces behind one user's, API key's, or header value's spend. On the Developer plan, open the `gateway` tracing project in your workspace instead.
 
 {/* VERIFY W5: tab name and the Developer-plan behavior (visibleTabs.ts restrictToHome for Developer). */}
 
@@ -24,12 +24,20 @@ Trace content (request and response bodies) is off by default for all organizati
 
 ### Trace metadata
 
-Gateway-proxied calls are distinguishable from direct LLM calls by the project they land in and the metadata attached to their spans:
+Gateway-proxied calls are distinguishable from direct LLM calls by the project they land in and the metadata attached to their spans. Gateway-specific keys appear under `gateway.` in the trace metadata, recorded as `langsmith.metadata.gateway.*` span attributes:
 
-- **Gateway project:** filter by the `gateway` project, or by the presence of `langsmith.metadata.gateway.*` span attributes, to find gateway-proxied calls.
-- **Policy evaluation results:** every gateway span records which policies were evaluated and their outcome via `langsmith.metadata.gateway.policy.matched_ids/_names`, `passed_ids/_names`, and `violated_ids/_names`, so both passes and blocks are captured.
-- **Guard rule matches:** when redaction policies apply, the guard pipeline emits a `rule_id → count` map stamped onto the span as `policy.matched_rules`, `passed_rules`, and `violated_rules`. These are rule IDs, not PII or secret category labels.
-- **Cost data:** token counts and cost are computed inline and feed the same spend accumulator that spend-cap policies enforce against.
+- **Gateway project**: Filter by the `gateway` project, or by the presence of `langsmith.metadata.gateway.*` span attributes, to find gateway-proxied calls.
+- **Caller identity**: `gateway.workspace_id`, `gateway.api_key_id`, and `gateway.user_agent`, the calling client's `User-Agent` header. `gateway.user_id` is set only for personal access tokens, so service-key calls have no user.
+- **Credential source**: `gateway.credential_source` names the credential that paid for the provider call: `byok` for the workspace's provider key, `credits` for [Gateway Credits](/langsmith/llm-gateway-credits), `subscription_oauth` for a [Claude subscription](/langsmith/llm-gateway-coding-agents#use-claude-subscription-oauth), or `platform_managed`. Every gateway trace carries this key.
+- **Authentication mode**: `gateway.auth_mode` is set only when the caller did not authenticate with a LangSmith API key, such as `claude_max_oauth` for a Claude subscription.
+- **Model and provider**: `ls_model_name` and `ls_provider`, which the **Usage** tab groups spend by.
+- **Request headers**: each `X-Gateway-*` request header, recorded as `gateway.<name>`. For how names are normalized, see [Matchable headers](/langsmith/llm-gateway-header-policies#matchable-headers).
+- **Policy evaluation results**: Every gateway span records which policies were evaluated and their outcome via `langsmith.metadata.gateway.policy.matched_ids/_names`, `passed_ids/_names`, and `violated_ids/_names`, so both passes and blocks are captured.
+- **Guard rule matches**: When redaction policies apply, the guard pipeline emits a `rule_id → count` map stamped onto the span as `policy.matched_rules`, `passed_rules`, and `violated_rules`. These are rule IDs, not PII or secret category labels.
+- **Content flags**: `ls_metadata_only` is `true` on a trace stored without request and response content. `content_quota_exceeded` is also `true` when the gateway dropped the content because a monthly trace limit was reached.
+- **Cost data**: Token counts and cost are computed inline and feed the same spend accumulator that spend-cap policies enforce against.
+
+The gateway sets these keys itself. Clients cannot override them through request headers.
 
 ## Restrict trace visibility
 

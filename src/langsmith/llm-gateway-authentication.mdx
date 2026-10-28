@@ -45,7 +45,7 @@ For a service key with its own role, grant the same two permissions to that role
 
 Use a LangSmith API key scoped to one workspace. That workspace determines which provider secrets the gateway reads, which policies apply, and where traces land. For a PAT, this is the key's default workspace. A key created in the Simulator belongs to the workspace that was open when you created it. Organization-scoped keys are not supported for gateway requests.
 
-{/* VERIFY X10: org-scoped keys with X-Tenant-Id are untested. Keep "not supported" until Eng answers. */}
+{/* VERIFY X10: tested on dev 2026-10-28. A Full Organization service key without X-Tenant-Id gets 403 org_scoped_key_requires_workspace; with X-Tenant-Id it works, and that workspace's provider secrets apply (424 in a workspace without the secret). No gateway code or test mentions org-scoped keys, so keep "not supported" until Eng says whether to document it. */}
 
 ## Send the key
 
@@ -84,14 +84,14 @@ For base URLs and request examples, see [API formats](/langsmith/llm-gateway-api
 | --- | --- | --- |
 | `401` with `{"error":"Unauthorized"}` | The request reached the gateway without a LangSmith API key, for example with a provider key (`sk-...`) in its place. | Send your LangSmith API key in place of the provider key. |
 | `401` from the provider, such as OpenAI's `Incorrect API key provided: lsv2_pt_***` or Anthropic's `invalid x-api-key` | The client sent your LangSmith API key straight to the provider, because it is not using the gateway base URL. | Set the client's base URL to the gateway. |
-| `403` with `{"error":"Forbidden"}` | The LangSmith API key is invalid or expired. | Create a new key. |
+| `403` with `{"error":"Forbidden"}` | The LangSmith API key is invalid. | Check that you copied the whole key, or create a new one. |
+| `403` with `{"error":"API key has expired"}` | The LangSmith API key has passed its expiry date. | Create a new key. |
 | `403` with `missing permission gateway:invoke` | The key's role lacks `gateway:invoke`. | Ask an admin to [grant the permission](#grant-permission-to-call-the-gateway). |
 
 For a `424`, an error that shows a masked provider key, or an Anthropic `invalid x-api-key` when your base URL already points at the gateway, the problem is the provider key stored in LangSmith, not your API key. See [Fix provider credential errors](/langsmith/llm-gateway-provider-authentication#fix-provider-credential-errors).
 
 Requests that a policy blocks return `402` for a [spend limit](/langsmith/llm-gateway-spend-policies) and `429` for a [rate limit](/langsmith/llm-gateway-rate-limit-policies). The response body names the policy, for example `{"type":"error","error":{"message":"request blocked by gateway policies: <POLICY_NAME>"}}`.
 
-{/* VERIFY W12 part 3: an expired key returning the same 403 as an invalid one is inferred. Only a fabricated lsv2_ key was tested (2026-10-22). Confirmed 2026-10-23: base URL unset gives OpenAI 401 with a masked lsv2_pt_ key and Anthropic 401 "invalid x-api-key"; a fake sk- key sent to the gateway gives 401 {"error":"Unauthorized"}. */}
 {/* FOLLOW-UP Eng finding 2: error bodies on /v1/chat/completions use four shapes, so the error tables quote messages rather than full bodies for 424 (now on provider authentication). Eng finding 7: an invalid lsv2_ key gets 403, a key without the lsv2_ prefix gets 401. */}
 
 ## See also
