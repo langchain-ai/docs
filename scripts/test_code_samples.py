@@ -72,6 +72,9 @@ SERIAL_GROUPS: dict[str, tuple[str, ...]] = {
     "experiment-runs-query": (
         "src/code-samples/langsmith/smithdb-migration/experiment-runs-query-",
     ),
+    # The dataset files recreate "Sample dataset" and the eval files read it;
+    # numeric prefixes put the dataset file first in lexical order.
+    "evaluation-quickstart": ("src/code-samples/langsmith/evaluation-quickstart-",),
 }
 
 
