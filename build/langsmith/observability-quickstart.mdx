@@ -1,0 +1,260 @@
+---
+title: Tracing quickstart
+sidebarTitle: Quickstart
+description: Add LangSmith tracing to an agent in minutes.
+icon: "rocket"
+---
+
+import TraceIngestionProject from '/snippets/python/langsmith/trace-ingestion-project.mdx';
+import ObservabilityQuickstartAppOpenaiPy from '/snippets/python/code-samples/observability-quickstart-app-openai-py.mdx';
+import ObservabilityQuickstartAppOpenaiJs from '/snippets/python/code-samples/observability-quickstart-app-openai-js.mdx';
+import ObservabilityQuickstartAppJava from '/snippets/python/code-samples/observability-quickstart-app-java.mdx';
+import ObservabilityQuickstartAppKt from '/snippets/python/code-samples/observability-quickstart-app-kt.mdx';
+import ObservabilityQuickstartAppAnthropicPy from '/snippets/python/code-samples/observability-quickstart-app-anthropic-py.mdx';
+import ObservabilityQuickstartAppAnthropicJs from '/snippets/python/code-samples/observability-quickstart-app-anthropic-js.mdx';
+import ObservabilityQuickstartAppGeminiPy from '/snippets/python/code-samples/observability-quickstart-app-gemini-py.mdx';
+import ObservabilityQuickstartAppGeminiJs from '/snippets/python/code-samples/observability-quickstart-app-gemini-js.mdx';
+import SaasRegionUrls from '/snippets/python/langsmith/saas-region-urls.mdx';
+
+LangSmith gives you end-to-end visibility into your agent by capturing [_traces_](/langsmith/observability-concepts#traces); a complete record of every step that ran during a request, from the inputs passed in to the final output returned.
+
+In this quickstart, you will add tracing to an AI assistant and view the results in LangSmith.
+
+Traces belong to an [agent and one of its environments](/langsmith/agents) within a workspace. This quickstart creates the agent in LangSmith, then configures your code to send traces to its identifier and environment. Compatibility instructions cover older workspaces and self-hosted LangSmith.
+
+<Tip>
+If you're building with [LangChain](https://docs.langchain.com/oss/python/langchain/overview) or [LangGraph](https://docs.langchain.com/oss/python/langgraph/overview), you can enable LangSmith tracing with a single environment variable. Refer to [trace with LangChain](/langsmith/trace-with-langchain) or [trace with LangGraph](/langsmith/trace-with-langgraph).
+</Tip>
+
+## Prerequisites
+
+Before you begin, make sure you have:
+
+- **A LangSmith account**: Sign up or log in at [smith.langchain.com](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=langsmith-observability-quickstart).
+- **A LangSmith API key**: Follow the [Create an API key](/langsmith/create-account-api-key) guide.
+- **A model provider API key**: Generate one from the [OpenAI dashboard](https://platform.openai.com/account/api-keys), the [Claude Console](https://platform.claude.com/settings/keys), or [Google AI Studio](https://aistudio.google.com/apikey) for Gemini.
+
+Select your provider in the tabs on each step. The Anthropic and Gemini examples are in Python and TypeScript only, because the LangSmith Java SDK wraps only the OpenAI client.
+
+## 1. Set up your environment
+
+1. Create a directory for your agent code, install the dependencies, and configure the required environment variables:
+
+    <Tabs>
+    <Tab title="OpenAI">
+
+    <CodeGroup>
+
+    ```bash Python
+    mkdir ls-quickstart && cd ls-quickstart
+    python -m venv .venv && source .venv/bin/activate
+    pip install -U langsmith openai
+    ```
+
+    ```bash TypeScript
+    mkdir ls-quickstart-ts && cd ls-quickstart-ts
+    npm init -y
+    npm install langsmith openai
+    npm install -D typescript tsx
+    ```
+
+    ```kotlin Java/Kotlin (Gradle)
+    implementation("com.langchain.smith:langsmith-java:0.1.0-beta.27")
+    ```
+
+    </CodeGroup>
+
+    </Tab>
+    <Tab title="Anthropic">
+
+    <CodeGroup>
+
+    ```bash Python
+    mkdir ls-quickstart && cd ls-quickstart
+    python -m venv .venv && source .venv/bin/activate
+    pip install -U langsmith anthropic
+    ```
+
+    ```bash TypeScript
+    mkdir ls-quickstart-ts && cd ls-quickstart-ts
+    npm init -y
+    npm install langsmith @anthropic-ai/sdk
+    npm install -D typescript tsx
+    ```
+
+    </CodeGroup>
+
+    </Tab>
+    <Tab title="Gemini">
+
+    <CodeGroup>
+
+    ```bash Python
+    mkdir ls-quickstart && cd ls-quickstart
+    python -m venv .venv && source .venv/bin/activate
+    pip install -U langsmith google-genai
+    ```
+
+    ```bash TypeScript
+    mkdir ls-quickstart-ts && cd ls-quickstart-ts
+    npm init -y
+    npm install langsmith @google/genai
+    npm install -D typescript tsx
+    ```
+
+    </CodeGroup>
+
+    </Tab>
+    </Tabs>
+
+1. Export your environment variables in your shell:
+
+    <Tabs>
+    <Tab title="OpenAI">
+
+    ```bash
+    export LANGSMITH_TRACING=true
+    export LANGSMITH_API_KEY="<your-langsmith-api-key>"
+    export OPENAI_API_KEY="<your-openai-api-key>"
+    ```
+
+    </Tab>
+    <Tab title="Anthropic">
+
+    ```bash
+    export LANGSMITH_TRACING=true
+    export LANGSMITH_API_KEY="<your-langsmith-api-key>"
+    export ANTHROPIC_API_KEY="<your-anthropic-api-key>"
+    ```
+
+    </Tab>
+    <Tab title="Gemini">
+
+    ```bash
+    export LANGSMITH_TRACING=true
+    export LANGSMITH_API_KEY="<your-langsmith-api-key>"
+    export GEMINI_API_KEY="<your-gemini-api-key>"
+    ```
+
+    </Tab>
+    </Tabs>
+
+    <TraceIngestionProject />
+
+    <Note>
+    If your account is in a region other than US (the default), also set `LANGSMITH_ENDPOINT` to the API URL for your region. Without this, your API key won't be recognized and requests will fail to authenticate.
+
+    <SaasRegionUrls prefix="api.smith" />
+
+    For example, EU accounts: `export LANGSMITH_ENDPOINT="https://eu.api.smith.langchain.com"`.
+    </Note>
+
+    For other providers, use the [`@traceable` decorator](/langsmith/annotate-code#use-%40traceable-%2F-traceable) to trace calls manually.
+
+## 2. Build the app
+
+The following app uses two LangSmith tools to add tracing:
+
+- **Provider wrapper**: wraps the [OpenAI](/langsmith/trace-openai), [Anthropic](/langsmith/trace-anthropic), or [Gemini](/langsmith/trace-with-google-gemini) client so every LLM call is automatically logged as a nested span. The Gemini wrapper is in [beta](/langsmith/release-stages).
+- **Traceable wrapper**: wraps a function so its inputs, outputs, and any nested spans appear as a single trace in LangSmith. Use `@traceable` in Python, `traceable` in TypeScript and Kotlin, and `Tracing.traceFunction` in Java.
+
+The `assistant` function calls a tool (`get_context`) to retrieve relevant context, then passes that context to the model. Using the traceable wrapper on both functions captures the full pipeline in one trace, with the tool call and LLM call as nested spans.
+
+Create a file called `app.py`, `index.ts`, `App.java`, or `App.kt` with the following code:
+
+<Tabs>
+<Tab title="OpenAI">
+
+<CodeGroup>
+
+<ObservabilityQuickstartAppOpenaiPy />
+<ObservabilityQuickstartAppOpenaiJs />
+<ObservabilityQuickstartAppJava />
+<ObservabilityQuickstartAppKt />
+</CodeGroup>
+
+</Tab>
+<Tab title="Anthropic">
+
+<CodeGroup>
+
+<ObservabilityQuickstartAppAnthropicPy />
+<ObservabilityQuickstartAppAnthropicJs />
+</CodeGroup>
+
+</Tab>
+<Tab title="Gemini">
+
+<CodeGroup>
+
+<ObservabilityQuickstartAppGeminiPy />
+<ObservabilityQuickstartAppGeminiJs />
+</CodeGroup>
+
+</Tab>
+</Tabs>
+
+## 3. Run the app
+
+<CodeGroup>
+
+```bash Python
+python app.py
+```
+
+```bash TypeScript
+npx tsx index.ts
+```
+
+```bash Java/Kotlin
+./gradlew run
+```
+
+</CodeGroup>
+
+## 4. View your trace
+
+In the [LangSmith UI](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=langsmith-observability-quickstart), select your agent, go to **Tracing**, and select the environment configured during setup. In a project-based workspace, open the project named by `LANGSMITH_PROJECT`. For more information, see [Navigate agents](/langsmith/navigate-agents).
+
+Click the `assistant` row to open the trace. The **Trajectory** tab shows the conversation as it was sent to the model. Select the **Details** tab to see the full run tree, including the `assistant` function with the `get_context` tool call and the model call nested inside it.
+
+<img
+    className="block dark:hidden"
+    src="/langsmith/images/trace-quickstart-app.png"
+    alt="LangSmith UI showing a trace with an outer agent span and a nested LLM call span."
+/>
+
+<img
+    className="hidden dark:block"
+    src="/langsmith/images/trace-quickstart-app-dark.png"
+    alt="LangSmith UI showing a trace with an outer agent span and a nested LLM call span."
+/>
+
+The outer span captures your `assistant` function's inputs and outputs. The nested **get_context** span (**getContext** in TypeScript) records the tool call, and the model span (**ChatOpenAI**, **ChatAnthropic**, or **ChatGoogleGenerativeAI**) records the exact prompt sent to the model and the response returned.
+
+<Tip>
+You can also inspect traces from the terminal using the [LangSmith CLI](/langsmith/langsmith-cli).
+</Tip>
+
+## Next steps
+
+- [Tracing integrations](/langsmith/integrations): LangChain, LangGraph, Anthropic, and other providers.
+- [Trace an agent](/langsmith/observability-llm-tutorial): a full lifecycle tutorial, from prototyping through production.
+- [Filter traces](/langsmith/filter-traces): search the traces in an agent environment.
+- [Log traces to an agent](/langsmith/log-traces-to-agent): configure the agent and environment in code or with environment variables.
+- [Agents](/langsmith/agents): how workspaces organize agents and their environments.
+
+<Callout type="info" icon="feather">
+After logging traces, use **[Chat](/langsmith/chat)** to analyze them and get AI-powered insights into your agent's performance.
+</Callout>
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/observability-quickstart.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

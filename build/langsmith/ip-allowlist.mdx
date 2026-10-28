@@ -1,0 +1,86 @@
+---
+title: Restrict access with an IP allowlist
+sidebarTitle: IP allowlist
+description: Limit access to your LangSmith Cloud organization to requests from approved IP addresses and CIDR ranges.
+---
+
+An IP allowlist limits access to your LangSmith organization to requests from IP addresses and CIDR ranges you approve. Requests from any other address receive `403 Forbidden`.
+
+<Note>
+The IP allowlist is available for [LangSmith Cloud](/langsmith/cloud) organizations on request. To enable it for your organization, contact your LangChain account team or [our sales team](https://www.langchain.com/contact-sales).
+</Note>
+
+## What the allowlist covers
+
+When the allowlist is active, LangSmith rejects requests from addresses outside the list on:
+
+- The LangSmith web app.
+- The REST API and the LangSmith SDKs.
+- Trace ingestion, including the OpenTelemetry endpoint (`/otel/v1/traces`).
+
+The allowlist applies to every workspace in the organization and to every credential type, including personal access tokens and service keys.
+
+<Warning>
+Every server or service that sends traces to LangSmith must be on the allowlist. Requests from addresses outside the list are rejected, so ingestion from those servers stops as soon as the allowlist takes effect.
+</Warning>
+
+## Prerequisites
+
+- The IP allowlist must be enabled for your organization by LangChain. You can't turn it on yourself. To check whether it's enabled, call [Get current organization info](/langsmith/smith-api/orgs/get-current-organization-info) and look for `"ip_allowlist_enabled": true` in the response.
+- You need the `organization:security-policy:manage` permission to change the allowlist. The [Organization Admin](/langsmith/rbac#organization-admin) and [Organization Operator](/langsmith/rbac#organization-operator) roles include it.
+- Personal organizations don't support the IP allowlist.
+
+## Set the allowlist
+
+The allowlist is configured through the API. Send the full list of allowed entries in the `ip_allowlist` field of the [Update current organization info](/langsmith/smith-api/orgs/update-current-organization-info) endpoint. Each request replaces the existing list.
+
+```bash
+curl -X PATCH https://api.smith.langchain.com/api/v1/orgs/current/info \
+  -H "X-Api-Key: $LANGSMITH_API_KEY" \
+  -H "X-Organization-Id: $LANGSMITH_ORGANIZATION_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"ip_allowlist": ["203.0.113.10", "198.51.100.0/24"]}'
+```
+
+For regional deployments, send the request to the same path on the regional host (`eu.api.smith.langchain.com`, `apac.api.smith.langchain.com`, or `aws.api.smith.langchain.com`).
+
+To see the current list, call [Get current organization info](/langsmith/smith-api/orgs/get-current-organization-info) and read the `ip_allowlist` field.
+
+### Entry format
+
+Each entry is either a single IP address or a CIDR range. IPv4 and IPv6 are both supported. The list can hold up to 200 entries.
+
+LangSmith rejects the update if any entry:
+
+- Isn't a valid IP address or CIDR range.
+- Is a bare IPv4 address ending in `.0` or `.255`. These usually mean a network or broadcast address was entered by mistake. If you intend to allow that range or host, use CIDR notation instead, such as `198.51.100.0/24` or `198.51.100.255/32`.
+- Falls within or overlaps the multicast range `224.0.0.0/4`.
+
+### Lockout protection
+
+The IP address you send the update from must be inside the new list. If it isn't, LangSmith rejects the update with `400 Bad Request` so you don't lock yourself out. Add an entry that covers your current address and try again.
+
+## Remove the allowlist
+
+To stop enforcing the allowlist, set `ip_allowlist` to an empty list:
+
+```bash
+curl -X PATCH https://api.smith.langchain.com/api/v1/orgs/current/info \
+  -H "X-Api-Key: $LANGSMITH_API_KEY" \
+  -H "X-Organization-Id: $LANGSMITH_ORGANIZATION_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"ip_allowlist": []}'
+```
+
+An empty list allows requests from any IP address.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/ip-allowlist.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
