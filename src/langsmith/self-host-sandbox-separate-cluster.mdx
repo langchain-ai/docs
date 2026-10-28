@@ -411,7 +411,7 @@ Manage the two releases as two applications, one for each cluster:
 
 - **Order**: Deploy the `langsmith` release first. Add the runtime after the `langsmith` application has synced and is Healthy (Flux: the HelmRelease is `Ready`).
 - **Versions**: Pin `langsmith-sandbox` to the exact chart version whose appVersion matches. Never use a range, `*`, or `*-0`, and never omit `version` in a Flux HelmRelease.
-- **Proxy CA**: Set `proxyCa.mode: existingSecret` and create the CA Secret yourself, with keys `tls.crt` and `tls.key`. The default `generatedSecret` mode reuses its CA through Helm `lookup`, which tools that render without cluster access cannot run, so each render produces a new CA.
+- **Proxy CA**: Set `proxyCa.mode: existingSecret` and point `proxyCa.existingSecretName` at a TLS Secret you create in the runtime namespace, with keys `tls.crt` and `tls.key`, for example `kubectl create secret tls <name> --cert=ca.crt --key=ca.key` with a CA certificate you generate. The default `generatedSecret` mode reuses its CA through Helm `lookup`, which tools that render without cluster access cannot run, so each render produces a new CA.
 - **Install notes**: Argo CD and Flux do not show Helm install notes. The rules that the notes print are on this page.
 
 ## Verify the installation
@@ -421,6 +421,15 @@ Check that both releases run the same LangSmith release. The `APP VERSION` colum
 ```bash
 helm list --kube-context <langsmith-context> -n <langsmith-namespace> --filter '^langsmith$'
 helm list --kube-context <sandbox-context> -n langsmith-sandbox --filter '^langsmith-sandbox$'
+```
+
+Argo CD renders the charts without creating Helm releases, so `helm list` shows nothing for an Argo CD install. Compare the image tags instead. Both must end in the same release:
+
+```bash
+kubectl --context <langsmith-context> -n <langsmith-namespace> get deployment langsmith-platform-backend \
+  -o jsonpath='{.spec.template.spec.containers[?(@.name=="platform-backend")].image}{"\n"}'
+kubectl --context <sandbox-context> -n langsmith-sandbox get deployment langsmith-sandbox-sandbox-host \
+  -o jsonpath='{.spec.template.spec.containers[?(@.name=="sandbox-host")].image}{"\n"}'
 ```
 
 Check that the hosts are ready:
