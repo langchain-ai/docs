@@ -47,7 +47,9 @@ To use your own providers:
       <Tab title="Amazon Bedrock">
         An AWS access key ID and secret access key, with an optional session token, or a Bedrock API key (bearer token). Optionally, an AWS region.
 
-        Engine uses the Bedrock Mantle API. Enable access to the required models in the selected AWS account and region. Grant the calling identity Mantle inference and model-subscription permissions. See [AmazonBedrockMantleInferenceAccess](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AmazonBedrockMantleInferenceAccess.html) for the required actions.
+        Engine uses the Bedrock Mantle API. To use Bedrock Runtime instead, see [Use Bedrock Runtime](#use-bedrock-runtime).
+
+        Enable access to the required models in the selected AWS account and region. Grant the calling identity Mantle inference and model-subscription permissions. See [AmazonBedrockMantleInferenceAccess](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AmazonBedrockMantleInferenceAccess.html) for the required actions.
 
         If no region is saved, Engine uses `us-east-1`, including with workload identity. It does not inherit the EKS cluster's region.
 
@@ -89,6 +91,34 @@ If Engine runs fail after you save:
 - **No provider selected:** Engine does not start runs until at least one provider is selected and saved.
 - **Rejected credentials:** **Test connection** reports which provider rejected them. Update the credentials and test again.
 - **Model not available:** enable the model in your provider account, then test again.
+
+## Use Bedrock Runtime
+
+To have Engine call Amazon Bedrock Runtime instead of Mantle, set two environment variables on both Engine workloads:
+
+```yaml
+engineInsightsAgent:
+  apiServer:
+    deployment:
+      extraEnv:
+        - name: ENGINE_BEDROCK_API
+          value: "runtime"
+        - name: ENGINE_BEDROCK_INFERENCE_PROFILE
+          value: "<system-inference-profile-id>"
+  queue:
+    deployment:
+      extraEnv:
+        - name: ENGINE_BEDROCK_API
+          value: "runtime"
+        - name: ENGINE_BEDROCK_INFERENCE_PROFILE
+          value: "<system-inference-profile-id>"
+```
+
+Set `ENGINE_BEDROCK_INFERENCE_PROFILE` to a system inference profile ID for Engine's Claude model, such as `us.anthropic.<model-id>`. Supported prefixes are `us.`, `eu.`, `apac.`, and `global.`. Profile ARNs and application inference profiles are not supported.
+
+Grant the calling identity Bedrock Runtime access to that profile. Then apply the Helm values, restart both deployments, and run [**Test connection**](#test-a-provider). If an Engine upgrade changes its Claude model, update the profile ID.
+
+On BYOC, contact LangChain to make this change.
 
 ## Use cloud identity for your model providers
 
@@ -272,7 +302,8 @@ Engine calls each provider's standard API hostname from the `standalone-insights
 
 | **Provider** | **Hostname Engine calls** | **Private connection** |
 | --- | --- | --- |
-| Amazon Bedrock | `bedrock-mantle.<region>.api.aws` | An interface VPC endpoint for `com.amazonaws.<region>.bedrock-mantle`, with private DNS enabled or a Route 53 private hosted zone for the hostname |
+| Amazon Bedrock (Mantle) | `bedrock-mantle.<region>.api.aws` | An interface VPC endpoint for `com.amazonaws.<region>.bedrock-mantle`, with private DNS enabled or a Route 53 private hosted zone for the hostname |
+| Amazon Bedrock (Runtime) | `bedrock-runtime.<region>.amazonaws.com` | An interface VPC endpoint for `com.amazonaws.<region>.bedrock-runtime`, with private DNS enabled |
 | Google Vertex AI | `<region>-aiplatform.googleapis.com`, or `aiplatform.googleapis.com` for the global region | Private Service Connect for Google APIs, with private DNS for `googleapis.com` |
 | Azure AI Foundry | `<resource>.openai.azure.com` and `<resource>.services.ai.azure.com` | A private endpoint for the Foundry resource, with its private DNS zones |
 | Anthropic, OpenAI | `api.anthropic.com`, `api.openai.com` | Not available. These providers need public egress. |

@@ -5,7 +5,7 @@ description: Safely add, move, rename, or retire authored documentation pages by
 tags: [documentation, operations, navigation, redirects, build-system]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-20T08:20:37.912Z
+    at: 2026-10-21T08:20:13.723Z
 sources:
   - id: openwiki-source-18732c72f962c06354cb62db
     resource: repo://.agents/skills/add-docs-page/SKILL.md

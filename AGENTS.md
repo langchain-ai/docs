@@ -124,13 +124,13 @@ Two language dropdowns (Python, TypeScript) with the same 10 tabs each. Most con
 | Tab | Source | Groups |
 |-----|--------|--------|
 | Overview | `src/build-overview.mdx` | Single page |
-| Deep Agents | `src/oss/deepagents/` | Get started, Deployment (Going to production), Execution environment, Context management, Delegation, Steering, Frontend (Patterns), Protocols |
 | Managed Deep Agents | `src/langsmith/managed-deep-agents*.mdx` | Get started, Agent definition (Channels), Build and deploy |
+| Deep Agents | `src/oss/deepagents/` | Get started, Deployment (Going to production), Execution environment, Context management, Delegation, Steering, Frontend (Patterns), Protocols |
 | LangChain | `src/oss/langchain/` | Get started, Core components, Middleware, Frontend (Patterns → Generative UI, Integrations), Advanced usage (Multi-agent), Agent development (Test), Production |
 | LangGraph | `src/oss/langgraph/` | Get started, Capabilities, Production, Frontend, LangGraph APIs (Graph API, Functional API) |
 | OpenWiki | `src/oss/openwiki/` | Modes, Integrations, Search and link, Visualize, CLI reference, Customize, Providers, Automate updates, Changelog |
 | Integrations | `src/oss/python/integrations/` or `src/oss/javascript/integrations/` | Python: Popular Providers, Integrations by component. TypeScript: Popular Providers (OpenAI, Anthropic, Google, AWS, Microsoft), General integrations, RAG integrations |
-| Learn | `src/oss/` (various) | Tutorials (Deep Agents, LangChain, Multi-agent, LangGraph), Conceptual overviews, Additional resources. TypeScript adds LangChain Academy |
+| Learn | `src/oss/` (various) | Tutorials (Managed Deep Agents, Deep Agents, LangChain, Multi-agent, LangGraph), Conceptual overviews, Additional resources. TypeScript adds LangChain Academy |
 | Reference | `src/oss/reference/` | Reference, Releases (Releases, Migration guides), Policies; short entry pages linking to reference.langchain.com |
 | Contribute | `src/oss/contributing/` | Contribute (Integrations) |
 
@@ -275,7 +275,9 @@ description: SEO summary, no markdown allowed (no links, backticks, formatting)
 
 ### Language-specific content
 
-Use `:::python` or `:::js` fences for language-specific content. Pages with these fences generate separate Python and JavaScript versions.
+Use `:::python` or `:::js` fences for language-specific content. Every shared page under `src/oss/` builds a Python and a JavaScript version, and the fences decide what each version keeps.
+
+A shared page listed in only one language's navigation in `src/docs.json` builds only that language. To make a page Python-only, list it only in the Python nav, and add a `docs.json` redirect for the JavaScript URL if that URL was ever published. Pages listed in both navs, or in neither, build both versions.
 
 ```txt
 :::python
@@ -593,6 +595,37 @@ Notes:
 - Without `--write`, the script prints the table to stdout for inspection.
 - After regenerating, commit only `src/snippets/langsmith/mda-oauth-catalog.mdx`. Do not edit
   that snippet by hand.
+
+### Check integration repo links
+
+`scripts/check_integration_repos.py` scans every third-party `repo:` in `packages.yml`
+against GitHub. When a repo is 404, it looks for a live alternate on PyPI, npm, and
+existing `docs_url` values in `scripts/data/integration_external_docs.yaml`:
+
+- **Rename**: different live third-party GitHub `owner/repo` found → update
+  `packages.yml` (and listing hrefs that used the old URL). Never auto-retarget
+  into `langchain-ai/*`.
+- **Docs URL redirect**: an external `docs_url` that permanently redirects (HTTP
+  301 or 308) → update that `docs_url` and matching listing hrefs (for example
+  `hashlock.markets/docs` → `docs.hashlock.markets`). Temporary redirects
+  (302/307) are left alone.
+- **Delist**: no live GitHub, GitLab, or partner-docs home → remove the package
+  from `packages.yml`, matching external YAML rows, downloads-table rows, and the
+  `all_providers` card when no other package shares the provider key
+  (`name_short`).
+- **Attention only**: a live GitLab project or partner docs/homepage remains (for
+  example Writer's `dev.writer.com` when GitHub is gone), or the only alternate
+  is first-party → do not change listings; report in the evidence table.
+- **Skipped**: first-party `langchain-ai/*` packages.
+
+```bash
+export GITHUB_TOKEN="$(gh auth token)"
+uv run python scripts/check_integration_repos.py
+uv run python scripts/check_integration_repos.py --write --evidence /tmp/evidence.md
+```
+
+The weekly workflow `.github/workflows/check-integration-repos.yml` runs this with
+`--write` and opens or updates a standing **draft** PR on `chore/dead-integration-repos`.
 
 ## Pre-commit linting
 

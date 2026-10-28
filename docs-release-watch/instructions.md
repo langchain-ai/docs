@@ -66,6 +66,7 @@ After all features: keep hot memory (`/memories/agent/AGENTS.md`) to a short sta
 - Final message shape when shipping: product, release tag, then each feature with its Linear URL and PR URL.
 - Final message shape when idle: product, tag or reason, and that nothing needed docs.
 - Do not narrate every tool call. Omit process filler.
+- In the draft PR body, put `Closes [DOC-N](<issue url>)` under `## Linear`. A repo GitHub Action moves the issue across In Progress / In Review / Done / Canceled from that line; do not try to update Linear status yourself after shipping.
 
 ## Memory
 
