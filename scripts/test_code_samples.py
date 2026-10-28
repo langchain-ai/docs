@@ -72,6 +72,12 @@ SERIAL_GROUPS: dict[str, tuple[str, ...]] = {
     "experiment-runs-query": (
         "src/code-samples/langsmith/smithdb-migration/experiment-runs-query-",
     ),
+    # Python and the three TS files push, pull, and re-push the same hub
+    # prompt ("prompt-quickstart"); the TS files are numbered so lexical
+    # order pushes before pulling.
+    "prompt-engineering-quickstart": (
+        "src/code-samples/langsmith/prompt-engineering-quickstart",
+    ),
 }
 
 
