@@ -1,6 +1,6 @@
 ---
 title: Model fallbacks
-description: Automatically retry a request against backup models when the primary model rate-limits, errors, or returns another configured status code.
+description: Automatically retry a request against backup models when the primary model rate-limits, errors, times out, or returns another configured status code, and skip models that keep failing.
 ---
 
 import LLMGatewayBetaNote from '/snippets/langsmith/llm-gateway-beta-note.mdx';
@@ -16,11 +16,13 @@ A fallback chain has:
 - **A primary model**: the provider and model that trigger the chain when a request fails.
 - **One to five fallbacks**: an ordered list of direct provider models or saved [model configurations](/langsmith/model-configurations).
 - **Triggers**: the upstream HTTP status codes that move the request to the next model. For example, use `429` for rate limits, or `500`, `502`, `503`, and `504` for provider errors.
+- **A time to first output** (optional): how long to wait for a model to start responding before moving to the next model. For details, see [Set a time to first output](#set-a-time-to-first-output).
+- **A model cooldown** (optional): skips a model on later requests after it fails repeatedly. For details, see [Skip failing models with a cooldown](#skip-failing-models-with-a-cooldown).
 
 For each request, the gateway:
 
 1. Calls the primary model selected by the request's provider-prefixed model ID.
-1. If the request fails with a configured trigger status or a transport error, loads the matching fallback chain.
+1. If the request fails with a configured trigger status, times out, or fails to connect, loads the matching fallback chain.
 1. Calls each fallback in order until one succeeds, returns a status that does not trigger another fallback, or the chain is exhausted.
 1. Returns the final response in the API format used by the client.
 
@@ -42,9 +44,63 @@ To create a fallback chain:
 1. Select the primary provider and model. Requests to this provider-prefixed model ID use the chain when the primary attempt fails.
 1. Under **Fallbacks**, add one to five backup models in the order the gateway should try them. Choose a provider and model directly, select an existing model configuration, or create a custom model configuration.
 1. Under **Configure fallback triggers (advanced)**, review the HTTP status codes that should trigger the next fallback. Add or remove status codes as needed.
+1. (Optional) In the same section, adjust **Time to first output**. It is on by default for new chains, with a 120-second limit. For details, see [Set a time to first output](#set-a-time-to-first-output).
+1. (Optional) Turn on **Model cooldown** to skip a model that keeps failing. For details, see [Skip failing models with a cooldown](#skip-failing-models-with-a-cooldown).
 1. Click **Create chain**.
 
 A provider and model can have one fallback chain in each workspace. To change its behavior, edit the existing chain.
+
+## Set a time to first output
+
+A time to first output limits how long the gateway waits for each model to start responding. When a model does not respond in time, the gateway cancels that attempt and moves to the next model. Use it to recover quickly from a provider that hangs instead of returning an error.
+
+To set it, open **Configure fallback triggers (advanced)**, turn on **Time to first output**, and enter a value in **First output timeout per model (seconds)**. The value must be between 1 and 300 seconds.
+
+- For streaming requests, the timer runs until the model sends its first output.
+- For non-streaming requests, the timer runs until the provider returns response headers, which usually arrive when the full response is ready. Set a limit long enough for your longest expected completion.
+
+Each model in the chain gets a fresh timer. Turn off **Time to first output** to wait without a limit.
+
+## Skip failing models with a cooldown
+
+A model cooldown skips a model on later requests after it fails repeatedly, so requests go straight to the next model instead of waiting for the same failure again. For example, with a time to first output of 30 seconds, a provider outage costs every request 30 seconds until the provider recovers. With a cooldown, only the first few requests wait.
+
+To set a cooldown:
+
+1. Open **Configure fallback triggers (advanced)** and turn on **Model cooldown**.
+1. Enter **Failures before cooldown**: how many failures within the cooldown period put a model in cooldown. The default is 3, and the value must be between 1 and 1000.
+1. Enter **Cooldown (seconds)**: how long to skip the model. The same period is the window for counting failures. The default is 60, and the value must be between 1 and 300.
+
+For example, with 3 failures and 60 seconds, when a model fails 3 times within 60 seconds, later requests skip it for the next 60 seconds.
+
+{/* TODO(screenshot): Configure fallback triggers (advanced) section with Time to first output and Model cooldown turned on. */}
+<img
+  src="/images/llm-gateway-fallback-cooldown.png"
+  alt="Configure fallback triggers section with Time to first output set to 30 seconds and Model cooldown on, with 3 failures before cooldown and a 60-second cooldown."
+/>
+
+A cooldown follows these rules:
+
+- **What counts as a failure**: a trigger status code from the provider, a time to first output that elapses, or a failure to connect to the provider. Errors inside the gateway, and requests the client cancels, do not count.
+- **How failures are counted**: failures count within the cooldown period, starting from the first failure. A successful response does not reset the count.
+- **Which models can be skipped**: the primary model and every fallback except the last. The gateway always tries the last model in the chain, so a request is never left without a model to try.
+- **Scope**: each fallback chain counts its own failures. A model in cooldown for one chain is still tried by other chains that use it.
+
+A skipped model is not called, so it adds no latency and no cost. The [gateway response metadata](#inspect-fallback-attempts) records the skip with the trigger `cooldown`.
+
+To set a cooldown through the API, add an `ejection` block to the fallback chain's configuration:
+
+```json
+"ejection": {"failure_threshold": 3, "cooldown_seconds": 60}
+```
+
+### Rate limit cooldowns
+
+When a chain's triggers include `429`, the gateway also skips models that recently returned a rate limit, without any cooldown setting. After a provider returns `429` for a model, requests skip that model until the retry delay the provider requested has passed, up to 5 minutes. If the provider sends no retry delay, the model is skipped for 5 seconds. When the error indicates an exhausted quota or spend limit, the model is skipped for 5 minutes.
+
+Unlike a model cooldown, a rate limit cooldown is shared by every fallback chain in the workspace that uses the same provider and model and falls back on `429`, because the rate limit belongs to the provider account rather than to one chain.
+
+The LLM Gateway home page simulator does not apply cooldowns, so use real requests to check cooldown behavior.
 
 ## Make a call
 
@@ -69,6 +125,31 @@ curl https://<data_plane_host>/gateway/v1/chat/completions \
 </CodeGroup>
 
 The gateway applies the fallback chain configured for `anthropic/claude-opus-5` in the API key's workspace. If no chain matches, the gateway returns the primary model's response without attempting a fallback.
+
+## Inspect fallback attempts
+
+Every gateway response includes an `X-LangSmith-Gateway-Metadata` header with a JSON summary of how the gateway routed the request. To see it, add `-i` to a `curl` request.
+
+For a fallback chain, the summary lists each model the gateway tried or skipped:
+
+```json
+{
+  "selected_candidate": 2,
+  "selected_model": "gpt-5.4-mini",
+  "fallback_used": true,
+  "attempt_details": [
+    {"candidate": 1, "model": "claude-opus-5", "fallback_trigger": "cooldown"},
+    {"candidate": 2, "model": "gpt-5.4-mini", "status_code": 200}
+  ]
+}
+```
+
+The `fallback_trigger` field explains why the gateway moved past a model:
+
+- **`status_code`**: the model returned a configured trigger status code.
+- **`transport_error`**: the gateway could not connect to the model's provider.
+- **`timeout`**: the time to first output elapsed.
+- **`cooldown`**: the model was skipped without being called because it is in a cooldown.
 
 ## Set fallbacks for a prompt
 
