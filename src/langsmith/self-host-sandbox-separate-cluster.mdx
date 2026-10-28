@@ -39,7 +39,7 @@ With `separateCluster`, the `langsmith` release does not render `sandbox-host`, 
 %%{init: {'theme': 'base', 'themeVariables': {'fontFamily': 'TWK Lausanne, Inter', 'fontSize': '15px', 'lineColor': '#40668D', 'primaryTextColor': '#030710', 'textColor': '#030710', 'edgeLabelBackground': '#F2FAFF'}, 'flowchart': {'nodeSpacing': 50, 'rankSpacing': 60, 'curve': 'linear'}}}%%
 flowchart TB
     accTitle: Separate sandbox cluster topology
-    accDescr: The LangSmith cluster reaches sandbox-host in the sandbox cluster on TCP port 19190, directly or through an optional host ingress. sandbox-host calls the LangSmith API at platform.endpoint and stores sandbox data in JuiceFS.
+    accDescr: The LangSmith cluster reaches sandbox-host in the sandbox cluster on TCP port 19190, directly or through an optional host ingress. sandbox-host calls the LangSmith API at config.endpoint and stores sandbox data in JuiceFS.
     subgraph LS["LangSmith cluster"]
         CP["LangSmith API,<br/>platform-backend,<br/>and ingest-queue"]
     end
@@ -51,7 +51,7 @@ flowchart TB
     CP -->|"TCP 19190"| SH
     CP -.->|"HTTPS"| ING
     ING -->|"TCP 19190"| SH
-    SH -->|"platform.endpoint"| CP
+    SH -->|"config.endpoint"| CP
     SH --> ST
     classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
     classDef neutral fill:#F2FAFF,stroke:#40668D,stroke-width:2px,color:#2F4B68
@@ -71,8 +71,8 @@ The runtime chart uses the same settings as the `sameCluster` runtime, without t
 | `sandboxes.proxyCa.*` | `proxyCa.*` |
 | `sandboxes.authProxy.httpProxy.noProxy` | `authProxy.httpProxy.noProxy` |
 | `sandboxes.authProxy.httpProxy.url` | Key `sandbox_egress_proxy_url` in the runtime Secret |
-| `images.sandboxHostImage.*` | `images.sandboxHost.*` |
-| `config.customCa` | `customCa` |
+| `images.sandboxHostImage.*` | `images.sandboxHostImage.*` |
+| `config.customCa` | `config.customCa` |
 | Workload identity annotations on `sandboxes.sandboxHost.serviceAccount.annotations` | `workloadIdentity` |
 
 The [scaling](/langsmith/self-host-sandbox-scaling) and [operations](/langsmith/self-host-sandbox-operations) guides use the `sameCluster` names. Apply the same settings in the runtime chart.
@@ -84,12 +84,12 @@ The [scaling](/langsmith/self-host-sandbox-scaling) and [operations](/langsmith/
 - **Nodes**: KVM-capable `linux/amd64` nodes, tainted `sandbox.langsmith.com/host=true:NoSchedule` and labeled to match `sandboxHost.deployment.nodeSelector`. The node selector has no default, and the chart fails to render without it. The default toleration matches the taint above; for other taints, override `sandboxHost.deployment.tolerations`. For node-level requirements, see the [Enable Sandboxes prerequisites](/langsmith/enable-self-hosted-sandboxes#prerequisites) and [Node requirements for bare-metal and on-premises clusters](/langsmith/enable-self-hosted-sandboxes#node-requirements-for-bare-metal-and-on-premises-clusters).
 - **JuiceFS metadata Redis**: Use `maxmemory-policy noeviction`. Require AUTH, TLS, or IAM authentication whenever another cluster can reach it. The storage backends and bucket formats in the Enable Sandboxes prerequisites apply to `juicefs.storage` and `juicefs.bucket`.
 - **LangSmith hostname**: Set `config.hostname` in the `langsmith` release to an address the sandbox cluster can reach. The chart fails to render `separateCluster` without it, or with a loopback or in-cluster Service address.
-- **`platform.endpoint`**: Set the runtime chart's `platform.endpoint` to `https://<LangSmith hostname>[/<base path>]/api`, the externally reachable LangSmith API including the `/api` prefix.
-- **Private CA**: If a private CA signs the LangSmith API certificate, the host ingress certificate, or an HTTPS egress proxy certificate, add that CA to the runtime chart's `customCa`.
+- **`config.endpoint`**: Set the runtime chart's `config.endpoint` to `https://<LangSmith hostname>[/<base path>]/api`, the externally reachable LangSmith API including the `/api` prefix.
+- **Private CA**: If a private CA signs the LangSmith API certificate, the host ingress certificate, or an HTTPS egress proxy certificate, add that CA to the runtime chart's `config.customCa`.
 - **Network**: Open the paths in [Configure the network](#configure-the-network).
 - **Secrets**: Create the Secret in [Create the runtime Secret](#create-the-runtime-secret).
 
-If the sandbox cluster cannot pull from public registries, mirror the `sandbox-host` image as described in [Additional images for Sandboxes](/langsmith/self-host-mirroring-images#additional-images-for-sandboxes), and set `images.sandboxHost.repository` in the runtime chart to the mirrored repository. Keep the image's release tag in the mirror and leave `images.sandboxHost.tag` empty, so the image follows the chart's appVersion. A pinned tag does not change when you upgrade the chart.
+If the sandbox cluster cannot pull from public registries, mirror the `sandbox-host` image as described in [Additional images for Sandboxes](/langsmith/self-host-mirroring-images#additional-images-for-sandboxes), and set `images.sandboxHostImage.repository` in the runtime chart to the mirrored repository. Keep the image's release tag in the mirror and leave `images.sandboxHostImage.tag` empty, so the image follows the chart's appVersion. A pinned tag does not change when you upgrade the chart.
 
 ### Amazon EKS
 
@@ -123,7 +123,7 @@ By default, the LangSmith control plane connects directly to the node IPs that `
 | LangSmith `platform-backend` and `ingest-queue` pods | Sandbox nodes | TCP `19190` | Sandbox placement, lifecycle calls, exec, files, and other sandbox traffic |
 | Other sandbox nodes | Sandbox nodes | TCP `19190` | Forwarded ingress requests, sandbox links, and live-migration streams |
 | Host ingress controller or load balancer, when enabled | Sandbox nodes | TCP `19190` | Requests that arrive through the [host ingress](#use-the-host-ingress) |
-| Sandbox nodes | `platform.endpoint` | The endpoint's port, usually `443` | Host reports, lifecycle callbacks, and calls to the LangSmith API from inside Sandboxes |
+| Sandbox nodes | `config.endpoint` | The endpoint's port, usually `443` | Host reports, lifecycle callbacks, and calls to the LangSmith API from inside Sandboxes |
 | Sandbox nodes | JuiceFS Redis and object storage | The stores' ports | Sandbox storage |
 
 For the first row, allow the address that LangSmith pods appear from on your network: the node security group, the pod CIDR, or a SNAT address, depending on the CNI.
@@ -132,7 +132,7 @@ For the first row, allow the address that LangSmith pods appear from on your net
 Traffic on port `19190` is plain HTTP and carries sandbox commands, files, and credentials. Keep it on a private network you trust. If the clusters have no routed private network, or the traffic would leave one you trust, use the [host ingress](#use-the-host-ingress) with TLS.
 </Warning>
 
-The path from the sandbox nodes to `platform.endpoint` is new in this topology. With `sameCluster`, `sandbox-host` reaches LangSmith through in-cluster Service DNS. With `separateCluster`, it calls `platform.endpoint` over the network, so the call must pass every control in front of that address:
+The path from the sandbox nodes to `config.endpoint` is new in this topology. With `sameCluster`, `sandbox-host` reaches LangSmith through in-cluster Service DNS. With `separateCluster`, it calls `config.endpoint` over the network, so the call must pass every control in front of that address:
 
 - **Load balancer allowlists**: If the LangSmith load balancer restricts source addresses, allow the address sandbox node traffic arrives from. For an internal load balancer, that is usually the sandbox nodes' private addresses. For an internet-facing one, it is usually the public address of the NAT gateway that the sandbox nodes use.
 - **Egress filtering**: If a firewall filters egress from the sandbox cluster, allow the LangSmith hostname.
@@ -151,7 +151,7 @@ To route control-plane traffic through the host ingress:
      ingress:
        enabled: true
        ingressClassName: "<ingress-class>"
-       host: "sandbox-hosts.example.com"
+       hostname: "sandbox-hosts.example.com"
        tls:
          - secretName: "sandbox-hosts-tls"
            hosts:
@@ -177,10 +177,10 @@ The Ingress routes only `/internal/SandboxHost/` (host calls) and `/guest-operat
 
 ## Create the runtime Secret
 
-The runtime reads its credentials from a Secret that you create in the sandbox namespace. Set its name in `serviceAuth.existingSecretName`. The Secret holds two values, copied from the LangSmith side:
+The runtime reads its credentials from a Secret that you create in the sandbox namespace. Set its name in `config.existingSecretName`. The Secret holds two values, copied from the LangSmith side:
 
 - **Sandbox service-auth secret**: Signs calls between the control plane and the sandbox hosts. Store it under `sandbox_service_auth_secret`, or the key that `serviceAuth.secretKey` names.
-- **Callback signing JWK**: The Ed25519 private JWK that signs sandbox callbacks. Store it under `sandbox_callback_signing_jwk`, or the key that `serviceAuth.callbackSigningJwkSecretKey` names.
+- **Callback signing JWK**: The Ed25519 private JWK that signs sandbox callbacks. Store it under `sandbox_callback_signing_jwk`, or the key that `config.callbackSigningJwkSecretKey` names.
 
 Both values must equal the control plane's. Find them in the LangSmith app Secret:
 
@@ -277,10 +277,8 @@ Install the `langsmith` release first, then the `langsmith-sandbox` release. The
       <Tab title="EKS">
 
 ```yaml
-platform:
+config:
   endpoint: "https://langsmith.example.com/api"
-
-serviceAuth:
   existingSecretName: "langsmith-sandbox-runtime"
 
 workloadIdentity:
@@ -309,10 +307,8 @@ sandboxHost:
       <Tab title="GKE">
 
 ```yaml
-platform:
+config:
   endpoint: "https://langsmith.example.com/api"
-
-serviceAuth:
   existingSecretName: "langsmith-sandbox-runtime"
 
 workloadIdentity:
@@ -343,10 +339,8 @@ sandboxHost:
       <Tab title="AKS">
 
 ```yaml
-platform:
+config:
   endpoint: "https://langsmith.example.com/api"
-
-serviceAuth:
   existingSecretName: "langsmith-sandbox-runtime"
 
 workloadIdentity:
@@ -381,7 +375,7 @@ sandboxHost:
       </Tab>
     </Tabs>
 
-    Leave `images.sandboxHost.tag` empty. The chart then runs the `sandbox-host` image for its appVersion, the LangSmith release it pairs with.
+    Leave `images.sandboxHostImage.tag` empty. The chart then runs the `sandbox-host` image for its appVersion, the LangSmith release it pairs with.
   </Step>
 
   <Step title="Install the runtime chart">
@@ -439,7 +433,7 @@ kubectl --context <sandbox-context> -n langsmith-sandbox rollout status deployme
 kubectl --context <sandbox-context> -n langsmith-sandbox get pods
 ```
 
-Then run the sandbox smoke test in [Verify the installation](/langsmith/enable-self-hosted-sandboxes#verify-the-installation). If creating a sandbox fails with `NoSandboxHostsAvailable`, the control plane has no ready hosts. Check that the sandbox nodes reach `platform.endpoint`, which the hosts use to register, and the other paths in [Configure the network](#configure-the-network).
+Then run the sandbox smoke test in [Verify the installation](/langsmith/enable-self-hosted-sandboxes#verify-the-installation). If creating a sandbox fails with `NoSandboxHostsAvailable`, the control plane has no ready hosts. Check that the sandbox nodes reach `config.endpoint`, which the hosts use to register, and the other paths in [Configure the network](#configure-the-network).
 
 The same error appears when the two releases hold different service-auth secrets: LangSmith and the sandbox hosts then reject each other's calls. Compare the two values by checksum, without printing them:
 
@@ -525,7 +519,7 @@ To send sandbox egress through a corporate forward proxy, configure the runtime 
 
 - **Proxy URL**: Add the URL to the runtime Secret under the key `sandbox_egress_proxy_url`, or the key that `authProxy.httpProxy.urlSecretKey` names. The URL can carry credentials, so the chart reads it only from the Secret. Without the key, Sandboxes reach destinations directly.
 - **Bypass list**: Set `authProxy.httpProxy.noProxy`.
-- **Private CA**: For an HTTPS proxy with a private CA, add the CA to `customCa`.
+- **Private CA**: For an HTTPS proxy with a private CA, add the CA to `config.customCa`.
 
 For proxy requirements and behavior, see [Route Sandbox egress through a forward proxy](/langsmith/self-host-sandbox-egress-proxy).
 
