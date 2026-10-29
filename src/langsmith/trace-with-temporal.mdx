@@ -4,9 +4,13 @@ sidebarTitle: Temporal
 description: Learn how to trace Temporal workflows and activities in LangSmith using OpenTelemetry.
 ---
 
-[Temporal](https://temporal.io/) is a durable execution platform that enables developers to build resilient distributed applications. This guide shows you how to trace Temporal workflows and activities in LangSmith using OpenTelemetry.
+import AgentTracingPrerequisite from '/snippets/langsmith/agent-tracing-prerequisite.mdx';
+
+[Temporal](https://temporal.io/) is a durable execution platform that enables developers to build resilient distributed workflows. This guide shows you how to trace Temporal workflows and activities in LangSmith using OpenTelemetry.
 
 LangSmith supports OpenTelemetry (OTEL) trace ingestion, which integrates seamlessly with Temporal's native OpenTelemetry interceptors. This enables full distributed tracing across your workflow executions, activities, and any LLM calls within them.
+
+<AgentTracingPrerequisite />
 
 ## Prerequisites
 
@@ -21,7 +25,8 @@ Set the following environment variables for all implementations:
 | Variable            | Required | Description                                      |
 | ------------------- | -------- | ------------------------------------------------ |
 | `LANGSMITH_API_KEY` | Yes      | Your LangSmith API key from Settings.            |
-| `LANGSMITH_PROJECT` | No       | Project name (defaults to `"default"`).          |
+| `LANGSMITH_AGENT_ID` | Yes, for Python and TypeScript | Registered agent identifier. |
+| `LANGSMITH_AGENT_ENVIRONMENT` | Yes, for Python and TypeScript | Agent environment, such as `production`. |
 
 <Note>
 For regional SaaS or self-hosted LangSmith installations, also set `LANGCHAIN_BASE_URL` to your LangSmith instance URL.
@@ -32,7 +37,7 @@ For regional SaaS or self-hosted LangSmith installations, also set `LANGCHAIN_BA
 <Tabs>
 <Tab title="Go" icon="brand-golang">
 
-Go uses the `langsmith-go` SDK with Temporal's OpenTelemetry interceptors to automatically trace workflows and activities.
+This Go example uses the `langsmith-go` SDK with Temporal's OpenTelemetry interceptors to trace workflows and activities. It uses project-based configuration: set `LANGSMITH_PROJECT` to the [environment's `tracer_session_name`](/langsmith/create-an-agent#use-an-environment-project), without the two agent variables. The Python and TypeScript exporters use agent-addressing headers.
 
 <Steps>
 <Step title="Install">
@@ -165,10 +170,10 @@ func MyActivity(ctx context.Context, input string) (string, error) {
 </Step>
 <Step title="Execute workflow">
 
-In a separate client application, initialize the tracer and execute the workflow:
+In a separate client process, initialize the tracer and execute the workflow:
 
 ```go client.go
-// In a separate function or client application
+// In a separate function or client code
 func executeWorkflow() {
 	ctx := context.Background()
 
@@ -268,7 +273,8 @@ def init_tracer_provider() -> TracerProvider:
         endpoint="https://api.smith.langchain.com/otel/v1/traces",
         headers={
             "x-api-key": os.environ.get("LANGSMITH_API_KEY", ""),
-            "Langsmith-Project": os.environ.get("LANGSMITH_PROJECT", "default"),
+            "Langsmith-Agent-Id": os.environ["LANGSMITH_AGENT_ID"],
+            "Langsmith-Agent-Environment": os.environ["LANGSMITH_AGENT_ENVIRONMENT"],
         },
     )
 
@@ -436,7 +442,8 @@ export function initTracerProvider(): NodeTracerProvider {
     url: 'https://api.smith.langchain.com/otel/v1/traces',
     headers: {
       'x-api-key': process.env.LANGSMITH_API_KEY || '',
-      'Langsmith-Project': process.env.LANGSMITH_PROJECT || 'default',
+      'Langsmith-Agent-Id': process.env.LANGSMITH_AGENT_ID!,
+      'Langsmith-Agent-Environment': process.env.LANGSMITH_AGENT_ENVIRONMENT!,
     },
   });
 
@@ -593,10 +600,10 @@ run().catch(console.error);
 
 ## View traces in LangSmith
 
-Once configured, traces will appear in your LangSmith project:
+Once configured, traces appear in the selected agent environment:
 
 1. Navigate to your LangSmith instance.
-2. Select your project.
+2. Select your agent and environment.
 3. View traces in the **Tracing** tab.
 4. Click on individual traces to see the full span hierarchy.
 
@@ -703,8 +710,8 @@ const provider = new NodeTracerProvider({
 
 1. **Verify API key**: Ensure `LANGSMITH_API_KEY` is set correctly
 2. **Check endpoint**: Confirm you're using `https://api.smith.langchain.com/otel/v1/traces`
-3. **Flush on shutdown**: Call `provider.shutdown()` to flush pending spans before the application exits
-4. **Check project**: Verify traces are sent to the correct project (default is `"default"`)
+3. **Flush on shutdown**: Call `provider.shutdown()` to flush pending spans before the process exits
+4. **Check destination**: Verify the registered agent and environment in the exporter headers. For the Go compatibility example, verify the configured `tracer_session_name`.
 
 ### Missing activity spans
 
