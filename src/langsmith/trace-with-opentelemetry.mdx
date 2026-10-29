@@ -459,7 +459,7 @@ If a span sets more than one attribute for the same cache or reasoning field, La
 | `gen_ai.assistant.message`  | `outputs.messages[]` | Assistant message in conversation                                |
 | `gen_ai.tool.message`       | `outputs.messages[]` | Tool response message                                            |
 | `gen_ai.choice`             | `outputs`            | Model choice/response with finish reason                         |
-| `exception`                 | `status`, `error`    | Sets status to "error" and extracts exception message/stacktrace |
+| `exception`                 | `status`, `error`    | Uses the first exception event to populate `error`, even without a message |
 
 #### Event attribute extraction
 
@@ -480,10 +480,20 @@ For choice events:
 * `tool_calls.{n}.function.arguments` → tool function arguments
 * `tool_calls.{n}.type` → tool call type
 
-For exception events:
+For exception events, LangSmith uses the first `exception` event on the span:
 
 * `exception.message` → error message
 * `exception.stacktrace` → error stacktrace (appended to message)
+
+Event attributes apply in order. A nonempty message after a stacktrace replaces it. If neither produces an error, LangSmith uses the first nonempty value from `exception.type`, the span's `error.type`, or `Exception (no message)`.
+
+Exception events take precedence over span status, including `OK` and `UNSET`. Without an exception event, span status `ERROR` sets the run's `error` to:
+
+* **Status description**: Prefixed with `<error.type>: ` when the span has `error.type`, unless the description already starts with that value.
+* **Span's `error.type`**: Used when the status description is empty.
+* **`OTel span status ERROR (no description)`**: Used when both are empty.
+
+Without an exception event, `OK` and `UNSET` do not mark the run as an error, even when `error.type` is present. In metadata passthrough mode, `error.type` used for error mapping is not also copied to `otel.span.error.type`.
 
 ## Implementation examples
 
