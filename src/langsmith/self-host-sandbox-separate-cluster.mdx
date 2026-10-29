@@ -5,6 +5,7 @@ description: Run the self-hosted LangSmith Sandbox runtime in a dedicated Kubern
 ---
 
 import SandboxCallbackSigningJwk from '/snippets/langsmith/sandbox-callback-signing-jwk.mdx';
+import { SandboxDiagram } from '/snippets/sandbox-diagram.jsx';
 
 By default, the `langsmith` Helm release runs the [Sandbox](/langsmith/sandboxes) runtime in the same Kubernetes cluster as LangSmith. With `sandboxes.external.enabled: true`, the runtime is external: a second chart, `langsmith-sandbox`, installs it, here in a dedicated cluster. This guide covers the requirements, network rules, secrets, and Helm steps for that topology.
 
@@ -27,6 +28,12 @@ Otherwise, keep the default embedded runtime. One Helm release then installs and
 
 The LangSmith cluster keeps the Sandbox API and the control plane: authentication, placement, sandbox records in PostgreSQL, and the proxy for exec, file, and [service URL](/langsmith/sandbox-service-urls) traffic. The sandbox cluster runs the hosts and their microVMs.
 
+<Frame caption="The LangSmith cluster keeps the API, placement, and sandbox records. The sandbox cluster runs the hosts, holds copies of two secrets, and reaches sandbox storage.">
+  <SandboxDiagram name="separate-cluster" />
+</Frame>
+
+Compare it with the [default architecture](/langsmith/self-host-sandbox-architecture#understand-the-deployment-model), where `sandbox-host` runs in the LangSmith cluster.
+
 | | LangSmith cluster | Sandbox cluster |
 | --- | --- | --- |
 | Helm release | `langsmith`, with `sandboxes.external.enabled: true` | `langsmith-sandbox`, with `sandboxHost.enabled: true` |
@@ -34,32 +41,6 @@ The LangSmith cluster keeps the Sandbox API and the control plane: authenticatio
 | Holds | Sandbox records, the callback signing JWK, and the sandbox service-auth secret | A minimal Secret with copies of those two values, and the egress proxy CA |
 
 With an external runtime, the `langsmith` release does not render `sandbox-host`, the JuiceFS formatter, the JuiceFS configuration Secret, or the proxy CA. The sandbox cluster reaches the JuiceFS Redis metadata store and the object storage; the LangSmith cluster does not need them.
-
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {'fontFamily': 'TWK Lausanne, Inter', 'fontSize': '15px', 'lineColor': '#40668D', 'primaryTextColor': '#030710', 'textColor': '#030710', 'edgeLabelBackground': '#F2FAFF'}, 'flowchart': {'nodeSpacing': 50, 'rankSpacing': 60, 'curve': 'linear'}}}%%
-flowchart TB
-    accTitle: Separate sandbox cluster topology
-    accDescr: The LangSmith cluster reaches sandbox-host in the sandbox cluster on TCP port 19190, directly or through an optional host ingress. sandbox-host calls the LangSmith API at config.endpoint and stores sandbox data in JuiceFS.
-    subgraph LS["LangSmith cluster"]
-        CP["LangSmith API,<br/>platform-backend,<br/>and ingest-queue"]
-    end
-    subgraph SC["Sandbox cluster"]
-        ING["Host ingress<br/>(optional)"]
-        SH["sandbox-host<br/>on KVM nodes"]
-    end
-    ST[("JuiceFS Redis and<br/>object storage")]
-    CP -->|"TCP 19190"| SH
-    CP -.->|"HTTPS"| ING
-    ING -->|"TCP 19190"| SH
-    SH -->|"config.endpoint"| CP
-    SH --> ST
-    classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
-    classDef neutral fill:#F2FAFF,stroke:#40668D,stroke-width:2px,color:#2F4B68
-    classDef output fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33
-    class CP,SH process
-    class ING neutral
-    class ST output
-```
 
 The runtime chart uses the same settings as the embedded runtime, without the `sandboxes.` prefix:
 
@@ -127,6 +108,32 @@ By default, the LangSmith control plane connects directly to the node IPs that `
 | Sandbox nodes | JuiceFS Redis and object storage | The stores' ports | Sandbox storage |
 
 For the first row, allow the address that LangSmith pods appear from on your network: the node security group, the pod CIDR, or a SNAT address, depending on the CNI.
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'fontFamily': 'TWK Lausanne, Inter', 'fontSize': '15px', 'lineColor': '#40668D', 'primaryTextColor': '#030710', 'textColor': '#030710', 'edgeLabelBackground': '#F2FAFF'}, 'flowchart': {'nodeSpacing': 50, 'rankSpacing': 60, 'curve': 'linear'}}}%%
+flowchart TB
+    accTitle: Separate sandbox cluster topology
+    accDescr: The LangSmith cluster reaches sandbox-host in the sandbox cluster on TCP port 19190, directly or through an optional host ingress. sandbox-host calls the LangSmith API at config.endpoint and stores sandbox data in JuiceFS.
+    subgraph LS["LangSmith cluster"]
+        CP["LangSmith API,<br/>platform-backend,<br/>and ingest-queue"]
+    end
+    subgraph SC["Sandbox cluster"]
+        ING["Host ingress<br/>(optional)"]
+        SH["sandbox-host<br/>on KVM nodes"]
+    end
+    ST[("JuiceFS Redis and<br/>object storage")]
+    CP -->|"TCP 19190"| SH
+    CP -.->|"HTTPS"| ING
+    ING -->|"TCP 19190"| SH
+    SH -->|"config.endpoint"| CP
+    SH --> ST
+    classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
+    classDef neutral fill:#F2FAFF,stroke:#40668D,stroke-width:2px,color:#2F4B68
+    classDef output fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33
+    class CP,SH process
+    class ING neutral
+    class ST output
+```
 
 <Warning>
 Traffic on port `19190` is plain HTTP and carries sandbox commands, files, and credentials. Keep it on a private network you trust. If the clusters have no routed private network, or the traffic would leave one you trust, use the [host ingress](#use-the-host-ingress) with TLS.
