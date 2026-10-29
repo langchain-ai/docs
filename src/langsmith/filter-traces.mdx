@@ -445,6 +445,66 @@ Typing a new description does not clear the table, so the current results stay v
 
 AI search results include a **Confidence** column, which shows how strongly each thread, trace, or run matched the description as a percentage. A result without a score shows a dash.
 
+### Search with AI using the SDK
+
+The SDK streaming APIs accept `ai_search` for runs, traces, and threads. Use them to search conversations from scripts, with the same [organization opt-in and data-handling requirements](#enable-ai-search) as the UI.
+
+<Note>
+The following examples require `langsmith>=0.14.14` for Python or `langsmith` v0.11.4 or later for TypeScript.
+</Note>
+
+Pass a nonempty description of at most 2,000 UTF-8 bytes. Combine `ai_search` with `filter` to require both the conversation match and structured conditions.
+
+<Tabs>
+  <Tab title="Python">
+
+```python
+from langsmith import Langsmith
+
+client = Langsmith()
+
+for run in client.runs.streaming.query_v2_items(
+    project_ids=["<project-id>"],
+    ai_search="tool call failed",
+    filter='eq(run_type, "TOOL")',
+    selects=["id", "name"],
+):
+    print(run.id, run.name)
+```
+
+Use `client.traces.streaming.query_items(project_id="<project-id>", ai_search="tool call failed")` for traces. Use `client.threads.streaming.query_items(project_id="<project-id>", ai_search="user asks for a refund")` for threads.
+
+With `AsyncLangsmith`, use `async for` with the same methods.
+
+  </Tab>
+  <Tab title="TypeScript">
+
+```typescript
+import Langsmith from "langsmith";
+
+const client = new Langsmith();
+
+for await (const run of client.runs.streaming.queryV2Items({
+  project_ids: ["<project-id>"],
+  ai_search: "tool call failed",
+  filter: 'eq(run_type, "TOOL")',
+  selects: ["id", "name"],
+})) {
+  console.log(run.id, run.name);
+}
+```
+
+Use `client.traces.streaming.queryItems({ project_id: "<project-id>", ai_search: "tool call failed" })` for traces. Use `client.threads.streaming.queryItems({ project_id: "<project-id>", ai_search: "user asks for a refund" })` for threads.
+
+  </Tab>
+</Tabs>
+
+The item iterators follow pagination cursors automatically. The lower-level `query_v2` / `queryV2` and `query` methods on the streaming resources return server-sent events containing JSON patches instead of assembled items.
+
+AI search requires `Accept: text/event-stream`, which the streaming methods set automatically. Passing `ai_search` to a non-streaming query returns HTTP `406`. Deployments that route queries to the legacy v1 backend return HTTP `501`.
+
+For terminal usage, see [Search with AI using the CLI](/langsmith/langsmith-cli#search-with-ai).
+
 ### Review why a result matched
 
 When you open a thread, trace, or run from AI search results, LangSmith opens it in the [Trajectory view](/langsmith/view-traces#trajectory-view) at the messages that matched the description, so you can see why it matched. A thread opens at the first trace that matched. Reviewing matches requires permission to view run inputs and outputs.
