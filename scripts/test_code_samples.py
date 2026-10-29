@@ -6,6 +6,14 @@ By default runs all code samples. Pass FILES to test specific files only.
   make test-code-samples FILES="src/code-samples/langchain/return-a-string.py"
   make test-code-samples FILES="src/code-samples/langchain/return-a-string.py src/code-samples/langchain/return-a-string.ts"
 
+Set ``CODE_SAMPLE_PATHS`` to space-separated directories under ``src/code-samples/``
+to run only the samples beneath them. It filters both the run-all case and an
+explicit ``FILES`` list, so CI can hand every leg of a per-product matrix the same
+modified-file list and let each leg keep only its own product's files:
+
+  CODE_SAMPLE_PATHS="src/code-samples/langsmith" make test-code-samples
+  CODE_SAMPLE_PATHS="src/code-samples/langchain src/code-samples/langgraph" make test-code-samples
+
 Set ``CODE_SAMPLE_TRACING=1`` to enable LangSmith tracing, share public links for
 agent runs from single-snippet samples, and update ``src/code-samples/trace-links.json``.
 Traced single-snippet samples set ``LANGSMITH_DOCS_SNIPPET`` so collection can
@@ -71,6 +79,12 @@ SERIAL_GROUPS: dict[str, tuple[str, ...]] = {
     "evaluate-rag": ("src/code-samples/langsmith/evaluate-rag-",),
     "experiment-runs-query": (
         "src/code-samples/langsmith/smithdb-migration/experiment-runs-query-",
+    ),
+    # Python and the three TS files push, pull, and re-push the same hub
+    # prompt ("prompt-quickstart"); the TS files are numbered so lexical
+    # order pushes before pulling.
+    "prompt-engineering-quickstart": (
+        "src/code-samples/langsmith/prompt-engineering-quickstart",
     ),
 }
 
@@ -163,18 +177,50 @@ def is_valid_sample(p: Path, code_samples_dir: Path) -> bool:
     return "__pycache__" not in rel.parts and "node_modules" not in rel.parts
 
 
+def sample_path_prefixes(repo_root: Path, code_samples_dir: Path) -> list[Path]:
+    """Return the resolved directories named by CODE_SAMPLE_PATHS.
+
+    Entries outside src/code-samples/ are dropped with a warning so a typo
+    cannot widen the run to arbitrary paths. An empty list means no filter.
+    """
+    raw = os.environ.get("CODE_SAMPLE_PATHS", "").strip()
+    samples_root = code_samples_dir.resolve()
+    prefixes: list[Path] = []
+    for item in raw.split():
+        path = (repo_root / item).resolve()
+        if path != samples_root and samples_root not in path.parents:
+            print(
+                f"Warning: CODE_SAMPLE_PATHS entry {item} is not under "
+                "src/code-samples/, ignoring"
+            )
+            continue
+        prefixes.append(path)
+    return prefixes
+
+
+def matches_sample_paths(path: Path, prefixes: list[Path]) -> bool:
+    """Return True when ``path`` sits under any prefix, or when there is no filter."""
+    if not prefixes:
+        return True
+    resolved = path.resolve()
+    return any(resolved == prefix or prefix in resolved.parents for prefix in prefixes)
+
+
 def collect_files_to_test(
     repo_root: Path, code_samples_dir: Path
 ) -> list[tuple[Path, str]]:
     """Return list of (path, lang) for files to test.
 
     Uses FILES env var if set (space-separated paths). Otherwise runs all.
+    CODE_SAMPLE_PATHS narrows either set to the directories it names.
     """
     files_env = os.environ.get("FILES", "").strip()
+    prefixes = sample_path_prefixes(repo_root, code_samples_dir)
 
     if files_env:
         # Explicit list of files
         result = []
+        outside_paths = 0
         for raw in files_env.split():
             path = (repo_root / raw.strip()).resolve()
             if not path.exists():
@@ -187,6 +233,11 @@ def collect_files_to_test(
                 continue
             if code_samples_dir.resolve() not in path.parents:
                 print(f"Warning: {path} not under src/code-samples/, skipping")
+                continue
+            if not matches_sample_paths(path, prefixes):
+                # Expected under a per-product matrix: every leg sees the full
+                # modified list and keeps only its own files, so stay quiet.
+                outside_paths += 1
                 continue
             if path.suffix == ".py":
                 lang = "python"
@@ -201,39 +252,28 @@ def collect_files_to_test(
             else:
                 lang = "bash"
             result.append((path, lang))
+        if outside_paths:
+            print(
+                f"Skipped {outside_paths} file(s) outside CODE_SAMPLE_PATHS "
+                f"({os.environ.get('CODE_SAMPLE_PATHS', '').strip()})"
+            )
         return result
 
     # No FILES specified: run all by default
-    py_files = sorted(
-        p
-        for p in code_samples_dir.rglob("*.py")
-        if is_valid_sample(p, code_samples_dir)
-    )
-    ts_files = sorted(
-        p
-        for p in code_samples_dir.rglob("*.ts")
-        if is_valid_sample(p, code_samples_dir)
-    )
-    java_files = sorted(
-        p
-        for p in code_samples_dir.rglob("*.java")
-        if is_valid_sample(p, code_samples_dir)
-    )
-    kt_files = sorted(
-        p
-        for p in code_samples_dir.rglob("*.kt")
-        if is_valid_sample(p, code_samples_dir)
-    )
-    go_files = sorted(
-        p
-        for p in code_samples_dir.rglob("*.go")
-        if is_valid_sample(p, code_samples_dir)
-    )
-    sh_files = sorted(
-        p
-        for p in code_samples_dir.rglob("*.sh")
-        if is_valid_sample(p, code_samples_dir)
-    )
+    def listed(pattern: str) -> list[Path]:
+        return sorted(
+            p
+            for p in code_samples_dir.rglob(pattern)
+            if is_valid_sample(p, code_samples_dir)
+            and matches_sample_paths(p, prefixes)
+        )
+
+    py_files = listed("*.py")
+    ts_files = listed("*.ts")
+    java_files = listed("*.java")
+    kt_files = listed("*.kt")
+    go_files = listed("*.go")
+    sh_files = listed("*.sh")
     return (
         [(p, "python") for p in py_files]
         + [(p, "ts") for p in ts_files]

@@ -20,7 +20,7 @@ Engine calls your providers directly from your cluster. Prompts and responses go
 
 Sandbox usage by Engine is included in Engine's LSU billing. The sandboxes Engine uses to diagnose issues, generate fixes, and write evaluators do not incur additional Sandboxes product charges.
 
-Engine supports Anthropic, OpenAI, Amazon Bedrock, Google Vertex AI, and Azure AI Foundry. It uses a mix of models from the providers you select, so for the best results, add credentials for every provider you have access to.
+Engine supports Anthropic, OpenAI, Amazon Bedrock, Google Vertex AI, and Azure AI Foundry, and can also call Claude and GPT through [your own model gateway](#use-a-model-gateway). It uses a mix of models from the providers you select, so for the best results, add credentials for every provider you have access to.
 
 Enable access to Anthropic's Claude models and OpenAI's GPT models in your provider accounts, where your provider offers them. On Azure, use an Azure AI Foundry resource. To confirm that Engine can reach the models it uses, run [**Test connection**](#test-a-provider).
 
@@ -212,6 +212,135 @@ A provider listed in `engine.workloadIdentityProviders` counts as configured wit
 
 Saved credentials take precedence over cloud identity. When switching a provider, apply the cloud identity configuration before removing its saved credentials. Then remove only that provider's saved API keys or service account JSON under **Settings > Engine > Model providers**. For Bedrock, also remove any saved access key, secret access key, and session token. Keep the Azure AI Foundry resource name and any Bedrock region setting, then [test the provider](#test-a-provider) again.
 
+## Use a model gateway
+
+If your organization routes model traffic through its own LLM gateway, Engine can send its Claude and GPT calls through it instead of calling providers directly. The gateway appears under **Settings > Engine > Model providers** as **Model gateway**.
+
+<Info>
+Model gateway support requires LangSmith Helm chart `0.17.31` or later.
+</Info>
+
+Whoever installs LangSmith configures the gateway in the Helm values, not in the UI. Gateway URLs are often private addresses, so an organization setting would let any Organization Admin point Engine at internal services. On [BYOC](/langsmith/engine-self-hosted#engine-on-byoc), contact LangChain to configure a gateway.
+
+### Gateway requirements
+
+Your gateway must:
+
+- **Serve the Anthropic Messages API for Claude, the OpenAI Responses API for GPT, or both.** Engine runs on either model family. For the best results, serve both.
+- **Forward the `anthropic-beta` header and the request body unchanged.** Engine's Claude requests use a beta feature, and Anthropic can reject them without it.
+- **Return token usage on every response.** Engine fails a call whose response has no usage.
+- **Accept the provider model IDs Engine requests.** If your gateway maps them to its own deployments, keep the response's model the same model family.
+- **Set the base URL to the gateway's final address.** Engine doesn't follow redirects, so a base URL that redirects, for example from `http` to `https`, fails every call.
+
+Engine sends only the model request. With API key authentication, it does not send organization, workspace, or project identifiers to the gateway.
+
+### Configure the gateway
+
+<Steps>
+  <Step title="Declare the APIs your gateway serves">
+    Tell LangSmith which APIs the gateway serves. LangSmith shows **Model gateway** only when this is set:
+
+    ```yaml
+    commonEnv:
+      - name: ENGINE_GATEWAY_APIS
+        value: '["anthropic","openai"]'
+    ```
+
+    List only the APIs your gateway serves: `anthropic`, `openai`, or both.
+  </Step>
+  <Step title="Point Engine at the gateway">
+    Set the gateway's base URLs on both Engine workloads. Engine appends the API path to each URL:
+
+    - `ENGINE_GATEWAY_ANTHROPIC_BASE_URL`: the URL an Anthropic SDK client would use as its base URL. Engine calls `<base URL>/v1/messages`.
+    - `ENGINE_GATEWAY_OPENAI_BASE_URL`: the URL an OpenAI SDK client would use, usually ending in `/v1`. Engine calls `<base URL>/responses`.
+
+    Set only the URLs for the APIs you listed in `ENGINE_GATEWAY_APIS`. The URLs must use HTTPS. To trust a private certificate authority, see [Mount internal CAs for TLS](/langsmith/self-host-custom-tls-certificates#mount-internal-cas-for-tls). For a plain-HTTP address inside your cluster, also set `ENGINE_GATEWAY_ALLOW_INSECURE_HTTP` to `"true"`.
+  </Step>
+  <Step title="Configure authentication">
+    Choose how Engine authenticates to the gateway:
+
+    <Tabs>
+      <Tab title="API key">
+        Store the gateway key in a Kubernetes secret and mount it into both Engine workloads. Set `ENGINE_GATEWAY_API_KEY_FILE` to the mounted file's path.
+
+        ```yaml
+        engineInsightsAgent:
+          apiServer:
+            deployment:
+              extraEnv:
+                - name: ENGINE_GATEWAY_ANTHROPIC_BASE_URL
+                  value: "https://<gateway-host>/anthropic"
+                - name: ENGINE_GATEWAY_OPENAI_BASE_URL
+                  value: "https://<gateway-host>/openai/v1"
+                - name: ENGINE_GATEWAY_API_KEY_FILE
+                  value: "/etc/engine-gateway/api-key"
+              volumes:
+                - name: engine-gateway
+                  secret:
+                    secretName: engine-model-gateway
+              volumeMounts:
+                - name: engine-gateway
+                  mountPath: /etc/engine-gateway
+                  readOnly: true
+          queue:
+            deployment:
+              # The same extraEnv, volumes, and volumeMounts as apiServer.
+        ```
+
+        By default, Engine sends the key as `Authorization: Bearer <key>`. If your gateway expects the key in another header, set `ENGINE_GATEWAY_AUTH_HEADER` to that header's name, such as `x-api-key`. Engine then sends the key as the header's value.
+
+        To send additional headers, mount a directory with one file per header and set `ENGINE_GATEWAY_HEADERS_DIR` to its path. Each file's name is the header name, and its contents are the value. Engine reserves `host`, `content-length`, `content-type`, `transfer-encoding`, `connection`, and headers that start with `x-langsmith-`.
+
+        Engine reads the key and header files at the start of each run, so you can rotate them without restarting Engine.
+      </Tab>
+      <Tab title="LLM auth proxy">
+        If your gateway sits behind the [LLM auth proxy](/langsmith/llm-auth-proxy-self-hosted), Engine can authenticate with short-lived LangSmith tokens instead of a static key. See [Use the LLM auth proxy](#use-the-llm-auth-proxy).
+      </Tab>
+    </Tabs>
+
+    Apply the Helm values and restart both Engine workloads so they pick up the new environment variables.
+  </Step>
+  <Step title="Test and select the gateway">
+    Under **Settings > Engine > Model providers**, click **Test connection** next to **Model gateway**. Engine sends a small request through the gateway for each API you configured and shows whether each one succeeded. If the gateway rejects a request, the result includes the gateway's error message. Then select **Model gateway** and save.
+  </Step>
+</Steps>
+
+### Use the LLM auth proxy
+
+With the LLM auth proxy, Engine never holds a gateway key. The proxy validates a token that LangSmith signs, and your proxy configuration adds the gateway's credentials.
+
+For each run, Engine requests a token from your LangSmith installation and sends it in the `X-LangSmith-LLM-Auth` header on every model call. Tokens are valid for five minutes, and Engine requests a new one before the current token expires. **Test connection** uses the same flow.
+
+To set it up:
+
+1. Complete steps 1 through 4 of [Set up the LLM auth proxy](/langsmith/llm-auth-proxy-self-hosted): configure JWT signing and the issuer, enable the proxy for your organization, set the JWT audience, and install the auth proxy chart with your gateway as its upstream.
+1. On both Engine workloads, set `ENGINE_GATEWAY_AUTH` to `llm_auth_proxy`, and point the base URLs at the auth proxy service instead of the gateway. Don't set `ENGINE_GATEWAY_API_KEY_FILE`: Engine fails its runs when both are set.
+
+   ```yaml
+   engineInsightsAgent:
+     apiServer:
+       deployment:
+         extraEnv:
+           - name: ENGINE_GATEWAY_AUTH
+             value: "llm_auth_proxy"
+           - name: ENGINE_GATEWAY_ANTHROPIC_BASE_URL
+             value: "http://<auth-proxy-service>.<namespace>.svc.cluster.local:10000/anthropic"
+           - name: ENGINE_GATEWAY_OPENAI_BASE_URL
+             value: "http://<auth-proxy-service>.<namespace>.svc.cluster.local:10000/openai/v1"
+           - name: ENGINE_GATEWAY_ALLOW_INSECURE_HTTP
+             value: "true"
+     queue:
+       deployment:
+         # The same extraEnv as apiServer.
+   ```
+
+   `ENGINE_GATEWAY_ALLOW_INSECURE_HTTP` is needed only when Engine reaches the auth proxy over plain HTTP inside your cluster.
+1. If your organization's **Allowed URLs** setting is **Custom**, add the auth proxy's host to the list.
+
+Engine runs on a schedule, not as a signed-in user. Its tokens identify the organization and workspace, with `actor_type` set to `api_key:service`, and they do not include an IdP token. If your `ext_authz` or `ext_proc` service exchanges a user's IdP token for gateway credentials, handle Engine's requests separately, for example by mapping the workspace to gateway credentials.
+
+If Engine reports that the LLM auth proxy is not enabled for the organization, or that the organization has no JWT audience, complete [Configure organization settings in LangSmith](/langsmith/llm-auth-proxy-self-hosted#3-configure-organization-settings-in-langsmith).
+
 ## Connect privately
 
 Engine works over public egress. To keep its traffic on private networking, connect to LangSmith Intelligence with AWS PrivateLink, or connect to your own model providers through your cloud's private endpoints.
@@ -306,9 +435,9 @@ Engine calls each provider's standard API hostname from the `standalone-insights
 | Amazon Bedrock (Runtime) | `bedrock-runtime.<region>.amazonaws.com` | An interface VPC endpoint for `com.amazonaws.<region>.bedrock-runtime`, with private DNS enabled |
 | Google Vertex AI | `<region>-aiplatform.googleapis.com`, or `aiplatform.googleapis.com` for the global region | Private Service Connect for Google APIs, with private DNS for `googleapis.com` |
 | Azure AI Foundry | `<resource>.openai.azure.com` and `<resource>.services.ai.azure.com` | A private endpoint for the Foundry resource, with its private DNS zones |
-| Anthropic, OpenAI | `api.anthropic.com`, `api.openai.com` | Not available. These providers need public egress. |
+| Anthropic, OpenAI | `api.anthropic.com`, `api.openai.com` | Not available. These providers need public egress, unless you route them through a [model gateway](#use-a-model-gateway). |
 
-Engine does not accept custom endpoint URLs, so private connectivity works through DNS: the standard hostname must resolve to your private endpoint from the Engine pods.
+Engine does not accept custom endpoint URLs for these providers, so private connectivity works through DNS: the standard hostname must resolve to your private endpoint from the Engine pods. To send model traffic to an address you choose, use a [model gateway](#use-a-model-gateway).
 
 If Engine authenticates with [cloud identity](#use-cloud-identity-for-your-model-providers), the pods also need to reach your cloud's token service, such as an interface VPC endpoint for AWS STS on AWS.
 
