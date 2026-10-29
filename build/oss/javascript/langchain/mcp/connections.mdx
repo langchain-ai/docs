@@ -1,0 +1,142 @@
+---
+title: Connections
+description: Connection lifecycle, multiple servers, deployment scaling, protocol eras, and caching for MCP in LangChain.
+---
+
+import McpLifecycleShortPy from '/snippets/javascript/code-samples/mcp-lifecycle-short-py.mdx';
+import McpGraphFactoryPy from '/snippets/javascript/code-samples/mcp-graph-factory-py.mdx';
+import McpSharedPoolPy from '/snippets/javascript/code-samples/mcp-shared-pool-py.mdx';
+import McpMultiServerPy from '/snippets/javascript/code-samples/mcp-multi-server-py.mdx';
+import McpClientGroupPy from '/snippets/javascript/code-samples/mcp-client-group-py.mdx';
+import McpProtocolErasPy from '/snippets/javascript/code-samples/mcp-protocol-eras-py.mdx';
+import McpLifecycleShortJs from '/snippets/javascript/code-samples/mcp-lifecycle-short-js.mdx';
+import McpMultiServerJs from '/snippets/javascript/code-samples/mcp-multi-server-js.mdx';
+import McpSharedAdapterJs from '/snippets/javascript/code-samples/mcp-shared-adapter-js.mdx';
+import McpProtocolErasJs from '/snippets/javascript/code-samples/mcp-protocol-eras-js.mdx';
+
+
+
+[`MCPAdapter`](https://reference.langchain.com/javascript/langchain-mcp-adapters/MCPAdapter) discovers MCP tools and keeps their connections open so your agent can reuse them across calls. Discover tools with `listTools()` or `listToolsets()`, and close the adapter when your application finishes using them.
+
+Choose how long to keep the adapter open:
+
+| Situation | Pattern | Go to |
+| --- | --- | --- |
+| Script or agent invocation | Create the adapter, run the agent, then close in `finally` | [Connection lifecycle](#connection-lifecycle) |
+| Long-lived worker | Reuse one adapter and close it during shutdown | [Scale a deployment](#scale-a-deployment) |
+
+See [Transports](/oss/javascript/langchain/mcp#transports) for each server's connection options.
+
+
+
+
+## Connection lifecycle
+
+
+
+Constructing an adapter validates its configuration without opening connections. `listTools()`, `listToolsets()`, `getClient()`, and the resource methods connect when they run discovery. Keep the adapter open while your agent uses those tools.
+
+To discover tools, run an agent, and release the connections, pass your MCP server's HTTP URL to `runAgent`:
+
+<McpLifecycleShortJs />
+
+`close()` aborts in-flight adapter work, closes its connections, and clears its caches. You can call `listTools()` again to open fresh connections, but use the newly returned tools. Previously returned tools retain their closed clients.
+
+
+## Multiple servers
+
+
+
+Each named entry in `servers` gets its own connection, authentication, and [protocol mode](#protocol-eras). One adapter can connect to both HTTP and stdio servers.
+
+To discover tools from both transports, pass a calendar server's HTTP URL and a files server's script path to `listServerTools`:
+
+<McpMultiServerJs />
+
+`listToolsets()` groups tools by server name. `listTools()` returns one array; pass a server name or an array of names to select which tools it returns. Selection filters the result, but discovery still contacts every configured server. A failure on an unselected server can fail the call.
+
+The adapter prefixes tool names with their server name by default, such as `calendar_search` and `files_search`. Set `prefixToolNameWithServerName: false` to keep raw names. `listTools()` throws if its selected tools contain duplicate names.
+
+OpenAI and Anthropic accept only letters, digits, `_`, and `-` in tool names (`^[a-zA-Z0-9_-]+$`), up to 64 characters for OpenAI and 128 for Anthropic. The adapter does not rename a prefixed name that breaks these limits, so keep server names short and free of dots and spaces.
+
+Set `defaultToolTimeout` (in milliseconds) at the top level to apply it to every server's tools; it wins over a server's own `defaultToolTimeout`.
+
+
+## Scale a deployment
+
+
+
+Create the adapter at module scope, outside the graph factory. Each factory call can discover the current tool catalog and build an agent using the shared connections:
+
+<McpSharedAdapterJs />
+
+Keep the adapter open across runs. Close it during application shutdown, after active runs finish. For runs with different user credentials, see [Per-user authentication](/oss/javascript/langchain/mcp/auth#per-user-authentication).
+
+Discovery throws on connection failures by default. Set `onConnectionError: "ignore"`, or provide a callback that returns normally, to continue with the remaining servers. Non-authentication failures keep that connection skipped on later discoveries, even with `cacheMode: "refresh"`. Close the adapter to clear skipped connections before discovering again. Authentication failures are retried on the next discovery.
+
+Stdio servers support `restart` settings, and HTTP and SSE servers support `reconnect` settings when configured with `mode: "legacy"`. After a restart, call `listTools()` again and use the returned tools; tools returned before the restart keep the closed connection.
+
+Modern MCP servers keep no session, so their replicas can run behind any load balancer. A sessionful legacy server still needs sticky routing to one replica. A modern server that runs several replicas must share one `requestState` signing key across them, or an elicitation answer that reaches a different replica is rejected. See [Protect `requestState` with the codec](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/servers/input-required.md#protect-requeststate-with-the-codec) in the MCP TypeScript SDK documentation.
+
+
+## Caching
+
+
+
+The MCP SDK provides an in-memory cache for tool lists. Repeated discovery avoids a network request while the server's `ttlMs` hint remains valid. Without a positive `ttlMs`, discovery fetches the list again.
+
+Use `cacheMode` to control how `listTools()` and `listToolsets()` read the response cache:
+
+- **`"use"`** (the default): Serve a valid cached tool list when one is available, otherwise fetch and store it.
+- **`"refresh"`**: Fetch a fresh tool list and update the cache.
+- **`"bypass"`**: Fetch a fresh tool list without reading or updating the response cache.
+
+To refresh tools from all configured servers, pass an empty server-selection array and the discovery options:
+
+```typescript
+const tools = await adapter.listTools([], { cacheMode: "refresh" });
+```
+
+The adapter also reuses converted LangChain tool wrappers when the server descriptors have not changed. Rediscovery returns the current tools; it does not update an existing agent's tool list. Build the next agent with the returned tools.
+
+
+## Protocol eras
+
+
+
+The adapter negotiates the MCP protocol separately for each server. The default `mode: "auto"` supports modern and legacy servers in the same adapter.
+
+The legacy era starts with an `initialize` handshake. The modern era uses `server/discover` to discover server capabilities. Override `mode` when you need to require a specific era:
+
+<McpProtocolErasJs />
+
+Each server's `mode` controls its negotiation independently:
+
+- **`"auto"`** (the default): Try the current protocol and fall back for a legacy-only server.
+- **`"modern"`**: Require protocol version `2026-07-28` and fail instead of using legacy MCP.
+- **`"legacy"`**: Skip modern probing and use the legacy client interface.
+
+In `"auto"` mode, a URL server that answers the Streamable HTTP request with 404 or 405 is retried over SSE, at the same URL and then with a trailing `/mcp` replaced by `/sse`. In `"legacy"` mode, any 4xx falls back unless `automaticSSEFallback: false`.
+
+`setLoggingLevel()` is legacy-only and throws when a connected server negotiated the modern protocol; set `logLevel` on each modern server instead.
+
+
+## See also
+
+- [Authentication](/oss/javascript/langchain/mcp/auth): Bearer, OAuth, and per-user credentials.
+
+
+
+- [Human-in-the-loop](/oss/javascript/langchain/human-in-the-loop): Pause and resume tool calls.
+- [MCP specification](https://modelcontextprotocol.io/specification/latest)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/langchain/mcp/connections.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

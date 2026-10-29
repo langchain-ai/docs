@@ -1,0 +1,30 @@
+```python
+import asyncio
+
+from langgraph.errors import NodeTimeoutError
+from langgraph.func import entrypoint, task
+from langgraph.types import RetryPolicy
+
+attempts = 0
+
+
+@task(
+    timeout=1.0,
+    retry_policy=RetryPolicy(retry_on=NodeTimeoutError),
+)
+async def call_api(url: str) -> str:
+    global attempts
+    attempts += 1
+    if attempts < 2:
+        await asyncio.sleep(2)
+    return f"result from {url}"
+
+
+@entrypoint(timeout=5.0)
+async def workflow(inputs: dict) -> str:
+    return await call_api(inputs["url"])
+
+
+print(asyncio.run(workflow.ainvoke({"url": "https://example.com"})))
+# 'result from https://example.com'
+```

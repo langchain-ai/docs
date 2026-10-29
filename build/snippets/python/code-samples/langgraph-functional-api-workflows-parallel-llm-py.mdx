@@ -1,0 +1,32 @@
+```python
+from langchain.chat_models import init_chat_model
+from langchain_core.utils.uuid import uuid7
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.func import entrypoint, task
+
+model = init_chat_model("claude-sonnet-4-6")
+
+
+@task
+def generate_paragraph(topic: str) -> str:
+    response = model.invoke([
+        {"role": "system", "content": "You are a helpful assistant that writes educational paragraphs."},
+        {"role": "user", "content": f"Write a paragraph about {topic}."}
+    ])
+    return response.text
+
+
+checkpointer = InMemorySaver()
+
+
+@entrypoint(checkpointer=checkpointer)
+def workflow(topics: list[str]) -> str:
+    futures = [generate_paragraph(topic) for topic in topics]
+    paragraphs = [f.result() for f in futures]
+    return "\n\n".join(paragraphs)
+
+
+config = {"configurable": {"thread_id": str(uuid7())}}
+result = workflow.invoke(["quantum computing", "climate change", "history of aviation"], config=config)
+print(result)
+```
