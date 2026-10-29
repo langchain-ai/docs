@@ -1,0 +1,32 @@
+```python
+from typing import Any, Literal, TypedDict, Union
+
+from langchain.messages import ToolMessage
+from langgraph.types import interrupt
+
+
+class ToolCallReview(TypedDict, total=False):
+    action: Literal["continue", "update", "feedback"]
+    data: Any
+
+
+def review_tool_call(tool_call: dict) -> Union[dict, ToolMessage]:
+    """Review a tool call, returning a validated version."""
+    human_review: ToolCallReview = interrupt(
+        {
+            "question": "Is this correct?",
+            "tool_call": tool_call,
+        }
+    )
+    review_action = human_review["action"]
+    review_data = human_review.get("data")
+    if review_action == "continue":
+        return tool_call
+    if review_action == "update":
+        return {**tool_call, "args": review_data}
+    if review_action == "feedback":
+        return ToolMessage(
+            content=review_data, name=tool_call["name"], tool_call_id=tool_call["id"]
+        )
+    raise ValueError(f"Unknown review action: {review_action}")
+```
