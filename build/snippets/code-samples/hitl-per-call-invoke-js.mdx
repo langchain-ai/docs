@@ -1,0 +1,33 @@
+```ts
+import { isToolApprovalInterrupt } from "langchain";
+
+let config = { configurable: { thread_id: "1" } };
+let result = await agent.invoke(
+  {
+    messages: [
+      { role: "user", content: "Archive old orders, then delete them." },
+    ],
+  },
+  config,
+);
+
+// One interrupt per gated tool call, in no fixed order
+const approvals = (result.__interrupt__ ?? []).filter(isToolApprovalInterrupt);
+for (const interrupt of approvals) {
+  console.log(interrupt.value);
+}
+// > {
+// >   type: 'tool_approval',
+// >   tool_call_id: 'call_write',
+// >   name: 'write_file',
+// >   args: { path: 'orders_archive.csv', content: 'id,total\n1,20\n' },
+// >   description: 'Tool execution requires approval\n\nTool: write_file\nArgs: {\n  "path": "orders_archive.csv",\n  "content": "id,total\\n1,20\\n"\n}'
+// > }
+// > {
+// >   type: 'tool_approval',
+// >   tool_call_id: 'call_sql',
+// >   name: 'execute_sql',
+// >   args: { query: "DELETE FROM orders WHERE created_at < '2025-01-01'" },
+// >   description: `Tool execution requires approval\n\nTool: execute_sql\nArgs: {\n  "query": "DELETE FROM orders WHERE created_at < '2025-01-01'"\n}`
+// > }
+```
