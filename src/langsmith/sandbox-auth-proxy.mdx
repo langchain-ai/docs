@@ -195,7 +195,8 @@ Each rule specifies:
 | `name` | Required. Identifier for the rule |
 | `type` | Omit for header injection; `aws` or `gcp` for provider auth; `relay` to send matching connections through a [relay](/langsmith/relays) |
 | `match_hosts` | Required for header rules; rejected on `aws` and `gcp` rules. Bare hostnames, or a leading `*.` wildcard in front of a registrable domain (`*.github.com`, not `*.com` or `*`). No scheme, path, or port. The wildcard does not match the apex domain |
-| `match_paths` | Paths to match (empty = all paths). Header rules only |
+| `match_paths` | Paths to match (empty = all paths). Header rules only. Patterns are matched against the request path without the query string; see [Match rules by path or header](#match-rules-by-path-or-header) |
+| `match_headers` | Request headers that must all be present, each written `"name: value"` with a lowercase name and an exact value. Header rules only; see [Match rules by path or header](#match-rules-by-path-or-header) |
 | `headers` | Headers to inject, each with a `name`, `type`, and `value`. Header rules only |
 | `aws` / `gcp` | Provider credentials; see [Authenticate AWS requests](#authenticate-aws-requests) and [Authenticate GCP requests](#authenticate-gcp-requests) |
 | `env_vars` | Environment variables to set in the sandbox while the rule is enabled |
@@ -211,6 +212,73 @@ Each header has a required `type` that controls how its value is stored and disp
 | `workspace_secret` | References a workspace secret using `{KEY}` syntax. Resolved when the proxy configuration is applied. |
 | `plaintext` | Value is stored and returned as-is. Use for non-sensitive headers. |
 | `opaque` | Write-only. Value is encrypted at rest and never returned via the API. |
+
+### Match rules by path or header
+
+`match_hosts` alone sends every request to a host through one rule. Add `match_paths` or `match_headers` to give different requests to the same host different credentials. The proxy checks enabled header rules in list order and applies the first rule whose host, path, and headers all match, so put the more specific rule first.
+
+`match_paths` patterns are compared with the request path, not the query string:
+
+| Pattern | Matches |
+|---------|---------|
+| `/v1/runs` | Exactly `/v1/runs` |
+| `/v1/*` or `/v1/**` | Any path that starts with `/v1`. The match is on the text before `/*`, so `/v1/*` also matches `/v10` |
+| `*/runs` | Any path that ends with `/runs` |
+| `*` or `**` | Every path |
+
+A pattern cannot put a wildcard in the middle of a path, such as `/v1/*/runs`.
+
+The same host can use a different credential per route. This example sends one secret for requests under `/ingest` and another for requests under `/query`:
+
+```json
+{
+  "rules": [
+    {
+      "name": "ingest",
+      "match_hosts": ["api.example.com"],
+      "match_paths": ["/ingest/*"],
+      "headers": [
+        {"name": "x-api-key", "type": "workspace_secret", "value": "{INGEST_API_KEY}"}
+      ]
+    },
+    {
+      "name": "query",
+      "match_hosts": ["api.example.com"],
+      "match_paths": ["/query/*"],
+      "headers": [
+        {"name": "x-api-key", "type": "workspace_secret", "value": "{QUERY_API_KEY}"}
+      ]
+    }
+  ]
+}
+```
+
+When routes share a path, or the credential depends on which account the code is acting for, switch on a request header instead. Each `match_headers` entry is `"name: value"` with a lowercase name and an exact value, and the rule matches only when the request carries every listed header. Have the sandbox send a placeholder, and the rule replaces it with the real credential:
+
+```json
+{
+  "rules": [
+    {
+      "name": "account-a",
+      "match_hosts": ["api.example.com"],
+      "match_headers": ["authorization: Bearer account-a"],
+      "headers": [
+        {"name": "Authorization", "type": "workspace_secret", "value": "Bearer {ACCOUNT_A_TOKEN}"}
+      ]
+    },
+    {
+      "name": "account-b",
+      "match_hosts": ["api.example.com"],
+      "match_headers": ["authorization: Bearer account-b"],
+      "headers": [
+        {"name": "Authorization", "type": "workspace_secret", "value": "Bearer {ACCOUNT_B_TOKEN}"}
+      ]
+    }
+  ]
+}
+```
+
+`match_paths` and `match_headers` are accepted on header rules only. `aws`, `gcp`, and `relay` rules reject both.
 
 ### Set environment variables from a rule
 
