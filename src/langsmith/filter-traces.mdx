@@ -445,6 +445,72 @@ Typing a new description does not clear the table, so the current results stay v
 
 AI search results include a **Confidence** column, which shows how strongly each thread, trace, or run matched the description as a percentage. A result without a score shows a dash.
 
+### Search with AI using the SDK
+
+The SDK streaming APIs accept `ai_search` for runs, traces, and threads. Use them to search conversations from scripts, with the same [organization opt-in and data-handling requirements](#enable-ai-search) as the UI.
+
+<Note>
+The following examples require `langsmith>=0.14.14` for Python or `langsmith>=0.11.3` for TypeScript.
+</Note>
+
+Pass a nonempty description of at most 2,000 UTF-8 bytes in `ai_search`, and add a filter to require structured conditions as well: `filter` for runs and threads, or `trace_filter` and `tree_filter` for traces. The description and filters combine the same way as in the UI. See [Combine AI search with filters](#combine-ai-search-with-filters).
+
+<Tabs>
+  <Tab title="Python">
+
+```python
+from langsmith import Langsmith
+
+client = Langsmith()
+
+for run in client.runs.streaming.query_v2_items(
+    project_ids=["<project-id>"],
+    ai_search="tool call failed",
+    filter='eq(run_type, "llm")',
+    selects=["ID", "NAME"],
+):
+    print(run.id, run.name)
+```
+
+To search traces or threads, call the matching method:
+
+- **Traces**: `client.traces.streaming.query_items(project_id="<project-id>", ai_search="tool call failed")`
+- **Threads**: `client.threads.streaming.query_items(project_id="<project-id>", ai_search="user asks for a refund")`
+
+With `AsyncLangsmith`, use `async for` with the same methods.
+
+  </Tab>
+  <Tab title="TypeScript">
+
+```typescript
+import Langsmith from "langsmith";
+
+const client = new Langsmith();
+
+for await (const run of client.runs.streaming.queryV2Items({
+  project_ids: ["<project-id>"],
+  ai_search: "tool call failed",
+  filter: 'eq(run_type, "llm")',
+  selects: ["ID", "NAME"],
+})) {
+  console.log(run.id, run.name);
+}
+```
+
+To search traces or threads, call the matching method:
+
+- **Traces**: `client.traces.streaming.queryItems({ project_id: "<project-id>", ai_search: "tool call failed" })`
+- **Threads**: `client.threads.streaming.queryItems({ project_id: "<project-id>", ai_search: "user asks for a refund" })`
+
+</Tab>
+</Tabs>
+
+The `query_v2_items` / `queryV2Items` and `query_items` / `queryItems` methods follow pagination cursors and return assembled runs, traces, or threads. The lower-level `query_v2` / `queryV2` and `query` methods return server-sent events containing JSON patches instead.
+
+AI search requires `Accept: text/event-stream`, which the streaming methods set automatically. Passing `ai_search` to a non-streaming query returns HTTP `406`. Deployments that route queries to the legacy v1 backend return HTTP `501`.
+
+For terminal usage, see [Search with AI using the CLI](/langsmith/langsmith-cli#search-with-ai).
+
 ### Review why a result matched
 
 When you open a thread, trace, or run from AI search results, LangSmith opens it in the [Trajectory view](/langsmith/view-traces#trajectory-view) at the messages that matched the description, so you can see why it matched. A thread opens at the first trace that matched. Reviewing matches requires permission to view run inputs and outputs.
@@ -470,6 +536,8 @@ While an AI search row is in the search bar, changes to the other filter rows, t
 ### What AI search matches
 
 AI search operates on the [trajectory](/langsmith/observability-concepts#trajectories): the ordered list of human, AI, and tool messages that LangSmith builds from a trace. It matches your description against each trajectory, then returns the threads, traces, or runs whose associated trajectory matched.
+
+LangSmith builds trajectory messages from LLM runs, so AI search over runs returns only LLM runs. A filter on the run itself for another run type, such as `run_type:tool` with the **Single run** scope or `eq(run_type, "tool")` in `filter`, returns no results. An **Any run** filter, or `tree_filter` in the SDK, still works, because it matches other runs in the trace.
 
 Because AI search reads only the trajectory, it cannot match anything the trajectory does not contain, such as run status, run names, metadata, tags, or the structure of the trace. To filter on those, [write a query in the search bar](#build-a-query), for example `status:error` or `name:docs_agent`, rather than describing them in plain language.
 
