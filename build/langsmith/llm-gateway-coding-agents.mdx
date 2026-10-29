@@ -9,12 +9,10 @@ import LLMGatewayBetaNote from '/snippets/python/langsmith/llm-gateway-beta-note
 
 Configure coding agents to use the standard LLM Gateway endpoint for centralized cost controls, observability, and audit trails. The gateway authenticates each caller, routes by model ID, enforces policies, and traces each call.
 
-Claude Code can use the standard Anthropic Messages format, while Codex and Deep Agents Code can use the standard OpenAI-compatible formats. Gemini CLI uses Google's native API and requires [direct model access](/langsmith/llm-gateway-direct-model-access).
-
 ## Prerequisites
 
-- Your [Organization admin](/langsmith/rbac#organization-admin) has enabled the gateway and completed any required [provider setup](/langsmith/llm-gateway-admin-setup).
-- You have a workspace-scoped [LangSmith API key](/langsmith/create-account-api-key) with `gateway:invoke` and `workspaces:read` [permissions](/langsmith/organization-workspace-operations).
+- An admin has completed any required [gateway setup](/langsmith/llm-gateway-admin-setup).
+- You have a workspace-scoped LangSmith API key. For key types, permissions, and the header each client sends, see [Authenticate to the LLM Gateway](/langsmith/llm-gateway-authentication).
 - For bring-your-own-key models, your workspace has the corresponding provider secret. [Gateway Credits models](/langsmith/llm-gateway-credits) do not require a provider secret.
 
 Set your LangSmith API key before configuring a client:
@@ -23,12 +21,18 @@ Set your LangSmith API key before configuring a client:
 export LANGSMITH_API_KEY="lsv2_..._....cbed3e"
 ```
 
+Then configure your agent:
+
+- [Claude Code](#claude-code-cli) uses the standard Anthropic Messages format.
+- [Codex](#codex-cli) and [Deep Agents Code](#deep-agents-code) use the standard OpenAI-compatible formats.
+- [Gemini CLI](#gemini-cli) uses Google's native API and requires [direct model access](/langsmith/llm-gateway-direct-model-access).
+
 ## Claude Code CLI
 
-Claude Code supports two separate authentication methods. Choose one before configuring:
+Claude Code always authenticates to the gateway with your LangSmith API key. It supports two ways for the gateway to authenticate to Anthropic, each with a different billing owner. Choose one before configuring:
 
 - **Workspace provider secret**: The organization manages billing and policies through a provider key stored in workspace secrets. Use this method for org-managed usage.
-- **Claude subscription OAuth**: Anthropic bills LLM calls to the user's personal Claude Plus or Max subscription instead of the workspace provider secret, while LangSmith still enforces gateway permissions, policies, and tracing. Use this method when developers have their own subscriptions.
+- **Claude subscription OAuth**: Anthropic bills LLM calls to the user's personal Claude Plus or Max subscription instead of the workspace provider secret. LangSmith still enforces gateway permissions, rate limit, model access, and data policies, and traces each call. Spend limits do not apply. Use this method when developers have their own subscriptions.
 
 ### Use a workspace provider secret
 
@@ -130,7 +134,7 @@ Log in to Claude Code with your subscription, then configure the gateway.
 
 Claude Code uses and refreshes the OAuth credential from its saved login, including the required OAuth capability in the `anthropic-beta` header.
 
-The LangSmith API key authenticates the gateway request and remains subject to gateway permissions and policies. The gateway forwards the OAuth bearer to Anthropic, so Anthropic bills the call to the user's Claude subscription instead of the workspace provider secret. To confirm calls route through the gateway, check that traces appear in the `gateway` tracing project as described in [Verify the setup](#verify-the-setup).
+The LangSmith API key authenticates the gateway request and remains subject to gateway permissions and to rate limit, model access, and data policies. The gateway forwards the OAuth bearer to Anthropic, so Anthropic bills the call to the user's Claude subscription instead of the workspace provider secret. [Spend limits](/langsmith/llm-gateway-spend-policies) do not apply to these calls, and the calls are left out of spend totals. To confirm calls route through the gateway, check that traces appear in the `gateway` tracing project as described in [Verify the setup](#verify-the-setup).
 
 <Warning>
 Leave `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_API_KEY` unset for this mode. Either variable takes precedence over the saved subscription login.
@@ -194,11 +198,11 @@ To use a bring-your-own-key model, keep the standard base URL and pass a provide
 For organizations rolling the gateway out to all developers, distribute the configuration through mobile device management or a shared shell profile. Distribute:
 
 1. The standard gateway base URL for each client.
-1. A workspace-scoped [LangSmith API key](/langsmith/create-account-api-key) per user or team, depending on your policy granularity.
+1. A workspace-scoped [LangSmith API key](/langsmith/llm-gateway-authentication#choose-a-key-type) per user or team, depending on your policy granularity.
 1. The model IDs approved for each coding agent.
 1. The Codex `config.toml` if your organization uses Codex.
 
-Provider API keys stay centralized in LangSmith workspace secrets. Gateway Credits models do not require provider API keys.
+Provider API keys stay centralized in LangSmith workspace secrets.
 
 ## Group calls into conversation threads
 
@@ -228,14 +232,14 @@ After configuring a coding agent, make a test call and confirm that:
 1. The call succeeds and the agent receives a response.
 1. A trace appears in the `gateway` tracing project in your LangSmith workspace.
 
-If the call fails with a `403`, check that your API key's role includes `gateway:invoke` and `workspaces:read`. If a bring-your-own-key call fails with a `400` mentioning a missing provider key, ask your organization admin to add the provider's key to workspace secrets.
+If the call fails with a `401` or `403`, see [Fix authentication errors](/langsmith/llm-gateway-authentication#fix-authentication-errors). If a bring-your-own-key call fails with a `424` mentioning a missing provider key, ask a workspace admin to add the provider's key to workspace secrets. For details, see [Fix provider credential errors](/langsmith/llm-gateway-provider-authentication#fix-provider-credential-errors).
 
-## Next steps
+## See also
 
 - [Gateway Credits](/langsmith/llm-gateway-credits): call hosted models without a provider secret.
 - [Direct model access](/langsmith/llm-gateway-direct-model-access): configure provider-native routes for coding agents that require them.
 - [Spend policies](/langsmith/llm-gateway-spend-policies): set cost limits on developer LLM usage.
-- [Traces, Engine, and access control](/langsmith/llm-gateway-access): understand where gateway traces appear.
+- [View LLM Gateway traces](/langsmith/llm-gateway-traces): understand where gateway traces appear.
 
 ---
 
