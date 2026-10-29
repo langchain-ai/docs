@@ -2034,6 +2034,45 @@ You can pass request-level prompt cache options using the `prompt_cache_options`
 
 For models before the GPT-5.6 family, use `prompt_cache_retention` instead (`"in_memory"` or `"24h"`). That field is separate from `prompt_cache_options` and is deprecated on GPT-5.6 and later model families.
 
+### Prewarm a shared prefix
+
+Cache prewarming prepares a shared prefix without generating output. This moves prompt processing out of the user's wait time.
+
+<Note>
+    Prewarming requires the Responses API and a supported GPT-5.6 or later model. Set `use_responses_api=True`.
+</Note>
+
+The following example reads shared reference material from `reference.txt`. The prefix must meet OpenAI's [minimum cacheable length](https://developers.openai.com/api/docs/guides/prompt-caching#summary-of-model-differences).
+
+```python
+from pathlib import Path
+
+from langchain_openai import ChatOpenAI
+
+model = ChatOpenAI(model="gpt-6.1-sol", use_responses_api=True, streaming=False)
+shared_prefix = {
+    "role": "developer",
+    "content": Path("reference.txt").read_text(),
+}
+
+warmup = model.invoke(
+    [shared_prefix],
+    prompt_cache_options={"prewarm": True},
+)
+print(warmup.usage_metadata["input_token_details"])
+
+response = model.invoke(
+    [shared_prefix, {"role": "user", "content": "Summarize the reference material."}],
+)
+print(response.usage_metadata["input_token_details"])
+```
+
+Pass `prewarm` per invocation, not as a persistent model option, so subsequent requests generate output. Keep the warmup response out of conversation history. Reuse the same model, prompt prefix, tools, cache key if set, and cache-affecting configuration in the follow-up request.
+
+Check `cache_read` and `cache_creation` in usage metadata to verify cache use. Cache writes incur charges even when the request generates no output. Cached input also counts toward rate limits.
+
+`ChatOpenAI` does not schedule refreshes. If your application repeats prewarm requests, bound the idle duration and spend, and stop when the prefix changes or refreshes miss the cache. For current model support and billing, see OpenAI's [prewarming guide](https://developers.openai.com/api/docs/guides/prompt-caching#prewarm-the-cache).
+
 ### Cache write tokens
 
 When OpenAI writes new content to the prompt cache, it reports `cache_write_tokens` in the response. `ChatOpenAI` surfaces this as `cache_creation` in `input_token_details`:
