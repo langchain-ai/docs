@@ -645,7 +645,8 @@ When extracting data from PRs or changelogs, use the "Release Note:" section in 
 
 - Explain the "why" of changes
 - Highlight areas needing careful review
-- Disclose AI agent involvement in description
+- Disclose AI agent involvement as one plain sentence in the description, for example "Prepared with Claude Code."
+- Do not add a `🤖 Generated with [Claude Code]` badge or similar to PR descriptions or commit messages, and do not add a `Co-Authored-By` trailer for an AI agent to commits. This aligns with the `langster-safety` skill. The `check-pr-ai-attribution` workflow fails a PR whose description contains either one, and a ruleset on `main` blocks the Claude trailer.
 
 <!-- OPENWIKI:START -->
 
