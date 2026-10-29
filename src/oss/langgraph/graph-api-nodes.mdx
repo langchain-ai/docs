@@ -1,0 +1,434 @@
+---
+title: Configure nodes
+sidebarTitle: Configure nodes
+description: Add runtime configuration, retry policies, timeouts, error handling, defaults, and caching to LangGraph nodes.
+---
+
+import LanggraphGraphApiNodesCacheJs from '/snippets/code-samples/langgraph-graph-api-nodes-cache-js.mdx';
+import LanggraphGraphApiNodesCachePy from '/snippets/code-samples/langgraph-graph-api-nodes-cache-py.mdx';
+import LanggraphGraphApiNodesDrainJs from '/snippets/code-samples/langgraph-graph-api-nodes-drain-js.mdx';
+import LanggraphGraphApiNodesDrainPy from '/snippets/code-samples/langgraph-graph-api-nodes-drain-py.mdx';
+import LanggraphGraphApiNodesErrorHandlerJs from '/snippets/code-samples/langgraph-graph-api-nodes-error-handler-js.mdx';
+import LanggraphGraphApiNodesErrorHandlerPy from '/snippets/code-samples/langgraph-graph-api-nodes-error-handler-py.mdx';
+import LanggraphGraphApiNodesExecutionInfoIdsJs from '/snippets/code-samples/langgraph-graph-api-nodes-execution-info-ids-js.mdx';
+import LanggraphGraphApiNodesExecutionInfoIdsPy from '/snippets/code-samples/langgraph-graph-api-nodes-execution-info-ids-py.mdx';
+import LanggraphGraphApiNodesExecutionInfoRetryJs from '/snippets/code-samples/langgraph-graph-api-nodes-execution-info-retry-js.mdx';
+import LanggraphGraphApiNodesExecutionInfoRetryPy from '/snippets/code-samples/langgraph-graph-api-nodes-execution-info-retry-py.mdx';
+import LanggraphGraphApiNodesNodeDefaultsJs from '/snippets/code-samples/langgraph-graph-api-nodes-node-defaults-js.mdx';
+import LanggraphGraphApiNodesNodeDefaultsPy from '/snippets/code-samples/langgraph-graph-api-nodes-node-defaults-py.mdx';
+import LanggraphGraphApiNodesRetryCustomJs from '/snippets/code-samples/langgraph-graph-api-nodes-retry-custom-js.mdx';
+import LanggraphGraphApiNodesRetryCustomPy from '/snippets/code-samples/langgraph-graph-api-nodes-retry-custom-py.mdx';
+import LanggraphGraphApiNodesRetryDefaultJs from '/snippets/code-samples/langgraph-graph-api-nodes-retry-default-js.mdx';
+import LanggraphGraphApiNodesRetryDefaultPy from '/snippets/code-samples/langgraph-graph-api-nodes-retry-default-py.mdx';
+import LanggraphGraphApiNodesRuntimeConfigJs from '/snippets/code-samples/langgraph-graph-api-nodes-runtime-config-js.mdx';
+import LanggraphGraphApiNodesRuntimeConfigPy from '/snippets/code-samples/langgraph-graph-api-nodes-runtime-config-py.mdx';
+import LanggraphGraphApiNodesRuntimeLlmJs from '/snippets/code-samples/langgraph-graph-api-nodes-runtime-llm-js.mdx';
+import LanggraphGraphApiNodesRuntimeLlmPy from '/snippets/code-samples/langgraph-graph-api-nodes-runtime-llm-py.mdx';
+import LanggraphGraphApiNodesRuntimeSystemMessageJs from '/snippets/code-samples/langgraph-graph-api-nodes-runtime-system-message-js.mdx';
+import LanggraphGraphApiNodesRuntimeSystemMessagePy from '/snippets/code-samples/langgraph-graph-api-nodes-runtime-system-message-py.mdx';
+import LanggraphGraphApiNodesServerInfoJs from '/snippets/code-samples/langgraph-graph-api-nodes-server-info-js.mdx';
+import LanggraphGraphApiNodesServerInfoPy from '/snippets/code-samples/langgraph-graph-api-nodes-server-info-py.mdx';
+import LanggraphGraphApiNodesTimeoutJs from '/snippets/code-samples/langgraph-graph-api-nodes-timeout-js.mdx';
+import LanggraphGraphApiNodesTimeoutPy from '/snippets/code-samples/langgraph-graph-api-nodes-timeout-py.mdx';
+
+[Nodes](/oss/langgraph/graph-api#nodes) are the steps of a Graph API graph. This page covers how to attach runtime configuration, retries, timeouts, error handlers, defaults, and caching when you add a node. For wiring nodes into sequences, branches, and loops, see [Control flow](/oss/langgraph/graph-api-control-flow). For the full retry, timeout, and error lifecycle, see [Fault tolerance](/oss/langgraph/fault-tolerance).
+
+## Add runtime configuration
+
+Pass values into a run (for example, which LLM or system prompt to use) without putting those values in graph state.
+
+To add runtime configuration:
+
+1. Specify a schema for your configuration
+2. Add the configuration to the function signature for nodes or conditional edges
+3. Pass the configuration into the graph
+
+See below for a simple example:
+
+:::python
+<LanggraphGraphApiNodesRuntimeConfigPy />
+
+```
+{'my_state_value': 1}
+{'my_state_value': 2}
+```
+:::
+
+:::js
+<LanggraphGraphApiNodesRuntimeConfigJs />
+
+```
+{ myStateValue: 1 }
+{ myStateValue: 2 }
+```
+:::
+
+<Accordion title="Extended example: specifying LLM at runtime">
+  :::python
+  Choose OpenAI or Anthropic at invoke time. These examples call live providers and need API keys.
+
+  <LanggraphGraphApiNodesRuntimeLlmPy />
+
+  ```
+  claude-haiku-4-5-20251001
+  gpt-5.4-mini
+  ```
+  :::
+
+  :::js
+  Choose OpenAI or Anthropic at invoke time. These examples call live providers and need API keys.
+
+  <LanggraphGraphApiNodesRuntimeLlmJs />
+
+  ```
+  claude-haiku-4-5-20251001
+  gpt-5.4-mini
+  ```
+  :::
+</Accordion>
+
+<Accordion title="Extended example: specifying model and system message at runtime">
+  :::python
+  Configure both the model provider and a system message at invoke time. These examples call live providers and need API keys.
+
+  <LanggraphGraphApiNodesRuntimeSystemMessagePy />
+
+  ```
+  ================================ Human Message ================================
+
+  hi
+  ================================== Ai Message ==================================
+
+  Ciao! Come posso aiutarti oggi?
+  ```
+  :::
+
+  :::js
+  Configure both the model provider and a system message at invoke time. These examples call live providers and need API keys.
+
+  <LanggraphGraphApiNodesRuntimeSystemMessageJs />
+
+  ```
+  human: hi
+  ai: Ciao! Come posso aiutarti oggi?
+  ```
+  :::
+</Accordion>
+
+## Add retry policies
+
+Attach a retry policy when a node calls an API, database, or LLM that can fail transiently.
+
+:::python
+Pass `retry_policy` to @[`add_node`]. The value is a `RetryPolicy` named tuple. This example uses the defaults:
+
+<LanggraphGraphApiNodesRetryDefaultPy />
+
+By default, `retry_on` uses `default_retry_on`, which retries any exception except:
+
+* `ValueError`
+* `TypeError`
+* `ArithmeticError`
+* `ImportError`
+* `LookupError`
+* `NameError`
+* `SyntaxError`
+* `RuntimeError`
+* `ReferenceError`
+* `StopIteration`
+* `StopAsyncIteration`
+* `OSError`
+
+For exceptions from popular HTTP libraries such as `requests` and `httpx`, it only retries on 5xx status codes. See [Fault tolerance](/oss/langgraph/fault-tolerance#retries) for the full default list and parameters.
+:::
+
+:::js
+Pass `retryPolicy` to [`addNode`](https://reference.langchain.com/javascript/classes/_langchain_langgraph.index.Graph.html#addnode). An empty object uses the built-in defaults:
+
+<LanggraphGraphApiNodesRetryDefaultJs />
+
+Retries are opt-in: without a `retryPolicy`, the first failure ends the attempt. If the policy omits `retryOn`, LangGraph retries thrown errors except:
+
+* Abort and cancellation errors (`error.name === "AbortError"`, or `error.message` starts with `"Cancel"` or `"AbortError"`)
+* `GraphValueError`, matched by `error.name`
+* Aborted connections (`error.code === "ECONNABORTED"`)
+* HTTP client errors with status 400, 401, 402, 403, 404, 405, 406, 407, or 409
+* OpenAI-style quota errors (`error.error?.code === "insufficient_quota"`)
+
+See [Fault tolerance](/oss/langgraph/fault-tolerance#retries) for the full default list and parameters.
+:::
+
+<Accordion title="Extended example: customizing retry policies">
+  These snippets show how to attach different retry policies. They do not create database tables or invoke the graph.
+
+  :::python
+  Pass different retry policies to a model node and a SQL node:
+
+  <LanggraphGraphApiNodesRetryCustomPy />
+  :::
+
+  :::js
+  Pass different retry policies to a model node and a SQL node. The example uses Node.js built-in `node:sqlite` (Node.js 22.5 or later):
+
+  <LanggraphGraphApiNodesRetryCustomJs />
+  :::
+</Accordion>
+
+## Set node timeouts
+
+:::python
+<Note>
+Requires `langgraph>=1.2`.
+</Note>
+
+Pass `timeout` to @[`add_node`] to cap how long a single async node attempt may run. Use a number (seconds), a `datetime.timedelta`, or a @[`TimeoutPolicy`] for separate run and idle limits:
+
+<LanggraphGraphApiNodesTimeoutPy />
+
+Node timeouts apply only to **async** nodes. Setting `timeout` on a sync node fails at compile time, because sync Python execution cannot be safely canceled in-process. For separate run and idle limits, pass a @[`TimeoutPolicy`].
+
+When a node exceeds its timeout, LangGraph raises @[`NodeTimeoutError`]. It does **not** subclass built-in `TimeoutError` (an `OSError` subclass), so the default retry policy treats it as retryable when a `retry_policy` is set. The timeout applies to each attempt independently, so the timer resets for every retry. Timed-out attempts do not commit buffered writes.
+
+See [Fault tolerance](/oss/langgraph/fault-tolerance#timeouts) for the full timeout lifecycle, idle-timeout refresh sources, and `runtime.heartbeat()`.
+:::
+
+:::js
+<Note>
+Requires `@langchain/langgraph` v1.4.0 or later.
+</Note>
+
+Pass `timeout` to @[`addNode`] to cap how long a single node attempt may run. Use a number (milliseconds) or a @[`TimeoutPolicy`] for separate run and idle limits:
+
+<LanggraphGraphApiNodesTimeoutJs />
+
+When a node exceeds its timeout, LangGraph raises @[`NodeTimeoutError`], clears writes from the failed attempt, and lets the retry policy decide whether to retry. The timeout applies to each attempt independently.
+
+See [Fault tolerance](/oss/langgraph/fault-tolerance#timeouts) for the full timeout lifecycle, idle-timeout refresh sources, and heartbeats.
+:::
+
+## Handle node errors
+
+:::python
+<Note>
+Requires `langgraph>=1.2`.
+</Note>
+
+Pass `error_handler` to @[`add_node`] to run a function after a node fails and all retries are exhausted. The handler receives the current state and a typed @[`NodeError`], and can route to a recovery branch via @[`Command`]:
+
+<LanggraphGraphApiNodesErrorHandlerPy />
+
+See [Fault tolerance](/oss/langgraph/fault-tolerance#error-handling) for a full runnable example, compensation patterns, and `Command` routing.
+:::
+
+:::js
+<Note>
+Requires `@langchain/langgraph` v1.4.0 or later.
+</Note>
+
+Pass `errorHandler` to @[`addNode`] on @[`StateGraph`] (not the base `Graph` class). The handler runs after retries are exhausted and can route with @[`Command`]:
+
+<LanggraphGraphApiNodesErrorHandlerJs />
+
+See [Fault tolerance](/oss/langgraph/fault-tolerance#error-handling) for compensation patterns and `Command` routing.
+:::
+
+## Set graph-wide node defaults
+
+:::python
+<Note>
+Requires `langgraph>=1.2`.
+</Note>
+
+Use @[`set_node_defaults`] to set `retry_policy`, `timeout`, `cache_policy`, or `error_handler` once for every node in a graph, instead of repeating them on each @[`add_node`] call. Per-node values always win, and defaults are applied at @[`StateGraph.compile`] time:
+
+<LanggraphGraphApiNodesNodeDefaultsPy />
+
+`retry_policy` and `timeout` defaults apply to every node, including error-handler nodes. `cache_policy` and `error_handler` defaults apply only to regular nodes—handlers never catch themselves, and caching a handler result is unsafe. Defaults are not inherited by subgraphs.
+
+See [Fault tolerance](/oss/langgraph/fault-tolerance#graph-defaults) for the full precedence rules and applicability table.
+:::
+
+:::js
+<Note>
+Requires `@langchain/langgraph` v1.4.0 or later.
+</Note>
+
+Use [`setNodeDefaults`](https://reference.langchain.com/javascript/langchain-langgraph/index/StateGraph#member-setNodeDefaults) to set `retryPolicy`, `timeout`, `cachePolicy`, or `errorHandler` once for every node in a graph, instead of repeating them on each `addNode` call. Per-node values always win, and defaults are applied at compile time:
+
+<LanggraphGraphApiNodesNodeDefaultsJs />
+
+`retryPolicy` and `timeout` defaults apply to every node, including error-handler nodes. `cachePolicy` and `errorHandler` defaults apply only to regular nodes. Handlers never catch themselves, and caching a handler result is unsafe. Defaults are not inherited by subgraphs.
+
+See [Fault tolerance](/oss/langgraph/fault-tolerance#graph-defaults) for the full precedence rules and applicability table.
+:::
+
+## Access execution info inside a node
+
+:::python
+Access execution identity and retry information via `runtime.execution_info`. This surfaces thread, run, and checkpoint identifiers as well as retry state, without reading from `config` directly.
+
+| Attribute | Type | Description |
+| --------- | ---- | ----------- |
+| `thread_id` | `str \| None` | Thread ID for the current execution. `None` without a checkpointer. |
+| `run_id` | `str \| None` | Run ID for the current execution. `None` when not provided in config. |
+| `checkpoint_id` | `str` | Checkpoint ID for the current execution. |
+| `checkpoint_ns` | `str` | Checkpoint namespace for the current execution. |
+| `task_id` | `str` | Task ID for the current execution. |
+| `node_attempt` | `int` | Current execution attempt number (1-indexed). `1` on the first try, `2` on the first retry, etc. |
+| `node_first_attempt_time` | `float \| None` | Unix timestamp (seconds) of when the first attempt started. Stays the same across retries. |
+
+#### Access thread and run IDs
+
+Use `execution_info` to access the thread ID, run ID, and other identity fields inside a node:
+
+<LanggraphGraphApiNodesExecutionInfoIdsPy />
+
+#### Adjust behavior based on retry state
+
+When a node has a retry policy, use `execution_info` to inspect the current attempt number and switch to a fallback after the first attempt fails:
+
+<LanggraphGraphApiNodesExecutionInfoRetryPy />
+
+`execution_info` is set once the node task is prepared. Even without a retry policy, `node_attempt` defaults to `1`, and `node_first_attempt_time` is set when the node starts executing.
+:::
+
+:::js
+Access execution identity and retry information via `config.executionInfo` on the node's second argument (`LangGraphRunnableConfig`). This surfaces thread, run, and checkpoint identifiers as well as retry state.
+
+| Attribute | Type | Description |
+| --------- | ---- | ----------- |
+| `threadId` | `string \| undefined` | Thread ID for the current execution. |
+| `runId` | `string \| undefined` | Run ID for the current execution. |
+| `checkpointId` | `string` | Checkpoint ID for the current execution. |
+| `checkpointNs` | `string` | Checkpoint namespace for the current execution. |
+| `taskId` | `string` | Task ID for the current execution. |
+| `nodeAttempt` | `number` | Current execution attempt number (1-indexed). |
+| `nodeFirstAttemptTime` | `number \| undefined` | Unix timestamp (milliseconds) of when the first attempt started. Stays the same across retries. |
+
+#### Access thread and run IDs
+
+Use `executionInfo` to access the thread ID, run ID, and other identity fields inside a node:
+
+<LanggraphGraphApiNodesExecutionInfoIdsJs />
+
+#### Adjust behavior based on retry state
+
+When a node has a retry policy, use `executionInfo` to inspect the current attempt number and switch to a fallback after the first attempt fails:
+
+<LanggraphGraphApiNodesExecutionInfoRetryJs />
+
+`executionInfo` is set once the node task is prepared. Even without a retry policy, `nodeAttempt` defaults to `1`, and `nodeFirstAttemptTime` is set when the node starts executing.
+:::
+
+## Access server info inside a node
+
+:::python
+When your graph runs on LangGraph Server, you can access server-specific metadata via `runtime.server_info`. This surfaces the assistant ID, graph ID, and authenticated user without reading config metadata or configurable keys directly.
+
+| Attribute | Type | Description |
+| --------- | ---- | ----------- |
+| `assistant_id` | `str` | The assistant ID for the current deployment. |
+| `graph_id` | `str` | The graph ID for the current deployment. |
+| `user` | `BaseUser \| None` | The authenticated user, if [custom auth](/langsmith/custom-auth) is configured. |
+
+<LanggraphGraphApiNodesServerInfoPy />
+
+`server_info` is `None` when the graph is not running on LangGraph Server (for example, during local development or testing).
+
+<Note>
+Requires `langgraph>=1.1.5`.
+</Note>
+:::
+
+:::js
+When your graph runs on LangGraph Server, you can access server-specific metadata via `config.serverInfo`.
+
+| Attribute | Type | Description |
+| --------- | ---- | ----------- |
+| `assistantId` | `string` | The assistant ID for the current deployment. |
+| `graphId` | `string` | The graph ID for the current deployment. |
+| `user` | `Record<string, unknown> \| undefined` | The authenticated user object, if [custom auth](/langsmith/custom-auth) is configured. |
+
+<LanggraphGraphApiNodesServerInfoJs />
+
+`serverInfo` is `undefined` when the graph is not running on LangGraph Server.
+
+<Note>
+Requires `@langchain/langgraph` v1.2.8 or later.
+</Note>
+:::
+
+## Access drain state inside a node
+
+:::python
+When a [graceful shutdown](/oss/langgraph/fault-tolerance#graceful-shutdown) has been requested, `runtime.drain_requested` is `True`. Read this inside a node to skip expensive work before the next superstep boundary:
+
+<LanggraphGraphApiNodesDrainPy />
+
+| Property | Type | Description |
+| -------- | ---- | ----------- |
+| `drain_requested` | `bool` | `True` if `RunControl.request_drain()` has been called for this run. |
+| `drain_reason` | `str \| None` | The reason string passed to `request_drain()`, or `None` if drain was not requested. |
+
+<Note>
+Requires `langgraph>=1.2`. See [Graceful shutdown](/oss/langgraph/fault-tolerance#graceful-shutdown) for the full `RunControl` API.
+</Note>
+:::
+
+:::js
+When a [graceful shutdown](/oss/langgraph/fault-tolerance#graceful-shutdown) has been requested, `runtime.control?.drainRequested` is `true`. Read this inside a node to skip expensive work before the next superstep boundary:
+
+<LanggraphGraphApiNodesDrainJs />
+
+| Property | Type | Description |
+| -------- | ---- | ----------- |
+| `control.drainRequested` | `boolean` | `true` if drain has been requested for this run. |
+| `control.drainReason` | `string \| undefined` | The reason string passed to `requestDrain`, if any. |
+
+<Note>
+See [Graceful shutdown](/oss/langgraph/fault-tolerance#graceful-shutdown) for the full `RunControl` API.
+</Note>
+:::
+
+## Add node caching
+
+Use node caching when a step is expensive and you want to reuse results for the same input.
+
+To enable caching:
+
+1. Pass a cache when you compile the graph (for example, `InMemoryCache`). `SqliteCache` is also available in Python.
+2. Attach a @[`CachePolicy`] on the node.
+
+@[`CachePolicy`] options:
+
+:::python
+- **`key_func`**: Function that builds a cache key from the node input. Defaults to a hash of the input (via pickle).
+- **`ttl`**: Time to live in seconds. When omitted, the cache entry does not expire.
+:::
+
+:::js
+- **`keyFunc`**: Function that builds a cache key from the node input.
+- **`ttl`**: Time to live in seconds. When omitted, the cache entry does not expire.
+:::
+
+:::python
+<LanggraphGraphApiNodesCachePy />
+
+The first run takes about two seconds because of the mocked work. The second run returns from the cache.
+
+You can also set `cache_policy` (and other node options) once for the graph with @[`set_node_defaults`]. See [Set graph-wide node defaults](#set-graph-wide-node-defaults).
+:::
+
+:::js
+<LanggraphGraphApiNodesCacheJs />
+
+You can also set `cachePolicy` (and other node options) once for the graph with `setNodeDefaults`. See [Set graph-wide node defaults](#set-graph-wide-node-defaults).
+:::
+
+## See also
+
+- [Graph API](/oss/langgraph/graph-api#nodes)
+- [Control flow](/oss/langgraph/graph-api-control-flow)
+- [Fault tolerance](/oss/langgraph/fault-tolerance)
+- [Define and update state](/oss/langgraph/graph-api-state)
+
