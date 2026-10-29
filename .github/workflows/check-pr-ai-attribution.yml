@@ -1,0 +1,37 @@
+---
+# Squash merges use the PR description as the commit message on main, so a
+# Claude Code badge or co-author trailer in the description lands in history.
+# The main-branch ruleset blocks the trailer only at merge time; this check
+# flags both on the PR. See "Pull requests" in AGENTS.md.
+name: Check PR AI Attribution
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions: {}
+
+jobs:
+  check-ai-attribution:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Check PR description for badges and co-author trailers
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          failed=0
+          if printf '%s' "$PR_BODY" | grep -qF 'Generated with [Claude Code]'; then
+            echo "::error::Remove the 'Generated with [Claude Code]' badge from the PR description."
+            failed=1
+          fi
+          if printf '%s' "$PR_BODY" | grep -qE 'Co-[Aa]uthored-[Bb]y:.*<noreply@anthropic\.com>'; then
+            echo "::error::Remove the Claude 'Co-Authored-By' trailer from the PR description."
+            failed=1
+          fi
+          if [ "$failed" -eq 1 ]; then
+            echo "Disclose AI involvement as one plain sentence instead, for example: Prepared with Claude Code."
+            exit 1
+          fi
+          echo "No AI attribution badges or trailers found."
