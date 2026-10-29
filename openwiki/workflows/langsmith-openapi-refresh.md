@@ -10,8 +10,6 @@ sources:
     resource: repo://AGENTS.md
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
-  - id: openwiki-source-23775c3de52f3ab95a13cb8b
-    resource: repo://README.md
   - id: openwiki-source-49f717adb7cc59501f5c17ac
     resource: repo://scripts/filter_mint_broken_links.py
   - id: openwiki-source-697851c98229599f97376bfb
@@ -20,10 +18,10 @@ sources:
     resource: repo://src/docs.json
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-23T08:20:30.474Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-29T08:15:48.231Z" }
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-23T08:20:30.474Z
+    at: 2026-10-29T08:15:48.231Z
 ---
 
 # LangSmith OpenAPI Refresh
@@ -117,7 +115,7 @@ There is no repository command that proves Mintlify rendered every LangSmith RES
 
 ### Focused test boundary
 
-The focused unit coverage in this area is the link-report filter test. Its OpenAPI fixture covers the Agent Server route prefix, while the implementation independently excludes the LangSmith REST `smith-api` prefix. The test preserves the exemption for that deployment-generated OpenAPI-route report and retains an ordinary broken-link failure; it does not render endpoints or test the platform processor, remote fetch, GitHub branch/PR operations, or deployment-generated REST routes.
+The focused unit coverage in this area is the link-report filter test. Its only OpenAPI-route fixture covers the Agent Server prefix, while the implementation independently excludes the LangSmith REST `smith-api` prefix. The test asserts that the Agent Server report is removed and an ordinary broken-link report remains. It does not directly exercise the `smith-api` exclusion, render endpoints, or test the platform processor, remote fetch, GitHub branch/PR operations, or deployment-generated REST routes.
 
 Run it with:
 

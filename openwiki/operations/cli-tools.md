@@ -1,6 +1,6 @@
 ---
 type: operations reference
-title: Local Tooling and Commands
+title: Developer Commands and CLI Tools
 description: Install and operate the local documentation pipeline, Make targets, Mintlify checks, Vale prose linting, executable samples, and agent-skill links. Select the command layer and validation boundary that match the change.
 tags: [cli, make, documentation, code-samples, operations]
 sources:
@@ -62,13 +62,13 @@ sources:
     resource: repo://src/code-samples/package.json
   - id: openwiki-source-1eb6a61d042052ba1402c2eb
     resource: repo://uv.lock
+generated: { by: "openwiki/0.4.3", at: "2026-10-29T08:15:48.231Z" }
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-27T08:21:38.674Z
-generated: { by: "openwiki/0.4.3", at: "2026-10-27T08:21:38.674Z" }
+    at: 2026-10-29T08:15:48.231Z
 ---
 
-# Local Tooling and Commands
+# Developer Commands and CLI Tools
 
 Author documentation in `src/`, not `build/`. The build directory is disposable Mintlify input: a full build deletes and recreates it. Run commands from the repository root unless a target changes directory. For Mintlify validation, prefer the supported Make targets; they rebuild and invoke Mint from `build/`. Do **not** invoke raw Mint validation from the repository root: Mint can parse unrelated checkout files, including virtual-environment content, rather than the generated site.
 
