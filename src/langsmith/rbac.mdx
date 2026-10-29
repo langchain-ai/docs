@@ -27,9 +27,7 @@ To learn how to set up RBAC and assign roles to users, refer to the [User Manage
 <PermissionReference/>
 </Note>
 
-## Role types
-
-### Organization roles
+## Organization roles
 
 Organization roles control what a user can do across the organization, such as managing billing, members, and workspaces. They are separate from [workspace roles](#workspace-roles), which control access to resources inside a workspace. Organization roles are system-defined and cannot be modified or extended.
 
@@ -45,7 +43,7 @@ Organization roles control what a user can do across the organization, such as m
 In Developer organizations (single workspace), all users are assigned the [Organization Admin](#organization-admin) role by default.
 </Note>
 
-#### Organization admin
+### Organization admin
 
 **Description**: Full permissions to manage all organization configuration, users, billing, and workspaces.
 
@@ -73,7 +71,7 @@ In Developer organizations (single workspace), all users are assigned the [Organ
 
 For details on setting up and managing your organization, refer to the [Administration Overview](/langsmith/administration-overview#organizations).
 
-#### Organization Operator
+### Organization Operator
 
 Management access for day-to-day operations including workspace and user management, but cannot manage Organization Admins or create organization-wide service keys.
 
@@ -106,7 +104,7 @@ Management access for day-to-day operations including workspace and user managem
 - Cannot configure [SSO or authentication methods](/langsmith/user-management#set-up-saml-sso-for-your-organization)
 - Cannot create or manage [custom roles](#custom-roles)
 
-#### Organization User
+### Organization User
 
 **Description**: Read access to organization information and ability to create personal access tokens.
 
@@ -131,7 +129,7 @@ Management access for day-to-day operations including workspace and user managem
 
 You can add an Organization User to a subset of workspaces and assigned workspace roles (if RBAC is enabled), which specify permissions at the workspace level.
 
-#### Organization viewer
+### Organization viewer
 
 **Description**: Read-only access to organization information.
 
@@ -149,13 +147,13 @@ You can add an Organization User to a subset of workspaces and assigned workspac
 - Cannot create personal access tokens
 - Cannot manage billing, workspaces, or members
 
-#### Organization restricted
+### Organization restricted
 
 Organization Restricted limits workspace-scoped [service keys](/langsmith/administration-overview#service-keys) to workspace access without organization-wide read access. When creating or editing a service key scoped to **Specific Workspaces**, choose Organization Viewer (the default) or Organization Restricted. This choice does not change who can create or edit service keys.
 
 The role includes `organization:read-metadata`, but not `organization:read`. Keys with this role cannot list organization members or service keys. Organization role metadata remains visible. Access to members within an assigned workspace depends on the key's workspace role.
 
-### Workspace roles
+## Workspace roles
 
 Workspace roles are part of the **Enterprise RBAC feature** and control what users can do with resources inside a workspace:
 
@@ -169,7 +167,7 @@ Workspace roles are part of the **Enterprise RBAC feature** and control what use
 RBAC (Role-Based Access Control) is a feature that is only available to [Enterprise](https://langchain.com/pricing) customers. If you are interested in this feature, [contact our sales team](https://www.langchain.com/contact-sales). Other plans default to using the Admin role for all users.
 </Note>
 
-#### Workspace admin
+### Workspace admin
 
 **Description**: Role with full permissions for all resources and ability to manage workspace.
 
@@ -179,7 +177,7 @@ RBAC (Role-Based Access Control) is a feature that is only available to [Enterpr
 
 <PermissionReference/>
 
-#### Workspace editor
+### Workspace editor
 
 **Description**: Role with full permissions for most resources. Cannot manage workspace settings or delete certain critical resources.
 
@@ -188,7 +186,7 @@ RBAC (Role-Based Access Control) is a feature that is only available to [Enterpr
 - Cannot manage workspace settings (change workspace name, etc.)
 - Cannot manage workspace members (add, remove, or update member roles)
 
-#### Workspace viewer
+### Workspace viewer
 
 **Description**: Read-only access to all workspace resources.
 
@@ -204,9 +202,9 @@ For step-by-step instructions on assigning workspace roles to users, refer to th
 
 <Info>Creating custom roles is only available for organizations on the Enterprise plan.</Info>
 
-[Organization Admins](#organization-admin) can create custom roles with specific combinations of permissions tailored to their organization's needs.
+Custom roles are workspace roles that you define. [Organization Admins](#organization-admin) can create custom roles with specific combinations of workspace-level permissions, then assign them alongside the built-in [workspace roles](#workspace-roles).
 
-### Creating custom roles
+### Create a custom role
 
 Custom roles are created at the [organization](/langsmith/administration-overview#organizations) level and can be assigned to users in any [workspace](/langsmith/administration-overview#workspaces) within that organization.
 
@@ -230,7 +228,19 @@ Note the following details on custom roles:
 - Custom roles cannot have organization-level permissions.
 - Users can have different roles (including custom roles) in different workspaces.
 
-### Restrict roles
+### Understand permission behavior
+
+Some permissions offer granular control when used in custom roles:
+
+- `workspaces:manage` does **not** include the ability to manage workspace members. To allow a custom role to add, remove, or update workspace members, you must explicitly grant `workspaces:manage-members`. The built-in Workspace Admin role includes both permissions automatically.
+- `workspaces:manage-model-configs` controls the ability to create, edit, or delete [model configurations](/langsmith/model-configurations) (including attaching [OAuth client credentials](/langsmith/model-configurations#oauth-client-credentials)) and to change which LangSmith features each model is available in. It is separate from `workspaces:manage`—grant it explicitly on custom roles that should be able to configure models. The built-in Workspace Admin role includes it automatically.
+- `workspaces:manage-keys` controls the ability to create and delete workspace API keys (service keys scoped to a workspace). It is separate from `workspaces:manage`—grant it explicitly on custom roles that should be able to manage API keys without full workspace management. To prevent privilege escalation, a key created by a user who does not have `workspaces:manage` cannot be granted more permissions than that user holds, and cannot be assigned a role the organization has marked restricted. The built-in Workspace Admin role includes it automatically.
+- `bulk-exports:read` and `bulk-exports:manage` cover the bulk export endpoints (listing, creating, cancelling exports, and managing destinations). Use them in a custom role to grant least-privilege bulk export access without `workspaces:manage`. The built-in Workspace Admin role includes `bulk-exports:manage` and all read-capable roles include `bulk-exports:read` automatically.
+- `projects:increase-trace-tier` and `projects:decrease-trace-tier` are independent and can be granted separately. For example, you can allow a role to decrease retention without allowing it to increase retention. If a user lacks both permissions, the retention settings UI is hidden entirely. If they have only one, the UI is partially enabled (the disallowed direction is disabled).
+- `runs:read-inputs` and `runs:read-outputs` control whether a role can see run inputs and outputs, and are separate from `runs:read`. A role with `runs:read` but without one of these permissions can still list and open runs, but responses leave out the denied field and its preview. Message and trajectory views require both permissions. To hide inputs or outputs only in specific projects, use an [access policy](/langsmith/abac#control-access-to-run-inputs-and-outputs).
+- `projects:update` covers only metadata updates (name, description, tags) and does **not** grant the ability to change trace retention. To allow a custom role to modify trace tier, you must explicitly grant `projects:increase-trace-tier`, `projects:decrease-trace-tier`, or both.
+
+## Restrict roles
 
 <Info>Role restriction is available for organizations on the [Enterprise](/langsmith/pricing-plans) plan.</Info>
 
@@ -253,15 +263,3 @@ To unrestrict a role, follow the same steps and clear the **Restricted** checkbo
 <Note>
 Role restriction applies to both system roles (Workspace Admin, Workspace Editor, Workspace Viewer) and custom roles. It is available on LangSmith [Cloud](/langsmith/cloud) and [Self-hosted](/langsmith/self-hosted).
 </Note>
-
-### Understand permission behavior
-
-Some permissions offer granular control when used in custom roles:
-
-- `workspaces:manage` does **not** include the ability to manage workspace members. To allow a custom role to add, remove, or update workspace members, you must explicitly grant `workspaces:manage-members`. The built-in Workspace Admin role includes both permissions automatically.
-- `workspaces:manage-model-configs` controls the ability to create, edit, or delete [model configurations](/langsmith/model-configurations) (including attaching [OAuth client credentials](/langsmith/model-configurations#oauth-client-credentials)) and to change which LangSmith features each model is available in. It is separate from `workspaces:manage`—grant it explicitly on custom roles that should be able to configure models. The built-in Workspace Admin role includes it automatically.
-- `workspaces:manage-keys` controls the ability to create and delete workspace API keys (service keys scoped to a workspace). It is separate from `workspaces:manage`—grant it explicitly on custom roles that should be able to manage API keys without full workspace management. To prevent privilege escalation, a key created by a user who does not have `workspaces:manage` cannot be granted more permissions than that user holds, and cannot be assigned a role the organization has marked restricted. The built-in Workspace Admin role includes it automatically.
-- `bulk-exports:read` and `bulk-exports:manage` cover the bulk export endpoints (listing, creating, cancelling exports, and managing destinations). Use them in a custom role to grant least-privilege bulk export access without `workspaces:manage`. The built-in Workspace Admin role includes `bulk-exports:manage` and all read-capable roles include `bulk-exports:read` automatically.
-- `projects:increase-trace-tier` and `projects:decrease-trace-tier` are independent and can be granted separately. For example, you can allow a role to decrease retention without allowing it to increase retention. If a user lacks both permissions, the retention settings UI is hidden entirely. If they have only one, the UI is partially enabled (the disallowed direction is disabled).
-- `runs:read-inputs` and `runs:read-outputs` control whether a role can see run inputs and outputs, and are separate from `runs:read`. A role with `runs:read` but without one of these permissions can still list and open runs, but responses leave out the denied field and its preview. Message and trajectory views require both permissions. To hide inputs or outputs only in specific projects, use an [access policy](/langsmith/abac#control-access-to-run-inputs-and-outputs).
-- `projects:update` covers only metadata updates (name, description, tags) and does **not** grant the ability to change trace retention. To allow a custom role to modify trace tier, you must explicitly grant `projects:increase-trace-tier`, `projects:decrease-trace-tier`, or both.
