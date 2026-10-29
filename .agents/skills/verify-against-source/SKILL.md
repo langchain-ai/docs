@@ -45,19 +45,24 @@ is weaker than the one above it.
 | LangGraph | [langchain-ai/langgraph](https://github.com/langchain-ai/langgraph) | `libs/langgraph/`, `libs/prebuilt/`, `libs/checkpoint*/`, `libs/cli/`, `libs/sdk-py/` and `libs/sdk-js/` |
 | Deep Agents | [langchain-ai/deepagents](https://github.com/langchain-ai/deepagents) | Also the source of the eval matrix the docs publish |
 | LangSmith SDK | [langchain-ai/langsmith-python](https://github.com/langchain-ai/langsmith-python) and [langchain-ai/langsmith-javascript](https://github.com/langchain-ai/langsmith-javascript) | The Python and JavaScript client libraries |
-| LangSmith platform | langchain-ai/langchainplus (private) | `smith-backend/` (Python API), `smith-go/` (Go services), `smith-frontend/` (UI labels and flows), `host-backend/`, `lc_config/` for settings and their defaults |
-| Agent Server | langchain-ai/langgraph-api (private) | Not in the OSS langgraph repo. Also the source of the Agent Server OpenAPI spec PRs |
+| LangSmith platform and Agent Server | langchain-ai/langchainplus (private) | `smith-backend/` (Python API), `smith-go/` (Go services), `smith-frontend/` (UI labels and flows), `host-backend/`, `lc_config/` for settings and their defaults. `langgraph-api/` for the Agent Server (not in the OSS langgraph repo), which is also the source of the Agent Server OpenAPI spec PRs |
 | Helm charts | [langchain-ai/helm](https://github.com/langchain-ai/helm) | `charts/langsmith/values.yaml` for defaults, `templates/_helpers.tpl` for the value-to-environment-variable mapping |
 | OpenEvals | [langchain-ai/openevals](https://github.com/langchain-ai/openevals) | Prebuilt evaluators |
 
-Two traps worth naming:
+Three traps worth naming:
 
 - **A private repo is still readable through `gh`.** `gh api` works on
-  langchainplus and langgraph-api with the usual credentials. GitHub code search
-  is unreliable on the larger ones, so fall back to the git trees API and fetch
-  a path directly.
-- **langchain-ai/deployments is archived.** Its GitOps content moved into
-  langchainplus. A skill, script, or note that still points at it is stale.
+  langchainplus with the usual credentials. GitHub code search is unreliable on
+  a repo that size, so fall back to the git trees API and fetch a path directly.
+- **langchain-ai/deployments and langchain-ai/langgraph-api are archived.**
+  Their content moved into langchainplus. A skill, script, or note that still
+  points at either one is stale.
+- **An Agent Server change can ship in two release lines.** Releases are tagged
+  `langgraph-api==<version>`. `main` carries the next minor version, and a fix
+  cherry-picked onto the `langgraph-api/rc` branch ships one version earlier.
+  To confirm a release includes a change, compare the PR's merge commit with
+  the tag: `gh api "repos/langchain-ai/langchainplus/compare/<sha>...langgraph-api%3D%3D<version>" --jq .status`
+  returns `ahead` or `identical` when the tag contains it.
 
 A self-hosted LangSmith claim usually spans two repositories: the chart sets a
 value, and the backend decides what to do with it. Check both before describing
