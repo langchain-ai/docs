@@ -463,6 +463,45 @@ Sandboxes burst to twice their requested CPU when the host has spare capacity. R
 Free-form `labels` (up to 128 per sandbox, 256 bytes per key and 4096 bytes per value) can be set through the REST API on create. Sandboxes inherit their snapshot's labels unless overridden. The `langsmith.sandbox` clients do not expose this field yet.
 </Note>
 
+## Create a non-persistent sandbox
+
+A non-persistent sandbox keeps filesystem writes only while it runs. Use it for disposable code execution or evaluations that do not need files after a stop. Non-persistent sandboxes incur no storage charges; compute usage still applies.
+
+Persistence is enabled by default. Set `persistent=False` when creating a sandbox to opt out. This setting applies to the new sandbox, not existing sandboxes.
+
+<Note>
+The Python sandbox client requires `langsmith>=0.14.15` for the `persistent` argument.
+</Note>
+
+To create a non-persistent sandbox:
+
+1. Upgrade the Python SDK:
+
+   ```bash
+   pip install --upgrade 'langsmith>=0.14.15'
+   ```
+
+2. Set `LANGSMITH_API_KEY` and `LANGSMITH_ENDPOINT` as described in [Create and run a sandbox](#create-and-run-a-sandbox).
+3. Pass `persistent=False` at creation. Files remain available between commands while the sandbox runs:
+
+   ```python
+   from langsmith.sandbox import SandboxClient
+
+   client = SandboxClient()
+   with client.sandbox(persistent=False) as sandbox:
+       sandbox.run("echo hello > /tmp/example.txt")
+       result = sandbox.run("cat /tmp/example.txt")
+       print(result.stdout)
+   ```
+
+   The context manager deletes the sandbox when the block exits. For manual cleanup, use `client.create_sandbox(persistent=False)` and call `sandbox.delete()` when finished.
+
+<Warning>
+Both an idle timeout and an explicit stop discard filesystem writes. The next start boots fresh from the snapshot. Save outputs outside the sandbox before it stops. Setting `delete_after_stop_seconds` does not preserve these writes.
+</Warning>
+
+Non-persistent sandboxes cannot preserve memory on stop or capture their filesystem as a snapshot. Some snapshots captured from other sandboxes cannot boot a non-persistent sandbox. Use the default snapshot or a compatible [custom snapshot](/langsmith/sandbox-snapshots). Disk capacity is limited to 16 GiB per vCPU.
+
 ## Sandbox lifetime and retention
 
 Sandboxes are governed by a two-stage retention model anchored to **idle
