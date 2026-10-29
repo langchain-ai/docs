@@ -245,7 +245,7 @@ print("✓ langgraph-graph-api-send-command-command-parent-graph-py")
 # :remove-end:
 
 # :remove-start:
-from langchain_core.messages import AIMessage
+from langchain.messages import AIMessage
 
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
