@@ -50,6 +50,7 @@ once to link the tree, and again in each new git worktree.
 | `docs-restructure` | Splitting a page that grew too long, moving sections between pages, retiring a page, or a topic documented in two places: the duplication map, choosing one owner, cutting rather than relocating. |
 | `docs-team-voice` | Drafting or revising prose in the house voice: sentence length, cross-link density, stating defaults, the revision pass. |
 | `docs-review` | Reviewing changed prose against Vale and the style guide, reporting the rule each finding breaks. `add-docs-page` invokes it before committing. |
+| `open-docs-pr` | Opening a PR for finished changes: branching from the latest `origin/main`, the lint and link gates, the commit, the short PR description with its AI disclosure line, pushing, and watching checks. |
 | `docs-tooling-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, and how to edit safely. Required whenever a PR adds or changes a script, workflow, or check. |
 | `docs-code-samples` | Moving inline MDX code blocks into external, testable sample files. |
 | `verify-against-source` | Checking that a code sample, signature, default, or behavior claim is true: which repository owns each product, how to reach the private ones, and naming what stayed unverified. |
@@ -645,7 +646,8 @@ When extracting data from PRs or changelogs, use the "Release Note:" section in 
 
 - Explain the "why" of changes
 - Highlight areas needing careful review
-- Disclose AI agent involvement in description
+- Disclose AI agent involvement as one plain sentence in the description, for example "Prepared with Claude Code."
+- Do not add a `🤖 Generated with [Claude Code]` badge or similar to PR descriptions or commit messages, and do not add a `Co-Authored-By` trailer for an AI agent to commits. This aligns with the `langster-safety` skill. The `check-pr-ai-attribution` workflow fails a PR whose description contains either one, and a ruleset on `main` blocks the Claude trailer.
 
 <!-- OPENWIKI:START -->
 

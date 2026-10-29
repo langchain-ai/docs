@@ -1,8 +1,11 @@
 ---
 type: documentation route model
-title: Documentation Route and Language Versioning
-description: Explains how source ownership, conditional rendering, and link rewriting produce Python, JavaScript, and unversioned documentation routes. Covers navigation, language selection, and redirects as separate compatibility contracts.
+title: Documentation Routes and Language Versioning
+description: Explains how source families and docs.json navigation determine generated documentation routes, language variants, conditional content, and compatibility redirects. Covers unversioned product exceptions and safe verification of route changes.
 tags: [documentation-pipeline, routes, language-versioning, redirects]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-29T08:15:48.231Z
 sources:
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
@@ -20,139 +23,118 @@ sources:
     resource: repo://src/oss/deepagents/async-subagents.mdx
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-27T08:21:38.674Z" }
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-27T08:21:38.674Z
+generated: { by: "openwiki/0.4.3", at: "2026-10-29T08:15:48.231Z" }
 ---
 
-# Documentation Route and Language Versioning
+# Documentation Routes and Language Versioning
 
-`DocumentationBuilder` derives an emitted route from a source's ownership below `src/`. `src/docs.json` is copied as a shared file and independently supplies navigation and compatibility redirects. It does not decide which source family emits a route. Keep these four contracts separate:
+`DocumentationBuilder` turns `src/` into the disposable `build/` tree. A page's source family establishes its route family, while `src/docs.json` has two distinct responsibilities: it supplies reader navigation and redirects, and it selects the emitted language set for **shared OSS Markdown**. It is copied to the build as a shared file; it does not itself emit a page.
 
-1. **Source location** decides the builder's route family and rendering target.
-2. **Emitted artifact** is the generated file beneath disposable `build/`.
-3. **Navigation membership** is the reader-facing projection in `docs.json`.
-4. **Redirect** preserves an old public URL; it neither emits a page nor grants source ownership.
+Keep these contracts separate:
 
-**Do not infer ownership from a menu label.** The Build menus project sources from both `src/oss/` and `src/langsmith/`: Managed Deep Agents is authored in `src/langsmith/`, OpenWiki in `src/oss/openwiki/`, and ordinary agent-workspace guides such as `src/langsmith/agents.mdx` remain ordinary unversioned LangSmith pages. Determine ownership first, then configure the intended menu placement and retired URLs separately.
+1. **Source family** determines the route shape and preprocessing target.
+2. **Navigation** determines where a reader sees a route and, for shared OSS Markdown, can suppress an unwanted language copy.
+3. **Redirects** retain retired URLs; they neither create artifacts nor grant source ownership.
+4. **The language switcher** is client-side navigation between recognized paired routes; it does not validate or generate routes.
 
-## Route families
+This distinction matters because Build menus combine OSS and LangSmith content. For example, Managed Deep Agents is authored in `src/langsmith/`, OpenWiki in `src/oss/openwiki/`, and both appear in Build navigation.
 
-| Authored source family | Clean full-build output | Rendering target |
-| --- | --- | --- |
-| Shared `src/oss/` content, including Deep Agents outside `code/` | `/oss/python/...` and `/oss/javascript/...` | `python` and `js` |
-| `src/oss/python/...` | Only `/oss/python/...`, with `python/` removed from the remainder | `python` |
-| `src/oss/javascript/...` | Only `/oss/javascript/...`, with `javascript/` removed from the remainder | `js` |
-| `src/oss/deepagents/code/...` | `/oss/deepagents/code/...` | `python` fallback |
-| `src/oss/openwiki/...` | `/oss/openwiki/...` | `python` fallback |
-| Ordinary `src/langsmith/...` | `/langsmith/...` | `python` fallback |
-| Direct `src/langsmith/managed-deep-agents*.mdx` | `/langsmith/python/...` and `/langsmith/javascript/...` | `python` and `js` |
+## Choose the source family first
 
 ```mermaid
 flowchart TD
-    Source["Source below src"] --> Family{"Classify source family"}
-    Family --> Shared["Shared OSS"]
-    Shared --> PyOss["OSS Python artifact"]
-    Shared --> JsOss["OSS JavaScript artifact"]
-    Family --> Owned["Language-owned OSS"]
-    Owned --> OneOss["Matching OSS artifact"]
+    Source["Authored source under src"] --> Family{"Which source family"}
+    Family --> Shared["Shared OSS Markdown"]
+    Shared --> Nav{"Listed in exactly one OSS language navigation"}
+    Nav -->|"Yes"| OneShared["Emit that one OSS language route"]
+    Nav -->|"No"| BothShared["Emit Python and JavaScript OSS routes"]
+    Family --> Owned["oss/python or oss/javascript"]
+    Owned --> OwnedRoute["Emit matching OSS route without ownership segment"]
     Family --> Product["OpenWiki or Deep Agents Code"]
-    Product --> PlainProduct["Unprefixed OSS artifact"]
-    Family --> LangSmith["Ordinary LangSmith"]
-    LangSmith --> PlainLangSmith["Unprefixed LangSmith artifact"]
-    Family --> Managed["Managed Deep Agents"]
-    Managed --> PyManaged["LangSmith Python artifact"]
-    Managed --> JsManaged["LangSmith JavaScript artifact"]
-    PyOss --> Config["docs.json navigation and redirects"]
-    JsOss --> Config
-    OneOss --> Config
-    PlainProduct --> Config
-    PlainLangSmith --> Config
-    PyManaged --> Config
-    JsManaged --> Config
+    Product --> PlainProduct["Emit one unprefixed OSS product route"]
+    Family --> Ordinary["Ordinary LangSmith"]
+    Ordinary --> PlainLangSmith["Emit one unprefixed LangSmith route"]
+    Family --> Managed["Direct Managed Deep Agents MDX"]
+    Managed --> ManagedRoutes["Emit Python and JavaScript LangSmith routes"]
 ```
 
-This shows the controlling direction: source family produces artifacts; `docs.json` projects known routes into navigation and preserves retired URLs. It is not an input to route classification.
+This diagram shows the clean full-build decision. `docs.json` is an input only at the shared-OSS navigation decision; elsewhere it projects routes into menus and defines redirects.
 
-`build_all()` removes and recreates `build/`, emits ordinary OSS variants, then unversioned Deep Agents Code and OpenWiki, ordinary LangSmith, Managed Deep Agents variants, shared files, and npm snippets. Use this clean full build as the route-shape authority: it prevents stale artifacts after a page moves between families. Source collection skips symlinks and files resolving outside its requested root, preventing a source-tree link from putting host content in build artifacts.
+| Authored source family | Full-build output | Rendering target |
+| --- | --- | --- |
+| Shared `src/oss/` Markdown, excluding special and owned trees | One or both of `/oss/python/...` and `/oss/javascript/...` | `python` and/or `js` |
+| `src/oss/python/...` | `/oss/python/...`, removing `python/` from the source remainder | `python` |
+| `src/oss/javascript/...` | `/oss/javascript/...`, removing `javascript/` from the source remainder | `js` |
+| `src/oss/deepagents/code/...` | `/oss/deepagents/code/...` | `python` |
+| `src/oss/openwiki/...` | `/oss/openwiki/...` | `python` |
+| Ordinary `src/langsmith/...` | `/langsmith/...` | `python` |
+| Direct `src/langsmith/managed-deep-agents*.mdx` | `/langsmith/python/...` and `/langsmith/javascript/...` | `python` and `js` |
 
-Do not use `build_file()` as the route-shape check for language-owned OSS content. Its ordinary OSS branch writes both language output paths from the path below `oss/`, retaining a `python` or `javascript` path component. The full-build loop instead skips the nonmatching ownership tree and removes that component. Validate published language-owned routes with a clean full build.
+### Shared OSS navigation selection
+
+For a shared `.md` or `.mdx` page, the builder recursively collects `/oss/python/...` and `/oss/javascript/...` routes from `docs.json` navigation and caches the result until the file changes. If the page is listed in exactly one language, it emits only that variant. If it is listed in both languages—or in neither—it emits both. Non-Markdown shared OSS files always emit for both languages.
+
+A directory navigation entry can stand for `dir/index`, but it does not select a shared index for a language when a language-owned `src/oss/<language>/dir.mdx` or `.md` owns that route. This prevents a shared landing page from colliding with a language-specific page. If `docs.json` is unreadable, the builder intentionally falls back to both variants rather than risk producing an empty or incorrect one-language output.
+
+Language-owned directories remain ownership boundaries, not menu controls. Their files are emitted only to their matching tree regardless of navigation, with the ownership directory removed. Unlike earlier behavior, `build_file()` uses the same navigation-derived selection as `build_all()` for shared OSS pages, so a targeted development rebuild is suitable for checking that rule.
+
+`build_all()` first recreates `build/`, then emits ordinary OSS variants, the two unversioned OSS products, ordinary LangSmith content, Managed Deep Agents variants, shared files, and npm snippets. Treat a clean full build as the final route-shape check, especially after moving a source between families. Source collection rejects symlinks and files resolving outside the requested root, so source-tree links cannot place host files in build artifacts.
 
 ## Conditional content and transformations
 
-Shared OSS normally renders once for each target. Use `:::python` and `:::js` for an SDK-specific unit of prose, imports, or examples. For example, `src/oss/deepagents/async-subagents.mdx` is projected under Delegation in both Deep Agents tabs while its Python-only implementation details are fenced; a shared source is not evidence that both rendered variants contain identical prose. Put an entire page in `src/oss/python/` or `src/oss/javascript/` only when it belongs to one language; those directories are ownership boundaries, not menu controls.
+Shared pages can contain `:::python` and `:::js` blocks. For the selected target, a closed matching block contributes its content without its fences; a closed nonmatching supported block is removed. Escaped `\:::` becomes literal `:::`, while unsupported labels and unclosed blocks stay intact. An unknown target language raises `ValueError`.
 
-Conditional rendering recognizes only `:::python` and `:::js`. A matching closed block contributes its contents without fences; a closed supported block for the other language is removed. Escaped `\:::` markers become literal `:::`. Unsupported labels and unclosed blocks remain intact, and an invalid target raises `ValueError`.
+The conditional implementation is a whole-document regular-expression transform, not a Markdown-code-fence-aware parser. Do not nest conditional blocks, and escape a marker that must be displayed literally. The shared `src/oss/deepagents/async-subagents.mdx` illustrates why this matters: it is listed under Delegation in both Deep Agents navigation projections, but its output may differ by conditional branch.
 
-The renderer is a whole-document regular-expression transform, not a Markdown code-fence-aware parser. Do not nest conditional blocks or expect an ordinary code fence to protect literal conditional syntax; escape markers that must be displayed. Standard preprocessing resolves autolinks, adds LangSmith CTA parameters, and then selects conditional content.
+For Markdown and MDX, the processing order is:
 
-For a target-language Markdown or MDX artifact, the builder preprocesses, scopes eligible MDX snippet imports, rewrites OSS links, and finally rewrites Managed Deep Agents links. The internal key `js` maps to the `javascript` route segment, and a `.md` input is written as `.mdx`.
+1. Resolve `@[]` autolinks with the target as the default scope.
+2. Add UTM parameters to LangSmith CTA links.
+3. Apply conditional rendering.
+4. For a language target, point eligible snippet imports at its language-scoped copy.
+5. Rewrite eligible OSS links, then Managed Deep Agents links.
 
-```mermaid
-flowchart LR
-    Input["Markdown or MDX source"] --> Preprocess["Autolinks CTA conditional selection"]
-    Preprocess --> Target{"Language target"}
-    Target -->|"Present"| Imports["Scope snippet imports"]
-    Target -->|"Absent"| Write["Write artifact"]
-    Imports --> OssLinks["Rewrite OSS links"]
-    OssLinks --> ManagedLinks["Rewrite Managed Deep Agents links"]
-    ManagedLinks --> Write
-```
+The internal `js` target maps to the `javascript` URL segment. A `.md` source writes an `.mdx` artifact.
 
-This is the ordered transformation path for a language-targeted artifact.
+### Links and snippets
 
-An eligible bare `/oss/...` Markdown destination or quoted `href` gains `/oss/python/` or `/oss/javascript/`. The rewrite preserves images, already-prefixed routes, and the unversioned `/oss/deepagents/code` and `/oss/openwiki` families. Thus an unversioned page rendered with the Python target defaults links to ordinary OSS Python documentation but continues to link to unversioned products without a prefix. Bare Managed Deep Agents links are likewise rewritten to the current language; an already prefixed link remains pinned to its specified variant.
+An eligible absolute `/oss/...` Markdown destination or quoted `href` gains `/oss/python/` or `/oss/javascript/`. Image paths, already-prefixed routes, and the unversioned `/oss/deepagents/code` and `/oss/openwiki` families are preserved. Consequently, an unversioned product or ordinary LangSmith page rendered with the Python target links to ordinary OSS Python content by default without incorrectly prefixing links back into either unversioned product.
 
-The builder scopes an eligible import such as `from '/snippets/component.mdx'` to `/snippets/python/component.mdx` or `/snippets/javascript/component.mdx`, leaving a scoped import unchanged. Shared Markdown snippets are emitted as Python and JavaScript copies with target-specific preprocessing and absolute rewritten links. Their original paths are Python-targeted defaults for unversioned importers, avoiding depth-dependent relative links.
+Bare Managed Deep Agents links are similarly rewritten to the current target; an already prefixed link stays pinned to its stated language. This lets a Managed Deep Agents page link to its companion variant and to matching OSS content without authoring target prefixes repeatedly.
 
-## Reader-facing projections
+Shared Markdown snippets are special because consumers can be nested at arbitrary URL depths. The builder writes Python and JavaScript copies below `build/snippets/python/` and `build/snippets/javascript/`, with conditional rendering and absolute rewritten links for each target. Language-targeted pages rewrite eligible `from '/snippets/...mdx'` imports to those copies; already scoped imports remain unchanged. The original snippet path is also written with Python-targeted links as the default for unversioned importers.
 
-### Language selector behavior
+## Unversioned products and ordinary LangSmith
 
-The language-toggle script recognizes only paired `/oss/python/` ↔ `/oss/javascript/` and `/langsmith/python/` ↔ `/langsmith/javascript/` prefixes. When a reader chooses Python or TypeScript, it records the source path and hash in `sessionStorage`, attempts an immediate equivalent-route navigation, and consumes a fresh pending switch after client-side or full-page navigation. A shared landing page or another unprefixed route has no computed counterpart, so the script leaves Mintlify's selected landing-page navigation in place.
+Deep Agents Code and OpenWiki are explicit OSS exceptions. They emit exactly once at `/oss/deepagents/code/...` and `/oss/openwiki/...`; their Python target selects Python conditional content but does not create a Python route. OSS link rewriting preserves both product families while prefixing ordinary OSS links. `docs.json` lists the same unprefixed OpenWiki pages in both Build dropdowns, and `language-toggle.js` hides the language dropdown at `/oss/openwiki` and its descendants.
 
-This selector is navigation behavior, not a route generator or a redirect system. It cannot prove that a counterpart artifact exists; paired menus and generated output must still be checked. OpenWiki is explicitly excluded from the switcher on `/oss/openwiki` and descendants because it is one unversioned product despite appearing in both Build dropdowns.
+Deep Agents Code is separately projected as a Products and setup menu item. `docs.json` keeps compatibility redirects from former Python and JavaScript Code roots and wildcard descendants to its unprefixed route family, as well as older CLI aliases. Those redirects are public URL compatibility only.
 
-### Ordinary LangSmith and the expanded agent surface
+Ordinary LangSmith files emit once below `/langsmith/` with the Python target. Managed Deep Agents is the exception: `build_file()` recognizes a direct top-level `managed-deep-agents*.md` or `.mdx` source and emits its Python and JavaScript variants, while the ordinary LangSmith pass excludes it. The full build discovers only direct `.mdx` files, so a Managed Deep Agents page intended for a full build must be a direct `.mdx` file.
 
-Ordinary LangSmith sources emit once below `/langsmith/` using the Python target. The agent-workspace guides—`agents`, `agent-environments`, `navigate-agents`, `create-an-agent`, `build-an-agent`, and `deploy-to-agent-environment`—are projected as the **Agent-based workspaces** group under **Products and setup → LangSmith setup**, rather than as language variants. Their `src/langsmith/` location and their unprefixed menu routes agree; the presence of Python and REST examples inside a guide does not make it a paired language route.
+The Managed Deep Agents tabs are parallel Python and TypeScript projections with **Get started**, **Agent capabilities**, and **Build and deploy** groups. They include Agent definition, Identity, nested Channels, and Custom frontend in both projections. `managed-deep-agents-agent-definition.mdx` itself contains Python and JavaScript conditional source content. The unversioned landing aliases and listed unversioned per-page routes redirect to Python; that compatibility default does not remove the JavaScript artifacts.
 
-This keeps the newly expanded LangSmith agent documentation distinct from Managed Deep Agents. For example, `agents.mdx` links directly to `/langsmith/create-an-agent`, and `create-an-agent.mdx` uses a Python/REST content tab while remaining one ordinary source and one emitted route. Do not add `/langsmith/python/agents` or `/langsmith/javascript/create-an-agent` entries merely because the language switcher supports a different, Managed Deep Agents route family.
+Ordinary LangSmith agent-workspace guides remain unversioned. `docs.json` projects `agents`, `agent-environments`, `navigate-agents`, `create-an-agent`, `build-an-agent`, and `deploy-to-agent-environment` together as **Agent-based workspaces** under **Products and setup → LangSmith setup**. Do not infer a paired route merely from language-specific examples inside such a page.
 
-### OpenWiki and Deep Agents Code
+## Reader language selection
 
-Deep Agents Code and OpenWiki each emit once at `/oss/deepagents/code/...` and `/oss/openwiki/...`. Their Python target selects Python conditional content; it does not create Python routes.
+The language-toggle script recognizes only two prefix pairs: `/oss/python/` ↔ `/oss/javascript/` and `/langsmith/python/` ↔ `/langsmith/javascript/`. A click on Python, TypeScript, or JavaScript records the current path and hash with a timestamp in `sessionStorage`. When there is a counterpart, the capture-phase handler navigates directly to it and preserves the hash; otherwise the pending record can survive a full reload and is consumed on the next navigation.
 
-`docs.json` lists the same unprefixed OpenWiki route family in the OpenWiki tab of both Build-language dropdowns, and the language-toggle script hides its switcher at `/oss/openwiki` and below. At the same time, each Deep Agents tab includes a language-versioned `deepagents/openwiki` source-navigation page, while Deep Agents Code is a separate product-menu item. These are reader-facing projections, not evidence of alternative ownership or generated route families.
-
-Compatibility redirects map former Python and JavaScript Deep Agents Code roots and wildcard descendants to the unprefixed Code family. Redirects also cover earlier `cli` aliases and selected moved Code pages; a redirect maintains an old URL but does not create or own a page.
-
-### Managed Deep Agents
-
-Managed Deep Agents is the LangSmith exception: a direct top-level `src/langsmith/managed-deep-agents*` `.md` or `.mdx` file is recognized by `build_file()` and emits only Python and JavaScript variants; the ordinary LangSmith pass excludes it. The full Managed Deep Agents pass discovers only direct `managed-deep-agents*.mdx` files. A matching `.md` file can be built through the targeted path but is absent from `build_all()`. Use a direct `.mdx` source for a page intended for the published full build.
-
-`docs.json` projects Managed Deep Agents into corresponding Python and TypeScript tabs with the same three groups: **Get started**, **Agent capabilities**, and **Build and deploy**. The current projection includes Identity under Agent capabilities and Custom frontend under Build and deploy in both tabs, alongside the nested Channels group. Their direct `src/langsmith/managed-deep-agents-identity.mdx` and `managed-deep-agents-custom-frontend.mdx` sources therefore produce both language routes and must remain represented in both navigation projections.
-
-Compatibility redirects send the unversioned Managed Deep Agents landing URL, earlier aliases, and listed unversioned per-page URLs—including Identity and Custom frontend—to the corresponding Python route. No unversioned Managed Deep Agents artifact exists; Python is the compatibility default, not a replacement for the JavaScript variant. A redirect is a public-URL contract only: it does not cause the builder to emit a page or remove the JavaScript route.
+Pending switches expire after eight seconds and are consumed at most once. An unprefixed route has no computed language counterpart, so the script leaves Mintlify's landing-page navigation in place. The selector is neither a builder nor a redirect system: it does not establish that a matching artifact exists. Verify navigation, generated artifacts, and redirects independently.
 
 ## Change and verify safely
 
-When adding or moving a page, choose its source family before choosing a navigation label. Update `src/docs.json` for every intended navigation entry and retired public URL, but do not infer a source directory, emitted variant, or route from a product menu. A menu can list an unversioned route in both language dropdowns; it cannot create alternative output.
-
-For a versioning change:
-
-1. Run a clean full build rather than relying on `build_file()` for route shape.
-2. Verify required routes and the absence of prohibited siblings, especially for language-owned and unversioned pages.
-3. Inspect each applicable variant for selected conditional content, language-scoped snippets, and rewritten OSS and Managed Deep Agents links.
-4. Verify navigation entries, selector expectations, and redirects against the generated route family.
-5. Run `make broken-links-with-anchors`; after changing `@[...]` references, also run `make check-cross-refs`.
-
-Focused builder tests cover unversioned outputs and link exclusions, snippet import scoping and copies, Managed Deep Agents dual routes, link rewriting, and symlink rejection. Extend focused builder tests when changing classification, transformation order, or emitted route shape. Test selector changes against both supported prefix pairs, hash preservation, pending-switch expiry, and unversioned exceptions; builder tests cannot validate browser navigation behavior.
+1. Choose the source family before editing navigation. Use an owned OSS directory for intrinsically SDK-specific pages; use shared OSS plus `docs.json` language membership when one shared source should exist in only one menu and output.
+2. Update both navigation projections where a paired route is intended. For an unversioned product, intentionally use its unprefixed route in each relevant projection.
+3. Add redirects only for externally supported or retired URLs. A redirect must point to an emitted route but does not substitute for creating it.
+4. Run a clean full build. Check required artifacts and the absence of prohibited sibling artifacts, including shared pages selected for only one language.
+5. Inspect target outputs for conditional content, scoped snippet imports, OSS links, and Managed Deep Agents links. Run `make broken-links-with-anchors`; after changing `@[]` references, run `make check-cross-refs`.
+6. Extend focused builder tests when changing source classification, navigation-derived language selection, transformations, or route shape. Test selector changes separately for both supported prefix pairs, hash preservation, reload fallback, expiry, and unversioned exceptions.
 
 ## See also
 
+- [Build system](/openwiki/architecture/build-system.md)
 - [Source map](/openwiki/architecture/source-map.md)
 - [Adding pages](/openwiki/operations/adding-pages.md)
-- [Builder tests](/openwiki/testing/builder-tests.md)
+- [Conditional rendering](/openwiki/testing/conditional-rendering.md)
 - [Changing versioned content](/openwiki/workflows/versioned-content.md)

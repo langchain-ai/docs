@@ -1,4 +1,4 @@
 # Files
 
-- [Documentation Build System](build-system.md) - How the Python pipeline turns authored source files into the disposable Mintlify build tree, including routing, preprocessing, local development, and validation.
-- [Repository Source Map](source-map.md) - Maps the durable owners of documentation source, Mintlify configuration, generated artifacts, external integration metadata, and release-maintenance automation. Use it to choose the correct change boundary and avoid editing deployment or generated output.
+- [Documentation Build System](build-system.md) - How the documentation pipeline reconstructs the Mintlify build tree from src, selects language-aware OSS output, preprocesses Markdown, and supports local development.
+- [Repository Source Map](source-map.md) - Maps the durable owners of documentation, navigation, generated source, automation, and deployment output. Use it to select the safe change boundary and avoid editing derived artifacts.

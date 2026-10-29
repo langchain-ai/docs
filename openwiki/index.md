@@ -4,7 +4,7 @@ okf_version: "0.2"
 
 # Files
 
-- [Repository Wiki Quickstart](quickstart.md) - Route documentation, LangSmith agent and observability changes, generated artifacts, automation, and previews to their durable owners. Choose validation that covers the changed boundary without editing generated output.
+- [Repository Wiki Quickstart](quickstart.md) - Route documentation changes to their durable source, generated-input owner, and proportionate validation. Use this map for versioned OSS content, LangSmith documentation, runnable samples, Mintlify output, and CI automation.
 
 # Directories
 
