@@ -6,7 +6,7 @@ description: Run the self-hosted LangSmith Sandbox runtime in a dedicated Kubern
 
 import SandboxCallbackSigningJwk from '/snippets/langsmith/sandbox-callback-signing-jwk.mdx';
 
-By default, the `langsmith` Helm release runs the [Sandbox](/langsmith/sandboxes) runtime in the same Kubernetes cluster as LangSmith. With `sandboxes.deploymentMode: separateCluster`, the runtime runs in a dedicated cluster instead, installed by a second chart, `langsmith-sandbox`. This guide covers the requirements, network rules, secrets, and Helm steps for that topology.
+By default, the `langsmith` Helm release runs the [Sandbox](/langsmith/sandboxes) runtime in the same Kubernetes cluster as LangSmith. With `sandboxes.external.enabled: true`, the runtime is external: a second chart, `langsmith-sandbox`, installs it, here in a dedicated cluster. This guide covers the requirements, network rules, secrets, and Helm steps for that topology.
 
 For the default topology and the settings both topologies share, see [Enable Sandboxes](/langsmith/enable-self-hosted-sandboxes). For upgrades, see [Upgrade separate sandbox clusters](/langsmith/self-host-upgrades#upgrade-separate-sandbox-clusters).
 
@@ -21,7 +21,7 @@ Use a separate cluster when:
 - **Your LangSmith cluster cannot host sandbox nodes**: The sandbox runtime needs KVM-capable nodes and privileged pods. For example, GKE Autopilot clusters cannot run the runtime, so a LangSmith installation on Autopilot needs a separate GKE Standard cluster for Sandboxes.
 - **You want to isolate sandbox workloads**: Sandboxes run user code on privileged hosts. A separate cluster keeps those nodes away from the cluster that runs LangSmith and holds its application secrets. The runtime receives only the two secret values it needs.
 
-Otherwise, keep the default `sameCluster` topology. One Helm release then installs and upgrades the control plane and the runtime together, with no network path between clusters to maintain.
+Otherwise, keep the default embedded runtime. One Helm release then installs and upgrades the control plane and the runtime together, with no network path between clusters to maintain.
 
 ## Understand the topology
 
@@ -29,11 +29,11 @@ The LangSmith cluster keeps the Sandbox API and the control plane: authenticatio
 
 | | LangSmith cluster | Sandbox cluster |
 | --- | --- | --- |
-| Helm release | `langsmith`, with `sandboxes.deploymentMode: separateCluster` | `langsmith-sandbox`, with `sandboxHost.enabled: true` |
+| Helm release | `langsmith`, with `sandboxes.external.enabled: true` | `langsmith-sandbox`, with `sandboxHost.enabled: true` |
 | Runs | `platform-backend`, `ingest-queue`, and the rest of LangSmith | `sandbox-host` on KVM-capable nodes, the JuiceFS formatter Job, and an optional host ingress |
 | Holds | Sandbox records, the callback signing JWK, and the sandbox service-auth secret | A minimal Secret with copies of those two values, and the egress proxy CA |
 
-With `separateCluster`, the `langsmith` release does not render `sandbox-host`, the JuiceFS formatter, the JuiceFS configuration Secret, or the proxy CA. The sandbox cluster reaches the JuiceFS Redis metadata store and the object storage; the LangSmith cluster does not need them.
+With an external runtime, the `langsmith` release does not render `sandbox-host`, the JuiceFS formatter, the JuiceFS configuration Secret, or the proxy CA. The sandbox cluster reaches the JuiceFS Redis metadata store and the object storage; the LangSmith cluster does not need them.
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'fontFamily': 'TWK Lausanne, Inter', 'fontSize': '15px', 'lineColor': '#40668D', 'primaryTextColor': '#030710', 'textColor': '#030710', 'edgeLabelBackground': '#F2FAFF'}, 'flowchart': {'nodeSpacing': 50, 'rankSpacing': 60, 'curve': 'linear'}}}%%
@@ -61,9 +61,9 @@ flowchart TB
     class ST output
 ```
 
-The runtime chart uses the same settings as the `sameCluster` runtime, without the `sandboxes.` prefix:
+The runtime chart uses the same settings as the embedded runtime, without the `sandboxes.` prefix:
 
-| `langsmith` chart with `sameCluster` | `langsmith-sandbox` chart |
+| `langsmith` chart, embedded runtime | `langsmith-sandbox` chart |
 | --- | --- |
 | `sandboxes.sandboxHost.*` | `sandboxHost.*` |
 | `sandboxes.juicefs.*` | `juicefs.*` |
@@ -75,7 +75,7 @@ The runtime chart uses the same settings as the `sameCluster` runtime, without t
 | `config.customCa` | `config.customCa` |
 | Workload identity annotations on `sandboxes.sandboxHost.serviceAccount.annotations` | `workloadIdentity` |
 
-The [scaling](/langsmith/self-host-sandbox-scaling) and [operations](/langsmith/self-host-sandbox-operations) guides use the `sameCluster` names. Apply the same settings in the runtime chart.
+The [scaling](/langsmith/self-host-sandbox-scaling) and [operations](/langsmith/self-host-sandbox-operations) guides use the embedded runtime's names. Apply the same settings in the runtime chart.
 
 ## Check the requirements
 
@@ -83,7 +83,7 @@ The [scaling](/langsmith/self-host-sandbox-scaling) and [operations](/langsmith/
 
 - **Nodes**: KVM-capable `linux/amd64` nodes, tainted `sandbox.langsmith.com/host=true:NoSchedule` and labeled to match `sandboxHost.deployment.nodeSelector`. The node selector has no default, and the chart fails to render without it. The default toleration matches the taint above; for other taints, override `sandboxHost.deployment.tolerations`. For node-level requirements, see the [Enable Sandboxes prerequisites](/langsmith/enable-self-hosted-sandboxes#prerequisites) and [Node requirements for bare-metal and on-premises clusters](/langsmith/enable-self-hosted-sandboxes#node-requirements-for-bare-metal-and-on-premises-clusters).
 - **JuiceFS metadata Redis**: Use `maxmemory-policy noeviction`. Require AUTH, TLS, or IAM authentication whenever another cluster can reach it. The storage backends and bucket formats in the Enable Sandboxes prerequisites apply to `juicefs.storage` and `juicefs.bucket`.
-- **LangSmith hostname**: Set `config.hostname` in the `langsmith` release to an address the sandbox cluster can reach. The chart fails to render `separateCluster` without it, or with a loopback or in-cluster Service address.
+- **LangSmith hostname**: Set `config.hostname` in the `langsmith` release to an address the sandbox cluster can reach. With an external runtime, the chart fails to render without it, or with a loopback or in-cluster Service address.
 - **`config.endpoint`**: Set the runtime chart's `config.endpoint` to `https://<LangSmith hostname>[/<base path>]/api`, the externally reachable LangSmith API including the `/api` prefix.
 - **Private CA**: If a private CA signs the LangSmith API certificate, the host ingress certificate, or an HTTPS egress proxy certificate, add that CA to the runtime chart's `config.customCa`.
 - **Network**: Open the paths in [Configure the network](#configure-the-network).
@@ -132,7 +132,7 @@ For the first row, allow the address that LangSmith pods appear from on your net
 Traffic on port `19190` is plain HTTP and carries sandbox commands, files, and credentials. Keep it on a private network you trust. If the clusters have no routed private network, or the traffic would leave one you trust, use the [host ingress](#use-the-host-ingress) with TLS.
 </Warning>
 
-The path from the sandbox nodes to `config.endpoint` is new in this topology. With `sameCluster`, `sandbox-host` reaches LangSmith through in-cluster Service DNS. With `separateCluster`, it calls `config.endpoint` over the network, so the call must pass every control in front of that address:
+The path from the sandbox nodes to `config.endpoint` is new in this topology. With the embedded runtime, `sandbox-host` reaches LangSmith through in-cluster Service DNS. With an external runtime, it calls `config.endpoint` over the network, so the call must pass every control in front of that address:
 
 - **Load balancer allowlists**: If the LangSmith load balancer restricts source addresses, allow the address sandbox node traffic arrives from. For an internal load balancer, that is usually the sandbox nodes' private addresses. For an internet-facing one, it is usually the public address of the NAT gateway that the sandbox nodes use.
 - **Egress filtering**: If a firewall filters egress from the sandbox cluster, allow the LangSmith hostname.
@@ -162,7 +162,8 @@ To route control-plane traffic through the host ingress:
 
    ```yaml
    sandboxes:
-     hostIngressEndpoint: "https://sandbox-hosts.example.com"
+     external:
+       hostIngressEndpoint: "https://sandbox-hosts.example.com"
    ```
 
 TLS ends at the ingress. Inside the sandbox cluster, traffic from the ingress to the hosts and between hosts stays plain HTTP on port `19190`, so keep that network private.
@@ -189,7 +190,7 @@ Both values must equal the control plane's. Find them in the LangSmith app Secre
 | Service-auth secret | Key `sandbox_service_auth_secret`, set from `sandboxes.serviceAuth.secret` | The key that `sandboxes.serviceAuth.secretKey` names |
 | Callback signing JWK | Key `sandbox_callback_signing_jwk`, set from `sandboxes.callbackSigningJwk` | Key `sandbox_callback_signing_jwk` |
 
-With `separateCluster`, the Helm install notes of the `langsmith` release print the key names for your configuration.
+With an external runtime, the Helm install notes of the `langsmith` release print the key names for your configuration.
 
 ```yaml
 apiVersion: v1
@@ -209,7 +210,7 @@ Avoid committing this file to version control. If an external secret manager sup
 Copy only these two values. Never copy the whole LangSmith app Secret into the sandbox cluster.
 </Warning>
 
-The service-auth secret must be its own random value. Do not reuse `api_key_salt`: that value also salts LangSmith API keys and signs other LangSmith service calls, so it must not leave the LangSmith cluster. With `separateCluster`, the `langsmith` chart refuses to render without a dedicated value. Generate one, for example with `openssl rand -hex 32`, and set it on the control plane:
+The service-auth secret must be its own random value. Do not reuse `api_key_salt`: that value also salts LangSmith API keys and signs other LangSmith service calls, so it must not leave the LangSmith cluster. With an external runtime, the `langsmith` chart refuses to render without a dedicated value. Generate one, for example with `openssl rand -hex 32`, and set it on the control plane:
 
 - **Chart-managed Secret**: Set `sandboxes.serviceAuth.secret`. It must differ from `config.apiKeySalt`.
 - **`config.existingSecretName`**: Add a key with the new value to your Secret, and name it in `sandboxes.serviceAuth.secretKey`.
@@ -236,16 +237,17 @@ Install the `langsmith` release first, then the `langsmith-sandbox` release. The
 
     sandboxes:
       enabled: true
-      deploymentMode: separateCluster
+      external:
+        enabled: true
+        # Only when you use the host ingress:
+        # hostIngressEndpoint: "https://sandbox-hosts.example.com"
       # Required: a dedicated service-auth value, never api_key_salt. With
       # config.existingSecretName, set serviceAuth.secretKey to its key instead.
       serviceAuth:
         secret: "<random-secret>"
-      # Only when you use the host ingress:
-      # hostIngressEndpoint: "https://sandbox-hosts.example.com"
     ```
 
-    With `separateCluster`, the chart ignores `sandboxes.juicefs`, `sandboxes.sandboxHost`, and `sandboxes.proxyCa`. It fails to render when `sandboxes.authProxy.httpProxy` or `sandboxes.juicefs.redis.iamAuthProvider` is set; configure those in the runtime chart.
+    With an external runtime, the chart ignores `sandboxes.juicefs`, `sandboxes.sandboxHost`, and `sandboxes.proxyCa`. It fails to render when `sandboxes.authProxy.httpProxy` or `sandboxes.juicefs.redis.iamAuthProvider` is set; configure those in the runtime chart.
 
     Apply the chart:
 
@@ -448,9 +450,9 @@ kubectl --context <sandbox-context> -n langsmith-sandbox get secret langsmith-sa
 
 ## Run one runtime per installation
 
-Run exactly one `langsmith-sandbox` release for each LangSmith installation, and only while the `langsmith` release uses `sandboxes.deploymentMode: separateCluster`. Running Sandboxes in more than one cluster for the same installation is not supported.
+Run exactly one `langsmith-sandbox` release for each LangSmith installation, and only while the `langsmith` release sets `sandboxes.external.enabled: true`. Running Sandboxes in more than one cluster for the same installation is not supported.
 
-LangSmith accepts host reports from one sandbox runtime at a time, counting an embedded `sameCluster` runtime as one. While one runtime reports, LangSmith refuses any other: the refused runtime's hosts never join the host pool, and the accepted runtime's Sandboxes keep running. A refused runtime shows up in three places:
+LangSmith accepts host reports from one sandbox runtime at a time, counting the `langsmith` release's embedded runtime as one. While one runtime reports, LangSmith refuses any other: the refused runtime's hosts never join the host pool, and the accepted runtime's Sandboxes keep running. A refused runtime shows up in three places:
 
 - Its elected `sandbox-host` pod stays not ready, so `helm install --wait` and `kubectl rollout status` do not finish.
 - Its `sandbox-host` logs repeat `the platform refused this sandbox runtime because another runtime already reports to the same LangSmith install`, with the error code `sandbox_runtime_conflict`, every 15 seconds.
@@ -475,7 +477,7 @@ No warning appears in the first 15 minutes after LangSmith moves to a new releas
 
 ## Move an existing installation to a separate cluster
 
-To move a `sameCluster` installation to `separateCluster`, switch the `langsmith` release first, then install the runtime against the same JuiceFS metadata store and bucket. In the reverse order, LangSmith [refuses the new runtime](#run-one-runtime-per-installation) while the embedded one still reports. Sandboxes are unavailable between the two steps. Afterwards, existing Sandboxes and snapshots keep working.
+To move an installation from the embedded runtime to a separate cluster, switch the `langsmith` release first, then install the runtime against the same JuiceFS metadata store and bucket. In the reverse order, LangSmith [refuses the new runtime](#run-one-runtime-per-installation) while the embedded one still reports. Sandboxes are unavailable between the two steps. Afterwards, existing Sandboxes and snapshots keep working.
 
 <Steps>
   <Step title="Prepare the sandbox cluster">
@@ -485,7 +487,7 @@ To move a `sameCluster` installation to `separateCluster`, switch the `langsmith
     Sandboxes that resume from saved memory keep trusting the egress proxy CA they started with. To keep auth proxy credential injection working for them, run the new runtime with the same CA. Copy the proxy CA Secret (`smithbox-proxy-ca` by default, with keys `tls.crt` and `tls.key`) into the sandbox namespace, and set `proxyCa.mode: existingSecret` and `proxyCa.existingSecretName` in the runtime values. Copy it before the next step, which deletes a CA Secret that the `langsmith` chart generated.
   </Step>
   <Step title="Switch the LangSmith release">
-    Set `sandboxes.deploymentMode: separateCluster`, set the same dedicated service-auth secret as in the runtime Secret (`sandboxes.serviceAuth.secret`, or a key named in `sandboxes.serviceAuth.secretKey`), and upgrade the `langsmith` release. Keep `sandboxes.clusterName` unchanged. The release removes the embedded `sandbox-host` Deployment, and each host suspends its Sandboxes as it shuts down. Wait until the old host pods are gone:
+    Set `sandboxes.external.enabled: true`, set the same dedicated service-auth secret as in the runtime Secret (`sandboxes.serviceAuth.secret`, or a key named in `sandboxes.serviceAuth.secretKey`), and upgrade the `langsmith` release. Keep `sandboxes.clusterName` unchanged. The release removes the embedded `sandbox-host` Deployment, and each host suspends its Sandboxes as it shuts down. Wait until the old host pods are gone:
 
     ```bash
     kubectl --context <langsmith-context> -n <langsmith-namespace> wait --for=delete pod \
@@ -507,7 +509,7 @@ Rotate the sandbox service-auth secret in three steps. After each step, apply bo
 2. On both sides, make the new value current and the old value the previous secret.
 3. On both sides, remove the previous secret.
 
-With `sameCluster`, apply each step to the `langsmith` release only.
+With the embedded runtime, apply each step to the `langsmith` release only.
 
 Kubernetes does not restart pods when the data in an existing Secret changes. After you edit a Secret in place, restart the Deployments that read it, for example with `kubectl rollout restart`. Restarting `sandbox-host` suspends its Sandboxes, as in a rolling upgrade.
 
@@ -535,7 +537,7 @@ Neither chart deletes the JuiceFS Redis or the bucket. They hold the Sandboxes' 
 
 ## See also
 
-- [Deploy LangSmith with Terraform](/langsmith/self-host-terraform): the AWS, GCP, and Azure modules can build this topology with `sandbox_deployment_mode = "separate_cluster"`. They are one way to meet the requirements on this page.
+- [Deploy LangSmith with Terraform](/langsmith/self-host-terraform): the AWS, GCP, and Azure modules can build this topology with `sandbox_runtime_source = "external"`. They are one way to meet the requirements on this page.
 - [Enable Sandboxes](/langsmith/enable-self-hosted-sandboxes)
 - [Sandbox architecture and lifecycle](/langsmith/self-host-sandbox-architecture)
 - [Operate self-hosted Sandboxes](/langsmith/self-host-sandbox-operations)
