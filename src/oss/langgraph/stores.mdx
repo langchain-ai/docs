@@ -20,8 +20,16 @@ When using the [Agent Server](/langsmith/agent-server), you do not need to imple
 </Info>
 
 <Note>
-@[InMemoryStore] is suitable for development and testing. For production, use a persistent store like `PostgresStore`, `MongoDBStore`, `RedisStore`, or `UpstashStore`. All implementations extend @[BaseStore], which is the type annotation to use in node function signatures.
+@[InMemoryStore] is suitable for development and testing. For production, use a persistent store like @[PostgresStore], `MongoDBStore`, `RedisStore`, or `UpstashStore`. All implementations extend @[BaseStore], which is the type annotation to use in node function signatures.
 </Note>
+
+:::python
+<Note>
+`put`, `aput`, `list_namespaces`, `alist_namespaces`, and the other store methods are defined on LangGraph @[BaseStore]. Backend pages such as @[AsyncPostgresStore] document construction and setup. Method signatures and behavior live on the @[BaseStore] reference.
+
+LangGraph @[BaseStore] (`put` / `get` / `search` / `list_namespaces`) is not the same interface as the langchain-core [`BaseStore`](https://reference.langchain.com/python/langchain-core/stores/BaseStore) used for embedding caches (`mget` / `mset` / `yield_keys`).
+</Note>
+:::
 
 <Note>
 See [store integrations](/oss/integrations/long-term-memory/index) for the full list of available providers.
@@ -70,6 +78,8 @@ memory_id = str(uuid7())
 memory = {"food_preference" : "I like pizza"}
 store.put(namespace_for_memory, memory_id, memory)
 ```
+
+`put` and @[BaseStore.aput] require a dictionary value (`dict[str, Any]`). Top-level `None` is the delete signal used by `delete` / `adelete`, not a stored empty value. Do not pass `None` to `put` or `aput`. For a set-like or list-like marker entry with no payload, store an empty dictionary (`{}`) or another dictionary sentinel.
 :::
 
 :::js
@@ -143,7 +153,7 @@ The attributes it has are:
 ## Listing items in a namespace
 
 :::python
-Calling [`store.search`](https://reference.langchain.com/python/langgraph/store) (or the async [`store.asearch`](https://reference.langchain.com/python/langgraph/store)) with no `query` and no `filter` returns the items stored under `namespace_prefix`, up to `limit`. Use this to enumerate everything in a namespace when you don't need semantic ranking.
+Calling @[BaseStore.search] (or the async @[BaseStore.asearch]) with no `query` and no `filter` returns the items stored under `namespace_prefix`, up to `limit`. Use this to enumerate everything in a namespace when you don't need semantic ranking.
 :::
 
 :::js
@@ -183,9 +193,19 @@ To page through a large namespace:
 :::
 
 :::python
-To discover which namespaces exist (for example, to iterate over every user before listing their memories), use [`store.list_namespaces`](https://reference.langchain.com/python/langgraph/store) or [`store.alist_namespaces`](https://reference.langchain.com/python/langgraph/store):
+To discover which namespaces exist (for example, to iterate over every user before listing their memories), use @[BaseStore.list_namespaces] or @[BaseStore.alist_namespaces]:
 
 <StoreListNamespaceListPy />
+
+`list_namespaces` and `alist_namespaces` accept:
+
+- **prefix**: Return namespaces that start with this path. Use `"*"` for a single-segment wildcard.
+- **suffix**: Return namespaces that end with this path.
+- **max_depth**: Truncate returned namespaces to this depth.
+- **limit**: Maximum namespaces to return. Defaults to `100`.
+- **offset**: Number of namespaces to skip for pagination.
+
+Matching is case-sensitive. There is no case-insensitive option. Normalize namespace labels before writing if you need case-insensitive lookups later.
 
 :::
 
@@ -579,7 +599,7 @@ All five async methods are required. Sync counterparts (`put`, `get`, `delete`, 
 
 | Method | Description |
 |--------|-------------|
-| `aput(namespace, key, value, index=None)` | Store or overwrite a single item |
+| `aput(namespace, key, value, index=None)` | Store or overwrite a single item. `value` must be a dictionary; use `adelete` to remove an item |
 | `aget(namespace, key)` | Retrieve a single item by key; return `None` if missing |
 | `adelete(namespace, key)` | Delete a single item |
 | `asearch(namespace_prefix, *, query=None, filter=None, limit=10, offset=0)` | Search items under a namespace prefix; optionally by semantic query |

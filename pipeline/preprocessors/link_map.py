@@ -283,9 +283,23 @@ LINK_MAPS: list[LinkMap] = [
             "SurrealDBStore": "langchain-surrealdb/vectorstores/SurrealDBVectorStore",
             "SQLServer_VectorStore": "langchain-sqlserver/vectorstores/SQLServer_VectorStore",
             # Key-value stores
-            "BaseStore": "langchain-core/stores/BaseStore",
-            "BaseStore.put": "langgraph/store/#langgraph.store.base.BaseStore.put",
-            "InMemoryStore": "langchain-core/stores/InMemoryStore",
+            # LangGraph long-term memory BaseStore (put/get/search/list_namespaces).
+            # Not langchain-core's byte-store BaseStore (mget/mset/yield_keys); link
+            # that interface with an explicit markdown URL on key-value store pages.
+            "BaseStore": "langgraph.store/base/BaseStore",
+            "BaseStore.put": "langgraph.store/base/BaseStore/put",
+            "BaseStore.aput": "langgraph.store/base/BaseStore/aput",
+            "BaseStore.get": "langgraph.store/base/BaseStore/get",
+            "BaseStore.aget": "langgraph.store/base/BaseStore/aget",
+            "BaseStore.delete": "langgraph.store/base/BaseStore/delete",
+            "BaseStore.adelete": "langgraph.store/base/BaseStore/adelete",
+            "BaseStore.search": "langgraph.store/base/BaseStore/search",
+            "BaseStore.asearch": "langgraph.store/base/BaseStore/asearch",
+            "BaseStore.list_namespaces": "langgraph.store/base/BaseStore/list_namespaces",
+            "BaseStore.alist_namespaces": "langgraph.store/base/BaseStore/alist_namespaces",
+            "InMemoryStore": "langgraph.store/memory/InMemoryStore",
+            "PostgresStore": "langgraph.store.postgres/PostgresStore",
+            "AsyncPostgresStore": "langgraph.store.postgres/aio/AsyncPostgresStore",
             # Callbacks
             "on_llm_new_token": "langchain-core/callbacks/base/AsyncCallbackHandler/on_llm_new_token",
             # Exceptions
@@ -392,7 +406,8 @@ LINK_MAPS: list[LinkMap] = [
             "PostgresSaver": "langgraph/checkpoints/#langgraph.checkpoint.postgres.PostgresSaver",
             "CosmosDBSaverSync": "langchain-azure-cosmosdb/",
             "CosmosDBSaver": "langchain-azure-cosmosdb/",
-            "PostgresStore": "langgraph/store/#langgraph.store.postgres.PostgresStore",
+            # PostgresStore / AsyncPostgresStore are defined with the other
+            # LangGraph store entries under Key-value stores above.
             "AsyncSqliteStore": "langgraph/store/#langgraph.store.sqlite.AsyncSqliteStore",
             "create_react_agent": "langchain-classic/agents/react/agent/create_react_agent",
             "LastValue": "langgraph/channels/last_value/LastValue",
@@ -628,9 +643,10 @@ LINK_MAPS: list[LinkMap] = [
             "ThreadStateJS": "langchain-langgraph-sdk/index/ThreadState",
             # LangGraph checkpoint references
             "BaseCheckpointSaver": "langchain-langgraph/index/BaseCheckpointSaver",
-            "BaseStore": "langchain-core/stores/BaseStore",
+            # LangGraph long-term memory BaseStore, not langchain-core's byte store.
+            "BaseStore": "langchain-langgraph-checkpoint/BaseStore",
             "BaseStore.put": "langchain-langgraph-checkpoint/BaseStore/put",
-            "InMemoryStore": "langchain-core/stores/InMemoryStore",
+            "InMemoryStore": "langchain-langgraph-checkpoint/InMemoryStore",
             "InMemorySaver": "langchain-langgraph-checkpoint/index/MemorySaver",
             "MemorySaver": "langchain-langgraph/index/MemorySaver",
             "AsyncPostgresSaver": "langchain-langgraph-checkpoint-postgres/index/PostgresSaver",
