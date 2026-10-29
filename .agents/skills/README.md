@@ -45,6 +45,7 @@ the tree changes. Re-run the command after pulling, or symlink instead.
 | `docs-restructure` | Restructuring across pages: building a duplication map of the page family, choosing one owner per topic, cutting duplicated sections in favor of a pointer, and the anchors and redirects that breaks. |
 | `docs-team-voice` | Drafting or revising prose in the house voice: sentence length, cross-link density, stating defaults, and the revision pass. |
 | `docs-review` | Reviewing changed prose against Vale and the style guide, reporting the rule each finding breaks. Runs on a PR, a branch, or the working tree. |
+| `open-docs-pr` | Opening a PR for finished changes: branch from the latest `origin/main`, run the gates, commit, write the short PR description, push, and watch the checks. |
 | `docs-tooling-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, what stays in the repo, how to edit safely. |
 | `docs-code-samples` | Moving inline MDX code blocks into external, testable sample files: snippet markers, harness blocks, file placement, and the shared-module-scope trap in TypeScript. |
 | `verify-against-source` | Checking that a code sample, signature, default, or behavior claim is true: which repository owns each product, running the half of a sample that needs no API key, and naming what stayed unverified. |
