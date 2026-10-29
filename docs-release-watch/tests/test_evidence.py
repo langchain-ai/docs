@@ -24,6 +24,7 @@ from tools.evidence import (  # noqa: E402
 )
 from tools.github_prs import (  # noqa: E402
     parse_files_json,
+    prepare_file_edit_for_base,
     verify_old_content_matches_base,
 )
 from tools.releases import summarize_compare_files  # noqa: E402
@@ -136,6 +137,27 @@ def test_verify_old_content_matches_base() -> None:
         verify_old_content_matches_base("page.mdx", "", "current")
 
 
+def test_prepare_file_edit_rebases_stale_old_content() -> None:
+    old = "alpha\nbeta\ngamma\n"
+    new = "alpha\nbeta changed\ngamma\n"
+    # Unrelated drift elsewhere on main; the edited hunk is still unique.
+    base = "intro\nalpha\nbeta\ngamma\n"
+    old_for_commit, new_for_commit, rebased = prepare_file_edit_for_base(
+        "page.mdx", old, new, base
+    )
+    assert rebased is True
+    assert old_for_commit == base
+    assert new_for_commit == "intro\nalpha\nbeta changed\ngamma\n"
+
+
+def test_prepare_file_edit_fails_when_hunk_missing() -> None:
+    old = "alpha\nbeta\ngamma\n"
+    new = "alpha\nbeta changed\ngamma\n"
+    base = "completely different page\n"
+    with pytest.raises(ValueError, match="could not be rebased"):
+        prepare_file_edit_for_base("page.mdx", old, new, base)
+
+
 def test_claim_appears_in_source() -> None:
     content = "export function offloadBinaryContent() {\n  return true;\n}\n"
     assert claim_appears_in_source(content, symbol="offloadBinaryContent")
@@ -207,3 +229,26 @@ def test_line_churn_and_fence_validation() -> None:
             [{"path": "page.mdx", "old_content": page, "new_content": bad_js_edit}],
             language_scope="js",
         )
+
+def test_append_ship_failure_section() -> None:
+    from tools.linear_issues import _append_ship_failure_section
+
+    first = _append_ship_failure_section(
+        "Initial description",
+        reason="old_content mismatch on customization.mdx",
+        run_url="https://smith.langchain.com/example",
+    )
+    assert first.startswith("Initial description")
+    assert "## Ship failure" in first
+    assert "LangSmith run: https://smith.langchain.com/example" in first
+
+    replaced = _append_ship_failure_section(
+        first,
+        reason="second failure",
+        run_url="https://smith.langchain.com/second",
+    )
+    assert replaced.count("## Ship failure") == 1
+    assert "second failure" in replaced
+    assert "https://smith.langchain.com/second" in replaced
+    assert "old_content mismatch" not in replaced
+
