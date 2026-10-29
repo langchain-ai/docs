@@ -1231,7 +1231,7 @@ const responseFormat = toolStrategy(ProductRating, {
 :::python
 The strategies above, including `handle_errors` retries, apply to agents created with @[`create_agent`]. Chains composed with the pipe operator (for example, `prompt | model | parser`) have no built-in retry mechanism for output parsing failures. To handle malformed model output in a chain, use one of the following approaches:
 
-- **Model-level structured output**: Bind the schema to the model with @[`with_structured_output`][BaseChatModel.with_structured_output]. The provider enforces the schema, which avoids most parsing failures. See [Models - Structured output](/oss/langchain/models#structured-output). Use this approach when the model supports it.
+- **Model-level structured output**: Bind the schema to the model with @[`with_structured_output`][BaseChatModel.with_structured_output]. When the provider supports native structured output, it enforces the schema and avoids most parsing failures. See [Models - Structured output](/oss/langchain/models#structured-output). Use this approach when the model supports it.
 - **Fix malformed output with a model**: Wrap the output parser in an `OutputFixingParser` from [`langchain-classic`](https://pypi.org/project/langchain-classic). On a parsing failure, the wrapper sends the malformed output, the parser's format instructions, and the error message to a model and parses the corrected response.
 
 <Note>
@@ -1241,7 +1241,7 @@ The strategies above, including `handle_errors` retries, apply to agents created
 ```python
 from langchain.chat_models import init_chat_model
 from langchain_classic.output_parsers import OutputFixingParser
-from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 
@@ -1255,7 +1255,7 @@ class ProductReview(BaseModel):
 
 model = init_chat_model("gpt-5.4")
 
-base_parser = JsonOutputParser(pydantic_object=ProductReview)
+base_parser = PydanticOutputParser(pydantic_object=ProductReview)
 fixing_parser = OutputFixingParser.from_llm(
     parser=base_parser,
     llm=model,
@@ -1270,17 +1270,17 @@ prompt = ChatPromptTemplate.from_messages([
 chain = prompt | model | fixing_parser
 
 result = chain.invoke({"review": "Great product, 5 stars! Fast shipping, but expensive."})
-# {'rating': 5, 'sentiment': 'positive'}
+# ProductReview(rating=5, sentiment='positive')
 ```
 
 The wrapped parser only invokes the fixing model when the initial parse fails, so well-formed output incurs no extra model calls. `max_retries` controls how many fix attempts are made before the original `OutputParserException` is raised. Both sync (`invoke`) and async (`ainvoke`) execution are supported.
 
-`OutputFixingParser` sends only the malformed completion and the error to the fixing model. If correcting the output requires the original prompt for context, use `RetryOutputParser` from `langchain-classic` instead. It is invoked through its `parse_with_prompt(completion, prompt_value)` method rather than `parse`, so it cannot be piped directly as the final step of a chain.
+`OutputFixingParser` sends the malformed completion, the parser's format instructions, and the error. It does not include the original prompt. If correcting the output requires the original prompt for context, use `RetryOutputParser` from `langchain-classic` instead. It is invoked through its `parse_with_prompt(completion, prompt_value)` method rather than `parse`, so it cannot be piped directly as the final step of a chain.
 :::
 :::js
 The strategies above, including `handleError` retries, apply to agents created with `createAgent`. Chains composed with `.pipe()` (for example, `prompt.pipe(model).pipe(parser)`) have no built-in retry mechanism for output parsing failures. To handle malformed model output in a chain, use one of the following approaches:
 
-- **Model-level structured output**: Bind the schema to the model with @[`withStructuredOutput`][BaseChatModel.with_structured_output]. The provider enforces the schema, which avoids most parsing failures. See [Models - Structured output](/oss/langchain/models#structured-output). Use this approach when the model supports it.
+- **Model-level structured output**: Bind the schema to the model with @[`withStructuredOutput`][BaseChatModel.with_structured_output]. When the provider supports native structured output, it enforces the schema and avoids most parsing failures. See [Models - Structured output](/oss/langchain/models#structured-output). Use this approach when the model supports it.
 - **Fix malformed output with a model**: Wrap the output parser in an `OutputFixingParser` from [`@langchain/classic`](https://www.npmjs.com/package/@langchain/classic). On a parsing failure, the wrapper sends the malformed output, the parser's format instructions, and the error message to a model and parses the corrected response.
 
 <Note>
