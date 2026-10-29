@@ -4,11 +4,11 @@ sidebarTitle: Code evaluator advanced features
 description: Install packages, make network requests, and authenticate with workspace secrets from a LangSmith code evaluator that runs in a sandbox.
 ---
 
-Advanced features let a [code evaluator](/langsmith/code-evaluator-ui) install any public package, call external services and models, authenticate with [workspace secrets](/langsmith/set-up-hierarchy#configure-workspace-settings) that your evaluator code never sees, and run longer. They run the evaluator in an isolated [LangSmith sandbox](/langsmith/sandboxes) instead of the standard runtime, where code evaluators run by default. Advanced features are available for Python and JavaScript code evaluators, whether you create them from a dataset, the Playground, or a tracing project as an [online evaluator](/langsmith/online-evaluations-code).
+Advanced features let a [code evaluator](/langsmith/code-evaluator-ui) install public packages, call external services, authenticate with [workspace secrets](/langsmith/set-up-hierarchy#configure-workspace-settings) that your evaluator code never sees, and run for longer on each evaluation. They run the evaluator in an isolated [LangSmith sandbox](/langsmith/sandboxes) instead of the default code evaluator environment. Advanced features are available for Python and JavaScript code evaluators, whether you create them from a dataset, from the Playground, or as an [online evaluator](/langsmith/online-evaluations-code) that scores your traces.
 
-## Compare the runtimes
+## See what changes with advanced features
 
-| | Standard runtime | Advanced features |
+| | Without advanced features | With advanced features |
 |---|---|---|
 | Packages | The standard library, plus `numpy`, `pandas`, `jsonschema`, `scipy`, and `scikit-learn` for Python | Any public package from PyPI (Python) or npm (JavaScript) |
 | Network access | None | Outbound requests, subject to your organization's [egress policy](#make-network-requests) |
@@ -36,7 +36,7 @@ List the packages your evaluator imports in the package list. LangSmith installs
 
 LangSmith installs only public packages, up to 30 per evaluator. Private package indexes and registries are not supported. Use the package's install name, which can differ from its import name. For example, list `scikit-learn` to `import sklearn`.
 
-When you enable advanced features on a Python evaluator, `requirements.txt` starts with the packages that the standard runtime provides:
+When you enable advanced features on a Python evaluator, `requirements.txt` starts with the packages available without advanced features:
 
 ```txt
 numpy==2.3.5
@@ -46,12 +46,7 @@ scipy==1.16.3
 scikit-learn==1.7.2
 ```
 
-Remove the packages your evaluator does not use, and add any others on new lines:
-
-```txt
-requests
-rapidfuzz
-```
+Remove the packages your evaluator does not use, and add any others on new lines.
 
 ## Make network requests
 
@@ -63,35 +58,43 @@ Workspace secrets let your evaluator call services that require authentication, 
 
 To use a workspace secret in an evaluator:
 
-1. Under **Workspace secrets (optional)**, select one or more secrets. You can select only secrets with allowed hosts. The picker lists each secret's hosts.
+1. Under **Workspace secrets (optional)**, select one or more secrets. You can select only secrets with allowed hosts. The picker lists each secret's hosts. To add a secret or allow hosts on one, see [Configure allowed hosts for a secret](#configure-allowed-hosts-for-a-secret).
 1. In your evaluator code, send requests to an allowed host without an authentication header. The proxy adds the header to requests to allowed hosts, and sends requests to other hosts without it.
 
-For example, if a workspace secret is allowed on `eval-api.example.com` and sent as an `Authorization` header, the following evaluator authenticates without handling the key:
+For example, `OPENAI_API_KEY` comes with default hosts and headers, so when you select it, the following evaluator calls OpenAI without handling the key. Add `requests` to `requirements.txt` first:
 
 ```python
 import requests
 
 def perform_eval(run, example=None):
     response = requests.post(
-        "https://eval-api.example.com/policy-check",
-        json={"outputs": run["outputs"]},
+        "https://api.openai.com/v1/chat/completions",
+        json={
+            "model": "gpt-6-luna",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Answer yes or no: is the following response polite?\n\n"
+                    + str(run["outputs"]),
+                }
+            ],
+        },
         timeout=30,
     )
     response.raise_for_status()
-    return {"policy_compliance": response.json()["passed"]}
+    answer = response.json()["choices"][0]["message"]["content"]
+    return {"polite": int(answer.strip().lower().startswith("yes"))}
 ```
 
-Add `requests` to `requirements.txt` for this example.
-
 <Tip>
-To check that a secret reaches its host, create a test secret with a dummy value, allow it on `httpbin.org` with a header such as `X-QA-Secret`, and select it in the evaluator. Then run the following evaluator with **Test**. `httpbin.org/headers` echoes the request headers back, so the evaluator returns `1` when the proxy added the header. Never allow a real secret on a public echo service, because the service receives the secret value.
+To check that the proxy adds a secret's header, select `OPENAI_API_KEY` in the evaluator, then, with `requests` in `requirements.txt`, run the following evaluator with **Test**. OpenAI's models endpoint returns `200` only for an authenticated request, so the evaluator returns `1` when the proxy added the header.
 
 ```python
 import requests
 
 def perform_eval(run, example=None):
-    headers = requests.get("https://httpbin.org/headers", timeout=10).json()["headers"]
-    return {"secret_injected": int(any(k.lower() == "x-qa-secret" for k in headers))}
+    response = requests.get("https://api.openai.com/v1/models", timeout=10)
+    return {"secret_injected": int(response.status_code == 200)}
 ```
 </Tip>
 
@@ -118,18 +121,22 @@ A wildcard host allows every host under the domain. On a shared provider domain,
 
 ### Resolve secret errors
 
-Saving the evaluator fails when a selected secret has no allowed hosts, has no header configured, or cannot be used under your organization's restricted egress settings. At run time, an evaluation fails instead of running unauthenticated when:
+LangSmith checks an evaluator's secrets when you save the evaluator and again each time it runs, because an admin can edit or delete a secret after you select it. Saving fails, and an evaluation fails instead of running unauthenticated, when:
 
 - The secret no longer exists in the workspace.
 - The secret has no allowed hosts. Ask a workspace admin to add one.
 - The secret has no header configured for its allowed hosts.
-- Two selected secrets set the same header on the same host. Remove one of them from the evaluator.
+
+Two more checks apply at one stage only:
+
+- Saving fails when a secret's hosts cannot be used under your organization's restricted egress settings.
+- An evaluation fails when two selected secrets set the same header on the same host. Remove one of them from the evaluator.
 
 Failed evaluations show an error on the run's feedback and in the evaluator's **Logs**.
 
 ## Write the evaluator function
 
-Evaluators with advanced features accept the same function as the standard runtime. A `perform_eval(run, example)` function in Python or a `performEval` function in JavaScript works unchanged. For the full contract, see [Write your evaluator code](/langsmith/code-evaluator-ui#step-2-write-your-evaluator-code).
+Evaluators with advanced features accept the same function as evaluators without advanced features. A `perform_eval(run, example)` function in Python or a `performEval` function in JavaScript works unchanged. For the full contract, see [Write your evaluator code](/langsmith/code-evaluator-ui#step-2-write-your-evaluator-code).
 
 You can also define `evaluate(ctx)`, which LangSmith calls in preference to `perform_eval` or `performEval` when both exist. The `ctx` object exposes the run as `ctx.run` and the dataset example, when there is one, as `ctx.example`. Return the same dictionary of feedback keys and scores:
 
@@ -156,17 +163,17 @@ function evaluate(ctx) {
 
 Saving an evaluator with advanced features starts a build that installs your packages and prepares the sandbox. The **Building evaluator** banner shows while the build runs, which usually takes a couple of minutes. You cannot edit or delete the evaluator until the build finishes.
 
-When the build finishes, the evaluator status is **Ready** and **Test** becomes available. Test runs your evaluator in the same sandbox that production uses, against the last saved build, so save any edits before you test.
+When the build finishes, the evaluator status is **Ready** and **Test** becomes available. Test runs your evaluator the same way LangSmith runs it on your traces and experiments, using the last saved build, so save any edits before you test.
 
 If the build fails, the **Evaluator build failed** banner shows the error. When a package fails to install, the error starts with `pip install failed:` or `npm install failed:`, followed by the installer output. Fix the package list or code, then save again to rebuild.
 
 ### Keep scoring during a rebuild
 
-Once an evaluator has built successfully, LangSmith keeps scoring runs with that build while a new build runs, and after a new build fails. The new build takes over when it succeeds, so feedback continues without a gap. To stop the previous version immediately, for example because it produces wrong scores, disable the rule until the new build is ready.
+Once an evaluator has built successfully, LangSmith keeps scoring runs with that build while a new build runs, and after a new build fails. The new build takes over when it succeeds, so feedback continues without a gap. To stop the previous version immediately, for example because it produces wrong scores, open the evaluator's **Configure Evaluator** pane, select each source under **Source**, turn off **Enabled**, and then save. Leave it off until the new build is ready.
 
 Before the first build succeeds:
 
-- Online evaluator rules wait and evaluate the runs after the build completes.
+- Online evaluators wait and evaluate the runs after the build completes.
 - Experiment evaluations, such as Playground experiments, write error feedback such as `Code evaluator is not ready yet (build status: BUILDING)`.
 - If the first build fails and no build is in progress, every run gets error feedback so the failure is visible.
 
@@ -174,11 +181,11 @@ If you rename the feedback key while a rebuild is in progress, feedback written 
 
 ## Evaluate threads
 
-A thread evaluator scores a whole conversation [thread](/langsmith/threads) instead of a single run, and writes its feedback to the thread. Thread evaluators run as online evaluators on a tracing project and require advanced features. For how LangSmith decides when a thread is complete, see [Set up multi-turn online evaluators](/langsmith/online-evaluations-multi-turn#how-it-works).
+A thread evaluator scores a whole conversation [thread](/langsmith/threads) instead of a single run, and writes its feedback to the thread. Thread evaluators run as online evaluators on your traces and require advanced features. For how LangSmith decides when a thread is complete, see [Set up multi-turn online evaluators](/langsmith/online-evaluations-multi-turn#how-it-works).
 
 To create a thread evaluator:
 
-1. In the **Configure Evaluator** pane of a tracing project, select **Enable advanced features**. The **Threads** option is unavailable until advanced features are on.
+1. In the **Configure Evaluator** pane of an online evaluator, select **Enable advanced features**. The **Threads** option is unavailable until advanced features are on.
 1. In the **Runs** / **Threads** toggle, select **Threads**.
 1. Under **Evaluator input**, select the input your evaluator receives.
 1. Define an `evaluate(ctx)` function that reads the selected input from `ctx`. Thread evaluators do not support `perform_eval` or `performEval`.
