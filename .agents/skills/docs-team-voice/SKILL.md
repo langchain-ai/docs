@@ -119,7 +119,9 @@ Read the draft once looking only for these:
   condition, its actor, or its exact value reads cleanly and says something
   else. Restore the fact and split the sentence.
 - **A first mention with no link**, and repeat mentions that are linked again.
-- **A claim you did not verify.** Check it against the source, or cut it.
+- **A claim you did not verify.** Check it against the product source with the
+  `verify-against-source` skill, or cut it. Another docs page is not a source.
+  Name every claim you could not confirm in the PR body.
 - **A fact that disagrees with a related page.** Grep `src/` for the feature and
   read the pages that cover it from another angle, such as a CLI reference or a
   permissions table. The `docs-edit` skill covers what to look for.

@@ -1,14 +1,16 @@
 ---
 type: architecture reference
 title: Repository Source Map
-description: Maps the durable owners of documentation source, Mintlify configuration, generated artifacts, external integration metadata, and release-maintenance automation. Use it to choose the correct change boundary and avoid editing deployment or generated output.
+description: Maps the durable owners of documentation, navigation, generated source, release automation, and deployment output. Use it to choose the safe change boundary and avoid editing derived artifacts.
 tags: [documentation, build, automation, repository]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-22T08:20:38.024Z
+    at: 2026-10-30T08:15:16.596Z
 sources:
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
+  - id: openwiki-source-5e9ca8e4c3cab7d91998bc9e
+    resource: repo://.github/workflows/changelog-weekly.yml
   - id: openwiki-source-67b847f2c6d57526390e4981
     resource: repo://.github/workflows/check-integration-repos.yml
   - id: openwiki-source-164e2da859b5277df81c7d94
@@ -17,14 +19,10 @@ sources:
     resource: repo://.github/workflows/publish.yml
   - id: openwiki-source-5153f86e64d6ee0b305f72b3
     resource: repo://.github/workflows/refresh-langsmith-openapi.yml
-  - id: openwiki-source-192dd6007b37a6bb76dc7586
-    resource: repo://.github/workflows/sync-linear-issue-from-pr.yml
   - id: openwiki-source-4de47c60d7e3210385c34d35
     resource: repo://.github/workflows/update-package-downloads.yml
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
-  - id: openwiki-source-15059b0f9cd678e06d6faff0
-    resource: repo://docs-release-watch/agent.py
   - id: openwiki-source-12c8fb32a02de9dce773720f
     resource: repo://docs-release-watch/README.md
   - id: openwiki-source-2b522af6f26794f2e71ccb4e
@@ -39,6 +37,10 @@ sources:
     resource: repo://pipeline/commands/dev.py
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
+  - id: openwiki-source-17f3856bce97f37118963062
+    resource: repo://pipeline/preprocessors/handle_auto_links.py
+  - id: openwiki-source-dca59d03b9433eea9242c2e4
+    resource: repo://pipeline/preprocessors/link_map.py
   - id: openwiki-source-06a4c757b1153b7de4f47a0e
     resource: repo://pipeline/preprocessors/markdown_preprocessor.py
   - id: openwiki-source-0539c4d1a36abb10d1ed2fa9
@@ -47,6 +49,8 @@ sources:
     resource: repo://pyproject.toml
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
+  - id: openwiki-source-025c5762dd0d95eed99ef36d
+    resource: repo://scripts/changelog_pipeline.py
   - id: openwiki-source-bbd7fe20e2563e842ee80a78
     resource: repo://scripts/check_integration_repos.py
   - id: openwiki-source-0d19fa2f26e6485d05a6b929
@@ -59,105 +63,131 @@ sources:
     resource: repo://scripts/process_langsmith_openapi.py
   - id: openwiki-source-63d8ba810a7c0181c548a307
     resource: repo://scripts/refresh_integration_downloads.py
-  - id: openwiki-source-eab62bc712c4650a5ee3e7d3
-    resource: repo://scripts/sync_linear_issue_from_pr.py
+  - id: openwiki-source-381b2039419503f4809ac2df
+    resource: repo://src/code-samples/deepagents/rag-deep.py
+  - id: openwiki-source-11d4965febd3986495e06a17
+    resource: repo://src/code-samples/langsmith/create-an-agent.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
+  - id: openwiki-source-efb95e7fd1324eefaec0577a
+    resource: repo://src/langsmith/create-an-agent.mdx
+  - id: openwiki-source-31a97ae83c418d97b331e7df
+    resource: repo://src/snippets/code-samples/create-agent-py.mdx
+  - id: openwiki-source-3e7f005be053311cf7eb12f1
+    resource: repo://src/snippets/code-samples/rag-deep-index-py.mdx
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-22T08:20:38.024Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-30T08:15:16.596Z" }
 ---
 
-This repository produces the Mintlify site at `docs.langchain.com`; it does not own the separately generated `reference.langchain.com` site. The important boundary is between durable inputs and their outputs: `src/` is primarily authored documentation, `src/docs.json` is Mintlify configuration, and `build/` is disposable deployment output. Do not edit `build/`.
+This repository builds the Mintlify site at `docs.langchain.com`; it does not build the separately generated `reference.langchain.com` site. The primary boundary is durable input versus output: `src/` is authored documentation, `src/docs.json` is the Mintlify site contract, and `build/` is disposable deployment output. Never edit `build/`.
 
 ```mermaid
 flowchart TD
-    Authored["Authored src content"] --> Builder["DocumentationBuilder"]
-    Builder --> Output["Generated build output"]
-    Config["src/docs.json"] --> Mintlify["Mintlify navigation and deployment"]
+    Source["Authored source in src"] --> Builder["DocumentationBuilder"]
+    Builder --> Output["Disposable build output"]
+    Config["src/docs.json"] --> Mintlify["Mintlify deployment"]
     Output --> Mintlify
-    Packages["packages.yml"] --> PackageGenerators["Package generators"]
-    ExternalData["integration external docs YAML"] --> IntegrationGenerator["Integration table generator"]
-    PackageGenerators --> Authored
-    IntegrationGenerator --> Authored
     Mintlify --> Site["docs.langchain.com"]
-    ReleaseWatch["docs release watch"] --> DraftPR["Draft PR and Linear issue"]
-    DraftPR --> LinearSync["PR lifecycle sync"]
-    LinearSync --> Linear["Linear DOC issue"]
+    Metadata["Package and integration metadata"] --> Generators["Committed-source generators"]
+    Generators --> Source
+    Upstream["LangSmith OpenAPI host"] --> Processor["OpenAPI processor"]
+    Processor --> Spec["Committed OpenAPI input"]
+    Spec --> Mintlify
 ```
 
-This flow separates authored input, generated committed source, deployment-generated reference pages, and externally owned information. The PR-to-Linear path is operational automation, not part of the documentation build.
+*Authored and generated-but-committed inputs converge during the build; Mintlify then serves the disposable build and generates configured OpenAPI endpoint pages.*
 
 ## Ownership boundaries
 
-| Concern | Durable owner | Produced or controlled surface | Safe change boundary |
-| --- | --- | --- | --- |
-| Documentation prose, page frontmatter, assets, components, and runnable examples | `src/` | Content copied or transformed into the site | Edit source, never `build/`. |
-| Navigation, redirects, site settings, and OpenAPI declarations | `src/docs.json` | Mintlify menus, compatibility routes, and endpoint-reference configuration | A new page needs both source content and an explicit navigation decision. |
-| Routes and MDX transformation | `pipeline/` | Language-specific and unversioned build paths | Change with focused pipeline tests and preserve traversal safety. |
-| Deployment artifact | `build/` | The files published beneath `prod` | Regenerate locally or in CI; it is deleted and recreated on every full build. |
-| Package catalogue | `packages.yml` | Provider overview and package-linked integration presentation | Change metadata or its generator, then regenerate derived files. |
-| Third-party integration listing data | `scripts/data/integration_external_docs.yaml` | Rows in generated download tables that point away from the hosted site | Maintain validated external URLs and capabilities here; do not treat the generated MDX row as source. |
-| Public LangSmith API input | `src/langsmith/langsmith-platform-openapi.json` plus its processor | Deployment-generated Mintlify endpoint pages | Change the processor policy or refresh input, not endpoint MDX. |
-| Release-watch agent | `docs-release-watch/` | Evidence-gated draft PRs and Linear DOC issues | Update registry, skills, tools, schedules, then redeploy the separate Managed Deep Agent project. |
-| Verification and publication | `tests/`, `Makefile`, and `.github/workflows/` | Tests, validation, automation PRs, and the `main` to `prod` publish path | Select the workflow that owns the invariant. |
+| Concern | Durable owner | Safe change |
+| --- | --- | --- |
+| Page prose, frontmatter, assets, UI fragments, and runnable examples | `src/` | Edit source, not `build/`. |
+| Navigation, redirects, site settings, and OpenAPI declarations | `src/docs.json` | Update navigation deliberately as well as adding a page. |
+| Routes and Markdown transformations | `pipeline/` | Change pipeline code with focused tests. |
+| Deployment artifact | `build/` | Regenerate; never patch. |
+| Package catalogue | `packages.yml` | Change metadata or its generator, then regenerate outputs. |
+| External integration rows | `scripts/data/integration_external_docs.yaml` | Change the record, not a generated table row. |
+| LangSmith REST specification | `src/langsmith/langsmith-platform-openapi.json` and its processor | Change policy or refresh the committed input, not deployment-generated endpoint MDX. |
+| Cloud and Fleet changelog content | `src/langsmith/changelog.mdx`, `src/snippets/langsmith/fleet-changelog.mdx`, and the encrypted held-state ledger | Use the weekly proposal workflow or make a deliberate source edit; do not expose held state. |
+| Release-watch product coverage | `docs-release-watch/tools/products.py`, matching skill, and schedule prompt | Add all three and redeploy the managed agent. |
+| Verification and publication | `tests/`, `Makefile`, and `.github/workflows/` | Change the invariant owner alongside its focused checks. |
 
-## Authored pages, configuration, and build routes
+## Authored documentation, labels, and routes
 
-`src/` contains LangSmith material in `src/langsmith/`, OSS material in `src/oss/`, reusable fragments and UI in `src/snippets/`, assets, fonts, and executable programs in `src/code-samples/`. It is not a URL mirror. `src/docs.json` independently supplies Mintlify identity, navigation, redirects, and OpenAPI declarations. A builder-emitted page is therefore not automatically discoverable in a menu.
+`src/` is organized for authoring ownership, **not** as a URL or reader-navigation mirror. LangSmith content is in `src/langsmith/`, OSS content is in `src/oss/`, reusable MDX and components are in `src/snippets/`, and `src/code-samples/` holds runnable programs. Reader-facing product and menu labels deliberately cross those directories: the Build menu includes both OSS and LangSmith content, while Test, Deploy, and Monitor draw from LangSmith. Find the owner by directory; find the reader-facing location in `src/docs.json`.
 
-`DocumentationBuilder.build_all()` clears `build/`, emits Python and JavaScript OSS variants, emits the language-agnostic Deep Agents Code and OpenWiki families once, emits LangSmith content, then copies shared inputs including `docs.json`. In particular, normal OSS routes have language prefixes, while `src/oss/openwiki/` and `src/oss/deepagents/code/` are intentionally unversioned and OpenWiki is listed in both Build language dropdowns. Managed Deep Agents source files receive Python and JavaScript variants; unversioned Managed Deep Agents URLs redirect to Python rather than creating a third copy.
+A page emitted by the builder is not automatically discoverable. `src/docs.json` independently owns menus, redirects, and OpenAPI configuration, so adding or moving a page requires an explicit navigation decision and a redirect when retaining a public URL.
 
-Markdown preprocessing resolves `@[...]` references, adds UTM parameters to relevant LangSmith CTA links, and resolves the target-language `:::python` / `:::js` blocks. Markdown snippets are emitted both at their normal source-relative path and as language copies, so a language-targeted MDX import receives a matching preprocessed snippet. JSX and TSX snippet components stay shared. Source traversal rejects symlinks and files resolving outside the collection root; retain that invariant when changing collection or copy logic.
+`DocumentationBuilder.build_all()` recreates `build/`, builds Python and JavaScript OSS variants, emits Deep Agents Code and OpenWiki once at unversioned OSS routes, builds LangSmith content, then copies shared files including `docs.json`. Regular OSS pages land under `oss/python/` and `oss/javascript/`. `src/oss/openwiki/` and `src/oss/deepagents/code/` intentionally land only at unversioned paths; the Build navigation lists the OpenWiki paths under both language dropdowns. Managed Deep Agents is distinct: matching `src/langsmith/managed-deep-agents*.mdx` files produce Python and JavaScript routes, while configured unversioned legacy URLs redirect to the Python route.
 
-### Generated reference surfaces
+Source collection is containment-safe: the builder skips source-tree symlinks and files whose resolved path leaves the collection root. Preserve that safeguard when changing traversal or adding a collection.
 
-There are two kinds of API reference that must not be confused:
+### Markdown, snippets, and cross-references
 
-- `reference.langchain.com` is externally generated and deployed outside this repository.
-- Mintlify generates endpoint pages during deployment for the Agent Server, Control Plane, and LangSmith REST OpenAPI declarations in `src/docs.json`. Those pages are neither authored MDX nor local builder output.
+Before writing MD or MDX, the builder resolves `@[...]` cross-references, adds UTM parameters to eligible LangSmith CTA links, and selects the target `:::python` or `:::js` content while leaving unsupported conditional labels intact. The scoped entries in `pipeline/preprocessors/link_map.py` are the authority for cross-reference symbols. An unresolved symbol is logged and left literal rather than receiving a guessed URL.
 
-The committed LangSmith REST specification is a generated-but-reviewed repository input. `scripts/process_langsmith_openapi.py` fetches only from its allow-listed live host (or reads a local file), hides internal, fleet, and health operations, groups and orders tags, and normalizes visible operation summaries before writing `src/langsmith/langsmith-platform-openapi.json`. The daily refresh workflow does nothing if that file is unchanged and appends to the standing `chore/refresh-langsmith-openapi` PR when one is open. Change the policy or upstream contract rather than hand-editing the resulting JSON.
+Snippets are shared source but have language-aware Markdown copies: the build writes the source-relative copy plus Python and JavaScript copies, and rewrites language-targeted MDX imports to the corresponding copy. JSX and TSX components stay shared.
 
-## Local development, validation, and publication
+## API-reference boundaries
 
-The `docs` console script exposes the pipeline CLI. `docs dev` builds first unless explicitly skipped, watches `src/`, and runs `mint dev` against `build/`; an initial build failure prevents startup. `make build` and `make dev` remain the usual wrappers.
+Do not conflate three reference surfaces:
 
-CI calls reusable test, lint, and link-validation workflows, then checks cross-references, external integration URL schemes, and generated files. The link workflow builds and validates links with anchors from `build/` and validates the Agent Server OpenAPI specification. The production workflow is distinct: on `main`, it runs `make build`, verifies `build/`, nests it under `public/build`, and publishes it to `prod`.
+- `reference.langchain.com` is generated and deployed outside this repository. This repository only routes issue reports for it.
+- `src/docs.json` declares Agent Server, Control Plane, and LangSmith REST OpenAPI sources. Mintlify creates their endpoint pages during deployment; they are neither authored MDX nor builder output.
+- `src/langsmith/langsmith-platform-openapi.json` is a generated-but-reviewed committed input. Its processor fetches only an allow-listed LangSmith host, or reads a local input; hides fleet/internal and configured health operations; assigns and orders tag groups; and normalizes visible operation titles before writing the file.
 
-## Samples and integration metadata lifecycle
+The daily OpenAPI workflow runs that processor, makes no commit when the specification is unchanged, and appends changes to the existing `chore/refresh-langsmith-openapi` pull request. Change the processing policy or upstream contract rather than hand-editing endpoint pages.
 
-`src/code-samples/` is executable source rather than a page collection. `make test-code-samples` runs it. `make code-snippets` extracts marked regions to ignored `src/code-samples-generated/` and renders displayed MDX under `src/snippets/code-samples/`. Edit and test the program, then regenerate; do not hand-edit either derived layer.
+## Development, verification, and publication
 
-`packages.yml` is the source catalogue for package identity, repository, provider mapping, JavaScript counterpart, reference availability, and download metadata. It feeds the generated Python provider overview; CI regenerates that overview and rejects manual edits. The weekly download job updates metadata, regenerates the overview and integration table snippets, and opens a PR only if tracked output changes.
+The `docs` console script exposes the pipeline CLI. `docs dev` builds initially unless `--skip-build` is selected, watches `src/`, and starts `mint dev` in `build/`; an initial build failure prevents server startup. `make build`, `make dev`, and the link-check targets are the standard wrappers.
 
-Generated integration tables have a second input plane. `scripts/refresh_integration_downloads.py` reads hosted integration page frontmatter and merges third-party rows from `scripts/data/integration_external_docs.yaml`. The latter is intentionally external-facing metadata: its `docs_url` becomes the name link instead of a hosted guide and must be `https://`, `http://`, or a single-slash site-relative URL. CI invokes `--check-docs-urls`; use the YAML for a third-party integration that does not qualify for a hosted guide, not a manual row in generated snippets.
+CI calls reusable test, lint, and link-validation workflows and cancels an older run for the same workflow and ref when a newer push arrives. Separate jobs check merge-conflict markers, cross-references, external integration URL schemes, and generated provider output. The link workflow builds the site, validates links with anchors and redirects, and checks the Agent Server OpenAPI specification. The generated-file check regenerates `src/oss/python/integrations/providers/overview.mdx` and rejects drift except for its stated automation and label bypasses.
 
-The Monday repository-liveness job scans third-party GitHub homes in `packages.yml`. When the recorded home is dead, it can adopt a live third-party GitHub replacement evidenced by PyPI, npm, or external docs; it retains live GitLab, partner-documentation, and first-party alternatives for human attention. It delists only when no live alternate remains, then produces its scoped changes in the standing draft PR on `chore/dead-integration-repos`.
+Publication is separate from CI: a `main` push runs `make build`, verifies `build/`, places it at `public/build`, and publishes it to the `prod` branch. Reproducibility, rather than edits to output, is therefore the operational requirement.
 
-## Release watch and Linear handoff
+## Runnable samples and derived snippets
 
-`docs-release-watch/` is a separately deployed Managed Deep Agent project. Its product registry currently separates OpenWiki, Deep Agents Python, Deep Agents Code, and Deep Agents JS by release feed, relevant source paths, documentation scope, language fence scope, and persistent tracking memory. Its research subagent is read-only and must compare an eligible release diff and tagged source with existing docs before the shipping agent can create a Linear issue and draft documentation PR. Its write tools recheck evidence and constrain edits; credentials are held in ignored environment configuration and memory retains tracking URLs rather than secrets.
+`src/code-samples/` owns executable documentation examples. `make test-code-samples` executes them; `make code-snippets` extracts marked regions to the ignored `src/code-samples-generated/` intermediate and renders committed display MDX under `src/snippets/code-samples/`. Edit and test the program, then regenerate; do not hand-edit either derived layer.
 
-<!-- openwiki: broken internal link [<issue url>] file "<issue url>" does not exist. Fix the href or restore the target, then delete this comment. -->
-A draft PR links its ticket with `Closes [DOC-N](<issue url>)`. `.github/workflows/sync-linear-issue-from-pr.yml` runs only for same-repository PRs, so forks do not receive `LINEAR_API_KEY`; it skips safely when the secret is absent and writes JSON results to the job summary. The script detects linked DOC identifiers in the title or body, resolves the target state against that issue's own team workflow, and changes draft, review-ready, merged, and unmerged-closed PRs to In Progress, In Review, Done, and Canceled respectively. It avoids no-op updates, but fails an intended sync when the team lacks a matching target state. This lets GitHub own lifecycle observation while Linear remains the ticket-state owner.
+Snippet markers make the source-to-display relationship deterministic. For example, `rag-deep.py` marks `rag-deep-index-py`, whose display fragment is `src/snippets/code-samples/rag-deep-index-py.mdx`. The extractor removes marked non-display regions and errors on an unclosed removal marker; repair markers in the runnable source. The generator supports Python, TypeScript, Java, Kotlin, Go, and shell intermediates.
+
+The agent-registration guide demonstrates the boundary: `create-an-agent.mdx` imports `create-agent-py.mdx`, derived from a marked region in `src/code-samples/langsmith/create-an-agent.py`. That sample points the SDK at a loopback fixture and asserts create and retrieve requests, so running it does not create a live agent.
+
+## Package and integration metadata
+
+`packages.yml` is package metadata for generated integration surfaces. The partner-package generator writes the Python provider overview, and CI rejects manual edits to it. The weekly package-download workflow updates metadata, regenerates the overview plus download and featured snippets, and creates a pull request only when tracked outputs changed.
+
+Integration download tables combine hosted integration-page frontmatter with `scripts/data/integration_external_docs.yaml`. An external entry's validated `docs_url` supplies the name link instead of a hosted guide; CI validates allowed schemes. Use the YAML entry for a third-party row, not a handwritten generated row.
+
+The Monday repository-liveness workflow runs the checker with `--write` and maintains one standing draft PR on `chore/dead-integration-repos`. For a dead third-party GitHub home, the checker can adopt a live third-party replacement evidenced by PyPI, npm, or external documentation. It keeps live GitLab, partner-documentation, and first-party alternatives for human attention; with no live alternate, it delists the package and removes associated listing surfaces.
+
+## Changelog state and release-watch automation
+
+The weekly changelog pipeline owns proposed Cloud and Fleet updates. It collects merged `feat` and `fix` pull requests from `langchain-ai/langchainplus` for a Monday-to-Monday window, classifies customer relevance, and writes only through `weekly --write`. The destination files are `src/langsmith/changelog.mdx` and `src/snippets/langsmith/fleet-changelog.mdx`; flag-gated candidates are retained in `scripts/.changelog_held.json.enc` until rollout checks allow publication. The ledger is encrypted because the public repository must not disclose unreleased work.
+
+`.github/workflows/changelog-weekly.yml` is the operational entrypoint. It runs each Monday at 13:00 UTC or by validated manual date range, and opens or refreshes a review PR rather than publishing directly. A dry run writes candidate entries to the Actions summary; the detailed report stays local because it can name private PRs and unreleased work. Edit wording in the changelog targets during review, not generated build output. See [Weekly Changelog Publication](/openwiki/workflows/changelog-publication.md) for its gates and failure semantics.
+
+`docs-release-watch/` is a separately deployable Managed Deep Agent, not a Mintlify build input. Its registry maps each covered product to an upstream repository, documentation boundary, release-tag filter, source prefixes, language scope, and durable memory file. It currently watches OpenWiki, Deep Agents Python, Deep Agents Code, and Deep Agents JS. For an eligible release published 7–30 days earlier, it compares tagged source with the owned documentation boundary and prepares one Linear DOC ticket and one **draft** documentation PR per feature; people review before merge. To extend coverage, add the registry entry, a matching product skill, and a schedule prompt, then run `uv run mda deploy`. See [Documentation Release Watch](/openwiki/workflows/release-watch.md) for the write safeguards and credentials.
 
 ## Change guide
 
-1. **New or moved page:** edit the appropriate `src/` MDX, update `src/docs.json`, and add a redirect if preserving a public URL.
-2. **Route, language, or preprocessing behavior:** change `pipeline/`, preserve symlink containment, add focused tests, and rebuild.
-3. **Reusable prose or UI:** edit `src/snippets/`; rely on language-aware snippet imports instead of copied fragments.
-4. **Runnable example:** edit and test `src/code-samples/`, run `make code-snippets`, and commit rendered snippet MDX, not the ignored intermediate.
-5. **Provider, hosted integration, or external row:** use `packages.yml`, hosted page frontmatter, or `scripts/data/integration_external_docs.yaml` according to ownership; regenerate tables rather than edit their output.
-6. **OpenAPI reference:** change `src/docs.json`, the specification, or its processing policy; do not create endpoint MDX for deployment-generated pages.
-7. **Release automation or ticket handoff:** change `docs-release-watch/` and deploy it, or change the repository PR-sync workflow/script for lifecycle mapping. Preserve same-repository secret isolation and the `Closes DOC-N` convention.
+1. **Add or move a page:** edit the owning `src/` MDX, then update `src/docs.json`; do not infer navigation from the directory name.
+2. **Change routes, language rendering, snippets, or preprocessing:** modify `pipeline/`, preserve containment safety, add a focused test, and rebuild.
+3. **Change a runnable example:** edit and test `src/code-samples/`, run `make code-snippets`, and commit the rendered snippet MDX—not the ignored intermediate.
+4. **Change provider or integration listings:** choose `packages.yml`, hosted-page frontmatter, or `integration_external_docs.yaml` by ownership, then regenerate.
+5. **Change Mintlify API reference:** change `src/docs.json`, the committed specification, or `process_langsmith_openapi.py`; never author deployment-generated endpoint MDX.
+6. **Fix an API symbol link:** amend the scoped mapping in `pipeline/preprocessors/link_map.py` and verify preprocessing rather than pasting a guessed URL into output.
+7. **Change a changelog proposal:** preserve encrypted held-state handling and review-PR publication; use `weekly --write` only when the required secrets and rollout checks are available.
+8. **Extend release watch:** align the product registry, skill, schedule, and deployment. Do not treat its generated draft PR as an automatically publishable documentation change.
+9. **Change verification or scheduled maintenance:** update the workflow, script, and tests together; preserve the standing-PR behavior of OpenAPI and integration-repository maintenance.
 
 ## Related pages
 
 - [Build system](/openwiki/architecture/build-system.md)
 - [Versioning](/openwiki/concepts/versioning.md)
-- [GitHub Actions](/openwiki/integrations/github-actions.md)
-- [Quickstart](/openwiki/quickstart.md)
-- [Integration listing automation](/openwiki/workflows/integration-listing-automation.md)
-- [LangSmith OpenAPI refresh](/openwiki/workflows/langsmith-openapi-refresh.md)
-- [Release watch](/openwiki/workflows/release-watch.md)
+- [Mintlify integration](/openwiki/integrations/mintlify.md)
+- [Adding pages](/openwiki/operations/adding-pages.md)
+- [Weekly Changelog Publication](/openwiki/workflows/changelog-publication.md)
+- [Documentation Release Watch](/openwiki/workflows/release-watch.md)

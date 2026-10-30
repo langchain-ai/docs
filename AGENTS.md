@@ -50,6 +50,7 @@ once to link the tree, and again in each new git worktree.
 | `docs-restructure` | Splitting a page that grew too long, moving sections between pages, retiring a page, or a topic documented in two places: the duplication map, choosing one owner, cutting rather than relocating. |
 | `docs-team-voice` | Drafting or revising prose in the house voice: sentence length, cross-link density, stating defaults, the revision pass. |
 | `docs-review` | Reviewing changed prose against Vale and the style guide, reporting the rule each finding breaks. `add-docs-page` invokes it before committing. |
+| `open-docs-pr` | Opening a PR for finished changes: branching from the latest `origin/main`, the lint and link gates, the commit, the short PR description with its AI disclosure line, pushing, and watching checks. |
 | `docs-tooling-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, and how to edit safely. Required whenever a PR adds or changes a script, workflow, or check. |
 | `docs-code-samples` | Moving inline MDX code blocks into external, testable sample files. |
 | `verify-against-source` | Checking that a code sample, signature, default, or behavior claim is true: which repository owns each product, how to reach the private ones, and naming what stayed unverified. |
@@ -124,13 +125,13 @@ Two language dropdowns (Python, TypeScript) with the same 10 tabs each. Most con
 | Tab | Source | Groups |
 |-----|--------|--------|
 | Overview | `src/build-overview.mdx` | Single page |
-| Deep Agents | `src/oss/deepagents/` | Get started, Deployment (Going to production), Execution environment, Context management, Delegation, Steering, Frontend (Patterns), Protocols |
 | Managed Deep Agents | `src/langsmith/managed-deep-agents*.mdx` | Get started, Agent definition (Channels), Build and deploy |
+| Deep Agents | `src/oss/deepagents/` | Get started, Deployment (Going to production), Execution environment, Context management, Delegation, Steering, Frontend (Patterns), Protocols |
 | LangChain | `src/oss/langchain/` | Get started, Core components, Middleware, Frontend (Patterns → Generative UI, Integrations), Advanced usage (Multi-agent), Agent development (Test), Production |
 | LangGraph | `src/oss/langgraph/` | Get started, Capabilities, Production, Frontend, LangGraph APIs (Graph API, Functional API) |
 | OpenWiki | `src/oss/openwiki/` | Modes, Integrations, Search and link, Visualize, CLI reference, Customize, Providers, Automate updates, Changelog |
 | Integrations | `src/oss/python/integrations/` or `src/oss/javascript/integrations/` | Python: Popular Providers, Integrations by component. TypeScript: Popular Providers (OpenAI, Anthropic, Google, AWS, Microsoft), General integrations, RAG integrations |
-| Learn | `src/oss/` (various) | Tutorials (Deep Agents, LangChain, Multi-agent, LangGraph), Conceptual overviews, Additional resources. TypeScript adds LangChain Academy |
+| Learn | `src/oss/` (various) | Tutorials (Managed Deep Agents, Deep Agents, LangChain, Multi-agent, LangGraph), Conceptual overviews, Additional resources. TypeScript adds LangChain Academy |
 | Reference | `src/oss/reference/` | Reference, Releases (Releases, Migration guides), Policies; short entry pages linking to reference.langchain.com |
 | Contribute | `src/oss/contributing/` | Contribute (Integrations) |
 
@@ -174,7 +175,7 @@ Five tabs, all files flat in `src/langsmith/`:
 | Tab | Groups |
 |-----|--------|
 | Overview | Single page |
-| Trace | Tracing setup (Integrations → LLM providers, Agent frameworks, Voice AI frameworks, Developer tools; Manual instrumentation), Configuration & troubleshooting (Project & environment settings, Advanced tracing techniques, Data & privacy, Troubleshooting guides) |
+| Trace | Tracing setup (Integrations → LLM providers, Agent frameworks, Voice AI frameworks, Developer tools, Productivity; Manual instrumentation), Configuration & troubleshooting (Project & environment settings, Advanced tracing techniques, Data & privacy, Troubleshooting guides) |
 | Debug | Viewing & managing traces, Bulk export trace data, Trajectory view, Data type reference |
 | Observe | Monitoring & alerting, Online evaluators, Automations |
 | Reference | SmithDB SDK migration, LangSmith REST API |
@@ -275,7 +276,9 @@ description: SEO summary, no markdown allowed (no links, backticks, formatting)
 
 ### Language-specific content
 
-Use `:::python` or `:::js` fences for language-specific content. Pages with these fences generate separate Python and JavaScript versions.
+Use `:::python` or `:::js` fences for language-specific content. Every shared page under `src/oss/` builds a Python and a JavaScript version, and the fences decide what each version keeps.
+
+A shared page listed in only one language's navigation in `src/docs.json` builds only that language. To make a page Python-only, list it only in the Python nav, and add a `docs.json` redirect for the JavaScript URL if that URL was ever published. Pages listed in both navs, or in neither, build both versions.
 
 ```txt
 :::python
@@ -594,6 +597,32 @@ Notes:
 - After regenerating, commit only `src/snippets/langsmith/mda-oauth-catalog.mdx`. Do not edit
   that snippet by hand.
 
+### Update the egress IP inventory
+
+The LangSmith and LangSmith Deployment egress IP tables on `/langsmith/cloud` and
+`/langsmith/cloud-platform-features` are generated from
+`src/langsmith/egress-ip-addresses.json` by `scripts/generate_egress_ip_tables.py`. The JSON is
+also published as-is at `/langsmith/egress-ip-addresses.json` for customers to poll.
+
+Each address has a service (`langsmith` or `langsmith-deployment`), cloud (`gcp` or `aws`),
+customer region (`us`, `eu`, or `apac`), and IPv4 `/32` CIDR. Customers must allowlist every
+matching CIDR, including allocated reserves. Publish new reserves before using them. Attaching
+an already-published address does not require an inventory update. Remove an address only
+after it stops carrying traffic and has been released.
+
+```bash
+uv run python scripts/generate_egress_ip_tables.py           # rewrite the version and both tables
+uv run python scripts/generate_egress_ip_tables.py --check   # fail if anything is stale
+```
+
+Notes:
+
+- Commit the JSON and both generated pages together. Do not edit the generated tables or the
+  `version` field by hand.
+- `make test` runs the same `--check` on the committed files, so CI fails on drift.
+- After deployment, verify the changes at
+  [the public JSON](https://docs.langchain.com/langsmith/egress-ip-addresses.json).
+
 ### Check integration repo links
 
 `scripts/check_integration_repos.py` scans every third-party `repo:` in `packages.yml`
@@ -643,7 +672,8 @@ When extracting data from PRs or changelogs, use the "Release Note:" section in 
 
 - Explain the "why" of changes
 - Highlight areas needing careful review
-- Disclose AI agent involvement in description
+- Disclose AI agent involvement as one plain sentence in the description, for example "Prepared with Claude Code."
+- Do not add a `🤖 Generated with [Claude Code]` badge or similar to PR descriptions or commit messages, and do not add a `Co-Authored-By` trailer for an AI agent to commits. This aligns with the `langster-safety` skill. The `check-pr-ai-attribution` workflow fails a PR whose description contains either one, and a ruleset on `main` blocks the Claude trailer.
 
 <!-- OPENWIKI:START -->
 
