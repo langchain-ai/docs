@@ -40,7 +40,16 @@ description: SEO summary with no markdown, no links, and no backticks
 ```
 
 For OSS pages that differ by language, use `:::python` and `:::js` fences in one
-file rather than writing two files. The build pipeline emits both versions.
+file rather than writing two files. The build pipeline emits both versions. Keep
+each fence on its own line around whole blocks; a fence inside a table or list
+breaks it.
+
+Use only components that exist. Before writing a JSX tag you have not seen in
+`src/`, look it up on [Mintlify components](https://mintlify.com/docs/components)
+or with the `docs-mintlify` MCP server's `search_mintlify` tool. A name that
+sounds right is not evidence: `<Important>`, `<Anchor>`, and `<ItemTable>` all
+reached `main` and rendered as nothing. A snippet or custom component needs its
+`import` line on the page. See the Components section of `AGENTS.md`.
 
 Take every fact on the page from the product source, not from memory, a sibling
 docs page, or the request that asked for the page. This covers behavior,
@@ -151,8 +160,14 @@ Run all three, in this order:
 ```bash
 make lint_prose FILES="src/path/to/page.mdx"
 make build
+make check-mdx
 make broken-links-with-anchors
 ```
+
+`make check-mdx` fails on a tag that is neither a Mintlify built-in nor
+imported, and on foreign syntax such as `:::note` or a stray `:::`. It reports
+build paths (`oss/python/...`), so map each one back to its `src/` file. It
+needs a recent `mint`; the target says so when yours is too old.
 
 When `make build` fails with `Required uv version >=0.9.26 does not match the
 running version`, the local `uv` has drifted from the one `pyproject.toml`
@@ -223,6 +238,8 @@ instead.
 - [ ] Inbound `#anchor` links checked before any heading was reworded.
 - [ ] A block now on three or more pages extracted to `src/snippets/`, and its
       built `python/` and `javascript/` targets confirmed to exist.
+- [ ] Every JSX tag confirmed as a Mintlify built-in or imported; `make check-mdx`
+      clean.
 - [ ] `make lint_prose` clean, `make broken-links-with-anchors` shows no new `⎿` lines.
 - [ ] `docs-review` run on the changed files, findings addressed.
 - [ ] PR opened with `open-docs-pr`, checks green.

@@ -183,7 +183,10 @@ make lint_prose FILES="<changed files>"
 ```
 
 Run `make broken-links-with-anchors` as well when links, page names, or navigation entries
-changed. For a prose review against the style guide, use the `docs-review`
+changed. When the edit adds or changes a JSX tag, an import, or a `:::python` or
+`:::js` fence, run `make build` and then `make check-mdx`. Confirm any tag new to
+`src/` on [Mintlify components](https://mintlify.com/docs/components) before
+using it rather than trusting the name. For a prose review against the style guide, use the `docs-review`
 skill.
 
 ## Step 5. Report

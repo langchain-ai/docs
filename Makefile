@@ -1,4 +1,4 @@
-.PHONY: all dev build export htmltest export-htmltest format lint test install install_vale clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples update-code-sample-traces check-cross-refs check-legacy-links skills
+.PHONY: all check-mdx dev build export htmltest export-htmltest format lint test install install_vale clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples update-code-sample-traces check-cross-refs check-legacy-links skills
 
 # Default target
 all: help
@@ -194,6 +194,17 @@ broken-links-with-anchors: build
 check-legacy-links:
 	@bash scripts/check-legacy-doc-links.sh
 
+# check-mdx: Fails on JSX components that are neither Mintlify built-ins nor imported
+# (unknown-component), and on Docusaurus/MkDocs admonitions or stray ::: left by an
+# unbalanced language fence (foreign-syntax). Reads build/, so run make build first.
+# mint validate exits 0 on warnings in --no-build mode, so the JSON summary decides.
+check-mdx:
+	@test -d build || { echo "Error: build/ not found. Run make build first."; exit 1; }
+	@mint validate --help 2>&1 | grep -q unknown-component || { \
+		echo "Error: mint $$(mint --version 2>/dev/null || echo unknown) lacks the unknown-component rule. Run: npm install -g mint@latest"; exit 1; }
+	@cd build && mint validate --no-build --disable all --enable unknown-component,foreign-syntax --format json > /tmp/mint-validate.json 2>/dev/null; \
+		python3 -c 'import json, sys; r = json.load(open("/tmp/mint-validate.json")); s = r["summary"]; [print("%s:%s: %s" % (d["file"], d["line"], d["message"])) for d in r["diagnostics"]]; print("%d errors, %d warnings (paths are build/ paths)" % (s["errors"], s["warnings"])); sys.exit(1 if s["errors"] or s["warnings"] else 0)'
+
 check-openapi: build
 	@echo "Checking openapi spec validity"
 	@command -v mint >/dev/null 2>&1 || { echo "Error: mint is not installed. Run 'npm install -g mint@latest'"; exit 1; }
@@ -264,6 +275,7 @@ help:
 	@echo "  make broken-links       - Check for broken links in built documentation"
 	@echo "  make check-cross-refs   - Check for unresolved @[ref] cross-references"
 	@echo "  make broken-links-with-anchors - Same as above, also validates anchor links"
+	@echo "  make check-mdx          - Check build/ for unknown components and foreign syntax"
 	@echo "  make format             - Format code"
 	@echo "  make lint               - Lint code"
 	@echo "  make lint_md            - Lint markdown files"

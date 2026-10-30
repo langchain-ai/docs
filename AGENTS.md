@@ -286,6 +286,8 @@ Python-only content here
 :::
 ```
 
+Put each fence on its own line, with the opener and its `:::` closer around whole blocks. A fence inside a table, list, or paragraph breaks that block: the pipeline leaves a blank line where it strips the fence. For a table that differs by language, write one full table per language. `make check-mdx` reports a stray `:::` it can see, but not every one.
+
 ### Code highlighting
 
 ```python
@@ -323,6 +325,8 @@ Common Tabler names: `home` (not house), `tool` (not wrench), `player-play` (not
 | `<Card>` / `<CardGroup>` | Navigation/overview links only (not for highlighting points) |
 | `<Note>`, `<Tip>`, `<Warning>`, `<Info>` | Callouts |
 | `<Prompt>` | Copyable AI-assistant prompt. **Required at the top of every migration guide** |
+
+Every JSX tag on a page must be a Mintlify built-in or imported on that page. Mintlify renders any other tag as nothing, with no build error, so the content inside it silently disappears. Before using a tag you have not seen elsewhere in `src/`, confirm it on [Mintlify components](https://mintlify.com/docs/components) or through the `docs-mintlify` MCP server. Never invent one from another docs framework: `<Important>`, `<Anchor>`, and `:::note` are not Mintlify syntax. A custom component or snippet needs its `import` line. `make check-mdx` fails on both problems, and CI runs it.
 
 ### Migration guide convention
 

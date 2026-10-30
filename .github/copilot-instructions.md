@@ -64,6 +64,7 @@ description: SEO summary, no markdown allowed (no links, backticks, formatting)
 
 ## Syntax
 
-- Language-specific content: `:::python` or `:::js` fences (every shared `src/oss/` page builds both languages; a page listed in only one language nav builds only that language)
+- Language-specific content: `:::python` or `:::js` fences (every shared `src/oss/` page builds both languages; a page listed in only one language nav builds only that language). Each fence on its own line around whole blocks, never inside a table, list, or paragraph
+- Components: only Mintlify built-ins (<https://mintlify.com/docs/components>) or tags imported on the page; anything else renders as nothing. Run `make check-mdx` after `make build`
 - Code highlighting: `# [!code highlight]`, `# [!code ++]`, `# [!code --]`
 - API reference links: `@[ClassName]` for the first mention of SDK classes or methods
