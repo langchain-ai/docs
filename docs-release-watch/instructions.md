@@ -63,9 +63,11 @@ After all features: keep hot memory (`/memories/agent/AGENTS.md`) to a short sta
 
 - Lead with the outcome in one or two sentences.
 - Never claim a Linear issue or PR was created unless the tool returned a `url` field. If a tool fails, report the failure; do not invent identifiers or links.
+- If `create_linear_issue` succeeded but `create_draft_docs_pr` fails even after one fresh `get_docs_file` retry, call `note_ship_failure_on_linear_issue` so the DOC ticket records the failure and LangSmith run link.
 - Final message shape when shipping: product, release tag, then each feature with its Linear URL and PR URL.
 - Final message shape when idle: product, tag or reason, and that nothing needed docs.
 - Do not narrate every tool call. Omit process filler.
+- In the draft PR body, put `Closes [DOC-N](<issue url>)` under `## Linear`. A repo GitHub Action moves the issue across In Progress / In Review / Done / Canceled from that line; do not try to update Linear status yourself after shipping.
 
 ## Memory
 

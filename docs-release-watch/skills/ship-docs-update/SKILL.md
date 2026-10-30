@@ -52,13 +52,22 @@ Each item needs `path` plus `symbol` or `quote`. Empty evidence is rejected.
 3. Create the draft PR with `create_draft_docs_pr`:
    - Branch: `docs/<product>-<version>-<feature-slug>`
    - Title matches the issue scope
-   - Body links the Linear issue URL and names the triggering release
+   - Body must include a `## Linear` section with `Closes [DOC-N](<issue url>)` (markdown hyperlink). A GitHub Action syncs Linear status from that line (draft open → In Progress, ready for review → In Review, merged → Done, closed unmerged → Canceled), so the `Closes DOC-N` link is required.
    - Pass the same `evidence_json`
    - Pass `product` so language-fence validation uses the registry scope (`python` / `js` / `shared`)
    - `files_json` is a JSON array of `{ "path": "...", "old_content": "...", "new_content": "..." }`
    - `old_content` must be the exact string returned by `get_docs_file` (empty string only for a brand-new file)
    - Keep the edit surgical: the tool rejects diffs that rewrite too much of an existing page or change the other language fence
 4. Record the Linear URL and PR URL in product memory before starting the next feature. Only treat the ship as successful when both tools returned a `url`.
+
+## If `create_draft_docs_pr` fails
+
+The tool rebases stale `old_content` onto live `main` when the changed hunks still apply. When it still fails (for example `old_content does not match` / could not be rebased):
+
+1. Call `get_docs_file` again for every path in the failed PR.
+2. Re-apply the same surgical edit on that fresh content.
+3. Retry `create_draft_docs_pr` once with the new `old_content` / `new_content`.
+4. If the retry also fails, call `note_ship_failure_on_linear_issue` with the DOC identifier and a short reason. That appends a **Ship failure** section (and the LangSmith run URL when available) to the issue so a human can debug. Leave the issue open. Do not claim the feature shipped.
 
 ## PR body template
 
@@ -68,7 +77,7 @@ Each item needs `path` plus `symbol` or `quote`. Empty evidence is rejected.
 - Triggered by <product> <release tag>
 
 ## Linear
-<issue url>
+Closes [DOC-<number>](<issue url>)
 
 ## Source evidence
 - Repo: `<owner>/<repo>`

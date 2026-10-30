@@ -124,9 +124,22 @@ The daily schedule `daily_openwiki_check` runs at 09:00 America/Los_Angeles and 
 Runs in two phases:
 
 1. **Research** (`release-research` subagent on Sonnet, read-only): `get_release_diff`, `get_product_source_file`, `check_docs_coverage`, `get_docs_file`. Returns a JSON feature list. No Linear or PR tools.
-2. **Ship** (main agent on Opus): only features from that report. Read docs `AGENTS.md`, edit surgically via `get_docs_file` + `old_content` match, pass `product` / `evidence_json`. Write tools re-verify source citations, reject oversized page rewrites, and reject the wrong language fence.
+2. **Ship** (main agent on Opus): only features from that report. Read docs `AGENTS.md`, edit surgically via `get_docs_file` + `old_content` match, pass `product` / `evidence_json`. Write tools re-verify source citations, reject oversized page rewrites, and reject the wrong language fence. If `main` moved under the agent, `create_draft_docs_pr` rebases the surgical edit when the hunks still apply; if PR creation still fails after one fresh-file retry, the agent calls `note_ship_failure_on_linear_issue` to append the failure reason and LangSmith run URL to the open DOC ticket.
 
 Release notes are secondary leads. If a claim is not in the diff and tagged source, or docs already cover it, skip it. Never claim a ticket or PR without a tool-returned URL.
+
+## Linear status sync
+
+The agent does not poll PR status. After it opens a draft PR whose `## Linear` section includes `Closes [DOC-N](<issue url>)`, GitHub Actions updates the Linear issue:
+
+| PR event | Linear status (preferred name / type) |
+| --- | --- |
+| Opened or converted to draft | In Progress (`started`) |
+| Ready for review | In Review (`started`) |
+| Merged | Done (`completed`) |
+| Closed without merge | Canceled (`canceled`) |
+
+Implementation: `scripts/sync_linear_issue_from_pr.py` and `.github/workflows/sync-linear-issue-from-pr.yml` (uses repo secret `LINEAR_API_KEY`).
 
 ## Safety
 

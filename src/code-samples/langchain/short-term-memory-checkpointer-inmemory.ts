@@ -34,15 +34,9 @@ console.log(response); // "You are Bob!"
 // :snippet-end:
 
 // :remove-start:
-function assistantText(content: unknown): string {
-  if (typeof content === "string") {
-    return content;
-  }
-  return "";
-}
-
 async function main() {
-  const text = assistantText(response);
+  // `.text` joins text content blocks, so it works for string and block replies.
+  const text = result.messages.at(-1)?.text ?? "";
   if (!text.trim()) {
     throw new Error("expected non-empty assistant reply on second turn");
   }

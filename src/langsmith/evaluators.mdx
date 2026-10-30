@@ -53,19 +53,9 @@ You can create an evaluator in the [LangSmith UI](https://smith.langchain.com) o
 1. In the [LangSmith UI](https://smith.langchain.com), select **Evaluators** in the left sidebar.
 1. Click **+ Evaluator** to open the new evaluator panel.
 1. The panel lets you:
-   - **Create from scratch**: Build a new [LLM-as-a-Judge](/langsmith/llm-as-judge) or [Code](/langsmith/online-evaluations-code) evaluator. To use a [decision model](/langsmith/decision-model-evaluator) as the judge, select **LLM-as-a-Judge Evaluator**, then select a decision model.
+   - **Create from scratch**: Build a new [LLM-as-a-Judge](/langsmith/llm-as-judge), [Decision Model](/langsmith/decision-model-evaluator), or [Code](/langsmith/online-evaluations-code) evaluator.
    - **Add a LangChain Tuned Evaluator**: Attach a [specialized judge managed by LangChain](/langsmith/tuned-evaluators) to a compatible tracing project without configuring a prompt, model, or API key.
-   - **Create from a template**: Start from a ready-made evaluator (also known as a prebuilt evaluator) for common evaluation patterns. A **Recommended** section surfaces popular templates first, followed by templates organized by the following categories:
-
-     | Category | Description |
-     |----------|-------------|
-     | Security | Detect leaks, injections, and adversarial inputs. |
-     | Safety | Evaluate content safety and moderation. |
-     | Quality | Measure output quality and accuracy. |
-     | Conversation | Evaluate conversational quality and user experience. |
-     | Trajectory | Evaluate agent tool use and decision paths. |
-     | Image Evaluations | Evaluate image content quality and safety. |
-     | Voice Evaluation | Evaluate voice and audio interaction quality. |
+   - **Create from a template**: Start from a ready-made evaluator (also known as a prebuilt evaluator) for common evaluation patterns. A **Recommended** section lists popular templates first. The rest are grouped by category: Security, Safety, Quality, Conversation, Trajectory, Image Evaluations, and Voice Evaluation. For what each template scores, see [Prebuilt evaluator templates](#prebuilt-evaluator-templates).
 
 You can also add an evaluator directly from a [tracing project](/langsmith/observability-concepts#tracing-projects), an agent environment, or a [dataset](/langsmith/evaluation-concepts#datasets). In that flow, you can additionally **attach an existing evaluator** from your workspace, or create a [Composite](/langsmith/composite-evaluators-ui) evaluator. Refer to [Set up LLM-as-a-judge online evaluators](/langsmith/online-evaluations-llm-as-judge) and [Automatically run evaluators on experiments](/langsmith/bind-evaluator-to-dataset).
 
@@ -121,6 +111,100 @@ console.log("Created evaluator:", created.evaluator?.id);
 
 To create an LLM-as-a-judge evaluator and to retrieve, update, list, or delete evaluators, refer to [Manage evaluators with the SDK](/langsmith/manage-evaluators-sdk).
 
+## Prebuilt evaluator templates
+
+Prebuilt evaluator templates are ready-made evaluators for common checks, such as hallucination, prompt injection, and task completion. Each template is a starting point. You can edit its prompt and scoring schema before you save it to your workspace.
+
+Most templates are [LLM-as-a-judge](/langsmith/llm-as-judge) evaluators whose prompts come from the open-source [openevals](https://github.com/langchain-ai/openevals) package. Two are exceptions: Assertions uses a prompt defined in LangSmith, and Exact Match is a [code evaluator](/langsmith/online-evaluations-code).
+
+Each LLM-as-a-judge template writes a score under its feedback key and a `comment` with the judge's reasoning. Language and Support Intent return a label without a `comment`.
+
+A `true` score does not always mean a pass. Templates that detect a problem return `true` when they find it: the Security and Safety templates, Hallucination, Perceived Error, the Image templates, and Audio Quality. The rest return `true` when the output passes. The **Score** column in each table states what `true` means.
+
+Templates differ in the data they read:
+
+- **Whole threads**: Conversation and Trajectory templates read every message in a thread. When you add one to a tracing project, LangSmith configures it as a thread-level evaluator. For more information, see [Set up multi-turn online evaluators](/langsmith/online-evaluations-multi-turn).
+- **Reference outputs**: Correctness, Assertions, and Exact Match compare the output against a reference output, which comes from a [dataset](/langsmith/evaluation-concepts#datasets) example.
+- **Plan**: Plan Adherence reads a `plan` variable in addition to the thread messages.
+- **Attachments**: Image and Voice templates read the run's attachments. For more information, see [Evaluate with attachments](/langsmith/evaluate-with-attachments).
+
+### Security
+
+Security templates detect leaks, injections, and adversarial inputs.
+
+| Template | What it scores | Score |
+|----------|----------------|-------|
+| PII Leakage | Whether the input or output contains personal information that could identify or harm an individual. | `pii_leakage` (boolean): `true` when PII is found. |
+| Prompt Injection | Whether the input contains embedded instructions that target the AI system. Reads the input only. | `prompt_injection` (boolean): `true` when an injection attempt is found. |
+| Code Injection | Whether the input contains executable code embedded in data. Reads the input only. | `code_injection` (boolean): `true` when an injection attempt is found. |
+
+### Safety
+
+Safety templates evaluate content safety and moderation.
+
+| Template | What it scores | Score |
+|----------|----------------|-------|
+| Toxicity | Whether the content contains toxic elements, such as personal attacks or hate speech. | `toxicity` (boolean): `true` when toxic content is found. |
+| Bias & Fairness | Whether the content contains stereotyping, exclusionary language, or discriminatory framing. | `fairness` (boolean): `true` when bias or a fairness violation is found. |
+
+### Quality
+
+Quality templates measure output quality and accuracy.
+
+| Template | What it scores | Score |
+|----------|----------------|-------|
+| Hallucination | Whether the output contains claims the input context does not support, such as contradictions, speculative details, or inaccurate facts. | `hallucination` (boolean): `true` when the output contains a hallucination. |
+| Correctness | Whether the output is factually accurate, complete, and consistent with the reference output. | `correctness` (boolean): `true` when the output is correct. |
+| Assertions | Whether the output satisfies each assertion in the reference output. The judge reads an `assertions` list from the reference output, where each entry has a `key` and a `comment`. A missing or empty list scores `false`. | `assertions_passed` (boolean): `true` only when every assertion passes. |
+| Conciseness | How efficiently the output conveys the requested information, penalizing hedging, pleasantries, meta-commentary, and redundancy. | `conciseness` (number, 0 to 10): `10` when the output contains only essential information. |
+| Code Checker | Whether the code solves every requirement in the input, handles edge cases, and would run without errors. | `code_checker` (boolean): `true` when the code is complete and correct. |
+| Answer Relevance | Whether the output directly addresses the input question without off-topic tangents. | `answer_relevance` (boolean): `true` when the output is relevant. |
+| Exact Match | Whether the run's outputs exactly equal the reference outputs. This template runs as code and makes no LLM call. | `exact_match` (boolean): `true` when the outputs match. |
+
+### Conversation
+
+Conversation templates evaluate conversational quality and user experience across a whole thread.
+
+| Template | What it scores | Score |
+|----------|----------------|-------|
+| Perceived Error | Whether user signals, such as frustration or repeated corrections, show the user perceived the agent making an error. | `perceived_error` (boolean): `true` when the user perceived an error that caused significant frustration. |
+| Language | The primary language of the conversation. | `language` (string): a language name in English, such as `Spanish`. |
+| Support Intent | The primary intent of a support conversation. | `intent` (category): one of `Account & Billing`, `Order Management`, `Technical Support`, `Product Inquiry`, `Policy Inquiry`, `Status Check`, `Complaint & Feedback`, `Escalation`, or `Other`. |
+| User Satisfaction | Whether the user's tone and satisfaction indicators show the user was satisfied. | `user_satisfaction` (boolean): `true` when the user appears satisfied. |
+| Tone | Whether the agent's tone was appropriate for the context and consistent. | `agent_tone` (boolean): `true` when the tone was appropriate. |
+| Task Completion | Whether the agent fully completed every user request in the conversation. | `task_completion` (boolean): `true` when every request was completed. |
+| Knowledge Retention | Whether the agent retained and applied facts from earlier in the conversation, without contradictions or ignored context. | `knowledge_retention` (boolean): `true` when the agent retained earlier facts. |
+
+### Trajectory
+
+Trajectory templates evaluate agent tool use and decision paths across a whole thread.
+
+| Template | What it scores | Score |
+|----------|----------------|-------|
+| Plan Adherence | Whether the agent's steps followed its declared plan. | `plan_adherence` (boolean): `true` when the agent followed the plan. |
+| Tool Selection | Whether the agent chose the right tools, in a sensible order, without unnecessary calls. | `tool_selection` (boolean): `true` when tool selection was accurate and efficient. |
+| Trajectory Accuracy | Whether the agent's path was logical, showed clear progress, and was reasonably efficient. | `trajectory_accuracy` (boolean): `true` when the trajectory was accurate and efficient. |
+
+### Image Evaluations
+
+Image templates evaluate image content quality and safety.
+
+| Template | What it scores | Score |
+|----------|----------------|-------|
+| Explicit Content | Whether an image contains nudity, sexual content, or graphic violence. | `explicit_content` (boolean): `true` when explicit content is found. |
+| Sensitive Imagery | Whether an image contains harmful, offensive, or inappropriate symbols or depictions. | `sensitive_imagery` (boolean): `true` when sensitive imagery is found. |
+
+### Voice Evaluation
+
+Voice templates evaluate voice and audio interaction quality.
+
+| Template | What it scores | Score |
+|----------|----------------|-------|
+| Audio Quality | Whether the audio contains clipping, distortion, or glitches that degrade the listening experience. | `audio_quality` (boolean): `true` when quality issues are found. |
+| Transcription Accuracy | Whether a speech-to-text transcription accurately reflects the spoken content. | `transcription_accuracy` (boolean): `true` when the transcription is accurate. |
+| User Interrupts | Whether the agent handled user interruptions gracefully. | `user_interrupts` (boolean): `true` when interruptions were handled gracefully. |
+| Vocal Affect | Whether the agent's vocal warmth, prosody, and emotional tone were appropriate and natural. | `vocal_affect` (boolean): `true` when vocal affect was appropriate. |
+
 ## View evaluator details
 
 Click any evaluator in the table to open its detail view. The detail view has four tabs:
@@ -138,7 +222,7 @@ Because the evaluator is shared, changes apply across every trace container and 
 
 ## Manage evaluator trace retention
 
-When an online evaluator scores a trace, it attaches feedback to the trace. This can auto-upgrade the trace to [extended retention](/langsmith/usage-and-billing#data-retention-auto-upgrades), depending on the evaluator's retention setting. Extended retention keeps the trace longer but costs more. When you set up an online evaluator on a [tracing project](/langsmith/observability-concepts#tracing-projects), or on an agent environment, you can opt out of this upgrade so that scored traces stay at the base retention.
+When an online evaluator scores a trace, it attaches feedback to the trace. This can auto-upgrade the trace to [extended retention](/langsmith/usage-and-billing#data-retention-auto-upgrades), depending on the evaluator's retention setting. When you set up an online evaluator on a [tracing project](/langsmith/observability-concepts#tracing-projects), or on an agent environment, you can opt out of this upgrade so that scored traces stay at the base retention.
 
 This control is available only when the project's [default retention](/langsmith/billing#change-project-level-default-retention) is the [base tier](/langsmith/usage-and-billing#how-it-works). If the project defaults to extended retention ([set at the project or workspace level](/langsmith/data-purging-compliance#data-retention)), traces scored by the evaluator follow that default and the option is locked.
 
