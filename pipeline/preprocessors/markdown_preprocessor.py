@@ -15,6 +15,72 @@ from pipeline.preprocessors.utm_links import add_utm_to_cta_links
 
 logger = logging.getLogger(__name__)
 
+_FENCE_OPEN = re.compile(r"^[ \t]*:::(\w+)\s*$")
+_FENCE_CLOSE = re.compile(r"^[ \t]*:::\s*$")
+_FENCE_LIKE = re.compile(r"^[ \t]*:::")
+_CODE_FENCE = re.compile(r"^[ \t]*(```|~~~)")
+
+
+def _validate_conditional_fences(md_text: str) -> None:
+    """Raise if conditional fences are unbalanced or split a table.
+
+    Conditional rendering pairs each opener with the next closer, so a broken
+    fence does not fail on its own: content leaks into the other language and
+    a stray ``:::`` renders as text. A fence between two table rows splits the
+    table, because the stripped fence leaves a blank line behind.
+
+    Args:
+        md_text: The markdown content to check.
+
+    Raises:
+        ValueError: Listing the line number and problem for each broken fence.
+    """
+    lines = md_text.split("\n")
+    problems: list[str] = []
+    open_line: int | None = None
+    in_code = False
+
+    for number, line in enumerate(lines, start=1):
+        if _CODE_FENCE.match(line):
+            in_code = not in_code
+        if in_code or line.lstrip().startswith("\\:::"):
+            continue
+
+        if match := _FENCE_OPEN.match(line):
+            if open_line is not None:
+                problems.append(
+                    f"line {number}: :::{match.group(1)} opens inside the block "
+                    f"opened at line {open_line}"
+                )
+            open_line = number
+        elif _FENCE_CLOSE.match(line):
+            if open_line is None:
+                problems.append(f"line {number}: ::: closes a block that is not open")
+            open_line = None
+        elif _FENCE_LIKE.match(line):
+            problems.append(
+                f"line {number}: malformed fence {line.strip()[:40]!r}; put each "
+                "fence on its own line"
+            )
+            continue
+        else:
+            continue
+
+        previous = lines[number - 2].strip() if number > 1 else ""
+        following = lines[number].strip() if number < len(lines) else ""
+        if previous.startswith("|") and following.startswith("|"):
+            problems.append(
+                f"line {number}: fence inside a table splits it; write one full "
+                "table per language"
+            )
+
+    if open_line is not None:
+        problems.append(f"line {open_line}: block is never closed with :::")
+
+    if problems:
+        msg = "Broken conditional fences:\n  " + "\n  ".join(problems)
+        raise ValueError(msg)
+
 
 def _apply_conditional_rendering(md_text: str, target_language: str) -> str:
     r"""Apply conditional rendering to markdown content.
@@ -42,6 +108,8 @@ def _apply_conditional_rendering(md_text: str, target_language: str) -> str:
     if target_language not in {"python", "js"}:
         msg = "target_language must be 'python' or 'js'"
         raise ValueError(msg)
+
+    _validate_conditional_fences(md_text)
 
     # Pattern for non-escaped conditional blocks
     pattern = re.compile(
