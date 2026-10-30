@@ -58,40 +58,16 @@ Playground and Evals are available in v0.13.33+. Chat and Insights are available
 
 Skip this step for LangSmith SaaS. JWT signing is already configured.
 
-**Generate an Ed25519 key pair** using [step CLI](https://smallstep.com/docs/step-cli/installation/) (or an internal process if you prefer). Ed25519 is the signing algorithm LangSmith uses to sign JWTs. The private key signs each request; the auth proxy verifies the signature using only the public key.
+Follow [Configure a signing JWKS](/langsmith/kubernetes#configure-a-signing-jwks) to generate the shared Ed25519 key and provide it to the LangSmith Helm chart. The private key signs each request, while the auth proxy fetches only the public key from LangSmith.
 
-```shell
-TMPDIR_KEYS="$(mktemp -d)"
-step crypto keypair "$TMPDIR_KEYS/pub.pem" "$TMPDIR_KEYS/priv.pem" \
-  --kty OKP --crv Ed25519 --no-password --insecure
-PRIV_JWK=$(step crypto key format --jwk --no-password --insecure < "$TMPDIR_KEYS/priv.pem")
-SIGNING_JWKS=$(echo "$PRIV_JWK" | jq -c '{keys: [. + {use: "sig", alg: "EdDSA"}]}')
-echo "$SIGNING_JWKS"
-```
-
-**Store the JWKS in a Kubernetes secret:**
-
-```shell
-kubectl create secret generic langsmith-signing-jwks \
-  --namespace <namespace> \
-  --from-literal=LANGSMITH_SIGNING_JWKS="$SIGNING_JWKS"
-```
-
-A JWKS (JSON Web Key Set) is a standard JSON format for publishing cryptographic keys. `LANGSMITH_SIGNING_JWKS` contains the Ed25519 private key and is stored as a Kubernetes secret. It is never exposed. LangSmith automatically extracts the corresponding public key and serves it at `/.well-known/jwks.json`. The auth proxy fetches this public endpoint to verify JWT signatures without ever needing the private key.
-
-**Reference the secret in your [LangSmith `values.yaml`](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/values.yaml):**
+Set the issuer for LLM auth proxy tokens in your LangSmith `values.yaml`:
 
 ```yaml
-platformBackend:
-  deployment:
-    extraEnv:
-      - name: LLM_AUTH_PROXY_ISSUER
-        value: "langsmith"        # must match jwtIssuer in the auth proxy chart
-      - secretRef:
-          name: langsmith-signing-jwks
+config:
+  llmAuthProxyIssuer: "langsmith"
 ```
 
-`LLM_AUTH_PROXY_ISSUER` sets the `iss` claim in signed JWTs. Use `langsmith` to match the SaaS default, or a custom identifier like `langsmith:self-hosted:<short_identifier>` to distinguish your installation. The value must match `jwtIssuer` in the auth proxy chart in [Step 4](#4-install-the-auth-proxy-helm-chart)).
+`config.llmAuthProxyIssuer` sets the `iss` claim in signed JWTs. Use `langsmith` to match the SaaS default, or a custom identifier like `langsmith:self-hosted:<short_identifier>` to distinguish your installation. The value must match `jwtIssuer` in the auth proxy chart in [Step 4](#4-install-the-auth-proxy-helm-chart).
 
 ## 2. Enable LLM Auth Proxy for your organization
 
@@ -138,10 +114,10 @@ In the LangSmith UI, navigate to **Settings** > **General**, configure the follo
 
 1. **JWT audience:** the `aud` claim value the proxy will validate (for example, `example-audience`). This must match `jwtAudiences` in the auth proxy chart in [Step 4](#4-install-the-auth-proxy-helm-chart).
 2. **Enable LLM auth proxy:** toggle on for your organization.
-3. **Allowed URLs:** control which destination URLs the proxy is permitted to forward JWTs to. This prevents credential forwarding to unintended hosts. Choose one of three options:
+3. **Allowed URLs:** control which hosts LangSmith sends JWTs to. This prevents credential forwarding to unintended hosts. Choose one of three options:
     - **Allow all** (default): permits JWT forwarding to any upstream URL. Equivalent to no restriction.
     - **Block all:** blocks JWT forwarding to all URLs.
-    - **Custom:** specify an explicit list of allowed URL patterns. Empty strings and bare `*` are not accepted. The control is disabled when the LLM auth proxy toggle is off.
+    - **Custom:** list the hostnames LangSmith may send JWTs to, such as `llm-proxy.example.com` or `*.example.com`. A `*.` pattern matches the domain and all of its subdomains. Enter hostnames only, without a scheme, port, or path: an entry such as `https://llm-proxy.example.com:10000` matches nothing. Empty strings and bare `*` are not accepted. The control is disabled when the LLM auth proxy toggle is off.
 
     <img
     className="block dark:hidden"
@@ -173,7 +149,7 @@ If both are set, `jwksUri` takes precedence.
 ```yaml
 authProxy:
   upstream: "https://gateway.example.com"
-  jwtIssuer: "langsmith" # must match LLM_AUTH_PROXY_ISSUER in LangSmith values.yaml
+  jwtIssuer: "langsmith" # must match config.llmAuthProxyIssuer in LangSmith values.yaml
   jwtAudiences:
     - "example-audience" # must match the org setting in LangSmith
 
@@ -723,7 +699,7 @@ For production reliability, set `authProxy.autoscaling.hpa.minReplicas` to at le
 ```yaml
 authProxy:
   upstream: "https://gateway.example.com"   # your LLM gateway or provider
-  jwtIssuer: "langsmith"                    # must match LLM_AUTH_PROXY_ISSUER on LangSmith
+  jwtIssuer: "langsmith"                    # must match config.llmAuthProxyIssuer on LangSmith
   jwtAudiences:
     - "example-audience"                    # must match org setting in LangSmith
 
@@ -770,7 +746,7 @@ LangSmith signs JWTs using **Ed25519 (EdDSA)**. Public keys are served at `/.wel
 | Claim | Description |
 |-------|-------------|
 | `iat`, `exp`, `jti`, `nbf` | Standard JWT claims (issued-at, expiry, JWT ID, not-before) |
-| `iss` | Issuer. `langsmith` for SaaS; set via `LLM_AUTH_PROXY_ISSUER` for self-hosted |
+| `iss` | Issuer. `langsmith` for SaaS; set via `config.llmAuthProxyIssuer` for self-hosted |
 | `aud` | Audience. Matches the JWT audience in LangSmith organization settings |
 | `sub` | Actor identifier (user ID, evaluator ID, assistant ID, or API key ID) |
 | `actor_type` | One of: `user`, `evaluator`, `agent-builder`, `insights`, `polly`, `api_key:pat` (personal access token), or `api_key:service` (service account key) |

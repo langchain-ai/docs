@@ -1,187 +1,173 @@
 ---
-type: integration listing workflow
+type: documentation metadata workflow
 title: Integration Listing Automation
-description: Explains how hosted-guide metadata, external listing metadata, and package records produce public integration tables and the Python provider overview. Covers eligibility, URL validation, generated-output ownership, scheduled refreshes, and the maintainer-authorized issue intake flow.
-tags: [integrations, automation, documentation, metadata, ci]
+description: How integration metadata becomes hosted guides, external listings, generated download tables, and the Python provider overview. Covers ownership boundaries, scheduled regeneration, URL safety validation, and the checks required for safe changes.
+tags: [integrations, documentation, metadata, automation, validation]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-14T08:21:39.311Z
+    at: 2026-10-26T08:26:41.390Z
 sources:
   - id: openwiki-source-8bdd8b6031ea08044f515d8c
     resource: repo://.agents/skills/submit-integration/SKILL.md
+  - id: openwiki-source-1bf310cf2d4f8606635de732
+    resource: repo://.github/workflows/check-external-doc-links.yml
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
-  - id: openwiki-source-1ca506cf29eca9b87a087220
-    resource: repo://.github/workflows/external-integration-pr-comment.yml
-  - id: openwiki-source-1db901655f02af312133801d
-    resource: repo://.github/workflows/integration-submission.yml
   - id: openwiki-source-4de47c60d7e3210385c34d35
     resource: repo://.github/workflows/update-package-downloads.yml
   - id: openwiki-source-e52f38a56cc76188818237f7
     resource: repo://packages.yml
   - id: openwiki-source-0539c4d1a36abb10d1ed2fa9
     resource: repo://pipeline/tools/partner_pkg_table.py
+  - id: openwiki-source-ac5a96b2eaef63c5d8d74d9a
+    resource: repo://scripts/check-legacy-doc-links.sh
   - id: openwiki-source-0d19fa2f26e6485d05a6b929
     resource: repo://scripts/data/integration_external_docs.yaml
   - id: openwiki-source-250d64a0be85992104c0f95b
     resource: repo://scripts/flag_hosted_docs_candidates.py
   - id: openwiki-source-d4fdd9dfc4cf980ce0889985
     resource: repo://scripts/packages_yml_get_downloads.py
-  - id: openwiki-source-f36d9ac44867b9e853539abd
-    resource: repo://scripts/parse_integration_submission_issue.py
   - id: openwiki-source-63d8ba810a7c0181c548a307
     resource: repo://scripts/refresh_integration_downloads.py
   - id: openwiki-source-1f06ff54a6b42441ba3f34c3
     resource: repo://src/oss/contributing/publish-langchain.mdx
-  - id: openwiki-source-4d9644891221cf29cff85bfb
-    resource: repo://src/oss/python/integrations/chat/index.mdx
-  - id: openwiki-source-40800c01aa5ea143782c9738
-    resource: repo://src/oss/python/integrations/document_loaders/index.mdx
-  - id: openwiki-source-7bfe816fdba0201671040464
-    resource: repo://src/oss/python/integrations/providers/all_providers.mdx
   - id: openwiki-source-7be0fdefc402d868b9f2fdca
     resource: repo://tests/unit_tests/test_refresh_integration_downloads.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-14T08:21:39.311Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-26T08:26:41.390Z" }
 ---
 
 # Integration Listing Automation
 
-Integration discovery has two separate derived surfaces: component download tables and the Python provider overview. Maintainers change the metadata or authored provider cards that own an input, then run the applicable generator. Do **not** hand-edit generated integration snippets under `src/snippets/oss/` or `src/oss/python/integrations/providers/overview.mdx`; correct an owning input or generator and regenerate.
+Integration discovery is assembled from distinct owned inputs rather than edited as a single page. A listing can have a hosted MDX guide, an external table entry, an authored provider card, and a package-registry entry; not every integration has every surface. The automation has two independent generated products:
 
-## Listing boundary and source ownership
+- **Component download snippets** combine hosted-guide `integration:` frontmatter and external-listing YAML. They are consumed by component landing pages.
+- The **Python provider overview** is generated from `packages.yml`, with the authored Python provider-card catalog participating in link resolution.
 
-A package with at least 50,000 monthly PyPI or npm downloads, as verified by the workflow, or an explicit maintainer featured decision, is eligible for a hosted MDX guide. The threshold does not itself authorize `featured: true`. Integrations below that boundary use an external listing that links to partner-owned documentation. When a listing becomes a hosted guide, remove the duplicate external YAML row.
+Generated snippets and `src/oss/python/integrations/providers/overview.mdx` are outputs. Change the owning metadata or generator, then regenerate; do not preserve a hand-edited generated result.
 
-| Owner | Controls | Safe change |
+## Listing decision and source ownership
+
+A full hosted guide is for integrations with at least 50,000 monthly PyPI or npm downloads, or an explicit maintainer featured decision. An integration below that threshold is listed externally instead of receiving a new hosted MDX page. The decision does not make `featured: true` automatic: that is a maintainer decision. When moving an integration to a hosted guide, remove its matching external YAML row to avoid two table rows.
+
+| Owned input | Responsibility | Change when |
 | --- | --- | --- |
-| `scripts/data/integration_external_docs.yaml` | External rows grouped by language and component: display name, registry package, `docs_url`, and applicable component metadata | Add, correct, or remove the external row. Prefer partner docs, then a public repository, then the registry page. |
-| Hosted integration MDX frontmatter | `integration:` metadata found below `src/oss/{python,javascript}/integrations/` | Correct hosted-guide metadata, not the rendered table. |
-| `packages.yml` | LangChain package and repository records, download data, and maintainer-only `highlight` | Correct package metadata. `highlight` bypasses the provider-overview download filter and sorts before ordinary packages. |
-| `src/oss/{python,javascript}/integrations/providers/all_providers.mdx` | Authored provider-card catalogs | Maintain cards as discovery content. The Python catalog is also an input to provider-overview link resolution; a matching card may supply an external provider destination. |
+| `scripts/data/integration_external_docs.yaml` | Third-party rows grouped as `language` then `component`; `name`, registry package, `docs_url`, and supported component metadata | Adding, correcting, or removing an external listing |
+| Hosted integration MDX frontmatter under `src/oss/{python,javascript}/integrations/` | The hosted row's display name, PyPI/npm package, featured/deprecated status, and component capabilities | Changing a hosted guide's listing metadata |
+| `packages.yml` | Package/repository registry, monthly download record, JS package mapping, visibility, and maintainer-only `highlight` | Changing the Python provider overview's package input |
+| `src/oss/python/integrations/providers/all_providers.mdx` | Authored provider discovery cards and their destinations | Adding or correcting provider discovery content or an overview-link fallback |
 
-External YAML is the canonical metadata source for external language/component rows. The table generator merges those rows with hosted `integration:` frontmatter. An external row needs a display `name` and a safe `docs_url`; `pypi` or `npm` supplies download data when available. It links the displayed name to `docs_url`, whereas a hosted row links to its LangChain route.
+The external YAML comments define the link preference: partner documentation, then a GitHub repository, then a PyPI/npm page. It is the canonical source for external language/component entries. Hosted rows instead come from `integration:` frontmatter: for example, Browser Use supplies `name` and `pypi`, while the Azure Cosmos DB vector-store guide supplies `featured` and declared vector-store capabilities. A page without an `integration:` mapping or a `name` is skipped with a warning rather than becoming a row.
 
-## Metadata-to-table flow
+`all_providers.mdx` is authored content, not a generated provider overview. In particular, a card can link to an external destination, while a hosted provider page has a site-relative destination. The Python overview generator parses these cards as a fallback, so card title and href changes can affect generated overview links.
 
 ```mermaid
 flowchart TD
-    External["External YAML"] --> Validate["Validate docs URL"]
-    Hosted["Hosted integration frontmatter"] --> Collect["Collect hosted rows"]
-    Validate --> Collect
-    Collect --> Fetch["Fetch registry downloads"]
-    Fetch --> Render["Render component tables"]
-    Render --> Snippets["Generated MDX snippets"]
-    Snippets --> Landing["Component landing pages"]
-    Packages["packages.yml"] --> Overview["Provider overview generator"]
-    Cards["Python provider cards"] --> Overview
-    Overview --> Generated["Generated overview MDX"]
+    Hosted["Hosted MDX integration frontmatter"] --> Rows["Collect component rows"]
+    External["External listing YAML"] --> Validate["Validate external docs URL"]
+    Validate --> Rows
+    Rows --> Downloads["Fetch cached registry downloads"]
+    Downloads --> Render["Render component download snippets"]
+    Packages["packages.yml"] --> Overview["Generate Python provider overview"]
+    Cards["Authored Python provider cards"] --> Overview
 ```
 
-This shows the separate input paths for component-table snippets and the provider overview.
+This diagram separates the component-table pipeline from the provider-overview pipeline.
 
-`refresh_integration_downloads.py` scans the supported Python and JavaScript component directories, excluding indexes, templates, and example-data files. It collects hosted rows and external rows, then sorts available download counts descending and names secondarily; unavailable counts sort last. The generator emits an all-rows snippet for a component with rows and emits a featured snippet for chat or for a component with featured rows. Component landing pages import these snippets—for example, Python chat and document loaders—so the generated files are public documentation inputs.
+## Component download-table generation
 
-Table shape is component-specific: chat has capability fields; middleware and retrievers have their respective metadata columns; and vectorstore capability columns appear only when at least one row declares that capability. Capability and download cells carry numeric sort values, allowing stable first-paint and offline ordering while the client can refresh badges.
-
-Run from the repository root:
+Run the generator from the repository root:
 
 ```bash
 uv run python scripts/refresh_integration_downloads.py --write
 ```
 
-Without `--write`, the command prints tables. `--language` and `--component` restrict generation to supported values or `all`. Review regenerated output for language, component, links, capabilities, and unavailable-download handling; repair metadata or generator logic and rerun rather than patching a generated row.
+It scans configured component directories for Python and JavaScript, excluding index pages, templates, and example data. It collects hosted rows, appends external rows for the same language/component, then sorts rows with known downloads descending and name secondarily; unavailable counts are last. The run caches each registry/package download lookup. npm and PyPI requests retry HTTP 429 up to six times with exponential backoff; other request, parsing, or missing-data failures leave that row without a package/download value instead of failing the full collection.
 
-### URL validation is a pre-emission boundary
+The generated files begin with a do-not-edit marker. An all-rows `*-downloads.mdx` snippet is written for every nonempty component. A `*-featured.mdx` snippet is also written for chat, even if empty, and for any other component with featured rows. The renderer chooses component-specific columns: chat capabilities, middleware availability/source, retriever fields, and vector-store capability columns only when at least one row declares the corresponding value. It embeds sort values in capability and download cells for the client-side table sorter.
 
-External URLs are untrusted input. A `docs_url` may be `https://`, `http://`, or a site-relative path beginning with exactly one `/`. Protocol-relative `//…` paths and other schemes, including `javascript:`, `data:`, and `vbscript:`, are rejected.
+Without `--write`, the command renders tables to standard output. `--language` and `--component` limit it to the supported choices or `all`. Use these options for focused regeneration, but run a full regeneration before merging a cross-cutting metadata change.
+
+### External URL boundary
+
+External `docs_url` values are untrusted metadata because they become Markdown link destinations. The generator permits `https://`, `http://`, or a site-relative path beginning with exactly one `/`; it rejects blank values, protocol-relative `//…`, and other schemes such as `javascript:`, `data:`, and `vbscript:`.
 
 ```mermaid
 flowchart TD
-    Value["External docs URL"] --> Present{"Present and nonblank"}
-    Present -- No --> Missing["Report missing value"]
-    Present -- Yes --> Safe{"Allowed scheme or path"}
-    Safe -- No --> Reject["Reject unsafe value"]
-    Safe -- Yes --> Link["Emit external documentation link"]
+    URL["External docs URL"] --> Present{"Nonblank string"}
+    Present -- "No" --> Missing["Validation error or skipped row"]
+    Present -- "Yes" --> Allowed{"HTTP S or HTTP or single slash path"}
+    Allowed -- "No" --> Unsafe["Reject unsafe URL"]
+    Allowed -- "Yes" --> ExternalLink["Render external link"]
 ```
 
-This boundary prevents external metadata from becoming an unsafe generated link.
+This is the link-safety boundary before external metadata reaches generated MDX.
 
-During collection, a missing external URL is warned about and its row is skipped; an unsafe URL raises an error. The dedicated validation mode reports both missing and unsafe YAML values before network calls or writes:
+There are deliberately different failure semantics by entrypoint:
+
+- `--check-docs-urls` validates every external YAML row without network calls or writes, reports missing or unsafe values, and exits nonzero on errors.
+- Normal collection warns and skips an external row missing `docs_url`, but an unsafe external URL raises `ValueError` and stops generation.
+- A hosted row with an unsafe optional `docs_url` loses that URL and renders its normal internal route instead, so `_model_link` never emits an unsafe href.
+
+Validate listing URLs before regeneration:
 
 ```bash
 uv run python scripts/refresh_integration_downloads.py --check-docs-urls
 ```
 
-CI runs that command in a read-only job. The focused tests cover accepted and rejected schemes, unsafe-link fallback, validation of repository YAML, and Markdown cell normalization.
+The pull-request workflow named **Check for External Doc Links** is complementary rather than a replacement for this validator: for pull requests to `main` that touch Markdown-related paths, it runs a shell scan across authored `.md` and `.mdx` files and fails on retired documentation hostnames (apart from the Helm exception). Replace such links with relative documentation routes or `reference.langchain.com` API links.
 
-Download lookup is best-effort. npm and PyPI fetches retry HTTP 429 up to six times with exponential backoff. The process caches results by registry/package during a run; other request, parsing, and missing-data failures degrade that row to unavailable download data rather than aborting collection.
+## Python provider overview
 
-## Provider overview: a separate derived surface
-
-`pipeline/tools/partner_pkg_table.py` generates `src/oss/python/integrations/providers/overview.mdx` from `packages.yml`. It excludes configured core packages, includes a package at 100,000 downloads or one marked `highlight`, sorts highlighted packages first and then by downloads, and limits output to 50 entries. `has_reference_docs: true` together with `integration: false` is invalid.
-
-Provider destinations resolve in priority order: an absolute `provider_page` in `packages.yml`; a hosted provider page from a configured slug or short package name; a matching Python `all_providers.mdx` card href, including an external URL; the declared repository; then PyPI. Update the metadata or authored card that owns the destination, then run:
+The overview generator has a different input contract:
 
 ```bash
 uv run python pipeline/tools/partner_pkg_table.py
 ```
 
-CI regenerates the overview and fails if it differs from the checked-in file, directing a change to `packages.yml` or `partner_pkg_table.py`, never to the generated overview.
+It reads `packages.yml`, ignores core package names, derives a short name and display title, rejects `has_reference_docs: true` together with `integration: false`, and keeps packages with at least 100,000 downloads unless `highlight` is set. Highlighted packages sort before ordinary packages, then both groups sort by downloads; the output is limited to 50 rows. `highlight` is explicitly documented as a maintainer-only way to feature strategic or new integrations.
 
-## Scheduled refresh and promotion follow-up
+The generator chooses a provider destination in this order: an absolute `provider_page` in `packages.yml`; an existing hosted provider page using `provider_page` or the derived short name; a matching `all_providers.mdx` card href; the configured GitHub repository; and finally PyPI. Thus, update the package record when package identity or an explicit destination changes, and update the provider card when its discovery destination is intentionally the fallback.
+
+The generated overview itself carries a do-not-manually-edit marker. CI regenerates it and fails if the checked-in result differs, directing changes to `packages.yml` or `partner_pkg_table.py`.
+
+## Scheduled refresh and hosted-guide follow-up
+
+`update-package-downloads.yml` runs every Sunday at 23:59 UTC and may also be manually dispatched. Its read-only generation job refreshes package downloads, writes the provider overview, regenerates integration snippets, and then uploads only `packages.yml`, the overview, and generated snippets to the write-capable job. The latter exits without a PR when those tracked paths are unchanged; otherwise it creates a timestamped branch and an automated PR with squash auto-merge enabled.
 
 ```mermaid
 flowchart TD
-    Trigger["Sunday schedule or manual dispatch"] --> Generation["Read-only generation job"]
-    Generation --> Downloads["Refresh package downloads"]
-    Downloads --> Provider["Generate provider overview"]
-    Provider --> Tables["Generate integration snippets"]
-    Tables --> Candidates["Flag hosted-doc candidates"]
-    Candidates --> Artifact["Upload designated generated paths"]
-    Artifact --> Writer["Write-capable PR job"]
-    Writer --> Changed{"Tracked paths changed"}
-    Changed -- No --> Stop["Exit without a PR"]
-    Changed -- Yes --> PR["Create update PR and enable squash auto-merge"]
+    Schedule["Sunday schedule or manual dispatch"] --> Counts["Refresh packages.yml downloads"]
+    Counts --> Provider["Generate provider overview"]
+    Provider --> Snippets["Regenerate integration snippets"]
+    Snippets --> Flag["Check external hosted-guide candidates"]
+    Flag --> Artifact["Upload designated generated paths"]
+    Artifact --> Diff{"Tracked files changed"}
+    Diff -- "No" --> NoPR["Exit without PR"]
+    Diff -- "Yes" --> PR["Open automated update PR"]
 ```
 
-This shows the privilege boundary: generation has read-only contents permission, while the later job can write a branch and pull request.
+This workflow separates read-only generation from the job permitted to write a branch and pull request.
 
-`update-package-downloads.yml` runs at 23:59 UTC every Sunday and can be dispatched manually. It refreshes `packages.yml`, then generates the provider overview and integration snippets. The package refresher rejects duplicate package names, avoids refetching records updated within 24 hours, records a missing Pepy badge as zero, and timestamps refreshed records.
+The package refresher detects duplicate package names, avoids refetching a package updated in the previous 24 hours, records a missing Pepy badge as zero, and timestamps refreshed records. The same scheduled workflow also looks for external entries at the 50,000-download threshold. It is a dry run without both `LINEAR_API_KEY` and `LINEAR_TEAM_KEY`; with both configured, it creates Linear follow-up only after searching by a stable title fragment so changing counts do not create duplicate open issues.
 
-The artifact handoff is intentionally narrow: only `packages.yml`, the Python provider overview, and generated `*-downloads.mdx` and `*-featured.mdx` snippets reach the write-capable job. It exits when those tracked paths have no diff; otherwise it creates a timestamped `chore/update-package-downloads-…` branch, opens a PR, and enables squash auto-merge.
+## Change and verification procedure
 
-The same run flags external integrations at the 50,000-download threshold for hosted-doc follow-up. The flagger accepts `--threshold`; it is a dry run unless both `LINEAR_API_KEY` and `LINEAR_TEAM_KEY` are configured. Before it creates a Linear issue, it searches a stable title fragment that excludes the changing download count, avoiding duplicate open work.
-
-## External contribution and issue intake policy
-
-External contributors should use the Integration listing issue form, not a manual PR for a new listing. `external-integration-pr-comment.yml` runs as `pull_request_target` for non-draft PR updates. It only uses GitHub API data about changed files and PR-head file content; it does not check out or execute fork code. This boundary is essential because both fork-head frontmatter and issue-form fields are untrusted data.
-
-For a non-bot external author, the PR workflow detects added integration files (excluding `TEMPLATE.mdx`) or a change to the external-listing YAML and applies the `integration` label. It evaluates each newly added MDX file as eligible only when its frontmatter says `featured: true` or its declared PyPI/npm package can be fetched and verified at 50,000 monthly downloads. If any added MDX file is eligible, the workflow does not redirect or close the PR. A PR that only changes external-listing YAML, or whose new MDX files are not eligible, is redirected to the issue form with one marker-protected comment and is closed when open. A failed frontmatter or download verification fails the workflow before this closure path; it does not treat an unverifiable guide as eligible. Internal members and configured internal bots are not redirected by this workflow.
-
-The issue workflow is separate. Applying `integration-run` invokes it only when the triggering actor has `admin`, `maintain`, or `write` permission; issue creation alone cannot start it. A non-cancelling per-issue concurrency group and the `integration-automation` label avoid duplicate processing. The parser maps recognized issue-form headings to JSON and validates required fields and language/package combinations without evaluating the supplied values. Parse errors are reported on the issue. The workflow passes the structured fields to the agent as untrusted literal metadata; the agent must leave edits uncommitted and must not push, create a PR, or comment.
-
-A blocker file, failed agent, or no diff yields an issue comment rather than a PR. When edits exist, the workflow creates `integration/issue-<number>` with review checks for eligibility, URL/provider card, and generated surfaces; it then links and mentions the PR on the source issue.
-
-## Safe change procedure
-
-1. Decide whether the integration is external or hosted from measured registry downloads and a maintainer feature decision. Do not invent download counts or capabilities.
-2. Change the owning input—external YAML, hosted frontmatter, `packages.yml`, an authored provider card, or generator code—not a derived output.
-3. For external metadata, validate URLs:
-
-   ```bash
-   uv run python scripts/refresh_integration_downloads.py --check-docs-urls
-   ```
-
-4. Regenerate affected snippets with `--write`; regenerate the provider overview when package metadata, Python provider-card matching, or its generator changes.
-5. Review the generated diff. When validation or table rendering changes, run:
+1. Decide whether the integration is a hosted guide or external listing from measured monthly registry downloads and a maintainer feature decision. Do not use a generated table as the source of truth.
+2. Change the owner: hosted `integration:` frontmatter, external YAML, `packages.yml`, an authored provider card, or generator code. If promoting an external listing to a guide, remove the external row.
+3. Validate external links, then regenerate the affected component tables and, when package/provider-link inputs changed, the Python overview.
+4. Inspect the generated diff for component, language, links, capability columns, featured rows, and unavailable-download fallback. Do not hand-patch a snippet or overview.
+5. Run focused URL and rendering coverage when changing the download generator or its metadata rules:
 
    ```bash
    uv run pytest tests/unit_tests/test_refresh_integration_downloads.py
    ```
 
+The focused tests cover accepted and rejected URL forms, ensure an unsafe URL cannot enter a rendered link, validate the repository YAML, and verify Markdown-cell normalization. CI independently detects manual drift in the generated provider overview; the scheduled workflow provides recurring regeneration of both output families.
+
 ## Related pages
 
 - [Source Directory Map](/openwiki/architecture/source-map.md)
 - [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md)
-- [Adding Pages](/openwiki/operations/adding-pages.md)
+- [Adding pages](/openwiki/operations/adding-pages.md)
+- [Quickstart](/openwiki/quickstart.md)
 - [Testing overview](/openwiki/testing/test-overview.md)

@@ -1,5 +1,5 @@
 # Files
 
-- [Builder Tests](builder-tests.md) - Focused, offline tests for DocumentationBuilder routing, Markdown preprocessing, shared inputs, snippets, source containment, and generated build-output invariants. Covers when an output assertion is sufficient and when to add a built-site check.
-- [Conditional Rendering Tests](conditional-rendering.md) - Test guidance for the build-time `:::python` and `:::js` renderer, including its regex fence semantics, scoped autolinks, code-fence boundary, and language-specific artifacts.
-- [Testing Overview](test-overview.md) - Change-oriented validation for the weekly changelog pipeline, documentation builds, generated documentation, and credentialed code samples. Separates deterministic evidence from network, secret-bearing, generated-site, and hosted-service checks.
+- [Builder Test Boundaries](builder-tests.md) - Guidance for testing DocumentationBuilder route selection, docs.json-sensitive OSS variants, Markdown rewrites, snippets, and copy safety. It distinguishes deterministic unit contracts from generated-site and deployment review.
+- [Conditional Rendering Tests](conditional-rendering.md) - Test build-time selection of Python and JavaScript Markdown branches, scoped autolinks, and language-specific page and snippet artifacts. Covers preprocessing order and focused suites for conditional content and link transformations.
+- [Testing Overview](test-overview.md) - Select validation by the contract a documentation change affects. Deterministic local checks cover transformations and generated output, while CI-only checks cover credentials, services, and external destinations.

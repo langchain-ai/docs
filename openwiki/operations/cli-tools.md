@@ -1,14 +1,30 @@
 ---
-type: reference
-title: CLI Tools and Make Targets
-description: Operational reference for the documentation CLI, Make targets, local preview, generated snippets, sample execution, and trace-link refreshes.
+type: operations reference
+title: Developer Commands and CLI Tools
+description: Install and operate the local documentation pipeline, Make targets, Mintlify checks, Vale prose linting, and executable samples. Select the command layer and validation boundary that match the change.
 tags: [cli, make, documentation, code-samples, operations]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-08T08:23:51.982Z
+    at: 2026-10-30T08:15:16.596Z
 sources:
+  - id: openwiki-source-3638ff2c170b760df159d81b
+    resource: repo://.github/actions/uv_setup/action.yml
+  - id: openwiki-source-5c124605ed6e394bffee862c
+    resource: repo://.github/workflows/_check-links.yml
+  - id: openwiki-source-4d9cccca7700db7220ec055e
+    resource: repo://.github/workflows/_test.yml
+  - id: openwiki-source-164e2da859b5277df81c7d94
+    resource: repo://.github/workflows/ci.yml
+  - id: openwiki-source-97746d8f3662d803e625550e
+    resource: repo://.github/workflows/test-code-samples.yml
+  - id: openwiki-source-9c06bd9d7d25770709e07c7c
+    resource: repo://.mise.toml
+  - id: openwiki-source-635a4d4537a9628cdea912c0
+    resource: repo://.vale.ini
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
+  - id: openwiki-source-5b54a58d1b51cd490b0e7162
+    resource: repo://package.json
   - id: openwiki-source-6e6efa1569f158fcdb678ef0
     resource: repo://pipeline/cli.py
   - id: openwiki-source-41f7c907e42a5efd3b3405cd
@@ -21,157 +37,203 @@ sources:
     resource: repo://pipeline/tools/links.py
   - id: openwiki-source-05ccef8d4cf1698187f20464
     resource: repo://pyproject.toml
+  - id: openwiki-source-23775c3de52f3ab95a13cb8b
+    resource: repo://README.md
   - id: openwiki-source-7c3064080adf2cb0048e51fc
     resource: repo://scripts/check_llms_urls.py
+  - id: openwiki-source-819e9af046c9d9b8116a3da7
+    resource: repo://scripts/check_onboarding_models.py
+  - id: openwiki-source-ac5a96b2eaef63c5d8d74d9a
+    resource: repo://scripts/check-legacy-doc-links.sh
   - id: openwiki-source-2654e40275744504b4ca7e2b
     resource: repo://scripts/code_sample_tracing.py
   - id: openwiki-source-fd0cb9d6fca56bf4963559e9
     resource: repo://scripts/extract_code_snippets.py
+  - id: openwiki-source-49f717adb7cc59501f5c17ac
+    resource: repo://scripts/filter_mint_broken_links.py
   - id: openwiki-source-560bf24db9566b97ee19e383
     resource: repo://scripts/generate_code_snippet_mdx.py
+  - id: openwiki-source-c1655a468cf6a1dff9722eb1
+    resource: repo://scripts/install-vale.sh
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-08T08:23:51.982Z" }
+  - id: openwiki-source-2b3973f7b179794fb4534f89
+    resource: repo://src/code-samples/go.mod
+  - id: openwiki-source-11d4965febd3986495e06a17
+    resource: repo://src/code-samples/langsmith/create-an-agent.py
+  - id: openwiki-source-2d6fb565fec243c560da8729
+    resource: repo://src/code-samples/package-lock.json
+  - id: openwiki-source-e0401fc6d5f2a13d30455bd9
+    resource: repo://src/code-samples/package.json
+  - id: openwiki-source-1eb6a61d042052ba1402c2eb
+    resource: repo://uv.lock
+generated: { by: "openwiki/0.4.3", at: "2026-10-30T08:15:16.596Z" }
 ---
 
-# CLI Tools and Make Targets
+# Developer Commands and CLI Tools
 
-The Python `docs` CLI transforms documentation and runs the local preview. The `Makefile` provides checkout-oriented setup, validation, export, sample, and generated-content workflows. Author in `src/`; `build/` is disposable Mintlify input, not an authoring surface. A full build deletes and recreates it, so never hand-edit build artifacts.
+Author documentation in `src/`, not `build/`. The build directory is disposable Mintlify input: a full build deletes and recreates it. Run commands from the repository root unless a target changes directory. For Mintlify validation, prefer the supported Make targets; they rebuild and invoke Mint from `build/`. Do **not** invoke raw Mint validation from the repository root: Mint can parse unrelated checkout files, including virtual-environment content, rather than the generated site.
 
-## Entry points and setup
+## Install the toolchain
 
-The project script is `docs = "pipeline.cli:main"`. From a checkout, use `uv run pipeline <command>`; after installation, `docs <command>` reaches the same entry point. `make build` and `make dev` install local npm dependencies and invoke the corresponding pipeline command with the checkout on `PYTHONPATH`.
+`.mise.toml` defines the local baseline: Node 22, Python 3.13, uv 0.9.26, Vale 3.17.1, prek, and the Mint CLI. Start with `mise trust && mise install` when using mise. Its postinstall hook installs prek's pre-commit and pre-push hooks. Node 22 is intentional because Mintlify does not support Node 25 or newer. The Python project requires Python 3.13 or later, before Python 4, and uv 0.9.26 or later.
+
+The committed `uv.lock` is part of that contract: CI uses frozen, no-sync uv execution after dependency installation, so do not change a Python dependency floor without refreshing its lock resolution and validating the affected command.
+
+For a normal checkout, bootstrap with:
 
 ```bash
 make install
+```
+
+This synchronizes all uv dependency groups, installs root Node dependencies, installs `mint@latest` globally with retries, and links repository agent skills into `.claude/skills/`. Re-run `make skills` after adding or renaming skills; it preserves non-symlink personal entries and removes stale skill symlinks.
+
+## Choose the command layer
+
+Two CLIs have deliberately separate responsibilities:
+
+- The repository's **Python documentation CLI** transforms source documentation and runs the source-to-build pipeline. The project registers `docs = "pipeline.cli:main"`; in a checkout use `uv run pipeline <command>`, or use `docs <command>` after installation.
+- The separately installed **Mintlify CLI**, `mint`, serves, checks, and exports only generated site output. Make targets run its built-site operations from `build/`.
+
+| Need | Preferred command | Validation boundary |
+| --- | --- | --- |
+| Install dependencies and skills | `make install` | repository tooling |
+| Rebuild generated documentation | `make build` | `src/` to `build/` |
+| Preview edits | `make dev` | builder, watcher, and Mint server |
+| Check source cross-references | `make check-cross-refs` | source `@[ref]` values |
+| Reject retired documentation hosts | `make check-legacy-links` | authored `.md` and `.mdx` links under `src/` |
+| Check generated links and fragments | `make broken-links-with-anchors` | rebuilt `build/` tree |
+| Run a focused pipeline test | `make test TEST_FILE=tests/unit_tests/test_watcher.py` | selected pytest path |
+| Test a runnable example | `make test-code-samples FILES="src/code-samples/..."` | selected executable samples |
+
+```bash
 make build
 make dev
 uv run pipeline migrate legacy/guide.md --dry-run
 uv run pipeline mv old.mdx new.mdx --dry-run
 ```
 
-`make install` synchronizes all uv dependency groups, installs local npm dependencies and the global Mint CLI, then links agent skills. `mint` is a separate npm global binary rather than part of the Python CLI. CLI logs use stderr at INFO level with `LEVELNAME - message` formatting. See [Local Development](/openwiki/workflows/local-development.md) for environment setup and recovery guidance.
-
-## Select the right boundary
-
-| Need | Command | Inputs and outputs | Safety boundary |
-| --- | --- | --- | --- |
-| Reset generated site | `make build` or `docs build` | `src/` → regenerated `build/` | Destroys prior build output; do not rely on manual files there. |
-| Preview changes | `make dev` or `docs dev` | source changes → incremental build output → Mint preview | A preview tree can become stale; run a full build after broad changes. |
-| Check source references | `make check-cross-refs` | source `@[ref]` usages and map | Does not render or validate the Mint site. |
-| Check generated links | `make broken-links-with-anchors` | fresh `build/` → Mint report | Checks generated output; appropriate after route, redirect, heading, or link changes. |
-| Run examples | `make test-code-samples` | executable programs in `src/code-samples/` | Programs inherit credentials and can call live services. |
-| Regenerate snippets | `make code-snippets` | samples → intermediate extraction → MDX | Generated directories are outputs, not files to edit. |
-
-`build` is phony. Therefore `make broken-links`, `make broken-links-with-anchors`, `make check-openapi`, and `make export` rebuild before their Mint operation. `make htmltest` instead checks an already-existing export archive; source linters, `make test`, `make check-cross-refs`, and sample targets do not build the site.
+See [Mintlify](/openwiki/integrations/mintlify.md) for the generated-site boundary, [Agent Skills](/openwiki/operations/agent-skills.md) for skill distribution, [Cross-References](/openwiki/operations/cross-references.md) for `@[ref]` validation, [Local Development](/openwiki/workflows/local-development.md) for the contributor loop, and [Test Overview](/openwiki/testing/test-overview.md) for validation selection.
 
 ## Build and preview
 
-### Full build: `make build` / `docs build`
+### `make build` and `docs build`
 
-```bash
-make build
-# Direct CLI equivalent
-uv run pipeline build
-```
+`docs build` validates that `src/` exists, ensures `build/` exists, and delegates to `DocumentationBuilder`; it returns 0 on success and 1 on failure. `build_all()` clears the build tree, produces versioned and unversioned documentation, copies shared files, and copies npm snippet components. Manual changes under `build/` are therefore lost on a full build.
 
-`docs build` requires `src/`, ensures `build/` exists, and delegates to `DocumentationBuilder`. `build_all()` clears the output directory, emits versioned and unversioned documentation trees, copies shared files, and copies npm snippet components. Treat a full build as the reset operation.
+The parser accepts `docs build --watch`, but `build_command()` does not inspect that argument and builds once. Use `docs dev` for watching.
 
-Although argument parsing accepts `docs build --watch`, `build_command()` does not consume its arguments: it builds once and exits. Use `docs dev` for supported watch behavior.
+### `make dev` and `docs dev`
 
-### Local preview: `make dev` / `docs dev`
-
-Development normally performs a full build, watches `src/` recursively, and starts `mint dev --port 3000` with `build/` as its working directory. `--skip-build` is only for resuming with an already suitable build tree; it merely warns if `build/` does not exist.
+Unless `--skip-build` is supplied, development completes a full build, starts a watcher on `src/`, and launches `mint dev --port 3000` in `build/` with log forwarding. `--skip-build` only reuses an existing build tree and warns if none exists.
 
 ```mermaid
 flowchart TD
-  Start["docs dev"] --> Decide{"Skip initial build"}
-  Decide -->|"No"| Full["Rebuild generated tree"]
-  Decide -->|"Yes"| Reuse["Reuse build tree"]
+  Start["docs dev"] --> Choice{"Skip initial build"}
+  Choice -->|"No"| Full["Rebuild build tree"]
+  Choice -->|"Yes"| Reuse["Reuse existing tree"]
   Full --> Services["Start watcher and Mint dev"]
   Reuse --> Services
-  Services --> Change["Supported source event"]
-  Change --> Filter{"Temporary file or directory"}
-  Filter -->|"Yes"| Ignore["Ignore event"]
-  Filter -->|"No"| Queue["Queue source path"]
-  Queue --> Delay["Debounce 0.2 seconds"]
-  Delay --> Build["Build pending paths"]
-  Build --> Touch["Touch generated output"]
-  Touch --> Reload["Mint detects update"]
+  Services --> Event["Source-file event"]
+  Event --> Incremental["Incremental build"]
+  Incremental --> Reload["Mint reload sees output"]
 ```
 
-*Preview flow: `docs dev` establishes or reuses a build tree, then batches supported source-file events into incremental builds and touches their generated outputs for Mint reload detection.*
+*Development flow: the pipeline generates `build/`; Mint serves that generated tree.*
 
-The watcher ignores directories, backup files ending in `~`, `.bak`, or `.orig`, and hidden temporary files ending in `.tmp`, `.temp`, or `.swp`. It deduplicates queued paths, builds the pending batch asynchronously, then touches output for Mint. Deleting a source file removes its corresponding source-relative output path. This incremental loop does not replace a full build for whole-tree changes.
+An initial-build failure, missing `mint`, a nonzero Mint exit, or an unexpectedly stopped watcher fails development. Ctrl+C shuts down the watcher and terminates Mint, killing it after five seconds if necessary. After broad structural changes, run a full build rather than relying on incremental output.
 
-If the initial build fails, development returns 1 before starting services. After startup, Mint stdout and stderr are forwarded to logging; a nonzero Mint exit or unexpectedly stopped watcher fails the command. Ctrl+C shuts down the watcher and terminates Mint, killing it after five seconds if necessary. A missing `mint` executable returns 1 with installation guidance.
+## Source migration and moves
 
-## Migration and source refactoring
+These Python CLI commands act on source paths, never on generated output. Use `--dry-run` before a writing operation.
 
-Migration and move commands operate on supplied source paths, never on `build/`. Prefer `--dry-run`, review the result, then perform the modifying command.
+- `docs migrate <path>` recursively selects notebooks, Markdown, and `.markdown` files. `docs migrate-docusaurus <path>` also selects MDX. Both can print rather than write with `--dry-run`; parse failures are recorded per file so a batch continues.
+- `docs mv <old_path> <new_path>` finds the Git root and scans `<root>/src` Markdown, MDX, and notebook content. It rewrites relative inbound links while preserving anchors and recalculates relative links inside the moved Markdown, MDX, or notebook file. `--dry-run` previews without writing.
+- The move command also updates safe site-absolute routes in documentation and `src/docs.json` navigation entries and redirect destinations, while leaving redirect sources unchanged. Ambiguous versioned forms and forms without an equivalent destination are warned about and left unchanged. Review the diff and run `make broken-links-with-anchors` afterward; prose mentions cannot be safely rewritten.
 
-### `docs migrate <path>` and `docs migrate-docusaurus <path>`
+## Generated-site checks and exports
 
-`migrate` accepts `.md`, `.markdown`, and `.ipynb` files and searches a directory recursively. `migrate-docusaurus` also accepts `.mdx` and converts Docusaurus admonitions, tabs, imports, and frontmatter to Mintlify-oriented forms.
+`build` is phony. `make broken-links`, `make broken-links-with-anchors`, `make check-openapi`, and `make export` all depend on it, so each starts from a rebuilt generated tree. `make htmltest` instead validates an existing export archive.
+
+| Target | What it does and where it runs |
+| --- | --- |
+| `make broken-links` | Runs `mint broken-links --check-redirects` from `build/`, filters known false positives, and fails only if reported link entries remain. |
+| `make broken-links-with-anchors` | Same check with `--check-anchors`; use after headings, fragments, routes, redirects, navigation, or ordinary-link changes. |
+| `make check-openapi` | Runs `mint openapi-check langsmith/agent-server-openapi.json` from `build/`. |
+| `make export` | Checks for `mint export`, rejects Node 25+, and runs `mint export` in `build/`. It needs Node 20 or 22 and an Enterprise Mintlify plan; set `MINT_EXPORT_ARGS` for Mint arguments. |
+| `make htmltest` | Requires `htmltest`, `unzip`, and an existing `EXPORT_ZIP` (default `build/export.zip`), unpacks it under `HTMLTEST_UNPACK_DIR`, and uses the external-URL configuration. `make export-htmltest` runs export then this check. |
+
+The broken-link filter removes complete standalone snippet report sections because those links resolve only when imported, plus deployment-only OpenAPI and legacy-path reports. With `--check-anchors`, it also removes specified SmithDB migration anchor false positives. Remaining indented link reports are failures. This filtering and working-directory behavior are why the Make targets, rather than root-level raw Mint, are the supported checks.
+
+`make check-legacy-links` is a distinct source-policy check. It scans every authored Markdown and MDX file under `src/` by default (or supplied paths), rejects retired documentation hosts, permits only the Helm repository exception under `langchain-ai.github.io`, and directs replacements to relative docs routes or `https://reference.langchain.com/` for API reference.
+
+## Linting, formatting, and focused tests
+
+- `make lint` runs Ruff formatting and lint checks, `ty`, and `codespell src`. `make format` applies Ruff fixes; `make format-check` is non-mutating.
+- `make test` runs pytest with network sockets disabled except Unix sockets. Narrow it with `TEST_FILE`, for example `make test TEST_FILE=tests/unit_tests/tools/test_move_files.py`.
+- `make lint_md` requires `markdownlint`; `make lint_md_fix` applies its fixes.
+- `make lint_prose [FILES="src/path/page.mdx"]` installs and executes the pinned Vale binary. It excludes `node_modules` and `src/code-samples` from its target set.
+
+Vale's canonical version is the `vale` value in `.mise.toml`; the Makefile and installer derive their version from that pin. `scripts/install-vale.sh` accepts only a semantic version, reuses a matching Vale already on `PATH`, otherwise downloads the OS- and architecture-specific release to `.bin/vale`, and falls back to `go install` if download fails.
+
+`.vale.ini` sets `.github/vale/styles` as the styles path, treats only error-level alerts as failures, skips frontmatter, and maps MDX to Markdown. Markdown and MDX use the LangChain, proselint, Vale, and write-good style sets while ignoring fenced code blocks. It enables the repository's LangChain accessibility, terminology, grammar, and clarity rules, disables Vale spelling, and contains a narrowly scoped provider-catalog exception; do not generalize it to ordinary content.
+
+## Runnable samples, snippets, and trace cards
+
+`src/code-samples/` is executable source. `src/code-samples-generated/` is an extraction intermediate and `src/snippets/code-samples/` is generated MDX; do not hand-edit either generated directory.
+
+```mermaid
+flowchart TD
+  Source["Source code samples"] --> Extract["Extract marked snippets"]
+  Extract --> Intermediate["Generated sample fragments"]
+  Intermediate --> MDX["Generated snippet MDX"]
+  Source --> Test["Run language toolchains"]
+  Test --> Gate{"Tracing enabled and sample passed"}
+  Gate -->|"Eligible source"| Find["Find stamped root run"]
+  Find --> Manifest["Trace-links manifest"]
+  Manifest --> MDX
+```
+
+*Snippet rendering and sample execution are independent. Trace publication is a best-effort post-success operation that can add cards to generated MDX.*
+
+### Dependencies and generation
+
+`src/code-samples/package.json` is the **separate shared dependency manifest for TypeScript samples**; it is not the root-site `package.json`. Its committed `src/code-samples/package-lock.json` (lockfile version 3) records the resolved dependency graph. `make test-code-samples` and `make update-code-sample-traces` run `npm install --silent` in that directory before execution, and TypeScript samples run there through `npx tsx` so those dependencies resolve from the code-samples package.
+
+Python samples instead run against the root uv project, Go samples resolve the shared `src/code-samples/go.mod`, and Java and Kotlin samples use JBang with Java 21.
+
+### Python SDK floor and deterministic agent fixture
+
+The root Python project declares `langsmith>=0.14.12`; the committed lock currently resolves `langsmith` 0.14.12. This is the repository dependency floor for Python samples, including `src/code-samples/langsmith/create-an-agent.py`; it is not a claim about uninspected SDK behavior at other versions. Keep the requirement and lock in sync when changing a sample that needs a newer SDK surface.
+
+That agent-registration source is deliberately executable without creating a live agent: its non-snippet harness starts a loopback HTTP fixture, sets isolated LangSmith environment values, and asserts the request sequence after the two marked snippets run. Use the normal runner to exercise the same root uv environment and sample-selection boundary:
 
 ```bash
-uv run pipeline migrate legacy/ --output converted/
-uv run pipeline migrate-docusaurus legacy/guide.mdx --dry-run
+make test-code-samples FILES="src/code-samples/langsmith/create-an-agent.py"
 ```
 
-For each file, the command reads content, converts it through the selected parser, removes `.md` and `.mdx` link suffixes, then prints to stdout for `--dry-run` or creates parent directories and writes output. Directory output preserves relative layout; ordinary migration produces `.md`, while Docusaurus `.mdx` remains `.mdx`. Without `--output`, Markdown retains its extension; a successful in-place notebook conversion writes `.md` and deletes the original notebook.
+`make code-snippets` extracts marked regions from supported Python, TypeScript, Java, Kotlin, Go, and shell sources under `src/code-samples/` into `src/code-samples-generated/`, then generates importable MDX in `src/snippets/code-samples/`. A full extraction removes earlier supported intermediate files. Set `CODE_SNIPPET_SOURCES` to a space-separated list of existing supported paths below `src/code-samples/` to refresh only selected source stems; missing, out-of-tree, and unsupported selections fail.
 
-A missing path exits 1. A `ParseError` is reported without a full traceback, marks only that file failed, and lets the remaining batch continue; batches report success and failure totals. Unexpected exceptions include traceback context.
+Generation reads the trace-links manifest and adds a `View example trace` card only for a recorded snippet ID. For Python and TypeScript snippets, it can expand a generic agent `model` value into the configured Deep Agents provider tabs; `KEEP MODEL` leaves the next matching value unchanged, and provider-specific or embedding model values are not tab targets. Review generated MDX after changing source content or markers.
 
-### `docs mv <old_path> <new_path>`
+### Sample execution and traces
 
-The mover finds the Git root and scans `<root>/src` Markdown, MDX, and notebook Markdown. It rewrites inbound relative cross-references while preserving anchors and recalculates internal relative links in the moved Markdown/MDX file or notebook. `--dry-run` previews without writes or a move.
+`make test-code-samples` runs all eligible `.py`, `.ts`, `.java`, `.kt`, `.go`, and `.sh` files, or a space-separated `FILES` selection. It preserves the caller environment for credentials and live services. Python uses `uv run python`; TypeScript uses `npx tsx`; Go uses `go run`; shell uses `bash`; Java and Kotlin use JBang with Java 21 defaults.
 
-A real move creates destination parents, records absolute old and new paths in root-level `link_changes.jsonl`, rewrites inbound links, moves the file, then updates links within it. It does not update navigation, redirects, or arbitrary prose references; reconcile those authored surfaces and run a generated-site link check afterward. See [Adding Pages](/openwiki/operations/adding-pages.md) for authoring considerations.
+Set `CODE_SAMPLE_PATHS` to space-separated directories below `src/code-samples/` to narrow either the full scan or an explicit `FILES` selection. Paths outside that tree are ignored with a warning; the runner returns success when filtering leaves no eligible samples. CI uses this boundary to give each product-matrix leg the same changed-file list while running only that leg's directories.
 
-## Make targets for validation and export
+The default timeout is 1,200 seconds. The runner uses four workers by default, accepts `CODE_SAMPLE_JOBS`, and serializes configured groups sharing LangSmith datasets or experiment fixtures. Normal nonzero exits, missing tools, and timeouts fail. Detected LangSmith rate limits retry up to five times by default with configurable backoff capped at 120 seconds; a persistently rate-limited sample is skipped rather than failed.
 
-| Target | Behavior and requirements |
-| --- | --- |
-| `make broken-links` | Rebuilds, then runs `mint broken-links --check-redirects` from `build/`. Deployment-generated OpenAPI and standalone-snippet noise are filtered; remaining reported link entries fail the target. |
-| `make broken-links-with-anchors` | The same check with `--check-anchors`; use after heading or fragment-link changes. |
-| `make check-openapi` | Rebuilds, then validates `build/langsmith/agent-server-openapi.json` with Mint. |
-| `make export` | Rebuilds then runs `mint export` in `build/`. Requires a Mint CLI that supports `mint export`, Node 20 or 22 rather than Node 25+, and an Enterprise Mintlify plan. |
-| `make htmltest` | Requires a pre-existing `EXPORT_ZIP`, `htmltest`, and `unzip`; it unpacks and runs the configured external-URL check. `make export-htmltest` runs export then this check. |
-| `make test` | Runs pytest with network sockets disabled except Unix sockets. `TEST_FILE` narrows its default `tests/unit_tests` scope. |
-| `make lint`, `make format`, `make format-check` | Check, modify, or check Python format/lint/type/spelling state. `format` modifies files. |
-| `make lint_md`, `make lint_md_fix`, `make lint_prose` | Lint Markdown, apply Markdown fixes, or install and invoke Vale. `lint_prose` uses `FILES` when supplied, otherwise `src/`. |
-| `make skills` | Links `.agents/skills/` directories into `.claude/skills/`, retaining non-symlink entries and removing stale symlinks. |
+`make update-code-sample-traces` sets `CODE_SAMPLE_TRACING=1`, defaults `LANGSMITH_PROJECT` to `docs-code-samples`, executes selected samples, and regenerates snippet MDX. Publishing trace links requires `LANGSMITH_API_KEY`.
 
-For broader validation selection, see [Testing Overview](/openwiki/testing/test-overview.md) and [Mintlify Integration](/openwiki/integrations/mintlify.md).
+Only successful samples attempt trace collection. For an eligible single-snippet source, the runner stamps `LANGSMITH_DOCS_SNIPPET`; collection is lock-serialized, excludes previously claimed run IDs, and polls for a matching stamped root run in the sample window before creating or reusing its public share URL. A source with no marker or unsafe ID has no trace link. Multi-snippet sources are recorded as skipped and stale single-snippet entries are removed. If a successful single-snippet sample has no matching run, its old manifest entry is removed rather than retained. Trace lookup or sharing errors warn and do not fail the suite.
 
-## Samples, snippets, and trace refreshes
+## Remote audits and completion sequence
 
-`make code-snippets` is a two-stage generated-content refresh:
+`python3 scripts/check_llms_urls.py [--base-url URL]` validates the deployed site, not `build/`: it crawls root and nested `llms.txt` indexes, compares reachable pages with the served sitemap, and exits 1 after reporting sitemap pages absent from the index.
 
-```text
-src/code-samples/ -- extraction --> src/code-samples-generated/ -- MDX generation --> src/snippets/code-samples/
-```
+`uv run python scripts/check_onboarding_models.py` reports rather than edits stale model IDs in configured onboarding snippets. It reads GitHub by default, using `GITHUB_TOKEN` or `GH_TOKEN` when available, or a checkout with `--repo-dir`; it exits 0 when current, 1 for stale IDs, and 2 when its registry or inputs cannot be read.
 
-Extraction processes marked Python, TypeScript, Java, Kotlin, Go, and shell samples. A full run removes prior generated supported intermediate outputs. `CODE_SNIPPET_SOURCES` can restrict extraction to space-separated eligible files beneath `src/code-samples/`, replacing only those files’ prior generated outputs; missing, out-of-root, or unsupported selections fail. Generation scans the intermediate files and writes importable MDX. Edit the sample source, never the intermediate or generated MDX as an authoring shortcut. See [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md) for marker and dependency rules.
+For a focused change, run only the checks it exercises: a selected `make test`, `make check-cross-refs` for `@[ref]` edits, `make check-legacy-links` for authored external links, `make lint_prose FILES="..."` for prose, targeted sample execution for a runnable example, and `make broken-links-with-anchors` for rendered navigation or link changes. Use `make export-htmltest` when exported-site external-link coverage is needed.
 
-`make test-code-samples` executes all eligible samples or a focused `FILES="path ..."` set. It preserves the caller environment, including service and credential variables, and dispatches each supported language through its toolchain. It runs up to four samples concurrently by default (`CODE_SAMPLE_JOBS` overrides this); samples in the same configured dataset/experiment group are serialized. Invalid, missing, unsupported, or out-of-tree paths in a focused `FILES` list are warned about and skipped, and a focused selection with no valid samples exits successfully.
-
-Each sample has a 1,200-second default timeout, configurable with `CODE_SAMPLE_TIMEOUT_SECONDS`. Ordinary failures fail the command. Only detected LangSmith rate-limit failures are retried: the default is five attempts with increasing delays of 30, 60, 90, and 120 seconds, capped at 120 seconds; `CODE_SAMPLE_RATE_LIMIT_ATTEMPTS` and `CODE_SAMPLE_RATE_LIMIT_DELAY_SECONDS` tune those values. A sample still rate-limited after the final attempt is reported as skipped rather than failed, so successful completion with skips is not proof every selected sample ran.
-
-`make update-code-sample-traces` sets `CODE_SAMPLE_TRACING=1`, defaults `LANGSMITH_PROJECT` to `docs-code-samples`, executes the chosen samples, and regenerates snippet MDX. It requires `LANGSMITH_API_KEY` to publish trace links. Successful samples enable tracing; collection is serialized so parallel workers do not overwrite the shared `src/code-samples/trace-links.json` manifest or claim the same run. For a single-snippet sample, collection searches the sample time window for an agent-like root run, creates or reuses a public share URL, records it by snippet ID in the manifest, and the MDX generator adds the `View example trace` card.
-
-No-marker sources and sources with multiple `:snippet-start:` markers get no trace link; a multi-snippet source is recorded as skipped and any stale single-snippet entries are removed. Trace collection retries rate limits with the same attempt settings, but errors after a sample has passed are reported as warnings and do **not** fail the sample run. Review the manifest and generated-MDX diffs because the workflow can publish public share URLs and may complete with missing trace links.
-
-## Served LLM-index validation
-
-`python3 scripts/check_llms_urls.py` checks deployed output, not a local build. It crawls the served root `llms.txt` and reachable nested `/_llms/` indexes, compares normalized page URLs with the deployed sitemap, and exits 1 for sitemap pages missing from the index. `--base-url` chooses a served site. It retries dropped connections but not HTTP errors. Since the repository does not generate these index files, first check that no custom `llms.txt` entered the build; report a remaining served-index gap to Mintlify.
-
-## Focused command sequence
-
-1. For pipeline or watcher changes, run the closest focused unit test, for example `make test TEST_FILE=tests/unit_tests/test_watcher.py`.
-2. For `@[ref]` edits, run `make check-cross-refs`.
-3. For a prose-only page, use `make lint_prose FILES="src/path/page.mdx"`.
-4. For a runnable example, run `make test-code-samples FILES="src/code-samples/..."` and provide only the credentials and services it intentionally needs.
-5. After route, navigation, redirect, snippet, heading, or ordinary-reference changes, run `make broken-links-with-anchors`; it builds first.
-6. Use `make export-htmltest` for its separate exported-site external-link coverage.
+CI's core, lint, and generated-site link jobs use Python 3.13. The reusable test workflow installs the test group and invokes `make test`; the link workflow installs that group, uses Node 22 and Mint, then invokes `make broken-links-with-anchors` and `make check-openapi`. The code-sample workflow uses `make test-code-samples` for all samples or its changed-file selection, and only scheduled or manually dispatched runs regenerate snippets after tracing has updated at least one link. Matching these targets locally exercises the same command boundaries rather than approximating them with raw tool invocations.

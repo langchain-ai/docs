@@ -286,7 +286,80 @@ The checkpointer includes several optimizations for low-latency reads:
 - **Raw BYTEA**: Uses psycopg3 binary protocol instead of hex-encoding blobs in SQL
 - **Prepared statements**: `prepare_threshold` defaults to 5 and can be changed in `from_conn_string`
 - **Concurrent setup**: `setup()` is safe to run from several processes at once
-- **Connection resilience**: For long-running services, pass a `psycopg_pool` connection pool rather than a single connection. One connection cannot recover once it drops, and that includes `from_conn_string(..., pipeline=True)`
+- **Connection pools (v0.4.1+)**: For long-running services, pass a `psycopg_pool` connection pool rather than a single connection. A saver on a pool runs operations concurrently, each on its own pooled connection, so one saver can serve many agents; set the pool's `max_size` for the number of agents running at once. A saver on a single connection runs one operation at a time, and it cannot recover once that connection drops, which includes `from_conn_string(..., pipeline=True)`
+- **Atomic writes (v0.4.1+)**: A checkpoint write with several statements goes to the database as one batch, so a write that is cancelled partway saves nothing. It still takes one round trip
+
+### LangGraph Store
+
+Persist LangGraph long-term memory in CockroachDB: memories that outlive a conversation thread, such as user preferences and facts an agent learned.
+
+Both sync (`CockroachDBStore`) and async (`AsyncCockroachDBStore`) implementations are available. They require `langchain-cockroachdb` v0.5.0 or later and follow the API of `PostgresStore`, so they work with `create_agent(store=...)` and `StateGraph.compile(store=...)`.
+
+<Tip>
+Call `store.setup()` (or `await store.setup()`) the first time you use the CockroachDB store to create the required tables.
+</Tip>
+
+**Quick example:**
+
+```python
+import os
+
+from langchain_cockroachdb import CockroachDBStore
+
+DB_URI = os.environ["COCKROACHDB_URI"]
+
+with CockroachDBStore.from_conn_string(DB_URI, pool_config={"max_size": 10}) as store:
+    store.setup()
+
+    namespace = ("user", "alice", "memories")
+    store.put(namespace, "seat", {"text": "Prefers window seats"})
+    item = store.get(namespace, "seat")
+    results = store.search(("user", "alice"))
+```
+
+#### Semantic search
+
+Pass `index` to embed items when you put them and to rank searches by similarity to a `query`. With `DB_URI` as above:
+
+```python
+from langchain_openai import OpenAIEmbeddings
+
+with CockroachDBStore.from_conn_string(
+    DB_URI,
+    index={
+        "dims": 1536,
+        "embed": OpenAIEmbeddings(model="text-embedding-3-small"),
+        "fields": ["text"],
+    },
+) as store:
+    store.setup()
+    store.put(("user", "alice", "memories"), "seat", {"text": "Prefers window seats"})
+    results = store.search(("user", "alice", "memories"), query="Where does Alice sit?")
+```
+
+`setup()` creates a C-SPANN vector index with the namespace as a prefix column, so a search under one user's namespace reads only that part of the index. `distance_type` can be `"cosine"` (the default), `"l2"`, or `"inner_product"`.
+
+#### Expire memories with TTL
+
+Pass `ttl` to give items an expiry, in minutes. `setup()` then turns on CockroachDB's row-level TTL job, which deletes expired items on the server, so no sweeper thread is needed:
+
+```python
+with CockroachDBStore.from_conn_string(DB_URI, ttl={"default_ttl": 60 * 24 * 30}) as store:
+    store.setup()
+    store.put(("user", "alice", "memories"), "status", {"text": "In a meeting"}, ttl=10)
+```
+
+Reads, searches, and listings leave out expired items until the job deletes them. A `get` or `search` pushes back the expiry of the items it returns, unless `refresh_on_read` is `False`. To turn the job off, call `store.disable_ttl()`, or `await store.adisable_ttl()` on `AsyncCockroachDBStore`.
+
+#### Delete a namespace
+
+`delete_namespace` deletes every item in a namespace and its descendants, with their vectors, in one transaction, and returns the number of items deleted:
+
+```python
+deleted = store.delete_namespace(("user", "alice"))
+```
+
+On `AsyncCockroachDBStore`, use `await store.adelete_namespace(...)`.
 
 ### Multi-tenancy
 
@@ -340,7 +413,7 @@ engine = CockroachDBEngine.from_connection_string(
 )
 ```
 
-The vector store and chat history inherit the engine's policy. The checkpointers accept `retry_policy` too; give them a `psycopg_pool` connection pool so dropped connections are replaced.
+The vector store and chat history inherit the engine's policy. The checkpointers accept `retry_policy` too; give them a `psycopg_pool` connection pool so dropped connections are replaced. Since v0.4.1, a pooled checkpointer also retries whenever `psycopg` reports its connection broken, which covers TLS connections that drop on CockroachDB Cloud.
 
 ## Why CockroachDB for AI applications?
 

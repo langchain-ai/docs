@@ -25,4 +25,4 @@ Identify 2-4 most relevant URLs from the index. Prioritize:
 
 Use `fetch_url` on the selected URLs, then complete the user's request using the documentation content.
 
-If `fetch_url` fails or returns empty content, retry once. If it fails again, inform the user and suggest checking https://langchain-ai.github.io/langgraph/ directly.
+If `fetch_url` fails or returns empty content, retry once. If it fails again, inform the user and suggest checking https://docs.langchain.com/oss/python/langgraph/overview directly.

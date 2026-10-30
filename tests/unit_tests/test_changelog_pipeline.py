@@ -348,6 +348,88 @@ def test_text_reasons_catch_internal_names_and_flag_keys() -> None:
     assert cp._text_reasons({"title": "T", "entry": "Plain text."}, flags) == []
 
 
+@pytest.mark.parametrize(
+    ("entry", "leak"),
+    [
+        ("Run `langdev rr stackup` to start it.", "langdev"),
+        ("Log in with no Supabase sign-in screen.", "Supabase"),
+        ("Available on staging and US prod control planes.", "prod control planes"),
+    ],
+)
+def test_text_reasons_catch_internal_tooling_and_environments(
+    entry: str, leak: str
+) -> None:
+    """LangChain's own dev tooling and environments never reach the changelog."""
+    group = {"title": "", "entry": entry}
+    assert cp._text_reasons(group, {}) == [f"internal name: {leak}"]
+
+
+@pytest.mark.parametrize(
+    ("entry", "leak"),
+    [
+        ("Pass `enableColumnReordering: false` to `useDataGrid`.", "useDataGrid"),
+        ("DataGridV2 column headers can now be dragged.", "DataGridV2"),
+        ("Approval runs on each reconciler tick.", "reconciler"),
+        ("It can no longer crowd out other customers.", "other customers"),
+    ],
+)
+def test_text_reasons_catch_frontend_code_and_hosting_internals(
+    entry: str, leak: str
+) -> None:
+    """Component names and how Cloud is run never reach the Cloud changelog."""
+    group = {"title": "", "entry": entry}
+    assert cp._text_reasons(group, {}) == [f"internal name: {leak}"]
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        "Users and useful defaults stay the same.",
+        "Call `/v2/runs/analytics` with OpenAI or GPT-6.",
+    ],
+)
+def test_component_re_skips_ordinary_words_and_versioned_routes(entry: str) -> None:
+    """The case-sensitive patterns leave plain words and API routes alone."""
+    assert cp._text_reasons({"title": "", "entry": entry}, {}) == []
+
+
+def test_latest_bullets_skips_the_week_being_written(tmp_path: Path) -> None:
+    """A rerun after the new week is inserted still compares against last week."""
+    changelog = tmp_path / "changelog.mdx"
+    changelog.write_text(
+        '<Update label="Oct 19-26">\n- This week.\n</Update>\n'
+        '<Update label="Oct 12-19">\n- Last week.\n</Update>\n'
+        '<Update label="Oct 5-12">\n- Older.\n</Update>\n'
+    )
+    assert cp._latest_bullets(changelog, skip="Oct 19-26") == ["Last week."]
+    assert cp._latest_bullets(changelog, skip="Oct 26-Nov 2") == ["This week."]
+
+
+def test_rollout_reasons_flag_partial_availability() -> None:
+    """An entry for some workspaces only is left out, never rewritten to sound GA."""
+    group = {"title": "", "entry": "It runs for workspaces in a limited rollout."}
+    assert cp._rollout_reasons(group) == ["partial rollout: limited rollout"]
+    group = {"title": "", "entry": "This behavior is off by default until enabled."}
+    assert cp._rollout_reasons(group) == ["partial rollout: off by default until"]
+    group = {"title": "", "entry": "Wrapping is off by default."}
+    assert cp._rollout_reasons(group) == []
+
+
+def test_preflight_model_stops_on_a_rejected_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A rejected key stops the run before collection, not once per PR."""
+
+    def reject(*_: object) -> None:
+        msg = "Error code: 401 - invalid x-api-key"
+        raise RuntimeError(msg)
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "bad")
+    monkeypatch.setattr(cp, "_claude_api", reject)
+    with pytest.raises(SystemExit, match="invalid x-api-key"):
+        cp._preflight_model()
+
+
 def test_fix_text_publishes_clean_rewrites_only(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

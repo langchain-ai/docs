@@ -1234,7 +1234,7 @@
       "get": {
         "tags": ["Threads"],
         "summary": "Get Thread History",
-        "description": "Get all past states for a thread.",
+        "description": "Get all past states for a thread. Can return fewer than `limit` states; page with `before` to read further.",
         "operationId": "get_thread_history_threads__thread_id__history_get",
         "parameters": [
           {
@@ -1299,7 +1299,7 @@
       "post": {
         "tags": ["Threads"],
         "summary": "Get Thread History Post",
-        "description": "Get all past states for a thread.",
+        "description": "Get all past states for a thread. Can return fewer than `limit` states; page with `before` to read further.",
         "operationId": "get_thread_history_post_threads__thread_id__history_post",
         "parameters": [
           {
@@ -1708,13 +1708,33 @@
               "text/event-stream": {
                 "schema": {
                   "type": "string",
-                  "description": "Stream of `ProtocolEvent` frames. Each SSE frame uses the event's `method` as the `event:` field and a JSON-encoded `ProtocolEvent` as the `data:` field; `id:` is set to the event's `seq`.\n\n**Example frame:**\n\nid: 42\n\nevent: messages\n\ndata: {\"type\":\"event\",\"event_id\":\"42\",\"seq\":42,\"method\":\"messages\",\"params\":{\"namespace\":[],\"timestamp\":1700000000000,\"data\":{...}}}"
+                  "description": "Stream of `ProtocolEvent` frames. Each SSE frame uses the event's `method` as the `event:` field and a JSON-encoded `ProtocolEvent` as the `data:` field; `id:` is set to the event's `seq`.\n\nIf reading the thread's event stream fails, the server ends the stream with a final frame whose `event:` field is `error` and whose `data:` field is a `ProtocolError` with `id: null` and `error: \"unknown_error\"`. That frame has no `id:` field.\n\n**Example frame:**\n\nid: 42\n\nevent: messages\n\ndata: {\"type\":\"event\",\"event_id\":\"42\",\"seq\":42,\"method\":\"messages\",\"params\":{\"namespace\":[],\"timestamp\":1700000000000,\"data\":{...}}}"
                 }
               }
             }
           },
           "400": {
             "description": "Invalid request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
@@ -1797,7 +1817,8 @@
                   "metadata",
                   "kwargs",
                   "multitask_strategy",
-                  "langsmith_session_name"
+                  "langsmith_session_name",
+                  "cancel_reason"
                 ]
               },
               "title": "Select",
@@ -4581,7 +4602,7 @@
             "type": "string",
             "enum": ["sync", "async", "exit"],
             "title": "Durability",
-            "description": "Durability level for the run. Must be one of `sync`, `async`, or `exit`. See [durability modes](https://docs.langchain.com/oss/python/langgraph/durable-execution#durability-modes) for more details.",
+            "description": "Durability level for the run. Must be one of `sync`, `async`, or `exit`. See [durability modes](https://docs.langchain.com/oss/python/langgraph/checkpointers#durability-modes) for more details.",
             "default": "async"
           }
         },
@@ -4761,7 +4782,7 @@
             "type": "string",
             "enum": ["sync", "async", "exit"],
             "title": "Durability",
-            "description": "Durability level for the run. Must be one of `sync`, `async`, or `exit`. See [durability modes](https://docs.langchain.com/oss/python/langgraph/durable-execution#durability-modes) for more details.",
+            "description": "Durability level for the run. Must be one of `sync`, `async`, or `exit`. See [durability modes](https://docs.langchain.com/oss/python/langgraph/checkpointers#durability-modes) for more details.",
             "default": "async"
           }
         },
@@ -5027,6 +5048,12 @@
             "type": "string",
             "title": "Langsmith Session Name",
             "description": "LangSmith tracing session (project) name for this run, when tracing is enabled at creation time.",
+            "nullable": true
+          },
+          "cancel_reason": {
+            "type": "string",
+            "title": "Cancel Reason",
+            "description": "Why the run was cancelled, if it was: for example an explicit cancel request, a client disconnecting, or a newer run superseding it. Server-generated.",
             "nullable": true
           }
         },
@@ -5324,7 +5351,7 @@
             "type": "string",
             "enum": ["sync", "async", "exit"],
             "title": "Durability",
-            "description": "Durability level for the run. Must be one of `sync`, `async`, or `exit`. See [durability modes](https://docs.langchain.com/oss/python/langgraph/durable-execution#durability-modes) for more details.",
+            "description": "Durability level for the run. Must be one of `sync`, `async`, or `exit`. See [durability modes](https://docs.langchain.com/oss/python/langgraph/checkpointers#durability-modes) for more details.",
             "default": "async"
           }
         },
@@ -5515,7 +5542,7 @@
             "type": "string",
             "enum": ["sync", "async", "exit"],
             "title": "Durability",
-            "description": "Durability level for the run. Must be one of `sync`, `async`, or `exit`. See [durability modes](https://docs.langchain.com/oss/python/langgraph/durable-execution#durability-modes) for more details.",
+            "description": "Durability level for the run. Must be one of `sync`, `async`, or `exit`. See [durability modes](https://docs.langchain.com/oss/python/langgraph/checkpointers#durability-modes) for more details.",
             "default": "async"
           }
         },
@@ -5664,6 +5691,24 @@
             "title": "Metadata",
             "description": "Thread metadata to filter on."
           },
+          "exclude_metadata": {
+            "oneOf": [
+              {
+                "type": "object",
+                "minProperties": 1
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "minProperties": 1
+                },
+                "minItems": 1
+              }
+            ],
+            "title": "Exclude Metadata",
+            "description": "Exclude threads whose metadata contains this object, or any object in this list. Uses the same matching as `metadata`; threads missing the keys are not excluded."
+          },
           "values": {
             "type": "object",
             "title": "Values",
@@ -5747,6 +5792,24 @@
             "type": "object",
             "title": "Metadata",
             "description": "Thread metadata to filter on."
+          },
+          "exclude_metadata": {
+            "oneOf": [
+              {
+                "type": "object",
+                "minProperties": 1
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "minProperties": 1
+                },
+                "minItems": 1
+              }
+            ],
+            "title": "Exclude Metadata",
+            "description": "Exclude threads whose metadata contains this object, or any object in this list. Uses the same matching as `metadata`; threads missing the keys are not excluded."
           },
           "values": {
             "type": "object",
@@ -6720,7 +6783,7 @@
             "type": "string",
             "enum": ["sync", "async", "exit"],
             "title": "Durability",
-            "description": "Durability level for the run. Must be one of `sync`, `async`, or `exit`. See [durability modes](https://docs.langchain.com/oss/python/langgraph/durable-execution#durability-modes) for more details.",
+            "description": "Durability level for the run. Must be one of `sync`, `async`, or `exit`. See [durability modes](https://docs.langchain.com/oss/python/langgraph/checkpointers#durability-modes) for more details.",
             "default": "async"
           }
         },
