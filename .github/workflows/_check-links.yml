@@ -28,6 +28,9 @@ on:
 env:
   UV_FROZEN: "true"
   UV_NO_SYNC: "true"
+  # Pinned so a new mint release cannot change CI results unannounced. The
+  # cache key includes it, so bumping it reinstalls mint.
+  MINT_VERSION: "4.2.1181"
 
 jobs:
   check-links:
@@ -71,13 +74,11 @@ jobs:
           path: |
             ${{ steps.npm-paths.outputs.root }}/mint
             ${{ steps.npm-paths.outputs.bin }}/mint
-          key: mintlify-${{ runner.os }}-node-22-${{ hashFiles('.github/workflows/_check-links.yml') }}
-          restore-keys: |
-            mintlify-${{ runner.os }}-node-22-
+          key: mintlify-${{ runner.os }}-node-22-${{ env.MINT_VERSION }}
 
       - name: Install Mintlify CLI
         if: steps.cache-mint.outputs.cache-hit != 'true'
-        run: npm i -g mint@latest
+        run: npm i -g "mint@${MINT_VERSION}"
 
       - name: Patch KaTeX __VERSION__ bug
         if: steps.cache-mint.outputs.cache-hit != 'true'
@@ -91,6 +92,16 @@ jobs:
 
       - name: Validate documentation links
         run: make broken-links-with-anchors
+
+      # Catches components rendered without an import, such as a snippet whose
+      # import line was dropped. In --no-build mode mint exits 0 on warnings, so
+      # the summary decides the result.
+      - name: Check for unknown MDX components
+        working-directory: build
+        run: |
+          mint validate --no-build --disable all --enable unknown-component --format json > /tmp/mint-validate.json
+          jq -r '.diagnostics[] | "\(.file):\(.line): \(.message)"' /tmp/mint-validate.json
+          jq -e '.summary.errors == 0 and .summary.warnings == 0' /tmp/mint-validate.json > /dev/null
 
       - name: Validate openapi spec validity
         run: make check-openapi
