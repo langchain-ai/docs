@@ -3,6 +3,9 @@ type: operations guide
 title: Adding and Moving Documentation Pages
 description: Safely add, move, rename, or retire documentation pages by choosing the right source owner, declaring every emitted route in navigation, preserving old URLs with redirects, and validating generated output.
 tags: [documentation, operations, navigation, redirects, build-system]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-30T08:15:16.596Z
 sources:
   - id: openwiki-source-18732c72f962c06354cb62db
     resource: repo://.agents/skills/add-docs-page/SKILL.md
@@ -32,9 +35,6 @@ sources:
     resource: repo://scripts/refresh_integration_downloads.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-29T08:15:48.231Z
 generated: { by: "openwiki/0.4.3", at: "2026-10-29T08:15:48.231Z" }
 ---
 
