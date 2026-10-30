@@ -19,7 +19,7 @@ from scripts.generate_egress_ip_tables import (
 
 
 def test_egress_tables_detect_inventory_drift(tmp_path: Path) -> None:
-    """An inventory edit must update both the table and its reserved annotation."""
+    """Inventory changes update the version and tables; manual table drift fails."""
     for relative_path in [INVENTORY, *PAGES.values()]:
         target = tmp_path / relative_path
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -27,7 +27,7 @@ def test_egress_tables_detect_inventory_drift(tmp_path: Path) -> None:
     update_tables(tmp_path, check=True)
     data = load_inventory(tmp_path / INVENTORY)
     old_version = data["version"]
-    data["addresses"][0]["status"] = "reserved"
+    data["addresses"][0]["cidr"] = "34.59.65.98/32"
     (tmp_path / INVENTORY).write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(ValueError, match=r"egress-ip-addresses.json \(version\)"):
         update_tables(tmp_path, check=True)
@@ -35,11 +35,11 @@ def test_egress_tables_detect_inventory_drift(tmp_path: Path) -> None:
     update_tables(tmp_path, check=True)
     assert load_inventory(tmp_path / INVENTORY)["version"] != old_version
     page = tmp_path / PAGES["langsmith"]
-    page.write_text(page.read_text().replace("34.59.65.97", "34.59.65.98"))
+    page.write_text(page.read_text().replace("34.59.65.98", "34.59.65.97"))
     with pytest.raises(ValueError, match=r"cloud\.mdx"):
         update_tables(tmp_path, check=True)
     table = render_table(data["addresses"], "langsmith")
-    assert "34.59.65.97 (reserved)" in table
+    assert "34.59.65.98" in table
     assert "35.197.29.146" not in table
 
 
@@ -53,7 +53,6 @@ def test_egress_tables_detect_inventory_drift(tmp_path: Path) -> None:
         ("service", "unknown"),
         ("cloud", "azure"),
         ("region", "<script>"),
-        ("status", "retired"),
         ("unexpected", "field"),
     ],
 )
@@ -68,10 +67,9 @@ def test_invalid_egress_addresses_fail(tmp_path: Path, field: str, value: str) -
 
 
 def test_duplicate_egress_address_fails(tmp_path: Path) -> None:
-    """Do not publish conflicting statuses for the same address and scope."""
+    """Do not publish duplicate addresses within the same scope."""
     data = load_inventory(ROOT / INVENTORY)
     duplicate = copy.copy(data["addresses"][0])
-    duplicate["status"] = "reserved"
     data["addresses"].append(duplicate)
     path = tmp_path / "inventory.json"
     path.write_text(json.dumps(data), encoding="utf-8")

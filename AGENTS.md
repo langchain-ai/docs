@@ -602,10 +602,10 @@ The LangSmith and LangSmith Deployment egress IP tables on `/langsmith/cloud` an
 also published as-is at `/langsmith/egress-ip-addresses.json` for customers to poll.
 
 Each address has a service (`langsmith` or `langsmith-deployment`), cloud (`gcp` or `aws`),
-customer region (`us`, `eu`, or `apac`), IPv4 `/32` CIDR, and status. Use `reserved` for
-allocated addresses that are not attached, and `active` for addresses already in use. Customers
-must allowlist both statuses. Publish new reserves before using them, and mark consumed reserves
-`active`. Remove an address only after it stops carrying traffic and has been released.
+customer region (`us`, `eu`, or `apac`), and IPv4 `/32` CIDR. Customers must allowlist every
+matching CIDR, including allocated reserves. Publish new reserves before using them. Attaching
+an already-published address does not require an inventory update. Remove an address only
+after it stops carrying traffic and has been released.
 
 ```bash
 uv run python scripts/generate_egress_ip_tables.py           # rewrite the version and both tables

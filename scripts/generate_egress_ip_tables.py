@@ -33,14 +33,13 @@ def load_inventory(path):
     seen = set()
     for entry in data["addresses"]:
         if not isinstance(entry, dict) or set(entry) != {
-            "service", "cloud", "region", "cidr", "status"
+            "service", "cloud", "region", "cidr"
         }:
-            raise ValueError("Each address must contain service, cloud, region, cidr, status")
+            raise ValueError("Each address must contain service, cloud, region, cidr")
         for key, allowed in {
             "service": PAGES,
             "cloud": ("gcp", "aws"),
             "region": ("us", "eu", "apac"),
-            "status": ("active", "reserved"),
         }.items():
             if not isinstance(entry[key], str) or entry[key] not in allowed:
                 raise ValueError(f"Invalid {key}: {entry[key]!r}")
@@ -62,7 +61,6 @@ def render_table(addresses, service):
         for region in ("us", "eu", "apac"):
             values = [
                 entry["cidr"].removesuffix("/32")
-                + (" (reserved)" if entry["status"] == "reserved" else "")
                 for entry in addresses
                 if (entry["service"], entry["cloud"], entry["region"])
                 == (service, cloud, region)
