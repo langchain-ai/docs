@@ -3,6 +3,9 @@ type: publication workflow
 title: Weekly Changelog Publication
 description: Explains the review-gated weekly proposal pipeline for LangSmith Cloud and Fleet changelogs. Covers windowed PR collection, model-assisted curation, rollout-held encrypted state, public-repository safety, and focused validation.
 tags: [langsmith, changelog, publication, github-actions, release-management]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-30T08:15:16.596Z
 sources:
   - id: openwiki-source-5e9ca8e4c3cab7d91998bc9e
     resource: repo://.github/workflows/changelog-weekly.yml
@@ -10,9 +13,6 @@ sources:
     resource: repo://scripts/changelog_pipeline.py
   - id: openwiki-source-fa345f5b82e4b995e2e1280e
     resource: repo://tests/unit_tests/test_changelog_pipeline.py
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-29T08:15:48.231Z
 generated: { by: "openwiki/0.4.3", at: "2026-10-29T08:15:48.231Z" }
 ---
 

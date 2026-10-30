@@ -38,7 +38,10 @@ sources:
     resource: repo://src/docs.json
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-23T08:20:30.474Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-30T08:15:16.596Z
+generated: { by: "openwiki/0.4.3", at: "2026-10-30T08:15:16.596Z" }
 ---
 
 # Mintlify Integration
@@ -66,9 +69,9 @@ The diagram shows the repository-to-Mintlify handoff, including the hosted-only 
 
 The builder establishes output route families before Mintlify reads the tree:
 
-- Ordinary OSS documentation is emitted into both `/oss/python/...` and `/oss/javascript/...` trees. It rewrites eligible `/oss/` links for the target language.
+- The builder creates both `/oss/python/...` and `/oss/javascript/...` route trees and rewrites eligible `/oss/` links for the target language. A shared OSS page listed in only one language's navigation is emitted only for that language; pages listed in both or neither are emitted for both. Language-specific source files are likewise emitted only for their matching tree.
 - Managed Deep Agents pages emit only at `/langsmith/python/...` and `/langsmith/javascript/...`; `docs.json` redirects legacy unversioned URLs to Python so Mintlify does not serve orphaned unversioned copies.
-- Deep Agents Code and OpenWiki are language-agnostic OSS products. Deep Agents Code is emitted once at `/oss/deepagents/code/...`, and link rewriting leaves that prefix unversioned.
+- Deep Agents Code and OpenWiki are language-agnostic OSS products. Deep Agents Code is emitted once at `/oss/deepagents/code/...` and OpenWiki once at `/oss/openwiki/...`; link rewriting leaves both prefixes unversioned.
 
 These are builder rules, not Mintlify conventions. Choose the output family before adding navigation or links.
 
