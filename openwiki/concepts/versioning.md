@@ -3,9 +3,6 @@ type: documentation route model
 title: Documentation Routes and Language Versioning
 description: Explains how source families and docs.json navigation determine generated documentation routes, language variants, conditional content, and compatibility redirects. Covers unversioned product exceptions and safe verification of route changes.
 tags: [documentation-pipeline, routes, language-versioning, redirects]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-29T08:15:48.231Z
 sources:
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
@@ -17,13 +14,18 @@ sources:
     resource: repo://src/langsmith/agents.mdx
   - id: openwiki-source-efb95e7fd1324eefaec0577a
     resource: repo://src/langsmith/create-an-agent.mdx
+  - id: openwiki-source-17cda5e480a486a133aa3e81
+    resource: repo://src/langsmith/managed-deep-agents-runtime.mdx
   - id: openwiki-source-243c6e17a513bece229a34b9
     resource: repo://src/language-toggle.js
   - id: openwiki-source-838cde2da1a05c117501b824
     resource: repo://src/oss/deepagents/async-subagents.mdx
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-29T08:15:48.231Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-30T08:15:16.596Z
+generated: { by: "openwiki/0.4.3", at: "2026-10-30T08:15:16.596Z" }
 ---
 
 # Documentation Routes and Language Versioning
@@ -76,7 +78,7 @@ For a shared `.md` or `.mdx` page, the builder recursively collects `/oss/python
 
 A directory navigation entry can stand for `dir/index`, but it does not select a shared index for a language when a language-owned `src/oss/<language>/dir.mdx` or `.md` owns that route. This prevents a shared landing page from colliding with a language-specific page. If `docs.json` is unreadable, the builder intentionally falls back to both variants rather than risk producing an empty or incorrect one-language output.
 
-Language-owned directories remain ownership boundaries, not menu controls. Their files are emitted only to their matching tree regardless of navigation, with the ownership directory removed. Unlike earlier behavior, `build_file()` uses the same navigation-derived selection as `build_all()` for shared OSS pages, so a targeted development rebuild is suitable for checking that rule.
+Language-owned directories are ownership boundaries, not menu controls during a full build. Their files are emitted only to their matching tree regardless of navigation, with the ownership directory removed. `build_file()` applies the same navigation-derived selection as `build_all()` for shared OSS pages, so a targeted development rebuild can check that rule.
 
 `build_all()` first recreates `build/`, then emits ordinary OSS variants, the two unversioned OSS products, ordinary LangSmith content, Managed Deep Agents variants, shared files, and npm snippets. Treat a clean full build as the final route-shape check, especially after moving a source between families. Source collection rejects symlinks and files resolving outside the requested root, so source-tree links cannot place host files in build artifacts.
 
@@ -112,7 +114,7 @@ Deep Agents Code is separately projected as a Products and setup menu item. `doc
 
 Ordinary LangSmith files emit once below `/langsmith/` with the Python target. Managed Deep Agents is the exception: `build_file()` recognizes a direct top-level `managed-deep-agents*.md` or `.mdx` source and emits its Python and JavaScript variants, while the ordinary LangSmith pass excludes it. The full build discovers only direct `.mdx` files, so a Managed Deep Agents page intended for a full build must be a direct `.mdx` file.
 
-The Managed Deep Agents tabs are parallel Python and TypeScript projections with **Get started**, **Agent capabilities**, and **Build and deploy** groups. They include Agent definition, Identity, nested Channels, and Custom frontend in both projections. `managed-deep-agents-agent-definition.mdx` itself contains Python and JavaScript conditional source content. The unversioned landing aliases and listed unversioned per-page routes redirect to Python; that compatibility default does not remove the JavaScript artifacts.
+The Managed Deep Agents tabs are parallel Python and TypeScript projections with **Get started**, **Agent capabilities**, and **Build and deploy** groups. They include Identity, nested Channels, and Custom frontend in both projections. The representative runtime source uses `:::python` and `:::js` sections for its language-specific type names and nullability. Unversioned landing aliases and the listed unversioned per-page routes redirect to Python; that compatibility default does not remove the JavaScript artifacts.
 
 Ordinary LangSmith agent-workspace guides remain unversioned. `docs.json` projects `agents`, `agent-environments`, `navigate-agents`, `create-an-agent`, `build-an-agent`, and `deploy-to-agent-environment` together as **Agent-based workspaces** under **Products and setup → LangSmith setup**. Do not infer a paired route merely from language-specific examples inside such a page.
 

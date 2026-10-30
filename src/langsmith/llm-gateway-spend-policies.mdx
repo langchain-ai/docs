@@ -7,13 +7,19 @@ import LLMGatewayBetaNote from '/snippets/langsmith/llm-gateway-beta-note.mdx';
 
 <LLMGatewayBetaNote />
 
-A spend policy defines a cost cap for a specific scope (organization, workspace, API key, or user) over a time window (monthly, weekly, daily, or hourly). The [LLM Gateway](/langsmith/llm-gateway) tracks spend in real time and blocks any request that would push spend past the cap, returning a `402` response:
+A spend policy defines a cost cap for a specific scope (organization, workspace, user, or API key) over a time window (monthly, weekly, daily, or hourly). Once the spend recorded for the window reaches the cap, the [LLM Gateway](/langsmith/llm-gateway) blocks further requests with a `402` response that names the blocking policies:
 
-```
-API Error: 402 request blocked by gateway policies: R&D Spend Cap
+```json
+{"type":"error","error":{"message":"request blocked by gateway policies: <POLICY_NAME>"}}
 ```
 
-The blocked request is traced to LangSmith with the policy violation recorded as metadata, so you can see exactly what was blocked and why.
+The gateway records a request's cost after the request completes. The request that crosses the cap still succeeds, and only later requests are blocked, so spend for a window can exceed the cap. Requests sent close together can all pass before the first one is recorded, so the overshoot can be larger than one request.
+
+The blocked request is traced to LangSmith with the policy violation recorded as metadata, so you can see exactly what was blocked and why. The violation also surfaces as an issue in [LangSmith Engine](/langsmith/llm-gateway-traces#langsmith-engine-integration).
+
+<Info>
+Spend policies do not apply to calls billed to a [Claude subscription](/langsmith/llm-gateway-coding-agents#use-claude-subscription-oauth), and those calls are left out of spend totals.
+</Info>
 
 ## Policy dimensions
 
@@ -23,12 +29,12 @@ Spend policies are evaluated from broadest to most specific. All matching polici
 | --- | --- | --- |
 | **Organization** | Total spend across all workspaces in the org | "The entire org cannot spend more than $10,000/month on LLM calls" |
 | **Workspace** | Total spend within a single workspace or group of workspaces | "The workspaces related to R&D cannot spend more than $2,000/month" |
-| **API key** | Spend by a single API key or group of API keys (maps to a service or agent) | "The customer support agent keys cannot spend more than $500/month cumulatively" |
 | **User** | Spend by a single user or group of users (resolved from the API key's identity) | "No individual developer can spend more than $50/day" |
+| **API key** | Spend by a single API key or group of API keys (maps to a service or agent) | "The customer support agent keys cannot spend more than $500/month cumulatively" |
 
 ### Conflict resolution
 
-By default, LLM Gateway assesses the broadest scope first. If a granular policy applies, the most restrictive policy wins. Narrower scopes can only tighten limits, never loosen them. If an org-level policy caps spend at \$10,000/month and a workspace-level policy caps at \$15,000/month, the $10,000 org cap still applies.
+By default, the gateway assesses the broadest scope first. Narrower scopes can only tighten limits, never loosen them. For example, if an org-level policy caps spend at \$10,000/month and a workspace-level policy caps at \$15,000/month, the $10,000 org cap still applies.
 
 ### Defaults vs. granular policies
 
@@ -37,50 +43,47 @@ Spend policies have two aspects:
 1. **Sums across a dimension:** the total cap for that scope. Example: "This workspace's total spend cannot exceed $5,000/month."
 2. **Defaults for each member of a dimension:** a base limit that applies to every API key or user within a scope unless overridden. Example: "Each API key in this workspace gets a $200/month default cap." Individual API keys can receive additional policies that raise their specific limit, but no policy can loosen a cap set at a broader scope.
 
-## Time windows
+## Time window period
 
-| Window | Resets | Use case |
+The time window sets the period over which spend accumulates against the cap. At the end of each window, recorded spend resets to zero:
+
+| Period | Resets | Use case |
 | --- | --- | --- |
 | **Monthly** | First of each month | Budget alignment, overall cost control |
-| **Weekly** | Midnight UTC on the Monday of each week | weekly budgeting |
+| **Weekly** | Midnight UTC on the Monday of each week | Weekly budgeting |
 | **Daily** | Midnight UTC | Prevent single-day cost spikes (for example, a coding agent in a retry loop overnight) |
 | **Hourly** | Top of each hour | Catch runaway agents quickly |
 
+<Tip>
 You can apply multiple time windows to the same scope. For example, a workspace can have both a \$5,000/month cap and a \$500/day cap. Both are enforced independently.
+</Tip>
 
 ## Create a spend policy
 
 <Warning>
-Creating and managing policies requires `organization:manage` permission. For the full permissions breakdown, refer to [Traces, Engine, and access control](/langsmith/llm-gateway-access).
+Creating and managing policies requires `organization:gateway:manage` permission. Organization Admins and Organization Operators have it by default. For what each organization role can do, see [Organization roles](/langsmith/rbac#organization-roles).
 </Warning>
 
 1. Go to **LLM Gateway** and select **Cost Controls**.
 1. Click **Create spend limit**.
-1. Select the scope (organization, workspace, API key, or user).
+1. Select the **scope** (organization, workspace, user, or API key).
 1. (Optional) To separate a default limit by header, select **Workspace**, **User**, or **API Key** and apply the limit to every subject of that type by default. Select **Separate limits by custom header** and enter the header name without `X-Gateway-`, such as `Customer-Id`. Send the full `X-Gateway-Customer-Id` header on requests. Each subject and header-value pair receives an independent limit.
-1. Set the time window (monthly, weekly, daily, or hourly).
-1. Set the spend cap in USD.
+1. Set the spend cap in USD and the time window period (monthly, weekly, daily, or hourly).
 1. Click **Create spend limit**.
 
 Policies take effect immediately. The gateway evaluates them on every incoming request with sub-second enforcement latency.
 
-A spend policy can also use a custom request header to give each of your own end customers an independent cap under one API key. For more information, see [Per-customer policies](/langsmith/llm-gateway-header-policies).
+<Tip>
+A spend policy can also use a custom request header to give each end customer, tenant, or team an independent cap under one API key. For more information, see [Header-based policies](/langsmith/llm-gateway-header-policies).
+</Tip>
 
 ## View spend
 
-The spend visibility dashboard shows real-time cost rollups so you can understand where your LLM budget is going before you reach the limit.
+In **LLM Gateway** > **Cost Controls**, the **Usage** column shows how much each policy has spent, in dollars and as a percentage of its cap.
 
-From the gateway settings page, you can view how much each policy has spent against its cap.
+To analyze spend over time by user, API key, model, or request header, use the **Usage** tab. For more information, see [Monitor LLM Gateway spend](/langsmith/llm-gateway-monitoring).
 
-To [group spend by custom header in Usage](/langsmith/llm-gateway-monitoring#group-spend-by-custom-header), configure an enabled default **API Key** spend policy with **Separate limits by custom header**. An organization-level header condition alone does not enable grouping. The default policy also enforces its cap independently for each API-key and header-value pair; it is not an analytics-only setting.
+## See also
 
-## Integration with LangSmith Engine
-
-When a spend policy blocks a request, the violation is recorded as metadata on the trace. These violations surface as issues in [LangSmith Engine](/langsmith/engine), where you can click through from the issue to the trace to understand what the agent was doing when it hit the limit.
-
-This is useful for diagnosing whether a blocked request represents a genuine cost problem (a coding agent in a retry loop) or a policy that needs adjustment (a legitimate workload that grew beyond its cap).
-
-## Next steps
-
-- [Per-customer policies](/langsmith/llm-gateway-header-policies): split a cap by a custom request header so each end customer gets its own limit.
-- [Data policy](/langsmith/llm-gateway-data-policy): add data policies alongside cost controls.
+- [Header-based policies](/langsmith/llm-gateway-header-policies): split a cap by a custom request header so each header value gets its own limit.
+- [Data policies](/langsmith/llm-gateway-data-policy): add data policies alongside cost controls.

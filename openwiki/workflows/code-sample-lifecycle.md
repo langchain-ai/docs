@@ -3,9 +3,6 @@ type: documentation workflow
 title: Runnable Code Samples and Snippet Generation
 description: Explains how runnable documentation sources are executed, extracted, rendered as committed MDX, optionally linked to public LangSmith traces, and operated through CI.
 tags: [code-samples, documentation, mdx, testing, tracing, ci, langsmith]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-29T08:15:48.231Z
 sources:
   - id: openwiki-source-ddbddbe474c8dc57119458d7
     resource: repo://.agents/skills/docs-code-samples/SKILL.md
@@ -41,7 +38,10 @@ sources:
     resource: repo://tests/unit_tests/test_generate_code_snippet_mdx.py
   - id: openwiki-source-b631fb59f417cefbd356f03e
     resource: repo://tests/unit_tests/test_test_code_samples.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-29T08:15:48.231Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-30T08:15:16.596Z
+generated: { by: "openwiki/0.4.3", at: "2026-10-30T08:15:16.596Z" }
 ---
 
 ## Source of truth and lifecycle
@@ -83,11 +83,11 @@ make test-code-samples FILES="src/code-samples/deepagents/async-subagents-answer
 make test-code-samples FILES="src/code-samples/langsmith/observability-quickstart-app-openai.py"
 ```
 
-With `FILES`, the runner accepts only supported files beneath `src/code-samples/`; without it, it recursively selects supported Python, TypeScript, Java, Kotlin, Go, and shell samples. `CODE_SAMPLE_PATHS` further restricts either mode to named directories, which lets CI pass every changed path to each matrix leg while each leg executes only its product. Invalid path filters cannot widen execution outside `src/code-samples/`.
+With `FILES`, the runner accepts only supported files beneath `src/code-samples/`; without it, it recursively selects supported Python, TypeScript, Java, Kotlin, Go, and shell samples. `CODE_SAMPLE_PATHS` further restricts either mode to named directories, which lets CI pass every changed path to each matrix leg while each leg executes only its product. Entries outside `src/code-samples/` are ignored, and ancestry-based matching prevents a similarly named sibling directory from widening the run.
 
 Python executes through `uv run python`. TypeScript runs with `npx tsx` from `src/code-samples/`, whose `package.json` and lockfile are the shared dependency owner; `make test-code-samples` installs that package first. Go and shell also run from that directory, so Go resolves through the shared `go.mod`; Java and Kotlin run through JBang with Java 21. The default sample timeout is 1,200 seconds.
 
-The runner defaults to four workers. It serializes only the `evaluate-rag-` and `experiment-runs-query-` fixture families using per-group locks, leaving unrelated samples concurrent. Recognized LangSmith rate-limit failures are retried up to five total attempts by default, with a linear 30-second base delay capped at 120 seconds; the attempt count and base delay are environment-configurable. An exhaustively rate-limited sample is reported as skipped, whereas ordinary nonzero exits, unavailable executables, and timeouts fail the run.
+The runner defaults to four workers. Per-group locks serialize the four shared-fixture families—`evaluate-rag-`, `experiment-runs-query-`, `prompt-engineering-quickstart`, and `evaluation-quickstart-`—while unrelated samples remain concurrent. Recognized LangSmith rate-limit failures are retried up to five total attempts by default, with a linear 30-second base delay capped at 120 seconds; the attempt count and base delay are environment-configurable. An exhaustively rate-limited sample is reported as skipped, whereas ordinary nonzero exits, unavailable executables, and timeouts fail the run.
 
 ## Extract and generate MDX
 

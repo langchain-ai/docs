@@ -3,9 +3,6 @@ type: validation guide
 title: Testing Overview
 description: Select validation by the contract a documentation change affects. Deterministic local checks cover transformations and generated output, while CI-only checks cover credentials, services, and external destinations.
 tags: [testing, validation, ci, documentation, code-samples]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-29T08:15:48.231Z
 sources:
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
@@ -25,6 +22,8 @@ sources:
     resource: repo://pyproject.toml
   - id: openwiki-source-0a0a6c8d7a88288e6b6b9b5b
     resource: repo://scripts/check_cross_refs.py
+  - id: openwiki-source-2654e40275744504b4ca7e2b
+    resource: repo://scripts/code_sample_tracing.py
   - id: openwiki-source-fd0cb9d6fca56bf4963559e9
     resource: repo://scripts/extract_code_snippets.py
   - id: openwiki-source-560bf24db9566b97ee19e383
@@ -49,7 +48,10 @@ sources:
     resource: repo://tests/unit_tests/test_test_code_samples.py
   - id: openwiki-source-98a4de3472710de1bf3ccb4f
     resource: repo://tests/unit_tests/test_url_stub_noindex.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-29T08:15:48.231Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-30T08:15:16.596Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-30T08:15:16.596Z
 ---
 
 ## Choose the smallest meaningful boundary
@@ -101,6 +103,8 @@ The main CI workflow runs reusable test, lint, and documentation-link workflows 
 `make check-cross-refs` validates source `@[ref]` markers by scanning Markdown and MDX under `src`, skipping code fences, escaped references, generated code-sample snippets, and `node_modules`; unfenced shared OSS references must resolve in every applicable language scope. It is narrower than a site build and cannot prove a final route, redirect, fragment, or external destination.
 
 `make broken-links-with-anchors` rebuilds documentation and runs Mint's broken-link checker from `build/` with anchor and redirect checking. `make check-openapi` similarly rebuilds and checks `langsmith/agent-server-openapi.json`; the reusable documentation workflow runs both on Node 22. `src/docs.json` is the Mintlify site configuration, including navigation, so route or navigation changes need generated-site validation rather than only source-level tests.
+
+Navigation is also a builder input, not merely presentation metadata. For shared OSS pages, the builder reads `navigation` routes under `oss/python/` and `oss/javascript/` and emits a language copy only for a language that lists that route; pages listed in both—or in neither—are emitted for both languages. It caches this route map until `docs.json` changes so development rebuilds see navigation edits, and falls back to both language copies if `docs.json` is absent or invalid. Therefore, test a navigation edit with the focused builder suite as well as the generated-site link check.
 
 `test_url_stub_noindex.py` requires every MDX page with `url:` frontmatter to set `noindex: true`, so redirect-only sidebar stubs stay out of Mintlify discovery outputs including `llms.txt` and the sitemap.
 
