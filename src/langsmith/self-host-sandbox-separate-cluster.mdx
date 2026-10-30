@@ -414,8 +414,9 @@ Manage the two releases as two applications, one for each cluster:
 
 - **Order**: Deploy the `langsmith` release first. Add the runtime after the `langsmith` application has synced and is Healthy (Flux: the HelmRelease is `Ready`).
 - **Versions**: Pin `langsmith-sandbox` to the exact chart version whose appVersion matches. Never use a range, `*`, or `*-0`, and never omit `version` in a Flux HelmRelease.
-- **Proxy CA**: Set `proxyCa.mode: existingSecret` and point `proxyCa.existingSecretName` at a TLS Secret you create in the runtime namespace, with keys `tls.crt` and `tls.key`, for example `kubectl create secret tls <name> --cert=ca.crt --key=ca.key` with a CA certificate you generate. The default `generatedSecret` mode reuses its CA through Helm `lookup`, which tools that render without cluster access cannot run, so each render produces a new CA.
+- **Proxy CA with Argo CD**: Set `proxyCa.mode: existingSecret` and point `proxyCa.existingSecretName` at a TLS Secret you create in the runtime namespace, with keys `tls.crt` and `tls.key`, for example `kubectl create secret tls <name> --cert=ca.crt --key=ca.key` with a CA certificate you generate. The default `generatedSecret` mode reuses its CA through Helm `lookup`, which Argo CD and other tools that render without cluster access cannot run, so each render produces a new CA. Flux runs Helm in the cluster, so the default mode works there.
 - **Install notes**: Argo CD and Flux do not show Helm install notes. The rules that the notes print are on this page.
+- **Back to the Helm CLI**: To stop managing the runtime with Flux, set `spec.suspend: true` on its HelmRelease before you delete it; deleting an active HelmRelease uninstalls the release. Helm 4 applies changes server-side, so the first `helm upgrade` afterwards fails with conflicts on fields that Flux's `helm-controller` owns. Run that one upgrade with `--force-conflicts`.
 
 ## Verify the installation
 
@@ -453,7 +454,7 @@ kubectl --context <sandbox-context> -n langsmith-sandbox get secret langsmith-sa
   -o jsonpath='{.data.sandbox_service_auth_secret}' | base64 -d | openssl dgst -sha256
 ```
 
-`<langsmith-app-secret>` is the chart-managed Secret (`langsmith-secrets` for a release named `langsmith`) or your `config.existingSecretName`, and `<service-auth-key>` is `sandbox_service_auth_secret` or the key that `sandboxes.serviceAuth.secretKey` names. The two checksums must match. After you correct a value, restart the Deployments that read it on that side, because Kubernetes does not restart pods when Secret data changes. The previous-secret settings only cover a planned [rotation](#rotate-the-service-auth-secret), not values that drift apart.
+`<langsmith-app-secret>` is the chart-managed Secret (`langsmith-secrets` for a release named `langsmith`) or your `config.existingSecretName`, and `<service-auth-key>` is `sandbox_service_auth_secret` or the key that `sandboxes.serviceAuth.secretKey` names. The two checksums must match. After you correct a value, restart the Deployments that read it on that side, listed in [Rotate the service-auth secret](#rotate-the-service-auth-secret), because Kubernetes does not restart pods when Secret data changes. The previous-secret settings only cover a planned [rotation](#rotate-the-service-auth-secret), not values that drift apart.
 
 ## Run one runtime per installation
 
@@ -513,12 +514,12 @@ To move an installation from the embedded runtime to a separate cluster, switch 
 Rotate the sandbox service-auth secret in three steps. After each step, apply both releases and wait for both to finish rolling out before you start the next one:
 
 1. On both sides, add the new value as the previous secret. In the `langsmith` chart, set `sandboxes.serviceAuth.previousSecret`, or with `config.existingSecretName`, add a key and name it in `sandboxes.serviceAuth.previousSecretKey`. In the runtime chart, add a key to the runtime Secret and name it in `serviceAuth.previousSecretKey`.
-2. On both sides, make the new value current and the old value the previous secret.
-3. On both sides, remove the previous secret.
+2. On both sides, make the new value current and the old value the previous secret. If you edit an existing Secret in place, this step changes no chart values, so restart the Deployments that read the Secret instead of applying the releases.
+3. On both sides, remove the previous secret. With an existing Secret, first unset the previous-secret key setting and apply the release, then delete the key from the Secret: pods that reference a deleted key cannot start.
 
 With the embedded runtime, apply each step to the `langsmith` release only.
 
-Kubernetes does not restart pods when the data in an existing Secret changes. After you edit a Secret in place, restart the Deployments that read it, for example with `kubectl rollout restart`. Restarting `sandbox-host` suspends its Sandboxes, as in a rolling upgrade.
+Kubernetes does not restart pods when the data in an existing Secret changes. After you edit a Secret in place, restart the Deployments that read it, for example with `kubectl rollout restart`. In the LangSmith cluster, `<release>-backend`, `<release>-platform-backend`, `<release>-queue`, and `<release>-ingest-queue` read the service-auth secret; in the sandbox cluster, `<runtime release>-sandbox-host` does. Restarting `sandbox-host` suspends its Sandboxes, as in a rolling upgrade. Creating a Sandbox can fail with `No sandbox hosts are available. Retry shortly.` for a few seconds after the rollout finishes, until the new hosts report to LangSmith.
 
 The callback signing JWK has no previous-key setting. Keep it stable: changing it on a running installation makes callbacks fail until both sides use the new value.
 
