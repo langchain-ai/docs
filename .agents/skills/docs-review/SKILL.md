@@ -221,8 +221,9 @@ Only when the diff triggers them:
   `docs-mintlify` MCP server. An invented tag renders as nothing and lints
   clean, so report it as a blocking finding citing the Components section of
   `AGENTS.md`.
-- A new or moved `:::python` or `:::js` fence: is every opener closed, and is
-  none of them inside a table, list, or paragraph?
+- A new or moved `:::python` or `:::js` fence: is every opener closed before
+  the next one opens? `make build` fails otherwise, so a review of an unbuilt
+  diff should check by eye.
 
 The `add-docs-page` skill covers these in detail. Point at it rather than
 restating the procedure in a finding.

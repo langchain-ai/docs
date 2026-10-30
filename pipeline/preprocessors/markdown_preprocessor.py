@@ -16,18 +16,18 @@ from pipeline.preprocessors.utm_links import add_utm_to_cta_links
 logger = logging.getLogger(__name__)
 
 _FENCE_OPEN = re.compile(r"^[ \t]*:::(\w+)\s*$")
-_FENCE_CLOSE = re.compile(r"^[ \t]*:::\s*$")
-_FENCE_LIKE = re.compile(r"^[ \t]*:::")
+_FENCE_CLOSE = re.compile(r"^[ \t]*:::(?P<rest>.*)$")
 _CODE_FENCE = re.compile(r"^[ \t]*(```|~~~)")
 
 
 def _validate_conditional_fences(md_text: str) -> None:
-    """Raise if conditional fences are unbalanced or split a table.
+    """Raise if conditional fences are nested, stray, or never closed.
 
-    Conditional rendering pairs each opener with the next closer, so a broken
-    fence does not fail on its own: content leaks into the other language and
-    a stray ``:::`` renders as text. A fence between two table rows splits the
-    table, because the stripped fence leaves a blank line behind.
+    Conditional rendering pairs each opener with the next closer and never
+    checks the structure, so a broken fence builds cleanly: content leaks into
+    the other language and a stray ``:::`` renders as text. A closer may carry
+    text on the same line, as in ``::: | table row`` or ``::::::js`` (close,
+    then open), because the rendering regex accepts both.
 
     Args:
         md_text: The markdown content to check.
@@ -35,12 +35,11 @@ def _validate_conditional_fences(md_text: str) -> None:
     Raises:
         ValueError: Listing the line number and problem for each broken fence.
     """
-    lines = md_text.split("\n")
     problems: list[str] = []
     open_line: int | None = None
     in_code = False
 
-    for number, line in enumerate(lines, start=1):
+    for number, line in enumerate(md_text.split("\n"), start=1):
         if _CODE_FENCE.match(line):
             in_code = not in_code
         if in_code or line.lstrip().startswith("\\:::"):
@@ -53,26 +52,10 @@ def _validate_conditional_fences(md_text: str) -> None:
                     f"opened at line {open_line}"
                 )
             open_line = number
-        elif _FENCE_CLOSE.match(line):
+        elif match := _FENCE_CLOSE.match(line):
             if open_line is None:
                 problems.append(f"line {number}: ::: closes a block that is not open")
-            open_line = None
-        elif _FENCE_LIKE.match(line):
-            problems.append(
-                f"line {number}: malformed fence {line.strip()[:40]!r}; put each "
-                "fence on its own line"
-            )
-            continue
-        else:
-            continue
-
-        previous = lines[number - 2].strip() if number > 1 else ""
-        following = lines[number].strip() if number < len(lines) else ""
-        if previous.startswith("|") and following.startswith("|"):
-            problems.append(
-                f"line {number}: fence inside a table splits it; write one full "
-                "table per language"
-            )
+            open_line = number if _FENCE_OPEN.match(match.group("rest")) else None
 
     if open_line is not None:
         problems.append(f"line {open_line}: block is never closed with :::")

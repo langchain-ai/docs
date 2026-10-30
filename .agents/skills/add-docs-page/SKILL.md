@@ -40,9 +40,9 @@ description: SEO summary with no markdown, no links, and no backticks
 ```
 
 For OSS pages that differ by language, use `:::python` and `:::js` fences in one
-file rather than writing two files. The build pipeline emits both versions. Keep
-each fence on its own line around whole blocks; a fence inside a table or list
-breaks it.
+file rather than writing two files. The build pipeline emits both versions.
+Close each fence before opening the next; `make build` fails on a nested or
+stray fence and names the line.
 
 Use only components that exist. Before writing a JSX tag you have not seen in
 `src/`, look it up on [Mintlify components](https://mintlify.com/docs/components)

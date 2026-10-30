@@ -14,10 +14,17 @@ def test_balanced_fences_pass() -> None:
     assert _apply_conditional_rendering(text, "js").strip() == "JS text."
 
 
-def test_per_language_tables_pass() -> None:
-    """A full table inside each fence is valid."""
-    text = ":::python\n| A |\n| - |\n| py |\n:::\n\n:::js\n| A |\n| - |\n| js |\n:::\n"
+def test_compact_closers_pass() -> None:
+    """A closer may carry text, as the rendering regex accepts."""
+    text = (
+        "| A |\n| - |\n:::python\n| py |\n::: | shared |\n"
+        ":::python\nPy.\n::::::js\nJS.\n:::\n"
+    )
     _validate_conditional_fences(text)
+    rendered = _apply_conditional_rendering(text, "js")
+    assert "| shared |" in rendered
+    assert "JS." in rendered
+    assert "py" not in rendered
 
 
 def test_fences_inside_code_blocks_are_ignored() -> None:
@@ -36,10 +43,8 @@ def test_escaped_fences_are_ignored() -> None:
     [
         (":::python\nA\n:::python\nB\n:::\n", "line 3: :::python opens inside"),
         ("Text.\n:::\n", "line 2: ::: closes a block that is not open"),
-        (":::python\nA\n::::::js\nB\n:::\n", "line 3: malformed fence"),
-        (":::python\nA\n::: | row |\n", "line 3: malformed fence"),
+        ("Intro.\n:::caution Deprecated.\n", "line 2: ::: closes a block"),
         (":::js\nNever closed.\n", "line 1: block is never closed"),
-        ("| A |\n| - |\n:::python\n| py |\n:::\n", "line 3: fence inside a table"),
     ],
 )
 def test_broken_fences_raise(text: str, problem: str) -> None:

@@ -286,7 +286,7 @@ Python-only content here
 :::
 ```
 
-Put each fence on its own line, with the opener and its `:::` closer around whole blocks. A fence inside a table, list, or paragraph breaks that block: the pipeline leaves a blank line where it strips the fence. For a table that differs by language, write one full table per language. `make check-mdx` reports a stray `:::` it can see, but not every one.
+Close every fence before opening the next one. The pipeline does not check nesting by itself: a `:::python` opened inside another block, or a `:::` with no opener, leaks content into the other language and renders a literal `:::`. `make build` fails on both and names the line.
 
 ### Code highlighting
 
