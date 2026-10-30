@@ -1,8 +1,8 @@
 """Open draft pull requests against the docs repository.
 
 PRs must be grounded in the current docs file contents and in product-source
-evidence. Callers pass ``old_content`` that must match ``main`` exactly, so the
-agent cannot invent a whole page from memory without first reading it.
+evidence. Callers pass ``old_content`` from ``get_docs_file``. When main has
+moved, the tool rebases surgical edits onto the live file when possible.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ import httpx
 from langchain.tools import tool
 
 from tools.credentials import github_token
+from tools.docs_edit import rebase_edit_onto_base
 from tools.evidence import ensure_evidence_in_body, parse_evidence_json
 from tools.source import verify_evidence_in_source
 
@@ -169,6 +170,45 @@ def verify_old_content_matches_base(
         )
 
 
+def prepare_file_edit_for_base(
+    path: str,
+    old_content: str,
+    new_content: str,
+    base_content: str | None,
+) -> tuple[str, str, bool]:
+    """Align one file edit with the live base branch, rebasing when needed.
+
+    Returns ``(old_for_commit, new_for_commit, rebased)``.
+    """
+    if base_content is None:
+        if old_content != "":
+            raise ValueError(
+                f"{path}: file does not exist on the base branch, so "
+                "old_content must be an empty string for a new file."
+            )
+        return "", new_content, False
+    if old_content == "":
+        raise ValueError(
+            f"{path}: file already exists on the base branch. Pass the exact "
+            "current contents from get_docs_file as old_content."
+        )
+    if old_content == base_content:
+        return old_content, new_content, False
+
+    rebased = rebase_edit_onto_base(old_content, new_content, base_content)
+    if rebased is None:
+        raise ValueError(
+            f"{path}: old_content does not match the base branch and the edit "
+            "could not be rebased onto the live file. Call get_docs_file again, "
+            "re-apply the surgical edit on that content, and retry "
+            "create_draft_docs_pr. If a Linear issue was already created for "
+            "this feature and retry still fails, call "
+            "note_ship_failure_on_linear_issue with that identifier and explain "
+            "the failure."
+        )
+    return base_content, rebased, True
+
+
 @tool(parse_docstring=True)
 async def get_docs_file(path: str, ref: str = DEFAULT_BASE) -> str:
     """Read a file from langchain-ai/docs at the given ref.
@@ -217,18 +257,20 @@ async def create_draft_docs_pr(
 ) -> str:
     """Create a draft PR on langchain-ai/docs with surgical file edits.
 
-    Each file must include old_content that exactly matches the base branch
-    (from get_docs_file) and the edited new_content. evidence_json must cite
-    product source at the release tag.
+    Each file must include old_content from get_docs_file and the edited
+    new_content. When main moved under the agent, the tool rebases the edit
+    onto the live file when the changed hunks still apply cleanly.
+    evidence_json must cite product source at the release tag.
 
     Args:
         title: Pull request title for one feature only.
-        body: Pull request body. Include the Linear issue URL. A Source
-            evidence section is appended from evidence_json when missing.
+        body: Pull request body. Include Closes [DOC-N](linear-url) under a
+            Linear heading so CI can sync status. A Source evidence section
+            is appended from evidence_json when missing.
         branch_name: New branch name to create from the base branch.
         files_json: JSON array of {path, old_content, new_content}.
-            old_content must match the base branch exactly (empty string for
-            a new file). Paths are relative to the docs repo root.
+            old_content should match the base branch (empty string for a new
+            file). Paths are relative to the docs repo root.
         evidence_json: JSON object with source_repo, source_tag, and items
             [{path, symbol}] or [{path, quote}] verified in product source.
         base_branch: Base branch to branch from (default: main).
@@ -239,13 +281,28 @@ async def create_draft_docs_pr(
     verification = await verify_evidence_in_source(evidence, token=token)
     files = parse_files_json(files_json)
 
+    prepared: list[dict[str, str]] = []
+    rebased_paths: list[str] = []
     for file in files:
         base_content = await fetch_docs_file_content(
             file["path"], token=token, ref=base_branch
         )
-        verify_old_content_matches_base(
-            file["path"], file["old_content"], base_content
+        old_for_commit, new_for_commit, rebased = prepare_file_edit_for_base(
+            file["path"],
+            file["old_content"],
+            file["new_content"],
+            base_content,
         )
+        if rebased:
+            rebased_paths.append(file["path"])
+        prepared.append(
+            {
+                "path": file["path"],
+                "old_content": old_for_commit,
+                "new_content": new_for_commit,
+            }
+        )
+    files = prepared
 
     pr_body = ensure_evidence_in_body(body, evidence)
 
@@ -325,11 +382,9 @@ async def create_draft_docs_pr(
             "base": base_branch,
             "draft": True,
             "files": [file["path"] for file in files],
+            "rebased_paths": rebased_paths,
             "commit_sha": commit["sha"],
             "evidence": evidence,
             "evidence_verified": verification,
-            "edit_validation": edit_summary,
-            "language_scope": scope or "shared",
-            "product": product.strip() or None,
         }
     )

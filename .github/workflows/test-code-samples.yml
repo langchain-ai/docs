@@ -21,10 +21,17 @@ concurrency:
 
 jobs:
   test-code-samples:
+    name: test-code-samples (${{ matrix.product }})
     # GitHub does not expose repository secrets to workflows triggered from fork PRs.
     # These tests require provider API keys for some samples, so skip on forks.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false)
     runs-on: ubuntu-latest
+    strategy:
+      # One leg per product so a LangSmith failure never turns the OSS check
+      # red, or the other way round. To rerun one leg, re-run its job.
+      fail-fast: false
+      matrix:
+        product: [oss, langsmith]
     # Scheduled and manual runs test all samples; PR runs may touch many files in large refactors.
     # Full runs (~600 samples + optional trace/snippet regen) exceeded 90m in practice.
     timeout-minutes: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 150 || 60 }}
@@ -47,6 +54,39 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Resolve sample paths for this leg
+        id: paths
+        env:
+          PRODUCT: ${{ matrix.product }}
+        run: |
+          # Each product directory under src/code-samples/ belongs to exactly one
+          # leg. Add new directories here; the check below fails the run when a
+          # directory is covered by no leg so it cannot silently go untested.
+          OSS_PATHS="src/code-samples/langchain src/code-samples/langgraph src/code-samples/deepagents"
+          LANGSMITH_PATHS="src/code-samples/langsmith"
+
+          case "$PRODUCT" in
+            oss) PATHS="$OSS_PATHS" ;;
+            langsmith) PATHS="$LANGSMITH_PATHS" ;;
+            *) echo "Unknown product: $PRODUCT"; exit 1 ;;
+          esac
+          echo "paths=$PATHS" >> "$GITHUB_OUTPUT"
+          echo "Leg '$PRODUCT' runs samples under: $PATHS"
+
+          uncovered=""
+          for dir in src/code-samples/*/; do
+            dir="${dir%/}"
+            [[ "$(basename "$dir")" == "node_modules" ]] && continue
+            case " $OSS_PATHS $LANGSMITH_PATHS " in
+              *" $dir "*) ;;
+              *) uncovered="$uncovered $dir" ;;
+            esac
+          done
+          if [[ -n "$uncovered" ]]; then
+            echo "::error::Sample directories covered by no matrix leg:$uncovered. Add them to OSS_PATHS or LANGSMITH_PATHS in this workflow."
+            exit 1
+          fi
+
       - name: Get modified code sample paths
         id: files
         env:
@@ -56,7 +96,7 @@ jobs:
         run: |
           if [[ "$EVENT_NAME" == "schedule" || "$EVENT_NAME" == "workflow_dispatch" ]]; then
             echo "run_all=true" >> "$GITHUB_OUTPUT"
-            echo "Full run: testing all code samples"
+            echo "Full run: testing all code samples in this leg"
           else
             echo "run_all=false" >> "$GITHUB_OUTPUT"
 
@@ -67,6 +107,8 @@ jobs:
               BASE="$BEFORE_SHA"
             fi
 
+            # Every leg receives the full modified list; the runner keeps only
+            # the files under this leg's CODE_SAMPLE_PATHS.
             FILES=$(git diff --name-only "$BASE" HEAD -- src/code-samples/ \
               | grep -E '\.(py|ts|java|kt|go|sh)$' \
               | tr '\n' ' ' || true)
@@ -139,12 +181,17 @@ jobs:
           ANTHROPIC_CUSTOM_HEADERS: ${{ secrets.ANTHROPIC_CUSTOM_HEADERS }}
           LS_GATEWAY_KEY: ${{ secrets.LS_GATEWAY_KEY }}
           LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
-          LANGSMITH_PROJECT: docs-code-samples
-          # Enable tracing + public share collection on monthly/manual full runs only.
-          CODE_SAMPLE_TRACING: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '1' || '' }}
+          # Separate projects so LangSmith-sample runs do not land among the
+          # OSS traces that the monthly refresh shares publicly.
+          LANGSMITH_PROJECT: ${{ matrix.product == 'langsmith' && 'docs-code-samples-langsmith' || 'docs-code-samples' }}
+          # Enable tracing + public share collection on monthly/manual full runs
+          # of the OSS leg only. Trace-link collection matches LangGraph agent
+          # roots, which LangSmith SDK samples do not produce.
+          CODE_SAMPLE_TRACING: ${{ matrix.product == 'oss' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '1' || '' }}
           # Concurrent sample processes. Each traced sample stamps
           # LANGSMITH_DOCS_SNIPPET; collection matches that metadata under a lock.
           CODE_SAMPLE_JOBS: "4"
+          CODE_SAMPLE_PATHS: ${{ steps.paths.outputs.paths }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           POSTGRES_URI: postgresql://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
@@ -155,7 +202,7 @@ jobs:
           MODIFIED_FILES: ${{ steps.files.outputs.files }}
         run: |
           if [[ "$RUN_ALL" == "true" ]]; then
-            echo "Running all code samples..."
+            echo "Running all code samples in this leg..."
             make test-code-samples
           else
             FILES="$MODIFIED_FILES"
@@ -172,6 +219,7 @@ jobs:
       - name: Regenerate snippet MDX with trace links
         id: regen_snippets
         if: >-
+          matrix.product == 'oss' &&
           (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
           steps.test.outcome != 'cancelled' &&
           fromJSON(steps.test.outputs.sample_failures || '999') < 20 &&
@@ -180,6 +228,7 @@ jobs:
 
       - name: Open or update code sample traces PR
         if: >-
+          matrix.product == 'oss' &&
           (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
           steps.regen_snippets.conclusion == 'success'
         env:
