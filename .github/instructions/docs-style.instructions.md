@@ -103,7 +103,7 @@ Capitalize a word when it refers to a **product or brand name**. Use lowercase w
 
 **Capitalize** product and brand names:
 
-- LangChain, LangGraph, LangSmith, Deep Agents, Fleet, Engine
+- LangChain, LangGraph, LangSmith, Deep Agents, Fleet, Engine, Agent Registry
 
 **Lowercase** common nouns (things you create, instances, or types):
 
