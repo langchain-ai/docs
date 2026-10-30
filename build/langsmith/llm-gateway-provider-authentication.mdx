@@ -65,11 +65,11 @@ The gateway reads these secret names:
 
 ## Configure Amazon Bedrock
 
-Amazon Bedrock supports three credential methods, each available in the provider form:
+Amazon Bedrock supports three credential methods, which you set in the provider form:
 
 | Method | Secrets | Notes |
 | --- | --- | --- |
-| IAM role (recommended) | `AWS_IAM_ROLE_ARN` | The gateway assumes the role and uses short-lived credentials, so LangSmith stores no long-lived AWS secret. |
+| IAM role (recommended) | `AWS_IAM_ROLE_ARN` | The gateway assumes the role and uses short-lived credentials, so LangSmith stores no long-lived AWS secret. Available on LangSmith Cloud only. |
 | AWS credentials | `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, plus `AWS_SESSION_TOKEN` for temporary credentials | Both keys are required. Temporary credentials stop working when they expire. |
 | Bearer token | `AWS_BEARER_TOKEN_BEDROCK` | An [Amazon Bedrock API key](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html). |
 
@@ -81,6 +81,12 @@ Every method also reads an optional `AWS_BEDROCK_REGION`, which defaults to `us-
 
 ### Use an IAM role
 
+<Note>
+The IAM role method is available on LangSmith Cloud only. The provider form does not show it on [self-hosted LangSmith](/langsmith/self-hosted) or [BYOC](/langsmith/byoc). On BYOC, use AWS credentials or a bearer token. On self-hosted, give the gateway pod its own AWS credentials instead, as described in [Configure Amazon Bedrock](#configure-amazon-bedrock).
+</Note>
+
+On LangSmith Cloud, the `AWS_IAM_ROLE_ARN` secret set here is shared with the [Playground and LLM-as-a-judge evaluators](/langsmith/playground-model-providers#iam-trusted-entity-recommended). One role covers all three.
+
 To let the gateway assume an IAM role:
 
 1. In AWS, create an IAM role with permission to invoke the Bedrock models you use.
@@ -88,8 +94,6 @@ To let the gateway assume an IAM role:
 1. Under **Provider**, select **Amazon Bedrock**, then select the **IAM role** method. Enter the role ARN and, optionally, the AWS Region.
 1. Copy the example trust policy that the form shows, and add it to the role in AWS. The policy lets LangSmith's AWS account assume the role, and requires your workspace ID as the external ID.
 1. Click **Save**.
-
-On self-hosted LangSmith, the gateway assumes the role with its pod's own AWS credentials, so the role's trust policy must allow that identity instead.
 
 The gateway limits each session to Bedrock actions, even if the role allows more. Sessions last one hour, and the gateway renews them automatically. In AWS CloudTrail, the session name is `langsmith-gw-` followed by the workspace ID.
 
@@ -99,7 +103,7 @@ Send a test request with a `bedrock/<model-id>` model ID, using a model ID from 
 
 - **`400` with `bedrock credentials not found`**: the workspace has no Bedrock secrets. Bedrock returns a `400` here, not the `424` other providers return for a missing key.
 - **`400` with `incomplete AWS access-key credentials`**: one of `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` is missing.
-- **`403` with `STS denied AssumeRole for the configured Bedrock role`**: the role's trust policy does not allow LangSmith, or its external ID is not the workspace ID.
+- **`403` with `STS denied AssumeRole for the configured Bedrock role`**: the role's trust policy does not allow LangSmith, or its external ID is not the workspace ID. On self-hosted LangSmith, the trust policy must allow the pod's own identity instead.
 
 ## Configure Azure Foundry
 
