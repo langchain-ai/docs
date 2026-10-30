@@ -44,7 +44,7 @@ When you put your application into production, you generally expose it to many e
 
 In Claude Agent SDK, the SDK ties the agent to its sandbox. To give each user an isolated execution environment, you must build an API wrapper that spins up a sandbox per user, tracks which sandbox belongs to whom, and tears it down afterwards.
 
-Deep Agents handles this directly: configure a sandbox [per user or per assistant](/oss/javascript/deepagents/going-to-production#lifecycle) in the harness, with scoped threads, run history, and [RBAC](/oss/javascript/deepagents/going-to-production#team-access-control-rbac) included. If you use [LangSmith Sandbox](/langsmith/sandbox-auth-proxy), you also get an auth proxy out of the box so end users can call third-party APIs from the sandbox without you provisioning credentials per user.
+Deep Agents handles this directly: configure a sandbox [per user or per assistant](/oss/javascript/deepagents/going-to-production#lifecycle) in the harness, with scoped threads, run history, and [RBAC](/oss/javascript/deepagents/going-to-production#role-based-access-control) included. If you use [LangSmith Sandbox](/langsmith/sandbox-auth-proxy), you also get an auth proxy out of the box so end users can call third-party APIs from the sandbox without you provisioning credentials per user.
 
 Managed Deep Agents builds on that with managed [identity](/langsmith/javascript/managed-deep-agents-identity) for callers and [connections](/langsmith/javascript/managed-deep-agents-connections) that run OAuth, so end users authorize their own accounts instead of you storing credentials for each one.
 

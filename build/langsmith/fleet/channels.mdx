@@ -45,7 +45,7 @@ For setup instructions, see [Integrate Slack with an agent](/langsmith/fleet/sla
 
 The Teams channel activates your agent when messages are sent in Microsoft Teams conversations.
 
-For full setup instructions including Azure Bot creation, credential registration, and tool configuration, see [Integrate Teams with an agent](/langsmith/fleet/teams-app).
+For full setup instructions including Azure Bot creation, credential registration, and tool configuration, see [Integrate Microsoft Teams with an agent](/langsmith/fleet/teams-app).
 
 ## Pause and resume channels
 
