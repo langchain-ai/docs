@@ -215,15 +215,9 @@ Only when the diff triggers them:
 - New internal links: root-relative, and free of `/python/` or `/javascript/`?
 - A new code block: does it carry a real language tag, and are imports sorted?
 - A page or heading that changed URL: is there a redirect?
-- A new JSX tag: is it a Mintlify built-in or imported on the page? Look up any
-  tag that appears nowhere else in `src/` on
-  [Mintlify components](https://mintlify.com/docs/components) or with the
-  `docs-mintlify` MCP server. An invented tag renders as nothing and lints
-  clean, so report it as a blocking finding citing the Components section of
-  `AGENTS.md`.
-- A new or moved `:::python` or `:::js` fence: is every opener closed before
-  the next one opens? `make build` fails otherwise, so a review of an unbuilt
-  diff should check by eye.
+- A new JSX tag: is it a Mintlify built-in or imported on the page? Look up a
+  tag new to `src/` on [Mintlify components](https://mintlify.com/docs/components).
+  An invented tag renders as nothing, so report it as blocking.
 
 The `add-docs-page` skill covers these in detail. Point at it rather than
 restating the procedure in a finding.

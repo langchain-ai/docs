@@ -286,7 +286,7 @@ Python-only content here
 :::
 ```
 
-Close every fence before opening the next one. The pipeline does not check nesting by itself: a `:::python` opened inside another block, or a `:::` with no opener, leaks content into the other language and renders a literal `:::`. `make build` fails on both and names the line.
+Close each fence before opening the next. `make build` fails on a nested, stray, or unclosed fence.
 
 ### Code highlighting
 
@@ -326,7 +326,7 @@ Common Tabler names: `home` (not house), `tool` (not wrench), `player-play` (not
 | `<Note>`, `<Tip>`, `<Warning>`, `<Info>` | Callouts |
 | `<Prompt>` | Copyable AI-assistant prompt. **Required at the top of every migration guide** |
 
-Every JSX tag on a page must be a Mintlify built-in or imported on that page. Mintlify renders any other tag as nothing, with no build error, so the content inside it silently disappears. Before using a tag you have not seen elsewhere in `src/`, confirm it on [Mintlify components](https://mintlify.com/docs/components) or through the `docs-mintlify` MCP server. Never invent one from another docs framework: `<Important>`, `<Anchor>`, and `:::note` are not Mintlify syntax. A custom component or snippet needs its `import` line. `make check-mdx` fails on both problems, and CI runs it.
+Use only Mintlify built-ins or components imported on the page. Mintlify silently renders any other tag as nothing. Confirm an unfamiliar tag on [Mintlify components](https://mintlify.com/docs/components) or through the `docs-mintlify` MCP server; `<Important>`, `<Anchor>`, and `:::note` are not Mintlify syntax. CI runs `make check-mdx` to catch both.
 
 ### Migration guide convention
 

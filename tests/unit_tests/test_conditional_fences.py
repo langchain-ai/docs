@@ -27,12 +27,6 @@ def test_compact_closers_pass() -> None:
     assert "py" not in rendered
 
 
-def test_fences_inside_code_blocks_are_ignored() -> None:
-    """Fence-like lines inside a code block are not checked."""
-    text = "```md\n:::\n:::python\n```\n"
-    _validate_conditional_fences(text)
-
-
 def test_escaped_fences_are_ignored() -> None:
     """Escaped fences render literally and are not checked."""
     _validate_conditional_fences("\\:::python\nLiteral.\n\\:::\n")

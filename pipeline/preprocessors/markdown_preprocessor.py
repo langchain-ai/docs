@@ -17,34 +17,19 @@ logger = logging.getLogger(__name__)
 
 _FENCE_OPEN = re.compile(r"^[ \t]*:::(\w+)\s*$")
 _FENCE_CLOSE = re.compile(r"^[ \t]*:::(?P<rest>.*)$")
-_CODE_FENCE = re.compile(r"^[ \t]*(```|~~~)")
 
 
 def _validate_conditional_fences(md_text: str) -> None:
     """Raise if conditional fences are nested, stray, or never closed.
 
-    Conditional rendering pairs each opener with the next closer and never
-    checks the structure, so a broken fence builds cleanly: content leaks into
-    the other language and a stray ``:::`` renders as text. A closer may carry
-    text on the same line, as in ``::: | table row`` or ``::::::js`` (close,
-    then open), because the rendering regex accepts both.
-
-    Args:
-        md_text: The markdown content to check.
-
-    Raises:
-        ValueError: Listing the line number and problem for each broken fence.
+    The rendering regex below never checks structure, so a broken fence leaks
+    content into the other language. Like that regex, accept a closer followed
+    by text, such as ``::: | row`` or ``::::::js`` (close, then open).
     """
     problems: list[str] = []
     open_line: int | None = None
-    in_code = False
 
     for number, line in enumerate(md_text.split("\n"), start=1):
-        if _CODE_FENCE.match(line):
-            in_code = not in_code
-        if in_code or line.lstrip().startswith("\\:::"):
-            continue
-
         if match := _FENCE_OPEN.match(line):
             if open_line is not None:
                 problems.append(
