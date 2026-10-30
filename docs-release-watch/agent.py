@@ -1,7 +1,7 @@
 from managed_deepagents import define_deep_agent
 from tools.docs_edit import check_docs_coverage
 from tools.github_prs import create_draft_docs_pr, get_docs_file
-from tools.linear_issues import create_linear_issue
+from tools.linear_issues import create_linear_issue, note_ship_failure_on_linear_issue
 from tools.releases import (
     get_eligible_release,
     get_release_diff,
@@ -27,6 +27,7 @@ _READ_TOOLS = [
 _WRITE_TOOLS = [
     create_linear_issue,
     create_draft_docs_pr,
+    note_ship_failure_on_linear_issue,
 ]
 
 _RESEARCH_SYSTEM_PROMPT = """\
