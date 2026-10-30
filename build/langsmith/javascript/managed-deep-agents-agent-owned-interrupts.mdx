@@ -18,7 +18,7 @@ Agent-owned interrupts require `managed-deepagents>=0.8.0` and a [Slack channel]
 
 ## How it works
 
-1. A run starts from a Slack message. Your tool reads the conversation from `runtime.channel` and posts a Block Kit message into the same Slack thread, using the deployment's bot token.
+1. A run starts from a Slack message. Your tool reads the conversation from `runtime.thread.origin.channel` and posts a Block Kit message into the same Slack thread, using the deployment's bot token.
 2. The tool calls `interrupt()` with a value that carries a correlation ID. The thread parks at a checkpoint.
 3. The user presses a button or submits a modal. Slack sends the interaction to Managed Deep Agents, which forwards it to the deployment as a `user_prompt_response` event.
 4. The SDK matches the event to the parked interrupt and resumes the run. `interrupt()` returns the user's response, and the tool continues.
@@ -31,12 +31,12 @@ The tool needs three things: the Slack conversation to post into, the bot token,
 
 
 
-- **Conversation**: `runtime.channel.rawEvent` is the Slack event that started the run. It carries `channel`, `ts`, and, for a threaded message, `thread_ts`. Post into that thread so the answer routes back to the same agent thread.
+- **Conversation**: `runtime.thread.origin.channel.rawEvent` is the Slack event that started the run. It carries `channel`, `ts`, and, for a threaded message, `thread_ts`. Post into that thread so the answer routes back to the same agent thread.
 - **Bot token**: `connections.get("mda/slack-bot-token", { type: "agent" })` resolves the token of the Slack app that Managed Deep Agents provisioned for the deployment. The slug is reserved and cannot be created with `mda connections create`.
 - **Correlation ID**: put the same string under `INTERRUPT_CORRELATION_KEY` in each button's `value` (as JSON) and in the value you pass to `interrupt()`.
 
 
-The built-in Slack channel's `runtime.channel.post` sends text only, so post Block Kit through the Slack Web API directly.
+The built-in Slack channel's `post` sends text only, so post Block Kit through the Slack Web API directly.
 
 
 
@@ -57,14 +57,14 @@ type SlackEvent = { channel: string; ts: string; thread_ts?: string };
 
 export const requestApproval = tool(
   async ({ amount }, runtime: ManagedDeepAgentRuntime) => {
-    const channel = runtime.channel;
+    const channel = runtime.thread?.origin?.channel;
     if (!channel || channel.provider !== "slack") {
       return "Approval forms are available only in Slack.";
     }
 
     const correlationId = randomUUID();
-    // The tool runs again when the interrupt resumes. Post only on the first pass.
-    if (channel.event.type !== "user_prompt_response") {
+    // The tool runs again when the interrupt resumes. Post only in the run the Slack message started.
+    if (channel.event?.type === "message") {
       await postApprovalForm(channel.rawEvent as SlackEvent, amount, correlationId);
     }
 
@@ -146,7 +146,7 @@ Any `action_id` works for a button in a message, except one that starts with `md
 
 
 
-The same response is available on run context as `runtime.channel.event`, with `type` set to `user_prompt_response`. Slack's verbatim interaction payload is on `runtime.channel.rawEvent`. For a form with inputs inside the message, the user's entries are at `rawEvent.state.values`, keyed by block ID and action ID.
+The same response is available on run context as `runtime.thread.origin.channel.event`, with `type` set to `user_prompt_response`. Slack's verbatim interaction payload is on `runtime.thread.origin.channel.rawEvent`. For a form with inputs inside the message, the user's entries are at `rawEvent.state.values`, keyed by block ID and action ID.
 
 
 Managed Deep Agents reads only the first action in a Slack interaction payload, so one press must mean one event.
@@ -161,7 +161,7 @@ Slack does not know which interrupt a button belongs to, so the SDK reads the in
 | One or more | Present and matches exactly one | Resumes the matching interrupt. |
 | Several | Absent | Nothing runs. The SDK logs the ambiguity and acknowledges the event. |
 | One or more | Present but matches none, or matches several | Nothing runs. Starting a turn would abandon the parked checkpoints. |
-| None | Any | Starts a fresh run with no new message. The response is reachable only on `runtime.channel.event`. |
+| None | Any | Starts a fresh run with no new message. The response is reachable only on `runtime.thread.origin.channel.event`. |
 
 Carry a correlation ID whenever an agent might have more than one interrupt parked on a thread. Without one, a thread can only be answered while exactly one interrupt is pending.
 
@@ -197,7 +197,7 @@ The entire view has to fit inside the button's `value`, which Slack caps at 2000
 
 ## Post without pausing
 
-A tool can post a form and let the run end instead of calling `interrupt()`. The submission then starts a fresh run with no new message, and your code reads the answer from `runtime.channel.event`. Nothing on the platform tracks that a prompt was outstanding, so your application owns the state of pending forms, expiry, and what a later chat message means while a form is open.
+A tool can post a form and let the run end instead of calling `interrupt()`. The submission then starts a fresh run with no new message, and your code reads the answer from `runtime.thread.origin.channel.event`. Nothing on the platform tracks that a prompt was outstanding, so your application owns the state of pending forms, expiry, and what a later chat message means while a form is open.
 
 Prefer `interrupt()` when the next thing the user does is expected to be answering the prompt.
 

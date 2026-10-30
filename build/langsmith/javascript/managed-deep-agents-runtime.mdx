@@ -1,7 +1,7 @@
 ---
 title: Managed Deep Agents runtime
 sidebarTitle: Runtime
-description: Read run context, the verified caller, the channel delivery, and the sandbox from the native runtime types that agent factories, tools, and middleware receive.
+description: Read run context, the verified caller, the thread, and the sandbox from the native runtime types that agent factories, tools, and middleware receive.
 ---
 
 import ManagedDeepAgentsPublicBetaNote from '/snippets/javascript/langsmith/managed-deep-agents-public-beta-note.mdx';
@@ -27,7 +27,7 @@ Type parameters follow the native order, so `ManagedToolRuntime` takes state fir
 Each type keeps every native field and method, such as `context`, `state`, `store`, `writer`, and `toolCallId`. Managed Deep Agents adds three fields:
 
 - **`serverInfo`**: Native server metadata plus the verified caller. Tools and middleware receive it.
-- **`channel`**: The verified channel delivery that started the run. `undefined` on direct API and schedule runs.
+- **`thread`**: The run's thread and the channel conversation it came from. See [Thread](#thread).
 - **`backend`**: The thread's [sandbox](/langsmith/javascript/managed-deep-agents-sandboxes) filesystem. `undefined` when the project declares no sandbox.
 
 
@@ -37,7 +37,7 @@ Context, the caller, and the channel delivery come from different sources and ha
 
 - **Context** comes from the `context` parameter of an API call. LangGraph validates it against your context schema. Use it to select behavior, not to grant access.
 - **Server info** comes from [identity](/langsmith/javascript/managed-deep-agents-identity), which resolves the caller from a verified token. Managed Deep Agents strips identity keys that a client sends through `configurable`, so use this field for authorization.
-- **Channel** comes from managed [channel](/langsmith/javascript/managed-deep-agents-channels) ingress, which verifies the delivery before the run starts. A `channel` key in a direct API call's context does not create `runtime.channel`.
+- **Channel** comes from managed [channel](/langsmith/javascript/managed-deep-agents-channels) ingress, which verifies the delivery before the run starts. A `channel` key in a direct API call's context does not create `runtime.thread.origin`.
 
 API callers pass context next to the input:
 
@@ -60,17 +60,17 @@ A channel delivery carries no application context. Managed Deep Agents removes d
 On channel runs, context is `undefined` in the agent factory and tools, and an empty object in native middleware.
 
 
-To tell a channel run from a direct run, check `runtime.channel`.
+To tell a channel run from a direct run, check `runtime.thread.origin`.
 
 ## Read the runtime in the agent factory
 
-An agent factory receives a `ManagedServerRuntime`: the native [`ServerRuntime`](/langsmith/graph-rebuild) plus `channel` and `backend`. To write a factory, see [Select configuration per run](/langsmith/javascript/managed-deep-agents-agent-definition#select-configuration-per-run).
+An agent factory receives a `ManagedServerRuntime`: the native [`ServerRuntime`](/langsmith/graph-rebuild) plus `thread` and `backend`. To write a factory, see [Select configuration per run](/langsmith/javascript/managed-deep-agents-agent-definition#select-configuration-per-run).
 
 
 
 Agent Server also calls the factory to read schemas and state. `accessContext` names the operation. [`executionRuntime`](/langsmith/graph-rebuild#access-contexts) is `null` outside `threads.create_run`, so read run context from `executionRuntime.context`. Return the same graph structure and schemas from every call.
 
-`channel` is available, so a factory can choose configuration per channel. `backend` is always `undefined`, because the factory selects the sandbox.
+`thread` is available, so a factory can choose configuration per channel. `backend` is always `undefined`, because the factory selects the sandbox.
 
 
 ## Read the runtime in tools
@@ -90,7 +90,7 @@ export const checkOrder = tool(
   async ({ orderId }, runtime: ManagedToolRuntime<unknown, AppContext>) => {
     const principal = runtime.serverInfo?.principal;
     if (!principal) return "Sign in to check orders.";
-    await runtime.channel?.post?.({
+    await runtime.thread?.origin?.channel.post?.({
       type: "content",
       content: "Checking that order now.",
     });
@@ -123,9 +123,9 @@ type AppContext = { region?: string };
 export const logCaller = createMiddleware({
   name: "LogCaller",
   beforeModel: (_state, runtime) => {
-    const { serverInfo, channel } = runtime as ManagedRuntime<AppContext>;
+    const { serverInfo, thread } = runtime as ManagedRuntime<AppContext>;
     const caller = serverInfo?.principal?.id ?? "anonymous";
-    console.log(`${caller} via ${channel?.provider ?? "api"}`);
+    console.log(`${caller} via ${thread?.origin?.channel.provider ?? "api"}`);
     return undefined;
   },
 });
@@ -152,15 +152,27 @@ Tool-call hooks receive a `ManagedToolRuntime`. Declarative subagents receive th
 
 Read the caller from `principal`, not from the native `user`. For identity providers and claim mapping, see [Identity](/langsmith/javascript/managed-deep-agents-identity).
 
+### Thread
+
+`runtime.thread` is a `ManagedThread`:
+
+- **`id`**: The LangGraph thread ID.
+- **`origin`**: The channel conversation the thread came from, with its `channel` and the `sender` of the latest message. Not set on a thread that no channel message reached.
+- **`participants`**: The people on the thread. Each has an `id` and a `role`, `"owner"` or `"member"`.
+
+<Warning>
+`runtime.channel` is deprecated and will be removed in `managed-deepagents` 0.11. Read `runtime.thread.origin.channel` instead.
+</Warning>
+
 ### Channel
 
 
 
-`runtime.channel` is a `RuntimeChannel`:
+`runtime.thread.origin.channel` is a `RuntimeChannel`:
 
 - **`name`**: The configured channel name.
 - **`provider`**: The provider label, such as `"slack"`.
-- **`event`**: The typed delivery. See the event types below.
+- **`event`**: The typed delivery. `null` in a run that no channel event started, such as a Studio resume. See the event types below.
 - **`rawEvent`**: The original provider payload, when the channel supplies one. For Slack, this is the inner Slack event without HTTP headers or the Trigger envelope. A resume can omit it.
 - **`post`**: An async function that sends a message to the conversation that started the run. `undefined` when the channel cannot send.
 
