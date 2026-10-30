@@ -825,9 +825,10 @@ This approach is useful when you want the approval logic to live with the tool i
       StateGraph,
       StateSchema,
       MessagesValue,
-      GraphNode,
       interrupt,
     } from "@langchain/langgraph";
+    import { ToolNode } from "@langchain/langgraph/prebuilt";
+    import { AIMessage } from "@langchain/core/messages";
     import * as z from "zod";
 
     const sendEmailTool = tool(
@@ -862,6 +863,7 @@ This approach is useful when you want the approval logic to live with the tool i
     );
 
     const model = new ChatAnthropic({ model: "claude-sonnet-4-6" }).bindTools([sendEmailTool]);
+    const toolNode = new ToolNode([sendEmailTool]);
 
     const State = new StateSchema({
       messages: MessagesValue,
@@ -873,10 +875,21 @@ This approach is useful when you want the approval logic to live with the tool i
       return { messages: [response] };
     };
 
+    const shouldContinue = (state: typeof State.State) => {
+      // Route to the tools node if the LLM made a tool call
+      const lastMessage = state.messages.at(-1);
+      if (AIMessage.isInstance(lastMessage) && lastMessage.tool_calls?.length) {
+        return "tools";
+      }
+      return END;
+    };
+
     const graphBuilder = new StateGraph(State)
       .addNode("agent", agent)
+      .addNode("tools", toolNode)
       .addEdge(START, "agent")
-      .addEdge("agent", END);
+      .addConditionalEdges("agent", shouldContinue, ["tools", END])
+      .addEdge("tools", "agent"); // Loop back after tools
 
     const checkpointer = new MemorySaver();
     const graph = graphBuilder.compile({ checkpointer });
@@ -911,7 +924,7 @@ Sometimes you need to validate input from humans and re-prompt if the value is i
 
 <Warning>
 
-**Avoid `while True` + `interrupt()` loops inside a single node.** Because the node re-runs from the beginning on every resume (see [Rules of interrupts](#rules-of-interrupts)), a loop that calls `interrupt()` multiple times causes each resume to replay all previous iterations: the first resume replays 1 iteration, the second replays 2, and so on. The result is exponential re-execution of any code inside the loop body.
+**Avoid `while True` + `interrupt()` loops inside a single node.** Because the node re-runs from the beginning on every resume (see [Rules of interrupts](#rules-of-interrupts)), a loop that calls `interrupt()` multiple times causes each resume to replay all previous iterations: the first resume replays 1 iteration, the second replays 2, and so on.
 
 </Warning>
 
@@ -925,7 +938,7 @@ The correct pattern:
 
 <LanggraphInterruptsValidateConditionalEdgePatternPy />
 
-Each resume invokes `get_age_node` exactly once, runs the `interrupt()` call once, and exits. When the answer is invalid, the conditional edge loops back and the next interrupt re-prompts with the updated question. No code runs more than once per resume.
+In this example, an invalid answer causes the node to return the updated question. During the same graph run, the conditional edge invokes the node again, and this new invocation pauses at `interrupt()`. On a later resume, the node still restarts from the beginning, so any code before `interrupt()` runs again. See [Rules of interrupts](#rules-of-interrupts).
 
 :::
 
@@ -939,7 +952,7 @@ The correct pattern:
 
 <LanggraphInterruptsValidateConditionalEdgePatternJs />
 
-Each resume invokes `getAgeNode` exactly once, runs the `interrupt()` call once, and exits. When the answer is invalid, the conditional edge loops back and the next interrupt re-prompts with the updated question.
+In this example, an invalid answer causes the node to return the updated question. During the same graph run, the conditional edge invokes the node again, and this new invocation pauses at `interrupt()`. On a later resume, the node still restarts from the beginning, so any code before `interrupt()` runs again. See [Rules of interrupts](#rules-of-interrupts).
 
 :::
 
@@ -1359,6 +1372,8 @@ As an example, you might have an API call to update a record inside of a node. I
 * ✅ Place side effects after @[`interrupt`] calls
 * ✅ Separate side effects into separate nodes when possible
 
+In the post-approval examples below, side effects run only when approval succeeds. If a node fails after committing a side effect but before completing, retrying the node can repeat the effect. Use idempotent operations or deduplicate writes in the external system.
+
 :::python
 <CodeGroup>
 ```python Idempotent operations
@@ -1377,7 +1392,7 @@ def node_a(state: State):
 ```python Side effects after interrupt
 def node_a(state: State):
     # ✅ Good: placing side effect after the interrupt
-    # This ensures it only runs once after approval is received
+    # Approval gates this side effect; retries still need idempotency
     approved = interrupt("Approve this change?")
 
     if approved:
@@ -1397,7 +1412,7 @@ def approval_node(state: State):
 
 def notification_node(state: State):
     # ✅ Good: side effect happens in a separate node
-    # This runs after approval, so it only executes once
+    # Approval gates this side effect; retries still need idempotency
     if (state.approved):
         send_notification(
             user_id=state["user_id"],
@@ -1428,7 +1443,7 @@ const nodeA: GraphNode<typeof State> = async (state) => {
 ```typescript Side effects after interrupt
 const nodeA: GraphNode<typeof State> = async (state) => {
   // ✅ Good: placing side effect after the interrupt
-  // This ensures it only runs once after approval is received
+  // Approval gates this side effect; retries still need idempotency
   const approved = interrupt("Approve this change?");
 
   if (approved) {
@@ -1451,7 +1466,7 @@ const approvalNode: GraphNode<typeof State> = async (state) => {
 
 const notificationNode: GraphNode<typeof State> = async (state) => {
   // ✅ Good: side effect happens in a separate node
-  // This runs after approval, so it only executes once
+  // Approval gates this side effect; retries still need idempotency
   if (state.approved) {
     await sendNotification({
       userId: state.userId,
