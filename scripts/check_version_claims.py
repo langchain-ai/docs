@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 SRC = Path("src")
-IGNORE_FILE = Path("scripts/version_claims_ignore.txt")
+IGNORE_FILE = Path("scripts/version_claims_ignore.cfg")
 
 # A specifier as it appears in prose or a requirements block:
 #   langchain>=1.3.2   langsmith[livekit]>=0.11.2   @langchain/langgraph>=1.4.0
