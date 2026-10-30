@@ -1267,6 +1267,37 @@
             },
             "name": "before",
             "in": "query"
+          },
+          {
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "values",
+                      "next",
+                      "tasks",
+                      "checkpoint",
+                      "metadata",
+                      "created_at",
+                      "parent_checkpoint",
+                      "interrupts"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^values\\.[A-Za-z0-9_-]+$"
+                  }
+                ]
+              },
+              "title": "Select",
+              "description": "Specify which fields of each state to return. Use `values.<key>` to return only that key of the state values, for example `values.messages`. If not provided, all fields are returned."
+            },
+            "name": "select",
+            "in": "query"
           }
         ],
         "responses": {
@@ -1635,6 +1666,28 @@
             },
             "name": "stream_modes",
             "in": "query"
+          },
+          {
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": ["lifecycle", "run_modes", "state_update"]
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": ["lifecycle", "run_modes", "state_update"]
+                  }
+                }
+              ],
+              "title": "Stream Mode",
+              "description": "Alias of `stream_modes`, the name the SDKs send. Ignored when `stream_modes` is set."
+            },
+            "name": "stream_mode",
+            "in": "query"
           }
         ],
         "responses": {
@@ -1818,7 +1871,8 @@
                   "kwargs",
                   "multitask_strategy",
                   "langsmith_session_name",
-                  "cancel_reason"
+                  "cancel_reason",
+                  "priority"
                 ]
               },
               "title": "Select",
@@ -2419,9 +2473,43 @@
           {
             "required": false,
             "schema": {
-              "type": "string",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "values",
+                    "messages",
+                    "messages-tuple",
+                    "tasks",
+                    "checkpoints",
+                    "updates",
+                    "events",
+                    "debug",
+                    "custom",
+                    "tools"
+                  ]
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "values",
+                      "messages",
+                      "messages-tuple",
+                      "tasks",
+                      "checkpoints",
+                      "updates",
+                      "events",
+                      "debug",
+                      "custom",
+                      "tools"
+                    ]
+                  }
+                }
+              ],
               "title": "Stream Mode",
-              "description": "The mode to stream the run in. If not provided, the default mode will be used."
+              "description": "Stream modes to control which of the run's events are returned. Only modes the run was created with have events. If not provided, all of the run's events are returned."
             },
             "name": "stream_mode",
             "in": "query"
@@ -5055,6 +5143,13 @@
             "title": "Cancel Reason",
             "description": "Why the run was cancelled, if it was: for example an explicit cancel request, a client disconnecting, or a newer run superseding it. Server-generated.",
             "nullable": true
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": -5,
+            "maximum": 5,
+            "title": "Priority",
+            "description": "Queue priority level of the run, from -5 to 5. When all workers are busy, runs at a lower level start first."
           }
         },
         "type": "object",
@@ -5277,7 +5372,8 @@
                     "updates",
                     "events",
                     "debug",
-                    "custom"
+                    "custom",
+                    "tools"
                   ]
                 },
                 "type": "array"
@@ -5293,7 +5389,8 @@
                   "updates",
                   "events",
                   "debug",
-                  "custom"
+                  "custom",
+                  "tools"
                 ]
               }
             ],
@@ -5475,7 +5572,8 @@
                     "updates",
                     "events",
                     "debug",
-                    "custom"
+                    "custom",
+                    "tools"
                   ]
                 },
                 "type": "array"
@@ -5491,7 +5589,8 @@
                   "updates",
                   "events",
                   "debug",
-                  "custom"
+                  "custom",
+                  "tools"
                 ]
               }
             ],
@@ -5766,7 +5865,9 @@
                 "config",
                 "status",
                 "values",
-                "interrupts"
+                "interrupts",
+                "run_priority",
+                "fairness_group"
               ]
             },
             "title": "Select",
@@ -5878,6 +5979,20 @@
             "type": "object",
             "title": "Interrupts",
             "description": "The current interrupts of the thread."
+          },
+          "run_priority": {
+            "type": "integer",
+            "minimum": -5,
+            "maximum": 5,
+            "title": "Run Priority",
+            "description": "The queue priority level of the thread's runs, from -5 (highest priority) to 5 (lowest priority). Set at the thread's first run; null until then.",
+            "nullable": true
+          },
+          "fairness_group": {
+            "type": "string",
+            "title": "Fairness Group",
+            "description": "A label for the thread's runs, such as a tenant or customer ID, kept for sharing workers fairly between tenants; scheduling doesn't use it yet. Set at the thread's first run with a default of \"default\"; null until then.",
+            "nullable": true
           },
           "ttl": {
             "type": "object",
@@ -6232,6 +6347,32 @@
             "$ref": "#/components/schemas/CheckpointConfig",
             "title": "Checkpoint",
             "description": "Return states for this subgraph."
+          },
+          "select": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "values",
+                    "next",
+                    "tasks",
+                    "checkpoint",
+                    "metadata",
+                    "created_at",
+                    "parent_checkpoint",
+                    "interrupts"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "pattern": "^values\\.[A-Za-z0-9_-]+$"
+                }
+              ]
+            },
+            "title": "Select",
+            "description": "Specify which fields of each state to return. Use `values.<key>` to return only that key of the state values, for example `values.messages`. If not provided, all fields are returned."
           }
         },
         "type": "object",
