@@ -5,7 +5,7 @@ description: Safely change shared and language-specific documentation by coordin
 tags: [versioning, documentation, conditional-rendering, navigation, snippets]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-29T08:15:48.231Z
+    at: 2026-10-30T08:15:16.596Z
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
@@ -25,7 +25,7 @@ sources:
     resource: repo://src/langsmith/managed-deep-agents-runtime.mdx
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-29T08:15:48.231Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-30T08:15:16.596Z" }
 ---
 
 # Versioned Content Change Workflow
@@ -53,7 +53,7 @@ flowchart TD
     PlainRoute --> Verify
 ```
 
-The flow shows the important dependency: for a *shared* OSS Markdown page, being present in exactly one language navigation tree makes the builder emit only that language. Navigation therefore must be decided before accepting the generated route.
+The diagram shows the build-time dependency: for a *shared* OSS Markdown page, presence in exactly one language navigation tree makes the builder emit only that language. Decide and review navigation before accepting the generated route.
 
 ## 1. Classify the source and its route owner
 
@@ -69,11 +69,11 @@ The conditional renderer accepts target keys `python` and `js`; URL segments are
 
 ### Shared OSS pages: navigation can select one output
 
-For a shared `.md` or `.mdx` file, the builder recursively reads `navigation` in `src/docs.json` and collects `oss/python/...` and `oss/javascript/...` routes. A page listed in exactly one tree builds only for that language. A page listed in both trees—or in neither—builds for both. This protects a Python-only or JavaScript-only shared source from producing an empty or wrong-language sibling merely because its language branch was removed.
+For a shared `.md` or `.mdx` file, the builder recursively reads `navigation` in `src/docs.json` and collects `oss/python/...` and `oss/javascript/...` routes. A page listed in exactly one tree builds only for that language. A page listed in both trees—or in neither—builds for both. This prevents a Python-only or JavaScript-only shared source from producing an empty or wrong-language sibling merely because its language branch was removed.
 
-Consequently, source placement does not choose a sidebar, but `docs.json` has a build-time effect for shared pages. When adding, removing, or moving one, update and review the relevant navigation entries before building. A directory navigation entry can stand for `dir/index` only if a language-owned `src/oss/<language>/dir.mdx` or `.md` does not own that route.
+Source placement does not choose a sidebar, but `docs.json` has a build-time effect for shared pages. When adding, removing, or moving one, update and review the relevant navigation entries before building. A directory navigation entry can stand for `dir/index` only if a language-owned `src/oss/<language>/dir.mdx` or `.md` does not own that route.
 
-Use `src/oss/python/` and `src/oss/javascript/` when the source itself is owned by one SDK. During a full OSS build, the builder skips the other ownership tree and removes the matching ownership directory from the public path. Do not use a language-owned directory just to choose a menu.
+Use `src/oss/python/` and `src/oss/javascript/` when the source itself is owned by one SDK. During a full OSS build, the builder skips the other ownership tree and removes the matching ownership directory from the public path. Do not use a language-owned directory merely to choose a menu.
 
 `build_file()` applies the same navigation-aware selection to ordinary shared pages, but it is not a route-shape substitute for a language-owned source: its ordinary OSS handling treats the ownership directory as route content. Use a clean full build to check a language-owned route.
 
@@ -105,7 +105,7 @@ import { createAgent } from "langchain";
 
 For the selected target, rendering removes the matching supported-block markers and retains its content, while removing the other supported block. Unsupported labels remain intact, and an invalid target raises `ValueError`.
 
-Managed Deep Agents sources demonstrate the intended pattern: shared product prose sits around branches for project filenames (`agent.py` and `agent.ts`), SDK APIs, types, and nullability. Keep a semantic unit together so an import, type, or filename from one SDK cannot appear beside the other SDK's example.
+Managed Deep Agents sources demonstrate the intended pattern: shared product prose sits around branches for project filenames (`agent.py` and `agent.ts`), SDK APIs, runtime types, and nullability. Keep a semantic unit together so an import, type, or filename from one SDK cannot appear beside the other SDK's example.
 
 ### Conditional syntax is not structural parsing
 
@@ -184,7 +184,7 @@ make check-cross-refs
 make broken-links
 ```
 
-`build_all()` clears `build/`, builds OSS language routes, then unversioned OSS products and LangSmith content, emits Managed Deep Agents variants, and copies shared files. `make broken-links` builds first and asks Mint to validate redirects; use `make broken-links-with-anchors` if anchors changed. Its report filter excludes standalone snippets because their absolute language-prefixed OSS paths are valid when inlined, not when Mint evaluates a fragment alone.
+`build_all()` clears `build/`, builds OSS language routes, then unversioned OSS products and LangSmith content, emits Managed Deep Agents variants, and then copies shared files. `make broken-links` builds first and asks Mint to validate redirects; use `make broken-links-with-anchors` if anchors changed. Its report filter excludes standalone snippets because their absolute language-prefixed OSS paths are valid when inlined, not when Mint evaluates a fragment alone.
 
 Inspect generated files without modifying them:
 
@@ -211,7 +211,8 @@ When build behavior changes, add focused regression coverage in `tests/unit_test
 
 ## See also
 
-- [Build System](/openwiki/architecture/build-system.md)
-- [Versioned Documentation and Routes](/openwiki/concepts/versioning.md)
+- [Source Map](/openwiki/architecture/source-map.md)
+- [Documentation Routes and Language Versioning](/openwiki/concepts/versioning.md)
 - [Adding and Maintaining Documentation Pages](/openwiki/operations/adding-pages.md)
 - [Conditional Rendering Tests](/openwiki/testing/conditional-rendering.md)
+- [LangSmith Agent and Observability Documentation Changes](/openwiki/workflows/langsmith-agent-documentation.md)

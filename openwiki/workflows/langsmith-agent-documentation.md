@@ -1,7 +1,7 @@
 ---
 type: documentation change workflow
 title: LangSmith Agent and Observability Documentation Changes
-description: Safely update connected LangSmith agent, observability, runnable-sample, Managed Deep Agents, and generated REST-reference documentation without editing derived output.
+description: Safely update connected LangSmith agent, observability, evaluation, prompt, runnable-sample, Managed Deep Agents, navigation, and generated REST-reference documentation without editing derived output.
 tags: [langsmith, agents, observability, tracing, documentation, openapi, code-samples]
 sources:
   - id: openwiki-source-5153f86e64d6ee0b305f72b3
@@ -12,12 +12,24 @@ sources:
     resource: repo://scripts/process_langsmith_openapi.py
   - id: openwiki-source-11d4965febd3986495e06a17
     resource: repo://src/code-samples/langsmith/create-an-agent.py
+  - id: openwiki-source-c41de8441485030d489b7266
+    resource: repo://src/code-samples/langsmith/evaluation-quickstart-0-dataset.py
+  - id: openwiki-source-afb6e09010374242d3c75ab4
+    resource: repo://src/code-samples/langsmith/evaluation-quickstart-1-eval.py
   - id: openwiki-source-557dacf97eb637d4d15f6939
     resource: repo://src/code-samples/langsmith/observability-quickstart-app-anthropic.py
   - id: openwiki-source-85e4906174f35fd6bbf19949
     resource: repo://src/code-samples/langsmith/observability-quickstart-app-gemini.ts
   - id: openwiki-source-ee54f1318f03a16aae18479d
     resource: repo://src/code-samples/langsmith/observability-quickstart-app-openai.py
+  - id: openwiki-source-b95c33ff108c20bd3a8b04ad
+    resource: repo://src/code-samples/langsmith/prompt-engineering-quickstart-0-create.ts
+  - id: openwiki-source-359b976cacc5f9dfa8e496bf
+    resource: repo://src/code-samples/langsmith/prompt-engineering-quickstart-1-test.ts
+  - id: openwiki-source-8a68d1c8cbb0211d31c0f22a
+    resource: repo://src/code-samples/langsmith/prompt-engineering-quickstart-2-iterate.ts
+  - id: openwiki-source-3da6c04a1c89dfb91396bd55
+    resource: repo://src/code-samples/langsmith/prompt-engineering-quickstart.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
   - id: openwiki-source-f685babda3a9a82ad6b9c98e
@@ -26,6 +38,8 @@ sources:
     resource: repo://src/langsmith/agents.mdx
   - id: openwiki-source-efb95e7fd1324eefaec0577a
     resource: repo://src/langsmith/create-an-agent.mdx
+  - id: openwiki-source-ad43538180e2060b126ab46c
+    resource: repo://src/langsmith/evaluation-quickstart.mdx
   - id: openwiki-source-dab366a6f340489dcb3ad96d
     resource: repo://src/langsmith/log-traces-to-agent.mdx
   - id: openwiki-source-932afc9f195d1192160413ee
@@ -42,6 +56,8 @@ sources:
     resource: repo://src/langsmith/managed-deep-agents-runtime.mdx
   - id: openwiki-source-9364a51b23a5a207bf223965
     resource: repo://src/langsmith/observability-quickstart.mdx
+  - id: openwiki-source-2cc9415de6c500d515a7a890
+    resource: repo://src/langsmith/prompt-engineering-quickstart.mdx
   - id: openwiki-source-24a416c8599e676dd1a4a590
     resource: repo://src/langsmith/resolve-an-agent.mdx
   - id: openwiki-source-5b871fd80900677c39fa5e02
@@ -54,20 +70,21 @@ sources:
     resource: repo://src/snippets/langsmith/trace-ingestion-project.mdx
   - id: openwiki-source-8358ceb3c932d2549365532d
     resource: repo://src/snippets/trace-with-openai.mdx
-generated: { by: "openwiki/0.4.3", at: "2026-10-29T08:15:48.231Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-30T08:15:16.596Z" }
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-29T08:15:48.231Z
+    at: 2026-10-30T08:15:16.596Z
 ---
 
 ## Scope and ownership
 
-This workflow maintains a connected authoring contract rather than duplicating product documentation. A change can affect the agent/environment trace destination, the quickstart's provider samples, Managed Deep Agents (MDA) content emitted in two language routes, navigation and redirects, or a deployment-generated REST reference. Edit the smallest authoritative source, then review every consumer of the changed rule.
+This workflow maintains a connected authoring contract rather than duplicating product documentation. A change can affect the agent/environment trace destination, observability, evaluation, or prompt quickstart samples, Managed Deep Agents (MDA) content emitted in two language routes, navigation and redirects, or a deployment-generated REST reference. Edit the smallest authoritative source, then review every consumer of the changed rule.
 
 | Surface | Authoritative owner | Safe change action | Do not edit as source |
 | --- | --- | --- | --- |
 | Agent model, registration, routing, resolution, observability, and integration narrative | Authored `src/langsmith/*.mdx` and shared authored snippets | Change the page or reusable snippet that owns the rule, then reconcile consuming guides. | `build/` output. |
-| Quickstart provider code | Runnable `src/code-samples/langsmith/observability-quickstart-app-*` sources | Change and execute the source, regenerate snippet MDX, then inspect the imported quickstart tab. | A committed `src/snippets/code-samples/` fragment. |
+| Observability provider code | Runnable `src/code-samples/langsmith/observability-quickstart-app-*` sources | Change and execute the source, regenerate snippet MDX, then inspect the imported quickstart tab. | A committed `src/snippets/code-samples/` fragment. |
+| Evaluation and prompt quickstart code | Runnable `src/code-samples/langsmith/evaluation-quickstart-*` and `prompt-engineering-quickstart-*` sources | Preserve ordered, cross-file setup dependencies and marked snippet regions; execute, regenerate, and inspect every importing step. | A committed `src/snippets/code-samples/` fragment. |
 | Registration display fragments | Marked regions in `src/code-samples/langsmith/create-an-agent.py` | Maintain visible calls and hidden loopback fixture assertions together, then regenerate. | Generated snippet MDX or intermediates. |
 | MDA narrative | Direct `src/langsmith/managed-deep-agents*.mdx` sources | Keep Python and JavaScript conditional branches, project ownership, deployment statements, and cross-links coherent. | One emitted `/langsmith/python/` or `/langsmith/javascript/` route. |
 | LangSmith REST reference | Processor policy and upstream contract | Change `scripts/process_langsmith_openapi.py` policy or the service-owned source, regenerate, and review the refresh workflow. | Individual JSON operations, generated endpoint pages, or `build/`. |
@@ -131,11 +148,47 @@ Use `CODE_SNIPPET_SOURCES` for an iterative source-specific extraction, but run 
 
 The OpenAI tracing guide is a separate thin consumer of `src/snippets/trace-with-openai.mdx`. Change that shared snippet—not just its page—when shared wrapper behavior or tracing prerequisites change. The reusable ingestion snippet is similarly a consumer boundary: agent-routing instructions must remain compatible with the destination rules above.
 
+## Evaluation and prompt quickstart lifecycles
+
+The evaluation quickstart has two entrypoints that must remain semantically aligned, rather than one being a transcription of the other. The UI flow creates a Playground prompt, dataset, Correctness evaluator, and experiment. The SDK flow imports runnable Python and TypeScript fragments: it creates the `Sample dataset` with input/reference-output examples, defines a target, wraps `CORRECTNESS_PROMPT` with an LLM-as-judge evaluator, and calls `evaluate(...)`. That call pulls dataset examples, invokes the target, passes its outputs plus `reference_outputs` to the evaluator, and records the results as an experiment. Update the setup prose, import names, and all affected fragments together when the data contract or evaluator changes.
+
+```mermaid
+flowchart LR
+  Dataset["Dataset examples"] --> Target["Target function"]
+  Target --> Outputs["Model outputs"]
+  Dataset --> References["Reference outputs"]
+  Outputs --> Evaluator["LLM as judge"]
+  References --> Evaluator
+  Evaluator --> Experiment["LangSmith experiment"]
+```
+
+This diagram shows the SDK evaluation data flow: an evaluator receives both target outputs and the reference outputs stored with each dataset example.
+
+The runnable evaluation files deliberately execute in sequence. The dataset setup has hidden cleanup because creating an existing dataset name fails; it is run before the evaluation source, which contains three separately extracted snapshots of a growing `eval.py`. Preserve those `:snippet-start:`/`:snippet-end:` regions and harness-only `:remove:` code. A visible fragment is not an independent program merely because it is renderable.
+
+The prompt quickstart follows a second stateful chain. A create source builds a `ChatPromptTemplate` and pushes `prompt-quickstart`; the test source pulls that name, formats its variable, converts to the provider message format, and calls the model; the iterate source pushes an updated template under the same name. Pushing that name again records a new commit rather than overwriting prompt history. Python keeps the three displayed fragments in one executable file, while TypeScript separates ordered `0-create`, `1-test`, and `2-iterate` files. Keep the shared prompt name, lexical ordering, source-specific SDK calls, and removed assertions/logging intact when changing this narrative or its samples.
+
+```mermaid
+flowchart LR
+  Create["Create template"] --> Push["Push prompt name"]
+  Push --> CommitOne["First commit"]
+  CommitOne --> Pull["Pull latest or hash"]
+  Pull --> Test["Format and call model"]
+  Test --> Iterate["Push updated template"]
+  Iterate --> CommitTwo["New commit"]
+```
+
+This diagram shows the prompt quickstart lifecycle: the same prompt name is the versioned history boundary, and a pull can select the latest commit or a hash.
+
+Run the relevant sources in their dependency order and regenerate snippets before reviewing the two quickstarts. In particular, do not test only the prompt test or iteration source without the create source, and do not leave the fixed evaluation dataset from a previous run in place. Use the sample runner for the relevant source family and then `make code-snippets`; if extraction or rendering changes, run the focused extractor/renderer tests listed below.
+
 ## Managed Deep Agents: authored model, routing, and deployment boundary
 
 MDA documentation describes a code-first project where the author supplies agent behavior and the managed runtime supplies the Deep Agents harness and hosting. The overview is the capability map; the agent-definition page owns `define_deep_agent` / `defineDeepAgent`, static names, model and runtime-facing options, graph factories, and their repeatability constraints. Do not blur this into generic agent-addressing documentation or ordinary self-hosted Deep Agents guidance.
 
 A static root `agent.py` or `agent.ts`/`agent.tsx` exports the named definition. It is configuration, not a compiled agent: MDA compiles it at deploy time with the managed backend, store, checkpointer, context, and runtime. Instructions and skills are managed context, tools and middleware are normal imported application modules, and recognized paths such as identity, memory, channels, schedules, sandbox, and MCP declarations enable managed capabilities. A factory may choose configuration per run from application context, but context is not verified identity; authorization belongs to the verified runtime caller.
+
+Runtime guidance is a trust and lifecycle boundary. Factories, tools, and middleware retain their native LangChain/LangGraph runtime; MDA adds thread and sandbox fields, while tools and middleware also receive managed server metadata. API context is schema-validated application input; verified identity arrives separately in server information, and managed channel ingress separately establishes delivery origin. Channel runs carry no application context, so required context does not reject them; direct API calls retain native validation. Factories are also invoked for inspection, when execution runtime is absent, and therefore must tolerate missing run context and return stable graph structure and schemas. A factory chooses the sandbox, so its own `backend` is unavailable.
 
 ```mermaid
 flowchart LR
@@ -181,6 +234,8 @@ Choose checks by the changed contract:
 | --- | --- |
 | Agent address, registration, compatibility identity, OpenAI, or OTLP prose | Reconcile the owning guide, reusable snippet, quickstart, and routing/compatibility consumers; lint prose and validate changed links. |
 | Provider quickstart source | Execute the source, regenerate snippets, and compare the generated tab import and trace-tree explanation. |
+| Evaluation quickstart source or prose | Preserve the dataset → target → evaluator → experiment contract; execute setup before evaluation, regenerate snippets, and inspect the SDK and UI paths. |
+| Prompt quickstart source or prose | Preserve create → pull/test → repeat push ordering and the shared prompt name; execute the prerequisite create source, regenerate snippets, and inspect Python and TypeScript imports. |
 | Snippet extraction/rendering mechanism | Run `make test TEST_FILE=tests/unit_tests/test_test_code_samples.py` and `make test TEST_FILE=tests/unit_tests/test_generate_code_snippet_mdx.py`. |
 | MDA definition, project, local-dev, or deploy assertion | Check both conditional language outputs, emitted `/langsmith/python/` and `/langsmith/javascript/` routes, navigation, redirects, and linked capability/deployment pages. |
 | MDA factory/runtime security guidance | Keep application context separate from verified identity and channel delivery; do not authorize from caller-controlled context. |
