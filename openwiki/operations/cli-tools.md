@@ -1,9 +1,14 @@
 ---
 type: operations reference
 title: Developer Commands and CLI Tools
-description: Install and operate the local documentation pipeline, Make targets, Mintlify checks, Vale prose linting, executable samples, and agent-skill links. Select the command layer and validation boundary that match the change.
+description: Install and operate the local documentation pipeline, Make targets, Mintlify checks, Vale prose linting, and executable samples. Select the command layer and validation boundary that match the change.
 tags: [cli, make, documentation, code-samples, operations]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-30T08:15:16.596Z
 sources:
+  - id: openwiki-source-3638ff2c170b760df159d81b
+    resource: repo://.github/actions/uv_setup/action.yml
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
   - id: openwiki-source-4d9cccca7700db7220ec055e
@@ -62,10 +67,7 @@ sources:
     resource: repo://src/code-samples/package.json
   - id: openwiki-source-1eb6a61d042052ba1402c2eb
     resource: repo://uv.lock
-generated: { by: "openwiki/0.4.3", at: "2026-10-29T08:15:48.231Z" }
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-29T08:15:48.231Z
+generated: { by: "openwiki/0.4.3", at: "2026-10-30T08:15:16.596Z" }
 ---
 
 # Developer Commands and CLI Tools
@@ -217,6 +219,8 @@ Generation reads the trace-links manifest and adds a `View example trace` card o
 ### Sample execution and traces
 
 `make test-code-samples` runs all eligible `.py`, `.ts`, `.java`, `.kt`, `.go`, and `.sh` files, or a space-separated `FILES` selection. It preserves the caller environment for credentials and live services. Python uses `uv run python`; TypeScript uses `npx tsx`; Go uses `go run`; shell uses `bash`; Java and Kotlin use JBang with Java 21 defaults.
+
+Set `CODE_SAMPLE_PATHS` to space-separated directories below `src/code-samples/` to narrow either the full scan or an explicit `FILES` selection. Paths outside that tree are ignored with a warning; the runner returns success when filtering leaves no eligible samples. CI uses this boundary to give each product-matrix leg the same changed-file list while running only that leg's directories.
 
 The default timeout is 1,200 seconds. The runner uses four workers by default, accepts `CODE_SAMPLE_JOBS`, and serializes configured groups sharing LangSmith datasets or experiment fixtures. Normal nonzero exits, missing tools, and timeouts fail. Detected LangSmith rate limits retry up to five times by default with configurable backoff capped at 120 seconds; a persistently rate-limited sample is skipped rather than failed.
 

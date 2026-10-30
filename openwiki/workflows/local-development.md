@@ -1,22 +1,20 @@
 ---
 type: workflow guide
 title: Local Development Workflow
-description: Set up the documentation toolchain and safely turn authored src changes into a local Mintlify preview. Choose proportionate builds, checks, and code-sample validation while keeping generated output and CI-only credentials separate.
+description: Set up the pinned documentation toolchain and turn authored src changes into a local Mintlify preview. Select focused validation for pipeline changes, prose, generated-site integrity, and runnable code samples without editing generated output.
 tags: [local-development, documentation, mintlify, validation, build-system]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-29T08:15:48.231Z
+    at: 2026-10-30T08:15:16.596Z
 sources:
+  - id: openwiki-source-3638ff2c170b760df159d81b
+    resource: repo://.github/actions/uv_setup/action.yml
   - id: openwiki-source-97746d8f3662d803e625550e
     resource: repo://.github/workflows/test-code-samples.yml
   - id: openwiki-source-9c06bd9d7d25770709e07c7c
     resource: repo://.mise.toml
-  - id: openwiki-source-8037e2358a2c4f9b2c722a11
-    resource: repo://AGENTS.md
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
-  - id: openwiki-source-6e6efa1569f158fcdb678ef0
-    resource: repo://pipeline/cli.py
   - id: openwiki-source-41f7c907e42a5efd3b3405cd
     resource: repo://pipeline/commands/build.py
   - id: openwiki-source-b481a230af378c0c50ed9994
@@ -31,9 +29,7 @@ sources:
     resource: repo://README.md
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
-  - id: openwiki-source-16b92823fdcb07d686f2e27f
-    resource: repo://tests/unit_tests/test_watcher.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-29T08:15:48.231Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-30T08:15:16.596Z" }
 ---
 
 # Local Development Workflow
@@ -42,7 +38,7 @@ The contributor loop has a strict input/output boundary: author documentation, n
 
 ## Bootstrap a checkout
 
-The project requires Python 3.13 or later, Node.js, and `uv`. The checked-in mise configuration selects Node.js 22, Python 3.13, and `uv` 0.9.26, as well as Vale, `prek`, and Mint. When using mise, install the pinned toolchain and its hooks first:
+The repository requires Python 3.13 or later, Node.js, and `uv`. The checked-in mise configuration selects Node.js 22, Python 3.13, and `uv` 0.9.26; CI installs the same uv version. When using mise, install the pinned toolchain and hooks first:
 
 ```bash
 mise trust && mise install
@@ -56,19 +52,17 @@ cd docs
 make install
 ```
 
-`make install` runs `uv sync --all-groups`, installs root npm packages, and installs `mint@latest` globally. Global Mint installation retries up to three times before failing. It also installs the project console entry point, `docs`, which dispatches to `pipeline.cli:main`; relaunch the shell if that command is not yet on `PATH`.
+`make install` runs `uv sync --all-groups`, installs root npm packages, and installs `mint@latest` globally. Global Mint installation retries up to three times before failing. The installed project exposes `docs`, which dispatches to `pipeline.cli:main`; relaunch the shell if that command is not yet on `PATH`.
 
 ### Link authoring skills
 
-Task-specific procedures are canonical in `.agents/skills/`. Cursor, Codex, GitHub Copilot, Gemini CLI, OpenCode, and Deep Agents use that tree directly. Claude Code instead reads `.claude/skills/`.
+Task-specific procedures are canonical in `.agents/skills/`. Cursor, Codex, GitHub Copilot, Gemini CLI, OpenCode, and Deep Agents read that tree directly; Claude Code reads `.claude/skills/`.
 
 `make install` invokes `make skills` to link each canonical skill directory into `.claude/skills/`. The target preserves a pre-existing non-symlink entry and removes stale symlinks. Run it again after adding or renaming a skill, or in each new worktree:
 
 ```bash
 make skills
 ```
-
-See [Agent Instructions and Authoring Skills](/openwiki/operations/agent-skills.md) for the distinction between repository-wide instructions and task-specific skills.
 
 ## Work on source inputs
 
@@ -97,7 +91,7 @@ uv run pipeline dev --skip-build # reuse an existing generated tree
 
 After installation, `docs build` and `docs dev` expose the same pipeline CLI. Although the parser accepts `docs build --watch`, the build handler does not inspect that option: it builds once and returns. Use `dev` for supported watching.
 
-A full build removes and recreates `build/`. It builds OSS Python and JavaScript output, unversioned Deep Agents Code, OpenWiki, and LangSmith content, Managed Deep Agents variants, shared files, and the npm snippet-component overlay. That last whole-tree reconstruction is the reliable recovery path after broad changes.
+A full build removes and recreates `build/`. It builds OSS Python and JavaScript output, unversioned Deep Agents Code, OpenWiki, and LangSmith content, Managed Deep Agents variants, shared files, and the npm snippet-component overlay. That whole-tree reconstruction is the reliable recovery path after broad changes.
 
 ### Preview lifecycle
 
@@ -153,16 +147,25 @@ Choose the smallest check that proves the change, then add generated-site valida
 | Pipeline, preprocessing, routing, or watcher behavior | `make test TEST_FILE=tests/unit_tests/test_watcher.py` | A focused pytest path; omit `TEST_FILE` for the full unit-test default. Tests run with Internet sockets disabled and Unix sockets allowed. |
 | Python quality and spelling | `make lint` | Ruff format/check diffs, `ty`, and Codespell. |
 | Markdown formatting | `make lint_md` | Markdownlint below `src`. Use `make lint_md_fix` to apply its fixes. |
-| Edited prose | `make lint_prose FILES="src/..."` | Installs the Vale version pinned in `.mise.toml` to `.bin/vale`, then checks the selected files. |
+| Edited prose | `make lint_prose FILES="src/..."` | Installs the Vale version pinned in `.mise.toml` to `.bin/vale`, then checks selected prose while excluding code samples. |
 | Source `@[ref]` links | `make check-cross-refs` | Source references resolve against the link map. |
 | Built routes, redirects, and anchors | `make broken-links-with-anchors` | Rebuilds, then checks generated output with Mint. |
-| Runnable sample | `make test-code-samples FILES="src/code-samples/..."` | Executes only the selected sample boundary. |
+| Runnable sample | `make test-code-samples FILES="src/code-samples/..."` | Executes only the selected runnable sample boundary. |
 
 `make lint_md` and `make lint_md_fix` require the `markdownlint` CLI; the target suggests installing `markdownlint-cli` or using the VS Code extension. Focused watcher tests cover backup and temporary-file filtering. Update or run focused tests when changing event filtering, routing, incremental rebuild behavior, or shutdown.
 
-`make test-code-samples` runs all samples when `FILES` is unset, accepts a space-separated `FILES` selection, and defaults to four workers through `CODE_SAMPLE_JOBS`. Known shared LangSmith fixture groups are serialized. Detected rate limits retry with backoff; a sample still rate-limited after retries is reported as skipped, not as successful execution.
+### Run code samples deliberately
 
-Samples that call providers or remote services need the corresponding local credentials and tools. The repository's credentialed code-sample workflow receives provider API keys and a PostgreSQL service, and skips fork pull requests because secrets are unavailable there. Those secrets and services are CI concerns, not prerequisites for editing, building, or serving the local Mint preview. See [Testing and Validation Overview](/openwiki/testing/test-overview.md) for the local-versus-CI validation boundary.
+`make test-code-samples` runs all eligible samples when `FILES` is unset. `FILES` is a space-separated list, but the runner accepts only existing `.py`, `.ts`, `.java`, `.kt`, `.go`, and `.sh` files under `src/code-samples/`; it warns and skips missing, unsupported, or out-of-tree selections. Use `CODE_SAMPLE_PATHS` to narrow either an all-sample run or an explicit list to space-separated directories under `src/code-samples/`. Entries outside that root are ignored with a warning, preventing a typo from widening the run.
+
+```bash
+make test-code-samples FILES="src/code-samples/langchain/return-a-string.py"
+CODE_SAMPLE_PATHS="src/code-samples/langsmith" make test-code-samples
+```
+
+The runner uses `CODE_SAMPLE_JOBS` with a default of four workers. Known shared LangSmith fixture groups are serialized while unrelated samples may overlap. Rate-limit results retry with increasing delay, capped at 120 seconds; a sample still rate-limited after the configured attempts is reported as skipped rather than as successful execution. `CODE_SAMPLE_RATE_LIMIT_ATTEMPTS` defaults to 5 and `CODE_SAMPLE_RATE_LIMIT_DELAY_SECONDS` defaults to 30.
+
+Samples that call providers or remote services need the corresponding local credentials and tools. The credentialed code-sample workflow receives provider API keys and a PostgreSQL service, and skips fork pull requests because secrets are unavailable there. Those secrets and services are CI concerns, not prerequisites for editing, building, or serving the local Mint preview. For authoring and lifecycle guidance, see [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md).
 
 ## Run Mint safely
 
@@ -200,7 +203,8 @@ Use this sequence to discard stale generated state and reconstruct it, rather th
 
 ## Related pages
 
-- [Documentation Build System](/openwiki/architecture/build-system.md)
-- [Agent Instructions and Authoring Skills](/openwiki/operations/agent-skills.md)
+- [Mintlify Integration](/openwiki/integrations/mintlify.md)
 - [Developer Commands and CLI Tools](/openwiki/operations/cli-tools.md)
+- [Quickstart](/openwiki/quickstart.md)
 - [Testing and Validation Overview](/openwiki/testing/test-overview.md)
+- [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md)
