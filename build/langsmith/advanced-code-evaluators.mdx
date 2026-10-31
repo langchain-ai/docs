@@ -1,0 +1,232 @@
+---
+title: Use advanced code evals
+sidebarTitle: Advanced code evaluator
+description: Install packages, make network requests, and authenticate with workspace secrets from an advanced code evaluator that runs in a LangSmith sandbox.
+---
+
+Advanced code evaluators allow installing public packages, calling external services, authenticating with encrypted [workspace secrets](/langsmith/set-up-hierarchy#configure-workspace-settings), and longer run times on each evaluation. Advanced code evaluators run in an isolated [LangSmith sandbox](/langsmith/sandboxes) instead of the default [code evaluator](/langsmith/code-evaluator-ui) environment. Advanced features are available for Python and JavaScript code evaluators, whether you create them from a dataset, from the Playground, or as an [online evaluator](/langsmith/online-evaluations-code) that scores your traces.
+
+## Compare advanced and default code evaluators
+
+| | Default code evaluator | Advanced code evaluator |
+|---|---|---|
+| Packages | The standard library, plus `numpy`, `pandas`, `jsonschema`, `scipy`, and `scikit-learn` for Python | Any public package from PyPI (Python) or npm (JavaScript) |
+| Network access | None | Outbound requests, subject to your organization's [egress policy](#make-network-requests) |
+| Workspace secrets | Not available | Added as headers on requests to each secret's allowed hosts |
+| Threads | Not available | [Score whole threads](#evaluate-threads) with `evaluate(ctx)` |
+| Saving | Takes effect immediately | Starts a [build](#build-and-test-the-evaluator) |
+
+## Create an advanced code evaluator
+
+To create an advanced code evaluator:
+
+1. Create or open a code evaluator. For more information, see [Create the evaluator](/langsmith/code-evaluator-ui#step-1-create-the-evaluator) or [Configure online evaluators](/langsmith/online-evaluations-code#configure-online-evaluators).
+1. Select Python or JavaScript as the evaluator language.
+1. In the **Configure Evaluator** pane, select **Enable advanced features**. The package list appears.
+1. (Optional) [Add packages](#add-packages).
+1. (Optional) [Select workspace secrets](#authenticate-with-workspace-secrets) for authenticated requests.
+1. [Write your evaluator code](#write-the-evaluator-function), then click **Save**. Saving starts a [build](#build-and-test-the-evaluator).
+
+## Add packages
+
+List the packages your advanced code evaluator imports in the package list. LangSmith installs them into the evaluator's sandbox when you save.
+
+- **Python**: Add packages to `requirements.txt`. LangSmith installs them with pip.
+- **JavaScript**: Add packages under `dependencies` in `package.json`. LangSmith installs them with npm.
+
+LangSmith installs only public packages, up to 30 per evaluator. Private package indexes and registries are not supported. List each package by the name you install it with, which can differ from the name you import in code. For example, to use `import sklearn`, add `scikit-learn` to `requirements.txt`, not `sklearn`.
+
+When you create an advanced Python code evaluator, `requirements.txt` starts with the packages available to default code evaluators:
+
+```txt
+numpy==2.3.5
+pandas==2.3.3
+jsonschema==4.23.0
+scipy==1.16.3
+scikit-learn==1.7.2
+```
+
+Remove the packages your evaluator does not use, and add any others on new lines.
+
+## Make network requests
+
+Outbound network requests follow your organization's sandbox egress policy. Under restricted egress, LangSmith blocks requests to destinations outside the managed allowlist. For more information, see [Organization-level restricted egress](/langsmith/sandbox-auth-proxy#organization-level-restricted-egress).
+
+## Authenticate with workspace secrets
+
+Workspace secrets let an advanced code evaluator call services that require authentication, without putting credentials in the evaluator code. When you select a secret, the sandbox proxy adds it as an HTTP header on HTTPS requests to that secret's allowed hosts. The secret value never enters the sandbox, so your code cannot read it from an environment variable or anywhere else.
+
+To use a workspace secret in an evaluator:
+
+1. Under **Workspace secrets (optional)**, select one or more secrets. You can select only secrets with allowed hosts. The picker lists each secret's hosts. To add a secret or allow hosts on one, see [Configure allowed hosts for a secret](#configure-allowed-hosts-for-a-secret).
+1. In your evaluator code, send requests to an allowed host without an authentication header. The proxy adds the header to requests to allowed hosts, and sends requests to other hosts without it.
+
+For example, `OPENAI_API_KEY` comes with default hosts and headers, so when you select it, the following evaluator calls OpenAI without handling the key. Add `requests` to `requirements.txt` first:
+
+```python
+import requests
+
+def perform_eval(run, example=None):
+    response = requests.post(
+        "https://api.openai.com/v1/chat/completions",
+        json={
+            "model": "gpt-6-luna",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Answer yes or no: is the following response polite?\n\n"
+                    + str(run["outputs"]),
+                }
+            ],
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+    answer = response.json()["choices"][0]["message"]["content"]
+    return {"polite": int(answer.strip().lower().startswith("yes"))}
+```
+
+<Tip>
+To check that the proxy adds a secret's header, select `OPENAI_API_KEY` in the evaluator, then, with `requests` in `requirements.txt`, run the following evaluator with **Test**. OpenAI's models endpoint returns `200` only for an authenticated request, so the evaluator returns `1` when the proxy added the header.
+
+```python
+import requests
+
+def perform_eval(run, example=None):
+    response = requests.get("https://api.openai.com/v1/models", timeout=10)
+    return {"secret_injected": int(response.status_code == 200)}
+```
+</Tip>
+
+### Configure allowed hosts for a secret
+
+Each workspace secret defines which hosts it can be sent to and in which header. Configuring allowed hosts requires the `workspaces:manage-secrets` permission, which workspace admins have by default.
+
+Known provider secrets, such as `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`, come with default hosts and headers, so evaluators can use them without further setup. A custom secret has no allowed hosts until an admin adds one, so evaluators cannot select it.
+
+To add a custom secret with allowed hosts:
+
+1. Go to <Icon icon="settings" /> **Settings** > **Integrations** > **Provider secrets**. The **Allowed hosts** column shows each existing secret's hosts.
+1. Click **+ Secret** and select **Custom**.
+1. Enter the secret's key and value.
+1. Add one or more allowed hosts. Enter an exact host, such as `eval-api.example.com`, or a leading wildcard, such as `*.example.com`.
+1. Set the header name and the header value template. The template must contain `{value}`, which LangSmith replaces with the secret. For example, use `Bearer {value}` for a bearer token, or `{value}` to send the raw secret.
+1. Save the secret.
+
+To change the hosts or header of an existing secret, click the edit icon next to the secret, then follow the same steps. Changes to a secret's value, hosts, or header apply the next time the evaluator runs.
+
+<Warning>
+A wildcard host allows every host under the domain. On a shared provider domain, anyone who can create a resource under that domain could receive the secret. Prefer exact hosts.
+</Warning>
+
+### Resolve secret errors
+
+LangSmith checks an evaluator's secrets when you save the evaluator and again each time it runs, because an admin can edit or delete a secret after you select it. Saving fails, and an evaluation fails instead of running unauthenticated, when:
+
+- The secret no longer exists in the workspace.
+- The secret has no allowed hosts. Ask a workspace admin to add one.
+- The secret has no header configured for its allowed hosts.
+
+Two more checks apply at one stage only:
+
+- Saving fails when a secret's hosts cannot be used under your organization's restricted egress settings.
+- An evaluation fails when two selected secrets set the same header on the same host. Remove one of them from the evaluator.
+
+Failed evaluations show an error on the run's feedback and in the evaluator's **Logs**.
+
+## Write the evaluator function
+
+Advanced code evaluators accept the same function as default code evaluators. A `perform_eval(run, example)` function in Python or a `performEval` function in JavaScript works unchanged. For the full contract, see [Write your evaluator code](/langsmith/code-evaluator-ui#step-2-write-your-evaluator-code).
+
+You can also define `evaluate(ctx)`, which LangSmith calls in preference to `perform_eval` or `performEval` when both exist. The `ctx` object exposes the run as `ctx.run` and the dataset example, when there is one, as `ctx.example`. Return the same dictionary of feedback keys and scores:
+
+<CodeGroup>
+
+```python Python
+def evaluate(ctx):
+    actual = ctx.run["outputs"]["answer"]
+    expected = ctx.example["outputs"]["answer"]
+    return {"exact_match": actual == expected}
+```
+
+```javascript JavaScript
+function evaluate(ctx) {
+  const actual = ctx.run.outputs.answer;
+  const expected = ctx.example.outputs.answer;
+  return { exact_match: actual === expected };
+}
+```
+
+</CodeGroup>
+
+## Build and test the evaluator
+
+Saving an advanced code evaluator starts a build that installs your packages and prepares the sandbox. The **Building evaluator** banner shows while the build runs, which usually takes a couple of minutes. You cannot edit or delete the evaluator until the build finishes.
+
+When the build finishes, the evaluator status is **Ready** and **Test** becomes available. **Test** appears only after you attach the evaluator to a source with sample data: a dataset with at least one experiment, or traces with at least one recent successful run. Test runs your evaluator the same way LangSmith runs it on your traces and experiments, using the last saved build, so save any edits before you test.
+
+If the build fails, the **Evaluator build failed** banner shows the error. When a package fails to install, the error starts with `pip install failed:` or `npm install failed:`, followed by the installer output. Fix the package list or code, then save again to rebuild.
+
+### Keep scoring during a rebuild
+
+Once an advanced code evaluator has built successfully, LangSmith keeps scoring runs with that build while a new build runs, and after a new build fails. The new build takes over when it succeeds, so feedback continues without a gap. To stop the previous version immediately, for example because it produces wrong scores, open the evaluator's **Configure Evaluator** pane, select each source under **Source**, turn off **Enabled**, and then save. Leave it off until the new build is ready.
+
+Before the first build succeeds:
+
+- Online evaluators wait and evaluate the runs after the build completes.
+- Experiment evaluations, such as Playground experiments, write error feedback such as `Code evaluator is not ready yet (build status: BUILDING)`.
+- If the first build fails and no build is in progress, every run gets error feedback so the failure is visible.
+
+If you rename the feedback key while a rebuild is in progress, feedback written during the rebuild carries the new key with scores from the previous build.
+
+## Evaluate threads
+
+A thread evaluator scores a whole conversation [thread](/langsmith/threads) instead of a single run, and writes its feedback to the thread. Thread evaluators run as online evaluators on your traces and must be advanced code evaluators. For how LangSmith decides when a thread is complete, see [Set up multi-turn online evaluators](/langsmith/online-evaluations-multi-turn#how-it-works).
+
+To create a thread evaluator:
+
+1. In the **Configure Evaluator** pane of an online evaluator, select **Enable advanced features**. The **Threads** option is unavailable until you do.
+1. In the **Runs** / **Threads** toggle, select **Threads**.
+1. Under **Evaluator input**, select the input your evaluator receives.
+1. Define an `evaluate(ctx)` function that reads the selected input from `ctx`. Thread evaluators do not support `perform_eval` or `performEval`.
+1. Click **Save**, wait for the build, then click **Test**.
+
+Each evaluation receives exactly one of the following inputs:
+
+- **Thread** (`ctx.thread`): The full thread as an object, with `thread_id`, `session_id`, and the thread's `runs`.
+- **All messages** (`ctx.all_messages`): Every message in the thread, in order, as a string. This is the default.
+- **Human/AI pairs** (`ctx.human_ai_pairs`): Each human message paired with the AI reply that follows, as a string.
+- **First human, last AI** (`ctx.first_human_last_ai`): The first human message and the last AI message, as a string.
+
+For example, the following evaluator receives **All messages** and flags conversations that mention a refund:
+
+```python
+def evaluate(ctx):
+    transcript = ctx.all_messages
+    return {"mentions_refund": "refund" in transcript.lower()}
+```
+
+With the **Thread** input, read the thread's fields as attributes:
+
+```python
+def evaluate(ctx):
+    return {"turn_count": len(ctx.thread.runs)}
+```
+
+## See also
+
+- [How to define a code evaluator](/langsmith/code-evaluator-ui)
+- [Set up online code evaluators](/langsmith/online-evaluations-code)
+- [Configure auth proxy rules](/langsmith/sandbox-auth-proxy#configure-auth-proxy-rules)
+- [Sandboxes](/langsmith/sandboxes)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/advanced-code-evaluators.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
