@@ -4,3 +4,4 @@
 - [Agent Instructions and Authoring Skills](agent-skills.md) - Use the repository-wide instruction contract and task-specific skills to author, validate, distribute, and document documentation changes safely.
 - [Developer Commands and CLI Tools](cli-tools.md) - Install and operate the local documentation pipeline, Make targets, Mintlify checks, Vale prose linting, and executable samples. Select the command layer and validation boundary that match the change.
 - [Cross-References and API Links](cross-references.md) - Author, resolve, validate, and safely maintain scoped API documentation links using the @[...] cross-reference mechanism. Distinguishes source-level semantic-reference validation from rendered-site link checking.
+- [Published Package Version Claims](version-claims.md) - Explains how documentation package-version claims are recognized, assigned to PyPI or npm, checked against published releases, and enforced for changed MDX pull-request content.

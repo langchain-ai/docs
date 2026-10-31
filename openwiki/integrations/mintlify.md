@@ -40,8 +40,8 @@ sources:
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-30T08:15:16.596Z
-generated: { by: "openwiki/0.4.3", at: "2026-10-30T08:15:16.596Z" }
+    at: 2026-10-31T08:12:26.192Z
+generated: { by: "openwiki/0.4.3", at: "2026-10-31T08:12:26.192Z" }
 ---
 
 # Mintlify Integration
@@ -102,7 +102,7 @@ Mintlify configuration has three OpenAPI groups:
 | Group | Input | Configured directory |
 | --- | --- | --- |
 | Agent Server API | `langsmith/agent-server-openapi.json` in the generated tree | `langsmith/agent-server-api` |
-| Control Plane API | `https://api.host.langchain.com/openapi.json` fetched by Mintlify during deployment | None |
+| Control Plane API | `https://api.host.langchain.com/openapi.json` fetched by Mintlify during deployment | Mintlify default (`/api-reference/`) |
 | LangSmith REST API | committed `src/langsmith/langsmith-platform-openapi.json`, copied into the generated tree | `langsmith/smith-api` |
 
 Mintlify creates endpoint routes for these groups when it deploys. They are not authored Markdown or MDX files and, in particular, absent local endpoint paths must not be created or documented as authored repository pages. The local link checker intentionally filters `/langsmith/agent-server-api/`, `/langsmith/smith-api`, and `/api-reference/` reports; inspect a hosted preview or production deployment to validate the rendered endpoint surface. This generated endpoint surface is also separate from the externally built SDK reference at `reference.langchain.com`.
@@ -131,7 +131,7 @@ Mintlify generates `llms.txt` and, when required, nested `/_llms/` indexes only 
 ## Related concepts
 
 - [Build system](/openwiki/architecture/build-system.md) — generated-tree lifecycle and ownership.
+- [Source map](/openwiki/architecture/source-map.md) — durable ownership boundaries.
+- [GitHub Actions](/openwiki/integrations/github-actions.md) — validation, preview, publication, and refresh workflows.
 - [Reference documentation](/openwiki/integrations/reference-docs.md) — API-reference boundaries.
-- [CLI tools](/openwiki/operations/cli-tools.md) — command-line validation entry points.
-- [Test overview](/openwiki/testing/test-overview.md) — validation coverage.
 - [Local development](/openwiki/workflows/local-development.md) — developer setup and watch workflow.

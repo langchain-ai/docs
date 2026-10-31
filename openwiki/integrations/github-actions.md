@@ -3,9 +3,6 @@ type: CI automation guide
 title: GitHub Actions and CI Automation
 description: Maps the repository's GitHub Actions validation, preview and publication handoffs, and scheduled maintenance writers. It documents pinned uv setup, same-repository credential boundaries, code-sample escalation, and reviewed bot pull requests.
 tags: [github-actions, ci, automation, testing, langsmith]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-30T08:15:16.596Z
 sources:
   - id: openwiki-source-3638ff2c170b760df159d81b
     resource: repo://.github/actions/uv_setup/action.yml
@@ -19,10 +16,14 @@ sources:
     resource: repo://.github/workflows/changelog-weekly.yml
   - id: openwiki-source-b6d9390d936169b827965e4b
     resource: repo://.github/workflows/check-pr-ai-attribution.yml
+  - id: openwiki-source-21617d8a6b2b570989a7c900
+    resource: repo://.github/workflows/check-version-claims.yml
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
   - id: openwiki-source-7346220ed051a41471043c07
     resource: repo://.github/workflows/create-preview-branch.yml
+  - id: openwiki-source-6d4b4e707b8d60b6ccfa3425
+    resource: repo://.github/workflows/openwiki-update.yml
   - id: openwiki-source-f2608d0d515da097485b6ec5
     resource: repo://.github/workflows/publish.yml
   - id: openwiki-source-5153f86e64d6ee0b305f72b3
@@ -31,13 +32,20 @@ sources:
     resource: repo://.github/workflows/test-code-samples-linear.yml
   - id: openwiki-source-97746d8f3662d803e625550e
     resource: repo://.github/workflows/test-code-samples.yml
+  - id: openwiki-source-8037e2358a2c4f9b2c722a11
+    resource: repo://AGENTS.md
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
   - id: openwiki-source-41f7c907e42a5efd3b3405cd
     resource: repo://pipeline/commands/build.py
+  - id: openwiki-source-99b53585619b83f258314f8b
+    resource: repo://scripts/check_version_claims.py
   - id: openwiki-source-697851c98229599f97376bfb
     resource: repo://scripts/process_langsmith_openapi.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-30T08:15:16.596Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-31T08:12:26.192Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-31T08:12:26.192Z
 ---
 
 ## Authority map
@@ -55,6 +63,7 @@ flowchart TD
   Full --> Observe["Scheduled failure observer"]
   Observe --> Linear["Product-scoped Linear ticket"]
   Daily["Daily OpenAPI schedule"] --> ApiPr["Standing OpenAPI review PR"]
+  Wiki["Daily OpenWiki schedule"] --> WikiPr["Standing wiki review PR"]
   Weekly["Monday changelog schedule"] --> ChangePr["Dated changelog review PR"]
   Main["Main push"] --> Publish["prod build handoff"]
 ```
@@ -96,6 +105,12 @@ uv run python pipeline/tools/partner_pkg_table.py
 
 Do not hand-edit the generated provider overview: change its generator or package metadata, regenerate it, and commit the result. See [Testing and Validation Overview](/openwiki/testing/test-overview.md) for choosing broader validation.
 
+### Changed-document version claims
+
+**Check version claims** is a separate, read-only pull-request gate. It is triggered only when `src/**/*.mdx`, its checker or ignore configuration, or its workflow changes. With full Git history it computes the merge-base against the PR base and passes only changed `src/` MDX files to `scripts/check_version_claims.py`; when no such files changed, it succeeds without setting up Python.
+
+The checker verifies the narrow claim that every named `>=` or `==` package version exists on the appropriate registry. It does not raise a stated version floor merely because a newer release exists: the feature requirement remains a human judgment. Its language/fence, nearest-label, scoped-package, extras, and path rules select PyPI or npm before the registry lookup.
+
 ## Code-sample matrix and failure escalation
 
 **Test Code Samples** runs for relevant PR changes, manual dispatch, and at 00:00 UTC on the first of every month. It has non-fail-fast `oss` and `langsmith` legs, so a product failure does not mask the other product or prevent rerunning its individual job. `oss` owns `langchain`, `langgraph`, and `deepagents`; `langsmith` owns `langsmith`. A coverage check fails when a product directory below `src/code-samples/` belongs to neither mapping.
@@ -131,6 +146,12 @@ The writer considers only `src/code-samples/trace-links.json` and `src/snippets/
 
 ## Scheduled writers
 
+### OpenWiki update proposal
+
+`openwiki-update.yml` runs daily at 08:00 UTC or on manual dispatch. It checks out full history because `openwiki code --update` compares the current commit to the commit it last documented; a shallow checkout would make the change summary empty. The job installs the OpenWiki CLI and diagram-validation dependencies, then updates the wiki before creating or updating the fixed `openwiki/update` review PR.
+
+The update run receives provider and optional tracing credentials only through GitHub secrets. Branch and PR writes use a GitHub App token, rather than `GITHUB_TOKEN`, so ordinary pull-request workflows can run on the generated PR. The PR action limits staged paths to `openwiki`, `AGENTS.md`, and this workflow. Review its proposed documentation changes before merge; the workflow opens a PR and does not merge it.
+
 ### LangSmith OpenAPI refresh
 
 `refresh-langsmith-openapi.yml` runs daily at 10:00 UTC and manually. It creates a GitHub App token for checkout, branch pushes, and PR operations because a `GITHUB_TOKEN`-created PR leaves pull-request workflows awaiting manual approval. The processor permits network fetches only from `api.smith.langchain.com`, filters the source for public documentation, and writes `src/langsmith/langsmith-platform-openapi.json`.
@@ -159,6 +180,7 @@ Mintlify preview creation is restricted to same-repository PRs or manual dispatc
 6. Keep Linear escalation downstream of failed or cancelled scheduled runs. An unset team variable must warn rather than fail observation.
 7. Preserve no-diff, standing-PR, human-edit, and review boundaries for OpenAPI, changelog, and trace writers. Do not expose secrets or private reports in generated material.
 8. Preserve preview branch sanitization and deletion guards; do not enable credentialed preview paths for forks.
+9. When a PR adds or changes a workflow, script, Make target, PR check, scheduled job, or skill, invoke `docs-tooling-notion` before handoff. It records the operational change in its assigned internal documentation home; this follow-up does not justify duplicating secret values in the repository.
 
 ## Related pages
 

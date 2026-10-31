@@ -8,6 +8,8 @@ sources:
     resource: repo://.github/ISSUE_TEMPLATE/04-reference-docs.yml
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
+  - id: openwiki-source-164e2da859b5277df81c7d94
+    resource: repo://.github/workflows/ci.yml
   - id: openwiki-source-5153f86e64d6ee0b305f72b3
     resource: repo://.github/workflows/refresh-langsmith-openapi.yml
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
@@ -40,10 +42,12 @@ sources:
     resource: repo://tests/unit_tests/test_check_cross_refs.py
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-30T08:15:16.596Z" }
+  - id: openwiki-source-2ecfcd33b729fccd843ab705
+    resource: repo://tests/unit_tests/test_handle_auto_links.py
+generated: { by: "openwiki/0.4.3", at: "2026-10-31T08:12:26.192Z" }
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-30T08:15:16.596Z
+    at: 2026-10-31T08:12:26.192Z
 ---
 
 # Reference Documentation Boundaries
@@ -89,7 +93,7 @@ make check-cross-refs
 
 This source-level check scans Markdown and MDX beneath `src/` with the same marker and fence patterns. It ignores ordinary code fences, escaped markers, `snippets/code-samples/`, and `node_modules`. Files in `oss/python/` and `oss/javascript/` are checked in their respective scopes; a shared `oss/` file is checked in both. Consequently, an unfenced reference in shared OSS content must resolve in every emitted language scope, while a language fence narrows the requirement. The command exits nonzero for unresolved names.
 
-This is distinct from rendered-site link checking: passing a Mintlify link check does not establish that every semantic marker has a scoped mapping.
+This is distinct from rendered-site link checking: passing a Mintlify link check does not establish that every semantic marker has a scoped mapping. The `check-cross-refs` CI job provisions Python with `uv sync --group test` and runs this target, so unresolved source markers are a separate merge-time failure from rendered-link or OpenAPI checks.
 
 ## Declare OpenAPI inputs, not endpoint pages
 
@@ -158,7 +162,7 @@ The filter deliberately removes known local-build false positives:
 
 With `--check-anchors`, it additionally removes only the named SmithDB migration anchors `traces-query`, `runs-query`, and `exceptions`, plus `/langsmith/env-var-cloud#n_jobs_per_worker`. Other broken links and anchors remain failures. Therefore a passing local command does not prove the excluded deployment-time routes or named anchors work; inspect the generated endpoint surface in a hosted preview or deployment rather than creating local endpoint files.
 
-Focused tests cover cross-reference scope selection, shared-file validation, custom-title and backtick forms, multiple references, and the code-block, escaped-marker, and code-sample exclusions. Filter tests confirm that genuine failures and non-exempt anchors remain after filtering.
+Focused cross-reference checker tests cover scope selection, shared-file validation, custom-title and backtick forms, multiple references, and the code-block, escaped-marker, and code-sample exclusions. Resolver tests separately cover replacement outside code blocks, backtick and tilde code-fence protection, conditional-fence handling, and escaped markers. Filter tests confirm that genuine failures and non-exempt anchors remain after filtering.
 
 ## Route issues to the owning system
 
@@ -169,6 +173,7 @@ Change this repository for an authored marker, scoped map entry, preprocessor or
 ## Related documentation
 
 - [Source Map](/openwiki/architecture/source-map.md) — repository ownership and generated-source boundaries.
+- [GitHub Actions](/openwiki/integrations/github-actions.md) — CI checks and scheduled refresh automation.
 - [Mintlify Integration](/openwiki/integrations/mintlify.md) — deployment, previews, hosted artifacts, and rendered-site checks.
 - [Test Overview](/openwiki/testing/test-overview.md) — test layers and focused validation.
 - [LangSmith OpenAPI Refresh](/openwiki/workflows/langsmith-openapi-refresh.md) — processor policy and refresh-PR lifecycle.
