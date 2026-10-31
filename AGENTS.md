@@ -286,6 +286,8 @@ Python-only content here
 :::
 ```
 
+Close each fence before opening the next. `make build` fails on a nested, stray, or unclosed fence.
+
 ### Code highlighting
 
 ```python
@@ -323,6 +325,8 @@ Common Tabler names: `home` (not house), `tool` (not wrench), `player-play` (not
 | `<Card>` / `<CardGroup>` | Navigation/overview links only (not for highlighting points) |
 | `<Note>`, `<Tip>`, `<Warning>`, `<Info>` | Callouts |
 | `<Prompt>` | Copyable AI-assistant prompt. **Required at the top of every migration guide** |
+
+Use only Mintlify built-ins or components imported on the page. Mintlify silently renders any other tag as nothing. Confirm an unfamiliar tag on [Mintlify components](https://mintlify.com/docs/components) or through the `docs-mintlify` MCP server; `<Important>`, `<Anchor>`, and `:::note` are not Mintlify syntax. CI runs `make check-mdx` to catch both.
 
 ### Migration guide convention
 

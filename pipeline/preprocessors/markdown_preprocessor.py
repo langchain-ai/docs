@@ -15,6 +15,40 @@ from pipeline.preprocessors.utm_links import add_utm_to_cta_links
 
 logger = logging.getLogger(__name__)
 
+_FENCE_OPEN = re.compile(r"^[ \t]*:::(\w+)\s*$")
+_FENCE_CLOSE = re.compile(r"^[ \t]*:::(?P<rest>.*)$")
+
+
+def _validate_conditional_fences(md_text: str) -> None:
+    """Raise if conditional fences are nested, stray, or never closed.
+
+    The rendering regex below never checks structure, so a broken fence leaks
+    content into the other language. Like that regex, accept a closer followed
+    by text, such as ``::: | row`` or ``::::::js`` (close, then open).
+    """
+    problems: list[str] = []
+    open_line: int | None = None
+
+    for number, line in enumerate(md_text.split("\n"), start=1):
+        if match := _FENCE_OPEN.match(line):
+            if open_line is not None:
+                problems.append(
+                    f"line {number}: :::{match.group(1)} opens inside the block "
+                    f"opened at line {open_line}"
+                )
+            open_line = number
+        elif match := _FENCE_CLOSE.match(line):
+            if open_line is None:
+                problems.append(f"line {number}: ::: closes a block that is not open")
+            open_line = number if _FENCE_OPEN.match(match.group("rest")) else None
+
+    if open_line is not None:
+        problems.append(f"line {open_line}: block is never closed with :::")
+
+    if problems:
+        msg = "Broken conditional fences:\n  " + "\n  ".join(problems)
+        raise ValueError(msg)
+
 
 def _apply_conditional_rendering(md_text: str, target_language: str) -> str:
     r"""Apply conditional rendering to markdown content.
@@ -42,6 +76,8 @@ def _apply_conditional_rendering(md_text: str, target_language: str) -> str:
     if target_language not in {"python", "js"}:
         msg = "target_language must be 'python' or 'js'"
         raise ValueError(msg)
+
+    _validate_conditional_fences(md_text)
 
     # Pattern for non-escaped conditional blocks
     pattern = re.compile(

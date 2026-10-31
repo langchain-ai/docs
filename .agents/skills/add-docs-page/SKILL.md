@@ -42,6 +42,11 @@ description: SEO summary with no markdown, no links, and no backticks
 For OSS pages that differ by language, use `:::python` and `:::js` fences in one
 file rather than writing two files. The build pipeline emits both versions.
 
+Before writing a JSX tag you have not seen in `src/`, look it up on
+[Mintlify components](https://mintlify.com/docs/components) or with the
+`docs-mintlify` MCP server. A plausible name is not evidence: `<Important>` and
+`<ItemTable>` both reached `main` and rendered as nothing.
+
 Take every fact on the page from the product source, not from memory, a sibling
 docs page, or the request that asked for the page. This covers behavior,
 defaults, field names, version minimums, and examples. Use the
@@ -150,7 +155,7 @@ Run all three, in this order:
 
 ```bash
 make lint_prose FILES="src/path/to/page.mdx"
-make build
+make check-mdx
 make broken-links-with-anchors
 ```
 
@@ -223,6 +228,7 @@ instead.
 - [ ] Inbound `#anchor` links checked before any heading was reworded.
 - [ ] A block now on three or more pages extracted to `src/snippets/`, and its
       built `python/` and `javascript/` targets confirmed to exist.
+- [ ] `make check-mdx` clean.
 - [ ] `make lint_prose` clean, `make broken-links-with-anchors` shows no new `⎿` lines.
 - [ ] `docs-review` run on the changed files, findings addressed.
 - [ ] PR opened with `open-docs-pr`, checks green.

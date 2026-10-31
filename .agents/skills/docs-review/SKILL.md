@@ -215,8 +215,11 @@ Only when the diff triggers them:
 - New internal links: root-relative, and free of `/python/` or `/javascript/`?
 - A new code block: does it carry a real language tag, and are imports sorted?
 - A page or heading that changed URL: is there a redirect?
+- A new JSX tag: is it a Mintlify built-in or imported on the page? Look up a
+  tag new to `src/` on [Mintlify components](https://mintlify.com/docs/components).
+  An invented tag renders as nothing, so report it as blocking.
 
-The `add-docs-page` skill covers all five in detail. Point at it rather than
+The `add-docs-page` skill covers these in detail. Point at it rather than
 restating the procedure in a finding.
 
 ## Step 6. Report
