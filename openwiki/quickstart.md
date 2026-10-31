@@ -3,12 +3,11 @@ type: contributor routing guide
 title: Repository Wiki Quickstart
 description: Route documentation, tooling, sample, and automation changes to their durable owner, generated-output boundary, and proportionate validation. Use this map before editing a rendered route or choosing a repository workflow.
 tags: [quickstart, documentation, routing, validation, mintlify, automation]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-30T08:15:16.596Z
 sources:
   - id: openwiki-source-4d9cccca7700db7220ec055e
     resource: repo://.github/workflows/_test.yml
+  - id: openwiki-source-21617d8a6b2b570989a7c900
+    resource: repo://.github/workflows/check-version-claims.yml
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
   - id: openwiki-source-97746d8f3662d803e625550e
@@ -29,13 +28,18 @@ sources:
     resource: repo://README.md
   - id: openwiki-source-0a0a6c8d7a88288e6b6b9b5b
     resource: repo://scripts/check_cross_refs.py
+  - id: openwiki-source-99b53585619b83f258314f8b
+    resource: repo://scripts/check_version_claims.py
   - id: openwiki-source-fd0cb9d6fca56bf4963559e9
     resource: repo://scripts/extract_code_snippets.py
   - id: openwiki-source-560bf24db9566b97ee19e383
     resource: repo://scripts/generate_code_snippet_mdx.py
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-30T08:15:16.596Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-31T08:12:26.192Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-31T08:12:26.192Z
 ---
 
 # Repository Wiki Quickstart
@@ -51,6 +55,7 @@ This repository builds the Mintlify site at [docs.langchain.com](https://docs.la
 | Change build behavior, a preprocessor, generated output, or local watch behavior | `pipeline/` and the invoking Make target | [Repository Source Map](/openwiki/architecture/source-map.md) |
 | Change a runnable example, code extract, trace link, or sample CI behavior | `src/code-samples/` and its consumer page | [Runnable Code Samples and Snippet Generation](/openwiki/workflows/code-sample-lifecycle.md) |
 | Change a GitHub workflow, scheduled job, preview, publication path, secret-bearing job, or CI check | `.github/workflows/` and the command it invokes | [GitHub Actions and CI Automation](/openwiki/integrations/github-actions.md) |
+| State or revise a package version in authored MDX | The page under `src/` and the claimed package's published release | [Published Package Version Claims](/openwiki/operations/version-claims.md) |
 | Change OpenAPI input or endpoint reference behavior | The declared `src/docs.json` OpenAPI source and its refresh process | [Reference Documentation Boundaries](/openwiki/integrations/reference-docs.md) |
 | Report generated SDK API-reference content | The reference-documentation issue template | This repository routes reports but does not build `reference.langchain.com`. |
 
@@ -106,17 +111,19 @@ Python 3.13 or later is required. Run `make install` to synchronize all Python d
 | Focused prose | `make lint_prose FILES="src/path/to/page.mdx"` |
 | Navigation, redirects, routes, links, or anchors | `make broken-links-with-anchors` |
 | Shared or conditional `@[ref]` reference | `make check-cross-refs` |
+| Package version stated in changed MDX | `uv run python scripts/check_version_claims.py --files src/path/to/page.mdx` |
 | Pipeline, generator, or CLI behavior | Focused `make test TEST_FILE=tests/unit_tests/...`, then `make lint` as applicable |
 | Runnable sample or extraction marker | `make test-code-samples FILES="src/code-samples/..."`, then `make code-snippets` |
 | Agent Server OpenAPI input | `make check-openapi` |
 | Provider overview or external integration URL input | Run its owning generator or URL check from the relevant workflow guide |
 
-`make test` runs pytest against `tests/unit_tests` with network sockets disabled except Unix sockets. Core CI runs on pushes to `main`, pull requests, and manual dispatch. It invokes test, lint, and link gates, and separately checks merge-conflict markers, cross-references, external integration documentation URL schemes, and generated provider-overview drift. Local focused checks provide fast feedback; run generated-site checks when a change can affect emitted routes, imports, redirects, or anchors, and rely on CI for credentialed sample behavior.
+`make test` runs pytest against `tests/unit_tests` with network sockets disabled except Unix sockets. Core CI runs on pushes to `main`, pull requests, and manual dispatch. It invokes test, lint, and link gates, and separately checks merge-conflict markers, cross-references, external integration documentation URL schemes, and generated provider-overview drift. The separate pull-request version-claims gate checks changed `src/**/*.mdx` files for package releases that exist on PyPI or npm; it verifies publication, not whether a floor is the right feature requirement. Local focused checks provide fast feedback; run generated-site checks when a change can affect emitted routes, imports, redirects, or anchors, and rely on CI for credentialed sample behavior.
 
 ## Continue by domain
 
 - [Repository Source Map](/openwiki/architecture/source-map.md): durable source owners, deployment boundaries, and generated inputs.
 - [Adding and Moving Documentation Pages](/openwiki/operations/adding-pages.md): page lifecycle, navigation, redirects, and focused checks.
+- [Published Package Version Claims](/openwiki/operations/version-claims.md): package-version ownership, registry checks, and the changed-page pull-request gate.
 - [Testing Overview](/openwiki/testing/test-overview.md): what local, generated-site, and CI-only validation proves.
 - [Runnable Code Samples and Snippet Generation](/openwiki/workflows/code-sample-lifecycle.md): markers, runners, generated snippets, traces, and CI operations.
 - [GitHub Actions and CI Automation](/openwiki/integrations/github-actions.md): workflow authority, secrets boundaries, scheduled writers, previews, and publication.
