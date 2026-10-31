@@ -1,0 +1,189 @@
+---
+title: Subagents
+sidebarTitle: Subagents
+description: Delegate work to subagents that run inline or in the background for a managed deep agent.
+---
+
+import ManagedDeepAgentsPublicBetaNote from '/snippets/javascript/langsmith/managed-deep-agents-public-beta-note.mdx';
+
+Give a managed deep agent subagents to delegate specialized or context-heavy work, such as researching a topic, reviewing a change, or running a long task in the background with an async subagent while the agent keeps talking to the user. Each subagent has its own prompt and context window. It can also use its own model and tools.
+
+<ManagedDeepAgentsPublicBetaNote />
+
+There are two types of subagents:
+
+| Type | How the agent uses it | Use it for |
+| --- | --- | --- |
+| Subagent | Calls it with `task` and waits for its answer | Focused work whose result the agent needs before it continues |
+| Async subagent | Starts it with `start_async_task` and keeps working; the subagent reports back when it finishes | Long-running or parallel work the agent doesn't need to wait for |
+
+A subagent runs inside the agent's graph. Managed Deep Agents builds each async subagent as its own graph in the same deployment. Both kinds work in the agent's [sandbox](/langsmith/javascript/managed-deep-agents-sandboxes). For how subagents work in the open source Deep Agents SDK, see [Subagents](/oss/javascript/deepagents/subagents) and [Async subagents](/oss/javascript/deepagents/async-subagents).
+
+<Note>
+Async subagents require `managed-deepagents>=0.10.0`.
+</Note>
+
+## Declare a subagent
+
+Add subagent definitions to `subagents` in the [agent definition](/langsmith/javascript/managed-deep-agents-agent-definition). Each one needs a `name` and a `description`; the agent uses the description to decide when to delegate. To make a subagent async, add `async` to its definition:
+
+
+
+<Tabs>
+  <Tab title="Subagent">
+```ts agent.ts
+import { defineDeepAgent } from "managed-deepagents";
+
+export const agent = defineDeepAgent({
+  name: "research-assistant",
+  model: "openai:gpt-5.5",
+  subagents: [
+    {
+      name: "reviewer",
+      description: "Reviews a draft for accuracy and clarity.",
+      systemPrompt: "Review the draft and list concrete fixes.",
+    },
+  ],
+});
+```
+  </Tab>
+  <Tab title="Async subagent">
+```ts agent.ts
+import { defineDeepAgent } from "managed-deepagents";
+
+export const agent = defineDeepAgent({
+  name: "research-assistant",
+  model: "openai:gpt-5.5",
+  subagents: [
+    {
+      name: "researcher",
+      description: "Researches a topic in the background.",
+      systemPrompt: "Research the topic and report your findings.",
+      async: true,
+    },
+  ],
+});
+```
+  </Tab>
+</Tabs>
+
+
+## Subagents
+
+The agent runs a subagent with the `task` tool and waits for its answer. The subagent runs inside the agent's graph and works in the agent's [sandbox](/langsmith/javascript/managed-deep-agents-sandboxes).
+
+Every agent also gets a `general-purpose` subagent for delegated work that doesn't match a declared subagent. See [The general-purpose subagent](/oss/javascript/deepagents/subagents#the-general-purpose-subagent).
+
+### What a subagent inherits
+
+A subagent starts from the agent's configuration and replaces what its definition sets:
+
+
+
+| Setting | Behavior |
+| --- | --- |
+| `model`, `tools`, `permissions`, `interruptOn` | Uses the agent's setting unless the subagent sets its own |
+| `systemPrompt` | Uses only the subagent's prompt, not the agent's [instructions](/langsmith/javascript/managed-deep-agents-instructions) |
+| `skills` | Loads only the skills the subagent lists; list `"/skills/"` to load the agent's |
+| `middleware`, `responseFormat` | Uses only the subagent's own |
+| Memory | Not loaded |
+
+
+A subagent in fork mode starts with a copy of the agent's conversation and also uses the agent's instructions, middleware, skills, and memory. See [Choose a launch mode](/oss/javascript/deepagents/async-subagents#choose-a-launch-mode).
+
+## Async subagents
+
+The agent starts an async subagent with `start_async_task` and keeps working while the subagent runs on its own thread. The subagent reports back when it finishes.
+
+### How async subagents run
+
+Each async subagent appears in the deployment as its own graph, named after the agent and the subagent, such as `research-assistant--researcher`. Managed Deep Agents finds async subagents by reading your agent file when it builds, not by running it. Write each one directly in `subagents` or in a variable, with a fixed `name` and `async` value. An async subagent built by a function or a loop gets no graph, and the agent fails to start. A [graph factory](/langsmith/javascript/managed-deep-agents-agent-definition#select-configuration-per-run) can declare async subagents too, as long as it returns the agent definition directly.
+
+Agents served by `mda dev` or a deployment also get an async version of the `general-purpose` subagent, so the agent can run delegated work in the foreground or in the background.
+
+The agent manages async subagents with these tools:
+
+| Tool | What it does |
+| --- | --- |
+| `start_async_task` | Starts an async subagent on its own thread and returns a task ID right away |
+| `check_async_task` | Gets a task's status and, once it finishes, its result |
+| `update_async_task` | Sends new instructions to a task |
+| `cancel_async_task` | Stops a running task |
+| `list_async_tasks` | Lists the agent's tasks and their statuses |
+
+The tools come with the async `general-purpose` subagent, so every agent served by `mda dev` or a deployment has them. Agents run with `mda eval` don't.
+
+### Get notified when a subagent finishes
+
+Async subagents report back on their own, whether the agent is busy, idle, or waiting on an approval. The agent doesn't need to poll with `check_async_task`:
+
+| When the subagent finishes, the agent is | What happens |
+| --- | --- |
+| Busy | The agent checks its unfinished tasks before each model call, so it gets the result mid-run |
+| Idle | The subagent wakes the agent with a new run |
+| Paused on an approval | The approval is left alone; the agent gets the result once the user answers |
+
+Each result is reported once. Before each model call, the agent makes one status check per unfinished task, capped at 5 seconds.
+
+If a subagent pauses for approval, the agent sees its task as `waiting` until someone answers on the subagent's thread. See [Answer approvals in channels](#answer-approvals-in-channels).
+
+### Configure an async subagent
+
+
+
+Do not set `graphId`, `url`, `headers`, or `runnable` on an async subagent: Managed Deep Agents builds and launches its graph itself. These options pass through to Deep Agents:
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `updateStrategy` | `"interrupt"` | `"enqueue"` queues a follow-up behind the current run instead of interrupting it |
+| `notifyParent` | `true` | Wake the agent when the subagent finishes while the agent is idle. Set to `false` to handle results yourself, such as with `webhook` |
+| `webhook` | Not set | URL the Agent Server calls whenever a run of the subagent finishes, with the run's thread ID, run ID, and status. See [Deliver results through your app](/oss/javascript/deepagents/async-subagents#deliver-results-through-your-app) |
+| `mode` | `"isolated"` | `"fork"` starts the subagent with a copy of the agent's conversation |
+
+
+For how each option behaves, see [Async subagents](/oss/javascript/deepagents/async-subagents).
+
+To use an agent on another deployment as an async subagent, declare it with its graph ID and `url` and without `async`, and Managed Deep Agents passes it to Deep Agents unchanged. For a Managed Deep Agent, the graph ID is its `name`. See [remote subagents](/oss/javascript/deepagents/async-subagents#http-transport-remote).
+
+### What an async subagent inherits
+
+An async subagent inherits from the agent the same way a [subagent](#what-a-subagent-inherits) does. In fork mode, it starts with a copy of the agent's conversation but keeps its own prompt, tools, and middleware, so it usually doesn't reuse the agent's [prompt cache](/oss/javascript/deepagents/async-subagents#fork-mode).
+
+### Share the sandbox and trace
+
+An async subagent starts on a new thread, separate from the agent's. Because the agent starts it as the same user, it shares the agent's sandbox. With [private threads](/langsmith/javascript/managed-deep-agents-identity), a run of the subagent from a different user gets its own sandbox. When it shares the sandbox, it uses the agent's files as they are and only refreshes connector credentials. If the agent hasn't used its sandbox yet, the subagent creates it, and the agent uses the same sandbox later.
+
+When tracing is on, an async subagent's run appears under the agent's run in LangSmith.
+
+### Answer approvals in channels
+
+When an agent runs in a [channel](/langsmith/javascript/managed-deep-agents-channels), its async subagents report to the same channel thread:
+
+1. The user asks the agent for work in a channel thread, and the agent starts an async subagent.
+2. If the subagent pauses for [approval](/langsmith/javascript/managed-deep-agents-tools#human-in-the-loop), Slack shows the request in the thread, and answering it there resumes the subagent. Other channels don't post the request; resume the subagent's thread as you would any [interrupt](/langsmith/javascript/managed-deep-agents-tools#respond-to-an-interrupt), in Studio or through the API.
+3. When the subagent finishes, the agent gets its result and replies in the thread: in its current run if it's still working, or in a new run if it's idle. Turning off parent notifications stops the new run.
+
+Managed Deep Agents doesn't post a subagent's answer to the channel; the agent decides what to tell the user.
+
+### Evaluate an agent
+
+`mda eval` runs without an Agent Server, so it can't evaluate an agent that declares async subagents. Evaluated agents also don't get the async `general-purpose` subagent or the async task tools.
+
+## See also
+
+- [Subagents](/oss/javascript/deepagents/subagents)
+- [Async subagents](/oss/javascript/deepagents/async-subagents)
+- [Agent definition](/langsmith/javascript/managed-deep-agents-agent-definition)
+- [Sandboxes](/langsmith/javascript/managed-deep-agents-sandboxes)
+- [Channels](/langsmith/javascript/managed-deep-agents-channels)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/managed-deep-agents-subagents.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
