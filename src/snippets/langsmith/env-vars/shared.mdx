@@ -70,6 +70,31 @@ For the full set of tracing options, see the [`DD_*` environment variables](http
 Enabling `DD_API_KEY` (and thus `ddtrace-run`) can override or interfere with other auto-instrumentation solutions (such as OpenTelemetry) that you may have instrumented into your application code.
 </Note>
 
+## `FF_PROFILE_IMPORTS`
+
+Set `FF_PROFILE_IMPORTS` to `true` to find out why a graph is slow to load. Defaults to `false`. Added in `langgraph-api==0.6.8`.
+
+Agent Server runs your graph code when it imports your graph modules at startup, so work that happens at import time delays readiness. Examples include network calls, database or client setup, reading large files, and heavy dependency imports. When a graph import takes longer than 3 seconds, the server logs a warning that suggests setting this variable.
+
+With the variable set, the server profiles the import of each Python module it loads from your configuration. This covers your graphs, custom app, auth handler, store, checkpointer, and encryption module. If any function inside an import takes at least 1 second, the server logs a `slow_import_profile` warning that lists up to 10 of the slowest. Each entry shows the function, its cumulative time, and where in your module it was called from. The report has the following format, with illustrative values:
+
+```text
+Slow startup for './agent.py:graph' (12.3s)
+
+    Slowest operations:
+       10.84s  connect_to_database      clients/db.py:42
+               ↳ from agent.py (module-level)
+```
+
+The report identifies the slow operation, so you can move it inside a function or initialize it lazily instead of running it at import time.
+
+Keep the following in mind:
+- Profiling adds overhead, so the reported times run higher than normal. Remove the variable once you've fixed the problem.
+- Calls made at the top level of a module are attributed to `(module-level)` with no line number.
+- Operations that take less than 1 second each don't appear in the report, even when many of them add up to a slow import.
+- Import profiling works for Python graphs only. JavaScript graphs aren't supported yet.
+- Only import time is profiled. Delays after your graph is imported, such as in your custom app lifespan, don't appear.
+
 ## `LANGGRAPH_AES_KEY` and `LANGGRAPH_AES_JSON_KEYS`
 
 Set `LANGGRAPH_AES_KEY` to a 16, 24, or 32-byte key to encrypt checkpoints at rest. Set `LANGGRAPH_AES_JSON_KEYS` to a comma-separated list of JSON keys to also encrypt wherever they appear in thread, assistant, run, cron, and store data. `LANGGRAPH_AES_JSON_KEYS` requires `LANGGRAPH_AES_KEY`.
