@@ -1,11 +1,11 @@
 ---
-type: integration
+type: build integration
 title: NPM Snippet Components
-description: How the builder overlays sandbox components from @langchain/docs-sandbox into generated documentation, how MDX pages consume them, and how to validate the resulting output.
-tags: [npm-package, snippet-components, build-system, mdx-integration, mintlify]
+description: How local JSX and TSX snippet components and allowlisted @langchain/docs-sandbox artifacts reach the built documentation site. Explains their distinct build, language-routing, and refresh behavior relative to MDX and generated code-sample snippets.
+tags: [npm, snippets, jsx, documentation-build, mdx]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-08T08:21:44.568Z
+    at: 2026-10-20T08:20:37.912Z
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
@@ -17,6 +17,10 @@ sources:
     resource: repo://pipeline/commands/build.py
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
+  - id: openwiki-source-636af982f42ea94123d2d7e9
+    resource: repo://pipeline/core/watcher.py
+  - id: openwiki-source-560bf24db9566b97ee19e383
+    resource: repo://scripts/generate_code_snippet_mdx.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
   - id: openwiki-source-13bb4a68b3327e33785edf79
@@ -25,52 +29,53 @@ sources:
     resource: repo://src/oss/langchain/frontend/integrations/copilotkit.mdx
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-08T08:21:44.568Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-20T08:20:37.912Z" }
 ---
 
-# NPM Snippet Components
+## Overview
 
-`@langchain/docs-sandbox` is the package boundary for selected interactive documentation components. The documentation repository declares the package as `^0.0.23`; the lockfile resolves the current installation to `0.0.23`. The builder, not MDX authors or Mintlify configuration, determines which package artifacts become site assets. Generated files under `build/` are deployable output and must not be edited as component source.
+The site has three materially different kinds of reusable content under `src/snippets/`:
 
-## Published component contract
+| Kind | Source of truth | Build treatment | Language behavior |
+| --- | --- | --- | --- |
+| Local JSX/TSX component | A `.jsx` or `.tsx` file in `src/snippets/` | Copied as a shared file to the same relative `build/` path | One shared component asset |
+| Package component | An explicitly mapped file in `node_modules/@langchain/docs-sandbox/dist/` | Copied during the full-build npm overlay | One shared component asset |
+| Authored MDX snippet | A `.md` or `.mdx` file in `src/snippets/` | Preprocessed into a default and two language-specific copies | Imports are rewritten for Python or JavaScript pages |
+| Generated code-sample snippet | Generated `.mdx` under `src/snippets/code-samples/` from `src/code-samples/` | Thereafter handled as an authored MDX snippet | Follows the MDX-snippet path, not the component path |
 
-The builder has an explicit allowlist rather than copying the package's entire `dist/` directory:
+Component files are deliverable assets, not Markdown content processed by `preprocess_markdown()`. A local component can use repository-owned implementation, such as `EventSelectionGraph`; package components let the documentation site consume an implementation published by `@langchain/docs-sandbox`. In both cases, MDX imports the generated public `/snippets/...` path rather than a package path.
 
-| Package artifact | Generated destination | Consumer |
-| --- | --- | --- |
-| `PatternEmbed.jsx` | `build/snippets/pattern-embed.jsx` | MDX import from `/snippets/pattern-embed.jsx` |
-| `ExampleEmbed.jsx` | `build/snippets/example-embed.jsx` | MDX import from `/snippets/example-embed.jsx` |
-| `ChatLangChainEmbed.js` | `build/ChatLangChainEmbed.js` | Site-wide deferred script configured in `src/docs.json` |
+## Full-build flow and precedence
 
-This mapping is the compatibility contract between the published package and the documentation build. Adding a package artifact has two required integration changes: publish it in the package and add an explicit source-name-to-output-name entry to the appropriate builder mapping. Updating the dependency without a mapping does not expose a new artifact to the site.
-
-`src/docs.json` injects `/ChatLangChainEmbed.js` with `defer`, so the root-level allowlisted file is a site configuration dependency. The two JSX artifacts are instead imported by MDX and resolved from the shared `/snippets/` URL space.
-
-## Copy boundary and lifecycle
-
-`make build` first runs `npm install` and then invokes the Python build command, which instantiates `DocumentationBuilder(src, build)` and calls `build_all()`. A full build deletes and recreates `build/`, emits routed documentation, copies shared source files, overlays package components, and only then produces the LLM indexes.
+`make build` runs `npm install` and then `uv run pipeline build`. The command constructs a `DocumentationBuilder` for `src` and `build` and calls `build_all()`. A full build deletes and recreates `build/`, produces the documentation families, copies shared files, and finally applies the npm overlay. It does not generate `llms.txt` indexes.
 
 ```mermaid
 flowchart TD
-    Install["npm install"] --> Package["node_modules package dist"]
-    Source["authored src content"] --> Shared["copy shared source files"]
-    Package --> Overlay["copy allowlisted package artifacts"]
-    Shared --> Overlay
-    Overlay --> Output["generated build assets"]
-    Output --> Render["Mintlify renders build"]
+    Install["npm install"] --> Package["Package dist artifacts"]
+    Source["src snippets and shared files"] --> Shared["Copy shared files"]
+    Shared --> Overlay["Copy allowlisted npm artifacts"]
+    Package --> Overlay
+    Overlay --> Output["Generated build tree"]
+    Output --> Site["Documentation site"]
 ```
 
-This shows the full-build overlay: package artifacts are copied after shared source files and become the generated assets Mintlify consumes.
+This is the full-build order: package artifacts copied by the overlay replace a source-tree file at the same output path.
 
-The package source is `node_modules/@langchain/docs-sandbox/dist/`, located relative to the parent of the configured source directory. `_copy_npm_snippets()` creates `build/snippets/`, copies each configured artifact with metadata preservation, and logs the result. It runs after `_copy_shared_files()`, deliberately replacing a source-tree file at the same generated destination when the package artifact is available. That ordering establishes package ownership of these named generated components without treating a copied `build/` file as editable source.
+The builder recognizes `.jsx` and `.tsx` as component extensions in its direct-copy set. Consequently, a local file such as `src/snippets/event-selection-graph.jsx` is copied to `build/snippets/event-selection-graph.jsx` during shared-file collection. This is a general source-tree mechanism—no mapping is needed for a local component.
 
-### Failure semantics
+The npm integration is deliberately narrower. `package.json` declares `@langchain/docs-sandbox` as `^0.0.24`; the lockfile resolves `0.0.24`, whose peer dependencies include React `^18 || ^19` and Zod `^4.3.6`. `_copy_npm_snippets()` reads its `dist/` directory from the repository's `node_modules` and copies only the class-level allowlists:
 
-The overlay is deliberately non-fatal. If the package `dist/` directory is absent, the builder logs a warning telling the operator to run `npm install` and returns. If an individual allowlisted file is absent, it logs a warning and continues with the remaining entries. Consequently, a successful builder process alone does not prove that every interactive component was installed: inspect the generated destinations or render the dependent page after a package or mapping change. A same-named source artifact copied earlier can remain when an overlay source is missing, but it is not a substitute for changing the published component contract.
+| Package `dist/` artifact | Generated location | Consumer |
+| --- | --- | --- |
+| `PatternEmbed.jsx` | `build/snippets/pattern-embed.jsx` | MDX import from `/snippets/pattern-embed.jsx` |
+| `ExampleEmbed.jsx` | `build/snippets/example-embed.jsx` | MDX import from `/snippets/example-embed.jsx` |
+| `ChatLangChainEmbed.js` | `build/ChatLangChainEmbed.js` | Deferred script in `docs.json` |
 
-## Authoring MDX consumers
+Publishing another file in the package does not make it available to the site. To add one, update the relevant allowlist, choose a stable generated name and destination, update the importing MDX or site configuration, and add focused coverage. The overlay runs after shared-file copying specifically so a package artifact wins over a local fallback with the same generated path.
 
-MDX pages consume only the stable generated import paths, not `node_modules` paths and not `build/` filesystem paths. Representative pages use:
+## How pages consume package components
+
+Pages use the emitted paths, for example:
 
 ```jsx
 import { PatternEmbed } from "/snippets/pattern-embed.jsx"
@@ -84,18 +89,38 @@ import { ExampleEmbed } from "/snippets/example-embed.jsx"
 <ExampleEmbed example="copilotkit" minHeight={700} />
 ```
 
-`PatternEmbed` is used by both versioned OSS frontend pages and the language-agnostic Deep Agents Code content; the observed calls provide a `pattern` identifier and sometimes `minHeight`. `ExampleEmbed` is used by LangChain frontend integration pages with an `example` identifier and `minHeight`. The implementation and the set of supported identifiers live in the published package, so repository changes should limit themselves to using values supported by the pinned package version rather than assuming undocumented props or editing a copied artifact.
+`pattern`, `example`, and component props are contracts of the installed component implementation. Confirm that an identifier remains supported when upgrading the package. The root-level `ChatLangChainEmbed.js` follows a different consumption route: `src/docs.json` includes it in `head` with `defer`, and shared-file copying places that configuration in the generated tree before the overlay supplies the script.
 
-The language-specific import rewrite applies only to imports ending in `.md` or `.mdx`. It redirects those Markdown snippets to `/snippets/python/` or `/snippets/javascript/` in language-targeted output. Imports of `.jsx` and `.tsx` components—including the two package paths above—remain unchanged, so one shared component serves every emitted language variant. Local JSX/TSX files that authors intentionally place under `src/snippets/` are also shared build inputs, but they are a separate source-owned mechanism; for a mapped sandbox destination, the later package overlay wins when installed.
+## Why components are not language-scoped
 
-For Markdown snippet processing and its three emitted variants, see [Markdown Preprocessing Pipeline](/openwiki/concepts/preprocessing.md). For the overall generated-tree ownership model, see [Build System Architecture](/openwiki/architecture/build-system.md) and [Mintlify Integration](/openwiki/integrations/mintlify.md).
+The regular Markdown path first calls `preprocess_markdown()`, which resolves cross-references, CTA attribution, and `:::python`/`:::js` blocks. For a language build, the builder then rewrites only imports from `/snippets/` ending in `.md` or `.mdx`. An unscoped Markdown snippet import becomes `/snippets/python/...` or `/snippets/javascript/...`; an already scoped one is preserved.
 
-## Safe change and validation workflow
+Markdown snippets themselves are emitted three ways: a Python-default copy at the original snippet path plus copies under `build/snippets/python/` and `build/snippets/javascript/`. This ensures that nested versioned pages use a snippet with routes and conditional content resolved for their target language, while unversioned consumers use the default.
 
-1. **Change the right owner.** For behavior inside `PatternEmbed`, `ExampleEmbed`, or `ChatLangChainEmbed`, make and publish the change in `@langchain/docs-sandbox`; then update the dependency lock state and builder mapping here when needed. For a page integration, edit the MDX page and import the stable `/snippets/` path.
-2. **Build from a clean dependency installation.** Run `make build`. It installs npm dependencies, recreates `build/`, and performs the overlay. Confirm the expected files exist at `build/snippets/pattern-embed.jsx`, `build/snippets/example-embed.jsx`, or `build/ChatLangChainEmbed.js` as applicable. This catches an absent package directory, a changed `dist/` filename, or a missing mapping.
-3. **Inspect every relevant route.** Versioned MDX consumers need both Python and JavaScript output checked; their component import remains `/snippets/...jsx`, while ordinary Markdown snippet imports are language-scoped. Also inspect unversioned consumers when applicable. Use Mintlify local development to verify that the component renders with the intended identifiers and dimensions.
-4. **Check generated links and anchors.** Run `make broken-links-with-anchors` when the change affects a page or its anchors. It rebuilds first and runs Mintlify from `build/`. Its filter intentionally excludes standalone snippets because their absolute links are valid when imported, not necessarily when checked as pages.
-5. **Run focused unit coverage for builder behavior.** `tests/unit_tests/test_builder.py` asserts that Markdown snippet imports gain Python or JavaScript prefixes, already-prefixed imports remain unchanged, and a `PatternEmbed` JSX import is not rewritten. It also verifies that a local TSX snippet is copied as a shared artifact. When changing the overlay mapping or its error behavior, add a direct `_copy_npm_snippets()` fixture test; the existing focused tests do not exercise the npm package copy itself.
+JSX and TSX imports do not match the Markdown-only rewrite pattern. Thus local component imports and `PatternEmbed`/`ExampleEmbed` imports stay at a single `/snippets/*.jsx` path, shared by both documentation variants. Do not add a language prefix to component imports unless the builder's import rewrite and output contract are intentionally extended together.
 
-The focused builder tests are complementary to a rendered preview: string-rewrite tests protect language routing, while a clean build and Mintlify preview validate package installation, file presence, MDX resolution, and browser rendering.
+Generated code samples are also different from components. `make code-snippets` extracts marked regions from executable files under `src/code-samples/`, produces intermediates under `src/code-samples-generated/`, and renders MDX into `src/snippets/code-samples/`. Once generated, that MDX is ordinary snippet Markdown: it is handled by the language-aware MDX-copy path. Changes to executable samples belong in `src/code-samples/`, not in the generated MDX; see [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md).
+
+## Failure and refresh behavior
+
+The npm overlay is best-effort:
+
+- If `node_modules/@langchain/docs-sandbox/dist/` is absent, it logs a warning to run `npm install` and returns.
+- If an allowlisted file is absent, it warns and continues with the remaining mappings.
+- A successful pipeline invocation therefore does not prove that every interactive component exists in `build/`.
+
+The development watcher rebuilds changed source paths through `build_file()`. It does not call `build_all()` and therefore does not rerun `_copy_npm_snippets()`. Use a full build after a package install, package upgrade, or allowlist change:
+
+```bash
+make build
+```
+
+For a missing package-provided component, inspect the installed `dist/` filename, run the full build, then check its mapped output path and the importing route. For a local component, check the source-relative `build/snippets/` path. Do not edit `node_modules/` or `build/`: installation and a full build replace them.
+
+## Tests and safe changes
+
+Focused builder tests establish that a local TSX snippet is copied and that language rewriting changes Markdown imports while preserving `.jsx` and already language-scoped Markdown imports. There is no direct unit test for `_copy_npm_snippets()`.
+
+When changing npm artifacts, add tests for the mapping's output, overwrite precedence over a source-tree fallback, and both missing-directory and missing-artifact warnings. Keep the existing MDX import-rewrite coverage separate: it protects the intentional boundary between versioned Markdown snippets and shared JSX/TSX components.
+
+For broader context, see [Build System Architecture](/openwiki/architecture/build-system.md) and [Preprocessing and Link Resolution](/openwiki/concepts/preprocessing.md).

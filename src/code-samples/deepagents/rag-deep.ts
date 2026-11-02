@@ -7,6 +7,7 @@ if (!process.env.OPENAI_API_KEY) {
 
 // :remove-start:
 import { MemoryVectorStore } from "@langchain/classic/vectorstores/memory";
+import { uuid7 } from "langsmith";
 import { OpenAIEmbeddings } from "@langchain/openai";
 // :remove-end:
 
@@ -101,7 +102,7 @@ const backend = new StateBackend();
 const searchDocumentation = tool(
   async ({ query }) => {
     const retrievedDocs = await vectorStore.similaritySearch(query, 4);
-    const batchId = crypto.randomUUID().slice(0, 8);
+    const batchId = uuid7().slice(0, 8);
     const uploads: Array<[string, Uint8Array]> = [];
     const savedPaths: string[] = [];
     const encoder = new TextEncoder();

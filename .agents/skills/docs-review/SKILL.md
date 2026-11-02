@@ -73,25 +73,52 @@ going further.
 
 ## Step 2. Run Vale
 
-In the main checkout, `make lint_prose FILES="<files>"` is enough. Vale's binary
-is gitignored, so a fresh worktree does not have it and `make lint_prose` there
-fails with `.bin/vale: No such file or directory`. From a worktree, call the main
-checkout's binary by path so it picks up `.vale.ini`:
-
-```bash
-cd <worktree> && <main-checkout>/.bin/vale --glob='!**/node_modules/**' <files>
-```
+Run `make lint_prose FILES="<files>"`, in the main checkout or a worktree alike.
+The target installs the Vale version pinned in `.mise.toml` into `.bin/vale` when
+it is missing, so a fresh worktree needs no setup beyond network access.
 
 Vale is deterministic and CI blocks on it, so its output is not a judgment call.
 Report every violation with its file and line. If invoked with `--fix`, correct
 them; otherwise list them.
 
+Lint the merge-base version of each changed file as well, and report the
+difference rather than the raw count:
+
+```bash
+git show origin/main:<file> > <scratch>/base-<name>
+make lint_prose FILES="<scratch>/base-<name>"
+```
+
+A file that already failed on `main` carries pre-existing debt the author did
+not introduce. A file that was clean on `main` and fails now is this diff's CI
+blocker. Say which one it is, because attribution is the difference between a
+finding the author has to fix and one they can reasonably decline.
+
+Reading the diff text is not a substitute for either run. A patch shows added
+lines without their column offsets or their surrounding component, which is
+exactly what these rules turn on.
+
 Vale covers terminology, contractions, first person, future tense, Oxford
 commas, spaced em dashes, navigation-path arrows, and heading case. **Do not
 spend model judgment re-checking what Vale already checks**, with one exception:
-Vale does not scan inside JSX components such as `<Note>` and `<Tip>`, so a clean
-run is not proof that content inside them complies. Grep the added lines in those
-blocks for the mechanical rules yourself.
+Vale does not scan every part of an MDX file, so a clean run is not proof of
+compliance. It misses content inside JSX components (`<Note>`, `<Tip>`, `<Tab>`,
+`<Step>`, `<Accordion>`) and inside table cells. A page can pass Vale with four
+spaced em dashes in it.
+
+Grep the mechanical rules yourself over any file whose diff touches those
+places:
+
+```bash
+grep -nE ' — | – ' <files>                      # spaced em dashes
+grep -nEi "\b(don't|can't|won't|isn't|it's|you'll)\b" <files>   # contractions
+grep -nE '\b(we|our|us|I)\b|\bwill [a-z]+\b' <files>          # first person, future tense
+grep -n '→' <files>                              # navigation arrows
+```
+
+Report a hit inside a component the same way you would report a Vale error: it
+would be one if Vale could see it. A `—` used as an empty table-cell marker is
+fine and is not a finding.
 
 ## Step 3. Check structure against the style guide
 
@@ -129,6 +156,14 @@ These are the rules that need reading:
   hides who treats it. Skip when the actor is genuinely irrelevant or unknown.
 - **Filler and hedging**: "Note that", "Specifically", "simply", "easily",
   "just", "very", "basically", "obviously". Cut the word, keep the sentence.
+- **A pronoun, "this", or "the above" whose antecedent the diff removed.**
+  Compression is the usual cause: the noun the sentence refers back to sat in a
+  clause the edit cut. Name the thing again.
+- **A condition, default, or requirement the diff shortened away.** Compare the
+  hunk against its base rather than reading the new text alone. A sentence that
+  got shorter by dropping when the behavior applies, or what value it applies
+  to, is a regression, and it lints clean. Quote "Be concise: cut filler words
+  and wordy phrases" and name the fact the cut removed.
 - **Product versus common noun capitalization.** A capitalized feature name that
   appears nowhere else in the file, or that disagrees with the UI label used
   elsewhere on the same page, is the tell. Grep the file for the term's other
@@ -147,6 +182,29 @@ heading form or phrasing is wrong, grep the repository for how often it already
 appears. A form used widely is established practice, not a defect, however much
 the guide seems to prohibit it. Report the count either way.
 
+A diff can also **leave** a convention rather than break a new one. Lowercasing
+the explanation in `- **Term**: Explanation.`, dropping a trailing period, or
+swapping a colon lead-in for a dash each reads as a harmless copy edit on its
+own. Compare the before and after of that exact form, then count both spellings
+across `src/`. When the base was following the majority, the change is the
+finding.
+
+Measure the same way when the diff **adopts** a convention rather than breaks
+one, because a repeated block has three parts and matching two of them still
+lands wrong:
+
+- **Component.** `<Note>` or `<Warning>` or plain prose.
+- **Wording.** Byte-identical to the siblings, or subtly reworded.
+- **Placement.** Before or after the intro paragraph, relative to imports and
+  the first heading.
+
+A status callout copied word for word from the one page in thirteen that puts it
+below the intro is a finding, and only a placement count surfaces it. Report the
+count for each of the three.
+
+When the same block appears on three or more pages, say so: it belongs in
+`src/snippets/` rather than duplicated. See `add-docs-page`.
+
 ## Step 5. Check the mechanics the diff implies
 
 Only when the diff triggers them:
@@ -157,8 +215,12 @@ Only when the diff triggers them:
 - New internal links: root-relative, and free of `/python/` or `/javascript/`?
 - A new code block: does it carry a real language tag, and are imports sorted?
 - A page or heading that changed URL: is there a redirect?
+- A PR target: does the description reference its Linear issue with
+  `Closes DOC-N` or `Refs DOC-N`, when one exists? Does it end with a plain AI-disclosure
+  sentence and carry no `Generated with` badge? `check-pr-ai-attribution`
+  fails a PR with a badge.
 
-The `add-docs-page` skill covers all five in detail. Point at it rather than
+The `add-docs-page` skill covers the page mechanics in detail. Point at it rather than
 restating the procedure in a finding.
 
 ## Step 6. Report

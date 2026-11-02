@@ -8,7 +8,7 @@ PROJECT_ID=$(curl -s "https://api.smith.langchain.com/api/v1/sessions?name=defau
 [ -n "$PROJECT_ID" ] && [ "$PROJECT_ID" != "null" ] || { echo "error: could not resolve project id for \"default\"" >&2; exit 1; }
 # :remove-end:
 
-FILTER='and(gt(start_time, "2023-07-15T12:34:56Z"), or(neq(status, "error"), and(eq(feedback_key, "Correctness"), eq(feedback_score, 0.0))))'
+FILTER='and(gt(start_time, "2023-07-15T12:34:56Z"), or(eq(status, "error"), eq(run_type, "llm")))'
 
 curl -X POST "https://api.smith.langchain.com/api/v1/runs/query" \
   -H "x-api-key: $LANGSMITH_API_KEY" \

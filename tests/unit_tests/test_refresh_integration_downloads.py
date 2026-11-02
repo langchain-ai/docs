@@ -34,10 +34,12 @@ from scripts.refresh_integration_downloads import (
     ],
 )
 def test_is_safe_docs_url(url: str, expected: bool) -> None:
+    """Validate whether a documentation URL uses an allowed scheme."""
     assert _is_safe_docs_url(url) is expected
 
 
 def test_normalize_docs_url_rejects_unsafe() -> None:
+    """Reject unsafe URLs and preserve a valid normalized URL."""
     assert _normalize_docs_url("javascript:alert(1)", label="Evil") is None
     assert (
         _normalize_docs_url("https://docs.example.com/", label="Safe")
@@ -46,6 +48,7 @@ def test_normalize_docs_url_rejects_unsafe() -> None:
 
 
 def test_row_from_integration_dict_drops_unsafe_docs_url() -> None:
+    """Drop an unsafe documentation URL when constructing an integration row."""
     row = _row_from_integration_dict(
         rel_path="chat/evil",
         integration={
@@ -60,6 +63,7 @@ def test_row_from_integration_dict_drops_unsafe_docs_url() -> None:
 
 
 def test_model_link_never_emits_unsafe_href() -> None:
+    """Render a safe internal link when an integration URL is unsafe."""
     row = IntegrationRow(
         rel_path="chat/evil",
         name="EvilIntegration",
@@ -78,6 +82,7 @@ def test_model_link_never_emits_unsafe_href() -> None:
 
 
 def test_validate_external_docs_urls_flags_unsafe() -> None:
+    """Report unsafe documentation URLs in integration metadata."""
     data = {
         "python": {
             "chat": [
@@ -99,6 +104,7 @@ def test_validate_external_docs_urls_flags_unsafe() -> None:
 
 
 def test_validate_external_docs_urls_accepts_repo_yaml() -> None:
+    """Accept the repository integration metadata when its URLs are safe."""
     assert validate_external_docs_urls() == []
 
 
@@ -107,13 +113,15 @@ def test_validate_external_docs_urls_accepts_repo_yaml() -> None:
     [
         ("guardrails — prompt", "guardrails—prompt"),
         ("use — the agent", "use—the agent"),
-        ("a–b", "a–b"),
+        ("a–b", "a–b"),  # noqa: RUF001
         ("plain text", "plain text"),
     ],
 )
 def test_normalize_prose_removes_dash_spaces(text: str, expected: str) -> None:
+    """Normalize spaces around em dashes without changing other dashes."""
     assert _normalize_prose(text) == expected
 
 
 def test_escape_cell_normalizes_dashes_and_pipes() -> None:
+    """Normalize dashes and escape pipes in a Markdown table cell."""
     assert _escape_cell("a — b | c") == "a—b \\| c"

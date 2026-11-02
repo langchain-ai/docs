@@ -1,0 +1,77 @@
+# Model IDs that LangSmith in-product onboarding snippets may use.
+#
+# scripts/check_onboarding_models.py reads the snippet files listed under
+# `source`, finds every model ID in them, and reports any ID that is not listed
+# as current for its provider. Each finding suggests the provider's preferred
+# model.
+#
+# This is detect-only. Nothing rewrites the snippets: a snippet can pin a model
+# on purpose, and a change to the product UI needs a frontend review.
+#
+# Fields:
+#   source.repo     GitHub repository that holds the snippets.
+#   source.ref      Branch to read.
+#   source.paths    File paths, or directory prefixes ending in `/`.
+#   providers.*     preferred: the model to suggest in a finding.
+#                   current:   IDs that pass. A listed ID also covers its dated
+#                              snapshots, so `claude-haiku-4-5` passes
+#                              `claude-haiku-4-5-20251001`.
+#   ignore          IDs that look like chat models but are not, so never flag.
+#
+# Choosing `preferred`: use the provider's latest GA small model that works
+# with every snippet for that provider. A hello-world trace does not need a
+# larger model, and one rule across providers is easier to keep current.
+#   - GA only. Skip preview, beta, and experimental IDs.
+#   - Latest generation first. If the newest generation has no small model,
+#     use its next tier up rather than an older small model. For example,
+#     Gemini 3.8 ships no Flash-Lite text model, so Google uses
+#     gemini-3.8-flash, not gemini-3.5-flash-lite.
+#   - Compatible means the snippet runs as written. Check that the model
+#     accepts the snippet's parameters (gpt-6-luna rejects `temperature`
+#     unless reasoning effort is `none`) and that any wrapper or router in
+#     the snippet (Mastra, LiveKit Inference) lists the ID.
+# The LangSmith quickstart and trace-with-* docs pages use the same models,
+# so change them in the same pass.
+#
+# `current` is the provider's current GA lineup plus the release before it.
+# Add a model here when it ships GA; remove one when the provider supersedes
+# it twice.
+
+source:
+  repo: langchain-ai/langchainplus
+  ref: main
+  paths:
+    - smith-frontend/src/Pages/Onboarding/components/snippets/
+    - smith-frontend/src/Pages/Onboarding/components/constants.tsx
+
+providers:
+  openai:
+    preferred: gpt-6-luna
+    current:
+      - gpt-6-luna
+      - gpt-6-astra
+      - gpt-6.1-sol
+      - gpt-6-sol
+      - gpt-5.5
+      - gpt-5.4-mini
+      # LLM-as-judge model in the OSS and LangSmith evaluation examples.
+      - o3-mini
+  anthropic:
+    preferred: claude-haiku-5-5
+    current:
+      - claude-sonnet-5-5
+      - claude-opus-5-5
+      - claude-haiku-5-5
+      - claude-fable-5-1
+      - claude-sonnet-5
+      - claude-opus-5
+  google:
+    preferred: gemini-3.8-flash
+    current:
+      - gemini-3.8-flash
+      - gemini-3.7-flash
+
+ignore:
+  # Speech-to-text model in the LiveKit snippet, not a chat model.
+  - gpt-4o-mini-transcribe
+

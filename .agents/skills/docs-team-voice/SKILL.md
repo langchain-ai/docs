@@ -7,9 +7,10 @@ description: Write or revise documentation prose so it reads like the rest of th
 
 `AGENTS.md` holds the rules a linter can check: no contractions, no first
 person, no future tense, sentence-case headings, Oxford commas, spacing around
-dashes. Vale enforces most of them, and `make lint_prose` is the gate. This
-skill covers what a linter cannot check: rhythm, density, and the shape of a
-sentence that carries information.
+dashes. Vale enforces most of them and `make lint_prose` is the gate, though
+Vale does not scan inside JSX components such as `<Note>` and `<Tip>`, so a
+clean run there proves nothing. This skill covers what a linter cannot check:
+rhythm, density, and the shape of a sentence that carries information.
 
 The targets below are measured from this repository's own pages, not invented.
 
@@ -30,6 +31,10 @@ stand alone.
 
 The second example is two sentences where one long one would have hidden the
 default inside a subordinate clause.
+
+The target is a floor as well as a ceiling. Keep the condition, the actor, and
+the exact value even when they push a sentence long, and split it rather than
+dropping one of them to get under 15 words.
 
 ## Link about half the time
 
@@ -105,9 +110,21 @@ Read the draft once looking only for these:
 - **Hedges and filler.** "simply", "just", "very", "basically", "note that",
   "be sure to", "in order to", "has the ability to". These are near-absent from
   this site's prose, well under one percent of sentences. Delete or replace.
+- **A spaced em dash.** `word — word` fails `LangChain.DashesSpaces` and blocks
+  CI. Prefer a comma, a colon, or two sentences, and reach for `word—word` only
+  when nothing else reads. A bold label opening a paragraph takes a colon:
+  `**Tier assignment**:`, measured at 177 uses in `src/` against 1 for the dash.
 - **A vague identifier** where the exact one belongs.
+- **A cut that took a fact with it.** A tightened sentence that lost its
+  condition, its actor, or its exact value reads cleanly and says something
+  else. Restore the fact and split the sentence.
 - **A first mention with no link**, and repeat mentions that are linked again.
-- **A claim you did not verify.** Check it against the source, or cut it.
+- **A claim you did not verify.** Check it against the product source with the
+  `verify-against-source` skill, or cut it. Another docs page is not a source.
+  Name every claim you could not confirm in the PR body.
+- **A fact that disagrees with a related page.** Grep `src/` for the feature and
+  read the pages that cover it from another angle, such as a CLI reference or a
+  permissions table. The `docs-edit` skill covers what to look for.
 - **An added "key features" list, or a horizontal rule** used to separate
   sections. Neither belongs here.
 

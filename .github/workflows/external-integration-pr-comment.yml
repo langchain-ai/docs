@@ -2,18 +2,19 @@
 # integration docs (hosted MDX pages or external listing YAML rows).
 #
 # Also posts a one-time nudge redirecting non-featured listing PRs to the
-# Integration listing issue form. Featured hosted pages (frontmatter
-# `featured: true`) skip the comment; labeling still applies.
+# Integration listing issue form, then closes the PR. Featured hosted pages
+# or pages with at least 50,000 monthly downloads skip comment and close; labeling still
+# applies.
 #
-# NOTE: Uses `pull_request_target` so it can label and comment on PRs from
-# forks. The script only reads changed files and PR head content from the
+# NOTE: Uses `pull_request_target` so it can label, comment, and close PRs
+# from forks. The script only reads changed files and PR head content from the
 # GitHub API and checks org membership — no untrusted code is executed.
 
 name: External Integration PR Comment
 
 on:
   pull_request_target:
-    types: [opened, ready_for_review, synchronize]
+    types: [opened, ready_for_review, reopened, synchronize]
 
 jobs:
   integration-comment:
@@ -131,9 +132,7 @@ jobs:
               console.log(`Added integration label to PR #${pr.number}`);
             }
 
-            // Skip the listing-form nudge when any newly added MDX page is
-            // featured (maintainer path for hosted guides).
-            async function fileHasFeaturedFrontmatter(filename) {
+            async function fileIsEligible(filename) {
               if (!filename.endsWith('.mdx')) return false;
               try {
                 const head = pr.head;
@@ -150,23 +149,40 @@ jobs:
                 const content = Buffer.from(data.content, 'base64').toString('utf8');
                 const frontmatter = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
                 if (!frontmatter) return false;
-                return /^[ \t]*featured:[ \t]*true[ \t]*$/m.test(frontmatter[1]);
+                if (/^[ \t]*featured:[ \t]*true[ \t]*$/m.test(frontmatter[1])) return true;
+                const packageMatch = frontmatter[1].match(
+                  /^[ \t]+(pypi|npm):[ \t]*["']?([^\s"'#]+)["']?[ \t]*(?:#.*)?$/m
+                );
+                if (!packageMatch) return false;
+                const [, registry, packageName] = packageMatch;
+                const encoded = encodeURIComponent(packageName);
+                const url = registry === 'npm'
+                  ? `https://api.npmjs.org/downloads/point/last-month/${encoded}`
+                  : `https://pypistats.org/api/packages/${encoded}/recent`;
+                const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+                if (!response.ok) throw new Error(`Download lookup returned ${response.status}`);
+                const stats = await response.json();
+                const downloads = registry === 'npm' ? stats.downloads : stats.data?.last_month;
+                if (!Number.isSafeInteger(downloads) || downloads < 0) {
+                  throw new Error('Invalid monthly download count');
+                }
+                console.log(`${registry}:${packageName}: ${downloads} monthly downloads`);
+                return downloads >= 50000;
               } catch (error) {
-                console.log(`Failed to read ${filename} from PR head: ${error.message}`);
-                return false;
+                throw new Error(`Could not verify eligibility for ${filename}: ${error.message}`);
               }
             }
 
-            let hasFeaturedIntegration = false;
+            let hasEligibleIntegration = false;
             for (const file of newIntegrationFiles) {
-              if (await fileHasFeaturedFrontmatter(file.filename)) {
-                console.log(`${file.filename} has featured: true; skipping nudge comment`);
-                hasFeaturedIntegration = true;
+              if (await fileIsEligible(file.filename)) {
+                console.log(`${file.filename} is featured or has at least 50,000 monthly downloads; skipping closure`);
+                hasEligibleIntegration = true;
                 break;
               }
             }
 
-            if (hasFeaturedIntegration) {
+            if (hasEligibleIntegration) {
               return;
             }
 
@@ -178,27 +194,42 @@ jobs:
               per_page: 100,
             });
 
-            if (comments.some((comment) => comment.body.includes(marker))) {
-              console.log('Comment already posted; skipping comment');
-              return;
-            }
-
             const body = [
               marker,
-              `Thanks for contributing a new integration docs page, @${author}!`,
-              '',
-              'New integration listings should be filed as an [Integration listing issue](https://github.com/langchain-ai/docs/issues/new?template=06-integration-submission.yml) rather than a manual PR. Automation opens a review PR from the form fields. See the [integration submission process](https://docs.langchain.com/oss/python/contributing/publish-langchain#make-your-integration-discoverable).',
-              '',
-              'We receive a large number of PRs and review them as quickly as we can. Please bear with us as we work through the queue.',
-              '',
-              'If you have already tagged a maintainer on this PR, do not tag them again.',
+              'New integration listings that are neither featured by LangChain maintainers nor have at least 50,000 monthly downloads should be filed as an [Integration listing issue](https://github.com/langchain-ai/docs/issues/new?template=06-integration-submission.yml) rather than a manual PR. This pull request is being closed.',
             ].join('\n');
+            const existingComment = comments.find(
+              (comment) => comment.user?.type === 'Bot' && comment.body.includes(marker)
+            );
 
-            await github.rest.issues.createComment({
-              owner,
-              repo,
-              issue_number: pr.number,
-              body,
-            });
+            if (existingComment) {
+              if (existingComment.body !== body) {
+                await github.rest.issues.updateComment({
+                  owner,
+                  repo,
+                  comment_id: existingComment.id,
+                  body,
+                });
+              }
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: pr.number,
+                body,
+              });
 
-            console.log(`Posted external integration comment on PR #${pr.number}`);
+              console.log(`Posted external integration comment on PR #${pr.number}`);
+            }
+
+            if (pr.state === 'open') {
+              await github.rest.pulls.update({
+                owner,
+                repo,
+                pull_number: pr.number,
+                state: 'closed',
+              });
+              console.log(`Closed PR #${pr.number}`);
+            } else {
+              console.log(`PR #${pr.number} is already ${pr.state}; skipping close`);
+            }

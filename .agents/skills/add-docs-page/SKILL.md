@@ -42,6 +42,13 @@ description: SEO summary with no markdown, no links, and no backticks
 For OSS pages that differ by language, use `:::python` and `:::js` fences in one
 file rather than writing two files. The build pipeline emits both versions.
 
+Take every fact on the page from the product source, not from memory, a sibling
+docs page, or the request that asked for the page. This covers behavior,
+defaults, field names, version minimums, and examples. Use the
+`verify-against-source` skill to find the repository that owns each claim. Never
+fabricate a value to fill a gap. Leave the claim out, and list what you could
+not confirm in the pull request body and in your reply to the requester.
+
 ## Step 3. Add the navigation entry
 
 Navigation lives in `src/docs.json` under `navigation.products`. There are two
@@ -76,14 +83,20 @@ instead, and touch `docs.json` only when creating a brand-new component group.
 ## Step 4. Add redirects for a move, rename, or deletion
 
 For a move or rename of a file that was already on `main`, run the repo's mover first. It rewrites cross-references
-across the corpus, which hand-editing misses:
+across the corpus, which hand-editing misses: every link to the page in every
+form (`/oss/langchain/x`, `/oss/python/langchain/x`, `href="..."`), plus the
+`src/docs.json` nav entries and redirect destinations that name it:
 
 ```bash
 uv run docs mv src/langsmith/old-name.mdx src/langsmith/new-name.mdx --dry-run
 ```
 
-Drop `--dry-run` once the preview looks right. Then add the redirect to the
-`redirects` array in `src/docs.json`:
+Read any `Left ... links unchanged` warning in the output. It marks links the
+mover could not rewrite safely, such as an unversioned `/oss/integrations/...`
+link that also reaches the other language's page. Fix those by hand.
+
+Drop `--dry-run` once the preview looks right. The mover does not add a
+redirect, so add one to the `redirects` array in `src/docs.json`:
 
 ```json
 { "source": "/langsmith/old-name", "destination": "/langsmith/new-name" }
@@ -98,6 +111,39 @@ page leaves the navigation and its source file is gone with no redirect. The
 same script fails when `docs.json` names a page whose file does not exist, so a
 typo in a page path is caught there rather than at build time.
 
+## Step 4b. Two traps that fail silently
+
+### Extract a snippet once a block appears on three pages
+
+`AGENTS.md` covers how to add a snippet. The rule for **when**: the same block
+repeated on three or more pages becomes one file under `src/snippets/`. A status
+callout duplicated across a page family means the wording change that retires it
+is an edit to every page in the family, and one will be missed.
+
+Verify a new snippet reaches the build. The pipeline rewrites snippet imports to
+language-specific paths, so `/snippets/langsmith/x.mdx` becomes
+`/snippets/python/langsmith/x.mdx` in the output, and a missing target renders as
+nothing at all rather than as an error:
+
+```bash
+ls build/snippets/python/langsmith/<name>.mdx build/snippets/javascript/langsmith/<name>.mdx
+```
+
+### Editing a heading moves its anchor
+
+A heading's slug is derived from its text, so rewording one silently breaks every
+`#anchor` link pointing at it, including links from other pages and entries in
+`src/docs.json`. Grep before editing:
+
+```bash
+grep -rn 'use-with-the-langsmith-gateway' src/ --include=*.mdx --include=*.json
+```
+
+Changing only capitalization is safe, because slugs are lowercased. Changing a
+word is not, and needs either a reworded inbound link or a redirect.
+`<Step>` and `<Accordion>` accept an explicit `id`, which is how to keep a
+landing spot that is no longer a heading.
+
 ## Step 5. Verify
 
 Run all three, in this order:
@@ -106,6 +152,35 @@ Run all three, in this order:
 make lint_prose FILES="src/path/to/page.mdx"
 make build
 make broken-links-with-anchors
+```
+
+When `make build` fails with `Required uv version >=0.9.26 does not match the
+running version`, the local `uv` has drifted from the one `pyproject.toml`
+expects. Run the pipeline directly rather than working around the build:
+
+```bash
+PYTHONPATH="$(pwd)" .venv/bin/python -m pipeline build
+```
+
+A fresh git worktree has no `.venv`, and the same version check blocks
+`uv sync` from creating one. Point at the main checkout's interpreter instead;
+`PYTHONPATH` still loads the pipeline code from the worktree:
+
+```bash
+PYTHONPATH="$(pwd)" <main-checkout>/.venv/bin/python -m pipeline build
+```
+
+A fresh worktree's `.mise.toml` is also untrusted, so the first commit fails
+at the Vale hook with `Config files in <dir>/.mise.toml are not trusted`. Run
+`mise trust` once in the worktree. The `docs-edit` skill covers the permanent
+fix.
+
+`make broken-links-with-anchors` depends on `build`, so it fails the same way.
+Its link-check half runs on its own once the build output exists:
+
+```bash
+cd build && mint broken-links --check-anchors | tee /tmp/bl.txt
+cd .. && python3 scripts/filter_mint_broken_links.py --check-anchors --input /tmp/bl.txt
 ```
 
 Read `make broken-links-with-anchors` output by skipping to the `⎿` lines. Those are the only
@@ -129,13 +204,34 @@ findings that go stale as soon as writing resumes.
 Skip this step for a change too small to have prose in it, such as a pure
 `docs.json` reorder or a redirect-only fix.
 
+## Step 7. Open the pull request
+
+Commit, push, and open the PR however you usually do. If the change belongs on
+an existing PR, use `docs-edit` instead. Two rules apply to the PR description:
+
+- **Linear**: When the work has a Linear issue, link it with
+  `Closes [DOC-N](<linear url>)` or `Refs [DOC-N](<linear url>)` as
+  appropriate. `sync-linear-issue-from-pr.yml` only syncs status for
+  docs-release-watch PRs labeled `release-watch-agent`, so a human PR does not
+  move the issue.
+- **AI disclosure**: End the description with one plain sentence, such as
+  `Prepared with Claude Code.` Do not add a `🤖 Generated with [Claude Code](...)`
+  badge or any similar badge. `check-pr-ai-attribution` fails a PR that carries
+  one, because the squash merge copies it into the commit on `main`.
+
 ## Checklist
 
 - [ ] File in the directory the source-directory table names, not `build/`.
 - [ ] Frontmatter present, `description` free of markdown.
+- [ ] Every claim checked against product source; unconfirmed claims cut and
+      listed in the PR body.
 - [ ] `src/docs.json` entry in the right product, menu item, tab, and group.
 - [ ] Both language entries added if the page is language-versioned.
 - [ ] Index page first if a new group was created.
 - [ ] Redirect added for every moved, renamed, or deleted path.
+- [ ] Inbound `#anchor` links checked before any heading was reworded.
+- [ ] A block now on three or more pages extracted to `src/snippets/`, and its
+      built `python/` and `javascript/` targets confirmed to exist.
 - [ ] `make lint_prose` clean, `make broken-links-with-anchors` shows no new `⎿` lines.
 - [ ] `docs-review` run on the changed files, findings addressed.
+- [ ] PR description references the Linear issue, if any, and has no AI badge.

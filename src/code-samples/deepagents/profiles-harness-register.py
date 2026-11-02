@@ -8,7 +8,7 @@ from deepagents import (
 )
 
 register_harness_profile(
-    "openai:gpt-5.5",
+    "openai:gpt-6-astra",
     HarnessProfile(
         system_prompt_suffix="Respond in under 100 words.",
         excluded_tools={"execute"},

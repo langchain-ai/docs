@@ -1,5 +1,6 @@
 // :snippet-start: runs-retrieve-not-found-after-js
 // :codegroup-tab: After
+import { uuid7 } from "langsmith";
 import { Client, NotFoundError } from "langsmith";
 
 const client = new Client();
@@ -7,7 +8,7 @@ const project = await client.readProject({ projectName: "default" });
 let runId = "<run-id>";
 const startTime = "2026-06-01T12:00:00Z";
 // :remove-start:
-runId = crypto.randomUUID();
+runId = uuid7();
 // :remove-end:
 
 try {

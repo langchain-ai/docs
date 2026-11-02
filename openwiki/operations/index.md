@@ -1,6 +1,7 @@
 # Files
 
-- [Adding and Modifying Documentation Pages](adding-pages.md) - Safely author, move, and review documentation pages by selecting the correct source owner, configuring navigation and redirects, and validating the generated site.
-- [Agent Authoring Skills](agent-skills.md) - Canonical discovery, distribution, authoring boundaries, and structural validation for repository agent skills and instruction files.
-- [Documentation CLI Tools](cli-tools.md) - Reference for the documentation pipeline CLI and Make targets, including generated-output ownership, local validation, executable samples, tracing, and agent-skill linking.
-- [Cross-Reference Links](cross-references.md) - Author and maintain semantic @[ref] links to external API reference documentation. Use the dedicated scope-aware validator to catch unresolved references separately from rendered-site link checking.
+- [Adding and Moving Documentation Pages](adding-pages.md) - Safely add, move, rename, or retire documentation pages by choosing the right source owner, declaring every emitted route in navigation, preserving old URLs with redirects, and validating generated output.
+- [Agent Instructions and Authoring Skills](agent-skills.md) - Use the repository-wide instruction contract and task-specific skills to author, validate, distribute, and document documentation changes safely.
+- [Developer Commands and CLI Tools](cli-tools.md) - Install and operate the local documentation pipeline, Make targets, Mintlify checks, Vale prose linting, and executable samples. Select the command layer and validation boundary that match the change.
+- [Cross-References and API Links](cross-references.md) - Author, resolve, validate, and safely maintain scoped API documentation links using the @[...] cross-reference mechanism. Distinguishes source-level semantic-reference validation from rendered-site link checking.
+- [Validate Package Version Claims](version-claims.md) - Verify that package versions named in authored documentation exist on PyPI or npm. Covers claim discovery, ecosystem resolution, failure semantics, ignore exceptions, focused use, and the checker’s deliberate limits.

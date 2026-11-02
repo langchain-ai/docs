@@ -13,7 +13,7 @@ openwiki personal --update
 openwiki personal --update "Refresh the wiki from configured connectors"
 ```
 
-To store personal wiki state somewhere other than `~/.openwiki`, set `OPENWIKI_CONFIG_DIR`. See [Customize OpenWiki](/oss/openwiki/customize#override-the-state-directory).
+Personal mode does not enable host shell execution for the agent. To store personal wiki state somewhere other than `~/.openwiki`, set `OPENWIKI_CONFIG_DIR`. See [Customize OpenWiki](/oss/openwiki/customize#override-the-state-directory).
 
 ## First-run onboarding
 

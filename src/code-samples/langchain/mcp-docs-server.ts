@@ -1,0 +1,45 @@
+// :snippet-start: mcp-docs-server-js
+import { MCPAdapter } from "@langchain/mcp-adapters";
+import { createAgent } from "langchain";
+
+async function main() {
+  const adapter = new MCPAdapter({
+    servers: { docs: { url: "https://docs.langchain.com/mcp" } }, // [!code highlight]
+  });
+
+  try {
+    const tools = await adapter.listTools();
+    // KEEP MODEL
+    const agent = createAgent({ model: "claude-sonnet-5", tools });
+    // :remove-start:
+    assert.ok(tools.length > 0, "The docs server must expose tools.");
+    assert.ok(agent);
+    if (!process.env.ANTHROPIC_API_KEY) {
+      console.log(
+        "Docs tools discovered and agent constructed; model invocation not tested (no ANTHROPIC_API_KEY).",
+      );
+      return;
+    }
+    // :remove-end:
+    return await agent.invoke({
+      messages: [
+        {
+          role: "user",
+          content: "How do I add short-term memory to a LangChain agent?",
+        },
+      ],
+    });
+  } finally {
+    await adapter.close();
+  }
+}
+// :snippet-end:
+
+// :remove-start:
+import assert from "node:assert/strict";
+
+await main();
+console.log(
+  "✓ mcp-docs-server: tool discovery, agent construction, and cleanup",
+);
+// :remove-end:

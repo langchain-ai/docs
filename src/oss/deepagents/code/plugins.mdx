@@ -27,6 +27,12 @@ The plugin manager also lets you enable, disable, and uninstall installed plugin
 
 Removing a marketplace uninstalls its plugins and removes managed cache data. Deep Agents Code preserves the original source when the marketplace came from a local directory or file. Run `/reload` or start a new session to apply the removal to an active session.
 
+## Discover plugins with the agent
+
+The agent can search your configured marketplace catalogs for missing capabilities and report available plugins.
+
+Ask the agent about available, disabled, or not-yet-installed plugins. It reads local catalogs through `dcode plugin list --json` and `dcode plugin marketplace list --json`, using the current profile. It does not search unconnected marketplaces on the internet.
+
 ## Automatically update plugins
 
 Deep Agents Code can update installed plugins in the background after the first prompt. Updates apply only to enabled plugins that opt in through their own manifest. Plugin authors opt in per plugin by adding this block to that plugin's `plugin.json`:
