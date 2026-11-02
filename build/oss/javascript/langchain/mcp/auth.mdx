@@ -1,0 +1,299 @@
+---
+title: Authentication
+description: Authenticate MCP connections with bearer tokens, OAuth 2.1, or per-user credentials in LangChain.
+---
+
+import McpAuthBearerPy from '/snippets/javascript/code-samples/mcp-auth-bearer-py.mdx';
+import McpAuthOauthPy from '/snippets/javascript/code-samples/mcp-auth-oauth-py.mdx';
+import McpAuthPerServerPy from '/snippets/javascript/code-samples/mcp-auth-per-server-py.mdx';
+import McpAuthPerUserPy from '/snippets/javascript/code-samples/mcp-auth-per-user-py.mdx';
+
+
+
+Most remote MCP servers require authentication. Each HTTP or SSE server under `servers` takes its own `authProvider` and `headers`, and `MCPAdapter` hands the provider object to the MCP SDK transport as-is and sends the headers with each request. Stdio servers take neither. Use a [header or token provider](#bearer-token) for credentials your app manages, or an [OAuth client provider](#oauth-authentication) for OAuth 2.1. When each run should reach the server as its caller, use [per-user authentication](#per-user-authentication).
+
+<Note>
+This page requires `@langchain/mcp-adapters` 2.0 or later. If you are upgrading from 1.x, see the [migration guide](/oss/javascript/migrate/langchain-mcp-adapters#authentication).
+</Note>
+
+## Bearer token
+
+For a fixed API key, send a static `Authorization` header. For a token your app issues or rotates, pass an `AuthProvider` (`{ token, onUnauthorized? }`) as `authProvider`.
+
+The example uses an application-provided `tokenStore`. Implement `current()` to read the token and `refresh()` to save a newer token and report whether it succeeded.
+
+```typescript
+import { MCPAdapter, UnauthorizedError } from "@langchain/mcp-adapters";
+
+const adapter = new MCPAdapter({
+  servers: {
+    // A fixed API key, sent as a header.
+    search: {
+      url: "https://search.example.com/mcp",
+      headers: { Authorization: `Bearer ${process.env.SEARCH_API_KEY}` },
+    },
+    // A token your app issues and rotates.
+    crm: {
+      url: "https://crm.example.com/mcp",
+      authProvider: {
+        token: async () => tokenStore.current(),
+        onUnauthorized: async () => {
+          // Throw when no newer token exists: over SSE, the SDK calls this
+          // again every time a reconnect is rejected.
+          if (!(await tokenStore.refresh())) {
+            throw new UnauthorizedError("No newer token for the CRM server");
+          }
+        },
+      },
+    },
+  },
+});
+```
+
+- **`token()`**: Runs before every request and returns the current token.
+- **`onUnauthorized()`**: Optional. Runs on a 401, before the request is retried once. Over SSE, the SDK calls it again every time a reconnect is rejected, with no cap. Throw `UnauthorizedError` when you have no newer token.
+
+Without `onUnauthorized`, a 401 fails the connection with the SDK's `UnauthorizedError`. See [Handle authentication errors](#handle-authentication-errors).
+
+Each named server opens its own connection, so servers in one adapter authenticate independently, as the two servers in this example do.
+
+The adapter re-exports the `AuthProvider` and `OAuthClientProvider` types, so you can type a provider without importing the SDK.
+
+## OAuth authentication
+
+OAuth lets users authorize your application to access an MCP server. Pass an `OAuthClientProvider` as `authProvider`. The SDK handles discovery, client registration, the code exchange, and token refresh. Your application supplies the provider's storage, browser redirect, and callback handler.
+
+Add `@modelcontextprotocol/client` 2.2.0 or later as a direct dependency. The adapter depends on the same range, so your app and the adapter share one SDK copy. The callback transport, `SdkHttpError`, and `SseError` come from it. Implement your provider using the SDK's [OAuth client guide](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/clients/oauth.md). Configure its `redirectUrl` for your callback route, and store client information, tokens, the PKCE verifier, and discovery state. Include `invalidateCredentials()` so rejected refresh credentials can trigger a new login.
+
+Keep each provider and its storage separate for each user and MCP server. The example below also binds each pending login to an authenticated application session. Read the user and session IDs from your application's session middleware, never from callback query parameters.
+
+The `createMcpSession()` helper below connects these steps:
+
+1. Call `listTools()` to discover tools. If login is required, redirect the user's browser to the returned `authorizationUrl`.
+2. In your callback route, call `completeLogin()` on the same session. It checks the caller and consumes the pending `state` before exchanging the code.
+3. Use the returned tools. After the exchange, the helper retries discovery with the saved tokens.
+
+<Accordion title="Session helper">
+This example keeps pending login state in one Node.js process. For multiple processes or restarts, use shared storage with an expiry. Check the state, user, session, and server, and consume the record in one atomic operation. The SDK does not validate `state`.
+
+```typescript
+import { randomUUID } from "node:crypto";
+import {
+  MCPAdapter,
+  MCPClientError,
+  UnauthorizedError,
+  type OAuthClientProvider,
+} from "@langchain/mcp-adapters";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+
+function createMcpSession(
+  serverUrl: string,
+  userId: string,
+  sessionId: string,
+  authProvider: OAuthClientProvider,
+) {
+  let pendingState: string | undefined;
+  let authorizationUrl: URL | undefined;
+
+  authProvider.state = () => (pendingState = randomUUID());
+  authProvider.redirectToAuthorization = (url) => {
+    authorizationUrl = url;
+  };
+
+  const adapter = new MCPAdapter({
+    servers: { crm: { url: serverUrl, authProvider } },
+  });
+
+  function causedByUnauthorized(error: unknown): boolean {
+    // Discovery wraps UnauthorizedError in MCPClientError, and wraps it
+    // again when an HTTP connection falls back to SSE. Walk a few hops.
+    let current: unknown = error;
+    for (let depth = 0; depth <= 3; depth += 1) {
+      if (UnauthorizedError.isInstance(current)) return true;
+      if (!(current instanceof Error)) return false;
+      current = current.cause;
+    }
+    return false;
+  }
+
+  async function listTools() {
+    // Reuse the pending login instead of starting another redirect.
+    if (authorizationUrl) return { authorizationUrl };
+    try {
+      return { tools: await adapter.listTools() };
+    } catch (error) {
+      if (
+        MCPClientError.isInstance(error) &&
+        causedByUnauthorized(error) &&
+        authorizationUrl
+      ) {
+        return { authorizationUrl };
+      }
+      throw error;
+    }
+  }
+
+  async function completeLogin(
+    callbackUrl: URL,
+    callbackUserId: string,
+    callbackSessionId: string,
+  ) {
+    const params = callbackUrl.searchParams;
+    if (
+      callbackUserId !== userId ||
+      callbackSessionId !== sessionId ||
+      !pendingState ||
+      params.get("state") !== pendingState
+    ) {
+      throw new Error("Invalid OAuth callback");
+    }
+    // No await between checking and consuming state: only one callback wins.
+    pendingState = undefined;
+
+    const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+      authProvider,
+    });
+    try {
+      await transport.finishAuth(params);
+    } catch {
+      // SDK errors can contain text supplied by the authorization server.
+      throw new Error("OAuth login failed");
+    } finally {
+      authorizationUrl = undefined;
+      await transport.close();
+    }
+    return listTools();
+  }
+
+  return { listTools, completeLogin, close: () => adapter.close() };
+}
+```
+</Accordion>
+
+To start discovery, pass your provider and the authenticated caller's identity:
+
+```typescript
+const crm = createMcpSession(
+  "https://crm.example.com/mcp",
+  userId,
+  sessionId,
+  authProvider,
+);
+const result = await crm.listTools();
+// If result.authorizationUrl is present, redirect the browser there.
+// Otherwise, pass result.tools to your agent.
+```
+
+Keep `crm` available to that application's session until the callback completes. Do not share its provider with another session.
+
+### Complete the redirect
+
+After the user signs in, the authorization server redirects to your provider's `redirectUrl`. In that route, retrieve the same `crm` instance and the caller's verified user and session IDs, then complete login:
+
+```typescript
+const result = await crm.completeLogin(new URL(req.url, "http://localhost"), userId, sessionId);
+// The helper exchanges the code and retries discovery using saved tokens.
+// Pass result.tools to your agent, or redirect if another login is required.
+```
+
+The helper passes the full query to `finishAuth()` so the SDK can validate the authorization server's `iss` parameter. It rejects missing, mismatched, or already consumed state before the exchange. Keep the adapter open while using its tools, then call `await crm.close()` when the application session ends.
+
+For a server configured with `transport: "sse"`, use `SSEClientTransport` in the callback helper. For machine-to-machine access without a user, use the SDK's `ClientCredentialsProvider` instead of a browser login.
+
+## Handle authentication errors
+
+A connection rejected for credentials throws an `MCPClientError`. The SDK error sits one level down its `cause` chain, or two when an HTTP connection falls back to SSE. This example walks a few levels and handles HTTP authentication failures with either of these causes:
+
+- **`UnauthorizedError`**: The SDK cannot recover on its own. An OAuth login is needed, or a token provider has no `onUnauthorized`.
+- **An HTTP 401** (an `SdkHttpError` with `status: 401`, or an `SseError` with `code: 401` over SSE): The server rejects the credentials, or none were provided.
+
+```typescript
+import { MCPClientError, UnauthorizedError } from "@langchain/mcp-adapters";
+import { SdkHttpError, SseError } from "@modelcontextprotocol/client";
+
+function authFailure(error: unknown): "login" | "rejected" | undefined {
+  if (!MCPClientError.isInstance(error)) return undefined;
+
+  let current: unknown = error;
+  for (let depth = 0; depth <= 3; depth += 1) {
+    if (UnauthorizedError.isInstance(current)) return "login";
+    if (SdkHttpError.isInstance(current) && current.status === 401)
+      return "rejected";
+    if (SseError.isInstance(current) && current.code === 401)
+      return "rejected";
+    if (!(current instanceof Error)) return undefined;
+    current = current.cause;
+  }
+  return undefined;
+}
+```
+
+The adapter re-exports `UnauthorizedError`. Import `SdkHttpError` and `SseError` from `@modelcontextprotocol/client`. An `MCPClientError` message includes the SDK's error text, so log it rather than show it to users.
+
+When a server rejects the credentials during a tool call, the tool fails with a `ToolException` instead. Under `createAgent`, the model sees it as an error message and the run continues.
+
+Discovery retries failures caused by `UnauthorizedError` or HTTP 401 on the next call, even when `onConnectionError` skips failed servers. A later login can recover without recreating the adapter. Other errors from `token()` or `onUnauthorized()`, such as a failed token-store request, do not count as authentication failures. When `onConnectionError` skips a connection after one of these errors, that connection stays blocked until `close()` clears it.
+
+## Header precedence
+
+Once a provider has a token, it replaces a configured `Authorization` header. Until then, the header is sent, so a static API key can fall back to OAuth.
+
+The SDK also forwards a static `Authorization` header to the authorization server's discovery, registration, and token endpoints, not only to the MCP server. Do not pair a secret API key with an OAuth provider whose authorization server lives on another origin.
+
+## Per-user authentication
+
+In a deployment, each run should reach the MCP server as the user who started it, not with one shared credential. Pass `authProvider` or `headers` in the options of `listTools()`, `listToolsets()`, `getClient()`, or the resource methods (`listResources()`, `listResourceTemplates()`, and `readResource()`):
+
+```typescript
+import { MCPAdapter, type AuthProvider } from "@langchain/mcp-adapters";
+
+// A single-server adapter, because each user brings a different credential.
+const crm = new MCPAdapter({
+  servers: { crm: { url: "https://crm.example.com/mcp" } },
+});
+
+// Reuse one provider object per user: each object opens its own connection.
+const providers = new Map<string, AuthProvider>();
+
+function providerFor(userId: string): AuthProvider {
+  let provider = providers.get(userId);
+  if (!provider) {
+    provider = { token: async () => tokenFor(userId) };
+    providers.set(userId, provider);
+  }
+  return provider;
+}
+
+const tools = await crm.listTools(["crm"], {
+  authProvider: providerFor(userId),
+});
+```
+
+In this example, implement `tokenFor(userId)` to retrieve a token for the authenticated user.
+
+The returned tools call the server through that user's connection. These rules apply to method-level authentication:
+
+- **Adapter-wide override**: An `authProvider` or `headers` in a method's options applies to every HTTP and SSE server the adapter holds, not only the one you name. Use a single-server adapter when different users need different credentials.
+- **Header precedence**: Server-configured headers take precedence over same-named method-level headers, regardless of capitalization. When passing a per-user `Authorization` header, omit that header from the server configuration. A provider token still takes precedence over either header.
+- **One connection per provider object**: Each distinct provider object gets its own connection, kept until `close()`. Reuse one provider object per user rather than creating one per call.
+- **Isolated catalogs**: Catalogs are keyed by provider object and headers, so one user never receives another user's cached tool list. Recreate the adapter when the account behind the same provider object changes.
+
+Resolve the user from the incoming request, for example with a [custom auth handler](/langsmith/auth) on a LangGraph server.
+
+## See also
+
+- [Migrate to `@langchain/mcp-adapters` 2.0](/oss/javascript/migrate/langchain-mcp-adapters)
+- [MCP authorization specification](https://modelcontextprotocol.io/specification/draft/basic/authorization)
+- [MCP TypeScript SDK OAuth client guide](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/clients/oauth.md)
+- [Custom authentication for a LangGraph server](/langsmith/auth)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/langchain/mcp/auth.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
