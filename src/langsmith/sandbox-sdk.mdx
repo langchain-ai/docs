@@ -470,7 +470,7 @@ A non-persistent sandbox keeps filesystem writes only while it runs. Use it for 
 Persistence is enabled by default. Set `persistent` to `false` when creating a sandbox to opt out. This setting applies to the new sandbox, not existing sandboxes.
 
 <Note>
-These examples require Python `langsmith` version 0.14.17 or later, or TypeScript `langsmith` version 0.11.7 or later.
+These examples use Python `langsmith` version 0.14.17 or later, TypeScript `langsmith` version 0.11.7 or later, Go `github.com/langchain-ai/langsmith-go` v0.29.3, and Java `com.langchain.smith:langsmith-java` version 0.1.0-beta.28.
 </Note>
 
 Set `LANGSMITH_API_KEY` and `LANGSMITH_ENDPOINT` as described in [Create and run a sandbox](#create-and-run-a-sandbox). Files remain available between commands while the sandbox runs:
@@ -498,6 +498,70 @@ try {
   console.log(result.stdout);
 } finally {
   await sandbox.delete();
+}
+```
+
+```go Go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	langsmith "github.com/langchain-ai/langsmith-go"
+)
+
+func main() {
+	ctx := context.Background()
+	client := langsmith.NewClient()
+	sandbox, err := client.Sandboxes.Boxes.NewSandbox(ctx, langsmith.SandboxBoxNewParams{
+		Persistent: langsmith.F(false),
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer sandbox.Delete(ctx)
+
+	result, err := sandbox.Run(ctx, langsmith.SandboxBoxRunParams{
+		Command: langsmith.F("echo hello > /tmp/example.txt && cat /tmp/example.txt"),
+	})
+	if err != nil {
+		log.Print(err)
+		return
+	}
+	fmt.Print(result.Stdout)
+}
+```
+
+```java Java
+import com.langchain.smith.client.okhttp.OkHttpClient;
+import com.langchain.smith.core.ClientOptions;
+import com.langchain.smith.models.sandboxes.boxes.BoxCreateParams;
+import com.langchain.smith.sandbox.Sandbox;
+import com.langchain.smith.sandbox.SandboxClient;
+
+public class NonPersistentSandbox {
+    public static void main(String[] args) {
+        ClientOptions options = ClientOptions.builder()
+            .fromEnv()
+            .httpClient(OkHttpClient.builder().build())
+            .build();
+        try {
+            SandboxClient client = SandboxClient.of(options);
+            Sandbox sandbox = client.create(
+                BoxCreateParams.builder().persistent(false).build()
+            );
+            try {
+                sandbox.run("echo hello > /tmp/example.txt");
+                System.out.print(sandbox.run("cat /tmp/example.txt").stdoutString());
+            } finally {
+                sandbox.delete();
+            }
+        } finally {
+            options.close();
+        }
+    }
 }
 ```
 
