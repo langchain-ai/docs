@@ -242,6 +242,8 @@ make test-code-samples
 
 For multiple files: `FILES="path1 path2"`. Fix any failures before proceeding—do not extract snippets until the samples pass.
 
+To run one product's samples, set `CODE_SAMPLE_PATHS` to space-separated directories under `src/code-samples/`, for example `CODE_SAMPLE_PATHS="src/code-samples/langsmith" make test-code-samples`. It also narrows an explicit `FILES` list. CI runs one matrix leg per product this way (`oss` covers `langchain/`, `langgraph/`, and `deepagents/`; `langsmith` covers `langsmith/`), so a failure in one product never turns the other product's check red. A new top-level directory under `src/code-samples/` must be added to a leg in `.github/workflows/test-code-samples.yml`, or the workflow fails its coverage check.
+
 Java files (`.java`) under `src/code-samples/` are run using `jbang`. To keep CI green, Java samples must:
 
 - Print at least one line of output so it's obvious the sample ran
@@ -339,6 +341,7 @@ To support additional languages, add config entries in that script.
 
 ## Guidelines
 
+- **Prefer the plainest thing that runs.** Keep the snippet verbatim from the page, add hidden harness code only where CI differs from a reader's machine (a missing env var, a dataset name that must be cleared first), and do not add options, inputs, or indirection nobody asked for. The same applies to the runner and workflow around the samples: one job per product, re-run a job from the GitHub UI rather than adding an input for it, read what GitHub already knows (job names, conclusions) rather than passing artifacts around. If a change needs a diagram to explain, it is too much.
 - **Run snippet code in tests** — `:remove-start:` harnesses must not exit before the snippet runs. Let imports, constructors, and configuration execute so `make test-code-samples` catches wrong signatures, renamed options, and broken import paths. Put `SystemExit` / `process.exit` only after the snippet (or use them to skip a trailing blocking call such as `server.start()`, not the whole sample).
 - **Collocate related snippets** in one code sample file per doc page or feature when possible (Python and Java). Import each generated MDX snippet separately in the MDX file (for example, `<RubricConfigurePy />` then `<RubricInvokePy />` from the same source file). For TypeScript, split into separate `.ts` files when snippets duplicate imports or top-level bindings; still import each generated MDX snippet in the MDX file the same way.
 - Do not mock LangChain internals (for example `unittest.mock.patch` on `init_chat_model` helpers) so that imports resolve real chat model instances. Do not use fake chat models in docs code samples (for example `GenericFakeChatModel`, `FakeListChatModel`, or other `langchain_core` testing fakes). Wire a real chat model (for example `ChatOpenAI`) so snippets match what readers run; `make test-code-samples` requires a valid API key when the sample calls the model.

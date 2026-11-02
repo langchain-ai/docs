@@ -46,6 +46,8 @@ With `create: false`, `name` is required. Otherwise pods fall back to the `defau
 
 **The metastore refuses connections.** Check that the database is reachable from the cluster, that `useSsl` matches what the server requires, and that the Secret keys named in `smithdb.config.metastore` match the keys actually present in the Secret.
 
+**Ingestion or queries fail with `Unavailable` errors.** An HTTP proxy or service mesh blocks connections to SmithDB pod IPs. The `ingest-queue` logs show errors such as `closing SmithDB ingestion stream failed: rpc error: code = Unavailable`. Allow the connections described in [Pod network access](/langsmith/self-host-smithdb-infrastructure#pod-network-access). Then restart `platform-backend`, `ingest-queue`, `queue`, and SmithDB query, because connections opened before the change keep failing.
+
 **Cache I/O is slow.** On local SSD, the `emptyDir` is backed by the boot disk rather than the SSD. On a network-attached disk, the volume is under-provisioned: confirm the StorageClass sets at least 7000 IOPS and 1000 MiB/s. Check which device backs the cache filesystem inside a running pod:
 
 ```bash
@@ -73,7 +75,7 @@ For validation failures, unclear causes, or issues other than under-provisioning
 Use this section to route LangSmith traffic back to ClickHouse and disable the SmithDB services. For the installation and cutover sequence, see [Install LangSmith with SmithDB](/langsmith/self-host-smithdb-install).
 
 <Warning>
-If a historical migration is active or its progress must be preserved, stop before disabling SmithDB. Disabling migration removes chart-managed TaskDB resources and, by default, its PVC. Contact LangChain through the [Support Portal](https://support.langchain.com/) if you need to preserve migration progress.
+Disabling migration removes chart-managed TaskDB and, by default, its PVC holding migration progress. To pause without losing progress, keep migration enabled and use `smithdb.migration.job.suspend: true`. See [Pause and resume migration](/langsmith/self-host-smithdb-migrate#pause-and-resume-migration).
 </Warning>
 
 If you re-enable SmithDB ingestion later, you need to run another migration to bring it back in sync with ClickHouse.

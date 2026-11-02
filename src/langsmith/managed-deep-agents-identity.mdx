@@ -1,7 +1,7 @@
 ---
 title: Add identity to Managed Deep Agents
 sidebarTitle: Identity
-description: Authenticate callers to a Managed Deep Agents deployment with a LangSmith API key, Supabase, or your own backend.
+description: Authenticate callers to a Managed Deep Agents deployment with a LangSmith API key, Supabase, another JWT provider, or your own backend.
 ---
 
 import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
@@ -33,15 +33,16 @@ For the full project layout, see [Project structure](/langsmith/managed-deep-age
 
 ## Choose the identity provider
 
-By default, `mda init` requires callers to present a LangSmith API key. Anyone who has that key can use the same deployment and may see the same threads. To give each signed-in end user private conversations, use Supabase instead:
+By default, `mda init` requires callers to present a LangSmith API key. Anyone who has that key can use the same deployment and may see the same threads. To give each signed-in end user private conversations, use Supabase, another JWT provider, or your own backend instead:
 
 | Goal | Use |
 | --- | --- |
 | Lock down the deployment for SDK clients, scripts, and services | [LangSmith API key (default)](#configure-identity-with-a-langsmith-api-key) |
 | Signed-in end users with private chats, verified by Managed Deep Agents | [Supabase](#configure-identity-with-supabase) |
+| Signed-in end users from another identity provider, such as Auth0, Okta, Clerk, or Microsoft Entra ID | [Another JWT provider](#configure-identity-with-another-jwt-provider) |
 | Signed-in end users with private chats, already authenticated by your own API | [Your own backend](#configure-identity-with-your-own-backend) |
 
-Supabase and backend identity both give each end user private threads. The difference is who verifies the user. With Supabase, the browser sends its access token and Managed Deep Agents verifies it. With backend identity, your API verifies the user and asserts the resulting user ID.
+Supabase, another JWT provider, and backend identity all give each end user private threads. The difference is who verifies the user. With Supabase or another JWT provider, the browser sends its access token and Managed Deep Agents verifies it. With backend identity, your API verifies the user and asserts the resulting user ID.
 
 For more information, see [Project structure](/langsmith/managed-deep-agents-project-structure).
 
@@ -74,7 +75,7 @@ export const identity = defineIdentity({
 Clients send the key as `x-api-key`. You do not need to add verification endpoint or tenant settings to your project `.env`. LangSmith Cloud supplies those.
 
 <Warning>
-Anyone with the key can reach the deployment, so treat the key as a secret. This default does not give each end user private threads. If Alice must not see Bob's threads, use [Supabase](#configure-identity-with-supabase) or [your own backend](#configure-identity-with-your-own-backend).
+Anyone with the key can reach the deployment, so treat the key as a secret. This default does not give each end user private threads. If Alice must not see Bob's threads, use [Supabase](#configure-identity-with-supabase), [another JWT provider](#configure-identity-with-another-jwt-provider), or [your own backend](#configure-identity-with-your-own-backend).
 </Warning>
 
 ## Configure identity with Supabase
@@ -162,6 +163,51 @@ Adding Supabase identity to an existing deployment does not add owner metadata t
   </Step>
 </Steps>
 
+## Configure identity with another JWT provider
+
+Use this option when your users sign in with an identity provider that issues JWT access tokens, such as Auth0, Okta, Clerk, or Microsoft Entra ID. Managed Deep Agents checks the token signature against the provider's public keys, then gives each user private threads.
+
+Declare the provider with its issuer, the audience your tokens use, and the claim that identifies the user:
+
+:::python
+```python identity.py
+from managed_deepagents import define_identity
+
+identity = define_identity(
+    auth={
+        "issuer": "https://your-tenant.us.auth0.com/",
+        "audience": "https://api.example.com",
+        "discover": True,
+        "claims": {"user": "sub"},
+    }
+)
+```
+:::
+
+:::js
+```ts identity.ts
+import { defineIdentity } from "managed-deepagents";
+
+export const identity = defineIdentity({
+  auth: {
+    issuer: "https://your-tenant.us.auth0.com/",
+    audience: "https://api.example.com",
+    discover: true,
+    claims: { user: "sub" },
+  },
+});
+```
+:::
+
+- **`issuer`**: Must match the `iss` claim in the token.
+- **`audience`**: Must match the `aud` claim in the token.
+- **`discover`**: Finds the public keys from the provider's `/.well-known/openid-configuration`. If your provider does not publish that document, remove `discover` and set `jwks` to the URL of the public keys.
+- **`claims.user`**: Names the claim to use as the user ID. Threads and stored credentials are keyed on this value. You can also set `claims.groups` and `claims.email`.
+
+Clients send the access token as `Authorization: Bearer <access_token>`, the same as in the [Supabase example](#send-the-access-token).
+
+Your tools and middleware can read every verified claim in the token from `principal.claims`. For an example, see [Read the runtime in tools](/langsmith/managed-deep-agents-runtime#read-the-runtime-in-tools).
+
 ## Configure identity with your own backend
 
 Use backend identity when your own API already authenticates users and calls the deployment on their behalf. Your backend proves itself with a shared secret and names the caller. Managed Deep Agents trusts that name only after the secret matches, then gives each named user private threads.
@@ -248,8 +294,17 @@ Use the same identifier for `x-mda-user-id` that your own system uses for that u
 `MDA_INGRESS_SECRET` is a server-side secret. Managed Deep Agents accepts whatever `x-mda-user-id` accompanies a valid secret, so any holder of the secret can act as any user. Keep it on your backend, never in browser code, a mobile app, or a client bundle.
 </Warning>
 
+## Scope access by organization or tenant
+
+Managed Deep Agents does not accept a [custom LangGraph auth handler](/langsmith/custom-auth). Its own handler keys threads, stored credentials, and user memory on the user ID. A replacement handler would break those features.
+
+To scope access by organization or tenant, choose the user ID based on what users must share:
+
+- If everyone in an organization should share threads and credentials, use the organization ID as the user ID.
+- If each person needs private threads, use the person's ID. Then check the organization in your backend before it calls the deployment, or read an organization claim from `principal.claims` in your tools and middleware.
+
 ## Test and deploy
 
 <ManagedDeepAgentsTestAndDeploy />
 
-Authentication failures return 401. For the LangSmith API-key default, confirm that clients send `x-api-key`. For Supabase, confirm that clients send `Authorization: Bearer <access_token>`, that `project_ref` / `projectRef` matches your Supabase project, and that callers cannot access another user's threads (403). For backend identity, confirm that your API sends both `x-mda-ingress-secret` and `x-mda-user-id`, that the secret matches `MDA_INGRESS_SECRET` on the deployment, and that one user's identifier cannot reach another user's threads (403).
+Authentication failures return 401. For the LangSmith API-key default, confirm that clients send `x-api-key`. For Supabase, confirm that clients send `Authorization: Bearer <access_token>`, that `project_ref` / `projectRef` matches your Supabase project, and that callers cannot access another user's threads (403). For another JWT provider, confirm that `issuer` and `audience` match the `iss` and `aud` claims in the token, and that callers cannot access another user's threads (403). For backend identity, confirm that your API sends both `x-mda-ingress-secret` and `x-mda-user-id`, that the secret matches `MDA_INGRESS_SECRET` on the deployment, and that one user's identifier cannot reach another user's threads (403).

@@ -42,6 +42,13 @@ description: SEO summary with no markdown, no links, and no backticks
 For OSS pages that differ by language, use `:::python` and `:::js` fences in one
 file rather than writing two files. The build pipeline emits both versions.
 
+Take every fact on the page from the product source, not from memory, a sibling
+docs page, or the request that asked for the page. This covers behavior,
+defaults, field names, version minimums, and examples. Use the
+`verify-against-source` skill to find the repository that owns each claim. Never
+fabricate a value to fill a gap. Leave the claim out, and list what you could
+not confirm in the pull request body and in your reply to the requester.
+
 ## Step 3. Add the navigation entry
 
 Navigation lives in `src/docs.json` under `navigation.products`. There are two
@@ -155,6 +162,19 @@ expects. Run the pipeline directly rather than working around the build:
 PYTHONPATH="$(pwd)" .venv/bin/python -m pipeline build
 ```
 
+A fresh git worktree has no `.venv`, and the same version check blocks
+`uv sync` from creating one. Point at the main checkout's interpreter instead;
+`PYTHONPATH` still loads the pipeline code from the worktree:
+
+```bash
+PYTHONPATH="$(pwd)" <main-checkout>/.venv/bin/python -m pipeline build
+```
+
+A fresh worktree's `.mise.toml` is also untrusted, so the first commit fails
+at the Vale hook with `Config files in <dir>/.mise.toml are not trusted`. Run
+`mise trust` once in the worktree. The `docs-edit` skill covers the permanent
+fix.
+
 `make broken-links-with-anchors` depends on `build`, so it fails the same way.
 Its link-check half runs on its own once the build output exists:
 
@@ -184,10 +204,18 @@ findings that go stale as soon as writing resumes.
 Skip this step for a change too small to have prose in it, such as a pure
 `docs.json` reorder or a redirect-only fix.
 
+## Step 7. Open the pull request
+
+Follow the `open-docs-pr` skill to commit, write the PR description, push, and
+watch the checks. If the change belongs on an existing PR, use `docs-edit`
+instead.
+
 ## Checklist
 
 - [ ] File in the directory the source-directory table names, not `build/`.
 - [ ] Frontmatter present, `description` free of markdown.
+- [ ] Every claim checked against product source; unconfirmed claims cut and
+      listed in the PR body.
 - [ ] `src/docs.json` entry in the right product, menu item, tab, and group.
 - [ ] Both language entries added if the page is language-versioned.
 - [ ] Index page first if a new group was created.
@@ -197,3 +225,4 @@ Skip this step for a change too small to have prose in it, such as a pure
       built `python/` and `javascript/` targets confirmed to exist.
 - [ ] `make lint_prose` clean, `make broken-links-with-anchors` shows no new `⎿` lines.
 - [ ] `docs-review` run on the changed files, findings addressed.
+- [ ] PR opened with `open-docs-pr`, checks green.

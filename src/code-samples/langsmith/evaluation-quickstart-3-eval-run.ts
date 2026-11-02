@@ -1,0 +1,64 @@
+// Evaluation quickstart, step 6: the complete eval.ts, which runs the experiment.
+// Depends on evaluation-quickstart-0-dataset.ts having created "Sample dataset".
+
+// :snippet-start: evaluation-quickstart-eval-run-js
+// :codegroup-tab: TypeScript
+// :codegroup-fence-mods: highlight={39-55}
+import { evaluate } from "langsmith/evaluation";
+import { wrapOpenAI } from "langsmith/wrappers/openai";   // helper to wrap OpenAI client
+import OpenAI from "openai";                              // model provider
+import { createLLMAsJudge, CORRECTNESS_PROMPT } from "openevals"; // evaluator tools
+
+const openaiClient = wrapOpenAI(new OpenAI());
+
+async function target(inputs: Record<string, any>): Promise<Record<string, any>> {
+const question = String(inputs.question ?? "");
+const resp = await openaiClient.chat.completions.create({
+    // KEEP MODEL
+    model: "gpt-6-luna",
+    messages: [
+    { role: "system", content: "Answer the following question accurately" },
+    { role: "user", content: question },
+    ],
+});
+return { answer: resp.choices[0].message.content?.trim() ?? "" };
+}
+
+const judge = createLLMAsJudge({
+prompt: CORRECTNESS_PROMPT,
+// KEEP MODEL
+model: "openai:gpt-5.5",
+feedbackKey: "correctness",
+});
+
+async function correctnessEvaluator(run: {
+inputs: Record<string, any>;
+outputs: Record<string, any>;
+referenceOutputs?: Record<string, any>;
+}) {
+return judge({
+    inputs: run.inputs,
+    outputs: run.outputs,
+    // OpenEvals expects snake_case here:
+    reference_outputs: run.referenceOutputs,
+});
+}
+
+async function main() {
+const datasetName = process.env.DATASET_NAME ?? "Sample dataset";
+
+const results = await evaluate(target, {
+    data: datasetName,
+    evaluators: [correctnessEvaluator],
+    experimentPrefix: "first-eval-in-langsmith",
+    maxConcurrency: 2,
+});
+
+console.log(results);
+}
+
+main().catch((e) => {
+console.error(e);
+process.exit(1);
+});
+// :snippet-end:

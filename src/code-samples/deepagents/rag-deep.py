@@ -13,7 +13,6 @@ if not os.environ.get("OPENAI_API_KEY"):
 import requests
 from langchain_core.documents import Document
 from langchain_core.vectorstores import InMemoryVectorStore
-from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 DOCS_BASE = "https://docs.langchain.com"
@@ -74,6 +73,8 @@ print(f"Split documentation into {len(all_splits)} chunks.")
 # :snippet-end:
 
 # :remove-start:
+from langchain_openai import OpenAIEmbeddings
+
 embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 vector_store = InMemoryVectorStore(embedding=embeddings)
 # :remove-end:

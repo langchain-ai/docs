@@ -17,7 +17,7 @@ Use this skill when the product is Deep Agents JS (npm `deepagents` from `langch
   - Prefer `:::js` fences and TypeScript examples
   - Leave `:::python` sections alone unless a shared prose change is required
   - Navigation in `src/docs.json`
-  - Shared guidance in root `AGENTS.md`
+  - Docs style authority: root `AGENTS.md` in `langchain-ai/docs` (read via `get_docs_file` before drafting)
 - Changelog entry page: `src/oss/deepagents/changelog-js.mdx`
 
 ## What usually needs docs
@@ -43,16 +43,16 @@ When unsure, open a small clarifying ticket/PR only if a reader of the current d
 
 ## Workflow for one Deep Agents JS release
 
-1. Call `get_eligible_release` with `product="deepagentsjs"` and `min_age_days=7`.
-2. Read `/memories/agent/deepagentsjs-releases.md` (create it if missing). Skip features already recorded for that tag.
-3. Load the release notes. Split the notes into discrete features (one user-facing capability each).
-4. In the sandbox, clone or refresh `https://github.com/langchain-ai/docs.git` and read the Deep Agents pages that might be affected. Stay out of `src/oss/deepagents/code/`.
-5. For each feature that needs a docs change:
-   - Draft the MDX edits (follow `AGENTS.md`: frontmatter, no markdown in `description`, Tabler icons only, sentence-case headings, no contractions, no first person).
+The main agent must run **phase 1** through the `release-research` subagent first (diff + source investigation). This skill guides **phase 2** shipping and judgment details the subagent also uses.
+
+1. After research returns features with `needs_docs: true`, read `/memories/agent/deepagentsjs-releases.md` and skip any already recorded for that tag.
+2. Call `get_docs_file` on `AGENTS.md` and read it in full. Then call `get_docs_file` for Deep Agents pages named in the research report. Stay out of `src/oss/deepagents/code/`.
+3. For each remaining feature:
+   - Edit surgically from the page `get_docs_file` content, following the docs repo `AGENTS.md`. Prefer `:::js` sections; leave `:::python` alone unless the change is shared.
    - Prefer updating the owning page over creating a new page. If a new page is required, also plan the `src/docs.json` navigation update.
-   - Load the `ship-docs-update` skill and ship that feature alone.
-6. After shipping, append the release tag, feature name, Linear URL, and PR URL to `/memories/agent/deepagentsjs-releases.md`.
-7. Keep `/memories/agent/AGENTS.md` short: last processed Deep Agents JS tag and date, alongside other products.
+   - Load the `ship-docs-update` skill and ship that feature alone with the research report's `evidence` as `evidence_json`.
+4. After shipping, append the release tag, feature name, Linear URL, and PR URL to `/memories/agent/deepagentsjs-releases.md`.
+5. Keep `/memories/agent/AGENTS.md` short: last processed Deep Agents JS tag and date, alongside other products.
 
 ## Memory format
 

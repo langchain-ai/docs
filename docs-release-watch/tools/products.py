@@ -18,6 +18,10 @@ PRODUCTS: dict[str, dict[str, Any]] = {
         "skill": "openwiki",
         "changelog_url": "https://github.com/langchain-ai/openwiki/releases",
         "release_tag_prefix": "",
+        # Empty means include every path in get_release_diff.
+        "source_path_prefixes": [],
+        # Docs language fence scope for surgical PR validation.
+        "language_scope": "shared",
         "memory_file": "/memories/agent/openwiki-releases.md",
     },
     "deepagents": {
@@ -35,6 +39,8 @@ PRODUCTS: dict[str, dict[str, Any]] = {
         "changelog_url": "https://github.com/langchain-ai/deepagents/releases",
         # Shared release feed also publishes deepagents-code, deepagents-acp, etc.
         "release_tag_prefix": "deepagents==",
+        "source_path_prefixes": ["libs/deepagents/"],
+        "language_scope": "python",
         "memory_file": "/memories/agent/deepagents-releases.md",
     },
     "deepagents-code": {
@@ -48,6 +54,8 @@ PRODUCTS: dict[str, dict[str, Any]] = {
         "skill": "deepagents-code",
         "changelog_url": "https://github.com/langchain-ai/deepagents/blob/main/libs/code/CHANGELOG.md",
         "release_tag_prefix": "deepagents-code==",
+        "source_path_prefixes": ["libs/code/"],
+        "language_scope": "shared",
         "memory_file": "/memories/agent/deepagents-code-releases.md",
     },
     "deepagentsjs": {
@@ -65,6 +73,8 @@ PRODUCTS: dict[str, dict[str, Any]] = {
         "changelog_url": "https://github.com/langchain-ai/deepagentsjs/releases",
         # Shared JS monorepo feed also publishes deepagents-acp@, @langchain/quickjs@, etc.
         "release_tag_prefix": "deepagents@",
+        "source_path_prefixes": ["libs/deepagents/"],
+        "language_scope": "js",
         "memory_file": "/memories/agent/deepagentsjs-releases.md",
     },
 }

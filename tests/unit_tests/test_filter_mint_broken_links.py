@@ -33,6 +33,21 @@ def test_check_anchors_filters_smithdb_false_positives() -> None:
     assert "real-anchor" in filtered
 
 
+def test_check_anchors_filters_only_known_env_var_anchor() -> None:
+    """Exclude the imported heading without hiding other broken links."""
+    raw = """page.mdx
+ ⎿  /langsmith/env-var-cloud#n_jobs_per_worker
+ ⎿  /langsmith/env-var-cloud#n_jobs_per_worker_missing
+ ⎿  /langsmith/env-var-cloud#missing
+ ⎿  /langsmith/other-page#n_jobs_per_worker
+ ⎿  /other/langsmith/env-var-cloud#n_jobs_per_worker
+ ⎿  /langsmith/env-var-cloud
+"""
+    expected = raw.replace(" ⎿  /langsmith/env-var-cloud#n_jobs_per_worker\n", "")
+    assert filter_broken_links(raw, check_anchors=True) == expected
+    assert filter_broken_links(raw) == raw
+
+
 def test_excludes_openapi_and_legacy_relative_paths() -> None:
     """Filter OpenAPI and legacy relative paths from broken-link output."""
     raw = """page.mdx

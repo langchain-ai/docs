@@ -1,6 +1,6 @@
 # Files
 
-- [Adding and Maintaining Documentation Pages](adding-pages.md) - Safely add, move, retire, or regenerate documentation pages by selecting the source owner, maintaining navigation and redirects, and validating emitted routes.
-- [Agent Authoring Skills](agent-skills.md) - Use the repository's task-specific skill catalog without duplicating global rules, distribute the canonical tree to supported agents, and follow source-verified, generated-file-safe documentation workflows.
-- [Developer CLI Tools](cli-tools.md) - Operational reference for the documentation Python CLI, the separately installed Mintlify CLI, Make targets, validation, runnable examples, snippet generation, and trace-link refreshes.
-- [Cross-References and Links](cross-references.md) - Author, resolve, repair, and validate scoped semantic API-reference links alongside documentation routes, snippets, and redirects. Covers Python and JavaScript lookup, link-map ownership, and distinct source and rendered-link checks.
+- [Adding and Moving Documentation Pages](adding-pages.md) - Safely add, move, rename, or retire documentation pages by choosing the right source owner, declaring every emitted route in navigation, preserving old URLs with redirects, and validating generated output.
+- [Agent Instructions and Authoring Skills](agent-skills.md) - Use the repository-wide instruction contract and task-specific skills to author, validate, distribute, and document documentation changes safely.
+- [Developer Commands and CLI Tools](cli-tools.md) - Install and operate the local documentation pipeline, Make targets, Mintlify checks, Vale prose linting, and executable samples. Select the command layer and validation boundary that match the change.
+- [Cross-References and API Links](cross-references.md) - Author, resolve, validate, and safely maintain scoped API documentation links using the @[...] cross-reference mechanism. Distinguishes source-level semantic-reference validation from rendered-site link checking.

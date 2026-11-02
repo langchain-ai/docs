@@ -426,19 +426,19 @@ A `202` means the run was accepted, not that it finished. The agent's answer arr
 
 ## Read the event in the agent
 
-Tools and middleware read the delivery from [`runtime.channel`](/langsmith/managed-deep-agents-runtime#channel). For the parser examples, `runtime.channel.provider` is `"orders"`.
+Tools and middleware read the delivery from [`runtime.thread.origin.channel`](/langsmith/managed-deep-agents-runtime#channel). For the parser examples, its `provider` is `"orders"`.
 
 :::python
-Return `raw_event` from `parse` to expose JSON provider data at `runtime.channel.raw_event`. If omitted, `runtime.channel.raw_event` is `None`.
+Return `raw_event` from `parse` to expose JSON provider data at `runtime.thread.origin.channel.raw_event`. If omitted, `raw_event` is `None`.
 :::
 
 :::js
-Return `rawEvent` from `parse` to expose JSON provider data at `runtime.channel.rawEvent`. If omitted, `runtime.channel.rawEvent` is `undefined`.
+Return `rawEvent` from `parse` to expose JSON provider data at `runtime.thread.origin.channel.rawEvent`. If omitted, `rawEvent` is `undefined`.
 :::
 
-The reply `target` stays private. Code cannot read it from `runtime.channel`.
+The reply `target` stays private. Code cannot read it from the channel.
 
-Managed Deep Agents builds `runtime.channel.event` from the parsed message. It does not decode the body again or preserve the provider event automatically.
+Managed Deep Agents builds the channel's `event` from the parsed message. It does not decode the body again or preserve the provider event automatically.
 
 ## Deploy the agent
 
@@ -467,6 +467,96 @@ uv run mda deploy
 :::
 
 Put the signing key and any reply credentials in the project `.env` so `mda deploy` forwards them as deployment secrets. Then register `https://<deployment-url>/channels/<name>/events` with the external service as its webhook target.
+
+## Share a channel adapter as a package
+
+A reusable channel adapter is a package that creates an HTTP channel. Publish the provider-specific code separately so other projects can install it without copying callbacks or changing the Managed Deep Agents SDK.
+
+The package owns request verification, event parsing, and optional reply delivery. Managed Deep Agents still owns the agent run and trusted handoff.
+
+### Package the adapter
+
+To package the orders adapter from this guide, move `verify`, `parse`, `post`, and their helpers into the package. Keep secrets in environment variables, not in the published source. Export a factory that returns the HTTP channel declaration:
+
+:::python
+Declare a normal Python dependency on `managed-deepagents` in `pyproject.toml`. Put the callbacks in `mda_orders/orders.py` and export the factory:
+
+```python mda_orders/__init__.py
+from managed_deepagents import HttpChannel, channels
+
+from .orders import parse, post, verify
+
+
+def orders_channel() -> HttpChannel:
+    return channels.http(
+        provider="orders",
+        verify=verify,
+        parse=parse,
+        post=post,
+    )
+```
+:::
+
+:::js
+Declare `managed-deepagents` as a `peerDependencies` entry in `package.json` so the application supplies the SDK. Import only from the public `managed-deepagents` entry point. The factory returns `HttpChannel`. Use `HttpChannelAdapter` and the request, parse-result, and post-input types when typing `verify`, `parse`, and `post`.
+
+Put the callbacks in `src/orders.ts` and export the factory from your package entry point:
+
+```ts src/index.ts
+import { channels, type HttpChannel } from "managed-deepagents";
+
+import { parse, post, verify } from "./orders.js";
+
+export function ordersChannel(): HttpChannel {
+  return channels.http({
+    provider: "orders",
+    verify,
+    parse,
+    post,
+  });
+}
+```
+
+Publish compiled JavaScript and TypeScript declarations, and point the package entry points at those files. Do not bundle a separate copy of `managed-deepagents` into the adapter.
+:::
+
+Declare the supported `managed-deepagents` versions in your package metadata. Test against those versions before publishing.
+
+### Use the package in a project
+
+`mda-orders` is an example package name, not a published integration. To install it as an application dependency and declare a channel under `channels/`:
+
+:::python
+```python channels/orders.py
+from mda_orders import orders_channel
+
+channel = orders_channel()
+```
+:::
+
+:::js
+```ts channels/orders.ts
+import { ordersChannel } from "mda-orders";
+
+export const channel = ordersChannel();
+```
+:::
+
+:::python
+The channel file name, `channels/orders.py`, determines the endpoint: `/channels/orders/events`.
+:::
+
+:::js
+The channel file name, `channels/orders.ts`, determines the endpoint: `/channels/orders/events`.
+:::
+
+Keep the `provider` value, `"orders"`, stable across releases because it namespaces caller identities.
+
+### Before you publish
+
+Test valid and invalid signatures, ignored events, conversation-to-thread mapping, and reply delivery. Document required environment variables, supported event types, and any provider limitations. Publishing an adapter does not add managed provider provisioning. Document how to create the provider app, configure credentials, and register the webhook.
+
+For deployment secrets and webhook registration, see [Deploy the agent](#deploy-the-agent).
 
 ## See also
 

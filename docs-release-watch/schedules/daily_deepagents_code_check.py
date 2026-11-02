@@ -5,13 +5,11 @@ schedule = define_schedule(
     timezone="America/Los_Angeles",
     prompt=(
         "Run the Deep Agents Code docs release check. "
-        "Load the deepagents-code skill. "
-        "Find the newest deepagents-code== release published at least 7 days ago. "
-        "Ignore deepagents== and other packages on the same GitHub releases feed. "
-        "Compare it to the Deep Agents Code docs under src/oss/deepagents/code/. "
-        "For each user-facing feature that needs documentation changes and is not "
-        "already tracked in memory, create one Linear DOC ticket and one draft PR "
-        "using the ship-docs-update skill. "
-        "If nothing needs docs changes, say so briefly and stop."
+        "First call the release-research subagent for deepagents-code "
+        "(get_release_diff, get_product_source_file, check_docs_coverage). "
+        "Then ship only needs_docs features from that report with surgical "
+        "get_docs_file edits, product=deepagents-code, and ship-docs-update. "
+        "Never claim a ticket or PR without a tool-returned URL. "
+        "Lead with the outcome. If research finds nothing, say so briefly and stop."
     ),
 )

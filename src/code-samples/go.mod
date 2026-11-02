@@ -1,10 +1,10 @@
 module github.com/langchain-ai/docs-code-samples
 
-go 1.25.0
+go 1.26.7
 
 require (
 	github.com/google/uuid v1.6.0
-	github.com/langchain-ai/langsmith-go v0.25.4
+	github.com/langchain-ai/langsmith-go v0.28.0
 )
 
 require (

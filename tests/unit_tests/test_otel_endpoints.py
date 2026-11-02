@@ -58,11 +58,12 @@ def test_otlp_traces_endpoint_mocked_export() -> None:
     }
 
     with patch.dict(os.environ, test_env, clear=True):
-        exporter = OTLPSpanExporter()
+        session = MagicMock()
+        exporter = OTLPSpanExporter(session=session)
         assert exporter._endpoint == expected_url
 
-        with patch.object(exporter._session, "post") as mock_post:
-            mock_post.return_value = MagicMock(status_code=200, text="OK")
+        with patch.object(session, "request") as mock_request:
+            mock_request.return_value = MagicMock(status_code=200, text="OK")
 
             provider = TracerProvider()
             provider.add_span_processor(SimpleSpanProcessor(exporter))
@@ -73,8 +74,8 @@ def test_otlp_traces_endpoint_mocked_export() -> None:
 
             provider.force_flush()
 
-            assert mock_post.called
-            called_url = mock_post.call_args.kwargs["url"]
+            assert mock_request.called
+            called_url = mock_request.call_args.kwargs["url"]
             assert called_url == expected_url
             assert not called_url.endswith("/v1/traces/v1/traces")
 
@@ -88,11 +89,12 @@ def test_otlp_base_endpoint_appends_single_suffix() -> None:
     }
 
     with patch.dict(os.environ, test_env, clear=True):
-        exporter = OTLPSpanExporter()
+        session = MagicMock()
+        exporter = OTLPSpanExporter(session=session)
         assert exporter._endpoint == expected_url
 
-        with patch.object(exporter._session, "post") as mock_post:
-            mock_post.return_value = MagicMock(status_code=200, text="OK")
+        with patch.object(session, "request") as mock_request:
+            mock_request.return_value = MagicMock(status_code=200, text="OK")
 
             provider = TracerProvider()
             provider.add_span_processor(SimpleSpanProcessor(exporter))
@@ -103,7 +105,7 @@ def test_otlp_base_endpoint_appends_single_suffix() -> None:
 
             provider.force_flush()
 
-            assert mock_post.called
-            called_url = mock_post.call_args.kwargs["url"]
+            assert mock_request.called
+            called_url = mock_request.call_args.kwargs["url"]
             assert called_url == expected_url
             assert not called_url.endswith("/v1/traces/v1/traces")

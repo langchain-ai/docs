@@ -193,9 +193,10 @@ Each rule specifies:
 | Field | Description |
 |-------|-------------|
 | `name` | Required. Identifier for the rule |
-| `type` | Omit for header injection; `aws`, `gcp`, or `azure` for provider auth |
-| `match_hosts` | Required for header rules; rejected on `aws`, `gcp`, and `azure` rules. Bare hostnames, or a leading `*.` wildcard in front of a registrable domain (`*.github.com`, not `*.com` or `*`). No scheme, path, or port. The wildcard does not match the apex domain |
-| `match_paths` | Paths to match (empty = all paths). Header rules only |
+| `type` | Omit for header injection; `aws`, `gcp`, or `azure` for provider auth; `relay` to send matching connections through a [relay](/langsmith/relays) |
+| `match_hosts` | Required for header rules. Optional on `aws` and `gcp` rules, where it narrows the provider's built-in hosts to the listed hosts under `amazonaws.com` or `googleapis.com`; rejected on `azure` rules. Bare hostnames, or a leading `*.` wildcard in front of a registrable domain (`*.github.com`, not `*.com` or `*`). No scheme, path, or port. The wildcard does not match the apex domain |
+| `match_paths` | Paths to match (empty = all paths). Header rules only. Patterns are matched against the request path without the query string; see [Match rules by path or header](#match-rules-by-path-or-header) |
+| `match_headers` | Request headers that must all be present, each written `"name: value"` with a lowercase name and an exact value. Header rules only; see [Match rules by path or header](#match-rules-by-path-or-header) |
 | `headers` | Headers to inject, each with a `name`, `type`, and `value`. Header rules only |
 | `aws` / `gcp` / `azure` | Provider credentials; see [Authenticate AWS requests](#authenticate-aws-requests), [Authenticate GCP requests](#authenticate-gcp-requests), and [Authenticate Azure requests](#authenticate-azure-requests) |
 | `env_vars` | Environment variables to set in the sandbox while the rule is enabled |
@@ -211,6 +212,73 @@ Each header has a required `type` that controls how its value is stored and disp
 | `workspace_secret` | References a workspace secret using `{KEY}` syntax. Resolved when the proxy configuration is applied. |
 | `plaintext` | Value is stored and returned as-is. Use for non-sensitive headers. |
 | `opaque` | Write-only. Value is encrypted at rest and never returned via the API. |
+
+### Match rules by path or header
+
+`match_hosts` alone sends every request to a host through one rule. Add `match_paths` or `match_headers` to give different requests to the same host different credentials. The proxy checks enabled header rules in list order and applies the first rule whose host, path, and headers all match, so put the more specific rule first.
+
+`match_paths` patterns are compared with the request path, not the query string:
+
+| Pattern | Matches |
+|---------|---------|
+| `/v1/runs` | Exactly `/v1/runs` |
+| `/v1/*` or `/v1/**` | Any path that starts with `/v1`. The match is on the text before `/*`, so `/v1/*` also matches `/v10` |
+| `*/runs` | Any path that ends with the text after the slash, `runs`. It also matches `/v1/xruns` |
+| `*` or `**` | Every path |
+
+A pattern cannot put a wildcard in the middle of a path, such as `/v1/*/runs`.
+
+The same host can use a different credential per route. This example sends one secret for requests under `/ingest` and another for requests under `/query`:
+
+```json
+{
+  "rules": [
+    {
+      "name": "ingest",
+      "match_hosts": ["api.example.com"],
+      "match_paths": ["/ingest/*"],
+      "headers": [
+        {"name": "x-api-key", "type": "workspace_secret", "value": "{INGEST_API_KEY}"}
+      ]
+    },
+    {
+      "name": "query",
+      "match_hosts": ["api.example.com"],
+      "match_paths": ["/query/*"],
+      "headers": [
+        {"name": "x-api-key", "type": "workspace_secret", "value": "{QUERY_API_KEY}"}
+      ]
+    }
+  ]
+}
+```
+
+When routes share a path, or the credential depends on which account the code is acting for, switch on a request header instead. Each `match_headers` entry is `"name: value"` with a lowercase name and an exact value, and the rule matches only when the request carries every listed header. Have the sandbox send a placeholder, and the rule replaces it with the real credential:
+
+```json
+{
+  "rules": [
+    {
+      "name": "account-a",
+      "match_hosts": ["api.example.com"],
+      "match_headers": ["authorization: Bearer account-a"],
+      "headers": [
+        {"name": "Authorization", "type": "workspace_secret", "value": "Bearer {ACCOUNT_A_TOKEN}"}
+      ]
+    },
+    {
+      "name": "account-b",
+      "match_hosts": ["api.example.com"],
+      "match_headers": ["authorization: Bearer account-b"],
+      "headers": [
+        {"name": "Authorization", "type": "workspace_secret", "value": "Bearer {ACCOUNT_B_TOKEN}"}
+      ]
+    }
+  ]
+}
+```
+
+`match_paths` and `match_headers` are accepted on header rules only. `aws`, `gcp`, `azure`, and `relay` rules reject both.
 
 ### Set environment variables from a rule
 
@@ -329,7 +397,8 @@ AWS auth rules are different from header injection rules:
 
 - Set `type` to `aws`.
 - Put credentials under the `aws` object.
-- Do not set `match_hosts`, `match_paths`, or `headers`; AWS host matching is built into the proxy.
+- Do not set `match_paths` or `headers`. AWS host matching is built into the proxy.
+- Optionally set `match_hosts` to hosts under `amazonaws.com`, such as `sts.amazonaws.com`, to narrow the rule to those hosts. A narrowed rule must still cover any S3 mount that relies on it.
 - Configure at most one AWS auth rule per sandbox. The limit counts every AWS rule, including disabled ones.
 
 ```bash
@@ -532,6 +601,7 @@ GCP auth rules are different from header injection rules:
 - Put credentials under `gcp.service_account_json`, or set `gcp.workload_identity_provider` instead. The two are mutually exclusive.
 - Optionally set `gcp.scopes` to a list of OAuth scopes. When omitted, it defaults to `https://www.googleapis.com/auth/cloud-platform`.
 - The proxy matches `googleapis.com` and its subdomains automatically and authenticates those requests with the configured credentials. Hosts under `google.com` are not matched. Plaintext HTTP to a matched host is rejected with `403`.
+- Optionally set `match_hosts` to hosts under `googleapis.com`, such as `bigquery.googleapis.com`, to narrow the rule to those hosts. A narrowed rule must still cover any GCS mount that relies on it.
 - Configure at most one GCP auth rule per sandbox. The limit counts every GCP rule, including disabled ones.
 
 The SDK `gcp_auth` and `gcpAuth` helpers build this same rule shape.

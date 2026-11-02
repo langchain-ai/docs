@@ -5,12 +5,11 @@ schedule = define_schedule(
     timezone="America/Los_Angeles",
     prompt=(
         "Run the OpenWiki docs release check. "
-        "Load the openwiki skill. "
-        "Find the newest OpenWiki release published at least 7 days ago. "
-        "Compare it to the OpenWiki docs under src/oss/openwiki/. "
-        "For each user-facing feature that needs documentation changes and is not "
-        "already tracked in memory, create one Linear DOC ticket and one draft PR "
-        "using the ship-docs-update skill. "
-        "If nothing needs docs changes, say so briefly and stop."
+        "First call the release-research subagent for openwiki "
+        "(get_release_diff, get_product_source_file, check_docs_coverage). "
+        "Then ship only needs_docs features from that report with surgical "
+        "get_docs_file edits, product=openwiki, and ship-docs-update. "
+        "Never claim a ticket or PR without a tool-returned URL. "
+        "Lead with the outcome. If research finds nothing, say so briefly and stop."
     ),
 )

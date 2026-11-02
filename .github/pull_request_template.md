@@ -1,40 +1,27 @@
-## Overview
-<!-- Brief description of what documentation is being added/updated -->
+## Why
+<!-- The problem this change solves, in two or three sentences. -->
 
-## Type of change
+## Changes
+<!-- One bullet per meaningful change, naming the page or file. -->
+-
 
-**Type:** [Replace with: New documentation page / Update existing documentation / Fix typo/bug/link/formatting / Remove outdated content / Other]
+## Review notes
+<!-- Where to look hardest, decisions a reviewer may disagree with, claims you could not verify, and the preview link. Delete this section if there is nothing to flag. -->
 
-## Related issues/PRs
+## Related
 <!--
-Link to related issues, feature PRs, or discussions (if applicable)
-
-To automatically close an issue when this PR is merged, use closing keywords:
-- "closes #123" or "fixes #123" or "resolves #123"
-
-For regular references without auto-closing, just use:
-- "#123" or "See issue #123"
-
-Examples:
-- closes #456 (will auto-close issue #456 when PR is merged)
-- See #789 for context (will reference but not auto-close issue #789)
+Issues, PRs, Linear tickets, or Slack threads. Delete this section if there are none.
+External contributors: a new page, guide, or tutorial needs a linked issue that a maintainer approved and assigned to you. Typos and small fixes do not.
+"Closes #123" closes a GitHub issue on merge. "Closes [DOC-123](<linear url>)" moves the Linear issue with this PR.
 -->
-- GitHub issue:
-- Feature PR:
-
-<!-- For LangChain employees, if applicable: -->
-- Linear issue:
-- Slack thread:
 
 ## Checklist
-<!-- Put an 'x' in all boxes that apply -->
-- [ ] I have read the [contributing guidelines](../README.md), including the [language policy](https://docs.langchain.com/oss/python/contributing/overview#language-policy)
-- [ ] I have tested my changes locally using `docs dev`
-- [ ] All code examples have been tested and work correctly
-- [ ] I have used **root relative** paths for internal links
-- [ ] I have updated navigation in `src/docs.json` if needed
+<!-- Tick only what you did. Leave the rest unticked. -->
+- [ ] I read the [contributing guidelines](https://docs.langchain.com/oss/contributing/documentation), including the [language policy](https://docs.langchain.com/oss/python/contributing/overview#language-policy)
+- [ ] I checked the rendered pages locally with `docs dev` or on the preview deployment
+- [ ] I ran every changed code example, or none changed
+- [ ] `make lint_prose` passes on the changed files
+- [ ] `make broken-links-with-anchors` passes, or no links, pages, or navigation changed
+- [ ] I updated `src/docs.json` navigation and redirects, or no page was added, moved, or removed
 
-(Internal team members only / optional): Create a preview deployment as necessary using the [Create Preview Branch workflow](https://github.com/langchain-ai/docs/actions/workflows/create-preview-branch.yml)
-
-## Additional notes
-<!-- Any other information that would be helpful for reviewers -->
+<!-- If an AI agent helped, say so in one plain sentence here, for example "Prepared with Claude Code." Do not add a "Generated with" badge. -->

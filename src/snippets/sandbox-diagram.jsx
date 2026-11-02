@@ -9,6 +9,15 @@ export const SandboxDiagram = ({ name }) => {
       title: "Self-hosted Sandbox architecture",
       description: "Apps connect to the platform backend, which manages sandbox hosts on dedicated Kubernetes nodes. PostgreSQL stores placement, while JuiceFS uses dedicated Redis metadata and object storage.",
     },
+    "separate-cluster": {
+      viewBox: "0 0 900 1004",
+      sources: {
+        light: "/images/langsmith/sandboxes/self-host-separate-cluster.svg",
+        dark: "/images/langsmith/sandboxes/self-host-separate-cluster-dark.svg",
+      },
+      title: "Self-hosted Sandboxes in a separate cluster",
+      description: "The platform backend in the LangSmith cluster calls sandbox hosts in a separate sandbox cluster on TCP port 19190, and the hosts call back over HTTPS to config.endpoint. The sandbox cluster holds copies of two secrets, uses its own Kubernetes API for Leases, and reaches JuiceFS storage; PostgreSQL stays with LangSmith.",
+    },
     node: {
       viewBox: "0 0 820 630",
       sources: {
