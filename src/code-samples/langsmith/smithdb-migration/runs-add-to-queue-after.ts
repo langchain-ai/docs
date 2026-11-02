@@ -18,14 +18,14 @@ if (runs.length === 0) {
   throw new Error("expected at least one run in the 'default' project");
 }
 // :remove-end:
-await client.addRunsToAnnotationQueue(
-  queueId,
-  runs.map((run) => ({
-    runId: run.id,
-    sessionId: run.session_id!,
-    startTime: run.start_time!,
+await client.annotationQueues.items.create(queueId, {
+  items: runs.map((run) => ({
+    item_type: "RUN" as const,
+    run_id: run.id,
+    project_id: run.session_id!,
+    start_time: new Date(run.start_time).toISOString(),
   })),
-);
+});
 // :snippet-end:
 
 // :remove-start:
