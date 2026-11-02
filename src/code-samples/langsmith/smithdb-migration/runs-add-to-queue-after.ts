@@ -23,7 +23,7 @@ await client.annotationQueues.items.create(queueId, {
     item_type: "RUN" as const,
     run_id: run.id,
     project_id: run.session_id!,
-    start_time: new Date(run.start_time).toISOString(),
+    start_time: new Date(run.start_time!).toISOString(),
   })),
 });
 // :snippet-end:
