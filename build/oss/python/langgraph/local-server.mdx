@@ -77,7 +77,7 @@ You will find a `.env.example` in the root of your new LangGraph app. Create a `
 ```bash
 LANGSMITH_API_KEY=lsv2...
 LANGSMITH_AGENT_ID="<your-agent-id>"
-LANGSMITH_AGENT_ENVIRONMENT="production"
+LANGSMITH_AGENT_ENVIRONMENT="local"
 ```
 
 ## 5. Launch Agent server
