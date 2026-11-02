@@ -191,6 +191,13 @@ skill.
 Say which branch the edits are on and whether it is the PR's own branch. Name
 the related pages you changed, and the ones you read and left alone. If
 anything could not be verified, list it. Do not push or force-push unless the
-user asks. When the user asks you to push, the merge-state check and the check
-watching in `open-docs-pr` apply here too. When the edits have no PR to land
-on, open one with `open-docs-pr`.
+user asks.
+
+When you write or update a PR description, two rules apply:
+
+- **Linear**: When the work has a Linear issue, write `Closes [DOC-N](<linear url>)`
+  in the description. `sync-linear-issue-from-pr.yml` moves the issue with the PR.
+- **AI disclosure**: End the description with one plain sentence, such as
+  `Prepared with Claude Code.` Do not add a `🤖 Generated with [Claude Code](...)`
+  badge or any similar badge. `check-pr-ai-attribution` fails a PR that carries
+  one, because the squash merge copies it into the commit on `main`.
