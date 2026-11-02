@@ -5,7 +5,7 @@ description: Documents the reviewed daily refresh that converts the LangSmith pl
 tags: [langsmith, openapi, automation, github-actions, mintlify, security]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-30T08:15:16.596Z
+    at: 2026-11-02T08:15:40.431Z
 sources:
   - id: openwiki-source-5153f86e64d6ee0b305f72b3
     resource: repo://.github/workflows/refresh-langsmith-openapi.yml
@@ -21,7 +21,7 @@ sources:
     resource: repo://src/docs.json
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-30T08:15:16.596Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-02T08:15:40.431Z" }
 ---
 
 # LangSmith OpenAPI Refresh
@@ -98,7 +98,7 @@ The workflow first saves the generated candidate, restores the checked-out artif
 3. With no diff, it exits successfully without a commit or PR change.
 4. With a diff, it commits that file. An existing PR receives an appended commit and normal push. Without an open PR, it force-pushes the standing branch because no open PR references it, then creates a PR against `main`.
 
-This keeps one outstanding refresh PR rather than a daily queue. The PR is the human review boundary for a changing, externally sourced public API reference. Review newly visible or hidden operations, title/version labels, and tag groups before merging.
+This keeps one outstanding refresh PR rather than a daily queue. The PR is the human review boundary for a changing, externally sourced public API reference. The workflow creates or updates a PR but does not merge it. Review newly visible or hidden operations, title/version labels, and tag groups before merging.
 
 ## Failure semantics and validation boundaries
 
