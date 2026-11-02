@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Sync Linear DOC issue status from a GitHub pull request lifecycle event.
 
-Used by `.github/workflows/sync-linear-issue-from-pr.yml` for PRs opened by
-docs-release-watch (and any other PR that links a DOC issue the same way).
+Used by `.github/workflows/sync-linear-issue-from-pr.yml` for docs-release-watch
+PRs (labeled ``release-watch-agent``) that link a DOC issue with ``Closes DOC-N``.
 
 Status mapping (resolved against the issue's team workflow states):
 

@@ -1,158 +1,164 @@
 ---
 type: documentation change workflow
 title: LangSmith Agent and Observability Documentation Changes
-description: Safely change the connected LangSmith agent, environment, trace-routing, compatibility-project, observability, integration, sample, and REST-reference documentation surfaces without editing derived output.
-tags: [langsmith, agents, observability, tracing, documentation, openapi, code-samples]
+description: Maintain the LangSmith Agent Registry, agent trace routing, OpenTelemetry endpoint guidance, runnable language samples, and Managed Deep Agents local-development documentation from their current authored sources.
+tags: [langsmith, agent-registry, observability, opentelemetry, code-samples, managed-deep-agents]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-27T08:21:38.674Z
+    at: 2026-11-02T08:15:40.431Z
 sources:
-  - id: openwiki-source-5153f86e64d6ee0b305f72b3
-    resource: repo://.github/workflows/refresh-langsmith-openapi.yml
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
-  - id: openwiki-source-697851c98229599f97376bfb
-    resource: repo://scripts/process_langsmith_openapi.py
-  - id: openwiki-source-11d4965febd3986495e06a17
-    resource: repo://src/code-samples/langsmith/create-an-agent.py
-  - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
-    resource: repo://src/docs.json
+  - id: openwiki-source-1c494078a5bc24c18e739845
+    resource: repo://src/code-samples/langsmith/log-traces-to-agent.py
+  - id: openwiki-source-649910a81a9d0d931eac8979
+    resource: repo://src/code-samples/langsmith/log-traces-to-agent.ts
+  - id: openwiki-source-2787d60f424ace517f93b306
+    resource: repo://src/code-samples/langsmith/TraceAgentExample.java
   - id: openwiki-source-f685babda3a9a82ad6b9c98e
     resource: repo://src/langsmith/agent-environments.mdx
-  - id: openwiki-source-661abd9305024589f43ce542
-    resource: repo://src/langsmith/agents.mdx
+  - id: openwiki-source-da820a9dbbf8f16f1502a5c0
+    resource: repo://src/langsmith/agent-registry.mdx
   - id: openwiki-source-efb95e7fd1324eefaec0577a
     resource: repo://src/langsmith/create-an-agent.mdx
   - id: openwiki-source-dab366a6f340489dcb3ad96d
     resource: repo://src/langsmith/log-traces-to-agent.mdx
-  - id: openwiki-source-9364a51b23a5a207bf223965
-    resource: repo://src/langsmith/observability-quickstart.mdx
+  - id: openwiki-source-d67d5f0a5ce9fbed759bdc27
+    resource: repo://src/langsmith/managed-deep-agents-deploy.mdx
+  - id: openwiki-source-3e03021a4dd4632fe50b6e24
+    resource: repo://src/langsmith/managed-deep-agents-local-development.mdx
   - id: openwiki-source-24a416c8599e676dd1a4a590
     resource: repo://src/langsmith/resolve-an-agent.mdx
-  - id: openwiki-source-5b871fd80900677c39fa5e02
-    resource: repo://src/langsmith/trace-openai.mdx
   - id: openwiki-source-f845dc2957bc8fe97f16df14
     resource: repo://src/langsmith/trace-with-opentelemetry.mdx
   - id: openwiki-source-6d41225f7bc7f09eb9953a9b
     resource: repo://src/snippets/langsmith/otlp-agent-addressing-note.mdx
-  - id: openwiki-source-7da40ee42e374d97f67c7361
-    resource: repo://src/snippets/langsmith/trace-ingestion-project.mdx
-  - id: openwiki-source-8358ceb3c932d2549365532d
-    resource: repo://src/snippets/trace-with-openai.mdx
-generated: { by: "openwiki/0.4.3", at: "2026-10-27T08:21:38.674Z" }
+  - id: openwiki-source-71e085db64c5296fd9b80141
+    resource: repo://tests/unit_tests/test_otel_endpoints.py
+generated: { by: "openwiki/0.4.3", at: "2026-11-02T08:15:40.431Z" }
 ---
 
-## Scope and ownership
+## Scope and source ownership
 
-This workflow maintains a *connected documentation contract*, not a duplicate of LangSmith product documentation. The authored LangSmith MDX pages explain different parts of one model: an agent has an immutable identifier, traces are addressed to that identifier **and** one environment, and an environment has legacy trace-storage identities for APIs and integrations that still speak in projects. Keep those statements coherent wherever the model is introduced, configured, queried, or shown in a framework integration.
+This workflow covers one connected contract: a registered LangSmith agent is the destination for traces, an environment selects the destination within that agent, SDK and OTLP clients convey that address, and documentation presents runnable examples without making generated fragments authoritative. It also covers the local Managed Deep Agents (MDA) path, which produces Local-environment traces under that same registry model.
 
-| Surface | Durable owner | Safe change action | Do not treat as source |
-| --- | --- | --- | --- |
-| Agent, environment, registration, addressing, resolution, concepts, quickstart, and framework-integration narrative | Authored `src/langsmith/*.mdx` and authored reusable `src/snippets/langsmith/*.mdx` / `src/snippets/*.mdx` | Edit the page or shared snippet that owns the rule; revise its consumers when a shared statement changes. | A rendered route beneath `build/`. |
-| Agent-registration display fragments | Marked regions in `src/code-samples/langsmith/create-an-agent.py` | Change, run, and regenerate from the executable source. | `src/code-samples-generated/` and the committed fragment MDX as primary inputs. |
-| Committed display fragments | `src/snippets/code-samples/create-agent-py.mdx` and `agent-environment-project-py.mdx` | Commit regenerated output and inspect it with the importing guide. | Handwritten replacement for the executable example. |
-| LangSmith REST reference input | `src/langsmith/langsmith-platform-openapi.json`, generated by `scripts/process_langsmith_openapi.py` | Change processor policy or the service contract, then regenerate and review through the dedicated refresh path. | Individual JSON operations or endpoint MDX. |
-| REST endpoint pages | Mintlify deployment configured in `src/docs.json` | Verify a preview or deployed site. | Deployment-generated `/langsmith/smith-api` endpoints and `build/`. |
+Edit the source that owns the behavior, then update its documentation consumers. In particular:
 
-The repository builder emits ordinary `src/langsmith/` pages once below `/langsmith/`; these are not Python/JavaScript route pairs. `src/docs.json` separately projects the agent setup pages, observability pages, resolution page, and the OpenAPI reference into navigation. When a change adds, removes, moves, or renames a page, make the navigation/redirect decision explicitly rather than assuming the source file or a menu label supplies it.
+| Change | Authoritative source | Consumer boundary to check |
+| --- | --- | --- |
+| Registry model, identifiers, environments | `src/langsmith/agent-registry.mdx`, `src/langsmith/agent-environments.mdx` | Registration, routing, resolution, and UI guidance |
+| Agent-routing rules and supported SDKs | `src/langsmith/log-traces-to-agent.mdx` | Shared OTLP addressing note and language sample imports |
+| OTLP setup and endpoint semantics | `src/langsmith/trace-with-opentelemetry.mdx` and `src/snippets/langsmith/otlp-agent-addressing-note.mdx` | All OTLP examples and endpoint tests |
+| Python, TypeScript, and Java trace examples | `src/code-samples/langsmith/log-traces-to-agent.py`, `log-traces-to-agent.ts`, and `TraceAgentExample.java` | Generated `src/snippets/code-samples/trace-agent-*.mdx` imports only |
+| MDA local development | `src/langsmith/managed-deep-agents-local-development.mdx` | MDA deploy guidance and the agent-registration prerequisite |
 
-## The invariant to preserve
+Do not repair a rendered `src/snippets/code-samples/` fragment by hand. It is output from marked runnable sources. Preserve `:snippet-start:`, `:snippet-end:`, and `:remove:` regions: the visible example and the hidden validation harness deliberately have different jobs.
+
+## Registry and destination invariants
 
 ```mermaid
 flowchart LR
-  Workspace["Workspace"] --> Agent["Registered agent identifier"]
-  Agent --> Environment["One fixed environment"]
-  Environment --> Trace["Addressed trace"]
-  Registration["Registration response"] --> Compatibility["tracer session name and ID"]
-  Compatibility --> Legacy["Legacy project integrations and query APIs"]
-  Address["Code variables or OTLP headers"] --> Agent
-  Address --> Environment
+  Workspace["Cloud workspace"] --> Agent["Registered agent ID"]
+  Agent --> Env["Production, Staging, Development, or Local"]
+  Env --> Trace["Trace"]
+  Address["SDK address or OTLP headers"] --> Agent
+  Address --> Env
+  Env --> Session["Compatibility session values"]
 ```
 
-*An agent address selects an environment for trace ingestion, while that environment supplies compatibility identities for older project-shaped consumers.*
+This diagram shows that an address chooses an agent and one environment, while the selected environment supplies compatibility storage identities.
 
-The following are cross-page invariants, and a change to any one requires checking the affected connected pages and snippets:
+An agent is a workspace-level organization unit. Every trace belongs to one agent environment; the fixed names are Production, Staging, Development, and Local, and custom names are not available. The identifier is the immutable routing value, whereas the display name is editable. Do not infer an identifier or an environment's backing session values from a display name.
 
-1. **Address is a pair.** An agent identifier and environment identify the destination together. The fixed vocabulary is `local`, `development`, `staging`, and `production` for code configuration; neither member alone supplies a default destination. Explicit SDK address configuration wins over environment variables.
-2. **Identifier is not display name.** Registration establishes a stable, immutable identifier; the display name is editable. Guides and examples must route with the identifier and must not suggest constructing it from a label.
-3. **Creation is setup, not request-path work.** Programmatic creation needs a setup credential with `projects:create`; tracing thereafter can use a tracing key. A duplicate identifier returns `409`, and an archived identifier remains unavailable.
-4. **Environment storage is the compatibility bridge.** An environment yields `tracer_session_name` for integrations requiring `project_name` and `tracer_session_id` / resolved `session_id` for APIs named `project_id` or `project_ids`. These are returned backing-storage values, not strings an author or reader should derive from an agent name.
-5. **Do not mix destination dialects.** Agent addressing must not coexist with legacy project settings for the same trace. This includes `LANGSMITH_PROJECT`, `LANGCHAIN_PROJECT`, and `LANGCHAIN_SESSION`, and applies to code configuration and OTLP headers. A project override intentionally routes that call to its project destination; a simultaneous explicit address and project name is an error. Partial agent variables warn and leave otherwise unaddressed calls untraced.
-6. **Workspace capability matters.** Agent addressing is for Cloud agent-based workspaces. Project-based and self-hosted documentation must use the project compatibility path rather than imply that agent routing will work; agent-addressed requests in unsupported self-hosted workspaces are rejected.
+Registration is setup, not startup work. Programmatic creation requires a PAT or service key with `projects:create`; a tracing key can submit traces later but cannot create the record. SDK/API/UI-created external agents start with all four environments, while agents created in Build start with Production and acquire other environments when first addressed. An existing or archived identifier produces a `409`, so callers should reuse or deliberately choose another identifier rather than retry creation on every application run.
 
-## Change by responsibility, not by page count
+For older integrations that still require a project-shaped destination, retrieve the selected environment. Use its returned `tracer_session_name` for `project_name`-style settings and its `tracer_session_id` or resolved `session_id` with APIs named `session_id`, `project_id`, or `project_ids`. These are returned compatibility/storage values, not name transformations.
 
-### Model, setup, and query surfaces
+## Trace routing: precedence and failure behavior
 
-Use the smallest owner for a conceptual change, then propagate only its contract:
+An agent address is an identifier plus one of `local`, `development`, `staging`, or `production`; neither half selects a destination alone. Code configuration wins over environment variables. The SDK reads `LANGSMITH_AGENT_ID` and `LANGSMITH_AGENT_ENVIRONMENT` only if no code destination is given, and a partial pair warns rather than guessing: otherwise unaddressed calls are left untraced.
 
-- `agents.mdx` owns the workspace → agent → environment → trace mental model and identifier/display-name distinction. `agent-environments.mdx` owns the four names, creation-dependent availability, and UI selection semantics. Keep their environment vocabulary and lifecycle statements aligned.
-- `create-an-agent.mdx` owns registration routes, ID validation, credentials, duplicate behavior, response fields, and the compatibility-project retrieval workflow. It must distinguish registration of an external LangSmith record from an in-process framework call that builds or runs an agent.
-- `log-traces-to-agent.mdx` owns SDK/environment-variable and OTLP destination configuration, precedence, conflicts, and trace-ingestion errors. `resolve-an-agent.mdx` owns converting an agent/environment address to the storage UUID consumed by project-shaped query and feedback APIs. Do not collapse `tracer_session_name` and `session_id`: they serve different legacy call sites.
-- `observability-concepts.mdx` owns the run/trace/thread/trajectory vocabulary and explains an environment as backing trace storage in agent-based workspaces. `observability-quickstart.mdx` is the executable reader journey: configure credentials and destination, instrument the app, run it, then locate the trace. Keep it compatible with both agent-based routing and project-based/self-hosted guidance.
+Agent addressing is available only in Cloud agent-based workspaces. Project-based workspaces, including self-hosted LangSmith, retain project-based configuration; self-hosted ingestion that carries an agent address is rejected with `403`, and the request records no runs.
 
-The quickstart's inline Python/TypeScript examples are authored page content, while its Java and Kotlin blocks are imported generated code-sample fragments. Its trace-ingestion setup is a reusable authored snippet, so a wording or configuration change there can affect multiple guides. The OpenAI guide is a thin consumer of the reusable `src/snippets/trace-with-openai.mdx`; change the snippet when the shared wrapper behavior or prerequisites change, not only the consuming page. OpenTelemetry is a separate authored integration guide, with shared prerequisite and OTLP-addressing notes.
+Keep the two routing dialects mutually exclusive:
 
-### Framework and OpenTelemetry integration boundaries
+- Agent variables combined with `LANGSMITH_PROJECT`, `LANGCHAIN_PROJECT`, or `LANGCHAIN_SESSION` warn and suppress calls without an explicit code destination.
+- Passing `address` and `project_name` in the same Python or TypeScript call is an error. An ingestion request that carries both agent and project addresses is rejected.
+- A `project_name` override in code is different: it intentionally overrides agent variables, which lets an evaluation use its own experiment destination.
 
-For wrapper or framework changes, confirm that all integrations still communicate the same destination rules rather than copying configuration independently:
+The language samples are concise demonstrations of the same contract: Python uses `ls.agent_address(...)` in `@traceable` or `tracing_context`, TypeScript puts `new AgentAddress(...)` in `traceable` configuration, and Java puts `new AgentAddress(...)` in `TraceConfig`. Keep their address, API, dependency version, and hidden assertions aligned with the routing guide; do not promote an extracted snippet to a separate implementation.
 
-- The OpenAI reusable snippet says `wrap_openai` / `wrapOpenAI` provides automatic client tracing and composes with `traceable`; it still requires `LANGSMITH_TRACING=true`, an API key, and, in agent-based workspaces, both agent variables.
-- The quickstart demonstrates an outer traceable function, a nested tool span, and a wrapped OpenAI client; its viewing instructions must agree with the selected agent environment or legacy project destination.
-- OpenTelemetry supports either LangSmith SDK integration or a standard OTLP exporter. With agent-based routing, exporter requests carry both `Langsmith-Agent-Id` and `Langsmith-Agent-Environment`; the Python SDK can derive them from the agent variables only when `OTEL_EXPORTER_OTLP_HEADERS` is unset. Other exporters need the headers explicitly. OTLP rejects one header without the other, or agent headers together with `Langsmith-Project`; self-hosted/project-based guidance uses the project header instead.
+## OpenTelemetry: headers and endpoint shape
 
-Do not turn trace semantic-attribute mapping or OpenTelemetry fanout into an agent-addressing change. Those mappings describe how spans become run fields; destination selection remains an ingestion-level address/header concern.
+OTLP agent routing uses request headers, not span attributes. In an agent-based workspace, send both `Langsmith-Agent-Id` and `Langsmith-Agent-Environment`; `gen_ai.agent.name` does not route a trace. A request with only one agent header, or an agent header mixed with `Langsmith-Project`, receives `400`. The Python exporter can derive both headers from the two LangSmith agent variables with `langsmith>=0.14.9`, but only when `OTEL_EXPORTER_OTLP_HEADERS` is unset. TypeScript and other exporters must supply the headers themselves. Project-based and self-hosted configurations use `Langsmith-Project` instead.
 
-## Runnable registration example and derived fragments
+Endpoint variables have deliberately different semantics:
 
-`create-an-agent.py` is a two-snippet executable source. The `create-agent-py` region creates `support-agent` with `Client.agents.create`; the `agent-environment-project-py` region retrieves it, selects `PRODUCTION`, and prints its compatibility session name and ID. `create-an-agent.mdx` imports both generated fragments, so registration API changes have one coupled update path:
+- `OTEL_EXPORTER_OTLP_ENDPOINT` is a base URL. An OTLP/HTTP exporter appends `/v1/traces`, so `https://api.smith.langchain.com/otel` becomes `https://api.smith.langchain.com/otel/v1/traces`.
+- `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is a per-signal URL used exactly as provided. A collector's `traces_endpoint` is likewise the full trace URL.
 
-1. Update the runnable file's visible SDK calls and hidden fixture schema/assertions together.
-2. Preserve the two marker IDs and their matching extraction boundaries. The source deliberately has two reader-facing fragments, so it is not a public-trace publication candidate.
-3. Run the source against its loopback fixture, regenerate fragment MDX, and inspect both generated files plus the importing guide.
-4. Keep the guide's `langsmith>=0.14.12` installation instruction aligned with the repository dependency floor and actual SDK API use.
+Never set the generic base variable to a URL already ending in `/v1/traces`: it yields `/v1/traces/v1/traces` and a `404`. Preserve this distinction in prose and configuration examples; the focused endpoint tests scan all MDX for the invalid generic pattern and instantiate the HTTP exporter to verify both forms resolve once.
 
-The hidden fixture starts a loopback `ThreadingHTTPServer`, clears and patches process environment to use it, disables tracing, returns `/info` metadata and an agent-shaped response, and asserts the SDK sends the documented create POST followed by retrieval GET. It makes the example a deterministic SDK request/response contract test without credentials or a live agent. Do not replace it with a real service call merely to make the displayed fragment appear shorter.
-
-```bash
-make test-code-samples FILES="src/code-samples/langsmith/create-an-agent.py"
-make code-snippets
+```mermaid
+sequenceDiagram
+  participant App as Instrumented application
+  participant Exporter as OTLP HTTP exporter
+  participant Ingest as LangSmith ingestion
+  App->>Exporter: emits spans
+  Exporter->>Ingest: base endpoint plus v1 traces
+  Note over Exporter,Ingest: Agent routing includes both agent headers
+  Ingest-->>App: rejects incomplete or mixed destination
 ```
 
-Use this source-specific regeneration while iterating only with the usual caution that rendering still scans retained extraction intermediates:
+This sequence distinguishes transport endpoint construction from request-level destination validation.
 
-```bash
-CODE_SNIPPET_SOURCES="src/code-samples/langsmith/create-an-agent.py" make code-snippets
+## Managed Deep Agents local-development path
+
+`mda dev` is a local compile-and-run workflow, not a deployment operation. It validates the MDA project, writes `.mda/build`, copies the project `.env` and local identity configuration when needed, creates a local Context Hub mock, starts the language-specific LangGraph development server, and opens Studio. A source change requires stopping and rerunning the command to recompile. Studio supports inspecting responses, tool calls, state, and interrupts without creating or updating a hosted deployment.
+
+```mermaid
+flowchart TD
+  Project["MDA project"] --> Dev["mda dev"]
+  Dev --> Build[".mda/build"]
+  Dev --> Context["Local Context Hub mock"]
+  Dev --> Server["Local LangGraph server"]
+  Server --> Studio["LangSmith Studio"]
+  Server --> LocalTrace["Local environment trace"]
+  LocalTrace --> Registry["Existing matching agent record"]
 ```
 
-Changes to the general extraction/rendering mechanism also need its focused generator coverage; generation checks presentation consistency but do not execute the sample.
+This flow shows that local execution works independently of hosted deployment, but agent-based trace ingestion needs the registered destination.
 
-## REST reference boundary
+Local runs use the agent's Local environment and the `{name}-local` project, where `name` comes from `define_deep_agent` or `defineDeepAgent`. In an agent-based workspace, those traces are rejected until a matching agent record exists. Create it once with the same identifier or run `mda deploy` once; Studio chat still works while trace ingestion is rejected. Local defaults also provide a test identity when needed, fall back to a temporary local sandbox when the configured sandbox is unavailable, and list schedules without provisioning or running them. Test identity and sandbox behavior in a development deployment before production use.
 
-The programmatic registration narrative may name `POST /api/v1/agents` and `GET /api/v1/agents/{id}`, but authored MDX is not the REST endpoint reference. `src/docs.json` supplies `src/langsmith/langsmith-platform-openapi.json` as the input for Mintlify's `langsmith/smith-api` directory, which Mintlify renders at deployment. The committed JSON is itself a generated, reviewed platform input. Never hand-edit it, a generated endpoint page, or `build/` to correct API documentation.
+`mda deploy` is the complementary hosted path: it compiles the project, syncs deploy-owned context, uploads the compiled source, and triggers a hosted Agent Server build. Its routing is intentionally separated: instructions and skills go to Context Hub; non-reserved `.env` values may become hosted secrets; source is archived from `.mda/build`; and schedules are reconciled after the deployment is live. `--no-wait` exits before that state and therefore skips schedule reconciliation.
 
-For a REST-reference change, use [LangSmith OpenAPI Refresh](/openwiki/workflows/langsmith-openapi-refresh.md): alter `scripts/process_langsmith_openapi.py` policy or the upstream service-owned contract, regenerate, review the standing refresh PR, and inspect deployment rendering. `make check-openapi` validates the separate Agent Server OpenAPI document, not this platform reference; local link filtering deliberately excludes deployment-generated `smith-api` routes. This workflow therefore cannot use a passing local OpenAPI check as proof that every LangSmith REST endpoint rendered.
+## Change and validation checklist
 
-## Focused validation and review
+1. Start with the registry/environment pages when changing terminology, identifier behavior, or the lifecycle of environments. Reconcile registration, routing, and resolution rather than duplicating rules inconsistently.
+2. For routing changes, check Cloud versus self-hosted behavior, the partial-variable case, code precedence, and all project-versus-agent conflict outcomes.
+3. For OTLP edits, preserve base versus per-signal endpoint semantics and header-pair validation. Run the focused test:
 
-Choose checks by the contract changed:
+   ```bash
+   uv run pytest tests/unit_tests/test_otel_endpoints.py
+   ```
 
-| Changed contract | Focused evidence |
-| --- | --- |
-| Registration sample or its snippet markers | `make test-code-samples FILES="src/code-samples/langsmith/create-an-agent.py"`, then `make code-snippets` and review both fragments and imports. |
-| Generated-fragment renderer behavior | `make test TEST_FILE=tests/unit_tests/test_generate_code_snippet_mdx.py` and a regenerated diff. |
-| Authored agent, address, quickstart, OpenAI, or OTel prose | `make lint_prose FILES="src/langsmith/..."`; include changed shared snippets in review and run link/build validation if routes or links changed. |
-| Navigation, route, anchor, or docs configuration | `make broken-links-with-anchors`; a clean build is required because `docs.json` independently controls menus and OpenAPI declarations. |
-| OpenAPI policy or committed platform specification | Controlled processor regeneration, diff review, and Mintlify preview/deployment verification; use the separate refresh workflow. |
-| Live framework/provider behavior | Run a credentialed representative sample only when the change crosses that remote boundary. The loopback registration fixture is intentionally not evidence of production credentials or service mutation. |
+4. For a language sample, edit and execute the runnable source, then regenerate snippets and review the importing MDX—not the generated fragment as a source:
 
-Before merge, trace each changed statement through its consumer: agent model → addressing guide and reusable prerequisites → quickstart/integration pages; registration response → compatibility-project and resolver guidance; executable sample → generated fragments → creation guide; platform API input → deployment-generated reference. This catches the characteristic failures in this area: a renamed variable in only one guide, a display name offered as an address, an invented project name, conflicting OTLP headers, a copied generated snippet, or an endpoint “fix” made in derived output.
+   ```bash
+   make test-code-samples FILES="src/code-samples/langsmith/log-traces-to-agent.py"
+   make test-code-samples FILES="src/code-samples/langsmith/log-traces-to-agent.ts"
+   make test-code-samples FILES="src/code-samples/langsmith/TraceAgentExample.java"
+   make code-snippets
+   ```
+
+5. For MDA local-development changes, keep `mda dev` separate from deployment claims; verify the Local trace destination, registration prerequisite, Studio behavior, sandbox fallback, and non-running schedules against the deployment page where the behavior crosses that boundary.
 
 ## Related pages
 
-- [Repository Source Map](/openwiki/architecture/source-map.md)
 - [Documentation Route and Language Versioning](/openwiki/concepts/versioning.md)
-- [Repository Wiki Quickstart](/openwiki/quickstart.md)
-- [Testing and Validation Overview](/openwiki/testing/test-overview.md)
+- [Reference Documentation Boundaries](/openwiki/integrations/reference-docs.md)
 - [Runnable Code Samples and Snippet Generation](/openwiki/workflows/code-sample-lifecycle.md)
-- [LangSmith OpenAPI Refresh](/openwiki/workflows/langsmith-openapi-refresh.md)
+- [Testing Overview](/openwiki/testing/test-overview.md)
+- [Quickstart](/openwiki/quickstart.md)
+- [Egress IP Inventory](/openwiki/workflows/egress-ip-inventory.md)
