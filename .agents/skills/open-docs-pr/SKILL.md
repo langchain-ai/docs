@@ -83,9 +83,11 @@ any section that would be empty rather than leaving placeholder comments.
 - **Review notes**: Where to look hardest, decisions the reviewer may disagree
   with, and every claim you could not verify against source. A preview link
   goes here once the preview deploys.
-- **Related**: Issues, PRs, Linear tickets, and Slack threads. Write
-  `Closes [DOC-N](<linear url>)` to let `sync-linear-issue-from-pr.yml` move
-  the Linear issue with the PR.
+- **Related**: Issues, PRs, Linear tickets, and Slack threads. Link DOC tickets
+  with `Closes [DOC-N](<linear url>)` or `Refs [DOC-N](<linear url>)` as
+  appropriate. Automatic Linear status sync from
+  `sync-linear-issue-from-pr.yml` is limited to docs-release-watch PRs labeled
+  `release-watch-agent`; human PRs do not get that label and do not trigger it.
 - **Checklist**: Tick only what you actually did in Step 2. Leave the rest
   unticked rather than claiming it.
 
