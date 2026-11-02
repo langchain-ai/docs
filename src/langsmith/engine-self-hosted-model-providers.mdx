@@ -220,7 +220,7 @@ If your organization routes model traffic through its own LLM gateway, Engine ca
 Model gateway support requires LangSmith Helm chart `0.17.31` or later.
 </Info>
 
-Whoever installs LangSmith configures the gateway in the Helm values, not in the UI. Gateway URLs are often private addresses, so an organization setting would let any Organization Admin point Engine at internal services. Model gateways are not yet available on [BYOC](/langsmith/engine-self-hosted#engine-on-byoc).
+Whoever installs LangSmith configures the gateway in the Helm values, not in the UI. Gateway URLs are often private addresses, so an organization setting would let any Organization Admin point Engine at internal services. On [BYOC](/langsmith/engine-self-hosted#engine-on-byoc) data planes on AWS, LangChain configures the gateway for you. See [Use a gateway on BYOC](#use-a-gateway-on-byoc).
 
 ### Gateway requirements
 
@@ -342,6 +342,24 @@ To set it up:
 Engine runs on a schedule, not as a signed-in user. Its tokens identify the organization and workspace, with `actor_type` set to `api_key:service`, and they do not include an IdP token. If your `ext_authz` or `ext_proc` service exchanges a user's IdP token for gateway credentials, handle Engine's requests separately, for example by mapping the workspace to gateway credentials.
 
 If Engine reports that the LLM auth proxy is not enabled for the organization, or that the organization has no JWT audience, complete [Configure organization settings in LangSmith](/langsmith/llm-auth-proxy-self-hosted#3-configure-organization-settings-in-langsmith).
+
+### Use a gateway on BYOC
+
+On [BYOC](/langsmith/engine-self-hosted#engine-on-byoc) data planes on AWS, LangChain configures the gateway, so you don't edit Helm values. Model gateways are not yet available on BYOC data planes on Azure or Google Cloud.
+
+1. Check that your gateway meets the [gateway requirements](#gateway-requirements) and that your data plane can reach it.
+1. Choose how Engine authenticates to the gateway:
+
+   - **API key**: Store the gateway key in AWS Secrets Manager, in the AWS account and region that host your data plane. The secret's name must start with `langsmith/`, because your data plane can read only secrets with that prefix. Store the key as a plain string, or as a field of a JSON secret. Encrypt the secret with the default `aws/secretsmanager` key. If you use your own KMS key instead, ask LangChain which role to allow in its key policy.
+   - **LLM auth proxy**: Install the [LLM auth proxy](/langsmith/llm-auth-proxy-self-hosted) where your data plane can reach it, and complete its organization settings. Set the proxy's `jwksUri` to `https://<data-plane-host>/api/.well-known/jwks.json`. Your data plane signs the tokens Engine sends with its own key, and this URL publishes that key.
+
+1. Contact LangChain with:
+   - The APIs your gateway serves: Anthropic, OpenAI, or both.
+   - The base URL for each API, as described in [Configure the gateway](#configure-the-gateway). For the LLM auth proxy, give the proxy's URLs instead.
+   - The authentication method. For an API key, include the secret's ARN, the JSON field that holds the key if the secret is JSON, and the header name if your gateway doesn't expect `Authorization: Bearer <key>`.
+1. After LangChain confirms the change, [test and select the gateway](#configure-the-gateway) under **Settings > Engine > Model providers**.
+
+If the key can't be read, for example because the secret was deleted or its KMS key doesn't allow LangSmith, **Test connection** fails for the gateway. Engine's other providers and the rest of LangSmith keep working.
 
 ## Connect privately
 

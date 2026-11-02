@@ -211,9 +211,18 @@ Skip this step for a change too small to have prose in it, such as a pure
 
 ## Step 7. Open the pull request
 
-Follow the `open-docs-pr` skill to commit, write the PR description, push, and
-watch the checks. If the change belongs on an existing PR, use `docs-edit`
-instead.
+Commit, push, and open the PR however you usually do. If the change belongs on
+an existing PR, use `docs-edit` instead. Two rules apply to the PR description:
+
+- **Linear**: When the work has a Linear issue, link it with
+  `Closes [DOC-N](<linear url>)` or `Refs [DOC-N](<linear url>)` as
+  appropriate. `sync-linear-issue-from-pr.yml` only syncs status for
+  docs-release-watch PRs labeled `release-watch-agent`, so a human PR does not
+  move the issue.
+- **AI disclosure**: End the description with one plain sentence, such as
+  `Prepared with Claude Code.` Do not add a `🤖 Generated with [Claude Code](...)`
+  badge or any similar badge. `check-pr-ai-attribution` fails a PR that carries
+  one, because the squash merge copies it into the commit on `main`.
 
 ## Checklist
 
@@ -231,4 +240,4 @@ instead.
 - [ ] `make check-mdx` clean.
 - [ ] `make lint_prose` clean, `make broken-links-with-anchors` shows no new `⎿` lines.
 - [ ] `docs-review` run on the changed files, findings addressed.
-- [ ] PR opened with `open-docs-pr`, checks green.
+- [ ] PR description references the Linear issue, if any, and has no AI badge.

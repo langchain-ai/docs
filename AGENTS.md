@@ -50,7 +50,6 @@ once to link the tree, and again in each new git worktree.
 | `docs-restructure` | Splitting a page that grew too long, moving sections between pages, retiring a page, or a topic documented in two places: the duplication map, choosing one owner, cutting rather than relocating. |
 | `docs-team-voice` | Drafting or revising prose in the house voice: sentence length, cross-link density, stating defaults, the revision pass. |
 | `docs-review` | Reviewing changed prose against Vale and the style guide, reporting the rule each finding breaks. `add-docs-page` invokes it before committing. |
-| `open-docs-pr` | Opening a PR for finished changes: branching from the latest `origin/main`, the lint and link gates, the commit, the short PR description with its AI disclosure line, pushing, and watching checks. |
 | `docs-tooling-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, and how to edit safely. Required whenever a PR adds or changes a script, workflow, or check. |
 | `docs-code-samples` | Moving inline MDX code blocks into external, testable sample files. |
 | `verify-against-source` | Checking that a code sample, signature, default, or behavior claim is true: which repository owns each product, how to reach the private ones, and naming what stayed unverified. |
@@ -473,11 +472,15 @@ These are common nouns, not proper nouns. Write them lowercase in prose, includi
 
 ### Product and feature name capitalization
 
-Capitalize a word when it refers to a **product or brand name**. Use lowercase when it refers to a **common noun**: a thing you build, an instance, or a type.
+Capitalize a word when it refers to a **product or brand name**, or to a **named feature** of a product. Use lowercase when it refers to a **common noun**: a thing you build, an instance, or a type.
 
 **Capitalize** product and brand names:
 
 - LangChain, LangGraph, LangSmith, Deep Agents, Fleet, Engine
+
+**Capitalize** named features of a product:
+
+- Agent Registry (a named feature of LangSmith)
 
 **Lowercase** common nouns (things you create, instances, or types):
 
@@ -487,7 +490,7 @@ Capitalize a word when it refers to a **product or brand name**. Use lowercase w
 - "Build agents across the agent development lifecycle" (the lifecycle is a process, not a product; marketing materials capitalize it, docs do not)
 - "LangChain provides the open agent engineering platform" (the phrase describes what LangChain provides; it is not a product name)
 
-When in doubt, ask: is this word the product's proper name, or is it describing a thing the user creates or works with? If the latter, use lowercase.
+When in doubt, ask: is this word the proper name of a product or a named feature, or is it describing a thing the user creates or works with? If the latter, use lowercase.
 
 Spell out "agent development lifecycle" in prose. Do not use the "ADLC" acronym, which appears in marketing materials but not in the documentation.
 

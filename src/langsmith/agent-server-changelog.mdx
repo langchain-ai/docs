@@ -21,13 +21,168 @@ rss: true
 
 Deployments use the newest `stable` version by default and are automatically updated to the newest `stable` version on each new revision. To pin to a specific version, set [`api_version`](/langsmith/cli#pinning-api-version) to the desired version in langgraph.json.
 
-## v0.17
+## v0.18
 
-Latest version: `0.17.0rc6`
+Latest version: `0.18.0rc1`
 
 <Callout icon="info" color="#F59E0B">
-This minor line is still a release candidate. The last stable release is `0.16.7`.
+This minor line is still a release candidate. The last stable release is `0.17.0`.
 </Callout>
+
+### Changes
+
+#### New Features
+- When a deployment is stopped before becoming ready, shutdown logs now report which startup phase was stuck and for how long, including guidance when the phase is customer graph code.
+- Updated CI infrastructure to run MCP conformance tests (`0.2.0-alpha.12`) against specific protocol revisions with isolated baselines.
+- The MCP endpoint now also accepts clients on MCP revision 2026-07-28, which send their protocol version and capabilities with each request and discover the server with `server/discover`.
+- Added `FF_RESUME_DRAINED_RUNS` to resume runs stopped by `RunControl.request_drain()` from their checkpoint instead of failing them. Requires langgraph 1.2.15+ in the deployment's dependencies; on older langgraph the flag is ignored with a startup warning.
+- Hands off in-flight runs to another replica when a replica shuts down, on Postgres-backed deployments running langgraph 1.2.15 or later with `FF_RESUME_DRAINED_RUNS` enabled.
+- Add `LANGGRAPH_THREAD_HISTORY_MAX_STATE_BYTES` (off by default) to cap how much thread state one history request returns. When set, history returns the newest state, then stops before the entry that would exceed the limit.
+- GET and POST /threads/{thread_id}/history accept `select` to return only the named fields of each state, including single keys of the state values such as `values.messages`. On Postgres-backed servers, `select` also keeps the server from loading the unselected state.
+- Supports OpenTelemetry SDK 1.45 and Prometheus exporter 0.66. Prometheus metrics now include `otel_scope_*` labels, and resource attributes include `service.instance.id`.
+- JS graphs can call their own deployment with the SDK client, using the `langgraph_api:url` context variable as its `apiUrl`, including under custom auth.
+- MCP clients on revision 2026-07-28 that support form elicitation are now asked for input when a graph pauses on `interrupt()` with a text question, and the tool call resumes with their answers.
+- MCP clients on revision 2026-07-28 that don't declare form elicitation now get error -32021, naming the capability, when a tool pauses with a question a form could answer, instead of an explicit error result.
+- MCP clients on revision 2026-07-28 now get typed forms for interrupts that declare a `response_schema`, and graphs that call MCP tools through `langchain.mcp` or `@langchain/mcp-adapters` pass those tools' form and URL questions on to the client.
+- MCP clients on revision 2026-07-28 can now approve, edit, reject or answer tool calls that LangChain's human-in-the-loop middleware pauses, in Python and JS, in batched and per-call mode.
+- Run attempts are now stored in postgres. Note that during rollout of this change active runs might run for more than the allocated number of retries on failure.
+- Adds a feature flag to opt into multi-process execution mode, which spins up separate python processes to execute runs. Set `DISPATCH_MODE=multi-process` so the Go queue worker claims background runs and executes them. This is a beta feature in active development. It is only available for python at the moment.
+
+#### Fixes
+- MCP tool results are now JSON instead of Python repr() text, failed runs include the error message, and a tool that pauses on interrupt() returns an explicit error result instead of looking like a success.
+- Preserves request IDs in worker logs for runs started or resumed through HTTP event-streaming commands.
+- Fixes runs on Redis Cluster that kept running after a cancel or rollback request once a failover or scale-in removed a Redis node.
+- Fixes A2A SendMessage ignoring non-blocking configuration.
+- Fixes `input.respond` failing with `no_such_interrupt` while the interrupt's run is still going; the answer is now queued and applied when the run pauses.
+- Fixes `input.respond` rejecting interrupts with `no_such_interrupt` when the run that raised them then failed, timed out or was cancelled, or was started from an earlier checkpoint.
+- Ignores a `cron_id` sent in a run's or cron's `config.configurable`, `context` or `checkpoint`; the server sets it for cron runs.
+- `run.start` input sent while a thread is paused on several interrupts now returns `invalid_argument` and leaves the thread paused, instead of starting a run that fails.
+- Ignores server-reserved keys such as cron_id and __after_seconds__ when they arrive in a v2 event-streaming run.start config, in a cron's stored checkpoint, or in a request header matched by http.configurable_headers, as the REST routes already do for request bodies.
+- Lower Agent Server memory use for streaming v2 SSE connections, which no longer keep a per-run event replay buffer.
+- Thread event streams now reject a thread the caller can't read before streaming: `POST /threads/{thread_id}/stream/events` returns 403 or 404 instead of a 200 with an error frame (422 for a malformed thread ID), and the WebSocket endpoint closes with 4403, 4404 or 4422.
+- A message sent with `run.start` while a run is going is now queued at once instead of after up to 5 seconds, and is no longer lost when sent while answered interrupts are running or after cancelling a run that had none open.
+- Fixes run cancellation so a run that a worker starts during the cancel is still stopped, a run that finishes during the cancel keeps its final status, and running runs stop within one heartbeat interval even if their cancel signal is lost.
+- Fixes the Redis run queue starting two runs of one thread at the same time, and keeps a thread's next run moving after a pending run is cancelled or deleted.
+- Lets browser clients resume a run stream after a dropped connection by exposing the `Location` header to cross-origin requests.
+- Fixes v3 streaming to respect graph output schemas for Python and JavaScript graphs.
+- The MCP endpoint now runs on the official MCP Python SDK. GET and DELETE return 405, a bad Accept header returns 406, and an unknown MCP-Protocol-Version header returns 400.
+- Fixes history and state operations failing for factory graphs when using the gRPC checkpointer.
+- Accepts `stream_mode` `"tools"` on the run routes again, so `useStream` apps that track tool progress can send messages. These routes don't stream tool events yet.
+- The thread stream honors the `stream_mode` filter that `threads.join_stream` (Python) and `threads.joinStream` (JS) send, instead of returning every event.
+- Runs whose stream events can't be published now finish instead of stopping early and being recorded as successful, timed-out runs end their stream with an `error` event, and resumable runs in `messages` stream mode replay their message events when rejoined.
+- Fixes JS graphs streamed in `messages` mode with subgraphs never sending `messages/complete`, and a JS graph process that crashes now and then no longer stops the whole server on its fourth exit.
+- Fixes API errors for up to 90 seconds after the core restarts, and abandoned thread streams holding server resources until they were garbage collected.
+- Fixes `http.disable_event_streaming`, which was ignored and left v2 event streaming mounted.
+- Ends a streaming response whose client has stopped reading for 2 minutes, instead of keeping its stream open indefinitely.
+- Fixes runs on threads that once used the event streaming endpoints streaming in the event streaming format instead of their requested stream modes.
+- Fixes Playwright's browser driver and other subprocesses started from worker threads failing to launch on LangSmith Deployment.
+- After a dropped connection, `runs.join_stream` and `runs.join` reconnect with the same `stream_mode` and `cancel_on_disconnect` instead of dropping them.
+- Fixes thread history and checkpoint cleanup failing for threads whose first run used `durability="exit"` with a DeltaChannel.
+- Stateless runs now return `Location` and `Content-Location` headers that point at the run, so clients can reconnect to a dropped stateless stream, and SDK `on_run_created` callbacks receive the run's temporary `thread_id`.
+- Ignores the `webhook` field on run and cron requests when `http.disable_webhooks` is set, so the server no longer resolves or stores the client-supplied URL.
+- Fixes a goroutine leak in the Go core when a Redis stream read fails after its client has stopped reading (optimized streaming).
+- Fixes thread streams resumed with a `Last-Event-ID` of `0` or a millisecond timestamp returning no events, and `<ms>-*` ids failing on thread and run streams.
+- Resuming a stream in `langgraph dev` with `Last-Event-ID` no longer skips events published in the same millisecond.
+- Fixes JS graphs streaming one Anthropic reply under two message ids in legacy `messages` mode.
+- The thread stream now accepts a negative `Last-Event-ID` such as `-1`, as run join does, and replays every event.
+- Fixes `langgraph dev` letting a thread's next run start before an interrupted run has stopped, interrupts not stopping runs older than four minutes, and rollbacks requested before a restart rerunning the run.
+- Fixes a memory leak in `langgraph dev` where every closed thread stream left behind a queue that kept receiving state updates.
+- `stream_mode="events"` now omits events from runs tagged `nostream` (`langsmith:nostream` in LangGraph.js), as the `messages` stream mode does.
+- Restores terminal error events for interrupted and rolled-back streamed runs, including interrupt replay on resumable streams, and reports user interrupts as interrupted rather than failed on v2 streams.
+- Fixes `GET /threads/{thread_id}/runs/{run_id}/stream` returning only one mode when `stream_mode` lists several, as the Python SDK and JS SDK 1.12+ send.
+- Fixes a bug where worker heartbeats could be lost on redis restart causing all active runs to be swept. Worker heartbeats now write to postgres. (The redis heartbeat is also preserved until `0.19.0` for backwards compatibility during upgrades).
+- Stops copying the run context and other internal run config into every checkpoint's metadata, so checkpoint rows no longer grow with the size of the run context.
+- Fixes startup failures with FastAPI included routers when custom-route authentication or auth-first middleware ordering is enabled, while preserving nested route path parameters for authentication and middleware.
+
+#### Security
+- Store operations from graphs now reject namespace labels that are empty or contain `.`, as the HTTP store API does, so such a label can no longer read or change another namespace's items.
+- Updates Python dependencies to address known security vulnerabilities.
+- The MCP endpoint now rejects requests whose `Origin` header the server's CORS settings don't allow (HTTP 403), on every MCP revision, to block DNS rebinding. Loopback origins are always allowed, and a `*` wildcard allows no other origin, so list your browser MCP clients' origins in `CORS_ALLOW_ORIGINS` or `CORS_CONFIG`. Also fixes a `CORS_CONFIG` with only `allow_origin_regex` allowing every origin.
+- Updates Go builds to mitigate the eMudhra certificate authority compromise.
+- Updates Python certificate trust bundles.
+- Patches Agent Server networking and tracing dependencies.
+
+<Accordion title="v0.18 releases">
+<Update label="2026-10-30" tags={["agent-server"]}>
+## v0.18.0rc1
+
+### New Features
+- When a deployment is stopped before becoming ready, shutdown logs now report which startup phase was stuck and for how long, including guidance when the phase is customer graph code.
+- Updated CI infrastructure to run MCP conformance tests (`0.2.0-alpha.12`) against specific protocol revisions with isolated baselines.
+- The MCP endpoint now also accepts clients on MCP revision 2026-07-28, which send their protocol version and capabilities with each request and discover the server with `server/discover`.
+- Added `FF_RESUME_DRAINED_RUNS` to resume runs stopped by `RunControl.request_drain()` from their checkpoint instead of failing them. Requires langgraph 1.2.15+ in the deployment's dependencies; on older langgraph the flag is ignored with a startup warning.
+- Hands off in-flight runs to another replica when a replica shuts down, on Postgres-backed deployments running langgraph 1.2.15 or later with `FF_RESUME_DRAINED_RUNS` enabled.
+- Add `LANGGRAPH_THREAD_HISTORY_MAX_STATE_BYTES` (off by default) to cap how much thread state one history request returns. When set, history returns the newest state, then stops before the entry that would exceed the limit.
+- GET and POST /threads/{thread_id}/history accept `select` to return only the named fields of each state, including single keys of the state values such as `values.messages`. On Postgres-backed servers, `select` also keeps the server from loading the unselected state.
+- Supports OpenTelemetry SDK 1.45 and Prometheus exporter 0.66. Prometheus metrics now include `otel_scope_*` labels, and resource attributes include `service.instance.id`.
+- JS graphs can call their own deployment with the SDK client, using the `langgraph_api:url` context variable as its `apiUrl`, including under custom auth.
+- MCP clients on revision 2026-07-28 that support form elicitation are now asked for input when a graph pauses on `interrupt()` with a text question, and the tool call resumes with their answers.
+- MCP clients on revision 2026-07-28 that don't declare form elicitation now get error -32021, naming the capability, when a tool pauses with a question a form could answer, instead of an explicit error result.
+- MCP clients on revision 2026-07-28 now get typed forms for interrupts that declare a `response_schema`, and graphs that call MCP tools through `langchain.mcp` or `@langchain/mcp-adapters` pass those tools' form and URL questions on to the client.
+- MCP clients on revision 2026-07-28 can now approve, edit, reject or answer tool calls that LangChain's human-in-the-loop middleware pauses, in Python and JS, in batched and per-call mode.
+- Run attempts are now stored in postgres. Note that during rollout of this change active runs might run for more than the allocated number of retries on failure.
+- Adds a feature flag to opt into multi-process execution mode, which spins up separate python processes to execute runs. Set `DISPATCH_MODE=multi-process` so the Go queue worker claims background runs and executes them. This is a beta feature in active development. It is only available for python at the moment.
+
+### Fixes
+- MCP tool results are now JSON instead of Python repr() text, failed runs include the error message, and a tool that pauses on interrupt() returns an explicit error result instead of looking like a success.
+- Preserves request IDs in worker logs for runs started or resumed through HTTP event-streaming commands.
+- Fixes runs on Redis Cluster that kept running after a cancel or rollback request once a failover or scale-in removed a Redis node.
+- Fixes A2A SendMessage ignoring non-blocking configuration.
+- Fixes `input.respond` failing with `no_such_interrupt` while the interrupt's run is still going; the answer is now queued and applied when the run pauses.
+- Fixes `input.respond` rejecting interrupts with `no_such_interrupt` when the run that raised them then failed, timed out or was cancelled, or was started from an earlier checkpoint.
+- Ignores a `cron_id` sent in a run's or cron's `config.configurable`, `context` or `checkpoint`; the server sets it for cron runs.
+- `run.start` input sent while a thread is paused on several interrupts now returns `invalid_argument` and leaves the thread paused, instead of starting a run that fails.
+- Ignores server-reserved keys such as cron_id and __after_seconds__ when they arrive in a v2 event-streaming run.start config, in a cron's stored checkpoint, or in a request header matched by http.configurable_headers, as the REST routes already do for request bodies.
+- Lower Agent Server memory use for streaming v2 SSE connections, which no longer keep a per-run event replay buffer.
+- Thread event streams now reject a thread the caller can't read before streaming: `POST /threads/{thread_id}/stream/events` returns 403 or 404 instead of a 200 with an error frame (422 for a malformed thread ID), and the WebSocket endpoint closes with 4403, 4404 or 4422.
+- A message sent with `run.start` while a run is going is now queued at once instead of after up to 5 seconds, and is no longer lost when sent while answered interrupts are running or after cancelling a run that had none open.
+- Fixes run cancellation so a run that a worker starts during the cancel is still stopped, a run that finishes during the cancel keeps its final status, and running runs stop within one heartbeat interval even if their cancel signal is lost.
+- Fixes the Redis run queue starting two runs of one thread at the same time, and keeps a thread's next run moving after a pending run is cancelled or deleted.
+- Lets browser clients resume a run stream after a dropped connection by exposing the `Location` header to cross-origin requests.
+- Fixes v3 streaming to respect graph output schemas for Python and JavaScript graphs.
+- The MCP endpoint now runs on the official MCP Python SDK. GET and DELETE return 405, a bad Accept header returns 406, and an unknown MCP-Protocol-Version header returns 400.
+- Fixes history and state operations failing for factory graphs when using the gRPC checkpointer.
+- Accepts `stream_mode` `"tools"` on the run routes again, so `useStream` apps that track tool progress can send messages. These routes don't stream tool events yet.
+- The thread stream honors the `stream_mode` filter that `threads.join_stream` (Python) and `threads.joinStream` (JS) send, instead of returning every event.
+- Runs whose stream events can't be published now finish instead of stopping early and being recorded as successful, timed-out runs end their stream with an `error` event, and resumable runs in `messages` stream mode replay their message events when rejoined.
+- Fixes JS graphs streamed in `messages` mode with subgraphs never sending `messages/complete`, and a JS graph process that crashes now and then no longer stops the whole server on its fourth exit.
+- Fixes API errors for up to 90 seconds after the core restarts, and abandoned thread streams holding server resources until they were garbage collected.
+- Fixes `http.disable_event_streaming`, which was ignored and left v2 event streaming mounted.
+- Ends a streaming response whose client has stopped reading for 2 minutes, instead of keeping its stream open indefinitely.
+- Fixes runs on threads that once used the event streaming endpoints streaming in the event streaming format instead of their requested stream modes.
+- Fixes Playwright's browser driver and other subprocesses started from worker threads failing to launch on LangSmith Deployment.
+- After a dropped connection, `runs.join_stream` and `runs.join` reconnect with the same `stream_mode` and `cancel_on_disconnect` instead of dropping them.
+- Fixes thread history and checkpoint cleanup failing for threads whose first run used `durability="exit"` with a DeltaChannel.
+- Stateless runs now return `Location` and `Content-Location` headers that point at the run, so clients can reconnect to a dropped stateless stream, and SDK `on_run_created` callbacks receive the run's temporary `thread_id`.
+- Ignores the `webhook` field on run and cron requests when `http.disable_webhooks` is set, so the server no longer resolves or stores the client-supplied URL.
+- Fixes a goroutine leak in the Go core when a Redis stream read fails after its client has stopped reading (optimized streaming).
+- Fixes thread streams resumed with a `Last-Event-ID` of `0` or a millisecond timestamp returning no events, and `<ms>-*` ids failing on thread and run streams.
+- Resuming a stream in `langgraph dev` with `Last-Event-ID` no longer skips events published in the same millisecond.
+- Fixes JS graphs streaming one Anthropic reply under two message ids in legacy `messages` mode.
+- The thread stream now accepts a negative `Last-Event-ID` such as `-1`, as run join does, and replays every event.
+- Fixes `langgraph dev` letting a thread's next run start before an interrupted run has stopped, interrupts not stopping runs older than four minutes, and rollbacks requested before a restart rerunning the run.
+- Fixes a memory leak in `langgraph dev` where every closed thread stream left behind a queue that kept receiving state updates.
+- `stream_mode="events"` now omits events from runs tagged `nostream` (`langsmith:nostream` in LangGraph.js), as the `messages` stream mode does.
+- Restores terminal error events for interrupted and rolled-back streamed runs, including interrupt replay on resumable streams, and reports user interrupts as interrupted rather than failed on v2 streams.
+- Fixes `GET /threads/{thread_id}/runs/{run_id}/stream` returning only one mode when `stream_mode` lists several, as the Python SDK and JS SDK 1.12+ send.
+- Fixes a bug where worker heartbeats could be lost on redis restart causing all active runs to be swept. Worker heartbeats now write to postgres. (The redis heartbeat is also preserved until `0.19.0` for backwards compatibility during upgrades).
+- Stops copying the run context and other internal run config into every checkpoint's metadata, so checkpoint rows no longer grow with the size of the run context.
+- Fixes startup failures with FastAPI included routers when custom-route authentication or auth-first middleware ordering is enabled, while preserving nested route path parameters for authentication and middleware.
+
+### Security
+- Store operations from graphs now reject namespace labels that are empty or contain `.`, as the HTTP store API does, so such a label can no longer read or change another namespace's items.
+- Updates Python dependencies to address known security vulnerabilities.
+- The MCP endpoint now rejects requests whose `Origin` header the server's CORS settings don't allow (HTTP 403), on every MCP revision, to block DNS rebinding. Loopback origins are always allowed, and a `*` wildcard allows no other origin, so list your browser MCP clients' origins in `CORS_ALLOW_ORIGINS` or `CORS_CONFIG`. Also fixes a `CORS_CONFIG` with only `allow_origin_regex` allowing every origin.
+- Updates Go builds to mitigate the eMudhra certificate authority compromise.
+- Updates Python certificate trust bundles.
+- Patches Agent Server networking and tracing dependencies.
+
+</Update>
+</Accordion>
+
+## v0.17
+
+Latest version: `0.17.0`
 ### Changes
 
 #### New Features
@@ -51,11 +206,34 @@ This minor line is still a release candidate. The last stable release is `0.16.7
 - Restores 0.17.0rc1 handling of `run.start` input sent while a run is going, so a resume sent right after an interrupt (for example from `RemoteGraph`) resumes the run instead of starting a new one with the resume value as input.
 - Lower Agent Server memory use for streaming v2 SSE connections, which no longer keep a per-run event replay buffer.
 - Fixes history and state operations failing for factory graphs when using the gRPC checkpointer.
+- Fixes Playwright's browser driver and other subprocesses started from worker threads failing to launch on LangSmith Deployment.
+- Fixes thread history and checkpoint cleanup failing for threads whose first run used `durability="exit"` with a DeltaChannel.
 
 #### Security
 - Store operations from graphs now reject namespace labels that are empty or contain `.`, as the HTTP store API does, so such a label can no longer read or change another namespace's items.
 
 <Accordion title="v0.17 releases">
+<Update label="2026-10-29" tags={["agent-server"]}>
+## v0.17.0
+
+### Security
+- Includes dependency and security maintenance updates.
+
+</Update>
+<Update label="2026-10-28" tags={["agent-server"]}>
+## v0.17.0rc8
+
+### Fixes
+- Fixes thread history and checkpoint cleanup failing for threads whose first run used `durability="exit"` with a DeltaChannel.
+
+</Update>
+<Update label="2026-10-27" tags={["agent-server"]}>
+## v0.17.0rc7
+
+### Fixes
+- Fixes Playwright's browser driver and other subprocesses started from worker threads failing to launch on LangSmith Deployment.
+
+</Update>
 <Update label="2026-10-26" tags={["agent-server"]}>
 ## v0.17.0rc6
 
@@ -125,7 +303,7 @@ This minor line is still a release candidate. The last stable release is `0.16.7
 
 ## v0.16
 
-Latest version: `0.16.7`
+Latest version: `0.16.9`
 ### Changes
 
 #### New Features
@@ -170,6 +348,8 @@ Latest version: `0.16.7`
 - Fixes a prune that could delete DeltaChannel history needed by later reads on threads where `update_state` ran under langgraph before 1.2.13.
 - Preserves request IDs in worker logs for runs started or resumed through HTTP event-streaming commands.
 - Fixes history and state operations failing for factory graphs when using the gRPC checkpointer.
+- Fixes Playwright's browser driver and other subprocesses started from worker threads failing to launch on LangSmith Deployment.
+- Fixes JS deployments cancelling in-flight runs and streams on shutdown instead of draining gracefully.
 
 #### Security
 - Update the Go toolchain to 1.26.8 and upgrade golang.org/x/mod to address checksum database verification vulnerabilities.
@@ -187,6 +367,20 @@ Latest version: `0.16.7`
 - Updates certifi, Hono and Vite to patched versions to address published security advisories.
 
 <Accordion title="v0.16 releases">
+<Update label="2026-10-28" tags={["agent-server"]}>
+## v0.16.9
+
+### Fixes
+- Fixes JS deployments cancelling in-flight runs and streams on shutdown instead of draining gracefully.
+
+</Update>
+<Update label="2026-10-27" tags={["agent-server"]}>
+## v0.16.8
+
+### Fixes
+- Fixes Playwright's browser driver and other subprocesses started from worker threads failing to launch on LangSmith Deployment.
+
+</Update>
 <Update label="2026-10-26" tags={["agent-server"]}>
 ## v0.16.7
 
@@ -337,7 +531,7 @@ Latest version: `0.16.7`
 
 ## v0.15
 
-Latest version: `0.15.9`
+Latest version: `0.15.10`
 ### Changes
 
 #### New Features
@@ -355,6 +549,7 @@ Latest version: `0.15.9`
 - Fix HTTPS webhooks failing after the AnyIO security upgrade.
 - Fix agent server startup crash (`ImportError: _ExtendedAttributes`) caused by an unpinned Datadog tracer install pulling opentelemetry-api 1.45.0.
 - Fixes a memory leak in the Go core's Postgres checkpointer caused by an outdated Datadog tracing dependency.
+- Fixes Playwright's browser driver and other subprocesses started from worker threads failing to launch on LangSmith Deployment.
 
 #### Security
 - Fix grpc-go security vulnerabilities by upgrading to 1.83.2.
@@ -372,6 +567,13 @@ Latest version: `0.15.9`
 - Updates bundled certifi and Hono to clear known CVEs.
 
 <Accordion title="v0.15 releases">
+<Update label="2026-10-27" tags={["agent-server"]}>
+## v0.15.10
+
+### Fixes
+- Fixes Playwright's browser driver and other subprocesses started from worker threads failing to launch on LangSmith Deployment.
+
+</Update>
 <Update label="2026-10-23" tags={["agent-server"]}>
 ## v0.15.9
 
@@ -517,7 +719,7 @@ Latest version: `0.15.9`
 
 ## v0.14
 
-Latest version: `0.14.7`
+Latest version: `0.14.9`
 ### Changes
 
 #### New Features
@@ -540,6 +742,7 @@ Latest version: `0.14.7`
 - Fix gRPC checkpointer failures when private runtime config contains non-JSON values.
 - Fix agent server startup crash (`ImportError: _ExtendedAttributes`) caused by an unpinned Datadog tracer install pulling opentelemetry-api 1.45.0.
 - Fixes a memory leak in the Go core's Postgres checkpointer caused by an outdated Datadog tracing dependency.
+- Fixes Playwright's browser driver and other subprocesses started from worker threads failing to launch on LangSmith Deployment.
 
 #### Security
 - Fixes a bug where create_run auth could be bypassed by a run using if_not_exists.
@@ -548,8 +751,25 @@ Latest version: `0.14.7`
 - Patch AnyIO vulnerabilities in server dependencies, preserve HTTPS webhook compatibility, and prevent obsolete Python package files from surviving image upgrades.
 - Update bundled npm tooling to address dependency vulnerabilities in server images.
 - Updates Agent Server's Go toolchain and HTTP/2 dependencies with upstream security fixes.
+- Patches Agent Server certificate bundles, networking, Go toolchain, and tracing dependencies.
+- Updates gRPC certificate roots and pins the optional OpenTelemetry certificate bundle.
 
 <Accordion title="v0.14 releases">
+<Update label="2026-10-31" tags={["agent-server"]}>
+## v0.14.9
+
+### Security
+- Patches Agent Server certificate bundles, networking, Go toolchain, and tracing dependencies.
+- Updates gRPC certificate roots and pins the optional OpenTelemetry certificate bundle.
+
+</Update>
+<Update label="2026-10-27" tags={["agent-server"]}>
+## v0.14.8
+
+### Fixes
+- Fixes Playwright's browser driver and other subprocesses started from worker threads failing to launch on LangSmith Deployment.
+
+</Update>
 <Update label="2026-10-23" tags={["agent-server"]}>
 ## v0.14.7
 

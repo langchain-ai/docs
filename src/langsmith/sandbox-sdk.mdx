@@ -463,6 +463,118 @@ Sandboxes burst to twice their requested CPU when the host has spare capacity. R
 Free-form `labels` (up to 128 per sandbox, 256 bytes per key and 4096 bytes per value) can be set through the REST API on create. Sandboxes inherit their snapshot's labels unless overridden. The `langsmith.sandbox` clients do not expose this field yet.
 </Note>
 
+## Create a non-persistent sandbox
+
+A non-persistent sandbox keeps filesystem writes only while it runs. Use it for disposable code execution or evaluations that do not need files after a stop. Non-persistent sandboxes incur no storage charges; compute usage still applies.
+
+Persistence is enabled by default. Set `persistent` to `false` when creating a sandbox to opt out. This setting applies to the new sandbox, not existing sandboxes.
+
+<Note>
+These examples use Python `langsmith` version 0.14.17 or later, TypeScript `langsmith` version 0.11.7 or later, Go `github.com/langchain-ai/langsmith-go` v0.29.3, and Java `com.langchain.smith:langsmith-java` version 0.1.0-beta.28.
+</Note>
+
+Set `LANGSMITH_API_KEY` and `LANGSMITH_ENDPOINT` as described in [Create and run a sandbox](#create-and-run-a-sandbox). Files remain available between commands while the sandbox runs:
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import SandboxClient
+
+client = SandboxClient()
+with client.sandbox(persistent=False) as sandbox:
+    sandbox.run("echo hello > /tmp/example.txt")
+    result = sandbox.run("cat /tmp/example.txt")
+    print(result.stdout)
+```
+
+```ts TypeScript
+import { SandboxClient } from "langsmith/sandbox";
+
+const client = new SandboxClient();
+const sandbox = await client.createSandbox({ persistent: false });
+try {
+  await sandbox.run("echo hello > /tmp/example.txt");
+  const result = await sandbox.run("cat /tmp/example.txt");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+```go Go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	langsmith "github.com/langchain-ai/langsmith-go"
+)
+
+func main() {
+	ctx := context.Background()
+	client := langsmith.NewClient()
+	sandbox, err := client.Sandboxes.Boxes.NewSandbox(ctx, langsmith.SandboxBoxNewParams{
+		Persistent: langsmith.F(false),
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer sandbox.Delete(ctx)
+
+	result, err := sandbox.Run(ctx, langsmith.SandboxBoxRunParams{
+		Command: langsmith.F("echo hello > /tmp/example.txt && cat /tmp/example.txt"),
+	})
+	if err != nil {
+		log.Print(err)
+		return
+	}
+	fmt.Print(result.Stdout)
+}
+```
+
+```java Java
+import com.langchain.smith.client.okhttp.OkHttpClient;
+import com.langchain.smith.core.ClientOptions;
+import com.langchain.smith.models.sandboxes.boxes.BoxCreateParams;
+import com.langchain.smith.sandbox.Sandbox;
+import com.langchain.smith.sandbox.SandboxClient;
+
+public class NonPersistentSandbox {
+    public static void main(String[] args) {
+        ClientOptions options = ClientOptions.builder()
+            .fromEnv()
+            .httpClient(OkHttpClient.builder().build())
+            .build();
+        try {
+            SandboxClient client = SandboxClient.of(options);
+            Sandbox sandbox = client.create(
+                BoxCreateParams.builder().persistent(false).build()
+            );
+            try {
+                sandbox.run("echo hello > /tmp/example.txt");
+                System.out.print(sandbox.run("cat /tmp/example.txt").stdoutString());
+            } finally {
+                sandbox.delete();
+            }
+        } finally {
+            options.close();
+        }
+    }
+}
+```
+
+</CodeGroup>
+
+The Python context manager deletes the sandbox when the block exits. For manual cleanup, use `client.create_sandbox(persistent=False)` and call `sandbox.delete()` when finished. The TypeScript `finally` block deletes the sandbox even if a command fails.
+
+<Warning>
+Both an idle timeout and an explicit stop discard filesystem writes. The next start boots fresh from the snapshot. Save outputs outside the sandbox before it stops. Setting `delete_after_stop_seconds` does not preserve these writes.
+</Warning>
+
+Non-persistent sandboxes cannot preserve memory on stop or capture their filesystem as a snapshot. Some snapshots captured from other sandboxes cannot boot a non-persistent sandbox. Use the default snapshot or a compatible [custom snapshot](/langsmith/sandbox-snapshots). Disk capacity is limited to 16 GiB per vCPU.
+
 ## Sandbox lifetime and retention
 
 Sandboxes are governed by a two-stage retention model anchored to **idle
@@ -686,6 +798,8 @@ async def main():
 ## Trace sandbox activity
 
 For tracing in an agent-based workspace, [create an agent and configure agent addressing](/langsmith/create-an-agent#configure-tracing-for-the-agent) before running the examples.
+
+Code inside the sandbox needs `langsmith>=0.14.9` in Python or `langsmith@>=0.11.0` in TypeScript to send traces to an agent.
 
 Pass LangSmith tracing environment variables through the `env` parameter on `run()` to send traces from code running inside a sandbox. Call `flush()` before the process exits to ensure all traces are delivered.
 
