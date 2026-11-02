@@ -191,4 +191,6 @@ skill.
 Say which branch the edits are on and whether it is the PR's own branch. Name
 the related pages you changed, and the ones you read and left alone. If
 anything could not be verified, list it. Do not push or force-push unless the
-user asks.
+user asks. When the user asks you to push, the merge-state check and the check
+watching in `open-docs-pr` apply here too. When the edits have no PR to land
+on, open one with `open-docs-pr`.

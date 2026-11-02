@@ -25,16 +25,32 @@ jobs:
     # Same-repo PRs only (fork PRs do not receive LINEAR_API_KEY).
     if: github.event.pull_request.head.repo.full_name == github.repository
     steps:
+      - name: Check Linear credentials
+        id: creds
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${LINEAR_API_KEY}" ]; then
+            echo "LINEAR_API_KEY unset; skipping Linear sync"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v6
+        if: steps.creds.outputs.skip != 'true'
         with:
           fetch-depth: 1
 
       - name: Set up Python 3.13 + uv
+        if: steps.creds.outputs.skip != 'true'
         uses: "./.github/actions/uv_setup"
         with:
           python-version: "3.13"
 
       - name: Sync Linear issue state from PR
+        if: steps.creds.outputs.skip != 'true'
         env:
           LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
           PR_TITLE: ${{ github.event.pull_request.title }}
@@ -44,10 +60,6 @@ jobs:
           PR_MERGED: ${{ github.event.pull_request.merged }}
         run: |
           set -euo pipefail
-          if [ -z "${LINEAR_API_KEY}" ]; then
-            echo "LINEAR_API_KEY unset; skipping Linear sync"
-            exit 0
-          fi
 
           # Title/body/state come from env (avoids argv size and quoting issues).
           uv run python scripts/sync_linear_issue_from_pr.py --json \

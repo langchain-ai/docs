@@ -1,7 +1,7 @@
 ///usr/bin/env jbang "$0" "$@" ; exit $?
 //JAVA 21
 //KOTLIN 2.0.21
-//DEPS com.langchain.smith:langsmith-java:0.1.0-alpha.25
+//DEPS com.langchain.smith:langsmith-java:0.1.0-beta.27
 //DEPS com.openai:openai-java:4.61.0
 
 // :snippet-start: observability-quickstart-app-kt
