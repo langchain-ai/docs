@@ -515,16 +515,6 @@ def _claude(
 _api_client = None
 
 
-def _custom_headers(raw: str | None) -> dict[str, str]:
-    """Parse `Name: Value` lines, the ANTHROPIC_CUSTOM_HEADERS format Claude Code uses."""
-    headers = {}
-    for line in (raw or "").splitlines():
-        name, sep, value = line.partition(":")
-        if sep and name.strip():
-            headers[name.strip()] = value.strip()
-    return headers
-
-
 def _claude_api(
     system: str, schema: dict, prompt: str, model: str
 ) -> tuple[dict, dict]:
@@ -532,12 +522,9 @@ def _claude_api(
 
     global _api_client  # noqa: PLW0603 - one client shared across worker threads
     if _api_client is None:
-        # The repo key goes through a gateway: the SDK reads ANTHROPIC_BASE_URL itself,
-        # but not the gateway's headers.
-        _api_client = anthropic.Anthropic(
-            max_retries=5,
-            default_headers=_custom_headers(os.environ.get("ANTHROPIC_CUSTOM_HEADERS")),
-        )
+        # In CI, ANTHROPIC_BASE_URL points at the LLM Gateway's direct Anthropic path,
+        # and ANTHROPIC_API_KEY holds the gateway key. The SDK reads both itself.
+        _api_client = anthropic.Anthropic(max_retries=5)
     model_id, in_price, out_price = API_MODELS[model]
     with _api_client.messages.stream(
         model=model_id,
@@ -2629,8 +2616,8 @@ def _preflight_model() -> None:
         _claude_api("Reply with ok set to true.", schema, "ping", PASS1_MODEL)
     except Exception as exc:  # any failure here stops the run
         msg = (
-            "Model preflight failed; check ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL, "
-            f"and ANTHROPIC_CUSTOM_HEADERS: {str(exc)[:300]}"
+            "Model preflight failed; check ANTHROPIC_API_KEY and ANTHROPIC_BASE_URL: "
+            f"{str(exc)[:300]}"
         )
         raise SystemExit(msg) from exc
 
