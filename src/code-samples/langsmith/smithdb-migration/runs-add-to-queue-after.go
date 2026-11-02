@@ -43,16 +43,17 @@ if err != nil {
 	panic(err.Error())
 }
 // :remove-end:
-body := make([]langsmith.AnnotationQueueRunNewByKeyParamsBody, len(found.Runs))
+items := make([]langsmith.AnnotationQueueItemNewParamsItem, len(found.Runs))
 for i, run := range found.Runs {
-	body[i] = langsmith.AnnotationQueueRunNewByKeyParamsBody{
+	items[i] = langsmith.AnnotationQueueItemNewParamsItem{
+		ItemType:  langsmith.F(langsmith.AnnotationQueueItemNewParamsItemsItemTypeRun),
 		RunID:     langsmith.F(run.ID),
-		SessionID: langsmith.F(run.SessionID),
+		ProjectID: langsmith.F(run.SessionID),
 		StartTime: langsmith.F(run.StartTime),
 	}
 }
-_, err = client.AnnotationQueues.Runs.NewByKey(ctx, queueID, langsmith.AnnotationQueueRunNewByKeyParams{
-	Body: body,
+_, err = client.AnnotationQueues.Items.New(ctx, queueID, langsmith.AnnotationQueueItemNewParams{
+	Items: langsmith.F(items),
 })
 // :remove-start:
 if err != nil {
