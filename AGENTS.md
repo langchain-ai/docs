@@ -675,6 +675,11 @@ Also run `make broken-links-with-anchors` when adding or renaming links, pages, 
 
 When extracting data from PRs or changelogs, use the "Release Note:" section in PR bodies, not PR titles. Always verify the data source format before processing.
 
+## Workflow secrets
+
+- Reference a secret in a workflow only if it exists in the repository, or if the same PR asks a maintainer to create it. A reference to a missing secret is not an error: the value is empty, and the step can skip work without failing. Tool-generated workflow templates add optional entries this way, so delete any you do not set up.
+- When a change stops reading a secret, list it in the PR description so a maintainer can delete it after merge. Check every workflow first, because others may still read it.
+
 ## Pull requests
 
 - Explain the "why" of changes
