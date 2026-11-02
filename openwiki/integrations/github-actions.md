@@ -1,8 +1,8 @@
 ---
 type: CI automation guide
 title: GitHub Actions and CI Automation
-description: Maps the repository's GitHub Actions validation, preview and publication handoffs, and scheduled maintenance writers. It documents pinned uv setup, same-repository credential boundaries, code-sample escalation, and reviewed bot pull requests.
-tags: [github-actions, ci, automation, testing, langsmith]
+description: Maps validation, code-sample execution, deterministic Mintlify previews, and bounded write automation in GitHub Actions. It also documents OpenWiki updates, maintainer-gated integration submissions, and release-watch Linear lifecycle synchronization.
+tags: [github-actions, ci, automation, testing, documentation, linear]
 sources:
   - id: openwiki-source-3638ff2c170b760df159d81b
     resource: repo://.github/actions/uv_setup/action.yml
@@ -12,20 +12,16 @@ sources:
     resource: repo://.github/workflows/_lint.yml
   - id: openwiki-source-4d9cccca7700db7220ec055e
     resource: repo://.github/workflows/_test.yml
-  - id: openwiki-source-5e9ca8e4c3cab7d91998bc9e
-    resource: repo://.github/workflows/changelog-weekly.yml
-  - id: openwiki-source-b6d9390d936169b827965e4b
-    resource: repo://.github/workflows/check-pr-ai-attribution.yml
-  - id: openwiki-source-21617d8a6b2b570989a7c900
-    resource: repo://.github/workflows/check-version-claims.yml
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
   - id: openwiki-source-7346220ed051a41471043c07
     resource: repo://.github/workflows/create-preview-branch.yml
-  - id: openwiki-source-f2608d0d515da097485b6ec5
-    resource: repo://.github/workflows/publish.yml
-  - id: openwiki-source-5153f86e64d6ee0b305f72b3
-    resource: repo://.github/workflows/refresh-langsmith-openapi.yml
+  - id: openwiki-source-1db901655f02af312133801d
+    resource: repo://.github/workflows/integration-submission.yml
+  - id: openwiki-source-6d4b4e707b8d60b6ccfa3425
+    resource: repo://.github/workflows/openwiki-update.yml
+  - id: openwiki-source-192dd6007b37a6bb76dc7586
+    resource: repo://.github/workflows/sync-linear-issue-from-pr.yml
   - id: openwiki-source-751a704f6f25787856371177
     resource: repo://.github/workflows/test-code-samples-linear.yml
   - id: openwiki-source-97746d8f3662d803e625550e
@@ -34,75 +30,56 @@ sources:
     resource: repo://Makefile
   - id: openwiki-source-41f7c907e42a5efd3b3405cd
     resource: repo://pipeline/commands/build.py
-  - id: openwiki-source-99b53585619b83f258314f8b
-    resource: repo://scripts/check_version_claims.py
-  - id: openwiki-source-697851c98229599f97376bfb
-    resource: repo://scripts/process_langsmith_openapi.py
-  - id: openwiki-source-0cd1dbd077626457942be406
-    resource: repo://scripts/version_claims_ignore.cfg
-  - id: openwiki-source-607673c5c40214b511f9e0a7
-    resource: repo://tests/unit_tests/test_check_version_claims.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-02T08:15:40.431Z" }
+  - id: openwiki-source-f36d9ac44867b9e853539abd
+    resource: repo://scripts/parse_integration_submission_issue.py
+  - id: openwiki-source-eab62bc712c4650a5ee3e7d3
+    resource: repo://scripts/sync_linear_issue_from_pr.py
+generated: { by: "openwiki/0.4.3", at: "2026-11-02T20:09:30.414Z" }
 verified:
   - by: openwiki/0.4.3
-    at: 2026-11-02T08:15:40.431Z
+    at: 2026-11-02T20:09:30.414Z
 ---
 
-## Authority map
+# GitHub Actions and CI Automation
 
-GitHub Actions separates checks that hold only read access to this repository from automation that may write a branch, comment on a pull request, or publish a generated site. Read-only in this map describes GitHub repository authority, not necessarily network isolation: the changed-document version check queries public registries. The source tree is the authoring surface. `build/`, preview branches, `prod`, and maintenance branches are outputs; maintenance writers propose changes for review rather than merge them.
+GitHub Actions is the repository's execution boundary, not its authoring surface. Authors change source files; workflows validate them or create deliberately bounded outputs: a preview branch, a review pull request, a bot comment, or an external issue-state update. A green read-only check does not prove a credentialed integration worked, and a job skipped for a fork is **not** passing coverage.
 
-The local composite action `.github/actions/uv_setup` is the common Python bootstrap for current CI and maintenance workflows. It pins `astral-sh/setup-uv@v7` to uv `0.9.26`, requires a major.minor Python version input, and sets `ignore-nothing-to-cache: true` so a job that exits before `uv sync` or `uv run` does not fail during cache cleanup. Reuse this action instead of independently selecting a uv version in a workflow.
+## Authority map and trust boundaries
+
+The workflows separate ordinary validation from jobs that can change GitHub state or call credentialed services.
+
+| Class | Workflows and authority | Fork and failure boundary |
+| --- | --- | --- |
+| Read-only checks | `ci.yml`, reusable test/lint/link checks, and the release-watch trigger inspect repository state and report results. `ci.yml` cancels superseded runs for the same ref. | These checks may run for pull requests, but do not write branches, comments, or issues. |
+| Credentialed sample execution and trace writer | `test-code-samples.yml` has repository write permissions because a successful eligible full OSS run may update its trace review PR. Sample execution receives provider/service credentials. | Pull-request sample jobs run only when the head is not a fork. A fork therefore has no credentialed sample result. |
+| Preview writer | `create-preview-branch.yml` gives write permission only to the preview-branch job and PR-comment permission only to the comment job. The latter calls Mintlify with repository secrets. | Creation is restricted to same-repository PRs or manual dispatch; do not interpret a fork skip as a successful preview. |
+| Maintainer-initiated automation | Integration submission, OpenWiki update, and Linear synchronization can write repository/issue state or an external Linear issue. | Their trigger and credential gates are part of the authorization boundary; keep untrusted issue or PR text out of shell interpretation and never disclose secret values. |
+
+The shared `.github/actions/uv_setup` action is the Python bootstrap where it is used: it requires a major.minor Python input, pins `astral-sh/setup-uv@v7` and uv `0.9.26`, and tolerates an empty cache during post-cleanup. Prefer that action over a new, drifting Python/uv setup in workflows that need this convention.
 
 ```mermaid
 flowchart TD
-  Change["Pull request or main push"] --> CI["Read-only CI gates"]
-  Internal["Same-repository sample pull request"] --> Samples["Isolated sample matrix"]
-  Schedule["Monthly sample schedule"] --> Full["Full sample matrix"]
-  Full --> Trace["Standing trace review PR"]
-  Full --> Observe["Scheduled failure observer"]
-  Observe --> Linear["Product-scoped Linear ticket"]
-  Daily["Daily OpenAPI schedule"] --> ApiPr["Standing OpenAPI review PR"]
-  Weekly["Monday changelog schedule"] --> ChangePr["Dated changelog review PR"]
-  Main["Main push"] --> Publish["prod build handoff"]
+  Change["Pull request or scheduled event"] --> Check["Read-only validation"]
+  Change --> Samples["Code-sample matrix"]
+  Samples --> TraceGate{"Eligible full OSS refresh"}
+  TraceGate -->|"yes"| TracePR["Trace review pull request"]
+  Change --> PreviewGate{"Same repository preview"}
+  PreviewGate -->|"yes"| Preview["Preview branch and PR comment"]
+  Issue["Maintainer labeled integration issue"] --> Listing["Integration listing review pull request"]
+  Schedule["Daily OpenWiki schedule"] --> WikiPR["OpenWiki update review pull request"]
+  ReleasePR["Labeled release-watch pull request"] --> LinearGate{"Same repository and credentials"}
+  LinearGate -->|"yes"| Linear["Linear state synchronization"]
 ```
 
-*Read-only validation does not write repository state; write-capable paths produce bounded deployment or review artifacts.*
+*The diagram distinguishes checks from write-capable handoffs; every writer has an explicit eligibility gate and produces reviewable or externally visible state.*
 
-### Credential and fork boundary
+## Core validation and local entrypoints
 
-Credentialed sample execution is deliberately unavailable to fork pull requests: provider API keys are repository secrets, so **Test Code Samples** runs PR jobs only when the head repository is this repository. Mintlify preview creation applies the same same-repository condition before its write-capable build-and-push job. A skipped fork run is absent integration coverage, not a passing credentialed test.
+The central `ci.yml` workflow runs on pull requests, pushes to `main`, and manual dispatch. It calls reusable test, lint, and documentation-link workflows, then performs merge-conflict, cross-reference, external documentation URL, and generated-provider-overview checks. Its concurrency group is the workflow and ref, with cancellation enabled, so an older run is abandoned when a newer push targets the same PR or branch.
 
-Workflow permissions reinforce that distinction: core checks request read access, while the preview branch, trace-refresh, OpenAPI-refresh, changelog, and publishing paths have only the write authority needed for their output. Keep secrets in GitHub secrets and do not place their values in shell output, summaries, bot comments, or PR bodies.
+Reusable test and lint jobs synchronize the `test` dependency group and invoke `make test` or `make lint` for caller-supplied Python and working-directory inputs. The reusable documentation check has read-only contents permission and a 20-minute timeout; it runs the anchor-link and Agent Server OpenAPI checks. The generated-file job regenerates `src/oss/python/integrations/providers/overview.mdx` and fails on a diff, except for the specified package-download automation or a `bypass-auto-check` PR label.
 
-### Pull-request attribution policy
-
-**Check PR AI Attribution** runs on opened, edited, reopened, and synchronized pull requests with no permissions. It rejects the linked `Generated with [Claude Code](` badge and a Claude `Co-Authored-By` trailer using an Anthropic noreply address in the PR description. The failure message directs authors to disclose involvement as a plain sentence instead. This check matters because a squash merge uses the PR description as the commit message and would otherwise carry that badge or trailer into `main` history.
-
-## Core CI gates
-
-`ci.yml` runs on pull requests, pushes to `main`, and manual dispatch. It invokes reusable test, lint, and documentation-link workflows, then separately checks merge-conflict markers, source cross-references, external integration documentation URL schemes, and generated-file drift. Its concurrency group is the workflow plus ref and cancels an obsolete run when a newer push arrives for the same PR or branch.
-
-| Gate | Control flow and contract |
-| --- | --- |
-| Tests | `_test.yml` takes a Python version and working directory, bootstraps pinned uv, synchronizes the `test` group, and runs `make test`. It conditionally adds server integration tests for `./libs/server`. |
-| Lint | `_lint.yml` takes the same inputs, synchronizes the `test` group, runs `make lint`, and uses GitHub-format Ruff output for annotations. |
-| Documentation links | `_check-links.yml` is read-only, times out at 20 minutes, builds the docs through its Make target, then uses Node 22 and Mintlify to check anchors, redirects, and the Agent Server OpenAPI file. |
-| Generated overview | `ci.yml` regenerates `src/oss/python/integrations/providers/overview.mdx` and fails on a diff. It bypasses only the expected package-download bot update or a `bypass-auto-check` PR label. |
-
-### Changed-document package-version claims
-
-**Check version claims** is a separate, read-only pull-request workflow. It is triggered when authored `src/**/*.mdx`, its checker, ignore configuration, or workflow definition changes. After a full-history checkout, it finds the merge-base against the PR base and passes only changed MDX files below `src/` to `scripts/check_version_claims.py --files`; if that diff is empty, it succeeds without setting up Python or making registry requests.
-
-The checker is deliberately narrower than an upgrade bot: it collects exact pins (`==`) and minimum floors (`>=`) named in documentation, then verifies that each named release—or a release in a truncated series such as `1.1`—has been published. It does **not** decide that a valid floor should be raised. A scoped package always goes to npm and a package with Python extras always goes to PyPI; otherwise the nearest Python/JavaScript label, a `:::python` or `:::js` fence, and then page-path language determine the registry. This prevents a package published on divergent Python and npm version lines from being checked against the wrong registry.
-
-A registry lookup failure is reported as an unresolved note rather than a bad-version failure, so an outage or unavailable package does not block the PR. A version that resolves but was never published fails unless its exact specifier is a documented exception in `scripts/version_claims_ignore.cfg`. Run the same focused check locally after documentation changes:
-
-```bash
-uv run python scripts/check_version_claims.py --files src/path/to/page.mdx
-```
-
-`make build` installs npm dependencies and calls the pipeline build command. The command requires the source directory, creates `build/`, and delegates the transformation to `DocumentationBuilder.build_all()`. Use the narrow local entrypoint first:
+For a targeted local approximation of these gates, use the Makefile targets rather than modifying generated output:
 
 ```bash
 make test
@@ -110,83 +87,88 @@ make lint
 make check-cross-refs
 make broken-links-with-anchors
 make check-openapi
-uv run python scripts/refresh_integration_downloads.py --check-docs-urls
-uv run python pipeline/tools/partner_pkg_table.py
+make build
 ```
 
-Do not hand-edit the generated provider overview: change its generator or package metadata, regenerate it, and commit the result. See [Testing and Validation Overview](/openwiki/testing/test-overview.md) for choosing broader validation.
+`make build` installs npm dependencies and invokes the pipeline build command. The command requires the source directory, creates `build/`, and delegates the source-to-build transformation to `DocumentationBuilder.build_all()`. See [Testing and Validation Overview](/openwiki/testing/test-overview.md) for selecting the smallest check that proves a change.
 
-## Code-sample matrix and failure escalation
+## Code-sample matrix, trace refresh, and escalation
 
-**Test Code Samples** runs for relevant PR changes, manual dispatch, and at 00:00 UTC on the first of every month. It has non-fail-fast `oss` and `langsmith` legs, so a product failure does not mask the other product or prevent rerunning its individual job. `oss` owns `langchain`, `langgraph`, and `deepagents`; `langsmith` owns `langsmith`. A coverage check fails when a product directory below `src/code-samples/` belongs to neither mapping.
+**Test Code Samples** starts for code-sample workflow/paths changes on a pull request, manually, and monthly at 00:00 UTC on the first day. It uses independent, non-fail-fast `oss` and `langsmith` matrix legs: OSS owns `langchain`, `langgraph`, and `deepagents`; LangSmith owns `langsmith`. The workflow fails when a directory below `src/code-samples/` belongs to neither mapping, preventing a new product from silently escaping the matrix.
 
-For an eligible internal PR, the workflow finds the merge-base diff and sends changed `.py`, `.ts`, `.java`, `.kt`, `.go`, and `.sh` sample files to the runner. Scheduled and manual events run every sample in the leg. Jobs provision pgvector PostgreSQL, Python 3.13 with pinned uv, Node 20, Java 21 with JBang, and Go. PR jobs have a 60-minute timeout; full runs have 150 minutes. `make test-code-samples` accepts `FILES` and respects the product's `CODE_SAMPLE_PATHS` partition.
+An eligible PR computes its merge-base with the base branch and passes changed supported `.py`, `.ts`, `.java`, `.kt`, `.go`, and `.sh` paths to both legs. The runner filters paths using that leg's `CODE_SAMPLE_PATHS`. Scheduled and manual invocations set `RUN_ALL` and execute every sample in each leg. Each leg provisions PostgreSQL plus the Python, Node, Java/JBang, and Go environments required by the sample runner; PR jobs allow 60 minutes and full jobs allow 150 minutes. Locally, `make test-code-samples` runs all samples or accepts `FILES="..."`; `CODE_SAMPLE_PATHS` supplies the same product partition used in CI.
 
 ```mermaid
 flowchart TD
-  Event["Sample workflow event"] --> Fork{"Fork pull request"}
-  Fork -->|"yes"| Skip["Skip credentialed execution"]
-  Fork -->|"no"| Legs["Run OSS and LangSmith legs"]
-  Legs --> Scope{"Manual or scheduled"}
-  Scope -->|"no"| Diff["Run changed eligible samples"]
-  Scope -->|"yes"| All["Run all samples in each leg"]
-  All --> Gate{"OSS trace gates pass"}
-  Gate -->|"yes"| TracePr["Update standing trace PR"]
-  Diff --> Result["Fail if sample test failed"]
-  All --> Result
-  TracePr --> Result
+  Event["Code-sample event"] --> Fork{"Fork pull request"}
+  Fork -->|"yes"| Skip["No credentialed sample execution"]
+  Fork -->|"no or full run"| Matrix["OSS and LangSmith legs"]
+  Matrix --> Mode{"Full manual or scheduled run"}
+  Mode -->|"no"| Changed["Run changed supported samples"]
+  Mode -->|"yes"| All["Run all samples"]
+  All --> TraceGate{"OSS and trace conditions met"}
+  TraceGate -->|"yes"| Snippets["Regenerate trace-linked snippets"]
+  Snippets --> TracePR["Create or append trace PR"]
+  Changed --> Final["Fail when sample test failed"]
+  All --> Final
+  TracePR --> Final
 ```
 
-*Only a full OSS run can produce trace-link artifacts; its final result still reflects sample failures.*
+*The continued test step permits a bounded artifact refresh, but it never converts a failed sample run into a successful job.*
 
-### Bounded trace refresh
+### Bounded trace writer
 
-Only the OSS leg of a manual or scheduled full run enables tracing and public trace collection. The test step continues after an error so that a bounded refresh remains possible, but the final step fails the job if the test step failed. Regeneration requires that the test was not cancelled, fewer than 20 samples failed, and traces changed.
+Only a scheduled or manually dispatched **OSS** leg enables tracing and public trace collection. The test step uses `continue-on-error` so trace processing can be considered, but the final step fails the job when that test step failed. Snippet regeneration requires all of the following: the test was not cancelled, fewer than 20 samples failed, and traces were updated. It then runs `make code-snippets`.
 
-The writer considers only `src/code-samples/trace-links.json` and `src/snippets/code-samples`. With no diff it exits; otherwise it appends to the open `chore/refresh-code-sample-traces` PR or creates that branch and PR from `main`. It does not merge. Review the trace links and generated snippets as a publication change; see [Runnable Code Samples and Snippet Generation](/openwiki/workflows/code-sample-lifecycle.md).
+The write step considers only `src/code-samples/trace-links.json` and `src/snippets/code-samples`. If those paths do not differ, it exits without a commit. Otherwise it appends to the open `chore/refresh-code-sample-traces` PR, or creates that branch and a PR against `main`; it does not merge. Review this generated output as a documentation change. [Runnable Code Samples and Snippet Generation](/openwiki/workflows/code-sample-lifecycle.md) owns the source, extraction, and trace-link lifecycle.
 
-### Linear is downstream escalation
+A separate observer watches completed **Test Code Samples** runs. It acts only on failed or cancelled scheduled runs, reads their job list, and creates separate OSS and LangSmith Linear tickets for non-successful product legs. When no product leg reported, it files a generic pipeline-completion ticket. If the `LINEAR_TEAM_KEY` repository variable is unset, it warns and files no ticket; this is an intentionally absent escalation, not a successful Linear write.
 
-`test-code-samples-linear.yml` observes completed **Test Code Samples** runs. It acts only when a scheduled run concludes `failure` or `cancelled`, queries its job list with read-only Actions access, and files separate OSS and LangSmith issues for non-successful fixed-name legs. If no leg reported it files a generic pipeline-completion issue. If `LINEAR_TEAM_KEY` is unset, it warns and files nothing. It is not a retry or repair workflow: investigate and rerun the linked product leg.
+## Deterministic Mintlify previews
 
-## Scheduled writers
+The preview workflow reacts to opened, synchronized, reopened, and closed pull requests, as well as manual dispatch. Its default permission is read-only; the creation job alone has `contents: write` and runs only for a same-repository PR or manual dispatch that is not a close event. It validates the source branch's allowed characters and length, checks out that source, installs dependencies, and runs `make build` before any branch write.
 
-### LangSmith OpenAPI refresh
+The preview branch is deterministic: `preview-<normalized-and-truncated-source-slug>-<eight-character-SHA-256-prefix>`. The source branch alone determines it, preserving the Mintlify preview URL across pushes; the hash distinguishes distinct long names that share a truncated slug. A run commits `build/` and either creates the branch or updates it with `--force-with-lease`, which rejects a concurrent remote movement rather than silently overwriting it. On PR closure, cleanup recomputes that name and also finds legacy matching branches, but refuses to delete anything without the `preview-` prefix.
 
-`refresh-langsmith-openapi.yml` runs daily at 10:00 UTC and manually. It creates a GitHub App token for checkout, branch pushes, and PR operations because a `GITHUB_TOKEN`-created PR leaves pull-request workflows awaiting manual approval. The processor permits network fetches only from `api.smith.langchain.com`, filters the source for public documentation, and writes `src/langsmith/langsmith-platform-openapi.json`.
+The dependent comment job runs only after creation succeeds and excludes Dependabot. It has only `pull-requests: write`, requires a preview branch and Mintlify credentials, and invokes Mintlify's preview API. Missing inputs, invalid JSON, or an API error with neither status ID nor preview URL fail this credentialed job; they must not be described as a deployed preview. On success, the workflow removes bot-authored comments bearing the current marker or known legacy preview wording, then creates one replacement comment. When a preview URL exists, it adds deep links for at most five largest changed routable Markdown/MDX pages, excluding snippets and code samples. See [Mintlify Integration](/openwiki/integrations/mintlify.md) for the renderer and preview deployment boundary.
 
-The workflow preserves the generated candidate while it checks out `chore/refresh-langsmith-openapi`. It appends to its open PR, exits successfully when the specification has no diff, or force-pushes an unreferenced standing branch and opens a PR. It never merges it. See [LangSmith OpenAPI Refresh](/openwiki/workflows/langsmith-openapi-refresh.md) for transformation policy.
+## Maintainer-gated integration listings
 
-### Weekly changelog proposal
+**Integration submission** turns a structured Integration listing issue into a proposed documentation change, not a direct merge. Applying `integration-run` starts it; opening an issue alone does not. The workflow also supports manual dispatch with an issue number. Before checkout or agent execution it verifies that the actor is an `admin`, `maintain`, or `write` collaborator. An unauthorized labeling attempt is removed and annotated, while an issue already labeled `integration-automation` is skipped to avoid duplicate work.
 
-`changelog-weekly.yml` runs Mondays at 13:00 UTC, serializes the `changelog-weekly` group without cancelling an active run, and allows manual `since`, `until`, and `dry_run` inputs. It validates that manual dates are paired and use `YYYY-MM-DD`. Non-dry runs use a GitHub App token for the dated `changelog/weekly-<UTC-date>` branch and review PR.
+The workflow fetches the issue body, parses the recognized issue-form headings to JSON, and comments parsing errors rather than sending malformed data to the agent. The parser validates required fields and package requirements implied by a Python, TypeScript, or Both language selection; it does not execute field values. The agent receives the JSON explicitly as untrusted listing metadata, uses the `submit-integration` skill, leaves edits uncommitted, and is instructed not to push, open a PR, or comment on GitHub.
 
-Before force-pushing a same-day branch, the workflow refuses to overwrite a branch containing commits not authored by `github-actions[bot]`. It creates or updates a PR only when tracked changelog state changed; it never merges. A dry run writes only candidate public entries to the summary, not the detailed report that can name private PRs or unreleased work. See [Weekly Changelog Publication](/openwiki/workflows/changelog-publication.md).
+Only after a successful agent result with actual changes does the workflow mint a GitHub App token and create/update the `integration/issue-<number>` review PR. The token is deliberately created after the agent step, so the agent cannot access it. The workflow comments the issue and PR link for review; blocker files, agent failures, and no-change results receive an issue comment with retry guidance instead. This is a write-capable, maintainer-authorized path and should retain its narrow skill allow-list and review boundary. [Agent Instructions and Authoring Skills](/openwiki/operations/agent-skills.md) describes the skill contract.
 
-## Previews and publication
+## Scheduled OpenWiki maintenance
 
-Mintlify preview creation is restricted to same-repository PRs or manual dispatch. It validates the source branch, builds documentation, creates a collision-resistant `preview-` branch containing `build/`, and invokes the Mintlify preview API only after the branch is pushed. On PR closure, cleanup selects the derived prefix and refuses to delete a non-`preview-` branch.
+`openwiki-update.yml` runs daily at 08:00 UTC and on manual dispatch with contents and pull-request write permissions. It fetches full history because `openwiki code --update` needs to compare `HEAD` with the previously documented commit; a shallow checkout would make the update appear as an empty change summary. It installs Node 22, OpenWiki, Mermaid, and jsdom, then runs `openwiki code --update --print` using configured provider and connector credentials.
 
-For a successful non-Dependabot PR, the comment job needs Mintlify credentials and the preview-branch output; malformed JSON or an API error with neither a status ID nor preview URL fails the job. It deletes all bot comments carrying the current marker or recognized legacy preview wording, then creates one replacement marker comment. If Mintlify supplies a preview URL, that comment includes the site URL, a deployment-readiness notice, and deep links for up to five largest changed routable Markdown or MDX files. Files outside `src/`, code-sample and snippet paths, and non-routable names are excluded; `index` maps to its directory and shared OSS paths map to the Python route unless already language-specific. Without a preview URL, the replacement still records the generated branch but has no page deep links. See [Mintlify Integration](/openwiki/integrations/mintlify.md).
+If the update produces changes, a GitHub App token opens or updates the `openwiki/update` PR. Its allowed paths are explicitly limited to `openwiki`, `AGENTS.md`, and the workflow itself. The App token ensures the resulting PR can trigger normal pull-request workflows; the workflow proposes changes for review rather than merging them. This job is credentialed and write-capable, so failures such as unavailable provider credentials or a failed update are failures to investigate, not evidence that documentation is current.
 
-`publish.yml` runs on a `main` push or manual dispatch. It builds documentation, verifies `build/`, copies it beneath `public/build`, then uses the GitHub token to publish `public` to `prod`. This production handoff is separate from preview branches and is not an authoring surface.
+## Release-watch pull request to Linear lifecycle
+
+`sync-linear-issue-from-pr.yml` is a small downstream synchronizer for release-watch delivery; it does not create documentation PRs or Linear issues. It listens to opened, reopened, draft/ready-for-review, closed, and relevant label events, with read-only repository and pull-request permissions. It runs only when the PR comes from this repository, has `release-watch-agent`, and—in the label case—the label that triggered the event is that label. This avoids exposing the Linear credential to fork PRs and avoids the race where a PR opens before its label is applied.
+
+The job first checks whether its Linear credential is configured. If it is absent, it explicitly records a skip and does not attempt synchronization. Otherwise it uses the shared uv setup action and runs `scripts/sync_linear_issue_from_pr.py --json`, placing the result in the job summary.
+
+The script reads the PR title/body from environment variables, recognizes `Closes DOC-N` or the canonical linked form, and only then extracts unique `DOC-<number>` identifiers. It derives the intended lifecycle from GitHub state: draft maps to **In Progress**, ready-for-review to **In Review**, merged to **Done**, and unmerged closed to **Canceled**. For each issue it prefers those state names from that issue's own Linear team and falls back to the corresponding workflow-state type. It records an already-target issue as skipped; it fails only when an intended update has no matching team state. Linear/API failures are surfaced rather than treated as successful synchronization. For the release selection and draft-PR producer, see [Documentation Release Watch](/openwiki/workflows/release-watch.md).
 
 ## Safe-change checklist
 
-1. Use `.github/actions/uv_setup` for a workflow's Python/uv bootstrap; do not silently drift its uv pin.
-2. Preserve read-only validation and the same-repository guard wherever secrets or write-capable GitHub operations are involved.
-3. Keep the AI-attribution check's PR-body policy aligned with squash-merge commit-history policy.
-4. When adding a sample product directory, assign it to exactly one matrix leg.
-5. Keep trace refresh OSS-only, full-run-only, bounded by its cancellation/failure/trace gates, and restricted to its two generated paths and review PR.
-6. Keep Linear escalation downstream of failed or cancelled scheduled runs. An unset team variable must warn rather than fail observation.
-7. Preserve no-diff, standing-PR, human-edit, and review boundaries for OpenAPI, changelog, and trace writers. Do not expose secrets or private reports in generated material.
-8. Preserve preview branch sanitization and deletion guards; do not enable credentialed preview paths for forks.
-9. Keep package-version validation scoped to changed authored MDX and publication existence; do not turn it into automated dependency-floor upgrades or make registry outages a false failure.
+1. Keep read-only checks separate from secret-bearing or write-capable jobs, and state skips as missing coverage rather than success.
+2. Preserve the same-repository guards around credentialed samples, Mintlify previews, and release-watch Linear synchronization.
+3. When adding a code-sample product directory, assign it to exactly one matrix mapping and retain the uncovered-directory failure.
+4. Keep trace refresh OSS-only, full-run-only, bounded by cancellation/failure/trace gates, restricted to its two generated paths, and reviewable through its standing PR.
+5. Do not change the preview naming algorithm without changing both creation and cleanup; stable names are the preview URL contract.
+6. Keep integration automation maintainer-gated, parse issue data before agent use, and mint write credentials only after untrusted agent work completes.
+7. Retain full-history checkout and the bounded PR paths for OpenWiki updates.
+8. Keep the release-watch `release-watch-agent`, same-repository, credential, and `Closes DOC-N` gates together; a missing credential means no synchronization occurred.
 
 ## Related pages
 
 - [Mintlify Integration](/openwiki/integrations/mintlify.md)
+- [Agent Instructions and Authoring Skills](/openwiki/operations/agent-skills.md)
 - [Testing and Validation Overview](/openwiki/testing/test-overview.md)
-- [Weekly Changelog Publication](/openwiki/workflows/changelog-publication.md)
 - [Runnable Code Samples and Snippet Generation](/openwiki/workflows/code-sample-lifecycle.md)
-- [LangSmith OpenAPI Refresh](/openwiki/workflows/langsmith-openapi-refresh.md)
+- [Documentation Release Watch](/openwiki/workflows/release-watch.md)

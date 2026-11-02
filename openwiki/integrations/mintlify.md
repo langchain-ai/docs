@@ -3,6 +3,9 @@ type: integration
 title: Mintlify Integration
 description: Mintlify renders the generated documentation tree and creates selected deployment-time artifacts for docs.langchain.com. This page covers configuration, build handoff, route behavior, previews, validation, OpenAPI, and hosted checks.
 tags: [mintlify, documentation, navigation, openapi, deployment]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-11-02T20:09:30.414Z
 sources:
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
@@ -38,10 +41,7 @@ sources:
     resource: repo://src/docs.json
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-11-02T08:15:40.431Z
-generated: { by: "openwiki/0.4.3", at: "2026-11-02T08:15:40.431Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-02T20:09:30.414Z" }
 ---
 
 # Mintlify Integration
@@ -111,7 +111,7 @@ The LangSmith REST specification refreshes daily. Its processor only fetches the
 
 ## Preview and production handoff
 
-For a same-repository pull request, the preview workflow validates branch syntax and length, runs `make build`, and creates a collision-resistant `preview-` branch from a sanitized source prefix, timestamp, and commit SHA. It force-adds the generated `build/` tree, pushes the branch, and then invokes Mintlify's preview API after verifying the API key, project ID, and branch name. A non-JSON response, or an error without a status ID or preview URL, fails the API step. Fork PRs do not create previews because the job needs repository write access. On close, cleanup finds matching preview branches and refuses to delete a name without the `preview-` prefix.
+For a same-repository pull request, the preview workflow validates branch syntax and length, runs `make build`, and derives a deterministic `preview-` branch from a normalized source-branch slug and an eight-character SHA-256 prefix of the full source branch. The bounded name preserves the same Mintlify preview URL across pushes and distinguishes source branches that normalize to the same truncated slug. It force-adds the generated `build/` tree and pushes the branch; later runs replace the branch under `--force-with-lease`, so a concurrent update is rejected rather than silently overwritten. Only after the build-and-push job succeeds, a separate comment job invokes Mintlify's preview API after verifying the API key, project ID, and branch name. A non-JSON response, or an error without a status ID or preview URL, fails the API step. Fork PRs do not create previews because the job needs repository write access. On close, cleanup recomputes the deterministic name and also sweeps legacy matching branches; it refuses to delete a name without the `preview-` prefix. These temporary CI artifacts are deployment inputs, never mergeable source branches.
 
 The PR comment can include a site URL and up to five deep links for changed Markdown or MDX files, ranked by diff size. These are **best-effort source-path guesses**, not a build-manifest lookup: it strips `src/` and extensions, converts `index` to its directory, and adds `oss/python/` to an unprefixed OSS path. It excludes paths outside `src/`, non-Markdown files, and files in `code-samples` or `snippets`; it does not consult navigation, generated output, redirects, or the builder's language rules. As a result, the guessed link can be wrong or unlisted for a shared page emitted only for JavaScript, an unversioned OpenWiki or Deep Agents Code page, a language-prefixed Managed Deep Agents page, a redirect, or deployment-generated OpenAPI output. Treat the preview root and the actual built route as authoritative when reviewing those changes.
 

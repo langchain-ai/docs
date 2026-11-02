@@ -1,11 +1,11 @@
 ---
 type: validation guide
-title: Testing Overview
-description: Select validation by the contract a documentation change affects. Deterministic local checks cover transformations and generated output, while CI-only checks cover credentials, registry lookups, services, and external destinations.
+title: Testing and Validation Overview
+description: Select the smallest validation boundary that proves a documentation change, then expand to generated-site or credentialed checks only when required. Covers docs.json navigation, snippets, runnable samples, trace refreshes, and CI coverage limits.
 tags: [testing, validation, ci, documentation, code-samples]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-11-02T08:15:40.431Z
+    at: 2026-11-02T20:09:30.414Z
 sources:
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
@@ -63,7 +63,7 @@ sources:
     resource: repo://tests/unit_tests/test_test_code_samples.py
   - id: openwiki-source-98a4de3472710de1bf3ccb4f
     resource: repo://tests/unit_tests/test_url_stub_noindex.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-02T08:15:40.431Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-02T20:09:30.414Z" }
 ---
 
 ## Choose the smallest meaningful boundary
@@ -76,7 +76,8 @@ Each layer proves a different contract. Start with the focused unit test or stat
 | Authored MDX package floor or pin | `uv run python scripts/check_version_claims.py --files src/path/to/page.mdx` | Changed-document version-claim workflow | The literal `>=` or `==` version was published on its routed registry, not that it is the correct feature floor. |
 | Formatting, types, spelling, or prose style | `make lint`; `make lint_prose FILES="src/..."` | None | Static quality or Vale style, not rendering, factual correctness, or runtime behavior. |
 | `@[Name]` cross-reference and language scope | `make check-cross-refs` | CI repeats it | Source references resolve in applicable scopes, not final route reachability. |
-| Authored route, redirect, navigation, anchor, or Agent Server OpenAPI input | `make broken-links-with-anchors`; `make check-openapi` | Hosted preview when deployment behavior matters | Freshly generated Mint tree, including routes, redirects, and anchors; not a deployed site. |
+| `src/docs.json` navigation or route configuration | `make test TEST_FILE=tests/unit_tests/test_builder.py`, then `make broken-links-with-anchors` | Hosted preview when deployment behavior matters | Builder route selection followed by the freshly generated Mint tree, including routes, redirects, and anchors; not a deployed site. |
+| Authored route, redirect, anchor, or Agent Server OpenAPI input | `make broken-links-with-anchors`; `make check-openapi` | Hosted preview when deployment behavior matters | Freshly generated Mint tree, including routes, redirects, and anchors; not a deployed site. |
 | Egress IP inventory or its rendered tables | `uv run python scripts/generate_egress_ip_tables.py --check` | None required | The canonical JSON, its content-derived version, and both marked table blocks agree; a full build additionally proves publication. |
 | OTLP setup prose | `make test TEST_FILE=tests/unit_tests/test_otel_endpoints.py` | None | Documentation syntax and Python exporter endpoint resolution, not trace ingestion by a live workspace. |
 | Snippet markers or generated snippet MDX | Focused generator test, then `make code-snippets` and review the diff | None | Extractor/generator consistency; samples are not executed. |
@@ -158,4 +159,10 @@ The changelog-navigation Node tests use an in-memory DOM to verify that the self
 - **Sample failure or skip:** distinguish a nonzero program failure from an exhausted rate-limit skip, then inspect credentials, provider behavior, PostgreSQL readiness, and the selected toolchain. A skip is not a pass.
 - **Export htmltest failure:** treat it as external-destination evidence only; use Mint checks for internal paths and anchors.
 
-See [GitHub Actions](/openwiki/integrations/github-actions.md), [Mintlify Integration](/openwiki/integrations/mintlify.md), [Validate Package Version Claims](/openwiki/operations/version-claims.md), [Repository Wiki Quickstart](/openwiki/quickstart.md), and [LangSmith Agent and Observability Documentation Changes](/openwiki/workflows/langsmith-agent-documentation.md).
+## Related pages
+
+- [GitHub Actions and CI Automation](/openwiki/integrations/github-actions.md)
+- [Builder Test Boundaries](/openwiki/testing/builder-tests.md)
+- [Runnable Code Samples and Snippet Generation](/openwiki/workflows/code-sample-lifecycle.md)
+- [Local Development Workflow](/openwiki/workflows/local-development.md)
+- [Mintlify Integration](/openwiki/integrations/mintlify.md)

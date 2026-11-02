@@ -5,7 +5,7 @@ description: Documents the reviewed daily refresh that converts the LangSmith pl
 tags: [langsmith, openapi, automation, github-actions, mintlify, security]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-11-02T08:15:40.431Z
+    at: 2026-11-02T20:09:30.414Z
 sources:
   - id: openwiki-source-5153f86e64d6ee0b305f72b3
     resource: repo://.github/workflows/refresh-langsmith-openapi.yml
@@ -21,14 +21,14 @@ sources:
     resource: repo://src/docs.json
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-02T08:15:40.431Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-02T20:09:30.414Z" }
 ---
 
 # LangSmith OpenAPI Refresh
 
 The LangSmith REST API reference is published from the generated, committed `src/langsmith/langsmith-platform-openapi.json`. It is not an authored MDX endpoint tree: `src/docs.json` supplies that file to Mintlify's `langsmith/smith-api` directory, and Mintlify generates endpoint routes at deployment. Do not edit the generated specification or deployment-generated endpoint pages by hand.
 
-This flow is separate from the Agent Server and Control Plane APIs. Agent Server uses its own committed `src/langsmith/agent-server-openapi.json` input and `langsmith/agent-server-api` directory. Control Plane uses the remote `https://api.host.langchain.com/openapi.json` source rather than the platform artifact. Changes to one input must not be assumed to update either of the others.
+This flow is separate from the Agent Server and Control Plane APIs. Agent Server uses the separately committed `src/langsmith/agent-server-openapi.json` input and `langsmith/agent-server-api` directory; repository guidance describes its updates as specification-update PRs from `langgraph-api`. Control Plane uses the remote `https://api.host.langchain.com/openapi.json` source rather than either committed artifact. Changes to one input must not be assumed to update either of the others.
 
 ## Ownership and trust boundary
 
@@ -38,7 +38,7 @@ This flow is separate from the Agent Server and Control Plane APIs. Agent Server
 | Public REST-reference policy | `scripts/process_langsmith_openapi.py` | Change explicit hiding, titles, grouping, or order, then regenerate. |
 | Generated platform input | `src/langsmith/langsmith-platform-openapi.json` | Review and merge the refresh PR; never patch the JSON manually. |
 | Refresh and GitHub write authority | `.github/workflows/refresh-langsmith-openapi.yml` | Preserve its narrow staging and standing-PR behavior. |
-| Agent Server input | `src/langsmith/agent-server-openapi.json` | Use the separate Agent Server specification-update process. |
+| Agent Server input | `src/langsmith/agent-server-openapi.json` | Review the separate upstream specification-update PR; do not use the platform processor. |
 | Control Plane input | `https://api.host.langchain.com/openapi.json` | Correct the service-owned source; do not commit a platform copy. |
 | Rendered endpoint pages | Mintlify deployment configured by `src/docs.json` | Inspect a deployed preview or production site. |
 
@@ -104,11 +104,11 @@ This keeps one outstanding refresh PR rather than a daily queue. The PR is the h
 
 A disallowed hostname raises `ValueError`; network, TLS, timeout, or JSON-decoding failures stop a candidate from being produced. The workflow shell runs with `set -euo pipefail`, so branch, push, checkout, or PR-command failures stop the write step. A no-diff refresh is a successful no-op.
 
-Local checks do not prove that LangSmith REST endpoint pages were rendered. `make check-openapi` runs `mint openapi-check` only on `langsmith/agent-server-openapi.json`. The Mint broken-link targets filter `/langsmith/smith-api` reports because those routes are generated at deployment rather than present in the local build. Use a processor run and generated-diff review for transformation changes, then inspect a Mintlify preview or production site for the rendered REST surface.
+Local checks do not prove that LangSmith REST endpoint pages were rendered. `make check-openapi` runs `mint openapi-check` only on the separate Agent Server specification, `langsmith/agent-server-openapi.json`. The Mint broken-link targets filter `/langsmith/smith-api` reports because those routes are generated at deployment rather than present in the local build. Use a processor run and generated-diff review for platform transformation changes, then inspect a Mintlify preview or production site for the rendered REST surface.
 
 ### Focused test boundary
 
-The focused link-filter test covers the Agent Server route prefix and asserts that an ordinary broken-link report remains. The implementation separately filters the LangSmith REST `smith-api` prefix. This test does not render endpoint pages or exercise the platform processor, network fetch, GitHub PR lifecycle, or deployment-generated routes.
+The focused link-filter test exercises the Agent Server route prefix and asserts that an ordinary broken-link report remains. The implementation separately filters the LangSmith REST `smith-api` prefix. This test does not render endpoint pages or exercise the platform processor, network fetch, GitHub PR lifecycle, or deployment-generated routes.
 
 Run it with:
 
@@ -122,7 +122,7 @@ make test TEST_FILE=tests/unit_tests/test_filter_mint_broken_links.py
 2. Keep platform network fetching restricted to `api.smith.langchain.com`; use `--input` for a controlled candidate.
 3. Modify hide, grouping, title, or ordering policy in `scripts/process_langsmith_openapi.py`, regenerate, and review the complete diff.
 4. Preserve the workflow's single staged path, no-diff exit, GitHub App credential use, and one-standing-PR lifecycle.
-5. Route Agent Server input changes through its own process and correct Control Plane content at its remote source rather than committing it as the platform input.
+5. Route Agent Server input changes through its own specification-update process and correct Control Plane content at its remote source rather than committing it as the platform input.
 6. Review the refresh PR as a public API documentation change and inspect a Mintlify preview or production deployment for rendered endpoints.
 
 ## Related pages

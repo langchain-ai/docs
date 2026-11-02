@@ -26,6 +26,10 @@ sources:
     resource: repo://src/code-samples/deepagents/async-subagents-answer-waiting.ts
   - id: openwiki-source-ee54f1318f03a16aae18479d
     resource: repo://src/code-samples/langsmith/observability-quickstart-app-openai.py
+  - id: openwiki-source-2d6fb565fec243c560da8729
+    resource: repo://src/code-samples/package-lock.json
+  - id: openwiki-source-e0401fc6d5f2a13d30455bd9
+    resource: repo://src/code-samples/package.json
   - id: openwiki-source-9364a51b23a5a207bf223965
     resource: repo://src/langsmith/observability-quickstart.mdx
   - id: openwiki-source-838cde2da1a05c117501b824
@@ -40,8 +44,8 @@ sources:
     resource: repo://tests/unit_tests/test_test_code_samples.py
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-30T08:15:16.596Z
-generated: { by: "openwiki/0.4.3", at: "2026-10-30T08:15:16.596Z" }
+    at: 2026-11-02T20:09:30.414Z
+generated: { by: "openwiki/0.4.3", at: "2026-11-02T20:09:30.414Z" }
 ---
 
 ## Source of truth and lifecycle
@@ -62,7 +66,9 @@ flowchart TD
   Decision -->|"no"| Result["Validation result"]
 ```
 
-This is the source-to-docs lifecycle. The ignored intermediate is replaceable build state, while committed MDX is the reviewed documentation artifact.
+This diagram shows the authoritative source, replaceable intermediate, and reviewable artifacts in the sample lifecycle.
+
+The checked-in `src/code-samples/package.json` and `package-lock.json` define and lock the shared Node dependency environment for the TypeScript corpus; the Make targets install it from `src/code-samples/` before running samples. Keep both files in a dependency change and review lockfile resolution, rather than relying on a developer's ambient packages.
 
 Two representative source-to-document relationships illustrate the boundary. `async-subagents-answer-waiting.ts` defines the TypeScript helper that reads the subagent thread's pending interrupt and resumes it using the task ID as that thread ID; the async-subagents guide imports its generated fragment. `observability-quickstart-app-openai.py` wraps an OpenAI client and marks both the tool and pipeline with `@traceable`; its generated Python fragment is included in the tracing quickstart. Their generated fragments preserve the visible code but omit source markers and any removed harness code.
 
@@ -112,7 +118,7 @@ The runner-focused tests cover `CODE_SAMPLE_PATHS` selection for full and explic
 
 ## Optional public trace publication
 
-`make update-code-sample-traces` is an explicit publication operation, not ordinary validation. It enables tracing, selects `LANGSMITH_PROJECT` or the `docs-code-samples` default, runs samples, and regenerates MDX; it requires `LANGSMITH_API_KEY` for meaningful trace collection.
+`make update-code-sample-traces` is an explicit publication operation, not ordinary validation. It enables tracing, selects `LANGSMITH_PROJECT` or the `docs-code-samples` default, runs samples, and regenerates MDX; it requires `LANGSMITH_API_KEY`. Supply credentials only through the local or CI environment; never commit or print them.
 
 ```mermaid
 sequenceDiagram
@@ -130,13 +136,15 @@ sequenceDiagram
   Collector->>Manifest: store public URL
 ```
 
-This is the guarded trace-publication path. When tracing is enabled, the runner stamps a source with exactly one safe snippet ID through `LANGSMITH_DOCS_SNIPPET`. After a successful sample only, collection runs under a lock, finds a root run with that exact metadata value, excludes already claimed run IDs, and stores its shared URL in `src/code-samples/trace-links.json`. The renderer appends a **View example trace** Card only when the manifest supplies that URL.
+This diagram shows the guarded publication path from a successful sample to its reviewable manifest entry.
+
+When tracing is enabled, the runner stamps a source with exactly one safe snippet ID through `LANGSMITH_DOCS_SNIPPET`. After a successful sample only, collection runs under a lock, finds a root run with that exact metadata value, excludes already claimed run IDs, and stores its shared URL in `src/code-samples/trace-links.json`. The renderer appends a **View example trace** Card only when the manifest supplies that URL.
 
 The collector fails closed. Sources with several snippets are recorded as skipped and their stale per-snippet entries are removed. For an otherwise eligible source that produced no stamped root run, any old entry is removed so regeneration removes its stale CTA. Collection retries rate-limit errors with the runner policy, but collection failures are warnings and do not fail a sample suite that otherwise passed.
 
 ## CI operations and failure handling
 
-**Test Code Samples** runs for relevant pull requests, manual dispatches, and monthly scheduled runs. Fork PRs are skipped because secrets are unavailable. The workflow has independent `oss` and `langsmith` matrix legs: OSS covers `langchain`, `langgraph`, and `deepagents`; LangSmith covers `langsmith`. It verifies that every top-level sample directory belongs to a leg. Internal PRs identify changed supported sample files from the merge-base diff, and the runner's path filter confines each leg to its product. Manual and scheduled runs test all samples in each leg.
+**Test Code Samples** runs for relevant pull requests, manual dispatches, and monthly scheduled runs. Fork PR sample execution is intentionally skipped because repository secrets are unavailable; that skip is not validation of the changed samples. The workflow has independent `oss` and `langsmith` matrix legs: OSS covers `langchain`, `langgraph`, and `deepagents`; LangSmith covers `langsmith`. It verifies that every top-level sample directory belongs to a leg. Internal PRs identify changed supported sample files from the merge-base diff, and the runner's path filter confines each leg to its product. Manual and scheduled runs test all samples in each leg.
 
 The job provisions PostgreSQL and Python, Node, Java/JBang, and Go. It allows 60 minutes for PR runs and 150 minutes for full runs. Only manual or scheduled **OSS** runs enable tracing and public-share collection, because the collector is intended for LangGraph agent roots rather than LangSmith SDK samples.
 
@@ -148,7 +156,7 @@ A separate `workflow_run` observer handles scheduled failures or cancellations. 
 
 1. Change the runnable source under `src/code-samples/`; never make a derived MDX fragment the primary edit location.
 2. Keep markers paired, language-correct, and suffix-correct. Put non-reader-facing harness code in remove blocks, but ensure visible code executes.
-3. Run the focused source through `make test-code-samples FILES="…"` and update shared manifests and lockfiles when changing dependencies.
+3. Run the focused source through `make test-code-samples FILES="…"`; when TypeScript dependencies change, update and review both `src/code-samples/package.json` and `src/code-samples/package-lock.json`.
 4. Run `make code-snippets`, inspect every affected committed fragment, and check the MDX page that imports it.
 5. Run the focused runner or generator tests when changing selection, retries, marker handling, or rendering invariants.
 6. Use trace publication only for an intended, credentialed, single-snippet agent run that can safely become public.

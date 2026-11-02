@@ -1,11 +1,11 @@
 ---
 type: integration boundary
 title: Reference Documentation Boundaries
-description: Distinguishes externally generated SDK reference documentation from Mintlify OpenAPI endpoint documentation, and explains ownership, refresh, validation, and issue-routing responsibilities.
+description: Distinguishes external SDK reference documentation, semantic source cross-references, and Mintlify-generated OpenAPI endpoint documentation. Explains ownership, refresh, validation, and issue-routing boundaries.
 tags: [api-reference, openapi, cross-references, mintlify, langsmith]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-11-02T08:15:40.431Z
+    at: 2026-11-02T20:09:30.414Z
 sources:
   - id: openwiki-source-759309714d08144a07e1b2e0
     resource: repo://.github/ISSUE_TEMPLATE/04-reference-docs.yml
@@ -43,7 +43,7 @@ sources:
     resource: repo://tests/unit_tests/test_check_cross_refs.py
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-30T08:15:16.596Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-02T20:09:30.414Z" }
 ---
 
 # Reference Documentation Boundaries
@@ -168,7 +168,7 @@ Change this repository for an authored marker, scoped map entry, preprocessor or
 
 ## Related documentation
 
-- [Source Map](/openwiki/architecture/source-map.md) — repository ownership and generated-source boundaries.
-- [Mintlify Integration](/openwiki/integrations/mintlify.md) — deployment, previews, hosted artifacts, and rendered-site checks.
-- [Test Overview](/openwiki/testing/test-overview.md) — test layers and focused validation.
+- [Repository Source Map](/openwiki/architecture/source-map.md) — repository ownership and generated-source boundaries.
+- [Cross-References and API Links](/openwiki/operations/cross-references.md) — authoring, scoping, and checking semantic SDK links.
+- [Testing Overview](/openwiki/testing/test-overview.md) — test layers and focused validation.
 - [LangSmith OpenAPI Refresh](/openwiki/workflows/langsmith-openapi-refresh.md) — processor policy and refresh-PR lifecycle.

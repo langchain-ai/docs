@@ -3,9 +3,6 @@ type: operations reference
 title: Developer Commands and CLI Tools
 description: Install and operate the local documentation pipeline, Make targets, Mintlify checks, Vale prose linting, and executable samples. Select the command layer and validation boundary that match the change.
 tags: [cli, make, documentation, code-samples, operations]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-30T08:15:16.596Z
 sources:
   - id: openwiki-source-3638ff2c170b760df159d81b
     resource: repo://.github/actions/uv_setup/action.yml
@@ -67,7 +64,10 @@ sources:
     resource: repo://src/code-samples/package.json
   - id: openwiki-source-1eb6a61d042052ba1402c2eb
     resource: repo://uv.lock
-generated: { by: "openwiki/0.4.3", at: "2026-10-30T08:15:16.596Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-02T20:09:30.414Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-11-02T20:09:30.414Z
 ---
 
 # Developer Commands and CLI Tools
@@ -92,7 +92,7 @@ This synchronizes all uv dependency groups, installs root Node dependencies, ins
 
 Two CLIs have deliberately separate responsibilities:
 
-- The repository's **Python documentation CLI** transforms source documentation and runs the source-to-build pipeline. The project registers `docs = "pipeline.cli:main"`; in a checkout use `uv run pipeline <command>`, or use `docs <command>` after installation.
+- The repository's **Python documentation CLI** transforms source documentation and runs the source-to-build pipeline. The project registers `docs = "pipeline.cli:main"`; in a checkout use `uv run docs <command>` (or the module form `uv run pipeline <command>` used by Make), or use `docs <command>` after installation.
 - The separately installed **Mintlify CLI**, `mint`, serves, checks, and exports only generated site output. Make targets run its built-site operations from `build/`.
 
 | Need | Preferred command | Validation boundary |

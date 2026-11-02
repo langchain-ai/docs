@@ -3,9 +3,6 @@ type: contributor routing guide
 title: Repository Wiki Quickstart
 description: Route a documentation, generated-data, validation, LangSmith, or automation change to its durable owner and the smallest meaningful check. Use this map before editing a rendered route, generated artifact, or CI workflow.
 tags: [quickstart, documentation, routing, validation, mintlify, automation]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-11-02T08:15:40.431Z
 sources:
   - id: openwiki-source-4d9cccca7700db7220ec055e
     resource: repo://.github/workflows/_test.yml
@@ -15,6 +12,8 @@ sources:
     resource: repo://.github/workflows/ci.yml
   - id: openwiki-source-7346220ed051a41471043c07
     resource: repo://.github/workflows/create-preview-branch.yml
+  - id: openwiki-source-97746d8f3662d803e625550e
+    resource: repo://.github/workflows/test-code-samples.yml
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
   - id: openwiki-source-012f2c78e3b1446dfc35803f
@@ -39,7 +38,10 @@ sources:
     resource: repo://scripts/generate_egress_ip_tables.py
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-02T08:15:40.431Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-02T20:09:30.414Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-11-02T20:09:30.414Z
 ---
 
 # Repository Wiki Quickstart
@@ -51,6 +53,7 @@ This repository authors the Mintlify documentation site at [docs.langchain.com](
 | If the change concerns... | Start at | Then read |
 | --- | --- | --- |
 | An authored page, asset, snippet consumer, navigation entry, redirect, or site setting | The owning content under `src/` and `src/docs.json` | [Repository Source Map](/openwiki/architecture/source-map.md) and [Documentation Routes and Language Versioning](/openwiki/concepts/versioning.md) |
+| A new, moved, renamed, or retired authored page | The owning `src/` page and its route family, then `src/docs.json` | [Adding, Moving, and Retiring Documentation Pages](/openwiki/operations/adding-pages.md); use the `add-docs-page` procedure rather than treating a generated route as the owner. |
 | A source-family or route decision—OSS Python/JavaScript, unversioned OpenWiki or Deep Agents Code, LangSmith, or Managed Deep Agents | The source family and its navigation entry | [Documentation Routes and Language Versioning](/openwiki/concepts/versioning.md) |
 | A literal `package>=version` or `package==version` claim in MDX | The authored MDX and `scripts/check_version_claims.py` | [Validate Package Version Claims](/openwiki/operations/version-claims.md) |
 | LangSmith Agent Registry, environments, trace routing, OTLP guidance, or Managed Deep Agents local development | The corresponding `src/langsmith/` page and runnable sample | [LangSmith Agent and Observability Documentation Changes](/openwiki/workflows/langsmith-agent-documentation.md) |
@@ -58,7 +61,7 @@ This repository authors the Mintlify documentation site at [docs.langchain.com](
 | A generated provider overview, code snippet, or OpenAPI reference | Its generator or declared source—not the generated view | [Repository Source Map](/openwiki/architecture/source-map.md), [Testing Overview](/openwiki/testing/test-overview.md), or [Reference Documentation Boundaries](/openwiki/integrations/reference-docs.md) |
 | A workflow, CI check, preview, scheduled writer, secret-bearing sample run, or publication path | `.github/workflows/` and the command it invokes | [GitHub Actions and CI Automation](/openwiki/integrations/github-actions.md) |
 
-`AGENTS.md` is the repository-wide authoring contract. It applies to manually authored `src/` content: do not edit `build/`; use Markdown-free frontmatter descriptions and Tabler icons; add pages to `src/docs.json`; and test examples. Procedures that apply only to a task live in `.agents/skills/`. Run `make skills` in each Claude Code worktree to link them into `.claude/skills/`. A change to a script, workflow, Make target, PR check, scheduled job, or skill also requires the `docs-tooling-notion` follow-up before PR handoff.
+`AGENTS.md` is the repository-wide authoring contract. It applies to manually authored `src/` content: do not edit `build/`; use Markdown-free frontmatter descriptions and Tabler icons; add pages to `src/docs.json`; and test examples. Procedures that apply only to a task live in `.agents/skills/`: use `add-docs-page` for additions, moves, renames, and retirements, and `docs-edit` for an edit on an existing PR. Run `make skills` in each Claude Code worktree to link them into `.claude/skills/`. A change to a script, workflow, Make target, PR check, scheduled job, or skill also requires the `docs-tooling-notion` follow-up before PR handoff.
 
 ## Find the durable owner
 
@@ -109,12 +112,16 @@ The version-claim checker verifies publication existence, not feature compatibil
 
 `make test` runs pytest against `tests/unit_tests` with network sockets disabled except Unix sockets. Core CI runs on pull requests, pushes to `main`, and manual dispatch; it invokes test, lint, and generated-site link checks and separately checks merge markers, source cross-references, integration documentation URL schemes, and generated provider-overview drift. Local checks give fast feedback; CI supplies the broader generated-site and credentialed boundaries.
 
-Preview and publication outputs are not source. Mintlify preview creation is restricted to same-repository pull requests or manual dispatch because it builds documentation and pushes a `preview-` branch; fork PRs do not receive that write-capable path. Preview cleanup refuses to delete a non-`preview-` branch. Treat a skipped fork preview or credentialed sample run as absent coverage, not a pass.
+The separate code-sample workflow runs only on same-repository PRs when secrets may be needed, and runs all samples on its monthly or manual full runs. It partitions `src/code-samples/` into independent `oss` and `langsmith` legs, rejects an uncovered top-level sample directory, and limits trace-link refresh to eligible full OSS runs. See [Testing Overview](/openwiki/testing/test-overview.md) for its credentials, services, and failure boundaries.
+
+Preview and publication outputs are not source. Mintlify preview creation is restricted to same-repository pull requests or manual dispatch because it builds documentation and pushes a deterministic `preview-<slug>-<hash>` branch; a stable branch name keeps the preview URL stable across pushes, while `--force-with-lease` rejects a concurrent branch movement. Fork PRs do not receive that write-capable path. On successful PR previews, a separately permissioned job calls Mintlify and replaces the bot preview comment, including up to five deep links to the largest changed routable Markdown pages when the API returns a URL. Preview cleanup refuses to delete a non-`preview-` branch. Treat a skipped fork preview or credentialed sample run as absent coverage, not a pass.
 
 ## Continue by domain
 
 - [Repository Source Map](/openwiki/architecture/source-map.md): durable owners, generator boundaries, and publication surfaces.
 - [Documentation Routes and Language Versioning](/openwiki/concepts/versioning.md): source families, language variants, and route behavior.
+- [Adding, Moving, and Retiring Documentation Pages](/openwiki/operations/adding-pages.md): authored-page placement, navigation, redirects, and emitted-route review.
+- [Local Documentation Development](/openwiki/workflows/local-development.md): setup, `make dev`, full rebuilds, and focused local checks.
 - [Validate Package Version Claims](/openwiki/operations/version-claims.md): registry routing, failures, exceptions, and focused invocation.
 - [LangSmith Agent and Observability Documentation Changes](/openwiki/workflows/langsmith-agent-documentation.md): registry, environments, agent routing, OTLP, samples, and Managed Deep Agents.
 - [Maintain the LangSmith Egress IP Inventory](/openwiki/workflows/egress-ip-inventory.md): inventory schema, table generation, and public artifact lifecycle.

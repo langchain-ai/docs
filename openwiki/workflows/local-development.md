@@ -1,11 +1,8 @@
 ---
 type: workflow guide
-title: Local Development Workflow
+title: Local Documentation Development
 description: Set up the pinned documentation toolchain and turn authored src changes into a local Mintlify preview. Select focused validation for pipeline changes, prose, generated-site integrity, and runnable code samples without editing generated output.
 tags: [local-development, documentation, mintlify, validation, build-system]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-30T08:15:16.596Z
 sources:
   - id: openwiki-source-3638ff2c170b760df159d81b
     resource: repo://.github/actions/uv_setup/action.yml
@@ -15,6 +12,8 @@ sources:
     resource: repo://.mise.toml
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
+  - id: openwiki-source-6e6efa1569f158fcdb678ef0
+    resource: repo://pipeline/cli.py
   - id: openwiki-source-41f7c907e42a5efd3b3405cd
     resource: repo://pipeline/commands/build.py
   - id: openwiki-source-b481a230af378c0c50ed9994
@@ -29,10 +28,13 @@ sources:
     resource: repo://README.md
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-30T08:15:16.596Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-11-02T20:09:30.414Z
+generated: { by: "openwiki/0.4.3", at: "2026-11-02T20:09:30.414Z" }
 ---
 
-# Local Development Workflow
+# Local Documentation Development
 
 The contributor loop has a strict input/output boundary: author documentation, navigation, and assets in `src/`; the Python pipeline generates the Mintlify-facing `build/` tree. `build/` is disposable output, so never edit it directly. Correct `src/` or the pipeline, then regenerate with a supported target.
 
@@ -163,9 +165,11 @@ make test-code-samples FILES="src/code-samples/langchain/return-a-string.py"
 CODE_SAMPLE_PATHS="src/code-samples/langsmith" make test-code-samples
 ```
 
-The runner uses `CODE_SAMPLE_JOBS` with a default of four workers. Known shared LangSmith fixture groups are serialized while unrelated samples may overlap. Rate-limit results retry with increasing delay, capped at 120 seconds; a sample still rate-limited after the configured attempts is reported as skipped rather than as successful execution. `CODE_SAMPLE_RATE_LIMIT_ATTEMPTS` defaults to 5 and `CODE_SAMPLE_RATE_LIMIT_DELAY_SECONDS` defaults to 30.
+The runner uses `CODE_SAMPLE_JOBS` with a default of four workers. Known shared LangSmith fixture groups are serialized while unrelated samples may overlap. Each execution has a 1,200-second default timeout, configurable with `CODE_SAMPLE_TIMEOUT_SECONDS`. Rate-limit results retry with increasing delay, capped at 120 seconds; a sample still rate-limited after the configured attempts is reported as skipped rather than as successful execution. `CODE_SAMPLE_RATE_LIMIT_ATTEMPTS` defaults to 5 and `CODE_SAMPLE_RATE_LIMIT_DELAY_SECONDS` defaults to 30.
 
-Samples that call providers or remote services need the corresponding local credentials and tools. The credentialed code-sample workflow receives provider API keys and a PostgreSQL service, and skips fork pull requests because secrets are unavailable there. Those secrets and services are CI concerns, not prerequisites for editing, building, or serving the local Mint preview. For authoring and lifecycle guidance, see [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md).
+The selected suffix determines the execution environment: Python uses `uv run python`; TypeScript uses `npx tsx`; Go and shell samples run from `src/code-samples/`; Java and Kotlin run through JBang with Java 21. Ensure the toolchain and relevant credentials exist before running a sample that needs them.
+
+The CI workflow partitions samples into independent `oss` and `langsmith` legs. For pull requests from the main repository, each leg receives the modified runnable sample paths and its `CODE_SAMPLE_PATHS` product scope; scheduled and manually dispatched runs test every sample in each scope. CI provisions Python/uv, Node, Java 21 with JBang, Go, PostgreSQL, and provider credentials. It skips fork pull requests because secrets are unavailable there. Those credentials and services are a code-sample execution boundary, not prerequisites for editing, building, or serving the local Mint preview. For authoring and lifecycle guidance, see [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md).
 
 ## Run Mint safely
 
@@ -203,8 +207,7 @@ Use this sequence to discard stale generated state and reconstruct it, rather th
 
 ## Related pages
 
-- [Mintlify Integration](/openwiki/integrations/mintlify.md)
+- [Build System](/openwiki/architecture/build-system.md)
 - [Developer Commands and CLI Tools](/openwiki/operations/cli-tools.md)
-- [Quickstart](/openwiki/quickstart.md)
 - [Testing and Validation Overview](/openwiki/testing/test-overview.md)
 - [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md)
