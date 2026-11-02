@@ -1,0 +1,39 @@
+```ts TypeScript highlight={4,20-37}
+import { evaluate } from "langsmith/evaluation";
+import { wrapOpenAI } from "langsmith/wrappers/openai";
+import OpenAI from "openai";
+import { createLLMAsJudge, CORRECTNESS_PROMPT } from "openevals";
+
+const openaiClient = wrapOpenAI(new OpenAI());
+
+async function target(inputs: Record<string, any>): Promise<Record<string, any>> {
+  const question = String(inputs.question ?? "");
+  const resp = await openaiClient.chat.completions.create({
+    model: "gpt-6-luna",
+    messages: [
+      { role: "system", content: "Answer the following question accurately" },
+      { role: "user", content: question },
+    ],
+  });
+  return { answer: resp.choices[0].message.content?.trim() ?? "" };
+}
+
+const judge = createLLMAsJudge({
+  prompt: CORRECTNESS_PROMPT,
+  model: "openai:gpt-5.5",
+  feedbackKey: "correctness",
+});
+
+async function correctnessEvaluator(run: {
+  inputs: Record<string, any>;
+  outputs: Record<string, any>;
+  referenceOutputs?: Record<string, any>;
+}) {
+  return judge({
+    inputs: run.inputs,
+    outputs: run.outputs,
+    // OpenEvals expects snake_case here:
+    reference_outputs: run.referenceOutputs,
+  });
+}
+```
