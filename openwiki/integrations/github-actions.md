@@ -3,9 +3,6 @@ type: CI automation guide
 title: GitHub Actions and CI Automation
 description: Maps the repository's GitHub Actions validation, preview and publication handoffs, and scheduled maintenance writers. It documents pinned uv setup, same-repository credential boundaries, code-sample escalation, and reviewed bot pull requests.
 tags: [github-actions, ci, automation, testing, langsmith]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-30T08:15:16.596Z
 sources:
   - id: openwiki-source-3638ff2c170b760df159d81b
     resource: repo://.github/actions/uv_setup/action.yml
@@ -19,6 +16,8 @@ sources:
     resource: repo://.github/workflows/changelog-weekly.yml
   - id: openwiki-source-b6d9390d936169b827965e4b
     resource: repo://.github/workflows/check-pr-ai-attribution.yml
+  - id: openwiki-source-21617d8a6b2b570989a7c900
+    resource: repo://.github/workflows/check-version-claims.yml
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
   - id: openwiki-source-7346220ed051a41471043c07
@@ -35,14 +34,23 @@ sources:
     resource: repo://Makefile
   - id: openwiki-source-41f7c907e42a5efd3b3405cd
     resource: repo://pipeline/commands/build.py
+  - id: openwiki-source-99b53585619b83f258314f8b
+    resource: repo://scripts/check_version_claims.py
   - id: openwiki-source-697851c98229599f97376bfb
     resource: repo://scripts/process_langsmith_openapi.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-30T08:15:16.596Z" }
+  - id: openwiki-source-0cd1dbd077626457942be406
+    resource: repo://scripts/version_claims_ignore.cfg
+  - id: openwiki-source-607673c5c40214b511f9e0a7
+    resource: repo://tests/unit_tests/test_check_version_claims.py
+generated: { by: "openwiki/0.4.3", at: "2026-11-02T08:15:40.431Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-11-02T08:15:40.431Z
 ---
 
 ## Authority map
 
-GitHub Actions separates read-only validation from automation that may write a branch, comment on a pull request, or publish a generated site. The source tree is the authoring surface. `build/`, preview branches, `prod`, and maintenance branches are outputs; maintenance writers propose changes for review rather than merge them.
+GitHub Actions separates checks that hold only read access to this repository from automation that may write a branch, comment on a pull request, or publish a generated site. Read-only in this map describes GitHub repository authority, not necessarily network isolation: the changed-document version check queries public registries. The source tree is the authoring surface. `build/`, preview branches, `prod`, and maintenance branches are outputs; maintenance writers propose changes for review rather than merge them.
 
 The local composite action `.github/actions/uv_setup` is the common Python bootstrap for current CI and maintenance workflows. It pins `astral-sh/setup-uv@v7` to uv `0.9.26`, requires a major.minor Python version input, and sets `ignore-nothing-to-cache: true` so a job that exits before `uv sync` or `uv run` does not fail during cache cleanup. Reuse this action instead of independently selecting a uv version in a workflow.
 
@@ -59,7 +67,7 @@ flowchart TD
   Main["Main push"] --> Publish["prod build handoff"]
 ```
 
-*Validation does not write repository state; the write-capable paths produce bounded deployment or review artifacts.*
+*Read-only validation does not write repository state; write-capable paths produce bounded deployment or review artifacts.*
 
 ### Credential and fork boundary
 
@@ -81,6 +89,18 @@ Workflow permissions reinforce that distinction: core checks request read access
 | Lint | `_lint.yml` takes the same inputs, synchronizes the `test` group, runs `make lint`, and uses GitHub-format Ruff output for annotations. |
 | Documentation links | `_check-links.yml` is read-only, times out at 20 minutes, builds the docs through its Make target, then uses Node 22 and Mintlify to check anchors, redirects, and the Agent Server OpenAPI file. |
 | Generated overview | `ci.yml` regenerates `src/oss/python/integrations/providers/overview.mdx` and fails on a diff. It bypasses only the expected package-download bot update or a `bypass-auto-check` PR label. |
+
+### Changed-document package-version claims
+
+**Check version claims** is a separate, read-only pull-request workflow. It is triggered when authored `src/**/*.mdx`, its checker, ignore configuration, or workflow definition changes. After a full-history checkout, it finds the merge-base against the PR base and passes only changed MDX files below `src/` to `scripts/check_version_claims.py --files`; if that diff is empty, it succeeds without setting up Python or making registry requests.
+
+The checker is deliberately narrower than an upgrade bot: it collects exact pins (`==`) and minimum floors (`>=`) named in documentation, then verifies that each named release—or a release in a truncated series such as `1.1`—has been published. It does **not** decide that a valid floor should be raised. A scoped package always goes to npm and a package with Python extras always goes to PyPI; otherwise the nearest Python/JavaScript label, a `:::python` or `:::js` fence, and then page-path language determine the registry. This prevents a package published on divergent Python and npm version lines from being checked against the wrong registry.
+
+A registry lookup failure is reported as an unresolved note rather than a bad-version failure, so an outage or unavailable package does not block the PR. A version that resolves but was never published fails unless its exact specifier is a documented exception in `scripts/version_claims_ignore.cfg`. Run the same focused check locally after documentation changes:
+
+```bash
+uv run python scripts/check_version_claims.py --files src/path/to/page.mdx
+```
 
 `make build` installs npm dependencies and calls the pipeline build command. The command requires the source directory, creates `build/`, and delegates the transformation to `DocumentationBuilder.build_all()`. Use the narrow local entrypoint first:
 
@@ -145,7 +165,9 @@ Before force-pushing a same-day branch, the workflow refuses to overwrite a bran
 
 ## Previews and publication
 
-Mintlify preview creation is restricted to same-repository PRs or manual dispatch. It validates the source branch, builds documentation, creates a collision-resistant `preview-` branch containing `build/`, and invokes the Mintlify preview API only after the branch is pushed. On PR closure, cleanup selects the derived prefix and refuses to delete a non-`preview-` branch. The comment job requires Mintlify credentials, rejects malformed or unusable API responses, maintains one marker-based bot comment for successful non-Dependabot PRs, removes old duplicates, and lists at most five changed routable Markdown pages by diff size. See [Mintlify Integration](/openwiki/integrations/mintlify.md).
+Mintlify preview creation is restricted to same-repository PRs or manual dispatch. It validates the source branch, builds documentation, creates a collision-resistant `preview-` branch containing `build/`, and invokes the Mintlify preview API only after the branch is pushed. On PR closure, cleanup selects the derived prefix and refuses to delete a non-`preview-` branch.
+
+For a successful non-Dependabot PR, the comment job needs Mintlify credentials and the preview-branch output; malformed JSON or an API error with neither a status ID nor preview URL fails the job. It deletes all bot comments carrying the current marker or recognized legacy preview wording, then creates one replacement marker comment. If Mintlify supplies a preview URL, that comment includes the site URL, a deployment-readiness notice, and deep links for up to five largest changed routable Markdown or MDX files. Files outside `src/`, code-sample and snippet paths, and non-routable names are excluded; `index` maps to its directory and shared OSS paths map to the Python route unless already language-specific. Without a preview URL, the replacement still records the generated branch but has no page deep links. See [Mintlify Integration](/openwiki/integrations/mintlify.md).
 
 `publish.yml` runs on a `main` push or manual dispatch. It builds documentation, verifies `build/`, copies it beneath `public/build`, then uses the GitHub token to publish `public` to `prod`. This production handoff is separate from preview branches and is not an authoring surface.
 
@@ -159,6 +181,7 @@ Mintlify preview creation is restricted to same-repository PRs or manual dispatc
 6. Keep Linear escalation downstream of failed or cancelled scheduled runs. An unset team variable must warn rather than fail observation.
 7. Preserve no-diff, standing-PR, human-edit, and review boundaries for OpenAPI, changelog, and trace writers. Do not expose secrets or private reports in generated material.
 8. Preserve preview branch sanitization and deletion guards; do not enable credentialed preview paths for forks.
+9. Keep package-version validation scoped to changed authored MDX and publication existence; do not turn it into automated dependency-floor upgrades or make registry outages a false failure.
 
 ## Related pages
 
