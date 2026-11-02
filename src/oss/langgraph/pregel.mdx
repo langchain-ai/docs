@@ -517,23 +517,25 @@ Below are a few different examples to give you a sense of the Pregel API.
     <Tab title="Cycle">
     :::python
     This example demonstrates how to introduce a cycle in the graph, by having
-    a chain write to a channel it subscribes to. Execution will continue
-    until a `None` value is written to the channel.
+    a chain write to a channel it subscribes to. The node doubles the string
+    until its length is at least 10, then writes an empty list. Because
+    `Topic` clears between steps when it receives no new values, the channel
+    becomes empty and the cycle ends.
 
     ```python
-    from langgraph.channels import EphemeralValue
-    from langgraph.pregel import Pregel, NodeBuilder, ChannelWriteEntry
+    from langgraph.channels import Topic
+    from langgraph.pregel import Pregel, NodeBuilder
 
     example_node = (
         NodeBuilder().subscribe_only("value")
-        .do(lambda x: x + x if len(x) < 10 else None)
-        .write_to(ChannelWriteEntry("value", skip_none=True))
+        .do(lambda xs: xs[0] + xs[0] if len(xs[0]) < 10 else [])
+        .write_to("value")
     )
 
     app = Pregel(
         nodes={"example_node": example_node},
         channels={
-            "value": EphemeralValue(str),
+            "value": Topic(str, accumulate=False),
         },
         input_channels=["value"],
         output_channels=["value"],
@@ -543,28 +545,30 @@ Below are a few different examples to give you a sense of the Pregel API.
     ```
 
     ```pycon
-    {'value': 'aaaaaaaaaaaaaaaa'}
+    {'value': ['aaaaaaaaaaaaaaaa']}
     ```
     :::
 
     :::js
     This example demonstrates how to introduce a cycle in the graph, by having
-    a chain write to a channel it subscribes to. Execution will continue
-    until a `null` value is written to the channel.
+    a chain write to a channel it subscribes to. The node doubles the string
+    until its length is at least 10, then writes an empty array. Because
+    `Topic` clears between steps when it receives no new values, the channel
+    becomes empty and the cycle ends.
 
     ```typescript
-    import { EphemeralValue } from "@langchain/langgraph/channels";
-    import { Pregel, NodeBuilder, ChannelWriteEntry } from "@langchain/langgraph/pregel";
+    import { Topic } from "@langchain/langgraph/channels";
+    import { Pregel, NodeBuilder } from "@langchain/langgraph/pregel";
 
     const exampleNode = new NodeBuilder()
       .subscribeOnly("value")
-      .do((x: string) => x.length < 10 ? x + x : null)
-      .writeTo(new ChannelWriteEntry("value", { skipNone: true }));
+      .do((xs: string[]) => (xs[0].length < 10 ? xs[0] + xs[0] : []))
+      .writeTo("value");
 
     const app = new Pregel({
       nodes: { exampleNode },
       channels: {
-        value: new EphemeralValue<string>(),
+        value: new Topic<string>(),
       },
       inputChannels: ["value"],
       outputChannels: ["value"],
@@ -574,7 +578,7 @@ Below are a few different examples to give you a sense of the Pregel API.
     ```
 
     ```console
-    { value: 'aaaaaaaaaaaaaaaa' }
+    { value: ['aaaaaaaaaaaaaaaa'] }
     ```
     :::
     </Tab>
