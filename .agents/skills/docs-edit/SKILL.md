@@ -195,8 +195,11 @@ user asks.
 
 When you write or update a PR description, two rules apply:
 
-- **Linear**: When the work has a Linear issue, write `Closes [DOC-N](<linear url>)`
-  in the description. `sync-linear-issue-from-pr.yml` moves the issue with the PR.
+- **Linear**: When the work has a Linear issue, link it with
+  `Closes [DOC-N](<linear url>)` or `Refs [DOC-N](<linear url>)` as
+  appropriate. `sync-linear-issue-from-pr.yml` only syncs status for
+  docs-release-watch PRs labeled `release-watch-agent`, so a human PR does not
+  move the issue.
 - **AI disclosure**: End the description with one plain sentence, such as
   `Prepared with Claude Code.` Do not add a `🤖 Generated with [Claude Code](...)`
   badge or any similar badge. `check-pr-ai-attribution` fails a PR that carries

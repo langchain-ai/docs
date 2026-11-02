@@ -216,7 +216,7 @@ Only when the diff triggers them:
 - A new code block: does it carry a real language tag, and are imports sorted?
 - A page or heading that changed URL: is there a redirect?
 - A PR target: does the description reference its Linear issue with
-  `Closes DOC-N`, when one exists? Does it end with a plain AI-disclosure
+  `Closes DOC-N` or `Refs DOC-N`, when one exists? Does it end with a plain AI-disclosure
   sentence and carry no `Generated with` badge? `check-pr-ai-attribution`
   fails a PR with a badge.
 
