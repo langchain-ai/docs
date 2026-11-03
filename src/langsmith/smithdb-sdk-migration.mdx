@@ -4,6 +4,74 @@ sidebarTitle: SmithDB SDK migration
 description: Migrate your existing LangSmith SDK methods to their SmithDB-backed equivalents for faster agent observability.
 ---
 
+## Migrate with an AI agent
+
+Copy the following prompt into your coding agent. It finds every SDK method and direct API call to the deprecated endpoints, waits for your approval, migrates them, and opens a pull request.
+
+<Prompt
+    description="Migrate LangSmith SDK calls and direct API calls to the SmithDB-backed endpoints"
+    icon="arrow-right"
+    actions={["copy"]}
+>
+Help me migrate this codebase off deprecated LangSmith API endpoints. On LangSmith Cloud they stop working on January 31, 2027. On self-hosted they stop working when ClickHouse is turned off, at the latest with the upgrade to v0.19. Calls may go through a LangSmith SDK (Python, TypeScript/JavaScript, Go or Java) or straight over HTTP; handle all of them.
+
+Work in 4 phases, in order. Stop only where a phase says STOP, and wait for my go. Do not edit any file before I approve phase 2.
+
+**Phase 1: explain (short)**
+
+In 3 to 5 lines, tell me what is changing and why: LangSmith moved run storage to SmithDB, the v1 run query/read endpoints and the SDK methods that call them are replaced by v2 ones, and what breaks if we do nothing.
+
+Source of truth: fetch https://docs.langchain.com/langsmith/smithdb-sdk-migration.md first (minimum SDK versions per language, exception changes, discontinued methods). Then fetch only the area pages this codebase needs. Each one has before/after examples in Python, TypeScript, Go, Java and cURL:
+
+- Searching the runs in a project: https://docs.langchain.com/langsmith/smithdb-sdk-migration-query-runs.md
+- Fetching one run by ID, its child runs, and its URL: https://docs.langchain.com/langsmith/smithdb-sdk-migration-runs.md
+- Querying traces, their token and cost aggregates, and the runs in one trace: https://docs.langchain.com/langsmith/smithdb-sdk-migration-traces.md
+- Querying threads and the traces in one thread: https://docs.langchain.com/langsmith/smithdb-sdk-migration-threads.md
+- Querying the runs of an experiment on a dataset: https://docs.langchain.com/langsmith/smithdb-sdk-migration-experiments.md
+- Feedback, annotation queues, and shared runs: https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback.md
+
+Then continue straight to phase 2.
+
+**Phase 2: inventory and plan (read only)**
+
+Search the whole repo (app code, scripts, notebooks, tests, CI and infra config, in every language it uses) for every SDK method and endpoint in the "Affected methods and endpoints" section of the guide's overview page:
+
+- SDK calls in Python, TypeScript/JavaScript, Go and Java/Kotlin. In Go and Java some replacements keep a similar name under a new service, so match on the guide's before/after, not on the name alone.
+- Feedback creation (`create_feedback`, `createFeedback`, `Feedback.New`, `feedback().create()`): the method and endpoint keep their name, but the project (session) ID is now required. List every call that does not pass it.
+- Direct HTTP calls to the deprecated paths, with or without `/api/v1`, in raw or built URLs and any HTTP client (requests, httpx, fetch, axios, net/http, OkHttp, curl).
+
+Keep raw HTTP calls as raw HTTP calls: change only the path, request body, response handling and pagination, following the guide's cURL examples. Note each raw call that would be simpler with an SDK method, for phase 4.
+
+Show a table: file:line, language, SDK or HTTP, current call, replacement, risk.
+
+Flag as risk: code reading `total_tokens`, `total_cost`, `prompt_*` or `completion_*` from a runs query (no longer includes child runs; use the traces query and its aggregates), catches of old exception classes, parameters the guide does not cover.
+
+List per language: current version, latest stable, guide minimum.
+
+If you find more than about 20 call sites, propose splitting the work into separate PRs by area (one folder, service or package each), with the call-site count per PR, and ask which one to do first. Phase 3 then covers only the PR I pick.
+
+Number every decision you need from me (1, 2, 3...), each with your proposed answer, so I can approve or reject them one by one (for example "1 yes, 2 no, 3 yes").
+
+Then STOP and wait for my approval.
+
+**Phase 3: migrate (after approval, only the scope and decisions I approved)**
+
+1. Upgrade each LangSmith SDK in use to its latest stable release (and its lockfile: uv.lock/poetry.lock, package-lock/pnpm-lock/yarn.lock, go.sum, Gradle/Maven). The guide's minimum is only the floor. If the latest release breaks something unrelated to this migration, use the newest version that works, never below the minimum, and say why in the PR.
+2. Migrate each call site from the table. The v2 queries take `project_ids` (UUIDs), not a project name. Resolve a plain project by name as the guide shows. If the project is an agent environment, an experiment or the workspace evaluators, propose resolving it with https://docs.langchain.com/langsmith/resolve-an-agent, and flag that it is beta and needs a newer SDK and server.
+3. Run tests, linters and the build for every language touched. Re-run the phase 2 search and show it finds nothing, or explain each leftover.
+4. Open a pull request: per file, what changed and why, plus anything left for review.
+
+**Phase 4: feedback and follow-ups**
+
+1. List anything the guide did not cover or got wrong, as a short note I can send to LangChain. Always end with this note, even if it is empty ("nothing to report").
+2. List the raw HTTP calls noted in phase 2 that could use an SDK method instead. For each, say what the SDK would bring to that call site, for example automatic pagination, retries with backoff on rate limits and server errors, typed parameters that catch field renames, deprecation warnings before an endpoint is removed, or config from the environment, plus anything else that applies to it. Then ask me if I want to switch them in a separate change. Skip this if there are none.
+
+**Rules**
+
+- If the guide does not cover a call site or parameter, search the rest of the LangSmith docs first (https://docs.langchain.com/langsmith, including the API reference). Then ask me, and include a proposed replacement with the doc link that backs it, or say you found nothing. Never apply an uncovered change without my go.
+- Do not call write endpoints or change LangSmith data while testing.
+</Prompt>
+
 ## Context
 In May 2026, we released [SmithDB](https://www.langchain.com/blog/introducing-smithdb?utm_source=docs), a new observability database built for modern AI agents. SmithDB delivers industry-leading performance across every key observability workload, making core LangSmith experiences dramatically faster.
 
@@ -83,7 +151,7 @@ Every SDK method and API endpoint below is deprecated and stops working on the r
 | `GET /public/{share_token}/run/{run_id}` | `GET /api/v2/public/{share_token}/run/{run_id}` | [Feedback and sharing](/langsmith/smithdb-sdk-migration-feedback) |
 | `POST /public/{share_token}/runs/query` | `POST /api/v2/public/{share_token}/runs/query` | [Feedback and sharing](/langsmith/smithdb-sdk-migration-feedback) |
 
-The annotation queue run endpoints move to the queue items API under `/api/v1/platform/annotation-queues`. The guide has no before/after examples for these yet; see the [API reference](/langsmith/smith-api) for request and response shapes.
+The annotation queue run endpoints move to the queue items API under `/api/v1/platform/annotation-queues`. For adding runs to a queue, see [Annotation queues: add runs](/langsmith/smithdb-sdk-migration-feedback#annotation-queues-add-runs). For the other endpoints, see the [API reference](/langsmith/smith-api) for request and response shapes.
 
 | Deprecated (`/annotation-queues/...`) | Replacement (`/api/v1/platform/annotation-queues/...`) |
 |---|---|
@@ -165,74 +233,6 @@ The annotation queue run endpoints move to the queue items API under `/api/v1/pl
     | `client.AnnotationQueues.NewRunStatus()` | `client.AnnotationQueues.Items.NewStatus()` |
   </Tab>
 </Tabs>
-
-## Migrate with an AI agent
-
-Copy the following prompt into your coding agent. It finds every SDK method and direct API call to the deprecated endpoints, waits for your approval, migrates them, and opens a pull request.
-
-<Prompt
-    description="Migrate LangSmith SDK calls and direct API calls to the SmithDB-backed endpoints"
-    icon="arrow-right"
-    actions={["copy"]}
->
-Help me migrate this codebase off deprecated LangSmith API endpoints. On LangSmith Cloud they stop working on January 31, 2027. On self-hosted they stop working when ClickHouse is turned off, at the latest with the upgrade to v0.19. Calls may go through a LangSmith SDK (Python, TypeScript/JavaScript, Go or Java) or straight over HTTP; handle all of them.
-
-Work in 4 phases, in order. Stop only where a phase says STOP, and wait for my go. Do not edit any file before I approve phase 2.
-
-**Phase 1: explain (short)**
-
-In 3 to 5 lines, tell me what is changing and why: LangSmith moved run storage to SmithDB, the v1 run query/read endpoints and the SDK methods that call them are replaced by v2 ones, and what breaks if we do nothing.
-
-Source of truth: fetch https://docs.langchain.com/langsmith/smithdb-sdk-migration.md first (minimum SDK versions per language, exception changes, discontinued methods). Then fetch only the area pages this codebase needs. Each one has before/after examples in Python, TypeScript, Go, Java and cURL:
-
-- Searching the runs in a project: https://docs.langchain.com/langsmith/smithdb-sdk-migration-query-runs.md
-- Fetching one run by ID, its child runs, and its URL: https://docs.langchain.com/langsmith/smithdb-sdk-migration-runs.md
-- Querying traces, their token and cost aggregates, and the runs in one trace: https://docs.langchain.com/langsmith/smithdb-sdk-migration-traces.md
-- Querying threads and the traces in one thread: https://docs.langchain.com/langsmith/smithdb-sdk-migration-threads.md
-- Querying the runs of an experiment on a dataset: https://docs.langchain.com/langsmith/smithdb-sdk-migration-experiments.md
-- Feedback, annotation queues, and shared runs: https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback.md
-
-Then continue straight to phase 2.
-
-**Phase 2: inventory and plan (read only)**
-
-Search the whole repo (app code, scripts, notebooks, tests, CI and infra config, in every language it uses) for every SDK method and endpoint in the "Affected methods and endpoints" section of the guide's overview page:
-
-- SDK calls in Python, TypeScript/JavaScript, Go and Java/Kotlin. In Go and Java some replacements keep a similar name under a new service, so match on the guide's before/after, not on the name alone.
-- Feedback creation (`create_feedback`, `createFeedback`, `Feedback.New`, `feedback().create()`): the method and endpoint keep their name, but the project (session) ID is now required. List every call that does not pass it.
-- Direct HTTP calls to the deprecated paths, with or without `/api/v1`, in raw or built URLs and any HTTP client (requests, httpx, fetch, axios, net/http, OkHttp, curl).
-
-Keep raw HTTP calls as raw HTTP calls: change only the path, request body, response handling and pagination, following the guide's cURL examples. Note each raw call that would be simpler with an SDK method, for phase 4.
-
-Show a table: file:line, language, SDK or HTTP, current call, replacement, risk.
-
-Flag as risk: code reading `total_tokens`, `total_cost`, `prompt_*` or `completion_*` from a runs query (no longer includes child runs; use the traces query and its aggregates), catches of old exception classes, parameters the guide does not cover.
-
-List per language: current version, latest stable, guide minimum.
-
-If you find more than about 20 call sites, propose splitting the work into separate PRs by area (one folder, service or package each), with the call-site count per PR, and ask which one to do first. Phase 3 then covers only the PR I pick.
-
-Number every decision you need from me (1, 2, 3...), each with your proposed answer, so I can approve or reject them one by one (for example "1 yes, 2 no, 3 yes").
-
-Then STOP and wait for my approval.
-
-**Phase 3: migrate (after approval, only the scope and decisions I approved)**
-
-1. Upgrade each LangSmith SDK in use to its latest stable release (and its lockfile: uv.lock/poetry.lock, package-lock/pnpm-lock/yarn.lock, go.sum, Gradle/Maven). The guide's minimum is only the floor. If the latest release breaks something unrelated to this migration, use the newest version that works, never below the minimum, and say why in the PR.
-2. Migrate each call site from the table. The v2 queries take `project_ids` (UUIDs), not a project name. Resolve a plain project by name as the guide shows. If the project is an agent environment, an experiment or the workspace evaluators, propose resolving it with https://docs.langchain.com/langsmith/resolve-an-agent, and flag that it is beta and needs a newer SDK and server.
-3. Run tests, linters and the build for every language touched. Re-run the phase 2 search and show it finds nothing, or explain each leftover.
-4. Open a pull request: per file, what changed and why, plus anything left for review.
-
-**Phase 4: feedback and follow-ups**
-
-1. List anything the guide did not cover or got wrong, as a short note I can send to LangChain. Always end with this note, even if it is empty ("nothing to report").
-2. List the raw HTTP calls noted in phase 2 that could use an SDK method instead. For each, say what the SDK would bring to that call site, for example automatic pagination, retries with backoff on rate limits and server errors, typed parameters that catch field renames, deprecation warnings before an endpoint is removed, or config from the environment, plus anything else that applies to it. Then ask me if I want to switch them in a separate change. Skip this if there are none.
-
-**Rules**
-
-- If the guide does not cover a call site or parameter, search the rest of the LangSmith docs first (https://docs.langchain.com/langsmith, including the API reference). Then ask me, and include a proposed replacement with the doc link that backs it, or say you found nothing. Never apply an uncovered change without my go.
-- Do not call write endpoints or change LangSmith data while testing.
-</Prompt>
 
 ## Exceptions
 
