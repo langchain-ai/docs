@@ -228,6 +228,29 @@ def test_release_held_by_flag_state() -> None:
     assert "not found in Eppo" in dropped["4"]
 
 
+def test_released_prs_are_marked_for_grouping_and_writing() -> None:
+    """Released PRs carry a marker, so stale "behind a flag" notes do not drop them."""
+    pr = {
+        "title": "feat: custom views",
+        "body": "Behind a flag, default off.",
+        "files": ["a.ts"],
+        "omitted_files": [],
+        "diff": "+x",
+    }
+    prs = {1: pr, 2: {**pr, "title": "fix: other"}}
+    results = {n: {"pass1": {"reason": "flag off", "evidence": []}} for n in prs}
+    notes = cp._group_notes([1, 2], prs, results, frozenset({1}))
+    assert notes.splitlines()[0].startswith("#1 | [released] feat: custom views")
+    assert "[released]" not in notes.splitlines()[1]
+
+    group = {"label": "Custom views", "layer": "highlight", "prs": [1]}
+    assert 'released="true"' in cp._group_prompt(group, prs, frozenset({1}))
+    assert 'released="true"' not in cp._group_prompt(group, prs)
+    assert "[released]" in cp.GROUP_SYSTEM
+    assert 'released="true"' in cp.ENTRY_SYSTEM
+    assert 'released="true"' in cp.HIGHLIGHT_SYSTEM
+
+
 def test_write_held_orders_by_pr_number(tmp_path: Path) -> None:
     """The held list is written in PR order, so weekly diffs stay small."""
     path = tmp_path / "held.json"
