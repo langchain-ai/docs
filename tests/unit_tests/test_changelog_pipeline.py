@@ -270,10 +270,8 @@ def test_eppo_state_overrides_a_dropped_released_group() -> None:
         "change",  # one released PR is enough; a missing field means not announced
         "highlight",  # not dropped: unchanged
     ]
-    assert (
-        "announced_before"
-        in cp.GROUP_SCHEMA["properties"]["groups"]["items"]["required"]
-    )
+    # Declared and required: the name appears once in properties, once in required.
+    assert json.dumps(cp.GROUP_SCHEMA).count('"announced_before"') == 2
 
 
 def test_write_held_orders_by_pr_number(tmp_path: Path) -> None:
