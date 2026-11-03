@@ -1,0 +1,35 @@
+```python
+from typing import TypedDict
+
+from langchain_core.runnables import RunnableConfig
+from langchain_core.utils.uuid import uuid7
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.func import entrypoint
+from langgraph.graph import START, StateGraph
+
+
+class State(TypedDict):
+    foo: int
+
+
+def double(state: State) -> State:
+    return {"foo": state["foo"] * 2}
+
+
+builder = StateGraph(State)
+builder.add_node("double", double)
+builder.add_edge(START, "double")
+graph = builder.compile()
+
+checkpointer = InMemorySaver()
+
+
+@entrypoint(checkpointer=checkpointer)
+def workflow(x: int, *, config: RunnableConfig) -> dict:
+    result = graph.invoke({"foo": x}, config)
+    return {"bar": result["foo"]}
+
+
+config = {"configurable": {"thread_id": str(uuid7())}}
+print(workflow.invoke(5, config=config))  # {'bar': 10}
+```

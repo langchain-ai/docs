@@ -1,0 +1,77 @@
+```ts icon="server" title="channel.ts"
+import { createServer } from "node:http";
+
+import { createChannel } from "@copilotkit/channels";
+import { CopilotKitIntelligence, CopilotRuntime } from "@copilotkit/runtime/v2";
+import { createCopilotNodeListener } from "@copilotkit/runtime/v2/node";
+
+import { makeAgent } from "./agent.js";
+
+function required(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing required environment variable: ${name}`);
+  return value;
+}
+
+// `name` must match the Channel Code shown in CopilotKit Intelligence.
+const channel = createChannel({
+  name: required("CHANNEL_CODE"),
+  identifyUser: "platform",
+  agent: makeAgent,
+});
+
+// Each incoming message starts a turn; runAgent streams the reply back.
+channel.onMessage(async ({ thread, message }) => {
+  await thread.runAgent({
+    prompt: message.contentParts?.length
+      ? [
+          ...(message.text ? [{ type: "text" as const, text: message.text }] : []),
+          ...message.contentParts,
+        ]
+      : message.text,
+    context: [{ description: "Originating platform", value: message.platform }],
+  });
+});
+
+const intelligence = new CopilotKitIntelligence({
+  apiKey: required("INTELLIGENCE_API_KEY"),
+});
+
+const runtime = new CopilotRuntime({
+  agents: {},
+  intelligence,
+  channels: [channel],
+});
+
+// Wire teardown before the listener exists, because creating it starts the
+// Channel. A Ctrl-C during the connect window then still tears it down.
+let teardown: (() => Promise<void>) | undefined;
+const shutdown = async () => {
+  await teardown?.();
+};
+process.once("SIGINT", shutdown);
+process.once("SIGTERM", shutdown);
+
+const listener = createCopilotNodeListener({
+  runtime,
+  basePath: "/api/copilotkit",
+});
+const channels = listener.channels;
+const server = createServer(listener);
+teardown = async () => {
+  await channels.stop();
+  if (server.listening) server.close();
+};
+
+// Creating the listener starts the Channel; there is no `channel.start()`.
+// `ready()` is optional; inspect `status()` before reporting the Channel online.
+await channels.ready({ timeoutMs: 30_000 });
+if (channels.status().overall !== "online") {
+  throw new Error("Slack Channel is not online");
+}
+
+const port = Number(process.env.PORT ?? 3000);
+server.listen(port, () => {
+  console.log(`Slack Channel online; listening on :${port}`);
+});
+```
