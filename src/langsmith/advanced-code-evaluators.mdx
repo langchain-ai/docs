@@ -1,42 +1,47 @@
 ---
-title: Use advanced features in code evaluators
-sidebarTitle: Code evaluator advanced features
-description: Install packages, make network requests, and authenticate with workspace secrets from a LangSmith code evaluator that runs in a sandbox.
+title: Use advanced code evaluators
+sidebarTitle: Advanced code evaluator
+description: Install packages, make network requests, and authenticate with workspace secrets from an advanced code evaluator that runs in a LangSmith sandbox.
+tag: "Beta"
 ---
 
-Advanced features let a [code evaluator](/langsmith/code-evaluator-ui) install public packages, call external services, authenticate with [workspace secrets](/langsmith/set-up-hierarchy#configure-workspace-settings) that your evaluator code never sees, and run for longer on each evaluation. They run the evaluator in an isolated [LangSmith sandbox](/langsmith/sandboxes) instead of the default code evaluator environment. Advanced features are available for Python and JavaScript code evaluators, whether you create them from a dataset, from the Playground, or as an [online evaluator](/langsmith/online-evaluations-code) that scores your traces.
+Advanced code evaluators allow installing public packages, calling external services, authenticating with encrypted [workspace secrets](/langsmith/set-up-hierarchy#configure-workspace-settings), and longer run times on each evaluation. Advanced code evaluators run in an isolated [LangSmith sandbox](/langsmith/sandboxes) instead of the default [code evaluator](/langsmith/code-evaluator-ui) environment. Advanced features are available for Python and JavaScript code evaluators, whether you create them from a dataset, from the Playground, or as an [online evaluator](/langsmith/online-evaluations-code) that scores your traces.
 
-## See what changes with advanced features
+<Note>
+Advanced code evaluators are in [beta](/langsmith/release-stages#beta). They are available at no additional cost during the beta.
+</Note>
 
-| | Without advanced features | With advanced features |
+## Compare advanced and default code evaluators
+
+| | Default code evaluator | Advanced code evaluator |
 |---|---|---|
 | Packages | The standard library, plus `numpy`, `pandas`, `jsonschema`, `scipy`, and `scikit-learn` for Python | Any public package from PyPI (Python) or npm (JavaScript) |
 | Network access | None | Outbound requests, subject to your organization's [egress policy](#make-network-requests) |
 | Workspace secrets | Not available | Added as headers on requests to each secret's allowed hosts |
-| Thread evaluators | Not available | [Score whole threads](#evaluate-threads) with `evaluate(ctx)` |
+| Threads | Not available | [Score whole threads](#evaluate-threads) with `evaluate(ctx)` |
 | Saving | Takes effect immediately | Starts a [build](#build-and-test-the-evaluator) |
 
-## Enable advanced features
+## Create an advanced code evaluator
 
-To enable advanced features on a code evaluator:
+To create an advanced code evaluator:
 
 1. Create or open a code evaluator. For more information, see [Create the evaluator](/langsmith/code-evaluator-ui#step-1-create-the-evaluator) or [Configure online evaluators](/langsmith/online-evaluations-code#configure-online-evaluators).
 1. Select Python or JavaScript as the evaluator language.
-1. In the **Configure Evaluator** pane, select **Enable advanced features**. The advanced features section expands to show the package list.
+1. In the **Configure Evaluator** pane, select **Enable advanced features**. The package list appears.
 1. (Optional) [Add packages](#add-packages).
 1. (Optional) [Select workspace secrets](#authenticate-with-workspace-secrets) for authenticated requests.
 1. [Write your evaluator code](#write-the-evaluator-function), then click **Save**. Saving starts a [build](#build-and-test-the-evaluator).
 
 ## Add packages
 
-List the packages your evaluator imports in the package list. LangSmith installs them into the evaluator's sandbox when you save.
+List the packages your advanced code evaluator imports in the package list. LangSmith installs them into the evaluator's sandbox when you save.
 
 - **Python**: Add packages to `requirements.txt`. LangSmith installs them with pip.
 - **JavaScript**: Add packages under `dependencies` in `package.json`. LangSmith installs them with npm.
 
-LangSmith installs only public packages, up to 30 per evaluator. Private package indexes and registries are not supported. Use the package's install name, which can differ from its import name. For example, list `scikit-learn` to `import sklearn`.
+LangSmith installs only public packages, up to 30 per evaluator. Private package indexes and registries are not supported. List each package by the name you install it with, which can differ from the name you import in code. For example, to use `import sklearn`, add `scikit-learn` to `requirements.txt`, not `sklearn`.
 
-When you enable advanced features on a Python evaluator, `requirements.txt` starts with the packages available without advanced features:
+When you create an advanced Python code evaluator, `requirements.txt` starts with the packages available to default code evaluators:
 
 ```txt
 numpy==2.3.5
@@ -54,7 +59,7 @@ Outbound network requests follow your organization's sandbox egress policy. Unde
 
 ## Authenticate with workspace secrets
 
-Workspace secrets let your evaluator call services that require authentication, without putting credentials in the evaluator code. When you select a secret, the sandbox proxy adds it as an HTTP header on HTTPS requests to that secret's allowed hosts. The secret value never enters the sandbox, so your code cannot read it from an environment variable or anywhere else.
+Workspace secrets let an advanced code evaluator call services that require authentication, without putting credentials in the evaluator code. When you select a secret, the sandbox proxy adds it as an HTTP header on HTTPS requests to that secret's allowed hosts. The secret value never enters the sandbox, so your code cannot read it from an environment variable or anywhere else.
 
 To use a workspace secret in an evaluator:
 
@@ -121,22 +126,23 @@ A wildcard host allows every host under the domain. On a shared provider domain,
 
 ### Resolve secret errors
 
-LangSmith checks an evaluator's secrets when you save the evaluator and again each time it runs, because an admin can edit or delete a secret after you select it. Saving fails, and an evaluation fails instead of running unauthenticated, when:
+LangSmith checks an evaluator's secrets when you save the evaluator and again each time it runs, because an admin can edit or delete a secret after you select it. When a check fails, LangSmith rejects the save, or fails the evaluation instead of running it without authentication.
 
-- The secret no longer exists in the workspace.
-- The secret has no allowed hosts. Ask a workspace admin to add one.
-- The secret has no header configured for its allowed hosts.
+| Problem | Fails on save | Fails on run |
+|---|---|---|
+| The secret no longer exists in the workspace. | Yes | Yes |
+| The secret has no allowed hosts. | Yes | Yes |
+| The secret has no header configured for its allowed hosts. | Yes | Yes |
+| Your organization's restricted egress settings block the secret's hosts. | Yes | No |
+| Two selected secrets set the same header on the same host. | No | Yes |
 
-Two more checks apply at one stage only:
+To fix missing hosts or headers, ask a workspace admin to [configure allowed hosts for the secret](#configure-allowed-hosts-for-a-secret). To fix a header conflict, remove one of the secrets from the evaluator.
 
-- Saving fails when a secret's hosts cannot be used under your organization's restricted egress settings.
-- An evaluation fails when two selected secrets set the same header on the same host. Remove one of them from the evaluator.
-
-Failed evaluations show an error on the run's feedback and in the evaluator's **Logs**.
+Failed evaluations show an error on the run's feedback and on the **Logs** tab of the [evaluator's detail view](/langsmith/evaluators#view-evaluator-details).
 
 ## Write the evaluator function
 
-Evaluators with advanced features accept the same function as evaluators without advanced features. A `perform_eval(run, example)` function in Python or a `performEval` function in JavaScript works unchanged. For the full contract, see [Write your evaluator code](/langsmith/code-evaluator-ui#step-2-write-your-evaluator-code).
+Advanced code evaluators accept the same function as default code evaluators. A `perform_eval(run, example)` function in Python or a `performEval` function in JavaScript works unchanged. For the full contract, see [Write your evaluator code](/langsmith/code-evaluator-ui#step-2-write-your-evaluator-code).
 
 You can also define `evaluate(ctx)`, which LangSmith calls in preference to `perform_eval` or `performEval` when both exist. The `ctx` object exposes the run as `ctx.run` and the dataset example, when there is one, as `ctx.example`. Return the same dictionary of feedback keys and scores:
 
@@ -161,15 +167,15 @@ function evaluate(ctx) {
 
 ## Build and test the evaluator
 
-Saving an evaluator with advanced features starts a build that installs your packages and prepares the sandbox. The **Building evaluator** banner shows while the build runs, which usually takes a couple of minutes. You cannot edit or delete the evaluator until the build finishes.
+Saving an advanced code evaluator starts a build that installs your packages and prepares the sandbox. The **Building evaluator** banner shows while the build runs, which usually takes less than a minute. You cannot edit or delete the evaluator until the build finishes.
 
-When the build finishes, the evaluator status is **Ready** and **Test** becomes available. **Test** appears only after you attach the evaluator to a source with sample data: a dataset with at least one experiment, or traces with at least one recent successful run. Test runs your evaluator the same way LangSmith runs it on your traces and experiments, using the last saved build, so save any edits before you test.
+When the build finishes, the evaluator status is **Ready** and **Test** becomes available. **Test** appears only after you attach the evaluator to a source with sample data: a dataset with at least one experiment or traces with at least one recent successful run. **Test** runs your evaluator the same way LangSmith runs it on your traces and experiments, using the last saved build, so save any edits before you test.
 
 If the build fails, the **Evaluator build failed** banner shows the error. When a package fails to install, the error starts with `pip install failed:` or `npm install failed:`, followed by the installer output. Fix the package list or code, then save again to rebuild.
 
 ### Keep scoring during a rebuild
 
-Once an evaluator has built successfully, LangSmith keeps scoring runs with that build while a new build runs, and after a new build fails. The new build takes over when it succeeds, so feedback continues without a gap. To stop the previous version immediately, for example because it produces wrong scores, open the evaluator's **Configure Evaluator** pane, select each source under **Source**, turn off **Enabled**, and then save. Leave it off until the new build is ready.
+Once an advanced code evaluator has built successfully, LangSmith keeps scoring runs with that build while a new build runs, and after a new build fails. The new build takes over when it succeeds, so feedback continues without a gap. To stop the previous version immediately, for example because it produces wrong scores, open the evaluator's **Configure Evaluator** pane, select each source under **Source**, turn off **Enabled**, and then save. Leave it off until the new build is ready.
 
 Before the first build succeeds:
 
@@ -181,11 +187,11 @@ If you rename the feedback key while a rebuild is in progress, feedback written 
 
 ## Evaluate threads
 
-A thread evaluator scores a whole conversation [thread](/langsmith/threads) instead of a single run, and writes its feedback to the thread. Thread evaluators run as online evaluators on your traces and require advanced features. For how LangSmith decides when a thread is complete, see [Set up multi-turn online evaluators](/langsmith/online-evaluations-multi-turn#how-it-works).
+A thread evaluator scores a whole conversation [thread](/langsmith/threads) instead of a single run, and writes its feedback to the latest root run in the thread. Thread evaluators run as online evaluators on your traces and must be advanced code evaluators. For how LangSmith decides when a thread is complete, see [Set up multi-turn online evaluators](/langsmith/online-evaluations-multi-turn#how-it-works).
 
 To create a thread evaluator:
 
-1. In the **Configure Evaluator** pane of an online evaluator, select **Enable advanced features**. The **Threads** option is unavailable until advanced features are on.
+1. In the **Configure Evaluator** pane of an online evaluator, select **Enable advanced features**. The **Threads** option is unavailable until you do.
 1. In the **Runs** / **Threads** toggle, select **Threads**.
 1. Under **Evaluator input**, select the input your evaluator receives.
 1. Define an `evaluate(ctx)` function that reads the selected input from `ctx`. Thread evaluators do not support `perform_eval` or `performEval`.
@@ -194,9 +200,16 @@ To create a thread evaluator:
 Each evaluation receives exactly one of the following inputs:
 
 - **Thread** (`ctx.thread`): The full thread as an object, with `thread_id`, `session_id`, and the thread's `runs`.
+- **Trajectory** (`ctx.trajectory`): The thread's [trajectory](/langsmith/observability-concepts#trajectories) as an object. Read its messages, including the tool calls and tool results from child runs, with `ctx.trajectory["messages"]`.
 - **All messages** (`ctx.all_messages`): Every message in the thread, in order, as a string. This is the default.
 - **Human/AI pairs** (`ctx.human_ai_pairs`): Each human message paired with the AI reply that follows, as a string.
 - **First human, last AI** (`ctx.first_human_last_ai`): The first human message and the last AI message, as a string.
+
+<Note>
+The **Trajectory** input is available on LangSmith Cloud. Self-hosted installations need LangSmith v0.17 or later, with queries [switched to SmithDB](/langsmith/self-host-smithdb-install#step-6-switch-queries-to-smithdb). For how a trajectory differs from the other thread inputs, see [Evaluate trajectories](/langsmith/online-evaluations-multi-turn#evaluate-trajectories).
+
+Once you save an evaluator, you cannot switch it between **Trajectory** and the other inputs. To change it, create a new evaluator.
+</Note>
 
 For example, the following evaluator receives **All messages** and flags conversations that mention a refund:
 
