@@ -127,7 +127,7 @@ Two language dropdowns (Python, TypeScript) with the same 10 tabs each. Most con
 | Managed Deep Agents | `src/langsmith/managed-deep-agents*.mdx` | Get started, Agent definition (Channels), Build and deploy |
 | Deep Agents | `src/oss/deepagents/` | Get started, Deployment (Going to production), Execution environment, Context management, Delegation, Steering, Frontend (Patterns), Protocols |
 | LangChain | `src/oss/langchain/` | Get started, Core components, Middleware, Frontend (Patterns → Generative UI, Integrations), Advanced usage (Multi-agent), Agent development (Test), Production |
-| LangGraph | `src/oss/langgraph/` | Get started, Capabilities, Production, Frontend, LangGraph APIs (Graph API, Functional API) |
+| LangGraph | `src/oss/langgraph/` | Get started, Capabilities, Patterns, Build with the Graph API, Deployment, Frontend, Advanced (Build with the Functional API) |
 | OpenWiki | `src/oss/openwiki/` | Modes, Integrations, Search and link, Visualize, CLI reference, Customize, Providers, Automate updates, Changelog |
 | Integrations | `src/oss/python/integrations/` or `src/oss/javascript/integrations/` | Python: Popular Providers, Integrations by component. TypeScript: Popular Providers (OpenAI, Anthropic, Google, AWS, Microsoft), General integrations, RAG integrations |
 | Learn | `src/oss/` (various) | Tutorials (Managed Deep Agents, Deep Agents, LangChain, Multi-agent, LangGraph), Conceptual overviews, Additional resources. TypeScript adds LangChain Academy |
@@ -285,6 +285,8 @@ Python-only content here
 :::
 ```
 
+Close each fence before opening the next. `make build` fails on a nested, stray, or unclosed fence.
+
 ### Code highlighting
 
 ```python
@@ -322,6 +324,8 @@ Common Tabler names: `home` (not house), `tool` (not wrench), `player-play` (not
 | `<Card>` / `<CardGroup>` | Navigation/overview links only (not for highlighting points) |
 | `<Note>`, `<Tip>`, `<Warning>`, `<Info>` | Callouts |
 | `<Prompt>` | Copyable AI-assistant prompt. **Required at the top of every migration guide** |
+
+Use only Mintlify built-ins or components imported on the page. Mintlify silently renders any other tag as nothing. Confirm an unfamiliar tag on [Mintlify components](https://mintlify.com/docs/components) or through the `docs-mintlify` MCP server; `<Important>`, `<Anchor>`, and `:::note` are not Mintlify syntax. CI runs `make check-mdx` to catch both.
 
 ### Migration guide convention
 

@@ -1,14 +1,16 @@
 ---
 type: architecture
 title: Documentation Build System
-description: How the documentation pipeline reconstructs the Mintlify build tree from src, selects language-aware OSS output, preprocesses Markdown, and supports local development.
+description: How the documentation pipeline rebuilds Mintlify-ready output from authored src content, selects language-aware routes, transforms Markdown, and supports local development.
 tags: [build-system, documentation-pipeline, mintlify, preprocessing, content-routing]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-29T08:15:48.231Z
+    at: 2026-11-03T08:13:57.434Z
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
+  - id: openwiki-source-6e6efa1569f158fcdb678ef0
+    resource: repo://pipeline/cli.py
   - id: openwiki-source-41f7c907e42a5efd3b3405cd
     resource: repo://pipeline/commands/build.py
   - id: openwiki-source-b481a230af378c0c50ed9994
@@ -23,6 +25,8 @@ sources:
     resource: repo://pipeline/preprocessors/markdown_preprocessor.py
   - id: openwiki-source-3ae8d89866d72418f1bdab6b
     resource: repo://pipeline/preprocessors/utm_links.py
+  - id: openwiki-source-05ccef8d4cf1698187f20464
+    resource: repo://pyproject.toml
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
@@ -31,7 +35,7 @@ sources:
     resource: repo://tests/unit_tests/test_builder.py
   - id: openwiki-source-16b92823fdcb07d686f2e27f
     resource: repo://tests/unit_tests/test_watcher.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-29T08:15:48.231Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-03T08:13:57.434Z" }
 ---
 
 # Documentation Build System
@@ -40,14 +44,14 @@ generated: { by: "openwiki/0.4.3", at: "2026-10-29T08:15:48.231Z" }
 
 ## Entrypoints and full reconstruction
 
-`make build` installs npm dependencies and invokes `uv run pipeline build`. The `docs` console script exposes the same CLI. The build handler verifies that `src/` exists, constructs `DocumentationBuilder(src, build)`, and calls `build_all()`; a missing source returns exit code 1.
+`make build` installs npm dependencies and invokes `uv run pipeline build`. The `docs` console script exposes the same CLI; its `build` subcommand accepts `--watch`, although the build handler itself always runs one full build. The handler verifies that `src/` exists, constructs `DocumentationBuilder(src, build)`, and calls `build_all()`; a missing source returns exit code 1.
 
 ```mermaid
 flowchart TD
     Source["Authored src tree"] --> Clear["Clear and recreate build"]
     Clear --> Py["Build OSS Python output"]
     Py --> Js["Build OSS JavaScript output"]
-    Js --> Unversioned["Build Deep Agents Code OpenWiki and LangSmith"]
+    Js --> Unversioned["Build unversioned OSS and LangSmith"]
     Unversioned --> Managed["Build Managed Deep Agents variants"]
     Managed --> Shared["Copy shared files and render snippets"]
     Shared --> Overlay["Overlay npm components"]
@@ -58,11 +62,11 @@ flowchart TD
     Touch --> Mint
 ```
 
-This flowchart distinguishes the authoritative full reconstruction (top path) from the narrower watch path (bottom path).
+This flowchart distinguishes authoritative full reconstruction (the top path) from the narrower watch path (the bottom path).
 
 A full build proceeds in the order shown: two ordinary OSS passes, unversioned Deep Agents Code and OpenWiki, ordinary LangSmith, Managed Deep Agents variants, shared-file copying, and the npm component overlay. The overlay runs last and can replace source-tree copies. The builder does not generate `llms` artifacts.
 
-## Routing is content-aware
+## Route families and language selection
 
 The source location selects a routing family, but ordinary shared OSS Markdown is not blindly duplicated. The builder recursively reads `navigation` from `src/docs.json`, collecting routes below `oss/python/` and `oss/javascript/`; the result is cached until the configuration modification time changes. A shared `.md` or `.mdx` page listed only in one language navigation is emitted only for that language. A page listed in both, in neither, or a non-Markdown asset is emitted for both. A navigation entry for `dir` can stand for `dir/index`, unless a language-specific `src/oss/python/dir.mdx` or `src/oss/javascript/dir.mdx` owns that route. If `docs.json` is missing or invalid, the safe fallback is both languages.
 
@@ -76,15 +80,17 @@ The source location selects a routing family, but ordinary shared OSS Markdown i
 | Direct `src/langsmith/managed-deep-agents*.mdx` | `build/langsmith/python/...` and `build/langsmith/javascript/...`; no unversioned page is emitted. |
 | Root and shared inputs | Source-relative output under `build/`, built or copied once. |
 
-Deep Agents Code and OpenWiki are deliberate OSS exceptions: they retain unprefixed routes and their `:::python` branch. Managed Deep Agents is the LangSmith exception. Direct Markdown/MDX files whose names begin `managed-deep-agents` get both language routes; `docs.json` supplies redirects from unversioned Managed Deep Agents URLs to the Python routes. The renderer also changes unprefixed Managed Deep Agents links to the current language route.
+Deep Agents Code and OpenWiki are deliberate OSS exceptions: they retain unprefixed routes and their `:::python` branch. Managed Deep Agents is the LangSmith exception. Direct Markdown/MDX files whose names begin `managed-deep-agents` get both language routes during incremental processing; full reconstruction enumerates the `.mdx` form. `docs.json` supplies redirects from unversioned Managed Deep Agents URLs to the Python routes. The renderer also changes unprefixed Managed Deep Agents links to the current language route.
 
 For language-targeted output, absolute `/oss/...` links are rewritten as `/oss/python/...` or `/oss/javascript/...`. Already-prefixed links, image paths, and Deep Agents Code and OpenWiki routes are exempt, because those destinations are not language-duplicated.
 
-## Markdown transformation pipeline
+## Markdown transformation and failure boundary
 
 Markdown and MDX are transformed only for output. Processing order is: standard preprocessing, language-specific snippet-import rewriting when there is a language target, OSS-link rewriting, Managed Deep Agents-link rewriting, then the contributor footer. `.md` inputs become `.mdx` output.
 
 Standard preprocessing resolves `@[LinkName]` references using scope-specific `SCOPE_LINK_MAPS`, adds UTM parameters to selected LangSmith CTA links, then evaluates conditionals. `:::python` content is retained for Python and removed for JavaScript; `:::js` behaves conversely. Unsupported conditional labels remain intact, and escaped `\:::` is unescaped to literal text. A missing autolink is logged rather than making the build fail. The UTM pass preserves existing query parameters, leaves functional LangSmith paths alone, and skips fenced code.
+
+Conditional fences are a build failure boundary: before rendering, preprocessing rejects nested, stray, or unclosed `:::` fences with `ValueError`. That prevents malformed language blocks from silently leaking content into another render target; the builder logs and re-raises Markdown processing failures.
 
 The output-only contributor footer is omitted for the root `index.mdx` and any path containing `snippets`. Other Markdown includes calls to connect the documentation, edit the source on GitHub, or file an issue.
 
@@ -98,7 +104,7 @@ Finally, the builder copies `PatternEmbed.jsx` and `ExampleEmbed.jsx` from `node
 
 ## Development is incremental, not reconstruction
 
-`make dev` installs npm dependencies and starts `pipeline dev`. Unless `--skip-build` is supplied, it performs the full build first, then watches `src/` recursively and runs `mint dev --port 3000` with `build/` as its working directory. It fails if initial construction fails, `mint` cannot be started, the Mint process exits nonzero, or the watcher stops unexpectedly; shutdown stops the watcher and terminates Mint, escalating to kill after five seconds.
+`make dev` installs npm dependencies and starts `pipeline dev`. Unless `--skip-build` is supplied, it performs the full build first, constructs `FileWatcher(src, build)`, and launches `mint dev --port 3000` with `build/` as its working directory. The watcher observes `src/`; Mint reads the generated `build/` tree. Development returns failure if initial construction fails, `mint` cannot be started, the Mint process exits nonzero, or the watcher stops unexpectedly. Shutdown stops the watcher and terminates Mint, escalating to kill after five seconds.
 
 The watcher queues supported created and modified files, rejects editor backups and temporary files, debounces events for 0.2 seconds, and builds a batch in worker threads (up to four). Afterwards it touches predicted output files so Mintlify detects the change. Incremental output is intentionally weaker than a full build:
 
@@ -116,6 +122,7 @@ The focused builder tests cover navigation-aware selection, language-routing exc
 
 ## Related pages
 
+- [Source map](/openwiki/architecture/source-map.md)
 - [Preprocessing](/openwiki/concepts/preprocessing.md)
 - [Versioning](/openwiki/concepts/versioning.md)
 - [Mintlify integration](/openwiki/integrations/mintlify.md)
