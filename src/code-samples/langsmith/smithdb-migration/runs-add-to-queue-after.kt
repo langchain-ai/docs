@@ -8,9 +8,11 @@
 import com.langchain.smith.client.LangsmithClient
 import com.langchain.smith.client.okhttp.LangsmithOkHttpClient
 import com.langchain.smith.models.annotationqueues.AnnotationQueueAnnotationQueuesParams
-import com.langchain.smith.models.annotationqueues.runs.RunCreateByKeyParams
-import com.langchain.smith.models.runs.RunQueryParams
+import com.langchain.smith.models.annotationqueues.items.ItemCreateParams
+import com.langchain.smith.models.runs.RunQueryV2Params
+import com.langchain.smith.models.runs.RunSelectField
 import com.langchain.smith.models.sessions.SessionListParams
+import java.time.OffsetDateTime
 
 // :remove-start:
 fun main() {
@@ -34,21 +36,29 @@ queueId = client.annotationQueues().annotationQueues(
         .build()
 ).id()
 // :remove-end:
-val runs = client.runs().query(
-    RunQueryParams.builder().session(listOf(projectId)).limit(5L).build()
+val runs = client.runs().queryV2(
+    RunQueryV2Params.builder()
+        .addProjectId(projectId)
+        .minStartTime(OffsetDateTime.now().minusDays(30))
+        .addSelect(RunSelectField.ID)
+        .addSelect(RunSelectField.PROJECT_ID)
+        .addSelect(RunSelectField.START_TIME)
+        .pageSize(5L)
+        .build()
 ).items()
 
-val params = RunCreateByKeyParams.builder().queueId(queueId)
+val params = ItemCreateParams.builder().queueId(queueId)
 for (run in runs) {
-    params.addBody(
-        RunCreateByKeyParams.Body.builder()
-            .runId(run.id())
-            .sessionId(run.sessionId())
+    params.addItem(
+        ItemCreateParams.Item.builder()
+            .itemType(ItemCreateParams.Item.ItemType.RUN)
+            .runId(run.id().get())
+            .projectId(run.projectId().get())
             .startTime(run.startTime().get())
             .build()
     )
 }
-client.annotationQueues().runs().createByKey(params.build())
+client.annotationQueues().items().create(params.build())
 // :remove-start:
 }
 // :remove-end:
