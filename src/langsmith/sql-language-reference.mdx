@@ -50,7 +50,9 @@ Scan bounds limit how much history a query reads. Add a lower time bound before 
 | `traces` | A `start_time` lower bound, or a sole `trace_id` equality lookup |
 | `threads` | A `first_start_time` or `last_start_time` lower bound, a literal `thread_id` equality or `IN` lookup, or discovery through bounded runs correlated by workspace, project, and thread |
 
-A `LIMIT` does not replace a required scan bound. An upper time bound is optional. Use `start_time >= TIMESTAMP '1970-01-01'` only when you need to scan all available run history.
+A `LIMIT` does not replace a required scan bound. Each raw `runs` scan in a join, CTE, or subquery needs its own qualifying lower bound. A raw `runs` lookup by `id` still needs that bound; the sole-ID exception applies only inside relationship lambdas.
+
+An upper time bound is optional. Use `start_time >= TIMESTAMP '1970-01-01'` only when you need to scan all available run history.
 
 For recent runs, prefer `ORDER BY start_time DESC, id DESC`. Other sort orders can require more work.
 
@@ -65,7 +67,7 @@ SQL types and operators have the following compatibility rules:
 - **UUIDs**: Compare UUID columns directly with UUID string literals.
 - **Timestamps**: Run timestamps use UTC with microsecond precision.
 - **Latency**: The `latency` column uses microseconds.
-- **JSON**: Use `->` for JSON extraction and `->>` for text extraction. Missing paths and invalid JSON return SQL `NULL`. Not all PostgreSQL `jsonb` operations are supported.
+- **JSON**: Use `->` for JSON extraction and `->>` for text extraction. Missing paths and invalid JSON return SQL `NULL`. For a JSON `null` value, `->` preserves JSON `null`, while `->>` returns SQL `NULL`. Not all PostgreSQL `jsonb` operations are supported.
 - **Arrays**: SQL arrays use 1-based indexing. JSON array extraction uses zero-based indices, with negative indices counting from the end. Custom SQL array bounds are not supported.
 - **Conversions**: `TRY_CAST` returns `NULL` when a conversion fails.
 
@@ -110,7 +112,7 @@ Relationship macros filter a parent row by related records without an explicit j
 
 Use `AND`, `OR`, and `NOT` to combine predicates. Separate calls can match different related records.
 
-`MATCHING_*` projections return lists of matching records, or an empty list when no records match. They do not require a corresponding `ANY_*` filter.
+`MATCHING_*` projections return lists of matching records, or an empty list when no records match. They do not require a corresponding `ANY_*` filter. List order is unspecified. Use `MATCHING_*` only in `SELECT` projections; `ANY_*` also supports `WHERE` filters.
 
 ### Respect lambda restrictions
 
