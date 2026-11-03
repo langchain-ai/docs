@@ -1,0 +1,118 @@
+---
+title: Query tracing data with SQL
+description: Query LangSmith runs, traces, threads, and feedback with read-only SQL over SmithDB.
+---
+
+SQL access runs read-only queries over your LangSmith tracing data in SmithDB. Use it to combine filters, inspect related records, and aggregate results without exporting data first.
+
+For the language syntax, tables, and relationship macros, see the [SQL language reference](/langsmith/sql-language-reference). For non-SQL filtering, see [Filter traces](/langsmith/filter-traces).
+
+<Note>
+SQL access requires enablement for your workspace and tracing data stored in SmithDB. During the preview, use one active workspace and one project per query.
+</Note>
+
+## Check permissions
+
+SQL queries require permission to read runs, run inputs, run outputs, and feedback. These requirements apply even if your query does not select those fields.
+
+SQL access is unavailable for projects where your access depends on trace-level access rules. The endpoint rejects the request rather than returning a partially authorized result.
+
+For more information, see [Access control](/langsmith/administration-overview).
+
+## Send a query
+
+The SQL endpoint accepts `POST /api/v2/sql/query` at your [LangSmith API endpoint](/langsmith/cloud). Each request contains one SQL statement and a project scope.
+
+To query a project:
+
+1. Create a [LangSmith API key](/langsmith/create-account-api-key) with the required permissions.
+2. Set `LANGSMITH_API_KEY`, `LANGSMITH_WORKSPACE_ID`, and `LANGSMITH_PROJECT_ID` for the workspace and project to query.
+3. Send a query with a `start_time` lower bound:
+
+```bash
+curl --request POST \
+  --url https://api.smith.langchain.com/api/v2/sql/query \
+  --header "x-api-key: ${LANGSMITH_API_KEY}" \
+  --header "x-tenant-id: ${LANGSMITH_WORKSPACE_ID}" \
+  --header 'Content-Type: application/json' \
+  --data "{\"project_ids\":[\"${LANGSMITH_PROJECT_ID}\"],\"query\":\"SELECT run_type, count(*) AS n FROM runs WHERE start_time > now() - INTERVAL '1 day' GROUP BY run_type\"}"
+```
+
+Use the API endpoint for your region or deployment in place of `https://api.smith.langchain.com`.
+
+### Request fields
+
+- **`project_ids`**: Array of project UUIDs in the authenticated workspace. Use one project during the preview.
+- **`query`**: One nonempty, read-only SQL statement, at most 65,536 bytes. Unknown request fields are rejected.
+
+The request scope applies to every table, join, subquery, and relationship macro. A SQL predicate cannot grant access to a different workspace or project.
+
+## Read the response
+
+The endpoint returns column descriptions and rows as JSON arrays. Match each row value to the column at the same index.
+
+- **`columns`**: Ordered column descriptions, each with `name` and `data_type`.
+- **`rows`**: Arrays of values in column order.
+- **`row_count`**: Number of rows included in the response, not the total number of matching rows.
+- **`is_truncated`**: Whether the endpoint omitted results because of a row or size limit.
+- **`truncation_reason`**: `row_limit`, `size_limit`, or `null` when the response is not truncated.
+- **`execution_time_ms`**: Query execution time in milliseconds, not total HTTP request latency.
+
+### Handle result limits
+
+Responses contain at most 500 rows by default. The deployment can configure a different row limit. The endpoint also limits result data to approximately 10 MiB.
+
+When `is_truncated` is `true`, narrow the time range, select fewer columns, or split the query into smaller ranges. The response does not include a pagination cursor.
+
+A SQL `LIMIT` limits the query itself. If your SQL requests 10 rows and all 10 fit in the response, `is_truncated` does not indicate whether additional records would match without that SQL limit.
+
+For large exports, use [Bulk export trace data](/langsmith/data-export) instead.
+
+### Interpret value types
+
+`data_type` describes the JSON encoding, not the full SQL type:
+
+| Value | JSON encoding |
+| --- | --- |
+| UUID | Canonical UUID string |
+| String | String |
+| Integer | Number |
+| Float, including Decimal128 values | Number, or `"NaN"`, `"Infinity"`, or `"-Infinity"` |
+| Boolean | Boolean |
+| Timestamp or date | String |
+| Binary | Base64 string |
+| List | Array |
+| Object | Object |
+| Null | `null` |
+
+SQL `NULL` values remain JSON `null`, including in otherwise typed columns. Clients that cannot represent 64-bit integers exactly must preserve number precision when decoding results.
+
+## Resolve errors
+
+The endpoint returns an HTTP error when it cannot validate, authorize, or execute a query.
+
+| Status | Cause | Action |
+| --- | --- | --- |
+| `400` | Invalid request, SQL parse or planning error, missing scan bound, or an oversized result message | Read the error detail. Correct the query, add a time bound, or select fewer columns |
+| `401` | Missing or invalid authentication | Check your API key and workspace header |
+| `403` | SQL access is not enabled, permissions are insufficient, or trace-level access rules apply | Check workspace enablement and project permissions |
+| `404` | A requested project does not exist in the workspace | Check the project and workspace IDs |
+| `503` | The query service is unavailable | Retry after the service becomes available |
+
+## See also
+
+- [SQL language reference](/langsmith/sql-language-reference)
+- [Filter traces](/langsmith/filter-traces)
+- [Export traces](/langsmith/export-traces)
+- [Bulk export trace data](/langsmith/data-export)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/query-traces-sql.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
