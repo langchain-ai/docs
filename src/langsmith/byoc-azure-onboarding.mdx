@@ -12,7 +12,7 @@ BYOC on Azure is in **[beta](/langsmith/release-stages)**. To get started, [cont
 
 This page describes how to create a LangSmith BYOC data plane in your Azure subscription. For how the data plane is built and secured, see [BYOC architecture on Azure](/langsmith/byoc-azure-architecture). For the AWS guide, see [BYOC onboarding](/langsmith/byoc-onboarding).
 
-Each data plane runs in its own resource group in your subscription. You create the resource group and a Key Vault in it, and give the LangSmith BYOC application roles on that resource group only. LangChain then creates and operates the data plane resources in the resource group.
+Each data plane runs in its own resource group in your subscription. A Terraform module creates the resource group and a Key Vault in it, and gives the LangSmith BYOC application roles on that resource group only. LangChain then creates and operates the data plane resources in the resource group.
 
 ## Before you start
 
@@ -20,7 +20,8 @@ You need the following:
 
 - **A LangSmith organization on Azure**: Use the LangSmith control plane on Azure at [azure.smith.langchain.com](https://azure.smith.langchain.com). Send your organization ID to the LangChain team to enable BYOC.
 - **An Azure subscription**: LangChain recommends a subscription dedicated to LangSmith BYOC, but it is not required.
-- **Azure permissions**: A role on the subscription that can create resource groups, Key Vaults, and role assignments, such as `Owner`. You also need a Microsoft Entra role that can add the service principal of a multi-tenant application to your tenant, such as `Cloud Application Administrator`.
+- **Azure permissions**: The `Owner` role on the subscription, because the Terraform module creates custom roles and role assignments and registers resource providers. You also need a Microsoft Entra role that can create and update the service principal of a multi-tenant application in your tenant, such as `Cloud Application Administrator`.
+- **Terraform**: Terraform 1.11.0 or later.
 - **An organization admin in LangSmith**: Creating, changing, and deleting a data plane requires the organization admin role.
 - **vCPU quota**: The AKS system node pool uses three `Standard_D2s_v6` VMs. LangSmith checks at create time that the region has at least 6 free vCPUs in both the **Total Regional vCPUs** quota and the Dsv6 VM family quota. Application nodes use D, E, and F series VMs of version 5 or later, so also plan quota for those families. See [Node pools](/langsmith/byoc-azure-architecture#compute).
 - **A region**: BYOC on Azure can run in any Azure region. If you need a region that is not yet enabled, contact the LangChain team, who can add it.
@@ -35,15 +36,13 @@ LangChain assigns your organization an external ID. Navigate to **Settings > Dat
 LangSmith uses the external ID to confirm that the role assignments in your subscription belong to your organization.
 </Step>
 
-<Step title="Grant LangSmith access to a resource group">
-For each data plane, create the following in your Azure subscription:
+<Step title="Grant LangSmith access with Terraform">
+Apply the [`langsmith-byoc-access` Terraform module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/azure/langsmith-byoc-access) in your Azure subscription with the external ID you copied. You must use this module. For each data plane in its `data_planes` input, it creates:
 
-- **The LangSmith BYOC service principal**: Add the service principal of the LangSmith BYOC multi-tenant application to your Microsoft Entra tenant. Its application (client) ID is `5b0a74cb-9f37-4797-b557-c15d7be80d3b`. You add it once per tenant. The application requests no Microsoft Graph permissions.
-- **A dedicated resource group**: Each resource group holds one data plane. Do not put other workloads in it.
-- **One Key Vault in the resource group**: The vault must use Azure RBAC authorization, not access policies. The resource group must contain exactly one Key Vault. LangSmith writes the data plane's bootstrap secret to this vault, and the data plane reads it through a private endpoint, so you can disable public network access on the vault.
-- **Two role assignments for the service principal on the resource group**: `Contributor` and `User Access Administrator`. Set the description of both role assignments to your external ID.
-
-The following Terraform configuration creates these resources for one data plane:
+- **The LangSmith BYOC service principal**: The service principal of the LangSmith BYOC multi-tenant application, with application (client) ID `5b0a74cb-9f37-4797-b557-c15d7be80d3b`, in your Microsoft Entra tenant. It is created once per tenant, and the application requests no Microsoft Graph permissions.
+- **A dedicated resource group**, `langsmith-byoc-<key>`: LangSmith deploys the data plane into it. Do not put other workloads in it.
+- **A Key Vault in the resource group**: It uses Azure RBAC authorization and has public network access disabled. LangSmith writes the data plane's bootstrap secret to it, and the data plane reads it through a private endpoint.
+- **Two role assignments for the service principal on the resource group**: A `langsmith-byoc` custom role with the actions LangSmith needs, and `User Access Administrator`. Both roles can only be used in that resource group, and both assignments carry your external ID as their description.
 
 ```hcl
 terraform {
@@ -84,58 +83,35 @@ variable "external_id" {
   type        = string
 }
 
-data "azurerm_client_config" "current" {}
+module "langsmith_byoc_access" {
+  source = "github.com/langchain-ai/terraform//modules/byoc/azure/langsmith-byoc-access?ref=main"
 
-# The LangSmith BYOC application in your tenant.
-resource "azuread_service_principal" "langsmith" {
-  client_id    = "5b0a74cb-9f37-4797-b557-c15d7be80d3b"
-  use_existing = true
-}
+  langsmith_app_client_id = "5b0a74cb-9f37-4797-b557-c15d7be80d3b"
+  external_id             = var.external_id
 
-resource "azurerm_resource_group" "data_plane" {
-  name     = "langsmith-byoc-prod"
-  location = "eastus"
-}
-
-resource "azurerm_key_vault" "data_plane" {
-  # Key Vault names are global: 3 to 24 letters, digits, and hyphens.
-  name                = "ls-byoc-prod-a1b2c3"
-  location            = azurerm_resource_group.data_plane.location
-  resource_group_name = azurerm_resource_group.data_plane.name
-  tenant_id           = data.azurerm_client_config.current.tenant_id
-  sku_name            = "standard"
-
-  rbac_authorization_enabled    = true
-  public_network_access_enabled = false
-
-  network_acls {
-    default_action = "Deny"
-    bypass         = "None"
+  data_planes = {
+    prod = {
+      location = "eastus"
+    }
   }
 }
 
-resource "azurerm_role_assignment" "langsmith" {
-  for_each = toset(["Contributor", "User Access Administrator"])
-
-  scope                = azurerm_resource_group.data_plane.id
-  role_definition_name = each.value
-  principal_id         = azuread_service_principal.langsmith.object_id
-  principal_type       = "ServicePrincipal"
-  description          = var.external_id
-}
-
-output "azure_entra_tenant_id" {
-  value = data.azurerm_client_config.current.tenant_id
-}
-
-output "resource_group_id" {
-  value = azurerm_resource_group.data_plane.id
+output "langsmith_byoc_access" {
+  value = module.langsmith_byoc_access
 }
 ```
 
-Replace the subscription ID, the region, and the Key Vault name, which must be unique across Azure. Then apply the configuration with your external ID, for example `terraform apply -var 'external_id=<external-id>'`. Note the `azure_entra_tenant_id` and `resource_group_id` outputs for the next step.
+Replace the subscription ID and the region. The `data_planes` key (`prod` in the example) names the resource group: 1 to 63 lowercase letters, digits, and hyphens, starting with a letter. Apply the configuration with your external ID, for example `terraform apply -var 'external_id=<external-id>'`.
 
-For what each role allows, see [Access and permissions](/langsmith/byoc-azure-architecture#access-and-permissions).
+Then read the outputs for the next step:
+
+```bash
+terraform output -json langsmith_byoc_access
+```
+
+You need `azure_entra_tenant_id`, and the `region` and `resource_group_id` of the data plane under `data_planes`.
+
+For what each role allows, see [Access and permissions](/langsmith/byoc-azure-architecture#access-and-permissions). For all module inputs, see the [module README](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/azure/langsmith-byoc-access).
 </Step>
 
 <Step title="Create the data plane">
@@ -214,8 +190,8 @@ To send traces and API requests to the data plane, see [BYOC usage](/langsmith/b
 
 | Code | HTTP status | Cause | Fix |
 |------|-------------|-------|-----|
-| `azure_external_id_mismatch` | 403 | A role assignment of the LangSmith service principal on the resource group does not have your organization's external ID as its description. | Set the description of both role assignments to the external ID from **Settings > Data Planes**, then retry. |
-| `azure_permissions` | 403 | The LangSmith service principal cannot access the resource group, or lacks a required permission. The remedy lists the missing actions. | Check that the resource group exists and that both role assignments are in place, then retry. |
+| `azure_external_id_mismatch` | 403 | A role assignment of the LangSmith service principal on the resource group does not have your organization's external ID as its description. | Apply the Terraform module with the external ID from **Settings > Data Planes**, then retry. |
+| `azure_permissions` | 403 | The LangSmith service principal cannot access the resource group, or lacks a required permission. The remedy lists the missing actions. | Check that the resource group exists and that you applied the Terraform module without `reduced_access`, then retry. |
 | `azure_policy_denied` | 403 | An Azure Policy assignment in your subscription denied a request. | Exempt the data plane resource group from the policy, then retry. |
 | `azure_resource_group_invalid` | 400 | The resource group does not exist, does not contain exactly one Key Vault, or its vault does not use Azure RBAC. | Fix the resource group, then retry. |
 | `azure_region_unavailable` | 400 | Your subscription cannot use the region, or cannot create the AKS system node size or the PostgreSQL size in it. | Choose another region, or ask Azure support to enable the VM size or PostgreSQL for your subscription in the region. |
@@ -248,9 +224,30 @@ You can change the following settings of an Azure data plane while it is `provis
 | Network firewall | `firewall` | Not available on Azure. |
 | Fleet OIDC | `fleet_oidc` | Not available on Azure. |
 
+## Reduce access after deployment
+
+Once the data plane is `active`, you can replace the `langsmith-byoc` role with the narrower `langsmith-byoc-reduced` role. Set `reduced_access = true` for the data plane in the Terraform module and run `terraform apply`:
+
+```hcl
+data_planes = {
+  prod = {
+    location       = "eastus"
+    reduced_access = true
+  }
+}
+```
+
+Terraform creates the new role assignment before it removes the old one, so LangSmith keeps access. With the reduced role, LangChain can still upgrade, scale, and repair the data plane, but cannot delete the data plane, its databases, its storage accounts, or its network, and cannot write Key Vault secrets. Set `reduced_access` back to `false` before you delete or re-create the data plane.
+
 ## Delete a data plane
 
-Delete the data plane in **Settings > Data Planes**, or with the `DELETE /orgs/current/data-planes/<data-plane-id>` API. You can delete an Azure data plane while it is `provisioning`, `active`, or `provisioning_failed`. LangSmith first checks that it can still access your resource group, so keep both role assignments in place until the deletion completes.
+<Warning>
+Do not remove the data plane from the Terraform module before you delete it in LangSmith. LangSmith needs its role assignments to delete the data plane resources.
+</Warning>
+
+1. If the data plane has `reduced_access = true`, set it to `false`, run `terraform apply`, and wait 5 minutes for Azure to apply the role change.
+1. Delete the data plane in **Settings > Data Planes**, or with the `DELETE /orgs/current/data-planes/<data-plane-id>` API. You can delete an Azure data plane while it is `provisioning`, `active`, or `provisioning_failed`. LangSmith first checks that it can still access your resource group.
+1. Wait until the data plane is gone from **Settings > Data Planes**.
 
 LangSmith deletes the AKS cluster, PostgreSQL, Redis, the network, and the private DNS zones. It keeps the following in your resource group:
 
@@ -259,11 +256,13 @@ LangSmith deletes the AKS cluster, PostgreSQL, Redis, the network, and the priva
 
 Azure keeps the backups of a deleted PostgreSQL server for a limited time, during which you can restore it. See [Restore a dropped Azure Database for PostgreSQL flexible server](https://learn.microsoft.com/azure/postgresql/flexible-server/how-to-restore-dropped-server).
 
-After the deletion completes, delete the resource group yourself when you no longer need the retained data. If you create a new data plane with the same name in the same resource group, it reuses the Key Vault and the retained Blob storage accounts.
+If you create a new data plane with the same name in the same resource group, it reuses the Key Vault and the retained Blob storage accounts.
+
+When you no longer need the retained data, delete the Blob storage accounts in the resource group, then remove the data plane's key from `data_planes` and run `terraform apply`. Terraform then deletes the resource group, the Key Vault, and the role assignments. With the default `features {}` block, the AzureRM provider refuses to delete a resource group that still contains resources Terraform does not manage, such as the retained storage accounts.
 
 ## Remove LangSmith access
 
-To stop LangSmith from changing or deleting the data plane, delete the two role assignments of the LangSmith service principal on the resource group. The data plane resources stay in your subscription, and LangChain can no longer upgrade or repair them. Delete the data plane first if you want LangSmith to clean up its resources.
+To stop LangSmith from changing or deleting a data plane, remove the two role assignments of the LangSmith service principal on its resource group. Removing the Terraform module removes the service principal and all role assignments, so LangSmith loses access to every data plane in the tenant. The data plane resources stay in your subscription, and LangChain can no longer upgrade or repair them. Delete the data plane first if you want LangSmith to clean up its resources.
 
 ## Next steps
 

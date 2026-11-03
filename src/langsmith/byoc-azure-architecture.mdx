@@ -23,7 +23,7 @@ To set up a data plane, follow [BYOC onboarding on Azure](/langsmith/byoc-azure-
 
 The lifecycle of a data plane is:
 
-1. You create a resource group and a Key Vault, and give the LangSmith BYOC application two roles on the resource group.
+1. You apply the LangSmith Terraform module, which creates a resource group and a Key Vault, and gives the LangSmith BYOC application two roles on the resource group.
 1. You create the data plane with the LangSmith API. The control plane checks its access, and writes the data plane's bootstrap secret to your Key Vault.
 1. The control plane creates the network, AKS cluster, databases, and storage in the resource group, then installs LangSmith on the cluster.
 1. The data plane reports to the control plane, and its status becomes `active`.
@@ -102,11 +102,12 @@ The control plane holds no stored credential for your tenant. It runs on AKS, an
 
 | Role | Scope | Why LangSmith needs it |
 |------|-------|------------------------|
-| `Contributor` | The data plane resource group | Create, update, and delete the data plane resources, write the bootstrap secret to the Key Vault, and approve the private endpoint to the AKS API |
+| `langsmith-byoc` (custom) | The data plane resource group | Create, update, and delete the data plane resources, write the bootstrap secret to the Key Vault, and approve the private endpoints to the AKS API and the data stores. The role names each action it allows. |
+| `langsmith-byoc-reduced` (custom, optional) | The data plane resource group | Replaces `langsmith-byoc` once the data plane is active, if you set `reduced_access`. Upgrades, scales, and repairs the data plane, but cannot delete it, its data stores, or its network, and cannot write Key Vault secrets. |
 | `User Access Administrator` | The data plane resource group | Give roles to the data plane's managed identities, and create the custom Blob data roles |
 | `Azure Kubernetes Service RBAC Cluster Admin` | The data plane's AKS cluster | Install and upgrade LangSmith on the cluster. LangSmith creates this role assignment itself. |
 
-Both role assignments that you create carry your organization's external ID as their description. LangSmith refuses to create a data plane when they do not match, which binds the resource group to your LangSmith organization.
+The Terraform module creates both custom roles with the resource group as their only assignable scope. Both role assignments carry your organization's external ID as their description. LangSmith refuses to create a data plane when they do not match, which binds the resource group to your LangSmith organization.
 
 ### What LangChain can and cannot access
 
@@ -121,7 +122,7 @@ Both role assignments that you create carry your organization's external ID as t
 | Data in Blob storage, PostgreSQL, and Redis | No data role. The roles are management roles. |
 | Key Vault secret values | Write through Azure Resource Manager. No role to read secrets. |
 
-`Contributor` and `User Access Administrator` are management roles. With them, an operator could give a data role to an identity. Your Azure Activity Log records every Azure Resource Manager call of the LangSmith BYOC application, including each role assignment change.
+The LangSmith custom roles and `User Access Administrator` are management roles. With them, an operator could give a data role to an identity. Your Azure Activity Log records every Azure Resource Manager call of the LangSmith BYOC application, including each role assignment change.
 
 Each resource group serves one data plane. LangSmith rejects a second data plane in a resource group that a data plane already uses.
 
