@@ -38,7 +38,7 @@ Organization Admins and Operators (`organization:manage`) can configure retentio
     1. Select **Usage configuration** from the left-hand menu.
     1. Find the workspace in the list that you would like to configure.
     1. Click on the value under the **Data retention policy** column for that workspace.
-    1. On the **workspace usage configurations** modal, customize the extended policy using the dropdown for **Extended - All traces are retained for** option. Available durations for SaaS customers are: 30d, 60d, 90d, 120d, 150d, and 180d (maximum as of September 14, 2026). Self-hosted deployments are not subject to this cap.
+    1. On the **workspace usage configurations** modal, customize the extended policy using the dropdown for **Extended - All traces are retained for** option. Available durations for SaaS customers are: 30d, 60d, 90d, 120d, 150d, and 180d (maximum as of September 14, 2026). Self-hosted deployments are not subject to this cap: your administrator chooses the available durations instead (see [Choose the extended retention periods users can pick](/langsmith/self-host-ttl#choose-the-extended-retention-periods-users-can-pick)).
     1. Select **Save**.
   </Tab>
   <Tab title="API">
@@ -80,9 +80,41 @@ Organization Admins and Operators (`organization:manage`) can configure retentio
   </Tab>
 </Tabs>
 
+### Configure extended retention for a project
+
+A project can have its own extended retention period instead of the workspace period. Use this when projects in the same workspace need different retention. For example, keep the traces of a production project for 365 days for audits, and keep the traces of a test project for 30 days to reduce storage.
+
+A project with its own period keeps it when the workspace period changes. A project that uses the workspace default follows the workspace period. In a project on the base tier, traces that a rule upgrades to extended retention use the project period. If the project has no period of its own, they use the workspace period, as before. Changes apply to new traces only.
+
+To set a longer period, you need `projects:increase-trace-tier`. To set a shorter period, you need `projects:decrease-trace-tier`.
+
+<Tabs>
+  <Tab title="UI">
+    1. Navigate to **Projects** > ***Your project name*** > select **Retention**.
+    1. Clear **Use workspace default**.
+    1. Choose the number of days.
+
+    To go back to the workspace period, select **Use workspace default**.
+  </Tab>
+  <Tab title="API">
+    Set `longlived_ttl_days` on the project. Set it to `null` to use the workspace default.
+
+    ```bash
+    curl -X PATCH "https://api.smith.langchain.com/api/v1/sessions/YOUR_PROJECT_ID" \
+      -H "x-api-key: YOUR_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{"longlived_ttl_days": 90}'
+    ```
+  </Tab>
+</Tabs>
+
+The available periods are the same as for workspaces. On self-hosted deployments, your administrator chooses them (see [Choose the extended retention periods users can pick](/langsmith/self-host-ttl#choose-the-extended-retention-periods-users-can-pick)).
+
 ### Workspace-level extended retention for self-hosted
 
 Self-hosted [Enterprise](/langsmith/pricing-plans) customers can also use workspace-level extended retention configuration instead of system-wide TTL settings. This provides more granular control over data retention for different workspaces without requiring environment variable changes.
+
+Administrators choose which periods workspaces can pick with `config.ttl.extended_retention_days`. See [Choose the extended retention periods users can pick](/langsmith/self-host-ttl#choose-the-extended-retention-periods-users-can-pick).
 
 <Warning>
 If you use blob storage, you **must** add a lifecycle rule for each custom retention period you configure. For example, setting a workspace to 90-day retention means blob data is written to the `ttl_90d/` prefix, which requires a matching lifecycle rule to be cleaned up automatically. See [blob storage TTL configuration](/langsmith/self-host-blob-storage#custom-workspace-level-retention-prefixes) for details and examples.

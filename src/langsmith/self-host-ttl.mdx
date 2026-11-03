@@ -23,7 +23,7 @@ LangSmith assigns the tier in the following order, highest precedence first:
 
 LangSmith then resolves the retention period for the assigned tier:
 
-- **`longlived`**: The workspace extended retention period (if set through the UI), otherwise the `longlived` value from the [Helm configuration](#requirements).
+- **`longlived`**: The project extended retention period (if set through the UI), otherwise the workspace extended retention period (if set through the UI), otherwise the `longlived` value from the [Helm configuration](#requirements).
 - **`shortlived`**: The `shortlived` value from the [Helm configuration](#requirements).
 
 The Helm chart defaults to 14 days for `shortlived` and 400 days for `longlived`.
@@ -34,6 +34,7 @@ Configure retention through Helm or environment variable settings:
 
 - **Enabled**: Enable or disable automatic data retention. When enabled, set your default organization and project TTL tiers through the UI (see [data retention guide](/langsmith/usage-and-billing#data-retention)).
 - **Retention periods**: Set system-wide retention periods for `shortlived` and `longlived` traces. Once set, manage retention at the project level or set an organization-wide default for new projects.
+- **Extended retention periods** (optional): Set the periods, in days, that users can choose for extended retention. See [Choose the extended retention periods users can pick](#choose-the-extended-retention-periods-users-can-pick).
 
 ```yaml Helm
 config:
@@ -43,7 +44,32 @@ config:
       # -- 400 day longlived and 14 day shortlived
       longlived: "34560000"
       shortlived: "1209600"
+    # -- Optional. Extended retention periods, in days, that users can choose.
+    extended_retention_days: [30, 90, 180]
 ```
+
+### Choose the extended retention periods users can pick
+
+<Note>
+Requires Helm chart `<VERSION>` or later.
+</Note>
+
+Without `extended_retention_days`, users choose from 30, 60, 90, 120, 150, 180, 240, 300, 365, and 400 days, up to your `longlived` period, plus the `longlived` period itself.
+
+With the configuration above, the extended retention dropdown shows:
+
+- **Default (400 days)**: the `longlived` period. Workspaces that choose it follow later changes to `longlived`.
+- **30 days**, **90 days**, and **180 days**: the values in your list.
+
+LangSmith accepts only these options, in the UI and in the API. The `longlived` period does not have to be in the list. It is also the maximum: LangSmith does not offer list values longer than `longlived`.
+
+The list can have at most 25 values.
+
+Each value needs its own blob storage lifecycle rule. See [Custom workspace-level retention prefixes](/langsmith/self-host-blob-storage#custom-workspace-level-retention-prefixes).
+
+**Remove a value.** If you remove a value from the list, for example 365, projects and workspaces that already use 365 days keep it for new traces. Their dropdown shows **365 days (no longer offered)**, and no other project or workspace can choose it. Keep its lifecycle rule (see [Custom workspace-level retention prefixes](/langsmith/self-host-blob-storage#custom-workspace-level-retention-prefixes)).
+
+**Change the default period.** Workspaces that use **Default** get the new `longlived` period for new traces. Change the `ttl_l/` lifecycle rule to the same number of days. If you lower it, list values longer than the new period are no longer offered. Projects and workspaces that already use them keep them.
 
 ## ClickHouse TTL cleanup job
 
