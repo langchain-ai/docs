@@ -1,0 +1,109 @@
+---
+title: Deploy the open-source design agent
+sidebarTitle: Design agent template
+description: Deploy Content Studio, LangChain's open-source design agent, to your Slack workspace as a Managed Deep Agents project.
+---
+
+import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
+
+[Content Studio](https://github.com/langchain-ai/design-agent) is the design agent LangChain runs internally, released as an open-source Managed Deep Agents project. Anyone on your team mentions it in Slack with a brief and any files, and it sends finished, on-brand files back to the same thread, from a resized ad to a launch film.
+
+The repository is a complete Managed Deep Agents project, so `mda deploy` deploys it as it is. It is also a working reference for how the platform's capabilities fit together in a long-running production agent.
+
+<ManagedDeepAgentsPublicBetaNote />
+
+## What the template uses
+
+- **[Channels](/langsmith/managed-deep-agents-channels-slack)**: The Slack app hands each message and its attachments to the agent, and the finished files come back to the same thread.
+- **[Sandboxes](/langsmith/managed-deep-agents-sandboxes)**: Each thread gets its own sandbox cloned from a snapshot with Chrome, FFmpeg, HyperFrames, D2, and your fonts. Everything the agent makes is code in a project folder there, so a change is an edit and a re-render.
+- **[Skills](/langsmith/managed-deep-agents-skills)**: A router skill picks the right workflow for each request out of 35 skills, served from [Context Hub](/langsmith/managed-deep-agents-context-hub) and loaded only when a job needs them.
+- **[Memory](/langsmith/managed-deep-agents-memory)**: Team memory everyone shares and personal memory for each person, so a rule told once applies to later runs.
+- **[Subagents](/langsmith/managed-deep-agents-subagents)** and **[schedules](/langsmith/managed-deep-agents-schedules)**: On large jobs the main agent starts subagents in the background on the same sandbox, and a one-time schedule wakes it when one finishes, fails, or stalls.
+- **[MCP connectors](/langsmith/managed-deep-agents-mcp-connectors)**: Servers such as Notion, Linear, GitHub, and Figma connect through Managed Deep Agents, with each person signed in as themselves.
+
+## Prerequisites
+
+- A LangSmith Cloud account and an API key with deployment permission (`LANGSMITH_API_KEY`).
+- A key for your model provider. On the LangSmith Gateway, the agent can use your LangSmith key instead.
+- [uv](https://docs.astral.sh/uv/). Docker is needed only to test the sandbox recipe locally.
+
+## Deploy the agent
+
+To deploy the design agent to your Slack workspace:
+
+<Steps>
+  <Step title="Install the project">
+
+The installer gets uv if you don't have it, clones the repository, and installs its dependencies:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/langchain-ai/design-agent/main/install.sh | bash
+cd design-agent
+```
+
+  </Step>
+  <Step title="Add your keys">
+
+```bash
+uv run design-agent config set LANGSMITH_API_KEY=<LANGSMITH_API_KEY> ANTHROPIC_API_KEY=<ANTHROPIC_API_KEY>
+```
+
+`mda deploy` forwards every key in `.env` as a deployment secret, except `LANGSMITH_API_KEY`, which signs the deploy.
+
+  </Step>
+  <Step title="Publish the sandbox">
+
+```bash
+uv run design-agent sandbox publish
+```
+
+This builds the machine every thread works on as a snapshot in your workspace. It runs once per workspace and takes 10 to 15 minutes. Publish again only when `sandbox/setup.sh` changes.
+
+  </Step>
+  <Step title="Deploy the agent">
+
+```bash
+uv run mda deploy
+```
+
+The first deploy provisions the agent's Slack app. Authorize it in your Slack workspace when prompted.
+
+  </Step>
+  <Step title="Try it in Slack">
+
+Mention the agent in a channel with a quick request, such as a square card announcing a launch. The thread shows live progress, and the files arrive in the same thread.
+
+  </Step>
+</Steps>
+
+<Tip>
+To test changes without touching the deployment your team uses, deploy a separate copy with `uv run mda deploy --name design-agent-test`.
+</Tip>
+
+The repository also ships onboarding skills for coding agents. Open it in Claude Code, Codex, or Cursor and ask it to deploy the agent to your Slack. `AGENTS.md` routes the request to a step-by-step skill that publishes the sandbox, checks what ships, and deploys after you confirm.
+
+## Run the demo locally
+
+The demo runs the real agent, sandbox, and checks with a scripted model and no API keys. It requires Docker and leaves a launch card in three sizes and a short teaser in `workspace/out/demo/`:
+
+```bash
+uv run design-agent sandbox build
+uv run design-agent demo
+```
+
+## Customize the agent
+
+Most changes are edits to files in the repository:
+
+- **Brand pack**: Your colors, fonts, logos, and voice in `workspace/brand/`. Ask your coding agent to build it from your website and brand guide.
+- **Instructions**: The always-on prompt in `instructions.md`.
+- **Skills**: One folder per workflow in `skills/`. Add a skill for a recurring request, such as a weekly newsletter header.
+
+For more information, see [Customization](https://github.com/langchain-ai/design-agent/blob/main/docs/customization.md) and [Deploy with Managed Deep Agents](https://github.com/langchain-ai/design-agent/blob/main/docs/deploy-mda.md) in the repository.
+
+## See also
+
+- [Design agent repository](https://github.com/langchain-ai/design-agent)
+- [How we built our design agent](https://www.langchain.com/blog/design-agent)
+- [Managed Deep Agents quickstart](/langsmith/managed-deep-agents-quickstart)
+- [Deploy a Managed Deep Agents project](/langsmith/managed-deep-agents-deploy)
