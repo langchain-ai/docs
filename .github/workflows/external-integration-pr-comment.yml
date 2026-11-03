@@ -1,0 +1,235 @@
+# Apply the `integration` label to PRs from external contributors that add
+# integration docs (hosted MDX pages or external listing YAML rows).
+#
+# Also posts a one-time nudge redirecting non-featured listing PRs to the
+# Integration listing issue form, then closes the PR. Featured hosted pages
+# or pages with at least 50,000 monthly downloads skip comment and close; labeling still
+# applies.
+#
+# NOTE: Uses `pull_request_target` so it can label, comment, and close PRs
+# from forks. The script only reads changed files and PR head content from the
+# GitHub API and checks org membership — no untrusted code is executed.
+
+name: External Integration PR Comment
+
+on:
+  pull_request_target:
+    types: [opened, ready_for_review, reopened, synchronize]
+
+jobs:
+  integration-comment:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    if: ${{ !github.event.pull_request.draft }}
+
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.ORG_MEMBERSHIP_APP_ID }}
+          private-key: ${{ secrets.ORG_MEMBERSHIP_APP_PRIVATE_KEY }}
+
+      - name: Comment on external new integration PRs
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const { owner, repo } = context.repo;
+            const pr = context.payload.pull_request;
+            const author = pr.user.login;
+
+            if (pr.user.type === 'Bot') {
+              console.log(`Skipping bot author ${author}`);
+              return;
+            }
+
+            const integrationPrefixes = [
+              'src/oss/python/integrations/',
+              'src/oss/javascript/integrations/',
+            ];
+            const externalListingPath = 'scripts/data/integration_external_docs.yaml';
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner,
+              repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+
+            const newIntegrationFiles = files.filter((file) => {
+              if (file.status !== 'added') return false;
+              if (!integrationPrefixes.some((prefix) => file.filename.startsWith(prefix))) {
+                return false;
+              }
+              const basename = file.filename.split('/').pop();
+              if (basename === 'TEMPLATE.mdx') return false;
+              return true;
+            });
+
+            const hasExternalListingChange = files.some(
+              (file) => file.filename === externalListingPath
+            );
+
+            if (newIntegrationFiles.length === 0 && !hasExternalListingChange) {
+              console.log('No integration contribution files found; skipping');
+              return;
+            }
+
+            if (newIntegrationFiles.length > 0) {
+              console.log(
+                `Found ${newIntegrationFiles.length} new integration file(s): ` +
+                newIntegrationFiles.map((f) => f.filename).join(', ')
+              );
+            }
+            if (hasExternalListingChange) {
+              console.log(`Found changes to ${externalListingPath}`);
+            }
+
+            const internalBots = new Set(['open-swe[bot]']);
+            let isExternal;
+
+            if (internalBots.has(author)) {
+              isExternal = false;
+            } else {
+              try {
+                const membership = await github.rest.orgs.getMembershipForUser({
+                  org: 'langchain-ai',
+                  username: author,
+                });
+                isExternal = membership.data.state !== 'active';
+              } catch (error) {
+                if (error.status === 404) {
+                  isExternal = true;
+                } else {
+                  console.error('Error checking membership:', error);
+                  isExternal = true;
+                }
+              }
+            }
+
+            if (!isExternal) {
+              console.log(`Author ${author} is internal; skipping`);
+              return;
+            }
+
+            const hasIntegrationLabel = pr.labels.some(
+              (label) => label.name === 'integration'
+            );
+
+            if (hasIntegrationLabel) {
+              console.log(`PR #${pr.number} already has the integration label; skipping labeling`);
+            } else {
+              await github.rest.issues.addLabels({
+                owner,
+                repo,
+                issue_number: pr.number,
+                labels: ['integration'],
+              });
+              console.log(`Added integration label to PR #${pr.number}`);
+            }
+
+            async function fileIsEligible(filename) {
+              if (!filename.endsWith('.mdx')) return false;
+              try {
+                const head = pr.head;
+                const { data } = await github.rest.repos.getContent({
+                  owner: head.repo.owner.login,
+                  repo: head.repo.name,
+                  path: filename,
+                  ref: head.sha,
+                });
+                if (Array.isArray(data) || !data.content) {
+                  console.log(`Could not read file content for ${filename}`);
+                  return false;
+                }
+                const content = Buffer.from(data.content, 'base64').toString('utf8');
+                const frontmatter = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+                if (!frontmatter) return false;
+                if (/^[ \t]*featured:[ \t]*true[ \t]*$/m.test(frontmatter[1])) return true;
+                const packageMatch = frontmatter[1].match(
+                  /^[ \t]+(pypi|npm):[ \t]*["']?([^\s"'#]+)["']?[ \t]*(?:#.*)?$/m
+                );
+                if (!packageMatch) return false;
+                const [, registry, packageName] = packageMatch;
+                const encoded = encodeURIComponent(packageName);
+                const url = registry === 'npm'
+                  ? `https://api.npmjs.org/downloads/point/last-month/${encoded}`
+                  : `https://pypistats.org/api/packages/${encoded}/recent`;
+                const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+                if (!response.ok) throw new Error(`Download lookup returned ${response.status}`);
+                const stats = await response.json();
+                const downloads = registry === 'npm' ? stats.downloads : stats.data?.last_month;
+                if (!Number.isSafeInteger(downloads) || downloads < 0) {
+                  throw new Error('Invalid monthly download count');
+                }
+                console.log(`${registry}:${packageName}: ${downloads} monthly downloads`);
+                return downloads >= 50000;
+              } catch (error) {
+                throw new Error(`Could not verify eligibility for ${filename}: ${error.message}`);
+              }
+            }
+
+            let hasEligibleIntegration = false;
+            for (const file of newIntegrationFiles) {
+              if (await fileIsEligible(file.filename)) {
+                console.log(`${file.filename} is featured or has at least 50,000 monthly downloads; skipping closure`);
+                hasEligibleIntegration = true;
+                break;
+              }
+            }
+
+            if (hasEligibleIntegration) {
+              return;
+            }
+
+            const marker = '<!-- external-integration-contribution -->';
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: pr.number,
+              per_page: 100,
+            });
+
+            const body = [
+              marker,
+              'New integration listings that are neither featured by LangChain maintainers nor have at least 50,000 monthly downloads should be filed as an [Integration listing issue](https://github.com/langchain-ai/docs/issues/new?template=06-integration-submission.yml) rather than a manual PR. This pull request is being closed.',
+            ].join('\n');
+            const existingComment = comments.find(
+              (comment) => comment.user?.type === 'Bot' && comment.body.includes(marker)
+            );
+
+            if (existingComment) {
+              if (existingComment.body !== body) {
+                await github.rest.issues.updateComment({
+                  owner,
+                  repo,
+                  comment_id: existingComment.id,
+                  body,
+                });
+              }
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: pr.number,
+                body,
+              });
+
+              console.log(`Posted external integration comment on PR #${pr.number}`);
+            }
+
+            if (pr.state === 'open') {
+              await github.rest.pulls.update({
+                owner,
+                repo,
+                pull_number: pr.number,
+                state: 'closed',
+              });
+              console.log(`Closed PR #${pr.number}`);
+            } else {
+              console.log(`PR #${pr.number} is already ${pr.state}; skipping close`);
+            }

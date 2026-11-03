@@ -18,9 +18,7 @@ Many model providers support setting credentials and other configuration options
 
 ## Configuration
 
-With the parameters from above, you can configure your LangSmith instance to use environment variables for model providers. You can do this by modifying the `langsmith_config.yaml` file for your LangSmith Helm Chart installation or the `docker-compose.yaml` file for your Docker installation.
-
-<CodeGroup>
+With the parameters from above, you can configure your LangSmith instance to use environment variables for model providers. You can do this by modifying the `langsmith_config.yaml` file for your LangSmith Helm Chart installation.
 
 ```yaml Helm
 playground:
@@ -38,26 +36,13 @@ playground:
       eks.amazonaws.com/role-arn: <your_role_arn>
 ```
 
-```yaml Docker
-# In your docker-compose.yaml file
-langchain-playground:
-  environment:
-    .. # Other environment variables
-    - OPENAI_BASE_URL=https://<my_proxy_url>
-    - OPENAI_API_KEY=<your_key> # This will be set in the .env file
-```
+## Gemini Enterprise Agent Platform configuration
 
-</CodeGroup>
-
-## VertexAI configuration
-
-You can configure VertexAI credentials for the playground service using either environment variables with secrets or workload identity (GCP Workload Identity for GKE or AWS IRSA for EKS).
+You can configure Gemini Enterprise Agent Platform credentials for the playground service using either environment variables with secrets or GCP Workload Identity for GKE.
 
 ### Using secrets
 
-Configure VertexAI credentials using Kubernetes secrets:
-
-<CodeGroup>
+Configure Gemini Enterprise Agent Platform credentials using Kubernetes secrets:
 
 ```yaml Helm
 playground:
@@ -90,83 +75,26 @@ playground:
           defaultMode: 0444
 ```
 
-```yaml Docker
-# In your docker-compose.yaml file
-langchain-playground:
-  environment:
-    .. # Other environment variables
-    - GOOGLE_VERTEX_AI_WEB_CREDENTIALS=<your_service_account_json>  # Full JSON as string
-    # Or use file path
-    - GOOGLE_APPLICATION_CREDENTIALS=/secrets/gcp-key.json
-    - GOOGLE_CLOUD_PROJECT=your-gcp-project-id
-    - VERTEXAI_PROJECT_ID=your-gcp-project-id
-    - VERTEXAI_LOCATION=us-central1
-  volumes:
-    - ./gcp-key.json:/secrets/gcp-key.json:ro
-```
-
-</CodeGroup>
-
 ### Using workload identity
 
-You can configure the playground service account to use workload identity to assume a GCP service account role without storing credentials. This is the recommended approach for GKE clusters.
+On self-hosted LangSmith running on GKE, Playground can use Workload Identity Federation and ADC instead of a service account JSON key. See [Authenticate Vertex AI with GKE workload identity](/langsmith/self-host-gke-vertex-ai-workload-identity) to configure Playground alongside Chat and Insights.
 
-#### GCP Workload Identity (GKE)
+## AWS IRSA (EKS)
 
-For GKE clusters, use GCP Workload Identity:
-
-<CodeGroup>
-
-```yaml Helm
-playground:
-  deployment:
-    extraEnv:
-      # Optional: Set project/location if not in model config
-      - name: GOOGLE_CLOUD_PROJECT
-        value: "your-gcp-project-id"
-      - name: VERTEXAI_PROJECT_ID
-        value: "your-gcp-project-id"
-      - name: VERTEXAI_LOCATION
-        value: "us-central1"
-    # No credentials needed - pod assumes GCP SA role via annotation
-  serviceAccount:
-    create: true  # Enable if not exists
-    annotations:
-      iam.gke.io/gcp-service-account: "vertexai-sa@your-gcp-project.iam.gserviceaccount.com"
-```
-
-</CodeGroup>
-
-<Note>
-When using GCP Workload Identity, ensure the GCP service account has the required VertexAI permissions (e.g., `roles/aiplatform.user`).
-</Note>
-
-#### AWS IRSA (EKS)
-
-For EKS clusters, you can use AWS IRSA to assume a GCP service account role:
+For EKS clusters, you can use AWS IRSA (IAM Roles for Service Accounts) to grant the `playground` service account access to AWS resources without storing credentials. Annotate the service account with your IAM role ARN:
 
 <CodeGroup>
 
 ```yaml Helm
 playground:
-  deployment:
-    extraEnv:
-      # Optional: Set project/location if not in model config
-      - name: GOOGLE_CLOUD_PROJECT
-        value: "your-gcp-project-id"
-      - name: VERTEXAI_PROJECT_ID
-        value: "your-gcp-project-id"
-      - name: VERTEXAI_LOCATION
-        value: "us-central1"
-    # No credentials needed - pod assumes GCP SA role via AWS IAM role
   serviceAccount:
     create: true  # Enable if not exists
     annotations:
-      eks.amazonaws.com/role-arn: arn:aws:iam::<account>:role/LangSmith-VertexAI-Role
+      eks.amazonaws.com/role-arn: arn:aws:iam::<account>:role/LangSmith-Playground-Role
 ```
 
 </CodeGroup>
 
 <Note>
-When using AWS IRSA, ensure your AWS IAM role has the necessary permissions to assume the GCP service account role, and that the GCP service account has the required VertexAI permissions.
+Ensure your AWS IAM role has the necessary permissions for the AWS resources the playground service needs to access.
 </Note>

@@ -12,16 +12,22 @@ the agent works through its plan. It's a progress dashboard built on the same
 not just message bubbles.
 
 import { PatternEmbed } from "/snippets/pattern-embed.jsx"
+import UseStreamTypeInference from '/snippets/oss/use-stream-type-inference.mdx';
+import FrontendTodoListSetupPy from '/snippets/code-samples/frontend-todo-list-setup-py.mdx';
+import FrontendTodoListSetupJs from '/snippets/code-samples/frontend-todo-list-setup-js.mdx';
 
 <PatternEmbed pattern="deep-agent-todo-list" />
 
 ## How it works
 
-In a LangGraph agent, state isn't limited to messages. You can define **custom
-state keys** that hold arbitrary data. In this case, a `todos` array. As the
-agent executes its plan, it updates each todo's status from `"pending"` to
-`"in_progress"` to `"completed"`. The `useStream` hook exposes these custom
-state values via `stream.values`, and your UI renders them reactively.
+Deep agents can expose a **`todos` state** channel when you opt into @[`TodoListMiddleware`]. That middleware adds the `write_todos` tool and persists task progress as the agent works through its plan. As the agent executes, it updates each
+todo's status from `"pending"` to `"in_progress"` to `"completed"`. The
+@[`useStream`] hook exposes this state via `stream.values.todos`, and your UI
+renders it reactively.
+
+<Note>
+Task planning is opt-in. Without @[`TodoListMiddleware`], `stream.values.todos` is not present. See [Task planning](/oss/deepagents/overview#task-planning).
+</Note>
 
 The flow looks like this:
 
@@ -32,41 +38,22 @@ The flow looks like this:
 4. `stream.values.todos` updates in real time as the agent progresses
 5. Your UI re-renders the todo list with current statuses
 
-## Setting up useStream
+## Setting up `useStream`
 
-No special configuration is needed. Point `useStream` at your agent and
-read the `todos` from `stream.values`.
+Enable @[`TodoListMiddleware`] on the agent.
 
 :::python
-
-Define a TypeScript interface matching your agent's state schema and pass it as a type parameter to `useStream` for type-safe access to state values, including custom state keys like `todos`. In the examples below, replace `typeof myAgent` with your interface name:
-
-```ts
-import type { BaseMessage } from "@langchain/core/messages";
-
-interface TodoItem {
-  title: string;
-  status: "pending" | "in_progress" | "completed";
-  description?: string;
-}
-
-interface AgentState {
-  messages: BaseMessage[];
-  todos: TodoItem[];
-}
-```
-
+<FrontendTodoListSetupPy />
 :::
 
 :::js
-
-Import your agent and pass `typeof myAgent` as a type parameter to `useStream` for type-safe access to state values:
-
-```ts
-import type { myAgent } from "./agent";
-```
-
+<FrontendTodoListSetupJs />
 :::
+
+Then point @[`useStream`] at that agent and
+read the `todos` from `stream.values`.
+
+<UseStreamTypeInference />
 
 <CodeGroup>
 ```tsx React
@@ -126,17 +113,17 @@ const todos = computed(() => stream.values.value?.todos ?? []);
 
   const AGENT_URL = "http://localhost:2024";
 
-  const { messages, values, submit } = useStream<typeof myAgent>({
+  const stream = useStream<typeof myAgent>({
     apiUrl: AGENT_URL,
     assistantId: "deep_agent_todo_list",
   });
 
-  $: todos = $values?.todos ?? [];
+  const todos = $derived(stream.values?.todos ?? []);
 </script>
 
 <div>
   <TodoList {todos} />
-  {#each $messages as msg (msg.id)}
+  {#each stream.messages as msg (msg.id)}
     <Message message={msg} />
   {/each}
 </div>
@@ -144,7 +131,7 @@ const todos = computed(() => stream.values.value?.todos ?? []);
 
 ```ts Angular
 import { Component, computed } from "@angular/core";
-import { useStream } from "@langchain/angular";
+import { injectStream } from "@langchain/angular";
 
 const AGENT_URL = "http://localhost:2024";
 
@@ -160,7 +147,7 @@ const AGENT_URL = "http://localhost:2024";
   `,
 })
 export class TodoAgentComponent {
-  stream = useStream<typeof myAgent>({
+  stream = injectStream<typeof myAgent>({
     apiUrl: AGENT_URL,
     assistantId: "deep_agent_todo_list",
   });
@@ -169,25 +156,6 @@ export class TodoAgentComponent {
 }
 ```
 </CodeGroup>
-
-## The Todo interface
-
-Each todo in the array has a simple structure:
-
-```ts
-interface Todo {
-  status: "pending" | "in_progress" | "completed";
-  content: string;
-}
-```
-
-| Property | Description |
-| --- | --- |
-| `status` | The current state of this task. Options: `pending` (not started), `in_progress` (agent is working on it), `completed` (done) |
-| `content` | A human-readable description of what the task involves |
-
-The agent populates this array when it creates its plan, then updates individual
-items as it executes each step.
 
 ## Building the TodoList component
 
@@ -356,72 +324,6 @@ Show the todo list only when `todos.length > 0`. Before the agent creates its
 plan, there's nothing to display. Showing an empty component wastes space.
 </Tip>
 
-## Custom state beyond todos
-
-This pattern demonstrates a powerful principle: `stream.values` can expose
-**any custom state** your agent defines, not just messages. The `todos` array is
-just one example. You could use the same approach for:
-
-- **Progress metrics**: `stream.values.progress` with numeric completion data
-- **Generated artifacts**: `stream.values.document` with a structured document
-  the agent is building
-- **Decision logs**: `stream.values.decisions` tracking every choice the agent
-  made
-- **Resource lists**: `stream.values.sources` with links and references the
-  agent found
-
-```ts
-// Any custom state key your agent defines is accessible
-const document = stream.values?.document;
-const sources = stream.values?.sources ?? [];
-const confidence = stream.values?.confidence_score;
-```
-
-<Info>
-Custom state keys are defined in your LangGraph graph's state schema. The
-`useStream` hook automatically includes them in `stream.values` without any additional
-client-side configuration.
-</Info>
-
-## Animating transitions
-
-Todo status transitions happen in real time, and smooth animations make these
-changes feel polished rather than jarring:
-
-```tsx
-function TodoItem({ todo }: { todo: Todo }) {
-  return (
-    <li
-      className={`
-        flex items-start gap-3 rounded-md border px-3 py-2
-        transition-all duration-300 ease-in-out
-        ${getStatusStyles(todo.status)}
-      `}
-    >
-      <span
-        className={`
-          mt-0.5 text-lg leading-none transition-colors duration-300
-          ${getIconStyles(todo.status)}
-        `}
-      >
-        {getStatusIcon(todo.status)}
-      </span>
-      <span
-        className={`
-          text-sm transition-all duration-300
-          ${todo.status === "completed" ? "line-through opacity-60" : ""}
-        `}
-      >
-        {todo.content}
-      </span>
-    </li>
-  );
-}
-```
-
-The `transition-all duration-300` classes ensure that color changes,
-strikethrough, and opacity shifts all animate smoothly.
-
 ## Use cases
 
 The todo list pattern fits any scenario where an agent executes a structured
@@ -485,3 +387,24 @@ function TodoList({ todos, isLoading }: { todos: Todo[]; isLoading: boolean }) {
 - **Keep the todo list in sync**. Because `stream.values` updates reactively,
   the todo list stays current automatically. Don't add manual polling or
   refresh logic.
+
+## Related LangChain guides
+
+The todo list pattern is a specialization of the broader LangChain approach to
+rendering structured agent state. These guides cover related techniques that
+pair well with plan-based agents:
+
+<CardGroup cols={2}>
+  <Card title="Structured output" icon="table" href="/oss/langchain/frontend/structured-output">
+    Render any structured agent state—not just todos—with custom UI components instead of plain text.
+  </Card>
+  <Card title="Join & rejoin streams" icon="arrows-merge" href="/oss/langchain/frontend/join-rejoin">
+    Reconnect to a running plan after a page reload or tab switch without losing progress.
+  </Card>
+  <Card title="Message queues" icon="list" href="/oss/langchain/frontend/message-queues">
+    Queue follow-up tasks while the agent is still working through its current plan.
+  </Card>
+  <Card title="Human-in-the-Loop" icon="hand" href="/oss/langchain/frontend/human-in-the-loop">
+    Pause and resume plan execution when the agent needs user approval or input.
+  </Card>
+</CardGroup>

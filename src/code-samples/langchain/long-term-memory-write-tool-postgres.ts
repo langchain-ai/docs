@@ -5,14 +5,14 @@ import { PostgresStore } from "@langchain/langgraph-checkpoint-postgres/store";
 
 const DB_URI =
   process.env.POSTGRES_URI ??
-  "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable";
+  "postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable";
 const store = PostgresStore.fromConnString(DB_URI);
 // :remove-start:
 // Drop tables from prior runs (Python samples use different schema; CI shares one DB)
 await (
   store as { core: { pool: { query: (q: string) => Promise<unknown> } } }
 ).core.pool.query(
-  "DROP TABLE IF EXISTS public.store_vectors CASCADE; DROP TABLE IF EXISTS public.store CASCADE; DROP TABLE IF EXISTS public.store_migrations CASCADE;",
+  "DROP TABLE IF EXISTS public.store_vectors CASCADE; DROP TABLE IF EXISTS public.store CASCADE; DROP TABLE IF EXISTS public.store_migrations CASCADE; DROP TABLE IF EXISTS public.vector_migrations CASCADE;",
 );
 // :remove-end:
 await store.setup();
@@ -54,7 +54,7 @@ console.log(result?.value);
 async function main() {
   const DB_URI =
     process.env.POSTGRES_URI ||
-    "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable";
+    "postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable";
   const store = PostgresStore.fromConnString(DB_URI);
 
   try {

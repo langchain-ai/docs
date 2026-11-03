@@ -1,0 +1,6 @@
+---
+title: Model Context Protocol
+sidebarTitle: MCP with LangChain
+url: "/oss/langchain/mcp"
+noindex: true
+---

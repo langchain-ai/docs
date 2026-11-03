@@ -1,6 +1,15 @@
 ---
-title: "ChatNVIDIA integration"
-description: "Integrate with ChatNVIDIA and ChatNVIDIADynamo chat models using LangChain Python."
+title: ChatNVIDIA integration
+description: Integrate with ChatNVIDIA and ChatNVIDIADynamo chat models using LangChain
+  Python.
+integration:
+  name: ChatNVIDIA
+  pypi: langchain-nvidia-ai-endpoints
+  featured: true
+  stream: true
+  tool_calling: true
+  structured_output: true
+  multimodal: true
 ---
 
 This will help you get started with NVIDIA [chat models](/oss/langchain/models). For detailed documentation of all `ChatNVIDIA` features and configurations head to the [API reference](https://reference.langchain.com/python/langchain-nvidia-ai-endpoints/chat_models/ChatNVIDIA).
@@ -32,7 +41,7 @@ For more information on accessing embedding models through this API, refer to th
 ## Install the package
 
 ```bash
-pip install -qU langchain-nvidia-ai-endpoints
+pip install -qU langchain-nvidia-ai-endpoints langchain
 ```
 
 ## Access the NVIDIA API Catalog
@@ -62,7 +71,7 @@ else:
 
 You can now use your key to access endpoints on the NVIDIA API Catalog.
 
-To enable automated tracing of your model calls, set your [LangSmith](/langsmith/home) API key:
+To enable automated tracing of your model calls, set your [LangSmith](/langsmith/observability) API key:
 
 ```python
 os.environ["LANGSMITH_TRACING"] = "true"
@@ -76,8 +85,8 @@ Now we can access models in the NVIDIA API Catalog. [Nemotron](https://www.nvidi
 ```python
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 
-# Nemotron 3 Nano — efficient reasoning and agentic tasks
-llm = ChatNVIDIA(model="nvidia/nemotron-3-super-120b-a12b")
+# Nemotron 3 Ultra - frontier reasoning and agentic workflows
+llm = ChatNVIDIA(model="nvidia/nemotron-3-ultra-550b-a55b")
 ```
 
 Any other model from the API Catalog can be used by passing its model ID:
@@ -93,6 +102,140 @@ result = llm.invoke("Write a ballad about LangChain.")
 print(result.content)
 ```
 
+## Enable thinking mode
+
+Some NVIDIA reasoning models support a configurable thinking mode. Enable thinking for a single request by passing `thinking_mode=True` to `invoke`:
+
+```python
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
+
+model = ChatNVIDIA(model="nvidia/nemotron-3-nano-30b-a3b")
+
+response = model.invoke("Solve this step by step: 17 * 23", thinking_mode=True)
+print(response.content_blocks)
+```
+
+Use `with_thinking_mode` when you want a reusable runnable with thinking enabled:
+
+```python
+thinking_model = model.with_thinking_mode(enabled=True)
+response = thinking_model.invoke("Solve this step by step: 17 * 23")
+```
+
+To list models that are known to support thinking mode, call `get_available_models` and inspect `supports_thinking`. This queries the NVIDIA model-listing API, then filters the returned model metadata:
+
+```python
+thinking_models = [
+    model for model in ChatNVIDIA.get_available_models() if model.supports_thinking
+]
+```
+
+`ChatNVIDIA` translates `thinking_mode=True` into the control mechanism required by the selected model. Some models use request parameters, such as `chat_template_kwargs={"enable_thinking": True}`. Other models use prompt-based control, where LangChain appends a model-specific thinking prefix to the system message, or creates a system message if one is not present. If both mechanisms are configured for a model, request parameters take precedence.
+
+Do not pass `thinking_mode=True` when constructing `ChatNVIDIA`. Unknown constructor arguments become raw `model_kwargs`, which are merged directly into the API payload. The thinking-mode translation runs only for invocation kwargs or bound kwargs, so use one of these forms instead:
+
+```python
+response = model.invoke("Solve this step by step: 17 * 23", thinking_mode=True)
+```
+
+```python
+thinking_model = model.with_thinking_mode(enabled=True)
+response = thinking_model.invoke("Solve this step by step: 17 * 23")
+```
+
+## Use Nemotron 3.5 Super VL
+
+Nemotron 3.5 Super VL accepts text and image input through `ChatNVIDIA`. Use it for chat, structured output, or as the model in a deep agent.
+
+The following examples use the connector's registered model ID, an 8,192-token completion limit, and explicitly enabled thinking:
+
+```python
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
+
+super_model = ChatNVIDIA(
+    model="nvidia/nemotron-3.5-super-vl-120b-a12b",
+    max_completion_tokens=8192,
+    chat_template_kwargs={"enable_thinking": True},
+)
+response = super_model.invoke("Plan a three-step research workflow for competitive analysis.")
+print(response.content_blocks)
+```
+
+### Return structured output
+
+Pass a JSON schema to `with_structured_output` to parse the response into a dictionary:
+
+```python
+schema = {
+    "type": "object",
+    "properties": {"city": {"type": "string"}},
+    "required": ["city"],
+    "additionalProperties": False,
+}
+structured_model = super_model.with_structured_output(schema)
+response = structured_model.invoke("Return Denver as the city.")
+print(response["city"])
+```
+
+To disable thinking for this structured-output runnable, bind the request parameter after calling `with_structured_output`:
+
+```python
+non_thinking_model = structured_model.bind(
+    chat_template_kwargs={"enable_thinking": False}
+)
+response = non_thinking_model.invoke("Return Denver as the city.")
+print(response["city"])
+```
+
+### Describe an image
+
+Encode a local PNG and include it in a [standard image content block](/oss/langchain/messages#multimodal). Replace `photo.png` with the path to your image:
+
+```python
+import base64
+from pathlib import Path
+
+from langchain.messages import HumanMessage
+
+image = base64.b64encode(Path("photo.png").read_bytes()).decode("ascii")
+message = HumanMessage(content=[
+    {"type": "text", "text": "Describe this image."},
+    {"type": "image", "base64": image, "mime_type": "image/png"},
+])
+response = super_model.invoke([message])
+print(response.content_blocks)
+```
+
+### Use with Deep Agents
+
+[Deep Agents](/oss/deepagents/overview) provides a built-in agent loop and tools. Install `deepagents`, then pass `super_model` to `create_deep_agent`:
+
+```bash
+pip install deepagents
+```
+
+```python
+from deepagents import create_deep_agent
+
+agent = create_deep_agent(model=super_model)
+result = agent.invoke({
+    "messages": [{
+        "role": "user",
+        "content": "Plan a three-step research workflow for competitive analysis.",
+    }]
+})
+print(result["messages"][-1].content_blocks)
+```
+
+This example uses the default Deep Agents harness without a model-specific profile. To ask the agent about the image, reuse `message` from the image example:
+
+```python
+result = agent.invoke({"messages": [message]})
+print(result["messages"][-1].content_blocks)
+```
+
+For the terminal coding agent, follow the [Deep Agents Code NVIDIA Build setup](/oss/deepagents/code/providers#use-nemotron-3-5-super-vl-on-nvidia-build).
+
 ## Self-host with NVIDIA NIM Microservices
 
 When you are ready to deploy your AI application, you can self-host models with NVIDIA NIM. For more information, refer to [NVIDIA NIM Microservices](https://www.nvidia.com/en-us/ai-data-science/products/nim-microservices/).
@@ -103,7 +246,7 @@ The following code connects to locally hosted NIM Microservices.
 from langchain_nvidia_ai_endpoints import ChatNVIDIA, NVIDIAEmbeddings, NVIDIARerank
 
 # Connect to a chat NIM running at localhost:8000, specifying a model
-llm = ChatNVIDIA(base_url="http://localhost:8000/v1", model="nvidia/nemotron-3-super-120b-a12b")
+llm = ChatNVIDIA(base_url="http://localhost:8000/v1", model="nvidia/nemotron-3-ultra-550b-a55b")
 
 # Connect to an embedding NIM running at localhost:8080
 embedder = NVIDIAEmbeddings(base_url="http://localhost:8080/v1")
@@ -123,16 +266,18 @@ print(llm.batch(["What's 2*3?", "What's 2*6?"]))
 ```
 
 ```python
-for chunk in llm.stream("How far can a seagull fly in one day?"):
+stream = llm.stream_events("How far can a seagull fly in one day?", version="v3")
+for token in stream.text:
     # Show the token separations
-    print(chunk.content, end="|")
+    print(token, end="|")
 ```
 
 ```python
-async for chunk in llm.astream(
-    "How long does it take for monarch butterflies to migrate?"
-):
-    print(chunk.content, end="|")
+stream = await llm.astream_events(
+    "How long does it take for monarch butterflies to migrate?", version="v3"
+)
+async for token in stream.text:
+    print(token, end="|")
 ```
 
 ## Supported models
@@ -175,7 +320,7 @@ prompt = ChatPromptTemplate.from_messages(
         ("user", "{input}"),
     ]
 )
-chain = prompt | ChatNVIDIA(model="nvidia/nemotron-3-super-120b-a12b") | StrOutputParser()
+chain = prompt | ChatNVIDIA(model="nvidia/nemotron-3-ultra-550b-a55b") | StrOutputParser()
 
 for txt in chain.stream({"input": "What are the key considerations when designing a multi-agent RAG system?"}):
     print(txt, end="")
@@ -193,7 +338,7 @@ from langchain_nvidia_ai_endpoints import ChatNVIDIA
 prompt = ChatPromptTemplate.from_messages(
     [("system", "You are a helpful AI assistant named Fred."), ("user", "{input}")]
 )
-chain = prompt | ChatNVIDIA(model="nvidia/nemotron-3-super-120b-a12b") | StrOutputParser()
+chain = prompt | ChatNVIDIA(model="nvidia/nemotron-3-ultra-550b-a55b") | StrOutputParser()
 
 for txt in chain.stream({"input": "What's your name?"}):
     print(txt, end="")
@@ -328,7 +473,7 @@ def get_session_history(session_id: str) -> InMemoryChatMessageHistory:
 
 
 chat = ChatNVIDIA(
-    model="nvidia/nemotron-3-super-120b-a12b",
+    model="nvidia/nemotron-3-ultra-550b-a55b",
     temperature=0.1,
     max_tokens=100,
     top_p=1.0,
@@ -413,7 +558,7 @@ See [How to use chat models to call tools](/oss/langchain/tools) for additional 
 A unique `prefix_id` is auto-generated for every request, enabling the router to track KV cache affinity.
 
 <Note>
-This section assumes you have a running [NVIDIA Dynamo deployment](https://docs.nvidia.com/dynamo/latest/getting-started/quickstart).
+This section assumes you have a running [NVIDIA Dynamo deployment](https://docs.nvidia.com/dynamo/latest/).
 </Note>
 
 ### Basic usage
@@ -489,8 +634,9 @@ print(result.content)
 Dynamo hints are included in the initial streaming request. Dynamo uses them to select the optimal worker before tokens start flowing.
 
 ```python
-for chunk in llm_critical.stream("Give a one-sentence summary of GPU computing."):
-    print(chunk.content, end="", flush=True)
+stream = llm_critical.stream_events("Give a one-sentence summary of GPU computing.", version="v3")
+for token in stream.text:
+    print(token, end="", flush=True)
 ```
 
 ### Inspect the payload
@@ -536,6 +682,8 @@ For detailed documentation of all `ChatNVIDIA` features and configurations head 
 - [Overview of NeMo Retriever Reranking NIM](https://docs.nvidia.com/nim/nemo-retriever/text-reranking/latest/overview.html)
 - [`NVIDIAEmbeddings` Model for RAG Workflows](/oss/integrations/embeddings/nvidia_ai_endpoints)
 - [NVIDIA Provider Page](/oss/integrations/providers/nvidia)
+- [Sandboxed agents with NVIDIA OpenShell](/oss/integrations/providers/nvidia#sandboxed-agents-with-openshell)
+- [Post-training agent workflows](/oss/integrations/providers/nvidia#post-training-agent-workflows)
 - [NVIDIA Dynamo](https://developer.nvidia.com/dynamo) — open-source inference framework
-- [Dynamo Quickstart Guide](https://docs.nvidia.com/dynamo/latest/getting-started/quickstart) — get a local deployment running
+- [Dynamo Quickstart Guide](https://docs.nvidia.com/dynamo/latest/) — get a local deployment running
 - [KV Cache-Aware Routing](https://docs.nvidia.com/dynamo/latest/user-guides/kv-cache-aware-routing) — how the Smart Router works
