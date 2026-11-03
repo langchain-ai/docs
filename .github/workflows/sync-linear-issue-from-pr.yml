@@ -1,6 +1,8 @@
 ---
-# Keep Linear DOC issue status aligned with the linked docs PR.
-# Used by docs-release-watch handoffs (PR body: Closes [DOC-N](<linear url>)).
+# Keep Linear DOC issue status aligned with linked docs-release-watch PRs.
+# Agent PRs get the `release-watch-agent` label and include:
+#   Closes [DOC-N](<linear url>)
+# in the PR body.
 
 name: Sync Linear issue from PR
 
@@ -16,25 +18,46 @@ on:
       - converted_to_draft
       - ready_for_review
       - closed
+      # Label is applied after PR create, so opened can race unlabeled.
+      - labeled
 
 jobs:
   sync-linear:
     name: Update Linear status
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # Same-repo PRs only (fork PRs do not receive LINEAR_API_KEY).
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # Same-repo release-watch PRs only (fork PRs do not receive LINEAR_API_KEY).
+    if: >
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'release-watch-agent') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'release-watch-agent')
     steps:
+      - name: Check Linear credentials
+        id: creds
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${LINEAR_API_KEY}" ]; then
+            echo "LINEAR_API_KEY unset; skipping Linear sync"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v6
+        if: steps.creds.outputs.skip != 'true'
         with:
           fetch-depth: 1
 
       - name: Set up Python 3.13 + uv
+        if: steps.creds.outputs.skip != 'true'
         uses: "./.github/actions/uv_setup"
         with:
           python-version: "3.13"
 
       - name: Sync Linear issue state from PR
+        if: steps.creds.outputs.skip != 'true'
         env:
           LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
           PR_TITLE: ${{ github.event.pull_request.title }}
@@ -44,10 +67,6 @@ jobs:
           PR_MERGED: ${{ github.event.pull_request.merged }}
         run: |
           set -euo pipefail
-          if [ -z "${LINEAR_API_KEY}" ]; then
-            echo "LINEAR_API_KEY unset; skipping Linear sync"
-            exit 0
-          fi
 
           # Title/body/state come from env (avoids argv size and quoting issues).
           uv run python scripts/sync_linear_issue_from_pr.py --json \

@@ -4,7 +4,7 @@ okf_version: "0.2"
 
 # Files
 
-- [Repository Wiki Quickstart](quickstart.md) - Route documentation, LangSmith agent and observability changes, generated artifacts, automation, and previews to their durable owners. Choose validation that covers the changed boundary without editing generated output.
+- [Repository Wiki Quickstart](quickstart.md) - Route a documentation, generator, validation, or automation change to its durable owner and smallest meaningful check. Use this map before editing rendered output, a generated artifact, or a deployment surface.
 
 # Directories
 

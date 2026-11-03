@@ -1,0 +1,29 @@
+// Managed Deep Agents quickstart, Tavily variant: the custom search tool.
+// Lives next to agent.ts so `import ... from "./tools/search"` resolves.
+
+// :snippet-start: mda-quickstart-tavily-search-js
+// :codegroup-tab: tools/search.ts
+import { TavilySearch } from "@langchain/tavily";
+import { tool } from "langchain";
+import { z } from "zod";
+
+export const internetSearch = tool(
+  async ({ query, maxResults = 5, topic = "general" }) => {
+    const tavilySearch = new TavilySearch({
+      maxResults,
+      tavilyApiKey: process.env.TAVILY_API_KEY,
+      topic,
+    });
+    return tavilySearch._call({ query });
+  },
+  {
+    name: "internet_search",
+    description: "Search the internet for relevant sources.",
+    schema: z.object({
+      query: z.string().describe("The search query."),
+      maxResults: z.number().optional().default(5),
+      topic: z.enum(["general", "news", "finance"]).optional().default("general"),
+    }),
+  },
+);
+// :snippet-end:
