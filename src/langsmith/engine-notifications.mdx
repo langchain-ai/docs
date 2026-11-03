@@ -82,7 +82,7 @@ To mention a coding agent:
 
 The agent is mentioned in the thread of each **Issue created** message. If the destination notifies on **Fix PR ready**, the mention appears under the **Fix PR ready** message instead, once per issue.
 
-The mention includes an issue marker, `<!-- langsmith-issue {"id":"<issue-id>"} -->`. When the agent opens a pull request with that marker in its body, in a repository [connected to Engine](/langsmith/engine-repositories), Engine links the pull request to the issue. The marker must be in the body when the pull request is opened.
+The mention includes an issue marker, `<!-- langsmith-issue {"id":"<issue-id>"} -->`. If the agent includes the marker in the body of a pull request it opens in a GitHub repository [connected to Engine](/langsmith/engine-repositories), Engine links the pull request to the issue. Engine checks for the marker only when the pull request is opened, so adding it later has no effect. Engine does not link GitLab merge requests this way.
 
 ## Create Jira work items
 

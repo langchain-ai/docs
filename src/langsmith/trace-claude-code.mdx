@@ -3,27 +3,21 @@ title: Trace Claude Code sessions
 sidebarTitle: Claude Code
 ---
 
-import ProjectTracingCompatibility from '/snippets/langsmith/project-tracing-compatibility.mdx';
-
+import CodingAgentManagedSettings from '/snippets/langsmith/coding-agent-managed-settings.mdx';
 import CodingAgentSecretRedaction from '/snippets/langsmith/coding-agent-secret-redaction.mdx';
+import CodingAgentStrictAuth from '/snippets/langsmith/coding-agent-strict-auth.mdx';
 
-This guide shows you how to send conversations automatically from the [Claude Code CLI](https://code.claude.com/docs/en/overview) to LangSmith.
-
-Once configured, each Claude Code project can opt in to sending traces to LangSmith. Each trace includes user messages, tool calls, compaction, subagent runs, and assistant responses. System prompts are not included, because Claude Code does not return them in conversation transcripts.
-
-<ProjectTracingCompatibility />
+The LangSmith tracing plugin sends your [Claude Code](https://code.claude.com/docs/en/overview) conversations to LangSmith so you can see what the agent did. Each message becomes a trace, and a session's messages are grouped into a thread.
 
 ## Prerequisites
 
-Before setting up tracing, ensure you have:
+- [Claude Code](https://code.claude.com/docs/en/overview) installed.
+- A LangSmith account.
+- [Node.js](https://nodejs.org/) 20 or later on Windows and Linux. On macOS the plugin runs its own build and does not need Node.js.
 
-- [**Claude Code CLI**](https://code.claude.com/docs/en/overview) installed.
-- A [**LangSmith API key**](/langsmith/create-account-api-key).
-- [**Node.js**](https://nodejs.org/) installed.
+## Install the plugin
 
-## Getting started
-
-From within Claude Code, run:
+Run these commands inside Claude Code:
 
 ```bash
 /plugin marketplace add langchain-ai/langsmith-claude-code-plugins
@@ -31,400 +25,114 @@ From within Claude Code, run:
 /reload-plugins
 ```
 
-To update the plugin, refresh the marketplace from within Claude Code:
+Auto-update is off for this marketplace by default. To turn it on, run `/plugin` and open **Marketplaces**. To install the plugin for everyone, see [Deploy to your organization](#deploy-to-your-organization). For more on installing plugins, see [Install plugins](https://code.claude.com/docs/en/plugins/install) in the Claude Code docs.
+
+## Sign in
+
+Sign in once with the LangSmith CLI. See [Install the LangSmith CLI](/langsmith/langsmith-cli#install) if you do not have it yet.
 
 ```bash
-/plugin marketplace update langsmith-claude-code-plugins
+langsmith auth login
 ```
 
-Then move the install onto the new version from your shell and restart Claude Code:
+If you use the CLI sign-in and have more than one profile, set `profile` in your config file to the one the plugin should use. Your own `api_key` ignores this setting, but a generic `LANGSMITH_API_KEY` is not used as a fallback while `profile` is set.
 
-```bash
-claude plugin update langsmith-tracing@langsmith-claude-code-plugins
-```
-
-<Note> The marketplace update on its own only refreshes the catalog clone. Your install stays pinned to the version directory it was installed from, so the hooks keep running the old bundle until `claude plugin update` moves it. To skip both steps next time, run `/plugin`, open **Marketplaces** → `langsmith-claude-code-plugins` and choose **Enable auto-update**: third-party marketplaces have it off by default, and enabling it updates the marketplace and its installed plugins together. </Note>
-
-<Note> If you are migrating from the previously recommended version of tracing Claude Code with manually created stop hooks, refer to [Migrating from the manual stop hook](#migrating-from-the-manual-stop-hook). </Note>
-
-### Setting environment variables
-
-**Option 1: Project-level configuration (recommended)**
-
-The plugin requires the following environment variables:
-
-- `TRACE_TO_LANGSMITH: "true"`: Enables tracing for this project. Remove or set to `false` to disable tracing.
-- `CC_LANGSMITH_API_KEY`: Your LangSmith API key.
-- `CC_LANGSMITH_PROJECT`: The selected agent environment's `tracer_session_name`.
-- (optional) `CC_LANGSMITH_METADATA`: JSON object of custom metadata to attach to all runs (e.g., PR URL, author).
-- (optional) `CC_LANGSMITH_DEBUG: "true"`: Enables detailed debug logging. Remove or set to `false` to disable debug logging.
-
-To get set up, create or edit [Claude Code's project settings file](https://code.claude.com/docs/en/settings#:~:text=Project%20settings%20are%20saved%20in%20your%20project%20directory%3A). Create a `.claude/settings.local.json` in your project directory and populate it as follows:
+To use an API key instead, add it to `~/.claude/langsmith.json`:
 
 ```json
-{
-  "env": {
-    "TRACE_TO_LANGSMITH": "true",
-    "CC_LANGSMITH_API_KEY": "<LangSmith API key>",
-    "CC_LANGSMITH_PROJECT": "<environment-tracer-session-name>"
-  }
-}
+{ "enabled": true, "api_key": "lsv2_pt_...", "agent_id": "shared-claude" }
 ```
 
-<Note> Alternatively, to enable tracing to LangSmith for all Claude Code sessions, you can add the previous JSON to your [global Claude Code settings.json](https://code.claude.com/docs/en/settings#:~:text=User%20settings%20are%20defined%20in%20~/.claude/settings.json%20and%20apply%20to%20all%20projects.) file. </Note>
+If more than one credential is set, the plugin uses the first one it finds:
 
-**Option 2: Shell environment variables**
+1. The plugin's own key from `api_key` or `CC_LANGSMITH_API_KEY`.
+2. Your `langsmith auth login` sign-in.
+3. A generic `LANGSMITH_API_KEY` from your environment.
 
-Run the following commands in your shell or add them to your shell configuration file (`~/.zshrc`, `~/.bashrc`, or `~/.bash_profile`):
+Tracing stops when your sign-in expires or your key is rejected, and turns from that gap are never uploaded. Claude Code reminds you in the chat until you fix it. Admins can also [require a working sign-in](#require-a-working-sign-in) for every prompt.
 
-```bash
-export TRACE_TO_LANGSMITH="true"
-export CC_LANGSMITH_API_KEY="<LangSmith API key>"
-export CC_LANGSMITH_PROJECT="<environment-tracer-session-name>"
-```
+## Turn on tracing
 
-## Verify setup
-
-Traces appear in the selected agent environment in [LangSmith](https://smith.langchain.com) after Claude Code responds. If you interrupt a run while it is in progress, the plugin will only flush that run when you send the next message or end the session.
-
-In LangSmith, you'll find:
-
-- Each message to Claude Code appears as a trace.
-- All turns from the same Claude Code session are grouped using a shared `thread_id`, which you can view in the **Threads** tab for that environment.
-
-## Custom metadata
-
-Set the `CC_LANGSMITH_METADATA` environment variable to a JSON object to attach custom metadata to all traced runs. This is useful for tagging traces with contextual information such as PR URLs, authors, or environment names.
-
-<Tabs>
-
-<Tab title="Settings file (recommended)">
+Tracing is off until you turn it on in `~/.claude/langsmith.json`, unless your admin already turned it on with a [managed file](#lock-settings). Send traces to an [agent](/langsmith/log-traces-to-agent#send-traces-to-an-agent) with `agent_id`:
 
 ```json
-{
-  "env": {
-    "TRACE_TO_LANGSMITH": "true",
-    "CC_LANGSMITH_API_KEY": "<LangSmith API key>",
-    "CC_LANGSMITH_PROJECT": "<environment-tracer-session-name>",
-    "CC_LANGSMITH_METADATA": "{\"author\":\"jane\",\"environment\":\"development\"}"
-  }
-}
+{ "enabled": true, "agent_id": "shared-claude" }
 ```
 
-</Tab>
-
-<Tab title="Shell environment variable">
-
-```bash
-export CC_LANGSMITH_METADATA='{"author":"jane","environment":"development"}'
-```
-
-</Tab>
-
-</Tabs>
-
-The metadata keys and values will appear on all runs in LangSmith, which you can use to filter and search traces.
-
-## Mute a thread
-
-Muting suppresses a thread's input and output content in traces without disabling tracing. Muting is off by default unless you [set a default](#set-a-default-mute-configuration).
-
-With tracing enabled, run these plugin commands inside Claude Code. Neither command takes arguments:
-
-- `/langsmith-tracing:mute`: Omit this thread's input and output content from later traces.
-- `/langsmith-tracing:unmute`: Restore full tracing for later turns in this thread.
-
-Both commands apply from the next turn, so the current turn is unchanged. A turn's mode is fixed when the turn starts, and its subagents inherit that mode.
-
-Muted runs keep their normal nesting, names, timing, status, model and tool identity, and token usage. Inputs and outputs are replaced with a system notice. Muted mode also omits raw errors, identity and repository attribution, custom metadata, SDK runtime metadata, and replica metadata overrides. Muting is independent of secret redaction.
-
-### Set a default mute configuration
-
-To start threads in metadata-only mode without running a command in each one, set `CC_LANGSMITH_DEFAULT_MUTED` to `"true"`:
-
-<Tabs>
-
-<Tab title="Settings file (recommended)">
+Or send them to a project with `project`:
 
 ```json
-{
-  "env": {
-    "TRACE_TO_LANGSMITH": "true",
-    "CC_LANGSMITH_API_KEY": "<LangSmith API key>",
-    "CC_LANGSMITH_PROJECT": "<environment-tracer-session-name>",
-    "CC_LANGSMITH_DEFAULT_MUTED": "true"
-  }
-}
+{ "enabled": true, "project": "shared-claude" }
 ```
 
-</Tab>
+Use either one. If you set both, `agent_id` wins.
 
-<Tab title="Shell environment variable">
+<Warning>
+A project can override these settings with `<project>/.claude/langsmith.json` or `<project>/langsmith-plugins.json`. A cloned repository can use them to turn tracing on and send your conversations to someone else's server. Before you trust a repository, review those files along with `.claude/settings.json` and `.claude/settings.local.json`.
+</Warning>
 
-```bash
-export CC_LANGSMITH_DEFAULT_MUTED="true"
-```
+Send a message and open your agent or project in [LangSmith](https://smith.langchain.com). Run `/langsmith-tracing:trace` to get a link to the current conversation's trace.
 
-</Tab>
+## Deploy to your organization
 
-</Tabs>
+Admins can install the plugin for everyone and control how it traces from one place.
 
-Set the variable to `"false"` to return to the unmuted default. The comparison is case-insensitive, and any other value mutes, including an empty string.
+### Install for everyone
 
-The plugin also reads a `defaultMuted` boolean from its own configuration files, in this order: `.claude/langsmith.json` and `langsmith-plugins.json` in the project directory, then `~/.claude/langsmith.json` and `~/.langsmith-plugins.json`. The environment variable takes precedence over all four.
+Use Claude Code's managed settings to install the plugin on every machine. For the setup, see [Manage Claude Code plugins for your organization](https://code.claude.com/docs/en/plugins/org).
 
-Thread preferences are sticky. The plugin saves each explicit mute or unmute to a privacy file, `~/.claude/state/langsmith_state.privacy.json` by default, and a saved thread preference wins over the configured default in both directions. Deleting the privacy file removes every thread override and returns each thread to the configured default.
+### Lock settings
+
+<CodingAgentManagedSettings />
+
+### Require a working sign-in
+
+<CodingAgentStrictAuth />
+
+<Warning>
+Strict auth also blocks non-interactive runs such as `claude -p` in CI. Leave it off for automated runs unless a failed sign-in should stop the job.
+</Warning>
+
+## Hide a conversation
+
+Run `/langsmith-tracing:mute` inside Claude Code to keep a conversation's content out of LangSmith, and `/langsmith-tracing:unmute` to turn it back on. The confirmation appears as a prompt blocked by a hook, because that is how Claude Code shows a plugin's reply. To mute every conversation by default, set `defaultMuted` to `true`.
 
 ## Secret redaction
 
-The plugin redacts detected secrets from run inputs, outputs, errors, and metadata before uploading them to LangSmith. Redaction is on by default.
-
 <CodingAgentSecretRedaction />
 
-Redaction targets credential values, not identity. The `anthropic_user_id` and `local_username` metadata that the plugin attaches is unaffected. To omit content and attribution instead of scrubbing credentials out of it, [mute the thread](#mute-a-thread).
+To turn redaction off or add your own patterns, see the [plugin settings](https://github.com/langchain-ai/langsmith-claude-code-plugins#settings).
 
-### Turn redaction off
+## Settings
 
-Set `CC_LANGSMITH_REDACT` to `false`, `0`, `no`, or `off`. The comparison is case-insensitive, and any other value leaves redaction on.
+Each setting has a config file key and an environment variable. The environment variable wins when both are set.
 
-```bash
-export CC_LANGSMITH_REDACT="false"
-```
+| Config key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | `TRACE_TO_LANGSMITH` | `false` | Turns tracing on. |
+| `api_key` | `CC_LANGSMITH_API_KEY` | none | LangSmith API key. Not needed if you sign in with the CLI. |
+| `project` | `CC_LANGSMITH_PROJECT` | `claude-code` | Project the traces go to. Use this or `agent_id`. |
+| `agent_id` | `LANGSMITH_AGENT_ID` | none | Agent the traces go to. Wins over `project` if both are set. |
+| `api_url` | `LANGSMITH_ENDPOINT` | `https://api.smith.langchain.com` | LangSmith server to send to. |
 
-### Redact additional patterns
+For every setting, see the [plugin settings](https://github.com/langchain-ai/langsmith-claude-code-plugins#settings).
 
-Set `CC_LANGSMITH_REDACT_EXTRA` to a JSON array of `{ "pattern": ..., "replace": ... }` rules. Each `pattern` is a regular expression string, applied globally and case-sensitively. `replace` is optional and falls back to `[redacted]`.
+## Other examples
 
-```json
-{
-  "env": {
-    "CC_LANGSMITH_REDACT_EXTRA": "[{\"pattern\":\"ACME-[A-Z0-9]{16}\",\"replace\":\"[REDACTED_ACME_KEY]\"}]"
-  }
-}
-```
+The plugin's [Advanced configuration](https://github.com/langchain-ai/langsmith-claude-code-plugins/blob/main/ADVANCED.md) guide has worked examples for:
 
-Extra rules run after the built-in ones. The plugin skips a rule with an invalid regular expression, logs an error, and uploads the turn with the remaining rules applied.
-
-Both settings also read from the plugin configuration files described in [Set a default mute configuration](#set-a-default-mute-configuration), as the `redact` and `redact_extra_rules` keys:
-
-```json
-{
-  "redact": true,
-  "redact_extra_rules": [{ "pattern": "ACME-[A-Z0-9]{16}", "replace": "[REDACTED_ACME_KEY]" }]
-}
-```
-
-The environment variables take precedence over all four files. A file behaves more strictly than the environment variable. One rule with an invalid regular expression discards every setting in that file, not only that rule.
-
-Because a project-level `.claude/langsmith.json` can set `redact` to `false`, review that file before enabling tracing in a repository you do not control.
-
-## Usage with GitHub Actions
-
-You can use this plugin with [`anthropics/claude-code-action`](https://github.com/anthropics/claude-code-action) to trace Claude Code runs in CI. Add the following to your workflow:
-
-```yaml
-- uses: anthropics/claude-code-action@v1
-  env:
-    TRACE_TO_LANGSMITH: "true"
-    CC_LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
-    CC_LANGSMITH_PROJECT: "<environment-tracer-session-name>"
-    CC_LANGSMITH_METADATA: |
-      {
-        "pr_url": "${{ github.event.pull_request.html_url || '' }}",
-        "pr_number": "${{ github.event.pull_request.number || '' }}",
-        "pr_author": "${{ github.event.pull_request.user.login || '' }}",
-        "repository": "${{ github.repository }}",
-        "commit_sha": "${{ github.sha }}",
-        "trigger": "${{ github.event_name }}"
-      }
-  with:
-    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-    github_token: ${{ secrets.GITHUB_TOKEN }}
-    plugin_marketplaces: |
-      https://github.com/langchain-ai/langsmith-claude-code-plugins.git
-    plugins: |
-      langsmith-tracing@langsmith-claude-code-plugins
-    prompt: |
-      Your prompt here
-```
-
-Make sure to add `LANGSMITH_API_KEY` and `ANTHROPIC_API_KEY` as [repository secrets](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions).
-
-This lets you correlate traces back to specific PRs, commits, and authors in LangSmith.
-
-## Nesting traces under an existing run
-
-You can also set an environment variable named `CC_LANGSMITH_PARENT_DOTTED_ORDER` to nest all Claude Code traces as children of an existing LangSmith run. This is useful when Claude Code is invoked programmatically as part of a larger traced workflow.
-
-**Python**
-
-```python
-import subprocess
-from langsmith import traceable, get_current_run_tree
-
-
-os.environ["LANGSMITH_TRACING"] = "true"
-os.environ["LANGSMITH_API_KEY"] = "<LangSmith API key>"
-os.environ["LANGSMITH_PROJECT"] = "claude-code"
-
-@traceable
-def run_claude(prompt: str):
-    run_tree = get_current_run_tree()
-    subprocess.run(
-        ["claude", "-p", prompt],
-        env={
-            **os.environ,
-            "TRACE_TO_LANGSMITH": "true",
-            "CC_LANGSMITH_API_KEY": "<LangSmith API key>",
-            "CC_LANGSMITH_PROJECT": "claude-code",
-            "CC_LANGSMITH_PARENT_DOTTED_ORDER": run_tree.dotted_order,
-        },
-    )
-```
-
-**TypeScript**
-
-```ts
-import { traceable, getCurrentRunTree } from "langsmith/traceable";
-import { execSync } from "node:child_process";
-
-process.env.LANGSMITH_TRACING = "true";
-process.env.LANGSMITH_API_KEY = "<LangSmith API key>";
-process.env.LANGSMITH_PROJECT = "claude-code";
-
-const runClaude = traceable(
-  async (prompt: string) => {
-    const runTree = getCurrentRunTree();
-    const pluginDir = new URL(".", import.meta.url).pathname;
-    const res = execSync(`claude -p "${prompt}" --plugin-dir '${pluginDir}'`, {
-      env: {
-        ...process.env,
-        TRACE_TO_LANGSMITH: "true",
-        CC_LANGSMITH_API_KEY: "<LangSmith API key>",
-        CC_LANGSMITH_PROJECT: "claude-code",
-        CC_LANGSMITH_PARENT_DOTTED_ORDER: runTree.dotted_order,
-      },
-    });
-    return res.toString();
-  },
-  { name: "run_claude" },
-);
-```
-
-The resulting trace hierarchy looks like:
-
-```
-Your outer run (chain)
-└── Claude Code Turn (chain)
-    ├── Claude (llm)
-    ├── Read (tool)
-    └── Claude (llm)
-```
-
-## Trace to multiple destinations (replicas)
-
-You can trace to multiple agent environments or workspaces simultaneously using the `CC_LANGSMITH_RUNS_ENDPOINTS` environment variable. Set `CC_LANGSMITH_RUNS_ENDPOINTS` to a JSON array of replica configurations. This overrides other client settings.
-
-Tracing to multiple [replicas](/langsmith/trace-replicas) is useful for:
-
-- Sending traces to both Production and Staging environments.
-- Tracing to multiple workspaces with different API keys.
-- Adding extra metadata to specific replica destinations.
-
-Each replica object supports the following fields:
-
-| Field | Required | Description |
-| --- | --- | --- |
-| `apiUrl` | Yes | LangSmith API URL (typically `https://api.smith.langchain.com`) |
-| `apiKey` | Yes | API key for the destination [workspace](/langsmith/administration-overview#workspaces) |
-| `projectName` | Yes | Destination agent environment's `tracer_session_name` |
-| `updates` | No | Optional metadata/fields to override on the replicated runs |
-
-There are two ways to set the `CC_LANGSMITH_RUNS_ENDPOINTS` environment variable:
-
-<Tabs>
-
-<Tab title="Settings file (recommended)">
-
-In your local `.claude/settings.local.json` or global `~/.claude/settings.json`:
-
-```json
-{
-  "env": {
-    "TRACE_TO_LANGSMITH": "true",
-    "CC_LANGSMITH_RUNS_ENDPOINTS": "[{\"apiUrl\":\"https://api.smith.langchain.com\",\"apiKey\":\"ls__key_workspace_a\",\"projectName\":\"<production-tracer-session-name>\"},{\"apiUrl\":\"https://api.smith.langchain.com\",\"apiKey\":\"ls__key_workspace_b\",\"projectName\":\"<staging-tracer-session-name>\",\"updates\":{\"metadata\":{\"environment\":\"staging\"}}}]"
-  }
-}
-```
-
-<Tip>
-To generate the escaped JSON string, use:
-
-```bash
-echo '[{"apiUrl":"...","apiKey":"...","projectName":"..."}]' | jq -cR .
-```
-</Tip>
-
-</Tab>
-
-<Tab title="Shell environment variable">
-
-**Option 2: Shell environment variable**
-
-Add to your `~/.zshrc`, `~/.bashrc`, or `~/.bash_profile`:
-
-```bash
-export CC_LANGSMITH_RUNS_ENDPOINTS='[{"apiUrl":"https://api.smith.langchain.com","apiKey":"ls__key_workspace_a","projectName":"<production-tracer-session-name>"},{"apiUrl":"https://api.smith.langchain.com","apiKey":"ls__key_workspace_b","projectName":"<staging-tracer-session-name>","updates":{"metadata":{"environment":"staging"}}}]'
-```
-
-</Tab>
-
-</Tabs>
+- [Setting variables in Claude Code's settings](https://github.com/langchain-ai/langsmith-claude-code-plugins/blob/main/ADVANCED.md#set-variables-in-claude-codes-settings)
+- [Adding custom metadata](https://github.com/langchain-ai/langsmith-claude-code-plugins/blob/main/ADVANCED.md#add-custom-metadata)
+- [Muting every conversation by default](https://github.com/langchain-ai/langsmith-claude-code-plugins/blob/main/ADVANCED.md#mute-every-conversation-by-default)
+- [Redacting extra patterns](https://github.com/langchain-ai/langsmith-claude-code-plugins/blob/main/ADVANCED.md#redact-extra-patterns)
+- [Sending the same trace to two places](https://github.com/langchain-ai/langsmith-claude-code-plugins/blob/main/ADVANCED.md#send-the-same-trace-to-two-places)
+- [Tracing a Claude Code run in CI](https://github.com/langchain-ai/langsmith-claude-code-plugins/blob/main/ADVANCED.md#trace-a-claude-code-run-in-ci)
+- [Nesting traces under a run you already trace](https://github.com/langchain-ai/langsmith-claude-code-plugins/blob/main/ADVANCED.md#nest-traces-under-a-run-you-already-trace) in Python and TypeScript
 
 ## Troubleshooting
 
-### No traces appearing in LangSmith
+- **No traces**: Check that the plugin is enabled in `/plugin` and that tracing is on.
+- **Tracing is paused**: Run `langsmith auth login` again or replace the rejected API key.
+- **Still stuck**: Set `CC_LANGSMITH_DEBUG=true` and check `~/.claude/state/hook.log`.
 
-1. **Check the hook is running**:
-   ```bash
-   tail -f ~/.claude/state/hook.log
-   ```
-   You should see log entries after each Claude response.
-
-2. **Verify environment variables**:
-   - Check that `TRACE_TO_LANGSMITH="true"` in your project's `.claude/settings.local.json`.
-   - Verify your Personal Access Token (PAT) is correct (starts with `lsv2_pt_`).
-   - Ensure the agent exists and the configured destination matches its environment's `tracer_session_name`.
-
-3. **Enable debug mode** to see detailed API activity:
-   ```json
-   {
-     "env": {
-       "CC_LANGSMITH_DEBUG": "true"
-     }
-   }
-   ```
-   Then check logs for API calls and HTTP status codes.
-
-### Subagent runs do not appear after user interruption
-Subagents are only traced upon completion. This means if you interrupt a conversation turn in the middle of a subagent run, the subagent's child runs will not be traced.
-
-### Managing log file size
-
-The hook logs all activity to `~/.claude/state/hook.log`. With debug mode enabled, this file can grow large:
-
-```bash
-# View log file size
-ls -lh ~/.claude/state/hook.log
-
-# Clear logs if needed
-> ~/.claude/state/hook.log
-```
-
-## Migrating from the manual stop hook
-
-If you were using the previous version of tracing Claude Code with LangSmith, you will need to remove `~/.claude/hooks/stop_hook.sh` and remove the reference to the hook from any previous `settings.local.json` or `settings.json` files you added it to previously, then follow the [plugin installation instructions](#getting-started).
-
-## Source code
-
-The plugin is open-source under the MIT license and is available in [this GitHub repo](https://github.com/langchain-ai/langsmith-claude-code-plugins).
+For more fixes, see [When nothing shows up](https://github.com/langchain-ai/langsmith-claude-code-plugins#when-nothing-shows-up).

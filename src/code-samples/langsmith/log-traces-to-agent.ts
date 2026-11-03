@@ -4,7 +4,7 @@ import { traceable } from "langsmith/traceable";
 
 const handleOrder = traceable(
   async (orderId: string) => ({ orderId, status: "charged" }),
-  { name: "handle_order", address: new AgentAddress("checkout", "production") },
+  { name: "handle_order", address: new AgentAddress("checkout", "local") },
 );
 // :snippet-end:
 

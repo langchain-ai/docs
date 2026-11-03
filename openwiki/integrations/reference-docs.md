@@ -1,7 +1,7 @@
 ---
 type: integration boundary
-title: API Reference and OpenAPI Surfaces
-description: Separates the externally generated SDK API reference from this repository's Mintlify OpenAPI sections. Explains OpenAPI input ownership, refresh and deployment lifecycles, validation boundaries, and safe authoring rules.
+title: Reference Documentation Boundaries
+description: Distinguishes externally generated SDK reference documentation from Mintlify OpenAPI endpoint documentation, and explains ownership, refresh, validation, and issue-routing responsibilities.
 tags: [api-reference, openapi, cross-references, mintlify, langsmith]
 sources:
   - id: openwiki-source-759309714d08144a07e1b2e0
@@ -40,13 +40,13 @@ sources:
     resource: repo://tests/unit_tests/test_check_cross_refs.py
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-23T08:20:30.474Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-03T08:13:57.434Z" }
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-23T08:20:30.474Z
+    at: 2026-11-03T08:13:57.434Z
 ---
 
-# API Reference and OpenAPI Surfaces
+# Reference Documentation Boundaries
 
 This repository builds the authored documentation site at `docs.langchain.com`. It **does not build** [reference.langchain.com](https://reference.langchain.com/python/): generated API reference for LangChain, LangGraph, LangSmith, and integration packages is built and deployed elsewhere, with separate [Python](https://reference.langchain.com/python/) and [JavaScript/TypeScript](https://reference.langchain.com/javascript/) sites.
 
@@ -140,7 +140,7 @@ Do **not** hand-edit `src/langsmith/langsmith-platform-openapi.json`. The refres
 uv run python scripts/process_langsmith_openapi.py --write
 ```
 
-By default, the processor fetches `https://api.smith.langchain.com/openapi.json`. Network fetching accepts only the allow-listed `api.smith.langchain.com` host and uses a 30-second timeout. `--input` supplies controlled local input for reproduction or policy work; `--output` selects a destination; without `--write`, processed JSON goes to standard output.
+By default, the processor fetches `https://api.smith.langchain.com/openapi.json`. Network fetching accepts only the allow-listed `api.smith.langchain.com` host and uses a 30-second timeout. `--input` supplies controlled local input for reproduction or policy work. `--output` selects a destination, but the processor writes there only with `--write`; otherwise, it prints processed JSON to standard output.
 
 The processor curates the upstream specification for public Mintlify documentation. It hides configured Fleet, product-feedback, internal, infrastructure, metrics, health, and path-selected operations; assigns human-readable tag groups and group order; and normalizes operation titles. Visible non-sandbox v2 operations receive `(v2)` labels. Existing Beta and v2 markers are removed before normalized markers are reapplied, so repeated processing is idempotent.
 
@@ -170,5 +170,6 @@ Change this repository for an authored marker, scoped map entry, preprocessor or
 
 - [Source Map](/openwiki/architecture/source-map.md) — repository ownership and generated-source boundaries.
 - [Mintlify Integration](/openwiki/integrations/mintlify.md) — deployment, previews, hosted artifacts, and rendered-site checks.
+- [Adding Pages](/openwiki/operations/adding-pages.md) — authoring, navigation, generated-input, and validation boundaries for page changes.
 - [Test Overview](/openwiki/testing/test-overview.md) — test layers and focused validation.
 - [LangSmith OpenAPI Refresh](/openwiki/workflows/langsmith-openapi-refresh.md) — processor policy and refresh-PR lifecycle.

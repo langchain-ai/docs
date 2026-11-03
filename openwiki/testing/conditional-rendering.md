@@ -1,11 +1,11 @@
 ---
 type: testing guide
 title: Conditional Rendering Tests
-description: Test build-time selection of Python and JavaScript Markdown branches, scoped autolinks, and language-specific page and snippet artifacts. Covers preprocessing order and focused suites for conditional content and link transformations.
+description: Test the validated :::python and :::js preprocessing contract, including literal escaped markers, compact closers, diagnostics, and language-specific build artifacts. Use focused fence tests for structural failures and builder tests for emitted output.
 tags: [testing, conditional-rendering, markdown-preprocessing, language-versioning]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-20T08:20:37.912Z
+    at: 2026-11-03T08:13:57.434Z
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
@@ -17,28 +17,20 @@ sources:
     resource: repo://pipeline/preprocessors/markdown_preprocessor.py
   - id: openwiki-source-3ae8d89866d72418f1bdab6b
     resource: repo://pipeline/preprocessors/utm_links.py
-  - id: openwiki-source-f9f449ee32cba8a0afe3e645
-    resource: repo://pipeline/tools/lexer.py
-  - id: openwiki-source-a210b0c642944a7ad93f3b40
-    resource: repo://pipeline/tools/parser.py
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-  - id: openwiki-source-2ecfcd33b729fccd843ab705
-    resource: repo://tests/unit_tests/test_handle_auto_links.py
-  - id: openwiki-source-2f15ccdb144af3cca87e162b
-    resource: repo://tests/unit_tests/test_lexer.py
-  - id: openwiki-source-5255204fc494ae04cd6ba685
-    resource: repo://tests/unit_tests/test_utm_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-20T08:20:37.912Z" }
+  - id: openwiki-source-f260e53bc2ed7f10cc38d28f
+    resource: repo://tests/unit_tests/test_conditional_fences.py
+generated: { by: "openwiki/0.4.3", at: "2026-11-03T08:13:57.434Z" }
 ---
 
 # Conditional Rendering Tests
 
-Conditional rendering makes one Markdown or MDX source produce target-specific documentation. The contract is observable only after preprocessing and, for a route or snippet change, after the builder writes its artifacts. Test both targets rather than inferring behavior from a source directory name.
+Conditional rendering lets one Markdown or MDX source produce Python and JavaScript variants. The test contract has two levels: the preprocessor validates conditional-fence structure and selects branch content; the builder applies that preprocessor while producing language-specific artifacts. Test both targets and assert both inclusion and exclusion—finding the selected text alone does not detect leakage from the other branch.
 
-## Core output invariant
+## Core selection invariant
 
-Use shared text and a closed branch for each supported target:
+Use complete, sibling blocks for the two supported target keys:
 
 ```markdown
 Shared introduction.
@@ -48,54 +40,46 @@ Python only.
 :::
 
 :::js
-TypeScript only.
+JavaScript only.
 :::
 ```
 
-For the `python` target, shared text and `Python only.` remain, both fences disappear, and `TypeScript only.` is absent. For `js`, the symmetric result applies. This positive-and-negative pair is the fundamental rendering assertion: checking only that the selected string exists does not catch leakage of the other branch.
-
-Only `python` and `js` are valid renderer targets. At the `preprocess_markdown()` boundary, an omitted target is read from `TARGET_LANGUAGE` and falls back to `python`; the target also becomes the default autolink scope unless the caller supplies `default_scope`. An invalid target fails with `ValueError`.
+For target `python`, shared text and `Python only.` remain, while both markers and `JavaScript only.` are absent. For `js`, the inverse applies. `_apply_conditional_rendering()` accepts only these target values; another target raises `ValueError`.
 
 ```mermaid
 flowchart TD
     Source["Markdown or MDX source"] --> Links["Resolve scoped autolinks"]
     Links --> Cta["Decorate CTA links"]
-    Cta --> Render["Select conditional blocks"]
-    Render --> Python["Python artifact"]
-    Render --> JavaScript["JavaScript artifact"]
+    Cta --> Validate["Validate conditional fences"]
+    Validate --> Render["Select supported branch"]
+    Render --> Python["Python output"]
+    Render --> JavaScript["JavaScript output"]
+    Validate --> Failure["ValueError"]
 ```
 
-This shows the preprocessor order and the two possible rendered artifacts.
+This shows the preprocessor order: validation and selection are the final stages, and invalid conditional structure stops rendering.
 
-Autolinks and CTA decoration therefore see the original branches before final branch selection. Test an `@[reference]` in a branch at this boundary when a failure might be caused by scope rather than by rendering.
+`preprocess_markdown()` derives an omitted target from `TARGET_LANGUAGE`, defaulting to `python`; its default autolink scope is the chosen target. Autolink resolution and CTA decoration run before fence validation and branch selection. Consequently, a branch-local reference or eligible CTA is transformed before the nonmatching branch is discarded. The ordinary backtick/tilde fence protection in those line-oriented earlier stages does **not** protect the final validator or renderer.
 
-## Scoped references and ordinary code fences
+## Structural validation is part of the contract
 
-`replace_autolinks()` scans one line at a time with one current scope. An unescaped line containing `:::language` selects that scope; a bare `:::` restores `default_scope`. Therefore, a reference in a JavaScript branch is resolved against the JavaScript map even when a later Python render removes that branch. A missing mapping is left as authored, so a removed branch does not prove that its source reference was valid.
+Before applying its whole-document substitution, `_apply_conditional_rendering()` calls `_validate_conditional_fences()`. The validator scans lines, tracking one open conditional block. It raises `ValueError` beginning `Broken conditional fences:` for each of these conditions:
 
-Backtick and tilde code fences protect the autolink and CTA line scanners. A line beginning with at least three backticks or tildes toggles their code-fence state; while active, neither replacements nor conditional-scope changes occur. `test_mixed_conditional_and_code_fences()` proves that `:::js` inside a normal code block cannot change an enclosing Python scope and that its autolink remains literal. `test_unclosed_code_block_suppresses_remaining()` establishes the corresponding failure boundary: an unclosed normal code fence suppresses autolink replacement for the rest of the input.
+- an opening marker occurs while a block is open; the diagnostic names its line and the original opening line;
+- a `:::` closer occurs without an open block; or
+- the input ends with a block still open.
 
-Run the focused scanner suite with:
+The focused `tests/unit_tests/test_conditional_fences.py` suite pins a successful pair of Python and JavaScript blocks and each of those failures. Match the relevant diagnostic fragment and line number, not just the exception type, when extending the structural contract.
 
-```bash
-make test TEST_FILE=tests/unit_tests/test_handle_auto_links.py
-```
+### Compact closers and adjacency
 
-### CTA link transformations
+A closer need not be a line containing only `:::`. Validation accepts text after the closer, and it treats a compact sequence such as `::::::js` as a close followed immediately by a new `:::js` opening. `test_compact_closers_pass()` verifies both forms: a table row can follow `::: | shared |`, and the compact sequence can end a Python branch and begin a JavaScript branch. The JavaScript render retains the shared row and JavaScript text but not the Python text.
 
-The CTA stage targets Markdown links to `https://smith.langchain.com` only when their path is the root or `/agents` (with or without a trailing slash). It appends the docs CTA UTM fields while preserving an existing query and an optional Markdown title; functional paths such as `/settings`, other domains, and fenced code remain untouched. Its `utm_content` is derived from the source path. When a conditional-content change includes one of these links, run the dedicated suite as well:
+This permissiveness is intentional because the renderer's close expression also accepts text after its marker. Keep compact-closer coverage if changing either the validation patterns or rendering pattern; otherwise valid source can fail validation or validation can approve source that renders differently.
 
-```bash
-make test TEST_FILE=tests/unit_tests/test_utm_links.py
-```
+### Escaped syntax examples
 
-This isolates CTA classification and code-fence behavior from conditional selection. Add a builder-level fixture only if the change also depends on the generated artifact or a route rewrite.
-
-### Code fences do not protect the final renderer
-
-Do not transfer the scanner guarantee to conditional rendering. `_apply_conditional_rendering()` is a whole-document regular-expression substitution with no normal-code-fence state. A complete `:::python ... :::` or `:::js ... :::` sequence inside a triple-backtick example can still be selected or removed by the last preprocessing step. Add a full-preprocessor case when changing this behavior.
-
-Syntax examples that must survive preprocessing must escape both markers:
+Escape both markers when documentation must show conditional syntax literally:
 
 ```markdown
 \:::python
@@ -103,72 +87,47 @@ Literal conditional syntax.
 \:::
 ```
 
-The matcher excludes an opening or closing marker immediately preceded by `\`. After it completes substitutions, the renderer removes the backslash from every `\:::` sequence. Assert that escaped opening and closing markers remain literal and that their output no longer contains the escape backslashes.
+Escaped markers do not match the validator's unescaped line patterns and are not eligible for conditional substitution. After rendering, the final unescape pass removes the backslash before every `:::` marker, so the output displays literal `:::python` and `:::`. `test_escaped_fences_are_ignored()` establishes that validation does not reject an escaped pair; a full-preprocessor assertion should additionally verify the unescaped literal output.
 
-## Regex boundaries worth pinning
+### Rendering boundaries
 
-The renderer recognizes a complete block whose opening label is a word-character sequence, then decides whether the label is one of the two supported targets. It is not a structural Markdown parser. Keep narrow unit-level expectations for these behaviors when modifying the pattern:
+The renderer is not a structural Markdown parser. Its substitution matches a complete, non-escaped `:::<word>` opening plus a later eligible non-escaped close, preserves only matching `python` or `js` content, and removes a nonmatching supported block without normalizing blank lines. A complete block with a different word label is returned unchanged by the rendering replacement, but it must still satisfy the structural validator.
 
-- A complete block with an unsupported label remains unchanged.
-- An opening marker without an eligible close remains unchanged because it does not match the substitution.
-- Conditional blocks cannot nest: the first eligible non-escaped closing marker ends the current regex match.
-- Indentation is not a safe rejection or nesting invariant. The pattern captures opening indentation and references it before the close, but it is not line-start anchored and permits whitespace at the close.
-- Removing a nonmatching branch substitutes an empty string; do not expect blank-line normalization.
+Do not rely on regular Markdown code fences to shield conditional-looking text: fence state exists in the autolink and CTA scanners, whereas validation and conditional selection scan the whole input without that state. Escape markers in a code sample if they must remain inert. Nested conditional blocks are invalid input, rather than a first-close rendering convention; validation rejects the second opening before regex rendering begins.
 
-Place a regular fenced code sample *inside* the selected conditional branch when the sample differs by target:
+## Prove generated artifacts when the change crosses the builder boundary
 
-````markdown
-:::python
-```python
-print("Python only")
+`DocumentationBuilder.build_all()` clears the build directory, then builds `oss/python` with target `python` and `oss/javascript` with target `js`. `_process_markdown_content()` runs `preprocess_markdown()` first, then rewrites targeted snippet imports, OSS routes, and Managed Deep Agents routes in that order. Use a direct conditional-fence test for parser/validator behavior; add a builder fixture when the change also affects generated paths, imports, or the placement of target output.
+
+`test_build_all_creates_managed_deep_agents_language_routes()` is the relevant artifact-level model. It creates a shared snippet containing both branch types, calls `build_all()`, and reads the generated Python and JavaScript snippet copies. The test asserts each copy retains its matching branch and excludes the other, while also checking language-specific snippet imports and rewritten Managed Deep Agents and OSS routes in the pages.
+
+Shared Markdown snippets have an independent output path: the builder preprocesses each for both targets and writes `build/snippets/python/` and `build/snippets/javascript/`; it also writes a Python-targeted unprefixed copy for unversioned consumers. When a page imports a conditional snippet, inspect both the scoped import and both generated snippet artifacts.
+
+## Focused commands and regression checklist
+
+Run the validator-focused suite after changes to conditional syntax, diagnostics, escaping, or compact closers:
+
+```bash
+make test TEST_FILE=tests/unit_tests/test_conditional_fences.py
 ```
-:::
 
-:::js
-```typescript
-console.log("TypeScript only");
-```
-:::
-````
-
-### Lexer tests are a separate contract
-
-`tests/unit_tests/test_lexer.py` verifies the parser pipeline's tokenization: `:::python` and `:::js` become conditional-open tokens, bare `:::` becomes a close token, and indentation and whitespace before a close are retained in token metadata. The lexer is consumed by `pipeline.tools.parser`, not by `preprocess_markdown()` or `DocumentationBuilder`. These tests protect recognition for the parser/converter path; they do **not** establish language-specific build output. Use rendering and builder tests for the latter.
-
-## Prove emitted artifacts at the builder boundary
-
-`DocumentationBuilder.build_all()` clears `build/`, builds ordinary OSS documentation once for `python` and once for `js`, and writes them under `build/oss/python/` and `build/oss/javascript/`. `_process_markdown_content()` preprocesses content first, then rewrites targeted snippet imports, OSS routes, and Managed Deep Agents routes in that order. A branch test at this boundary should read both files and assert matching content, absent opposite content, and any language-specific rewritten paths.
-
-Shared Markdown snippets take their own two-target path. `_process_snippet_markdown_file()` preprocesses every shared snippet for Python and JavaScript, writes the copies below `build/snippets/python/` and `build/snippets/javascript/`, and also writes a Python-targeted default copy at the unprefixed snippet path for unversioned consumers. A page that imports such a snippet needs both the scoped import assertion and assertions on the selected contents of the imported artifact.
-
-`test_build_all_creates_managed_deep_agents_language_routes()` is the artifact-level model. It creates a snippet with both branches, calls `build_all()`, then verifies each emitted language-specific snippet contains only its branch. It also checks the target-specific Managed Deep Agents route, OSS route, and snippet import rewrites. Run the builder suite with:
+Run the builder suite when output selection interacts with snippets, routes, or imports:
 
 ```bash
 make test TEST_FILE=tests/unit_tests/test_builder.py
 ```
 
-Use a direct preprocessor test for a regex edge case, then add the smallest `build_all()` fixture that reads both outputs for a change affecting snippets, imports, routes, or build placement. `make test` runs pytest with network sockets disabled except Unix sockets.
+`make test` uses pytest with network sockets disabled except Unix sockets. For an end-to-end documentation artifact check, `make build` installs Node dependencies and invokes `pipeline build` through `PYTHONPATH=$(CURDIR) uv run pipeline build`.
 
-For a clean end-to-end artifact check:
-
-```bash
-make build
-```
-
-The build target installs Node dependencies and runs `pipeline build` through `PYTHONPATH=$(CURDIR) uv run pipeline build`.
-
-## Regression checklist
-
-1. Render the same fixture for `python` and `js`; assert shared content, retained matching content, and absent nonmatching content in each result.
-2. If a branch contains `@[references]`, assert the branch scope is used before selection. Include a conditional-looking line in a normal code fence when changing the autolink scanner.
-3. If a branch contains a LangSmith CTA, run `test_utm_links.py` and assert only an eligible non-code link receives UTM parameters.
-4. Exercise escaped opening and closing markers through the full preprocessor and assert literal unescaped markers in output.
-5. When changing the conditional regex, pin unsupported labels, missing closes, first-close behavior, whitespace behavior, and a complete marker pair inside a normal code fence.
-6. For a page or snippet consumer, call `build_all()` and inspect both generated language artifacts plus the target-specific imports and routes.
+1. Render the same balanced fixture for `python` and `js`; assert shared content, retained matching content, absent nonmatching content, and removed fences.
+2. Pin every malformed case introduced by a syntax change: nested open, stray close, and never-closed block. Assert the diagnostic's relevant line information.
+3. Retain escaped-marker coverage and assert literal, unescaped output at the full-preprocessor boundary.
+4. Retain compact closer coverage for a closer with trailing text and for close-plus-open adjacency.
+5. If the change reaches build output, call `build_all()` and inspect both language-specific artifacts, including rewritten imports or routes when relevant.
 
 ## See also
 
 - [Markdown preprocessing pipeline](/openwiki/concepts/preprocessing.md)
 - [Language versioning strategy](/openwiki/concepts/versioning.md)
 - [Builder tests](/openwiki/testing/builder-tests.md)
-- [Changing versioned content](/openwiki/workflows/versioned-content.md)
+- [Testing overview](/openwiki/testing/test-overview.md)
