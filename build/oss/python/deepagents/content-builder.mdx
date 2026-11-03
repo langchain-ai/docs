@@ -1,0 +1,398 @@
+---
+title: Build a content builder agent
+sidebarTitle: Content Builder
+description: Build a content writing agent with brand voice, skills, subagents, and image generation using Managed Deep Agents or the Deep Agents SDK
+---
+
+import ContentBuilderToolsPy from '/snippets/python/code-samples/content-builder-tools-py.mdx';
+import ContentBuilderCreateAgentPy from '/snippets/python/code-samples/content-builder-create-agent-py.mdx';
+import ContentBuilderEntryPointPy from '/snippets/python/code-samples/content-builder-entry-point-py.mdx';
+import ContentBuilderToolsJs from '/snippets/python/code-samples/content-builder-tools-js.mdx';
+import ContentBuilderCreateAgentJs from '/snippets/python/code-samples/content-builder-create-agent-js.mdx';
+import ContentBuilderEntryPointJs from '/snippets/python/code-samples/content-builder-entry-point-js.mdx';
+import ContentBuilderBrandVoice from '/snippets/python/code-samples/content-builder-brand-voice.mdx';
+import ContentBuilderSkillBlogPost from '/snippets/python/code-samples/content-builder-skill-blog-post.mdx';
+import ContentBuilderSkillSocialMedia from '/snippets/python/code-samples/content-builder-skill-social-media.mdx';
+import ContentBuilderSubagentsYaml from '/snippets/python/code-samples/content-builder-subagents-yaml.mdx';
+import ContentBuilderMdaToolsPy from '/snippets/python/code-samples/content-builder-mda-tools-py.mdx';
+import ContentBuilderMdaToolsJs from '/snippets/python/code-samples/content-builder-mda-tools-js.mdx';
+import ContentBuilderMdaAgentPy from '/snippets/python/code-samples/content-builder-mda-agent-py.mdx';
+import ContentBuilderMdaAgentJs from '/snippets/python/code-samples/content-builder-mda-agent-js.mdx';
+import ManagedDeepAgentsPublicBetaNote from '/snippets/python/langsmith/managed-deep-agents-public-beta-note.mdx';
+import ManagedDeepAgentsPrerequisites from '/snippets/python/langsmith/managed-deep-agents-prerequisites.mdx';
+
+## Overview
+
+This guide shows how to build a content writing agent with [Deep Agents](/oss/python/deepagents). The agent loads brand voice and skills, delegates research to a subagent, drafts blog or social content, and generates companion images.
+
+The agent you build will:
+
+1. Load voice and workflow rules from brand instructions and skill folders
+1. Delegate web research to a specialized subagent with `web_search`
+1. Draft blog or social content following the loaded skill
+1. Generate cover or social images with Gemini and save files under the project directory
+
+For the full runnable SDK project, see the [content-builder-agent](https://github.com/langchain-ai/deepagents/tree/main/examples/content-builder-agent) example.
+
+### Key concepts
+
+This tutorial covers:
+
+- Brand instructions ([instructions](/langsmith/python/managed-deep-agents-instructions) on Managed Deep Agents, or [memory](/oss/python/deepagents/memory) files on the SDK) for always-on voice and research rules
+- [Skills](/oss/python/deepagents/skills) for blog and social playbooks
+- [Subagents](/oss/python/deepagents/subagents) for research before writing
+- [Filesystem backends](/oss/python/deepagents/backends) on the SDK path for file read and write
+- Custom [tools](/oss/python/langchain/tools) for search and image generation
+
+## Prerequisites
+
+API keys:
+
+- Anthropic (Claude) or another chat model provider
+- Google (Gemini) for image generation with `gemini-2.5-flash-image`
+- [Tavily](https://www.tavily.com/) for web search (free tier)
+- [LangSmith](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=oss-deepagents-content-builder) for tracing (optional on the SDK path; required for Managed Deep Agents)
+
+Python 3.11 or later.
+
+
+
+
+## Choose your path
+
+Start with [Managed Deep Agents](/langsmith/python/managed-deep-agents-overview) to run production agents without having to manage infrastructure. Alternatively, for maximum flexibility while using the same Deep Agents harness, use the Deep Agents SDK and host agents yourself, or run a custom [LangSmith Deployment](/langsmith/deployment).
+
+<Tabs>
+<Tab title="Managed Deep Agents">
+
+<ManagedDeepAgentsPublicBetaNote />
+
+Managed Deep Agents scaffolds a project and hosts the runtime. Brand voice goes in `instructions.md`, skills stay under `skills/`, and you declare tools and the researcher subagent in code. Image tools write under the project directory during `mda dev`.
+
+### Setup
+
+<ManagedDeepAgentsPrerequisites />
+
+<Steps>
+<Step title="Create the project">
+
+```bash
+uvx --from managed-deepagents mda init content-builder
+cd content-builder
+```
+
+
+
+
+</Step>
+<Step title="Add API keys">
+
+Add chat, image, search, and LangSmith keys to `.env`:
+
+```text .env
+ANTHROPIC_API_KEY=<ANTHROPIC_API_KEY>
+GOOGLE_API_KEY=<GOOGLE_API_KEY>
+TAVILY_API_KEY=<TAVILY_API_KEY>
+LANGSMITH_API_KEY=<LANGSMITH_API_KEY>
+```
+
+`GOOGLE_API_KEY` is required for Gemini image generation even when the chat model is Claude.
+
+<Warning>
+Do not commit the `.env` file into version control. It contains secrets.
+</Warning>
+
+</Step>
+<Step title="Install dependencies">
+
+```bash
+uv add tavily-python google-genai pillow
+```
+
+
+
+
+</Step>
+</Steps>
+
+### Build the agent
+
+<Steps>
+<Step title="Add tools">
+
+Create search and image tools. Markdown research notes use the agent filesystem (`write_file`). Cover and social images are written under the project directory on the host during local `mda dev`.
+
+Create `tools/content.py`:
+
+<ContentBuilderMdaToolsPy />
+
+
+
+
+</Step>
+<Step title="Add brand instructions">
+
+Put always-on brand voice and research requirements in `instructions.md`. Managed Deep Agents loads this file as the main agent system prompt (this is the SDK `AGENTS.md` / `memory=` role, not durable [memory](/langsmith/python/managed-deep-agents-memory)):
+
+<ContentBuilderBrandVoice />
+
+When you deploy, Managed Deep Agents syncs these instructions to [Context Hub](/langsmith/python/managed-deep-agents-context-hub).
+
+</Step>
+<Step title="Add skills">
+
+Create a `skills/` directory. Each skill is a folder with a `SKILL.md`. Managed Deep Agents discovers skills automatically; you do not pass a `skills=` argument.
+
+Create `skills/blog-post/SKILL.md`:
+
+<ContentBuilderSkillBlogPost />
+
+Create `skills/social-media/SKILL.md`:
+
+<ContentBuilderSkillSocialMedia />
+
+</Step>
+<Step title="Create the agent">
+
+Replace the scaffolded agent entry with the full file below. It creates an agent with the image tools and an inline researcher subagent (with `web_search`). Skills and instructions come from the project files.
+
+Replace `agent.py`:
+
+<ContentBuilderMdaAgentPy />
+
+
+
+
+</Step>
+</Steps>
+
+### Run the agent
+
+<Steps>
+<Step title="Run locally">
+
+```bash
+uv sync
+uv run mda dev
+```
+
+
+
+
+`mda dev` opens the agent in LangSmith Studio. Send a prompt such as:
+
+```txt wrap
+Write a blog post about how AI agents are transforming software development
+```
+
+You should see the agent load skills, delegate to `researcher`, write markdown, and call image tools. For more information, see [Develop locally with LangSmith Studio](/langsmith/python/managed-deep-agents-local-development).
+
+</Step>
+<Step title="Deploy (optional)">
+
+```bash
+uv run mda deploy
+```
+
+
+
+
+See [Deploy](/langsmith/python/managed-deep-agents-deploy).
+
+</Step>
+</Steps>
+
+</Tab>
+<Tab title="Deep Agents SDK">
+
+Use the open source SDK when you want to host the agent yourself or run a custom [LangSmith Deployment](/langsmith/deployment). The example keeps behavior in memory files, skills, and subagent definitions, plus a [FilesystemBackend](/oss/python/deepagents/backends).
+
+### Setup
+
+<Steps>
+<Step title="Create project directory">
+
+```bash
+mkdir content-builder-agent
+cd content-builder-agent
+```
+
+</Step>
+<Step title="Install dependencies">
+
+<CodeGroup>
+```bash pip wrap
+pip install deepagents google-genai pillow pyyaml rich tavily-python langchain
+```
+
+```bash uv wrap
+uv init
+uv add deepagents google-genai pillow pyyaml rich tavily-python langchain
+uv sync
+```
+</CodeGroup>
+
+Pin `deepagents` to a supported range in your own project (for example `>=0.3.5,<0.4.0`) to match the upstream example.
+
+</Step>
+<Step title="Set API keys">
+
+```bash
+export ANTHROPIC_API_KEY="your_anthropic_api_key"
+export GOOGLE_API_KEY="your_google_api_key"
+export TAVILY_API_KEY="your_tavily_api_key"           # Optional
+export LANGSMITH_API_KEY="your_langsmith_api_key"     # Optional
+```
+
+</Step>
+</Steps>
+
+
+
+
+### Add configuration files
+
+<Steps>
+<Step title="Add AGENTS.md">
+
+Create `AGENTS.md` in the project root. When you create the agent and pass this file in the [memory](/oss/python/deepagents/memory) parameter, it is loaded into the system prompt so brand voice and research expectations apply to every run:
+
+<ContentBuilderBrandVoice />
+
+To match your own tone, pillars, and formatting rules, update `AGENTS.md`.
+
+</Step>
+<Step title="Add subagents.yaml">
+
+Create `subagents.yaml`. It describes a `researcher` subagent with a Tavily-backed `web_search` tool:
+
+<ContentBuilderSubagentsYaml />
+
+The file is passed when creating the deep agent.
+
+</Step>
+
+
+<Step title="Add skills">
+
+Create a `skills/` directory. Each skill is a folder containing a `SKILL.md` file with YAML frontmatter (`name`, `description`) and instructions.
+
+Create `skills/blog-post/SKILL.md`:
+
+<ContentBuilderSkillBlogPost />
+
+Create `skills/social-media/SKILL.md`:
+
+<ContentBuilderSkillSocialMedia />
+
+They instruct the agent to call the `researcher` subagent first, write markdown under `blogs/`, `linkedin/`, or `tweets/`, and call `generate_cover` or `generate_social_image` for images.
+
+</Step>
+</Steps>
+
+### Build the script
+
+Create `content_writer.py` in the project root. The following sections belong in one file, in order.
+
+
+
+
+<Steps>
+<Step title="Add tools">
+
+The researcher subagent uses Tavily search. Blog and social workflows use Gemini image generation. When creating the agent later, `load_subagents` reads `subagents.yaml` and resolves tool names to these functions.
+
+<ContentBuilderToolsPy />
+
+
+
+
+</Step>
+<Step title="Create the agent">
+
+When creating the deep agent with [create_deep_agent](https://reference.langchain.com/python/deepagents/graph/create_deep_agent), pass memory paths, the skills directory, image tools, subagents from YAML, and a [FilesystemBackend](/oss/python/deepagents/backends) rooted at the example directory so paths like `./AGENTS.md` and `./skills/` resolve correctly.
+
+<ContentBuilderCreateAgentPy />
+
+
+
+
+</Step>
+<Step title="Add an entry point">
+
+Invoke the agent with a user message to verify the agent is working:
+
+<ContentBuilderEntryPointPy />
+
+
+
+
+</Step>
+</Steps>
+
+### Run the agent
+
+<Warning>
+The filesystem backend can read, write, and delete files under `root_dir`. Run only in a dedicated directory and review generated content before publishing.
+</Warning>
+
+From the project directory you can invoke the agent without passing an argument or by passing the prompt as an argument:
+
+<CodeGroup>
+```bash Default wrap
+python content_writer.py
+```
+
+```bash With prompt wrap
+python content_writer.py Write a blog post about prompt engineering
+```
+</CodeGroup>
+
+
+
+
+With `LANGSMITH_API_KEY` set, you can inspect runs in [LangSmith](/langsmith/observability).
+
+### Output
+
+
+
+On success, generated artifacts are written under a system temporary directory (on macOS and Linux, typically under `/tmp/`), not next to your project files.
+
+
+```text
+blogs/
+└── prompt-engineering/
+    ├── post.md
+    └── hero.png
+research/
+└── prompt-engineering.md
+```
+
+Paths follow the skill instructions in `SKILL.md`.
+
+### Full code
+
+Browse the complete [content-builder-agent example](https://github.com/langchain-ai/deepagents/tree/main/examples/content-builder-agent) on GitHub, including the Rich-based streaming UI.
+
+</Tab>
+</Tabs>
+
+## Next steps
+
+- Edit brand rules in `instructions.md` (Managed Deep Agents) or `AGENTS.md` (SDK)
+- Add skills under `skills/<name>/SKILL.md` for new content types
+- On the SDK path, add subagents in `subagents.yaml` and register tools in `load_subagents`; on Managed Deep Agents, edit the inline `researcher` in `agent.py` or `agent.ts`
+- Read [Subagents](/oss/python/deepagents/subagents), [Skills](/oss/python/deepagents/skills), and [Customization](/oss/python/deepagents/customization)
+- [Managed Deep Agents](/langsmith/python/managed-deep-agents-overview) and [Move from Deep Agents](/langsmith/python/managed-deep-agents-migrate)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/deepagents/content-builder.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
