@@ -177,7 +177,7 @@ Copy the following prompt into your coding agent. It finds every SDK method and 
 >
 Help me migrate this codebase off deprecated LangSmith API endpoints. On LangSmith Cloud they stop working on January 31, 2027. On self-hosted they stop working when ClickHouse is turned off, at the latest with the upgrade to v0.19. Calls may go through a LangSmith SDK (Python, TypeScript/JavaScript, Go or Java) or straight over HTTP; handle all of them.
 
-Work in 4 phases, in order. Stop only where a phase says STOP, and wait for my go.
+Work in 4 phases, in order. Stop only where a phase says STOP, and wait for my go. Do not edit any file before I approve phase 2.
 
 **Phase 1: explain (short)**
 
@@ -192,13 +192,14 @@ Source of truth: fetch https://docs.langchain.com/langsmith/smithdb-sdk-migratio
 - Querying the runs of an experiment on a dataset: https://docs.langchain.com/langsmith/smithdb-sdk-migration-experiments.md
 - Feedback, annotation queues, and shared runs: https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback.md
 
-Then STOP and wait for my go.
+Then continue straight to phase 2.
 
 **Phase 2: inventory and plan (read only)**
 
 Search the whole repo (app code, scripts, notebooks, tests, CI and infra config, in every language it uses) for every SDK method and endpoint in the "Affected methods and endpoints" section of the guide's overview page:
 
 - SDK calls in Python, TypeScript/JavaScript, Go and Java/Kotlin. In Go and Java some replacements keep a similar name under a new service, so match on the guide's before/after, not on the name alone.
+- Feedback creation (`create_feedback`, `createFeedback`, `Feedback.New`, `feedback().create()`): the method and endpoint keep their name, but the project (session) ID is now required. List every call that does not pass it.
 - Direct HTTP calls to the deprecated paths, with or without `/api/v1`, in raw or built URLs and any HTTP client (requests, httpx, fetch, axios, net/http, OkHttp, curl).
 
 Keep raw HTTP calls as raw HTTP calls: change only the path, request body, response handling and pagination, following the guide's cURL examples. Note each raw call that would be simpler with an SDK method, for phase 4.
@@ -207,9 +208,15 @@ Show a table: file:line, language, SDK or HTTP, current call, replacement, risk.
 
 Flag as risk: code reading `total_tokens`, `total_cost`, `prompt_*` or `completion_*` from a runs query (no longer includes child runs; use the traces query and its aggregates), catches of old exception classes, parameters the guide does not cover.
 
-List per language: current version, latest stable, guide minimum. Then STOP and wait for my approval.
+List per language: current version, latest stable, guide minimum.
 
-**Phase 3: migrate (after approval)**
+If you find more than about 20 call sites, propose splitting the work into separate PRs by area (one folder, service or package each), with the call-site count per PR, and ask which one to do first. Phase 3 then covers only the PR I pick.
+
+Number every decision you need from me (1, 2, 3...), each with your proposed answer, so I can approve or reject them one by one (for example "1 yes, 2 no, 3 yes").
+
+Then STOP and wait for my approval.
+
+**Phase 3: migrate (after approval, only the scope and decisions I approved)**
 
 1. Upgrade each LangSmith SDK in use to its latest stable release (and its lockfile: uv.lock/poetry.lock, package-lock/pnpm-lock/yarn.lock, go.sum, Gradle/Maven). The guide's minimum is only the floor. If the latest release breaks something unrelated to this migration, use the newest version that works, never below the minimum, and say why in the PR.
 2. Migrate each call site from the table. The v2 queries take `project_ids` (UUIDs), not a project name. Resolve a plain project by name as the guide shows. If the project is an agent environment, an experiment or the workspace evaluators, propose resolving it with https://docs.langchain.com/langsmith/resolve-an-agent, and flag that it is beta and needs a newer SDK and server.
