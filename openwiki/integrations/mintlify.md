@@ -3,6 +3,9 @@ type: integration
 title: Mintlify Integration
 description: Mintlify renders the generated documentation tree and creates selected deployment-time artifacts for docs.langchain.com. This page covers configuration, build handoff, route behavior, previews, validation, OpenAPI, and hosted checks.
 tags: [mintlify, documentation, navigation, openapi, deployment]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-11-03T08:13:57.434Z
 sources:
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
@@ -38,10 +41,7 @@ sources:
     resource: repo://src/docs.json
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-11-02T08:15:40.431Z
-generated: { by: "openwiki/0.4.3", at: "2026-11-02T08:15:40.431Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-03T08:13:57.434Z" }
 ---
 
 # Mintlify Integration
@@ -87,7 +87,7 @@ make broken-links-with-anchors
 make check-openapi
 ```
 
-The link targets rebuild first and run `mint broken-links` in `build/` with redirect checking; the second also checks anchors. The filter drops entire standalone `snippets/` report sections because their language-prefixed links work only after import, deployment-time OpenAPI paths, and known legacy relative-path reports. Anchor mode additionally drops only the exact SmithDB migration anchors and the exact `n_jobs_per_worker` anchor. The target fails only when filtered output retains an indented link entry. Unit tests protect these exclusions, and the reusable CI workflow uses Node 22 to run the anchor check and Agent Server OpenAPI validation.
+The link targets rebuild first and run `mint broken-links` in `build/` with redirect checking; the second also checks anchors. The filter drops entire standalone `snippets/` report sections because their language-prefixed links work only after import, deployment-time OpenAPI paths, and known legacy relative-path reports. Anchor mode additionally drops only the exact SmithDB migration anchors and the exact `n_jobs_per_worker` anchor. The target fails only when filtered output retains an indented link entry. Unit tests protect these exclusions. The reusable CI workflow pins Mint CLI `4.2.1181` on Node 22 and runs the anchor check, MDX validation, and the Agent Server OpenAPI validation.
 
 `make check-openapi` builds and runs `mint openapi-check langsmith/agent-server-openapi.json`. It validates the Agent Server input only—not the remote Control Plane input or committed LangSmith REST input.
 
@@ -111,11 +111,13 @@ The LangSmith REST specification refreshes daily. Its processor only fetches the
 
 ## Preview and production handoff
 
-For a same-repository pull request, the preview workflow validates branch syntax and length, runs `make build`, and creates a collision-resistant `preview-` branch from a sanitized source prefix, timestamp, and commit SHA. It force-adds the generated `build/` tree, pushes the branch, and then invokes Mintlify's preview API after verifying the API key, project ID, and branch name. A non-JSON response, or an error without a status ID or preview URL, fails the API step. Fork PRs do not create previews because the job needs repository write access. On close, cleanup finds matching preview branches and refuses to delete a name without the `preview-` prefix.
+For a same-repository pull request, the preview workflow validates branch syntax and length, runs `make build`, and derives `preview-<slug>-<hash>` from the source branch: the slug is normalized and capped, and the hash distinguishes names with the same truncated slug. The branch is therefore deterministic for a source branch, keeping its Mintlify preview URL stable across pushes. The workflow force-adds the generated `build/` tree; it creates the preview branch initially and updates it with `--force-with-lease` thereafter, so a concurrent move is rejected rather than silently overwritten. It then invokes Mintlify's preview API after verifying the API key, project ID, and branch name. A non-JSON response, or an error without a status ID or preview URL, fails the API step. Fork PRs do not create previews because the job needs repository write access.
+
+On close, cleanup recomputes and deletes the deterministic branch and also searches for legacy timestamp-style preview names matching the source branch's first six alphanumeric characters. Every deletion is guarded by the `preview-` prefix. Preview branches are generated deployment handoffs, not durable source.
 
 The PR comment can include a site URL and up to five deep links for changed Markdown or MDX files, ranked by diff size. These are **best-effort source-path guesses**, not a build-manifest lookup: it strips `src/` and extensions, converts `index` to its directory, and adds `oss/python/` to an unprefixed OSS path. It excludes paths outside `src/`, non-Markdown files, and files in `code-samples` or `snippets`; it does not consult navigation, generated output, redirects, or the builder's language rules. As a result, the guessed link can be wrong or unlisted for a shared page emitted only for JavaScript, an unversioned OpenWiki or Deep Agents Code page, a language-prefixed Managed Deep Agents page, a redirect, or deployment-generated OpenAPI output. Treat the preview root and the actual built route as authoritative when reviewing those changes.
 
-On pushes to `main` or manual dispatch, the production workflow builds, copies `build/` to `public/build`, and publishes `public` to the `prod` branch. Preview and `prod` branches are deployment handoffs, not authoring locations.
+On pushes to `main` or manual dispatch, the production workflow builds, copies `build/` to `public/build`, and publishes `public` to the `prod` branch. The `prod` branch is a deployment handoff, not an authoring location.
 
 ## Hosted-only `llms.txt`
 
@@ -135,6 +137,6 @@ Mintlify generates `llms.txt` and nested `/_llms/` indexes only on the deployed 
 - [Build system](/openwiki/architecture/build-system.md) — generated-tree lifecycle and ownership.
 - [Versioning](/openwiki/concepts/versioning.md) — language-specific route behavior.
 - [GitHub Actions](/openwiki/integrations/github-actions.md) — automation and branch handoff.
-- [Reference documentation](/openwiki/integrations/reference-docs.md) — API-reference boundaries.
-- [Quickstart](/openwiki/quickstart.md) — local setup.
 - [Test overview](/openwiki/testing/test-overview.md) — validation coverage.
+- [LangSmith OpenAPI refresh](/openwiki/workflows/langsmith-openapi-refresh.md) — managed REST specification updates.
+- [Local development](/openwiki/workflows/local-development.md) — local preview setup.
