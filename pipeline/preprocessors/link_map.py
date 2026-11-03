@@ -502,6 +502,7 @@ LINK_MAPS: list[LinkMap] = [
             # Functional API
             "task": "langgraph/func/task",
             "@task": "langgraph/func/task",
+            "entrypoint": "langgraph/func/entrypoint",
             "@entrypoint": "langgraph/func/entrypoint",
             "entrypoint.final": "langgraph/func/entrypoint/final",
             # Configuration
@@ -700,7 +701,9 @@ LINK_MAPS: list[LinkMap] = [
             "createReactAgent": "langchain-langgraph/prebuilt/createReactAgent",
             "createSupervisor": "langchain-langgraph-supervisor/createSupervisor",
             "entrypoint": "langchain-langgraph/index/entrypoint",
+            "@entrypoint": "langchain-langgraph/index/entrypoint",
             "entrypoint.final": "langchain-langgraph/index/entrypoint/final",
+            "CachePolicy": "langchain-langgraph/index/CachePolicy",
             "get_state_history": "langchain-langgraph/pregel/Pregel/getStateHistory",
             "get_state": "langchain-langgraph/pregel/Pregel/getState",
             "getStateHistory": "langchain-langgraph/pregel/Pregel/getStateHistory",

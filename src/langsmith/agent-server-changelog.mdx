@@ -192,6 +192,8 @@ Latest version: `0.17.0`
 - Add `LANGGRAPH_THREAD_HISTORY_MAX_STATE_BYTES` (off by default) to cap how much thread state one history request returns. When set, history returns the newest state, then stops before the entry that would exceed the limit.
 - GET and POST /threads/{thread_id}/history accept `select` to return only the named fields of each state, including single keys of the state values such as `values.messages`. On Postgres-backed servers, `select` also keeps the server from loading the unselected state.
 - Supports OpenTelemetry SDK 1.45 and Prometheus exporter 0.66. Prometheus metrics now include `otel_scope_*` labels, and resource attributes include `service.instance.id`.
+- Defaults to the Go checkpointer on langgraph >= 0.5; set `PREFER_GRPC_CHECKPOINTER=false` to temporarily restore the Python checkpointer.
+- Add lazy AES key rotation with versioned ciphertext envelopes and legacy-key migration.
 
 #### Fixes
 - Speeds up DeltaChannel reads on Postgres for threads that existed before the channel was added and had `update_state` run under langgraph before 1.2.13.
@@ -208,9 +210,24 @@ Latest version: `0.17.0`
 - Fixes history and state operations failing for factory graphs when using the gRPC checkpointer.
 - Fixes Playwright's browser driver and other subprocesses started from worker threads failing to launch on LangSmith Deployment.
 - Fixes thread history and checkpoint cleanup failing for threads whose first run used `durability="exit"` with a DeltaChannel.
+- JS graphs now pass each write's task path to the checkpointer, which DeltaChannel writes from parallel tasks need to replay in the order they ran.
+- Fixes thread state reading back parallel writes to a delta channel in a different order than the run produced them, for writes made after this upgrade on Postgres and MongoDB checkpointers.
+- Fixes run cancellation on the local dev server: rolling back a running background run no longer leaves that run's messages in the thread, and cancelling runs by status or deleting an assistant now actually stops runs that are executing.
+- Fixes thread and run event streams closing as if they had finished when reading events fails; the stream now ends with an `error` frame.
+- Fixed a bug where `cache_set()`'s `ttl` argument was ignored on the in-memory (non-Postgres/gRPC) cache backend; entries now expire at the requested ttl instead of the fixed 24-hour default.
+- Removes the outdated "running in lite mode" warning that Agent Servers logged when validating with a LangSmith API key instead of a license key. These servers already have every feature.
+- Fixes paused threads showing as `idle` after a run is cancelled or rolled back before its first checkpoint. A cancelled run now reports why in `cancel_reason`, instead of the thread's `error`.
+- Fixes crons created with top-level `context` stopping after their first run on the in-memory runtime.
+- Fixes `GET /threads/{thread_id}/storage` returning 500 when core-server owns all database access.
+- Fixed Postgres connections closed server-side (e.g. by idle_session_timeout) being reused from the pool.
+- Fixes AES-encrypted JSON data losing number formatting and precision (for example, `4.0` stored as `4`).
+- Fixed `langgraph dev` losing data: thread state and long-term store items are now saved to `.langgraph_api/` every 10 seconds as intended, and a restart no longer deletes every thread when saved state references a class from the graph file or one that was moved or renamed (an unreadable file is kept as a `.bak` copy).
 
 #### Security
 - Store operations from graphs now reject namespace labels that are empty or contain `.`, as the HTTP store API does, so such a label can no longer read or change another namespace's items.
+
+#### General Notes
+- Removes the built-in Python Postgres store; the Go store is now always used and `LANGGRAPH_STORE_BACKEND` is ignored. Custom stores and the in-memory runtime are unaffected.
 
 <Accordion title="v0.17 releases">
 <Update label="2026-10-29" tags={["agent-server"]}>
@@ -293,11 +310,27 @@ Latest version: `0.17.0`
 
 ### New Features
 - Adds `exclude_metadata` to thread search and count to exclude threads whose metadata matches any given object
+- Defaults to the Go checkpointer on langgraph >= 0.5; set `PREFER_GRPC_CHECKPOINTER=false` to temporarily restore the Python checkpointer.
+- Add lazy AES key rotation with versioned ciphertext envelopes and legacy-key migration.
 
 ### Fixes
 - Speeds up DeltaChannel reads on Postgres for threads that existed before the channel was added and had `update_state` run under langgraph before 1.2.13.
 - Fixes a prune that could delete DeltaChannel history needed by later reads on threads where `update_state` ran under langgraph before 1.2.13.
+- JS graphs now pass each write's task path to the checkpointer, which DeltaChannel writes from parallel tasks need to replay in the order they ran.
+- Fixes thread state reading back parallel writes to a delta channel in a different order than the run produced them, for writes made after this upgrade on Postgres and MongoDB checkpointers.
+- Fixes run cancellation on the local dev server: rolling back a running background run no longer leaves that run's messages in the thread, and cancelling runs by status or deleting an assistant now actually stops runs that are executing.
+- Fixes thread and run event streams closing as if they had finished when reading events fails; the stream now ends with an `error` frame.
+- Fixed a bug where `cache_set()`'s `ttl` argument was ignored on the in-memory (non-Postgres/gRPC) cache backend; entries now expire at the requested ttl instead of the fixed 24-hour default.
+- Removes the outdated "running in lite mode" warning that Agent Servers logged when validating with a LangSmith API key instead of a license key. These servers already have every feature.
+- Fixes paused threads showing as `idle` after a run is cancelled or rolled back before its first checkpoint. A cancelled run now reports why in `cancel_reason`, instead of the thread's `error`.
+- Fixes crons created with top-level `context` stopping after their first run on the in-memory runtime.
+- Fixes `GET /threads/{thread_id}/storage` returning 500 when core-server owns all database access.
+- Fixed Postgres connections closed server-side (e.g. by idle_session_timeout) being reused from the pool.
+- Fixes AES-encrypted JSON data losing number formatting and precision (for example, `4.0` stored as `4`).
+- Fixed `langgraph dev` losing data: thread state and long-term store items are now saved to `.langgraph_api/` every 10 seconds as intended, and a restart no longer deletes every thread when saved state references a class from the graph file or one that was moved or renamed (an unreadable file is kept as a `.bak` copy).
 
+### General Notes
+- Removes the built-in Python Postgres store; the Go store is now always used and `LANGGRAPH_STORE_BACKEND` is ignored. Custom stores and the in-memory runtime are unaffected.
 </Update>
 </Accordion>
 
