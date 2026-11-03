@@ -73,14 +73,9 @@ going further.
 
 ## Step 2. Run Vale
 
-In the main checkout, `make lint_prose FILES="<files>"` is enough. Vale's binary
-is gitignored, so a fresh worktree does not have it and `make lint_prose` there
-fails with `.bin/vale: No such file or directory`. From a worktree, call the main
-checkout's binary by path so it picks up `.vale.ini`:
-
-```bash
-cd <worktree> && <main-checkout>/.bin/vale --glob='!**/node_modules/**' <files>
-```
+Run `make lint_prose FILES="<files>"`, in the main checkout or a worktree alike.
+The target installs the Vale version pinned in `.mise.toml` into `.bin/vale` when
+it is missing, so a fresh worktree needs no setup beyond network access.
 
 Vale is deterministic and CI blocks on it, so its output is not a judgment call.
 Report every violation with its file and line. If invoked with `--fix`, correct
@@ -91,7 +86,7 @@ difference rather than the raw count:
 
 ```bash
 git show origin/main:<file> > <scratch>/base-<name>
-<main-checkout>/.bin/vale <scratch>/base-<name>
+make lint_prose FILES="<scratch>/base-<name>"
 ```
 
 A file that already failed on `main` carries pre-existing debt the author did
@@ -220,8 +215,15 @@ Only when the diff triggers them:
 - New internal links: root-relative, and free of `/python/` or `/javascript/`?
 - A new code block: does it carry a real language tag, and are imports sorted?
 - A page or heading that changed URL: is there a redirect?
+- A new JSX tag: is it a Mintlify built-in or imported on the page? Look up a
+  tag new to `src/` on [Mintlify components](https://mintlify.com/docs/components).
+  An invented tag renders as nothing, so report it as blocking.
+- A PR target: does the description reference its Linear issue with
+  `Closes DOC-N` or `Refs DOC-N`, when one exists? Does it end with a plain AI-disclosure
+  sentence and carry no `Generated with` badge? `check-pr-ai-attribution`
+  fails a PR with a badge.
 
-The `add-docs-page` skill covers all five in detail. Point at it rather than
+The `add-docs-page` skill covers the page mechanics in detail. Point at it rather than
 restating the procedure in a finding.
 
 ## Step 6. Report

@@ -200,6 +200,10 @@ AWS IAM role authentication avoids storing an expiring ECR authorization token i
 The **AWS IAM role** authentication method appears only when your LangSmith deployment supports it. If the option is unavailable, use username and password authentication.
 </Note>
 
+<Note>
+**BYOC deployments:** AWS IAM role authentication works on [BYOC](/langsmith/byoc) AWS data planes with no extra setup. Follow the steps below. If your data plane uses [bring your own IAM](/langsmith/byoc-byoiam), apply the latest version of the [`byoiam` Terraform module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/aws/byoiam) first. It grants the workload role permission to assume your ECR role.
+</Note>
+
 To register an ECR role:
 
 1. In LangSmith, open **Sandboxes > Registries**, select **Register Private Registry**, and enter your registry URL in the form `<aws-account-id>.dkr.ecr.<aws-region>.amazonaws.com`.
@@ -225,6 +229,20 @@ To register an ECR role:
   ]
 }
 ```
+
+<Note>
+**BYOC deployments:** BYOC data planes pass session tags when they assume the role, so the trust policy must also allow `sts:TagSession`. Add it as a separate statement without the `sts:ExternalId` condition. Otherwise AWS denies the role assumption:
+
+```json
+{
+  "Effect": "Allow",
+  "Principal": {
+    "AWS": "<principal-arn-shown-in-langsmith>"
+  },
+  "Action": "sts:TagSession"
+}
+```
+</Note>
 
 4. Give the role permission to discover and pull the required ECR images. The following policy grants access to every repository in one AWS account and region. Replace the placeholders, or narrow the repository resource to the repositories LangSmith can use:
 
@@ -254,7 +272,7 @@ To register an ECR role:
 }
 ```
 
-5. For hosted LangSmith, add the `LangSmithSandboxECR=true` tag to the IAM role.
+5. For hosted LangSmith and BYOC, add the `LangSmithSandboxECR=true` tag to the IAM role.
 6. Return to LangSmith, enter the role ARN in **AWS role ARN**, then register the private registry.
 
 LangSmith assumes the role separately for repository discovery, tag discovery, and each snapshot build attempt. It obtains a fresh ECR authorization token for delayed jobs and retries, and does not persist temporary AWS credentials or generated ECR tokens.

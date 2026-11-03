@@ -32,7 +32,7 @@ This guide will help you getting started with OpenAI [chat models](/oss/langchai
 
 ### Integration details
 
-| Class | Package | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/openai) | Downloads | Version |
+| Class | Package | Serializable | [PY support](/oss/python/integrations/chat/openai) | Downloads | Version |
 | :--- | :--- | :---: |  :---: | :---: | :---: |
 | [`ChatOpenAI`](https://reference.langchain.com/javascript/langchain-openai/ChatOpenAI) | [`@langchain/openai`](https://www.npmjs.com/package/@langchain/openai) | ✅ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/openai?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/openai?style=flat-square&label=%20&) |
 
@@ -489,7 +489,7 @@ weatherToolResult.tool_calls;
 
 ## Structured output
 
-We can also pass `strict: true` to the [`.withStructuredOutput()`](https://js.langchain.com/docs/how_to/structured_output/#the-.withstructuredoutput-method). Here's an example:
+We can also pass `strict: true` to the [`.withStructuredOutput()`](/oss/langchain/structured-output). Here's an example:
 
 ```typescript
 import { ChatOpenAI } from "@langchain/openai";
@@ -840,6 +840,76 @@ await reasoningModelNullableSchema.invoke([{
 ```javascript
 { color: null }
 ```
+
+### Changing reasoning effort mid-conversation
+
+<Note>
+    `configuration_update` requires `@langchain/openai>=1.5.12`.
+</Note>
+
+Use a [`configuration_update`](https://developers.openai.com/api/docs/guides/reasoning?api-mode=responses#change-reasoning-mid-conversation) content block to change reasoning effort between turns without modifying the request-level `reasoning.effort` parameter — keeping the prompt prefix cacheable. Embed the block directly in a `HumanMessage`:
+
+```typescript
+import { HumanMessage } from "@langchain/core/messages";
+import { ChatOpenAI } from "@langchain/openai";
+
+const llm = new ChatOpenAI({
+  model: "gpt-6-astra",
+  useResponsesApi: true,
+  reasoning: { effort: "low" },
+});
+
+const first = await llm.invoke("Hello");
+
+// Raise reasoning effort from this message onward
+const response = await llm.invoke([
+  "Hello",
+  first,
+  new HumanMessage({
+    content: [
+      { type: "configuration_update", reasoning: { effort: "high" } }, // [!code highlight]
+      { type: "text", text: "How many distinct 5-card poker hands are a full house?" },
+    ],
+  }),
+]);
+```
+
+### Add tools mid-conversation
+
+<Note>
+    `additional_tools` requires `@langchain/openai>=1.6.2`.
+</Note>
+
+Use an [`additional_tools`](https://developers.openai.com/api/docs/guides/tools-tool-search#add-tools-at-a-specific-point-in-the-input) content block to make tools available from a point in the conversation onward. This is useful when your application loads tools outside OpenAI's [tool search](https://developers.openai.com/api/docs/guides/tools-tool-search) flow. Put the block in a @[`SystemMessage`]:
+
+```typescript
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { ChatOpenAI } from "@langchain/openai";
+
+const llm = new ChatOpenAI({ model: "gpt-6-astra", useResponsesApi: true });
+
+const response = await llm.invoke([
+  new HumanMessage("What time is it?"),
+  new SystemMessage({
+    content: [
+      {
+        type: "additional_tools", // [!code highlight]
+        role: "developer", // [!code highlight]
+        tools: [
+          {
+            type: "function",
+            name: "get_time",
+            description: "Get the current time.",
+            parameters: { type: "object", properties: {} },
+          },
+        ],
+      },
+    ],
+  }),
+]);
+```
+
+The block requires the Responses API, so set `useResponsesApi: true`. On Chat Completions, or on a message other than a `SystemMessage`, `ChatOpenAI` throws an error. You can also write the block wrapped in a `non_standard` block, in `content` or `contentBlocks`.
 
 ## Prompt caching
 

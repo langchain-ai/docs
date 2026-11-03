@@ -1,32 +1,19 @@
 ---
 type: validation guide
 title: Testing Overview
-description: A change-oriented map for choosing isolated tests, source and rendered-document checks, generated-file validation, live code-sample execution, and deployed llms.txt coverage. Use it to match a change to its dependency boundary and interpret CI failures accurately.
-tags: [testing, pytest, ci, documentation, code-samples, versioning]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-29T08:22:38.059Z
+description: Select validation by the contract a documentation change affects. Deterministic local checks cover transformations and generated output, while CI-only checks cover credentials, registry lookups, services, and external destinations.
+tags: [testing, validation, ci, documentation, code-samples]
 sources:
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
-  - id: openwiki-source-f35e7c44cc1805709393a581
-    resource: repo://.github/workflows/_lint.yml
-  - id: openwiki-source-4d9cccca7700db7220ec055e
-    resource: repo://.github/workflows/_test.yml
-  - id: openwiki-source-477c95c54c9043bc75d26802
-    resource: repo://.github/workflows/check-llms-urls.yml
   - id: openwiki-source-21617d8a6b2b570989a7c900
     resource: repo://.github/workflows/check-version-claims.yml
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
-  - id: openwiki-source-0976291f8216a4c7151f20a7
-    resource: repo://.github/workflows/refresh-external-versions.yml
-  - id: openwiki-source-751a704f6f25787856371177
-    resource: repo://.github/workflows/test-code-samples-linear.yml
   - id: openwiki-source-97746d8f3662d803e625550e
     resource: repo://.github/workflows/test-code-samples.yml
-  - id: openwiki-source-9c06bd9d7d25770709e07c7c
-    resource: repo://.mise.toml
+  - id: openwiki-source-ded8a20999ec9d794fa86ab9
+    resource: repo://docs-release-watch/tests/test_evidence.py
   - id: openwiki-source-71ee7a4afbd2d6aa7b29f3d1
     resource: repo://htmltest-mint-export.yml
   - id: openwiki-source-012f2c78e3b1446dfc35803f
@@ -37,186 +24,145 @@ sources:
     resource: repo://pyproject.toml
   - id: openwiki-source-0a0a6c8d7a88288e6b6b9b5b
     resource: repo://scripts/check_cross_refs.py
-  - id: openwiki-source-6b3ad04031a04803eb901844
-    resource: repo://scripts/check_external_versions.py
-  - id: openwiki-source-7c3064080adf2cb0048e51fc
-    resource: repo://scripts/check_llms_urls.py
   - id: openwiki-source-99b53585619b83f258314f8b
     resource: repo://scripts/check_version_claims.py
   - id: openwiki-source-2654e40275744504b4ca7e2b
     resource: repo://scripts/code_sample_tracing.py
-  - id: openwiki-source-bd35b3b527f9ad0799d45497
-    resource: repo://scripts/data/external_versions.yaml
+  - id: openwiki-source-fd0cb9d6fca56bf4963559e9
+    resource: repo://scripts/extract_code_snippets.py
   - id: openwiki-source-560bf24db9566b97ee19e383
     resource: repo://scripts/generate_code_snippet_mdx.py
-  - id: openwiki-source-c1655a468cf6a1dff9722eb1
-    resource: repo://scripts/install-vale.sh
+  - id: openwiki-source-d22c99c9d9abf854bbf1a047
+    resource: repo://scripts/generate_egress_ip_tables.py
   - id: openwiki-source-63d8ba810a7c0181c548a307
     resource: repo://scripts/refresh_integration_downloads.py
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
-  - id: openwiki-source-583acf631f9a33a5389a3fde
-    resource: repo://scripts/version_claims_ignore.txt
-  - id: openwiki-source-6a4f3df816b7f7f45b6ac5b1
-    resource: repo://src/code-samples/conftest.py
-  - id: openwiki-source-e0401fc6d5f2a13d30455bd9
-    resource: repo://src/code-samples/package.json
+  - id: openwiki-source-11d4965febd3986495e06a17
+    resource: repo://src/code-samples/langsmith/create-an-agent.py
+  - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
+    resource: repo://src/docs.json
+  - id: openwiki-source-5d310b0d0e3f7a2baf5a473a
+    resource: repo://tests/changelog-navigation.test.js
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-  - id: openwiki-source-a10b62517b8302a8d4cf3b31
-    resource: repo://tests/unit_tests/test_check_external_versions.py
   - id: openwiki-source-607673c5c40214b511f9e0a7
     resource: repo://tests/unit_tests/test_check_version_claims.py
+  - id: openwiki-source-30a490be0964e690a58135e7
+    resource: repo://tests/unit_tests/test_egress_ip_inventory.py
   - id: openwiki-source-b68d7bad2afd9a38e8c331d5
     resource: repo://tests/unit_tests/test_generate_code_snippet_mdx.py
   - id: openwiki-source-71e085db64c5296fd9b80141
     resource: repo://tests/unit_tests/test_otel_endpoints.py
   - id: openwiki-source-7be0fdefc402d868b9f2fdca
     resource: repo://tests/unit_tests/test_refresh_integration_downloads.py
-  - id: openwiki-source-1695beda93a0ca504f038424
-    resource: repo://tests/unit_tests/test_skills.py
-  - id: openwiki-source-1eb6a61d042052ba1402c2eb
-    resource: repo://uv.lock
-generated: { by: "openwiki/0.4.3", at: "2026-09-29T08:22:38.059Z" }
+  - id: openwiki-source-b631fb59f417cefbd356f03e
+    resource: repo://tests/unit_tests/test_test_code_samples.py
+  - id: openwiki-source-98a4de3472710de1bf3ccb4f
+    resource: repo://tests/unit_tests/test_url_stub_noindex.py
+generated: { by: "openwiki/0.4.3", at: "2026-11-03T08:13:57.434Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-11-03T08:13:57.434Z
 ---
 
-## Choose the validation boundary
+## Choose the smallest meaningful boundary
 
-Validation is split by dependency boundary. Start with the narrowest check that can prove the change, then add checks when it affects generated output, remote data, a deployed service, or an executable example. A passing socket-isolated unit test does not prove a registry response, rendered Mintlify output, or a live provider call.
+Each layer proves a different contract. Start with the focused unit test or static check for the code or source convention changed. Add generated-site validation when a change can affect routes, imports, redirects, anchors, navigation, or OpenAPI input. Run credentialed samples only when an example crosses a provider or service boundary. A unit-test pass does not prove a rendered site, a reachable external URL, or a provider integration; a live run does not replace deterministic assertions about a transformation.
 
-| Change | Focused command | What it validates | Boundary |
+| Change | Deterministic local check | CI-only or network-dependent check | Boundary proved |
 | --- | --- | --- | --- |
-| Python pipeline, parser, skill, or checker behavior | `make test TEST_FILE=tests/unit_tests/test_builder.py` | Deterministic contracts in temporary/local fixtures | Isolated unit test |
-| Python environment or dependency change | `uv sync --group test` | The locked test environment can be installed | Local dependency resolution |
-| Prose in a document | `make lint_prose FILES="src/path/page.mdx"` | Vale terminology and style rules | Prose lint |
-| Build, redirect, anchor, or OpenAPI change | `make broken-links-with-anchors` and `make check-openapi` | The generated `build/` tree consumed by Mint | Rendered-document check |
-| Source `@[ref]` mapping | `make check-cross-refs` | References resolve in every applicable build scope | Source structural check |
-| Integration external-document metadata | `uv run python scripts/refresh_integration_downloads.py --check-docs-urls` | `docs_url` values are safe link targets | Deterministic metadata check |
-| Package version claim | `uv run python scripts/check_version_claims.py --files src/path/page.mdx` | A documented release is available from its selected registry | Registry network check |
-| Upstream-mirrored requirement | `uv run python scripts/check_external_versions.py --only <id>` | A registered page value matches its GitHub source | Upstream network check |
-| Runnable example | `make test-code-samples FILES="src/code-samples/..."` | A real program runs with its language environment, credentials, and services | Live sample |
-| Deployed `llms.txt` coverage | `python3 scripts/check_llms_urls.py` | Every deployed sitemap page is reachable from the served index hierarchy | Hosted-site network check |
+| Python pipeline, parser, builder, or generator | Owning `tests/unit_tests/test_*.py`, then `make test` for a wider change | None normally | Fixture-controlled transformation behavior, not remote services. |
+| Authored MDX package floor or pin | `uv run python scripts/check_version_claims.py --files src/path/to/page.mdx` | Changed-document version-claim workflow | The literal `>=` or `==` version was published on its routed registry, not that it is the correct feature floor. |
+| Formatting, types, spelling, or prose style | `make lint`; `make lint_prose FILES="src/..."` | None | Static quality or Vale style, not rendering, factual correctness, or runtime behavior. |
+| `@[Name]` cross-reference and language scope | `make check-cross-refs` | CI repeats it | Source references resolve in applicable scopes, not final route reachability. |
+| Authored route, redirect, navigation, anchor, or Agent Server OpenAPI input | `make broken-links-with-anchors`; `make check-openapi` | Hosted preview when deployment behavior matters | Freshly generated Mint tree, including routes, redirects, and anchors; not a deployed site. |
+| Egress IP inventory or its rendered tables | `uv run python scripts/generate_egress_ip_tables.py --check` | None required | The canonical JSON, its content-derived version, and both marked table blocks agree; a full build additionally proves publication. |
+| OTLP setup prose | `make test TEST_FILE=tests/unit_tests/test_otel_endpoints.py` | None | Documentation syntax and Python exporter endpoint resolution, not trace ingestion by a live workspace. |
+| Snippet markers or generated snippet MDX | Focused generator test, then `make code-snippets` and review the diff | None | Extractor/generator consistency; samples are not executed. |
+| Runnable LangSmith sample | `make test-code-samples FILES="src/code-samples/langsmith/..."` | Same-repository PR or scheduled/manual sample workflow when it needs credentials | Local fixture compatibility or execution against available credentials and services. |
+| Exported static-site external URLs | `make export-htmltest` where Mint export and network access are available | A suitable repeatable environment | External destinations in the exported subset only, not internal routes or fragments. |
 
 ```mermaid
 flowchart TD
-  Change["Change"] --> Unit["Isolated unit tests"]
-  Unit --> Contracts["Local contracts and fixtures"]
-  Change --> Build["Built-document checks"]
-  Build --> Rendered["Mint build, links, anchors, OpenAPI"]
-  Change --> Registry["Registry and upstream checks"]
-  Registry --> Remote["PyPI, npm, GitHub sources"]
-  Change --> Live["Live code samples"]
-  Live --> Services["Providers, credentials, PostgreSQL"]
-  Change --> Hosted["Hosted llms coverage"]
-  Hosted --> Served["Served indexes and sitemap"]
+  Change["Change"] --> Focused["Focused deterministic check"]
+  Focused --> Generated{"Changes generated output"}
+  Generated -->|"yes"| Mint["Build and Mint validation"]
+  Generated -->|"no"| Remote{"Needs registry or service"}
+  Mint --> Remote
+  Remote -->|"yes"| Boundary["Scoped network or credentialed check"]
+  Remote -->|"no"| Review["Review result"]
+  Boundary --> Review
 ```
 
-This flow separates local contracts from generated documents, remote sources, live services, and the deployed site; success at one boundary is not evidence for another.
+*Validation expands from the changed deterministic contract to generated output and then to remote boundaries only when the change requires it.*
 
-## Toolchain and isolated tests
+## Core local gates
 
-The project requires Python `>=3.13.0,<4.0.0`. Local mise selects Python 3.13 and uv 0.9.26, while `pyproject.toml` accepts uv 0.9.26 or newer. Change dependency declarations first, resolve with uv, and commit the resulting `uv.lock` update rather than treating the lockfile as an independent requirements source.
+`make test` runs pytest with Internet sockets disabled while allowing Unix sockets; pytest discovers tests under `tests`, uses automatic asyncio mode, and defaults its asyncio fixture loop scope to a function. Tests that ordinarily make HTTP calls therefore need mocks or local test doubles.
 
-For normal development, use `mise trust && mise install`, then:
+`make lint` runs Ruff formatting and lint checks in diff mode over the configured Python-file scope, `ty check`, and Codespell over `src`, making it a static-quality gate separate from runtime tests and documentation generation. `make lint_prose` installs the configured Vale binary and checks either specified files or `src`, excluding `node_modules` and `src/code-samples`; it is a prose style gate rather than a rendering or factual-correctness check.
 
-```bash
-uv sync --group test
-make test
-make test TEST_FILE=tests/unit_tests/test_builder.py
-```
+The main CI workflow runs reusable test, lint, and documentation-link workflows on pull requests, pushes to `main`, and manual dispatch, and separately runs merge-marker, source cross-reference, integration `docs_url`, and generated-provider-overview checks. The reusable test and lint jobs synchronize the test dependency group; the link job also installs Node 22 and Mint before running the generated-tree checks.
 
-`make test` runs `uv run pytest --disable-socket --allow-unix-socket $(TEST_FILE) -vv`. Pytest uses automatic asyncio mode and function-scoped asyncio fixture loops, with verbose reporting and five slowest-test durations. Unit tests must mock Internet-facing dependencies; Unix sockets remain allowed. A socket violation is a test-boundary failure, not evidence that an external service is down.
+### Version claims are publication checks, not upgrade advice
 
-The reusable test, lint, and documentation-link workflows install the test group with `UV_FROZEN=true`, so CI does not silently refresh a stale lockfile. The reusable test and link workflows also set `UV_NO_SYNC=true`; their explicit `uv sync --group test` step is the controlled installation point.
+The changed-document workflow is a read-only pull-request gate for changes to authored `src/**/*.mdx`, the checker, its ignore file, or its workflow. It finds the merge base, passes changed MDX files to `scripts/check_version_claims.py --files`, and skips Python setup and registry requests if that set is empty. It fails only when a successfully resolved PyPI or npm package does not contain a named version; registry outages and unavailable lookups are unresolved notes rather than false failures.
 
-### Focused local contracts
+The checker routes scoped names to npm and extras to PyPI, then uses the nearest inline language label, `:::python`/`:::js` fences, and language path before defaulting to PyPI. It checks exact pins and truncated series floors, groups duplicate locations, and ignores exact configured exceptions before lookups. Focused tests protect this precedence, safe package-name handling, lookup failure semantics, and PyPI/npm payload parsing. Do not use a successful check as evidence that a feature was introduced at the stated floor.
 
-- **Builder.** `tests/unit_tests/test_builder.py` checks the supported copy-extension set, an empty source tree, and copying a local TSX snippet component to `build/snippets`. Use it when changing copy policy. A full builder run removes and recreates `build/`, emits Python and JavaScript OSS variants plus unversioned content, then copies shared assets and package snippet components. Follow a builder change with a rendered-document check. See [Builder tests](/openwiki/testing/builder-tests.md).
-- **Agent skills.** Skill tests require a matching kebab-case directory/frontmatter identity, supported frontmatter, valid referenced paths and Make targets, and exact catalogues in `README.md` and `AGENTS.md`.
-- **Cross references and endpoint prose.** The cross-reference checker ignores code samples, `node_modules`, fenced code, and escaped references, but shared OSS references must resolve in every build scope. The OpenTelemetry test rejects signal paths in generic `OTEL_EXPORTER_OTLP_ENDPOINT`; Collector-exporter trace URLs belong in `traces_endpoint`.
-- **Integration `docs_url` metadata.** `--check-docs-urls` makes no network calls and writes nothing. It accepts `https://`, `http://`, and a single-leading-slash site-relative path, while rejecting missing values, protocol-relative URLs, and unsafe schemes. Main CI runs this validator as a separate read-only job.
-- **Code-snippet MDX rules.** `tests/unit_tests/test_generate_code_snippet_mdx.py` guards the generated Deep Agents model tabs and language-specific sample invariants without running providers: embeddings and provider-specific chat constructors stay unchanged, TypeScript uses `google:` and camel-case `googleSearch`, Python retains `google_genai:`, and both the declared and locked `@langchain/google` versions must include the required tool-configuration fix. Use these tests when changing code-sample dependencies, model rewriting, or generated CodeGroup behavior.
+## Generated documentation and navigation
 
-Vale has a single canonical pin in `.mise.toml`. `make lint_prose` installs that version through `scripts/install-vale.sh` and excludes `node_modules` and `src/code-samples`; update the mise pin rather than copying a version into a workflow. The installer validates the version, reuses a matching binary where possible, chooses supported Linux/macOS assets, and falls back to `go install` after a release-download failure.
+`DocumentationBuilder.build_all()` reconstructs the generated tree with Python and JavaScript OSS variants, unversioned Deep Agents Code and OpenWiki content, Managed Deep Agents language variants, shared assets, and npm snippet components; its Markdown processing rewrites language-sensitive links and snippet imports before output is written. Focused builder tests protect generated navigation topology by checking language-prefix rewriting, single unversioned OpenWiki output, language-scoped snippet imports, and rejection of source symlinks so build collection cannot copy content outside the source tree.
 
-## Rendered documentation and generated files
+`src/docs.json` is the Mintlify site configuration, including navigation, so changes to its navigation or route configuration require generated-site validation rather than only source-level tests. The builder uses `src/docs.json` navigation routes beneath `oss/python/` and `oss/javascript/` to decide which language copies of shared OSS pages to emit; a route listed in neither language falls back to both copies, and an absent or invalid configuration also falls back to both. Test a navigation edit with the focused builder suite as well as `make broken-links-with-anchors`.
 
-`make build` produces `build/`; Mint link and OpenAPI validation operate on that generated tree, not directly on `src`. `make broken-links-with-anchors` builds, checks anchors and redirects, filters known generated OpenAPI and standalone-snippet noise, and fails if relevant reported links remain. `make broken-links` omits anchor checking. The reusable documentation workflow uses Node 22, caches Mint, runs the anchor/redirect check, then runs `make check-openapi`.
+`make check-cross-refs` validates source `@[ref]` markers by scanning Markdown and MDX under `src`, skipping code fences, escaped references, generated code-sample snippets, and `node_modules`; unfenced shared OSS references must resolve in every applicable language scope. It is narrower than a site build and cannot prove a final route, redirect, fragment, or external destination.
 
-`make export-htmltest` is a separate external-link boundary: it exports Mint documentation, unpacks the export, then runs htmltest. Because the export lacks a complete page set, its configuration disables internal path and internal-hash checks while checking external resources. It limits external HTTP concurrency to four and timeout to 30 seconds. A source or unit check is therefore not a substitute for this rendered/export validation.
+`make broken-links-with-anchors` rebuilds documentation and runs Mint's broken-link checker from `build/` with anchor and redirect checking, while `make check-openapi` rebuilds then checks `langsmith/agent-server-openapi.json`; the reusable documentation workflow runs both on Node 22. `test_url_stub_noindex.py` requires every MDX page with `url:` frontmatter to set `noindex: true` so redirect-only sidebar stubs stay out of Mintlify discovery outputs including `llms.txt` and the sitemap.
 
-The main CI workflow cancels superseded runs for the same workflow/ref and dispatches reusable test, lint, and link jobs on Python 3.13. It also checks conflict markers, source cross-references, safe external integration documentation URLs, and generated output. Its generated-file gate regenerates `src/oss/python/integrations/providers/overview.mdx` and fails on a diff: change `pipeline/tools/partner_pkg_table.py` or `packages.yml`, regenerate, and commit the result. Only the designated automated package-download update PR and the `bypass-auto-check` label bypass that gate.
+## Inventory and endpoint correctness
 
-## Registry and upstream network checks
+The egress IP inventory is a generated-publication contract. `scripts/generate_egress_ip_tables.py` accepts only schema version 1 with a nonempty version and address list; each entry must contain exactly service, cloud, region, and a globally routable IPv4 `/32`. It limits services to the two owning pages, clouds to GCP or AWS, regions to US, EU, or APAC, and rejects duplicate entries. The canonical inventory version is a SHA-256 digest of sorted address data.
 
-`scripts/check_version_claims.py` treats explicit `>=` floors and `==` pins in MDX as published-availability assertions, not compatibility claims. It selects PyPI or npm from scoped syntax, extras, nearby labels, language fences, page context, and a PyPI default. Lookups are concurrent; exact releases must exist, while truncated series must be correctly delimited so `1.1` does not match `1.14`.
+Running the generator normally updates the inventory version and the one delimited generated block in each owning page. `--check` instead reports inventory-version or table drift and fails without writing. The focused suite mutates fixtures to prove invalid entries and duplicate addresses fail, stale JSON or table output is detected, regeneration converges, and a full `DocumentationBuilder` build copies the JSON bytes exactly once to the unversioned `build/langsmith/egress-ip-addresses.json` artifact. Edit the JSON and regenerate tables; do not hand-edit a rendered table.
 
-A timeout, malformed response, private or unsafe input, or unavailable registry lookup is **unresolved**, not confirmation that a version is published or unpublished. `scripts/version_claims_ignore.txt` is an exact-specifier exception mechanism for reviewed sentinel floors and placeholders; prefer correcting documentation to masking a claim. The pull-request workflow uses the merge base to run only for changed `src/**/*.mdx` files and has a 10-minute limit. The Monday full sweep is advisory-only, so an unavailable lookup or yanked release reports findings without failing the schedule.
+OpenTelemetry endpoint tests scan every authored MDX file for two configuration errors: a generic `OTEL_EXPORTER_OTLP_ENDPOINT` must not already include `/v1/traces`, `/v1/metrics`, or `/v1/logs`, and collector exporter YAML must use `traces_endpoint` rather than `endpoint` when its value ends in `/v1/traces`. They also create a real Python OTLP HTTP exporter with a mocked session: `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is used unchanged, while a generic base endpoint gains exactly one `/v1/traces` suffix. This protects endpoint construction and documentation conventions without contacting LangSmith.
 
-External-version synchronization is a distinct equality contract. `scripts/data/external_versions.yaml` allowlists a `src` page, an exactly-once page pattern with a named version capture, and a GitHub file or latest-release source. Validation rejects unsafe configuration before fetching. Check mode fails for drift or unreadable inputs. Write mode replaces only captured version digits and continues past unreadable upstream sources, allowing a review to contain resolvable updates without claiming unavailable sources synchronized. The Monday 08:00 UTC/manual workflow can write and maintains at most one `chore/refresh-external-versions` pull request when `src` has a version-only diff.
+## Generated snippets and runnable samples
 
-## Credentialed live code samples
+`make code-snippets` extracts marked snippets and generates MDX without executing them, whereas `make test-code-samples` executes selected or eligible samples; trace-enabled full runs may regenerate snippet MDX after sample execution. The extractor line-parses supported language markers, strips `:remove:` regions, and writes normalized Bluehawk-compatible extracted files; `CODE_SNIPPET_SOURCES` limits processing to supported files below `src/code-samples` and replaces output only for those selected source stems.
 
-```bash
-make test-code-samples
-make test-code-samples FILES="src/code-samples/langchain/return-a-string.py"
-```
+The snippet-MDX generator expands only routable Python or TypeScript agent model strings into provider CodeGroups, preserving embedding and provider-specific chat model identifiers; focused tests enforce those exclusions, language-specific Google provider syntax, and a compatible resolved `@langchain/google` version. The generated provider overview follows the same ownership rule: CI validates integration `docs_url` metadata with `scripts/refresh_integration_downloads.py --check-docs-urls`; the generator permits HTTP(S) and single-leading-slash site-relative URLs and rejects unsafe schemes, while the generated-file job regenerates and diffs the provider overview rather than accepting manual edits.
 
-The Make target installs the Node environment in `src/code-samples` when its `package.json` exists, then runs the sample runner with the repository on `PYTHONPATH`. The runner accepts Python, TypeScript, Java, Kotlin, Go, and shell files under `src/code-samples`. `FILES` is a space-separated explicit subset; without it, the runner discovers all eligible files except paths in `__pycache__` and `node_modules`.
+The code-sample runner accepts supported executable files beneath `src/code-samples`, runs each language with its corresponding toolchain, retries recognized rate limits and reports exhausted rate limits as skips, while non-rate-limit failures make the command fail. `CODE_SAMPLE_PATHS` restricts both discovered samples and explicit `FILES` to directories below `src/code-samples`; focused tests verify that a CI product leg can receive all modified paths while retaining only its own files and that out-of-tree filters cannot widen execution. Runs default to four workers but serialize known shared-fixture groups. When tracing is enabled, trace collection is locked and failures collecting a trace warn without converting an already successful sample into a suite failure.
 
-Every sample has a default 1,200-second timeout, configurable through `CODE_SAMPLE_TIMEOUT_SECONDS`. Python runs with `uv run python`; TypeScript with `npx tsx`; Go with `go run`; shell with `bash`; Java and Kotlin with JBang on Java 21. Python and JBang run from the repository root, while TypeScript, Go, and shell run from `src/code-samples` so their shared environments resolve.
+The `create-an-agent.py` executable sample directs a real LangSmith `Client` to a loopback HTTP fixture, asserts the create and retrieve requests and returned environment values, and removes fixture-only setup and assertions from extracted snippets; it validates local SDK request/response compatibility rather than a live LangSmith agent integration.
 
-```mermaid
-flowchart TD
-  Select["Select sample files"] --> Execute["Run language command"]
-  Execute --> Outcome{"Process passed"}
-  Outcome -->|"yes"| Tracing{"Tracing enabled"}
-  Tracing -->|"no"| Passed["Passed"]
-  Tracing -->|"yes"| Collect["Collect LangSmith trace"]
-  Collect --> Collected{"Collection succeeded"}
-  Collected -->|"yes"| Passed
-  Collected -->|"no"| Failed["Runner fails"]
-  Outcome -->|"429 rate limit"| Retry["Retry up to three attempts"]
-  Retry --> Skipped["Skipped after retries"]
-  Outcome -->|"other failure"| Failed
-```
+## CI-only sample boundary and exports
 
-This flow is live execution, not a deterministic test. A rate-limit skip is not a successful example execution.
+The code-sample workflow skips fork pull requests because samples can require secrets, runs changed executable samples on same-repository pull requests and all samples on scheduled/manual runs, and provisions provider credentials, language toolchains, and a pgvector PostgreSQL service. It partitions samples into OSS and LangSmith matrix legs, fails when a top-level sample directory has no assigned leg, and limits tracing plus trace-refresh publication to the OSS leg on scheduled or manually dispatched runs.
 
-### Live-sample CI and failure semantics
+Trace-link collection is limited to source files with exactly one valid snippet ID: the runner stamps that ID in `LANGSMITH_DOCS_SNIPPET`, and the collector requires the same metadata on a root run rather than selecting an arbitrary run from the time window. On scheduled or manual code-sample runs, the workflow regenerates snippet MDX only when the run was not cancelled, fewer than 20 samples failed, and trace links changed; it then opens or updates a dedicated trace-refresh pull request containing the trace manifest and generated snippet artifacts.
 
-The code-sample workflow skips fork pull requests because provider secrets are unavailable. Pull requests run changed eligible sample files from the merge-base diff; scheduled monthly and manually dispatched runs execute all samples. It uses 60 minutes for PR runs and 90 minutes for full runs, provisions a `pgvector/pgvector:pg17` service, installs Python/uv, Node 20, Java 21/JBang, and Go, and supplies provider credentials plus `POSTGRES_URI`.
+`make export-htmltest` runs Mint export before htmltest; the export requires a Mint CLI with `mint export`, Node 20 or 22, and an Enterprise plan, while htmltest intentionally checks external URLs only because the export omits many pages. The export htmltest configuration checks external URLs but disables internal paths and hashes because the Mint export is incomplete, so it cannot establish internal navigation or anchor correctness.
 
-For PostgreSQL-backed samples, the local helper honors `POSTGRES_URI` before attempting a pgvector testcontainer, Docker, and a default local connection. Preparation drops shared store and migration tables before setup to prevent stale partial schemas leaking between examples.
+The changelog-navigation Node tests use an in-memory DOM to verify that the self-hosted changelog indexes only visible stable minor releases, preserves excluded headings, coalesces mutation updates, cleans up on page changes, and falls back to an inline index without a sidebar. The release-watch `test_evidence.py` suite uses synthetic payloads and source/page text to test evidence parsing, surgical edit validation, and source-claim matching; it does not exercise remote release, GitHub, or Linear integrations.
 
-A LangSmith-style 429 is retried up to three total attempts with 15-second waits. A sample still rate-limited after those attempts is recorded as skipped and does not cause a nonzero exit; other sample failures do. A green run containing skips therefore says the runner did not observe a failure, not that every skipped sample worked.
+## Failure triage
 
-Scheduled/manual full runs enable `CODE_SAMPLE_TRACING`. After a successful process, trace collection is attempted; a collection failure makes the runner fail even though the sample process passed. Only a single-snippet source file with a qualifying recent agent root run gets a public manifest entry; multi-snippet files are recorded as skipped. Snippet generation adds a `View example trace` card only for a manifest URL. A successful full run and regeneration can open or update `chore/refresh-code-sample-traces`; a separate workflow opens a Linear issue only when a scheduled sample run fails or is cancelled. See [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md).
+- **Version-claim failure:** correct the literal package version or a routing/context error. Treat an unresolved-registry note as missing evidence, not proof that an unpublished version is valid.
+- **Builder, navigation, or Mint failure:** inspect regenerated `build/`, route ownership, redirects, snippet imports, and fragments. Source-map and generated-site checks prove different invariants.
+- **Egress failure:** fix the canonical JSON or its allowed values, run `python scripts/generate_egress_ip_tables.py`, and commit the resulting inventory/table changes.
+- **OTLP endpoint failure:** use a base URL with `OTEL_EXPORTER_OTLP_ENDPOINT`, or use the signal-specific traces variable or `traces_endpoint` when supplying `/v1/traces`.
+- **Sample failure or skip:** distinguish a nonzero program failure from an exhausted rate-limit skip, then inspect credentials, provider behavior, PostgreSQL readiness, and the selected toolchain. A skip is not a pass.
+- **Export htmltest failure:** treat it as external-destination evidence only; use Mint checks for internal paths and anchors.
 
-## Hosted `llms.txt` coverage
+## Related guides
 
-Mintlify generates the root `llms.txt` and, once it is large enough, nested `/_llms/` indexes; neither artifact is produced or checked into this repository. The hosted check therefore crawls the deployed site rather than a local build. It starts at `<base-url>/llms.txt`, follows only same-site Markdown links beneath `/_llms/`, normalizes page links by removing `.md` and `/index`, and compares the resulting page set with same-site URLs from `<base-url>/sitemap.xml`. Any sitemap page not reachable through the served indexes makes the command exit nonzero.
-
-The checker defaults to `https://docs.langchain.com` and supports `--base-url` for another deployment. Each request uses a repository-specific user agent and a 30-second timeout; connection-style failures are retried three times with increasing one-, two-, and three-second waits, while HTTP errors fail immediately. When coverage is incomplete, inspect whether a custom `llms.txt` was added to the build and report a Mintlify-generated index gap rather than editing a generated hosted file.
-
-The `Check llms.txt coverage` workflow runs every Monday at 07:13 UTC and may also be dispatched manually. It has read-only contents permission, no persisted checkout credentials, and a 10-minute job timeout; it runs `python3 scripts/check_llms_urls.py` against the served default site.
-
-## CI triage
-
-Interpret a failure at the boundary that produced it:
-
-- A socket error means an isolated test attempted an impermissible network operation.
-- A `UV_FROZEN` or sync failure means dependency declarations and `uv.lock` need reconciliation.
-- A Mint link, anchor, redirect, or OpenAPI failure concerns generated documentation and should be reproduced with the corresponding built-document command.
-- An invalid `docs_url` is unsafe or missing metadata; use an allowed absolute HTTP(S) URL or a site-relative `/path`.
-- A generated provider-overview diff means update its generator or `packages.yml`, not the generated page by hand.
-- An unresolved registry/upstream lookup is not proof of availability or synchronization; retry or investigate the remote source.
-- A live-sample failure can reflect credentials, provider behavior, PostgreSQL readiness, toolchain setup, or the sample itself. A rate-limit skip requires later execution.
-- An llms coverage failure means the deployed sitemap and served index hierarchy disagree. It is a deployment/Mintlify boundary, not a local generated-file failure.
-
-## Related documentation
-
-- [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md)
-- [Builder tests](/openwiki/testing/builder-tests.md)
-- [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md)
-- [Local Development Workflow](/openwiki/workflows/local-development.md)
+- [GitHub Actions](/openwiki/integrations/github-actions.md) explains the workflow and reusable-job integration boundary.
+- [Mintlify Integration](/openwiki/integrations/mintlify.md) covers Mint configuration and generated-site behavior.
+- [CLI Tools](/openwiki/operations/cli-tools.md) lists repository command-line tooling.
+- [Builder Tests](/openwiki/testing/builder-tests.md) and [Conditional Rendering](/openwiki/testing/conditional-rendering.md) cover focused deterministic test boundaries.
+- [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md) explains extraction, execution, tracing, and generated artifacts.
+- [Validate Package Version Claims](/openwiki/operations/version-claims.md), [Repository Wiki Quickstart](/openwiki/quickstart.md), and [LangSmith Agent and Observability Documentation Changes](/openwiki/workflows/langsmith-agent-documentation.md) provide adjacent operational context.

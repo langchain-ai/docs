@@ -126,8 +126,11 @@ def reference_url(p: dict) -> str | None:
     if not _is_integration(p):
         return f"https://reference.langchain.com/python/{p['name']}/"
 
-    ref_doc_name = p["name"].replace("-", "_")
-    return f"https://reference.langchain.com/python/integrations/{ref_doc_name}/"
+    # Integration reference docs now live at the top-level semantic path
+    # (/python/<package>). The older /python/integrations/<pkg>/ form
+    # 301-redirects there, so emit the canonical URL directly instead of
+    # adding a redirect hop to every link in the generated table.
+    return f"https://reference.langchain.com/python/{p['name']}"
 
 
 def package_url(p: dict) -> str:
