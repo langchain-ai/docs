@@ -23,6 +23,7 @@ The following middleware work with any LLM provider:
 | [Tool retry](#tool-retry) | Automatically retry failed tool calls with exponential backoff. |
 | [Model retry](#model-retry) | Automatically retry failed model calls with exponential backoff. |
 | [Model fallback](#model-fallback) | Automatically fallback to alternative models when primary fails. |
+| [Model refusal](#model-refusal) | Raise an error when the model refuses, instead of treating the refusal as a final answer. |
 | [Summarization](#summarization) | Automatically summarize conversation history when approaching token limits. |
 | [Human-in-the-loop](#human-in-the-loop) | Pause execution for human approval of tool calls. |
 | [Model call limit](#model-call-limit) | Limit the number of model calls to prevent excessive costs. |
@@ -842,6 +843,35 @@ The middleware accepts a variable number of string arguments representing fallba
 :::
 
 </Accordion>
+
+### Model refusal
+
+:::python
+
+Raise `ModelRefusalError` when the model refuses, instead of returning the refusal as the agent's final answer. Providers report a refusal, such as a safety-policy refusal, as a successful response, so without this middleware the agent run ends as if it succeeded. Model refusal is useful for the following:
+
+- Failing a run clearly when the model refuses.
+- Retrying a refused request on another model with [Model fallback](#model-fallback).
+
+The middleware checks each model response for a [`refusal` content block](/oss/langchain/messages#content-block-reference), which OpenAI and Anthropic models produce. It also catches refusals that fail to parse under a structured `response_format`. It does not detect refusals the model writes as ordinary text, and it does not retry.
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ModelFallbackMiddleware, ModelRefusalMiddleware
+
+agent = create_agent(
+    model="claude-sonnet-4-6",
+    tools=[],
+    middleware=[
+        ModelFallbackMiddleware("gpt-5.4-mini"),
+        ModelRefusalMiddleware(),
+    ],
+)
+```
+
+List `ModelRefusalMiddleware` after `ModelFallbackMiddleware` so the fallback catches the error and retries on the next model. `ModelRetryMiddleware` does not retry refusals, because retrying the same request is unlikely to succeed. Streamed output may already have reached the client before the refusal is known.
+
+:::
 
 ### Summarization
 

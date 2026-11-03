@@ -1150,6 +1150,7 @@ Models can be requested to provide their response in a format matching a given s
         - `'json_mode'`: A precursor to `'json_schema'` offered by some providers. Generates valid JSON, but the schema must be described in the prompt.
     - **Include raw**: Set `include_raw=True` to get both the parsed output and the raw AI message.
     - **Validation**: Pydantic models provide automatic validation. `TypedDict` and JSON Schema require manual validation.
+    - **Refusals**: If the model refuses, `with_structured_output` raises `ModelRefusalError`. With `include_raw=True`, the error is returned as `parsing_error` instead. See [Handle a model refusal](#handle-a-model-refusal).
 
     See your [provider's integration page](/oss/integrations/providers/overview) for supported methods and configuration options.
 </Note>
@@ -1281,6 +1282,35 @@ It can be useful to return the raw @[`AIMessage`] object alongside the parsed re
     ```
     :::
 </Accordion>
+
+:::python
+### Handle a model refusal
+
+Providers report a refusal, such as a safety-policy refusal, as a successful response rather than an error. A plain model call returns the message with a [`refusal` content block](/oss/langchain/messages#content-block-reference). Structured output has nothing to parse in that case, so `with_structured_output` raises `ModelRefusalError` from `langchain_core.exceptions` instead of a parsing error. The error's `raw_message` holds the refused response.
+
+```python
+from langchain_core.exceptions import ModelRefusalError
+
+model_with_structure = model.with_structured_output(Movie)
+
+try:
+    response = model_with_structure.invoke("Provide details about the movie Inception")
+except ModelRefusalError as error:
+    print(error)  # Model refused to produce the requested output (category='cyber'): ...
+    refused = error.raw_message
+```
+
+With `include_raw=True`, the error is returned as `parsing_error` instead of raised:
+
+```python
+model_with_structure = model.with_structured_output(Movie, include_raw=True)
+response = model_with_structure.invoke("Provide details about the movie Inception")
+if isinstance(response["parsing_error"], ModelRefusalError):
+    refused = response["raw"]
+```
+
+Refusals are detected for OpenAI and Anthropic models. To raise on refusals in an agent, add [`ModelRefusalMiddleware`](/oss/langchain/middleware/built-in#model-refusal).
+:::
 
 ---
 
