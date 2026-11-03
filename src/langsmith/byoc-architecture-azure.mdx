@@ -1,18 +1,18 @@
 ---
 title: BYOC architecture on Azure
-sidebarTitle: Architecture (Azure)
+sidebarTitle: Architecture
 tag: "Beta"
 description: What LangSmith BYOC deploys in your Azure subscription, how the data plane connects to the LangChain control plane, the access LangSmith gets, and how your data is protected.
 icon: "sitemap"
 ---
 
-BYOC on Azure runs the LangSmith data plane in a resource group in your Azure subscription, while LangChain runs the control plane in its own Azure environment in `centralus`. Your trace data stays in your subscription. This page describes what LangSmith deploys, how traffic flows, the access LangSmith gets, and how your data is protected. For BYOC on AWS, see [BYOC architecture](/langsmith/byoc-architecture).
+BYOC on Azure runs the LangSmith data plane in a resource group in your Azure subscription, while LangChain runs the control plane in its own Azure environment in `centralus`. Your trace data stays in your subscription. This page describes what LangSmith deploys, how traffic flows, the access LangSmith gets, and how your data is protected. For BYOC on AWS, see [BYOC architecture](/langsmith/byoc-architecture-aws).
 
 <Note>
 BYOC on Azure is in [beta](/langsmith/release-stages). Resources and permissions can change between releases. The values on this page are the current defaults.
 </Note>
 
-To set up a data plane, follow [BYOC onboarding on Azure](/langsmith/byoc-azure-onboarding).
+To set up a data plane, follow [BYOC onboarding on Azure](/langsmith/byoc-onboarding-azure).
 
 ## Control plane and data plane
 
@@ -66,7 +66,7 @@ Private DNS zones linked to the VNet resolve PostgreSQL, Redis, Key Vault, and B
 - **Network plugin**: Azure CNI with Cilium for the data path and network policy.
 - **System node pool**: Three `Standard_D2s_v6` nodes on Azure Linux, spread across the region's availability zones, reserved for critical add-ons.
 - **Application nodes**: [Node auto-provisioning](https://learn.microsoft.com/azure/aks/node-autoprovision) adds and removes nodes as pods need them. It uses on-demand D, E, and F series VMs of version 5 or later. Each node pool has a CPU and memory limit. The general pool is limited to 100 vCPUs and 400 GiB of memory. SmithDB runs on its own pools, including a pool of VMs with local NVMe disks for its cache.
-- **Upgrades**: AKS applies Kubernetes patch versions and node image updates automatically, in the data plane's [maintenance window](/langsmith/byoc-azure-onboarding#change-data-plane-settings).
+- **Upgrades**: AKS applies Kubernetes patch versions and node image updates automatically, in the data plane's [maintenance window](/langsmith/byoc-onboarding-azure#change-data-plane-settings).
 
 ### Data stores
 
@@ -84,6 +84,7 @@ Data planes store and query traces in [SmithDB](/langsmith/self-host-smithdb), w
 
 - **Hostname**: `<data_plane_id>.azure.langchain-byoc.com`. LangSmith creates a public DNS zone for the hostname in your resource group and delegates it from the parent zone that LangChain owns.
 - **Load balancer**: An Azure Standard load balancer, public or internal, as set by `public_load_balancer` in the create request.
+- **Private DNS**: For an internal load balancer, the hostname resolves through a private DNS zone linked to the data plane VNet. The public zone holds certificate validation records, not the internal endpoint address. Your users and applications need DNS resolution through the private zone.
 - **Ingress**: An Istio ingress gateway. HTTP redirects to HTTPS, and the gateway rejects the `TRACE`, `TRACK`, and `CONNECT` methods.
 - **TLS**: cert-manager gets a Let's Encrypt certificate for the hostname through a DNS-01 challenge.
 
@@ -102,7 +103,7 @@ Data plane workloads use user-assigned managed identities in your resource group
 
 The data plane pulls LangSmith container images from LangChain's container registry through the NAT gateway.
 
-The data plane sends operational data to the control plane, such as authentication requests, health metrics, and usage. As on AWS, the LangSmith UI loads static assets from the control plane and sends every request for application data to your data plane. See [Data traffic](/langsmith/byoc-architecture#data-traffic).
+The data plane sends operational data to the control plane, such as authentication requests, health metrics, and usage. As on AWS, the LangSmith UI loads static assets from the control plane and sends every request for application data to your data plane. See [Data traffic](/langsmith/byoc-architecture-aws#data-traffic).
 
 ## Access and permissions
 
@@ -138,7 +139,7 @@ The LangSmith custom roles and `User Access Administrator` are management roles.
 
 Each resource group serves one data plane. LangSmith rejects a second data plane in a resource group that a data plane already uses.
 
-To remove LangSmith's access, see [Remove LangSmith access](/langsmith/byoc-azure-onboarding#remove-langsmith-access).
+To remove LangSmith's access, see [Remove LangSmith access](/langsmith/byoc-onboarding-azure#remove-langsmith-access).
 
 ## Data protection
 
@@ -154,18 +155,18 @@ To remove LangSmith's access, see [Remove LangSmith access](/langsmith/byoc-azur
 
 ### Retention
 
-- **Trace payloads**: Blob lifecycle rules delete each object when its retention tier ends. The defaults are 14 days for short-lived traces and 400 days for long-lived traces. You can change both with the `ttl` setting. See [Change data plane settings](/langsmith/byoc-azure-onboarding#change-data-plane-settings).
+- **Trace payloads**: Blob lifecycle rules delete each object when its retention tier ends. The defaults are 14 days for short-lived traces and 400 days for long-lived traces. You can change both with the `ttl` setting. See [Change data plane settings](/langsmith/byoc-onboarding-azure#change-data-plane-settings).
 - **Blob versions**: Versioning is enabled, and previous versions are deleted 7 days after they are created. Deleted containers can be restored for 7 days. Blob soft delete is disabled, so expired traces do not outlive their retention tier.
 - **PostgreSQL**: Automated backups are kept for 7 days in the same region.
 - **Redis**: No persistence and no backups. Redis holds only short-lived data.
 
 ### Deletion
 
-When you delete a data plane, LangSmith deletes the AKS cluster, PostgreSQL, Redis, and the network resources. It keeps your resource group, your Key Vault, and the Blob storage accounts that hold trace and SmithDB data. For details, see [Delete a data plane](/langsmith/byoc-azure-onboarding#delete-a-data-plane).
+When you delete a data plane, LangSmith deletes the AKS cluster, PostgreSQL, Redis, and the network resources. It keeps your resource group, your Key Vault, and the Blob storage accounts that hold trace and SmithDB data. For details, see [Delete a data plane](/langsmith/byoc-onboarding-azure#delete-a-data-plane).
 
 ## Scaling and operations
 
-LangChain operates Azure data planes the same way as AWS data planes. See [BYOC operations](/langsmith/byoc-operations) for upgrades and maintenance. On Azure:
+LangChain operates Azure data planes the same way as AWS data planes. See [BYOC operations](/langsmith/byoc-operations-aws) for upgrades and maintenance. On Azure:
 
 - **Application services**: Each LangSmith service scales horizontally between its minimum and maximum replica counts. Most services target 70% CPU and 80% memory of their requested resources.
 - **Nodes**: Node auto-provisioning adds nodes for pods that cannot be scheduled, up to each node pool's limit. The system node pool stays at three nodes.
@@ -181,8 +182,8 @@ Your Azure Activity Log records every call that LangSmith makes to Azure Resourc
 
 The following AWS options are not available on Azure:
 
-- [Bring your own VPC](/langsmith/byoc-byovpc). LangSmith always creates the VNet.
-- [Bring your own IAM](/langsmith/byoc-byoiam). LangSmith creates the data plane's managed identities.
+- [Bring your own VPC](/langsmith/byoc-byovpc-aws). LangSmith always creates the VNet.
+- [Bring your own IAM](/langsmith/byoc-byoiam-aws). LangSmith creates the data plane's managed identities.
 - Customer-managed encryption keys.
 - The network firewall and Fleet OIDC data plane settings.
 - Creating the data plane and changing its maintenance window from the LangSmith UI. Use the LangSmith API instead.
@@ -190,5 +191,5 @@ The following AWS options are not available on Azure:
 ## See also
 
 - [BYOC overview](/langsmith/byoc)
-- [BYOC onboarding on Azure](/langsmith/byoc-azure-onboarding)
+- [BYOC onboarding on Azure](/langsmith/byoc-onboarding-azure)
 - [BYOC shared responsibility model](/langsmith/byoc-shared-responsibility)
