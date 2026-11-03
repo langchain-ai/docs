@@ -12,7 +12,7 @@ async function runAgent(serverUrl: string) {
     // :remove-start:
     assert.deepEqual(
       tools.map((tool) => tool.name),
-      ["weather__get_forecast"],
+      ["weather_get_forecast"],
     );
     assert.equal(await tools[0].invoke({ city: "Oslo" }), "Oslo: 18C and clear.");
     issuedTool = tools[0];

@@ -1,6 +1,7 @@
 ---
 title: Configure LangSmith for scale
 sidebarTitle: Configure for scale
+description: Scale a self-hosted LangSmith instance for trace ingestion, evaluation workloads, and concurrent users, with example configurations for different load patterns.
 ---
 
 <Warning>
@@ -8,6 +9,8 @@ The scaling guidance and example configurations on this page apply to **LangSmit
 </Warning>
 
 A self-hosted LangSmith instance can handle a large number of traces and users. The default configuration for the self-hosted deployment can handle substantial load, and you can configure your deployment to be able to achieve higher scale. This page describes scaling considerations and provides some examples to help configure your self-hosted instance.
+
+This page covers the LangSmith instance, which ingests traces and runs evaluations. To scale the Agent Server that runs your deployed agents, see [Configure Agent Server for scale](/langsmith/agent-server-scale).
 
 For example configurations, refer to [Example LangSmith configurations for scale](#example-langsmith-configurations-for-scale).
 
@@ -125,12 +128,16 @@ Services that play a large role in trace ingestion:
 
 - Platform backend service: Receives initial request to ingest traces and places traces on a Redis queue
 - Redis cache: Used to queue traces that need to be persisted
-- Ingest queue service: Persists traces for querying
+- Ingest queue service: Persists traces from the Redis queue to each enabled trace store, ClickHouse, SmithDB, or both
 - ClickHouse: Persistent storage used for traces
+- SmithDB ingestion service: Receives traces from the ingest queue service and writes them to object storage. Runs only when SmithDB ingestion is enabled. In unified mode, the single SmithDB pod handles ingestion.
 
-When scaling up the write path (trace ingestion), it is helpful to monitor the four services/resources listed above. Here are some typical changes that can help increase performance of trace ingestion:
+With [SmithDB](/langsmith/self-host-smithdb) dual ingestion enabled, the ingest queue service writes each batch to ClickHouse and SmithDB in parallel. A batch finishes only when both writes finish, so a slow store slows the ingest queue. When one write fails, the retry writes only to the store that failed. An installation that runs [without ClickHouse](/langsmith/self-host-smithdb-install#install-without-clickhouse) writes to SmithDB alone.
+
+When scaling up the write path (trace ingestion), monitor the services and resources listed above. Here are some typical changes that can help increase performance of trace ingestion:
 
 - Give ClickHouse more resources (CPU and memory) if it is approaching resource limits.
+- If SmithDB ingestion is enabled, size the SmithDB ingestion service for your write load. See [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale).
 - Increase the number of platform-backend pods if ingest requests are taking long to respond.
 - Increase ingest queue service pod replicas if traces are not being processed from Redis fast enough.
 - Use a larger Redis cache if you notice that the current Redis instance is reaching resource limits. This could also be a reason why ingest requests take a long time.

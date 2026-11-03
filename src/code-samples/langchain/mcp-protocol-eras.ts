@@ -15,7 +15,7 @@ async function listToolsAcrossEras(modernUrl: string, legacyUrl: string) {
     // :remove-start:
     assert.deepEqual(
       tools.map((tool) => tool.name),
-      ["current__ping", "legacy__ping"],
+      ["current_ping", "legacy_ping"],
     );
     assert.equal((await adapter.getClient("current"))?.getProtocolEra(), "modern");
     assert.equal((await adapter.getClient("legacy"))?.getProtocolEra(), "legacy");

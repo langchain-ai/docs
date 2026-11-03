@@ -17,21 +17,21 @@ def write_essay(topic: str) -> str:
 @entrypoint(checkpointer=InMemorySaver())
 def workflow(topic: str) -> dict:
     """A simple workflow that writes an essay and asks for a review."""
-    essay = write_essay("cat").result()
+    essay = write_essay(topic).result()
     is_approved = interrupt(
         {
             # Any json-serializable payload provided to interrupt as argument.
             # It will be surfaced on the client side as an Interrupt when streaming data
             # from the workflow.
-            "essay": essay,  # The essay we want reviewed.
-            # We can add any additional information that we need.
+            "essay": essay,  # The essay to review.
+            # You can add any additional information that you need.
             # For example, introduce a key called "action" with some instructions.
             "action": "Please approve/reject the essay",
         }
     )
     return {
         "essay": essay,  # The essay that was generated
-        "is_approved": is_approved,  # Response from HIL
+        "is_approved": is_approved,  # Response from human review
     }
 
 

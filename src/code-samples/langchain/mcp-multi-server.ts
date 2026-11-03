@@ -19,11 +19,11 @@ async function listServerTools(calendarUrl: string, filesServerPath: string) {
     assert.deepEqual(Object.keys(toolsets), ["calendar", "files"]);
     assert.deepEqual(
       toolsets.calendar.map((tool) => tool.name),
-      ["calendar__search"],
+      ["calendar_search"],
     );
     assert.deepEqual(
       fileTools.map((tool) => tool.name),
-      ["files__search"],
+      ["files_search"],
     );
     assert.equal(await toolsets.calendar[0].invoke({}), "calendar");
     assert.equal(await fileTools[0].invoke({}), "files");
