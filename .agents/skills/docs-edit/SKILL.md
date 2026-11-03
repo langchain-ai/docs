@@ -183,14 +183,25 @@ make lint_prose FILES="<changed files>"
 ```
 
 Run `make broken-links-with-anchors` as well when links, page names, or navigation entries
-changed. For a prose review against the style guide, use the `docs-review`
-skill.
+changed, and `make check-mdx` when it adds a JSX tag. Look up a tag new to
+`src/` on [Mintlify components](https://mintlify.com/docs/components) first. For
+a prose review against the style guide, use the `docs-review` skill.
 
 ## Step 5. Report
 
 Say which branch the edits are on and whether it is the PR's own branch. Name
 the related pages you changed, and the ones you read and left alone. If
 anything could not be verified, list it. Do not push or force-push unless the
-user asks. When the user asks you to push, the merge-state check and the check
-watching in `open-docs-pr` apply here too. When the edits have no PR to land
-on, open one with `open-docs-pr`.
+user asks.
+
+When you write or update a PR description, two rules apply:
+
+- **Linear**: When the work has a Linear issue, link it with
+  `Closes [DOC-N](<linear url>)` or `Refs [DOC-N](<linear url>)` as
+  appropriate. `sync-linear-issue-from-pr.yml` only syncs status for
+  docs-release-watch PRs labeled `release-watch-agent`, so a human PR does not
+  move the issue.
+- **AI disclosure**: End the description with one plain sentence, such as
+  `Prepared with Claude Code.` Do not add a `🤖 Generated with [Claude Code](...)`
+  badge or any similar badge. `check-pr-ai-attribution` fails a PR that carries
+  one, because the squash merge copies it into the commit on `main`.

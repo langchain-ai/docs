@@ -3,6 +3,9 @@ type: documentation workflow
 title: Runnable Code Samples and Snippet Generation
 description: Explains how runnable documentation sources are executed, extracted, rendered as committed MDX, optionally linked to public LangSmith traces, and operated through CI.
 tags: [code-samples, documentation, mdx, testing, tracing, ci, langsmith]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-11-03T08:13:57.434Z
 sources:
   - id: openwiki-source-ddbddbe474c8dc57119458d7
     resource: repo://.agents/skills/docs-code-samples/SKILL.md
@@ -38,9 +41,6 @@ sources:
     resource: repo://tests/unit_tests/test_generate_code_snippet_mdx.py
   - id: openwiki-source-b631fb59f417cefbd356f03e
     resource: repo://tests/unit_tests/test_test_code_samples.py
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-30T08:15:16.596Z
 generated: { by: "openwiki/0.4.3", at: "2026-10-30T08:15:16.596Z" }
 ---
 

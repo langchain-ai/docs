@@ -5,8 +5,10 @@ description: Documents the reviewed daily refresh that converts the LangSmith pl
 tags: [langsmith, openapi, automation, github-actions, mintlify, security]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-30T08:15:16.596Z
+    at: 2026-11-03T08:13:57.434Z
 sources:
+  - id: openwiki-source-5c124605ed6e394bffee862c
+    resource: repo://.github/workflows/_check-links.yml
   - id: openwiki-source-5153f86e64d6ee0b305f72b3
     resource: repo://.github/workflows/refresh-langsmith-openapi.yml
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
@@ -21,28 +23,28 @@ sources:
     resource: repo://src/docs.json
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-30T08:15:16.596Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-03T08:13:57.434Z" }
 ---
 
 # LangSmith OpenAPI Refresh
 
 The LangSmith REST API reference is published from the generated, committed `src/langsmith/langsmith-platform-openapi.json`. It is not an authored MDX endpoint tree: `src/docs.json` supplies that file to Mintlify's `langsmith/smith-api` directory, and Mintlify generates endpoint routes at deployment. Do not edit the generated specification or deployment-generated endpoint pages by hand.
 
-This flow is separate from the Agent Server and Control Plane APIs. Agent Server uses its own committed `src/langsmith/agent-server-openapi.json` input and `langsmith/agent-server-api` directory. Control Plane uses the remote `https://api.host.langchain.com/openapi.json` source rather than the platform artifact. Changes to one input must not be assumed to update either of the others.
+This flow is separate from the Agent Server and Control Plane APIs. Agent Server uses its own committed `src/langsmith/agent-server-openapi.json` input and `langsmith/agent-server-api` directory. Control Plane uses the remote `https://api.host.langchain.com/openapi.json` source rather than the platform artifact. Changes to one input do not update either of the others.
 
 ## Ownership and trust boundary
 
 | Concern | Owner | Safe maintenance action |
 | --- | --- | --- |
 | Upstream platform API description | `https://api.smith.langchain.com/openapi.json` | Correct service-owned content upstream when appropriate. |
-| Public REST-reference policy | `scripts/process_langsmith_openapi.py` | Change explicit hiding, titles, grouping, or order, then regenerate. |
+| Public REST-reference policy | `scripts/process_langsmith_openapi.py` | Change explicit hiding, titles, grouping, or ordering, then regenerate. |
 | Generated platform input | `src/langsmith/langsmith-platform-openapi.json` | Review and merge the refresh PR; never patch the JSON manually. |
 | Refresh and GitHub write authority | `.github/workflows/refresh-langsmith-openapi.yml` | Preserve its narrow staging and standing-PR behavior. |
 | Agent Server input | `src/langsmith/agent-server-openapi.json` | Use the separate Agent Server specification-update process. |
 | Control Plane input | `https://api.host.langchain.com/openapi.json` | Correct the service-owned source; do not commit a platform copy. |
 | Rendered endpoint pages | Mintlify deployment configured by `src/docs.json` | Inspect a deployed preview or production site. |
 
-The processor is the trust and policy boundary between service-owned input and public documentation. Its default network source is `https://api.smith.langchain.com/openapi.json`, and it rejects a parsed hostname outside its `api.smith.langchain.com` allowlist before making a request. `--input` reads a controlled local JSON file instead, which is the appropriate path for reproducing a candidate or developing policy.
+The processor is the safety-critical policy boundary between service-owned input and public documentation. Its default network source is `https://api.smith.langchain.com/openapi.json`; before requesting it, the processor parses the URL and rejects a hostname outside the `api.smith.langchain.com` allowlist. `--input` reads a controlled local JSON file instead, which is the appropriate path for reproducing a candidate or developing policy.
 
 ```mermaid
 flowchart TD
@@ -61,10 +63,10 @@ This flow shows the platform-only path from constrained service input through re
 
 ## Processor policy and local entrypoints
 
-`process_spec()` mutates a loaded OpenAPI object and the CLI serializes the result as UTF-8 JSON with two-space indentation and a trailing newline. It ignores path-level OpenAPI metadata while iterating operations. The policy deliberately shapes the public surface:
+`process_spec()` mutates a loaded OpenAPI object and the CLI serializes the result as UTF-8 JSON with two-space indentation and a trailing newline. While iterating paths it ignores path-level OpenAPI metadata rather than treating it as an operation. The policy deliberately shapes the public surface:
 
-- It sets `x-hidden: true` for configured Fleet, product-feedback, internal/infrastructure, administration/debug, and metrics tags, and for configured health and internal path rules. It also hides matching top-level tags.
-- It supplies a summary when one is absent, sentence-cases titles while preserving configured acronyms, and normalizes Beta and v2 markers. Visible non-sandbox `/v2/` operations receive `(v2)`; configured v2 operations have canonical title overrides. Existing markers are stripped before markers are reapplied, so title processing is idempotent.
+- It sets `x-hidden: true` for configured Fleet, product-feedback, internal/infrastructure, administration/debug, and metrics tags, plus configured health paths and internal path prefixes. Matching top-level tags are hidden too.
+- It supplies a summary when one is absent, sentence-cases titles while preserving configured acronyms, and normalizes Beta and v2 markers. Visible non-sandbox `/v2/` operations receive `(v2)`; configured v2 operations have canonical title overrides. Existing markers are stripped before markers are reapplied, making title processing idempotent.
 - It ensures a top-level tag array, adds tags observed only on operations, attaches configured human-readable `x-group` values, and sorts tags by configured group order. Groups not in that order follow alphabetically.
 
 The authoritative extension points are the processor constants such as `HIDDEN_TAGS`, `HIDDEN_PATHS`, `HIDDEN_PATH_PREFIXES`, `TAG_GROUPS`, `GROUP_ORDER`, and the title/v2 tables. Add or remove a public category there, not in the generated JSON.
@@ -98,13 +100,15 @@ The workflow first saves the generated candidate, restores the checked-out artif
 3. With no diff, it exits successfully without a commit or PR change.
 4. With a diff, it commits that file. An existing PR receives an appended commit and normal push. Without an open PR, it force-pushes the standing branch because no open PR references it, then creates a PR against `main`.
 
-This keeps one outstanding refresh PR rather than a daily queue. The PR is the human review boundary for a changing, externally sourced public API reference. Review newly visible or hidden operations, title/version labels, and tag groups before merging.
+This keeps one outstanding refresh PR rather than a daily queue. The PR is the human review boundary for a changing, externally sourced public API reference. The workflow creates or updates a PR but does not merge it. Review newly visible or hidden operations, title/version labels, and tag groups before merging.
 
 ## Failure semantics and validation boundaries
 
 A disallowed hostname raises `ValueError`; network, TLS, timeout, or JSON-decoding failures stop a candidate from being produced. The workflow shell runs with `set -euo pipefail`, so branch, push, checkout, or PR-command failures stop the write step. A no-diff refresh is a successful no-op.
 
 Local checks do not prove that LangSmith REST endpoint pages were rendered. `make check-openapi` runs `mint openapi-check` only on `langsmith/agent-server-openapi.json`. The Mint broken-link targets filter `/langsmith/smith-api` reports because those routes are generated at deployment rather than present in the local build. Use a processor run and generated-diff review for transformation changes, then inspect a Mintlify preview or production site for the rendered REST surface.
+
+The reusable documentation link workflow is read-only, builds the docs, and runs `make broken-links-with-anchors`, `make check-mdx`, and `make check-openapi` using Node 22 and a cached pinned Mint CLI. It therefore checks generated-tree links, MDX syntax/components, and the Agent Server input; it does not validate the platform artifact or render deployment-generated REST routes.
 
 ### Focused test boundary
 
@@ -127,7 +131,6 @@ make test TEST_FILE=tests/unit_tests/test_filter_mint_broken_links.py
 
 ## Related pages
 
-- [Repository Source Map](/openwiki/architecture/source-map.md)
 - [GitHub Actions and CI Automation](/openwiki/integrations/github-actions.md)
 - [Mintlify Integration](/openwiki/integrations/mintlify.md)
 - [Reference Documentation Boundaries](/openwiki/integrations/reference-docs.md)

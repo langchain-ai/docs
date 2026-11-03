@@ -42,6 +42,11 @@ description: SEO summary with no markdown, no links, and no backticks
 For OSS pages that differ by language, use `:::python` and `:::js` fences in one
 file rather than writing two files. The build pipeline emits both versions.
 
+Before writing a JSX tag you have not seen in `src/`, look it up on
+[Mintlify components](https://mintlify.com/docs/components) or with the
+`docs-mintlify` MCP server. A plausible name is not evidence: `<Important>` and
+`<ItemTable>` both reached `main` and rendered as nothing.
+
 Take every fact on the page from the product source, not from memory, a sibling
 docs page, or the request that asked for the page. This covers behavior,
 defaults, field names, version minimums, and examples. Use the
@@ -150,7 +155,7 @@ Run all three, in this order:
 
 ```bash
 make lint_prose FILES="src/path/to/page.mdx"
-make build
+make check-mdx
 make broken-links-with-anchors
 ```
 
@@ -206,9 +211,18 @@ Skip this step for a change too small to have prose in it, such as a pure
 
 ## Step 7. Open the pull request
 
-Follow the `open-docs-pr` skill to commit, write the PR description, push, and
-watch the checks. If the change belongs on an existing PR, use `docs-edit`
-instead.
+Commit, push, and open the PR however you usually do. If the change belongs on
+an existing PR, use `docs-edit` instead. Two rules apply to the PR description:
+
+- **Linear**: When the work has a Linear issue, link it with
+  `Closes [DOC-N](<linear url>)` or `Refs [DOC-N](<linear url>)` as
+  appropriate. `sync-linear-issue-from-pr.yml` only syncs status for
+  docs-release-watch PRs labeled `release-watch-agent`, so a human PR does not
+  move the issue.
+- **AI disclosure**: End the description with one plain sentence, such as
+  `Prepared with Claude Code.` Do not add a `🤖 Generated with [Claude Code](...)`
+  badge or any similar badge. `check-pr-ai-attribution` fails a PR that carries
+  one, because the squash merge copies it into the commit on `main`.
 
 ## Checklist
 
@@ -223,6 +237,7 @@ instead.
 - [ ] Inbound `#anchor` links checked before any heading was reworded.
 - [ ] A block now on three or more pages extracted to `src/snippets/`, and its
       built `python/` and `javascript/` targets confirmed to exist.
+- [ ] `make check-mdx` clean.
 - [ ] `make lint_prose` clean, `make broken-links-with-anchors` shows no new `⎿` lines.
 - [ ] `docs-review` run on the changed files, findings addressed.
-- [ ] PR opened with `open-docs-pr`, checks green.
+- [ ] PR description references the Linear issue, if any, and has no AI badge.

@@ -50,7 +50,6 @@ once to link the tree, and again in each new git worktree.
 | `docs-restructure` | Splitting a page that grew too long, moving sections between pages, retiring a page, or a topic documented in two places: the duplication map, choosing one owner, cutting rather than relocating. |
 | `docs-team-voice` | Drafting or revising prose in the house voice: sentence length, cross-link density, stating defaults, the revision pass. |
 | `docs-review` | Reviewing changed prose against Vale and the style guide, reporting the rule each finding breaks. `add-docs-page` invokes it before committing. |
-| `open-docs-pr` | Opening a PR for finished changes: branching from the latest `origin/main`, the lint and link gates, the commit, the short PR description with its AI disclosure line, pushing, and watching checks. |
 | `docs-tooling-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, and how to edit safely. Required whenever a PR adds or changes a script, workflow, or check. |
 | `docs-code-samples` | Moving inline MDX code blocks into external, testable sample files. |
 | `verify-against-source` | Checking that a code sample, signature, default, or behavior claim is true: which repository owns each product, how to reach the private ones, and naming what stayed unverified. |
@@ -286,6 +285,8 @@ Python-only content here
 :::
 ```
 
+Close each fence before opening the next. `make build` fails on a nested, stray, or unclosed fence.
+
 ### Code highlighting
 
 ```python
@@ -323,6 +324,8 @@ Common Tabler names: `home` (not house), `tool` (not wrench), `player-play` (not
 | `<Card>` / `<CardGroup>` | Navigation/overview links only (not for highlighting points) |
 | `<Note>`, `<Tip>`, `<Warning>`, `<Info>` | Callouts |
 | `<Prompt>` | Copyable AI-assistant prompt. **Required at the top of every migration guide** |
+
+Use only Mintlify built-ins or components imported on the page. Mintlify silently renders any other tag as nothing. Confirm an unfamiliar tag on [Mintlify components](https://mintlify.com/docs/components) or through the `docs-mintlify` MCP server; `<Important>`, `<Anchor>`, and `:::note` are not Mintlify syntax. CI runs `make check-mdx` to catch both.
 
 ### Migration guide convention
 
