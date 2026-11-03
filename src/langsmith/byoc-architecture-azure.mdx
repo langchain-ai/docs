@@ -1,0 +1,110 @@
+---
+title: BYOC architecture
+sidebarTitle: Architecture
+description: How a LangSmith BYOC deployment works across the LangChain control plane and the data plane in your Azure subscription.
+icon: "sitemap"
+---
+
+## Control plane and data plane model
+
+A BYOC deployment has two planes. This page describes their components, their connections, and the resources that LangChain creates in your Azure subscription.
+
+The **control plane** runs in LangChain's cloud. It handles authentication, organization configuration, and billing. It also provisions, monitors, and manages your deployment.
+
+The **data plane** runs in your Azure subscription. It stores and processes your application data in an AKS cluster, managed databases, and Blob Storage.
+
+| Plane | Where it runs | What it holds |
+|-------|---------------|---------------|
+| **Control plane** | LangChain's Azure subscription, `centralus` | Authentication, organization and workspace configuration, billing and usage metadata, LangSmith API keys, and static frontend assets |
+| **Data plane** | Your Azure subscription, in the region you choose | Traces, prompts, datasets, evaluators, experiments, annotation queues, agent deployments, workspace secrets, and other application data |
+
+<img
+  src="/images/byoc-azure-architecture.png"
+  alt="Azure BYOC architecture. The browser and client apps reach an Azure Load Balancer through private network access. Istio routes requests to LangSmith in AKS, which uses Blob Storage, PostgreSQL, and Managed Redis. Separate Private Link connections carry cluster management traffic and runtime calls. LangChain uses Microsoft Entra identity and Azure RBAC to provision resources."
+/>
+
+## Provisioned resources
+
+You create a dedicated resource group and an Azure Key Vault during [onboarding](/langsmith/byoc-azure-onboarding). LangChain then provisions these resources:
+
+- **Virtual network (VNet)**: A dedicated network with subnets, network security groups, private endpoints, private DNS zones, and a NAT gateway for outbound traffic.
+- **Managed databases**: Azure Database for PostgreSQL Flexible Server supports relational workloads and the SmithDB metastore. Azure Managed Redis provides a cache.
+- **Storage**: Azure Blob Storage accounts and containers for application data, the SmithDB object store, and sandbox files.
+- **AKS**: A private Azure Kubernetes Service cluster. Azure creates a separate node resource group for the cluster's compute and load balancer resources.
+- **Compute**: A system node pool for platform components. AKS node auto-provisioning manages additional nodes for application workloads.
+- **In-cluster resources**: The LangSmith Helm chart, Istio, KEDA, cert-manager, External Secrets Operator, and other platform components.
+- **Managed identities**: Identities and Azure RBAC assignments that let workloads access the Azure resources they need.
+
+<Note>
+New Azure data planes use [SmithDB](/langsmith/self-host-smithdb) to store and query traces. SmithDB runs in AKS and uses PostgreSQL and Blob Storage in your subscription.
+</Note>
+
+## Azure access permissions
+
+LangChain uses a service principal in your Microsoft Entra tenant to provision and manage the data plane. Its permissions let LangChain:
+
+- **Provision infrastructure**: Create the VNet, subnets, network security groups, private endpoints, and DNS records.
+- **Manage the Kubernetes cluster**: Create and maintain AKS, its node pools, and its components.
+- **Create storage resources**: Provision PostgreSQL, Managed Redis, and Blob Storage.
+- **Configure access**: Create managed identities and assign the roles that workloads need.
+- **Operate LangSmith**: Deploy, scale, monitor, and upgrade the application. Write the initial configuration secrets to your Key Vault.
+
+You grant these permissions with the [Azure BYOC Terraform module](). The module assigns an infrastructure role and the User Access Administrator role within the dedicated resource group.
+
+LangChain provides the external ID for your organization. Copy it with the button next to the **Data Planes** header in **Settings > Data Planes**. Use this value when you apply the Terraform module. The LangSmith role assignment descriptions must match this ID exactly. LangSmith rejects data plane creation if they do not match.
+
+### How least privilege is enforced
+
+- **Resource group scope**: The infrastructure roles apply to the dedicated data plane resource group.
+- **Infrastructure-scoped, not data-scoped**: The infrastructure role manages the resources that hold your data. It grants no direct permission to read blob contents, query PostgreSQL, or read Redis data.
+- **Separate workload identities**: Workloads use managed identities with permissions for their specific resources. For example, cert-manager receives access to the data plane's DNS zone.
+- **Federated authentication**: LangChain uses workload identity to obtain Microsoft Entra tokens. You do not supply a client secret for the LangSmith service principal.
+
+## Networking
+
+### Data traffic
+
+Your browser and SDK send application data requests directly to your data plane. The control plane serves the frontend and handles authentication and organization configuration.
+
+1. The browser opens `azure.smith.langchain.com` and downloads the LangSmith UI assets from LangChain's cloud. These assets contain no customer data.
+1. The UI selects the data plane endpoint for the current workspace. The browser sends requests for traces, datasets, and other application data to that endpoint.
+
+For programmatic access, configure your client to use the data plane API URL. Application data flows from the browser or client to your data plane and back.
+
+<img
+  src="/images/byoc-azure-data-flow.png"
+  alt="Azure BYOC data traffic. The browser downloads the UI from azure.smith.langchain.com, then sends application data requests directly to the data plane load balancer. Istio routes these requests to LangSmith in AKS, which accesses storage in your Azure subscription."
+/>
+
+Private ingress requires a network path and DNS resolution from your users and applications to the data plane.
+
+### Connectivity
+
+BYOC uses two Azure Private Link connections between the planes:
+
+- **Control plane to data plane (management path)**: A private endpoint in LangChain's VNet connects to your AKS management endpoint. LangChain uses this connection to install and manage Kubernetes resources.
+- **Data plane to control plane (runtime path)**: A private endpoint in your VNet connects to LangChain's Private Link service. The data plane uses this connection for authentication, API key validation, organization configuration, and operational telemetry.
+
+LangChain creates the endpoints, approves the expected connections, and configures private DNS for both paths. These connections do not provide browser access to your data plane.
+
+PostgreSQL, Managed Redis, Blob Storage, and Key Vault use private endpoints. Blob Storage disables public network access, anonymous blob access, and shared-key authentication.
+
+AKS downloads application images from LangChain's public Azure Container Registry. Outbound access also supports Azure APIs and certificate issuance.
+
+### DNS and ingress
+
+LangChain assigns a hostname under `azure.langchain-byoc.com` and delegates its DNS zone to your resource group.
+
+An Azure Load Balancer forwards traffic to Istio in AKS. Istio terminates HTTPS with a certificate that cert-manager obtains and renews.
+
+- **Private ingress (default)**: A private DNS zone resolves the hostname to the internal load balancer. The public DNS zone holds certificate validation records.
+- **Public ingress**: A public DNS record resolves the hostname to the public load balancer.
+
+Use the data plane API URL to configure your clients. For private ingress, your network must resolve the private DNS record and reach the internal load balancer.
+
+## See also
+
+- [BYOC overview](/langsmith/byoc)
+- [Azure onboarding](/langsmith/byoc-azure-onboarding)
+- [Shared responsibility](/langsmith/byoc-shared-responsibility)
+- [Egress for billing and operational telemetry](/langsmith/self-host-egress)
