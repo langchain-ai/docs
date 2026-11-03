@@ -223,11 +223,19 @@ The following code adds feedback to the runs from the [single experiment example
 # API Reference: https://docs.langchain.com/langsmith/smith-api/runs/query-runs
 experiment_id = experiment_ids[0]  # Evaluate the first experiment
 
+# Without min_start_time, the query only covers the last 24 hours.
+# Start from the experiment's start time so older experiments still return all runs.
+experiment = requests.get(
+    f"https://api.smith.langchain.com/api/v1/sessions/{experiment_id}",
+    headers={"x-api-key": os.environ["LANGSMITH_API_KEY"]}
+).json()
+
 runs_resp = requests.post(
     "https://api.smith.langchain.com/api/v2/runs/query",
     headers={"x-api-key": os.environ["LANGSMITH_API_KEY"]},
     json={
         "project_ids": [experiment_id],
+        "min_start_time": experiment["start_time"],
         "is_root": True,  # Only fetch root runs
         "selects": ["ID", "REFERENCE_EXAMPLE_ID", "OUTPUTS", "PROJECT_ID"],
         "page_size": 1000,  # Up to 1000 runs per page; follow "next_cursor" for more
@@ -311,12 +319,23 @@ experiment_ids = [info["id"] for info in comparative_experiment["experiments_inf
 from collections import defaultdict
 example_id_to_runs_map = defaultdict(list)
 
+# Without min_start_time, the query only covers the last 24 hours.
+# Start from the earliest experiment's start time.
+min_start_time = min(
+    requests.get(
+        f"https://api.smith.langchain.com/api/v1/sessions/{experiment_id}",
+        headers={"x-api-key": os.environ["LANGSMITH_API_KEY"]}
+    ).json()["start_time"]
+    for experiment_id in experiment_ids
+)
+
 #  API Reference: https://docs.langchain.com/langsmith/smith-api/runs/query-runs
 runs = requests.post(
     "https://api.smith.langchain.com/api/v2/runs/query",
     headers={"x-api-key": os.environ["LANGSMITH_API_KEY"]},
     json={
         "project_ids": experiment_ids,
+        "min_start_time": min_start_time,
         "is_root": True, # Only fetch root runs (spans) which contain the end outputs
         "selects": ["ID", "REFERENCE_EXAMPLE_ID", "OUTPUTS", "PROJECT_ID"],
         "page_size": 1000,  # Up to 1000 runs per page; follow "next_cursor" for more
