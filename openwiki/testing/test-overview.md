@@ -3,9 +3,6 @@ type: validation guide
 title: Testing Overview
 description: Select validation by the contract a documentation change affects. Deterministic local checks cover transformations and generated output, while CI-only checks cover credentials, registry lookups, services, and external destinations.
 tags: [testing, validation, ci, documentation, code-samples]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-11-02T08:15:40.431Z
 sources:
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
@@ -63,7 +60,10 @@ sources:
     resource: repo://tests/unit_tests/test_test_code_samples.py
   - id: openwiki-source-98a4de3472710de1bf3ccb4f
     resource: repo://tests/unit_tests/test_url_stub_noindex.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-02T08:15:40.431Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-03T08:13:57.434Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-11-03T08:13:57.434Z
 ---
 
 ## Choose the smallest meaningful boundary
@@ -158,4 +158,11 @@ The changelog-navigation Node tests use an in-memory DOM to verify that the self
 - **Sample failure or skip:** distinguish a nonzero program failure from an exhausted rate-limit skip, then inspect credentials, provider behavior, PostgreSQL readiness, and the selected toolchain. A skip is not a pass.
 - **Export htmltest failure:** treat it as external-destination evidence only; use Mint checks for internal paths and anchors.
 
-See [GitHub Actions](/openwiki/integrations/github-actions.md), [Mintlify Integration](/openwiki/integrations/mintlify.md), [Validate Package Version Claims](/openwiki/operations/version-claims.md), [Repository Wiki Quickstart](/openwiki/quickstart.md), and [LangSmith Agent and Observability Documentation Changes](/openwiki/workflows/langsmith-agent-documentation.md).
+## Related guides
+
+- [GitHub Actions](/openwiki/integrations/github-actions.md) explains the workflow and reusable-job integration boundary.
+- [Mintlify Integration](/openwiki/integrations/mintlify.md) covers Mint configuration and generated-site behavior.
+- [CLI Tools](/openwiki/operations/cli-tools.md) lists repository command-line tooling.
+- [Builder Tests](/openwiki/testing/builder-tests.md) and [Conditional Rendering](/openwiki/testing/conditional-rendering.md) cover focused deterministic test boundaries.
+- [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md) explains extraction, execution, tracing, and generated artifacts.
+- [Validate Package Version Claims](/openwiki/operations/version-claims.md), [Repository Wiki Quickstart](/openwiki/quickstart.md), and [LangSmith Agent and Observability Documentation Changes](/openwiki/workflows/langsmith-agent-documentation.md) provide adjacent operational context.
