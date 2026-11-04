@@ -40,10 +40,10 @@ sources:
     resource: repo://tests/unit_tests/test_check_cross_refs.py
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-30T08:15:16.596Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-03T08:13:57.434Z" }
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-30T08:15:16.596Z
+    at: 2026-11-03T08:13:57.434Z
 ---
 
 # Reference Documentation Boundaries
@@ -170,5 +170,6 @@ Change this repository for an authored marker, scoped map entry, preprocessor or
 
 - [Source Map](/openwiki/architecture/source-map.md) — repository ownership and generated-source boundaries.
 - [Mintlify Integration](/openwiki/integrations/mintlify.md) — deployment, previews, hosted artifacts, and rendered-site checks.
+- [Adding Pages](/openwiki/operations/adding-pages.md) — authoring, navigation, generated-input, and validation boundaries for page changes.
 - [Test Overview](/openwiki/testing/test-overview.md) — test layers and focused validation.
 - [LangSmith OpenAPI Refresh](/openwiki/workflows/langsmith-openapi-refresh.md) — processor policy and refresh-PR lifecycle.
