@@ -28,6 +28,7 @@ Start with an [agent project](/langsmith/managed-deep-agents-quickstart) and its
 | `app.name` | Optional. The app's name, shown where people mention it: 2 to 80 characters, without "Linear" or a URL. Defaults to the agent's name. |
 | `app.description` | Optional. What the app does, shown when a workspace admin installs it. Up to 1,000 characters. |
 | `app.icon` | Optional. A PNG or JPEG image, at least 256×256 pixels and at most 1 MB, given as a path relative to `channels/`, such as `assets/icon.png`. |
+| `autoPost` / `auto_post` | Optional. Post the run's final response as a comment on the issue or in the agent session. Defaults to `true`. Set it to `false` to leave the response to the agent's tools; session acknowledgements, **Stop**, and error messages still post. |
 | `onFinish` / `on_finish` | Optional. Runs once a handled event is done, after the channel's own session activities such as "Stopped.", with the event, its thread, and how the event finished: the run it started and how that run ended, why it started none, or that it failed. Each also lists the decisions the thread waits on. Runs in the background, and failures are logged. |
 
 Handlers receive two arguments and can be synchronous or asynchronous:
@@ -36,18 +37,18 @@ Handlers receive two arguments and can be synchronous or asynchronous:
 - **`event`**: The verified event, including `event.issue_id`, `event.team`, `event.actor`, `event.session_id` for session events, and the Linear data in `event.payload`.
 - **`thread`**: The conversation's thread, with its ID at `thread.id` and the channel name at `thread.channel.name`.
 
-Return a run input to start a run: a nonblank string, a message, state such as `{"messages": [...]}`, or `(input, options)` with `context`, `metadata`, or `webhook` options. Return `None` to skip the event.
+Return a run input to start a run: a nonblank string, a message, or state such as `{"messages": [...]}`. To set run options, return a list of runs such as `[{"input": prompt, "metadata": {"issue": "ENG-123"}}]`, with `context`, `metadata`, `webhook`, `multitask_strategy`, `auto_post`, or `thread`. See [Start runs on other threads](#start-runs-on-other-threads). Return `reply(message)` to answer without a run, or `None` to skip the event.
 :::
 :::js
 - **`event`**: The verified event, including `event.issueId`, `event.team`, `event.actor`, `event.sessionId` for session events, and the Linear data in `event.payload`.
 - **`thread`**: The conversation's thread, with its ID at `thread.id` and the channel name at `thread.channel.name`.
 
-Return a run input to start a run: a nonblank string, a message, state such as `{ messages: [...] }`, or `[input, options]` with `context`, `metadata`, or `webhook` options. Return `null` or `undefined` to skip the event.
+Return a run input to start a run: a nonblank string, a message, or state such as `{ messages: [...] }`. To set run options, return a list of runs such as `[{ input: prompt, metadata: { issue: "ENG-123" } }]`, with `context`, `metadata`, `webhook`, `multitaskStrategy`, `autoPost`, or `thread`. See [Start runs on other threads](#start-runs-on-other-threads). Return `reply(message)` to answer without a run, or `null` or `undefined` to skip the event.
 :::
 
 Keep handlers short. The run itself starts in the background.
 
-A handler can also be an endpoint of your service: a URL, or a request with headers such as a credential (`Request` in TypeScript, `httpx.Request` in Python). The channel POSTs `{"event": ..., "thread": ...}` as JSON, with the event's `key`, `deliveryId`, and Linear's `payload`, and the thread's `id` and `channel.name`. The service answers with `{"input": ...}`, optionally with `context`, `metadata`, and `webhook`, to start that run, or with `null` or HTTP 204 to start nothing. The SDK exports the request and answer types as `LinearEndpointRequest` and `EndpointAnswer`.
+A handler can also be an endpoint of your service: a URL, or a request with headers such as a credential (`Request` in TypeScript, `httpx.Request` in Python). The channel POSTs `{"event": ..., "thread": ...}` as JSON, with the event's `key`, `deliveryId`, and Linear's `payload`, and the thread's `id` and `channel.name`. The service answers with `{"input": ...}`, optionally with `context`, `metadata`, and `webhook`, to start that run, with `{"type": "reply", "message": ...}` to answer without a run, or with `null` or HTTP 204 to start nothing. The channel asks the service after Linear has its webhook response, so a slow service doesn't time out the delivery. The SDK exports the request and answer types as `LinearEndpointRequest` and `EndpointAnswer`.
 
 Register event keys under `onEvent` (`on_event` in Python). They use Linear's names:
 
@@ -293,7 +294,7 @@ When someone mentions the app or delegates an issue to it, Linear opens an agent
 - Posts the run's final response in the session, and an error message if the run fails.
 - Cancels the run when someone selects **Stop** in Linear.
 
-If a handler for an agent session event returns nothing, the channel answers the session that the agent is not set up for the request. If the handler fails, the session shows an error. Either way, the session does not stay open.
+If a handler for an agent session event returns nothing, the channel answers the session that the agent is not set up for the request. To answer with your own message instead, return `reply(message)`. If the handler fails, the session shows an error. Either way, the session does not stay open.
 
 To use only issue and comment events, set `sessions` to `false`. As long as `onEvent` has no `AgentSessionEvent` handlers, deploy then requests no permission to be mentioned or delegated to. Mentions then reach a `Comment.create` handler like other comments.
 
@@ -337,6 +338,35 @@ export const channel = channels.linear({
 });
 ```
 :::
+
+### Start runs on other threads
+
+By default, a handler's run starts on the event's conversation. A handler can return a list of runs instead, each on a thread it chooses:
+
+:::python
+```python
+def on_comment(event, thread):
+    return [
+        # The issue's conversation.
+        {"input": answer_prompt},
+        # A fresh thread, deleted once the run ends. Its response isn't posted.
+        {"input": triage_prompt, "thread": {"mode": "ephemeral"}},
+    ]
+```
+:::
+
+:::js
+```ts
+const onComment = (event, thread) => [
+  // The issue's conversation.
+  { input: answerPrompt },
+  // A fresh thread, deleted once the run ends. Its response isn't posted.
+  { input: triagePrompt, thread: { mode: "ephemeral" } },
+];
+```
+:::
+
+`thread` takes `{"mode": "ephemeral"}` or `{"mode": "persistent", "id": ...}` with a UUID your service keeps, as a [schedule](/langsmith/managed-deep-agents-schedules) does. At most one run may start on the event's conversation. Only that run posts its response, unless a run sets `autoPost` (`auto_post` in Python) to `true`. Each run can also set its own `multitaskStrategy`.
 
 ### Review actions in Studio
 
