@@ -874,49 +874,49 @@ agent = create_agent(
 
 List @[`ModelRefusalMiddleware`] after @[`ModelFallbackMiddleware`] so the fallback catches the error and retries on the next model. `ModelRetryMiddleware` does not retry refusals. When streaming, text the model sends before refusing can reach the client before the middleware raises.
 
-<Accordion title="Custom refusal handling">
+<Accordion title="Handle a refusal after fallback">
 
-To handle refusals without raising, write your own middleware that checks each response for a [`refusal` content block](/oss/langchain/messages#content-block-reference). Use it in place of `ModelRefusalMiddleware`. This example retries a refused request on a model from another provider, and replies to the user if that model also refuses:
+When every model refuses, `ModelRefusalMiddleware` raises @[`ModelRefusalError`]. To reply to the user instead of failing the run, add a middleware before @[`ModelFallbackMiddleware`] that catches the error:
 
 ```python
 from typing import Callable
 
 from langchain.agents import create_agent
-from langchain.agents.middleware import ModelRequest, ModelResponse, wrap_model_call
-from langchain.chat_models import init_chat_model
+from langchain.agents.middleware import (
+    ModelFallbackMiddleware,
+    ModelRefusalMiddleware,
+    ModelRequest,
+    ModelResponse,
+    wrap_model_call,
+)
 from langchain.messages import AIMessage
-
-backup_model = init_chat_model("gpt-6.1-sol")
-
-
-def is_refusal(response: ModelResponse) -> bool:
-    return any(block["type"] == "refusal" for block in response.result[-1].content_blocks)
+from langchain_core.exceptions import ModelRefusalError
 
 
 @wrap_model_call
-def handle_refusal(
+def reply_on_refusal(
     request: ModelRequest,
     handler: Callable[[ModelRequest], ModelResponse],
 ) -> ModelResponse:
-    response = handler(request)
-    if not is_refusal(response):
-        return response
-    # Retry once on a model from another provider
-    response = handler(request.override(model=backup_model))
-    if not is_refusal(response):
-        return response
-    # Both models refused: reply to the user instead of raising
-    return ModelResponse(result=[AIMessage("I cannot help with that request.")])
+    try:
+        return handler(request)
+    except ModelRefusalError:
+        # Every model refused: reply to the user instead of failing the run
+        return ModelResponse(result=[AIMessage("I cannot help with that request.")])
 
 
 agent = create_agent(
     model="claude-sonnet-5-5",
     tools=[],
-    middleware=[handle_refusal],
+    middleware=[
+        reply_on_refusal,
+        ModelFallbackMiddleware("gpt-6.1-sol"),
+        ModelRefusalMiddleware(),
+    ],
 )
 ```
 
-The same check works in other hooks. For example, an `after_model` hook can record the refusal in state, or call `interrupt()` to ask a human how to continue. See [Custom middleware](/oss/langchain/middleware/custom).
+The first model to refuse falls back to `gpt-6.1-sol`. If that model also refuses, `reply_on_refusal` returns the message. For other handling, such as recording the refusal in state or calling `interrupt()`, check the response for a [`refusal` content block](/oss/langchain/messages#content-block-reference) in your own middleware instead. See [Custom middleware](/oss/langchain/middleware/custom).
 
 </Accordion>
 
