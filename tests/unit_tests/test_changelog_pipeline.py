@@ -228,6 +228,52 @@ def test_release_held_by_flag_state() -> None:
     assert "not found in Eppo" in dropped["4"]
 
 
+def test_released_prs_are_marked_for_grouping_and_writing() -> None:
+    """Released PRs carry a marker, so stale "behind a flag" notes do not drop them."""
+    pr = {
+        "title": "feat: custom views",
+        "body": "Behind a flag, default off.",
+        "files": ["a.ts"],
+        "omitted_files": [],
+        "diff": "+x",
+    }
+    prs = {1: pr, 2: {**pr, "title": "fix: other"}}
+    results = {n: {"pass1": {"reason": "flag off", "evidence": []}} for n in prs}
+    notes = cp._group_notes([1, 2], prs, results, frozenset({1}))
+    assert notes.splitlines()[0].startswith("#1 | [released] feat: custom views")
+    assert "[released]" not in notes.splitlines()[1]
+
+    group = {"label": "Custom views", "layer": "highlight", "prs": [1]}
+    assert 'released="true"' in cp._group_prompt(group, prs, frozenset({1}))
+    assert 'released="true"' not in cp._group_prompt(group, prs)
+    assert "[released]" in cp.GROUP_SYSTEM
+    assert 'released="true"' in cp.ENTRY_SYSTEM
+    assert 'released="true"' in cp.HIGHLIGHT_SYSTEM
+    assert cp.ROLLOUT_FACT in cp._group_prompt(group, prs, frozenset({1}))
+    assert "<rollout>" not in cp._group_prompt(group, prs)
+
+
+def test_eppo_state_overrides_a_dropped_released_group() -> None:
+    """A released PR's group publishes unless an earlier entry announced it."""
+    groups = [
+        {"prs": [1], "layer": "drop", "announced_before": False},
+        {"prs": [2], "layer": "drop", "announced_before": True},
+        {"prs": [3], "layer": "drop", "announced_before": False},
+        {"prs": [4, 5], "layer": "drop"},
+        {"prs": [6], "layer": "highlight", "announced_before": False},
+    ]
+    assert cp._keep_released(groups, frozenset({1, 2, 5, 6})) == 2
+    assert [g["layer"] for g in groups] == [
+        "change",  # released, not announced: Eppo wins over the stale notes
+        "drop",  # released, but last week's entry already announced it
+        "drop",  # not released: the model's drop stands
+        "change",  # one released PR is enough; a missing field means not announced
+        "highlight",  # not dropped: unchanged
+    ]
+    # Declared and required: the name appears once in properties, once in required.
+    assert json.dumps(cp.GROUP_SCHEMA).count('"announced_before"') == 2
+
+
 def test_write_held_orders_by_pr_number(tmp_path: Path) -> None:
     """The held list is written in PR order, so weekly diffs stay small."""
     path = tmp_path / "held.json"

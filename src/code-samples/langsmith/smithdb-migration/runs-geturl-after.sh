@@ -3,6 +3,7 @@ set -euo pipefail
 
 # :snippet-start: runs-geturl-after-sh
 RUN_ID="<run-id>"
+PROJECT_ID="<project-id>"
 # :remove-start:
 PROJECT_ID=$(curl -s "https://api.smith.langchain.com/api/v1/sessions?name=default&limit=1" \
   -H "x-api-key: $LANGSMITH_API_KEY" | jq -r '.[0].id')
@@ -16,9 +17,8 @@ RUN_ID=$(echo "$FOUND" | jq -r '.items[0].id')
 [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ] || { echo "error: could not resolve a run id" >&2; exit 1; }
 # :remove-end:
 
-RUN=$(curl -s "https://api.smith.langchain.com/api/v1/runs/$RUN_ID" \
+RUN=$(curl -s "https://api.smith.langchain.com/api/v2/runs/$RUN_ID?project_id=$PROJECT_ID&selects=TRACE_ID&selects=START_TIME" \
   -H "x-api-key: $LANGSMITH_API_KEY")
-PROJECT_ID=$(echo "$RUN" | jq -r '.session_id')
 TRACE_ID=$(echo "$RUN" | jq -r '.trace_id')
 START_TIME=$(echo "$RUN" | jq -r '.start_time') # Optional, but speeds up retrieval
 
