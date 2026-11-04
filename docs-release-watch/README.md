@@ -130,11 +130,11 @@ Release notes are secondary leads. If a claim is not in the diff and tagged sour
 
 ## Linear status sync
 
-The agent does not poll PR status. After it opens a draft PR whose `## Linear` section includes `Closes [DOC-N](<issue url>)`, GitHub Actions updates the Linear issue:
+The agent does not poll PR status. `create_draft_docs_pr` labels every handoff PR `release-watch-agent`. After that draft's `## Linear` section includes `Closes [DOC-N](<issue url>)`, GitHub Actions updates the Linear issue. The workflow runs only on same-repo PRs with that label (including the `labeled` event, because the label is applied right after PR create).
 
 | PR event | Linear status (preferred name / type) |
 | --- | --- |
-| Opened or converted to draft | In Progress (`started`) |
+| Opened, labeled, or converted to draft | In Progress (`started`) |
 | Ready for review | In Review (`started`) |
 | Merged | Done (`completed`) |
 | Closed without merge | Canceled (`canceled`) |

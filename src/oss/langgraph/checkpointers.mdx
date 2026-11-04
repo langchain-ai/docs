@@ -56,6 +56,36 @@ A thread's current and historical state can be retrieved. To persist state, a th
 
 The checkpointer uses `thread_id` as the primary key for storing and retrieving checkpoints. Without it, the checkpointer cannot save state or resume execution after an [interrupt](/oss/langgraph/interrupts), since the checkpointer uses `thread_id` to load the saved state.
 
+#### Choose how to continue a thread
+
+The `thread_id` identifies saved state. The input and `checkpoint_id` determine whether an invocation starts new work, resumes unfinished work, or replays history. Reusing a thread ID alone does not mean that execution resumes.
+
+:::python
+With a checkpointer and an existing thread, choose the invocation for your goal:
+
+| Goal | Invocation | Execution |
+| --- | --- | --- |
+| Submit new input | `graph.invoke(input, config)` | Applies the input to saved state and starts from the entry point. |
+| Continue after an error | `graph.invoke(None, config)` | Loads the latest checkpoint and retries unfinished work. Omit `checkpoint_id`. |
+| Answer an `interrupt()` | `graph.invoke(Command(resume=answer), config)` | Supplies the interrupt's return value. The interrupted node starts again from its beginning. |
+| Replay history | `graph.invoke(None, snapshot.config)` | Uses a snapshot from `get_state_history()` and re-executes nodes after that checkpoint. |
+:::
+
+:::js
+With a checkpointer and an existing thread, choose the invocation for your goal:
+
+| Goal | Invocation | Execution |
+| --- | --- | --- |
+| Submit new input | `await graph.invoke(input, config)` | Applies the input to saved state and starts from the entry point. |
+| Continue after an error | `await graph.invoke(null, config)` | Loads the latest checkpoint and retries unfinished work. Omit `checkpoint_id`. |
+| Answer an `interrupt()` | `await graph.invoke(new Command({ resume: answer }), config)` | Supplies the interrupt's return value. The interrupted node starts again from its beginning. |
+| Replay history | `await graph.invoke(null, snapshot.config)` | Uses a snapshot from `getStateHistory()` and re-executes nodes after that checkpoint. |
+:::
+
+New input does not clear the thread. LangGraph applies it using the state's [reducers](/oss/langgraph/graph-api#reducers). Use a new `thread_id` to start with empty state.
+
+Resume returns the saved result without running nodes when the latest checkpoint has no unfinished work. For runnable examples, see [Functional API error recovery](/oss/langgraph/functional-api-tasks#resume-after-an-error), [resuming interrupts](/oss/langgraph/interrupts#resuming-interrupts), and [replaying history](/oss/langgraph/use-time-travel#replay).
+
 ### Checkpoints
 
 The state of a thread at a particular point in time is called a checkpoint. A checkpoint is a snapshot of the graph state saved at each [super-step](#super-steps) and is represented by a `StateSnapshot` object (see [StateSnapshot fields](#statesnapshot-fields) for the full field reference).
@@ -552,6 +582,35 @@ const interrupted = history.find(
 ```
 :::
 
+#### List every thread
+
+To see every thread a checkpointer holds state for, for example, to build an admin or debugging view, omit `thread_id` when listing checkpoints:
+
+:::python
+`graph.get_state_history(config)` requires a `thread_id` in `config` and only returns history for one thread. Call `.list` on the same checkpointer you passed to `compile`, with `config=None`:
+
+```python
+# config=None returns checkpoints across every thread
+for checkpoint_tuple in checkpointer.list(None):
+    print(checkpoint_tuple.config["configurable"]["thread_id"])
+```
+
+Pass `None`, not `{}`. @[`SqliteSaver`] treats any non-`None` config as a thread filter and raises if `thread_id` is missing. For async graphs, use `.alist(None)` instead. This works with @[`InMemorySaver`], @[`SqliteSaver`], and @[`PostgresSaver`]. `.list` still returns one row per checkpoint, not per thread, so group by `thread_id` yourself to build a thread list.
+:::
+
+:::js
+`graph.getStateHistory(config)` returns history for one thread when `thread_id` is set. Omit `thread_id` to list checkpoints across every thread, either via `graph.getStateHistory({})` or `.list` on the same checkpointer you passed to `compile`:
+
+```typescript
+// No thread_id in configurable: returns checkpoints across every thread
+for await (const checkpointTuple of checkpointer.list({})) {
+  console.log(checkpointTuple.config.configurable?.thread_id);
+}
+```
+
+This works with @[`MemorySaver`], @[`SqliteSaver`], and @[`PostgresSaver`]. `.list` still returns one row per checkpoint, not per thread, so group by `thread_id` yourself to build a thread list.
+:::
+
 ### Replay
 
 Replay re-executes steps from a prior checkpoint. Invoke the graph with a prior `checkpoint_id` to re-run nodes after that checkpoint. Nodes before the checkpoint are skipped (their results are already saved). Nodes after the checkpoint re-execute, including any LLM calls, API requests, or [interrupts](/oss/langgraph/interrupts) — which are always re-triggered during replay.
@@ -682,7 +741,7 @@ Each checkpointer conforms to @[`BaseCheckpointSaver`] interface and implements 
 * `.put` - Store a checkpoint with its configuration and metadata.
 * `.put_writes` - Store intermediate writes linked to a checkpoint (i.e. [pending writes](#pending-writes)).
 * `.get_tuple` - Fetch a checkpoint tuple using for a given configuration (`thread_id` and `checkpoint_id`). This is used to populate `StateSnapshot` in `graph.get_state()`.
-* `.list` - List checkpoints that match a given configuration and filter criteria. This is used to populate state history in `graph.get_state_history()`
+* `.list` - List checkpoints that match a given configuration and filter criteria. This is used to populate state history in `graph.get_state_history()`. Pass `config=None` to list checkpoints across every thread. See [List every thread](#list-every-thread).
 
 If the checkpointer is used with asynchronous graph execution (i.e. executing the graph via `.ainvoke`, `.astream`, `.abatch`), asynchronous versions of the above methods will be used (`.aput`, `.aput_writes`, `.aget_tuple`, `.alist`).
 
@@ -697,7 +756,7 @@ Each checkpointer conforms to the @[`BaseCheckpointSaver`] interface and impleme
 * `.put` - Store a checkpoint with its configuration and metadata.
 * `.putWrites` - Store intermediate writes linked to a checkpoint (i.e. [pending writes](#pending-writes)).
 * `.getTuple` - Fetch a checkpoint tuple using for a given configuration (`thread_id` and `checkpoint_id`). This is used to populate `StateSnapshot` in `graph.getState()`.
-* `.list` - List checkpoints that match a given configuration and filter criteria. This is used to populate state history in `graph.getStateHistory()`
+* `.list` - List checkpoints that match a given configuration and filter criteria. This is used to populate state history in `graph.getStateHistory()`. Pass `{}` (no `thread_id`) to list checkpoints across every thread -- see [List every thread](#list-every-thread).
 :::
 
 :::python

@@ -50,7 +50,7 @@ Get your LangSmith API key from **Settings**, then configure the registered agen
 export LANGSMITH_API_KEY=<your-langsmith-api-key>
 export LANGSMITH_TRACING=true
 export LANGSMITH_AGENT_ID="<your-agent-id>"
-export LANGSMITH_AGENT_ENVIRONMENT="production"
+export LANGSMITH_AGENT_ENVIRONMENT="local"
 ```
 
 ## Create a trace
@@ -179,21 +179,30 @@ Save the filter as a named view for quick reuse. For a full reference on filter 
 
 **Filter programmatically with the SDK:**
 
-[Retrieve the environment's `tracer_session_name`](/langsmith/create-an-agent#use-an-environment-project) and pass it to the query API's `project_name` parameter.
+[Retrieve the environment's `tracer_session_name`](/langsmith/create-an-agent#use-an-environment-project), look up its project ID, and pass it to `client.runs.query()`. The query looks back 1 day unless you pass `min_start_time`.
 
 ```python
+import asyncio
+from datetime import datetime, timedelta, timezone
+
 from langsmith import Client
 
-client = Client()
 
-# Fetch all runs produced by a specific subagent
-runs = client.list_runs(
-    project_name="<environment-tracer-session-name>",
-    filter='has(metadata, \'{"lc_agent_name": "research-agent"}\')',
-)
+async def main():
+    client = Client()
+    project_id = str(client.read_project(project_name="<environment-tracer-session-name>").id)
 
-for run in runs:
-    print(run.name, run.start_time, run.status)
+    # Fetch all runs produced by a specific subagent
+    async for run in client.runs.query(
+        project_ids=[project_id],
+        min_start_time=datetime.now(timezone.utc) - timedelta(days=7),
+        filter='and(eq(metadata_key, "lc_agent_name"), eq(metadata_value, "research-agent"))',
+        selects=["NAME", "START_TIME", "STATUS"],
+    ):
+        print(run.name, run.start_time, run.status)
+
+
+asyncio.run(main())
 ```
 
 For the full filter query language reference, see [Trace query syntax](/langsmith/trace-query-syntax).
