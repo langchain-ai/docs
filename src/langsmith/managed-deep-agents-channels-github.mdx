@@ -33,10 +33,10 @@ Handlers receive two arguments and can be synchronous or asynchronous:
 - **`thread`**: The conversation's thread, with its ID at `thread.id`, the channel name at `thread.channel.name`, and `thread.interrupted`, which is set only when the channel asks the handler about a thread that waits on a decision. See [Tell people a run waits for input](#tell-people-a-run-waits-for-input).
 
 :::python
-Return a run input to start a run: a nonblank string, a message, state such as `{"messages": [...]}`, or `(input, options)` with `context`, `metadata`, or `webhook` options. Return `None` to skip the event.
+Return a run input to start a run: a nonblank string, a message, or state such as `{"messages": [...]}`. To set run options, return a list of runs such as `[{"input": prompt, "metadata": {"issue": 42}}]`, with `context`, `metadata`, `webhook`, `multitask_strategy`, or `thread`. See [Start runs on other threads](#start-runs-on-other-threads). Return `None` to skip the event.
 :::
 :::js
-Return a run input to start a run: a nonblank string, a message, state such as `{ messages: [...] }`, or `[input, options]` with `context`, `metadata`, or `webhook` options. Return `null` or `undefined` to skip the event.
+Return a run input to start a run: a nonblank string, a message, or state such as `{ messages: [...] }`. To set run options, return a list of runs such as `[{ input: prompt, metadata: { issue: 42 } }]`, with `context`, `metadata`, `webhook`, `multitaskStrategy`, or `thread`. See [Start runs on other threads](#start-runs-on-other-threads). Return `null` or `undefined` to skip the event.
 :::
 
 Handlers run before GitHub receives the webhook response, so keep them short. If the conversation already has a run in progress, the handler runs once that run finishes. The agent itself runs in the background.
@@ -53,6 +53,7 @@ Register event and action combinations under `onEvent` (`on_event` in Python), s
 | `workflow_run` | `completed` |
 | `check_run` | `completed` |
 | `check_suite` | `completed` |
+| `merge_group` | `checks_requested`, `destroyed` |
 | `push` | None. Register as `push`. |
 | `status` | None. Register as `status`. |
 
@@ -582,6 +583,35 @@ export const channel = channels.github({
 });
 ```
 :::
+
+### Start runs on other threads
+
+By default, a handler's run starts on the event's conversation. A handler can return a list of runs instead, each on a thread it chooses:
+
+:::python
+```python
+def on_comment(event, thread):
+    return [
+        # The issue's conversation.
+        {"input": answer_prompt},
+        # A fresh thread, deleted once the run ends.
+        {"input": triage_prompt, "thread": {"mode": "ephemeral"}},
+    ]
+```
+:::
+
+:::js
+```ts
+const onComment = (event, thread) => [
+  // The issue's conversation.
+  { input: answerPrompt },
+  // A fresh thread, deleted once the run ends.
+  { input: triagePrompt, thread: { mode: "ephemeral" } },
+];
+```
+:::
+
+`thread` takes `{"mode": "ephemeral"}` or `{"mode": "persistent", "id": ...}` with a UUID your service keeps, as a [schedule](/langsmith/managed-deep-agents-schedules) does. At most one run may start on the event's conversation. While the conversation waits on a decision, runs on other threads still start. Each run can also set its own `multitaskStrategy`.
 
 ### Limit repositories and permissions
 
