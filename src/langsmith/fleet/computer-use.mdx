@@ -78,11 +78,43 @@ Each agent has two lifecycle settings that control how long a computer stays act
 
 ## Base snapshot
 
-A snapshot is the disk image used to boot the computer. By default, all Fleet agents use the workspace default snapshot. To build, capture, or configure custom snapshots, see [Sandbox snapshots](/langsmith/sandbox-snapshots). [Change the snapshot for an agent](#configure-lifecycle-and-snapshot) in the settings popover.
+A snapshot is the disk image used to boot the computer. When no snapshot is selected, Fleet uses the platform default, `system/default:latest`. The current default starts from `ubuntu:26.04` and includes Python 3, Node.js 24, Go, Git, Docker, a browser, and document-processing libraries. See [System snapshots and default tools](/langsmith/sandbox-snapshots#choose-a-system-snapshot) for the shared catalog and contents.
+
+To build or capture a custom snapshot, see [Sandbox snapshots](/langsmith/sandbox-snapshots). [Change the snapshot for an agent](#configure-lifecycle-and-snapshot) in the settings popover.
 
 <Note>
 Snapshot changes apply only to new computers for the agent. The single shared computer in **Shared computer** mode keeps its original snapshot for its lifetime.
 </Note>
+
+### Prepare a custom image for Fleet
+
+A custom snapshot replaces the default filesystem; it does not inherit the default tools. Include the dependencies for the Fleet capabilities your agents use, even when starting from a minimal Linux image.
+
+| Capability | Required components |
+| --- | --- |
+| Command execution | Bash at `/bin/bash`. |
+| PowerPoint files (`fleet-pptx`) | Python 3 and `python-pptx`. |
+| Word files (`fleet-docx`) | Python 3 and `python-docx`. |
+| Excel files (`fleet-xlsx`) | Python 3, `openpyxl`, and `defusedxml`. The skill requires `openpyxl.xml.DEFUSEDXML` to be `True` before opening files. |
+| Legacy document conversion (`fleet-document-converter`) | Node.js 20 or later and the `anydoc` executable from `@firecrawl/anydoc`, including its platform-specific native package. |
+
+The default image shipped with self-hosted LangSmith `0.17.62` pins these Python packages:
+
+| Package | Version |
+| --- | --- |
+| `python-pptx` | `1.0.2` |
+| `python-docx` | `1.2.0` |
+| `openpyxl` | `3.1.5` |
+| `defusedxml` | `0.7.1` |
+| `et-xmlfile` | `2.0.0` |
+| `lxml` | `6.1.1` |
+| `Pillow` | `13.0.0` |
+| `XlsxWriter` | `3.2.9` |
+| `typing-extensions` | `4.16.0` |
+
+The default also includes `@firecrawl/anydoc` version `0.1.7`. These are the default image's pins, not a requirement to use Ubuntu or install every development tool. If you use another distribution, provide compatible packages and their native dependencies. Verify that the document libraries import, the hardened XML parser is active, and `anydoc` runs in your image.
+
+`system/default:latest` is a snapshot reference, not a container image URI for a Dockerfile `FROM` instruction. Build your own container image, then [create a snapshot from it](/langsmith/sandbox-snapshots#build-a-snapshot-from-a-container-image). To audit the default or a named system snapshot, follow [Inspect the default snapshot filesystem in self-hosted deployments](/langsmith/sandbox-snapshots#inspect-the-default-snapshot-filesystem-in-self-hosted-deployments) using your deployed `sandbox-host` image.
 
 ## Configure lifecycle and snapshot
 
