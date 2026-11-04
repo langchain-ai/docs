@@ -36,12 +36,12 @@ LangSmith uses the external ID to confirm that the role assignments in your subs
 </Step>
 
 <Step title="Grant LangSmith access with Terraform">
-Apply the [`langsmith-byoc-access` Terraform module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/azure/langsmith-byoc-access) in your Azure subscription with the external ID you copied. You must use this module. For each data plane in its `data_planes` input, it creates:
+Apply the [`langsmith-byoc-access` Terraform module](https://github.com/langchain-ai/terraform/blob/main/modules/byoc/azure/langsmith-byoc-access/main.tf) in your Azure subscription with the external ID you copied. You must use this module. For each data plane in its `data_planes` input, it creates:
 
 - **The LangSmith BYOC service principal**: The service principal of the LangSmith BYOC multi-tenant application, with application (client) ID `5b0a74cb-9f37-4797-b557-c15d7be80d3b`, in your Microsoft Entra tenant. It is created once per tenant, and the application requests no Microsoft Graph permissions.
 - **A dedicated resource group**, `langsmith-byoc-<key>`: LangSmith deploys the data plane into it. Do not put other workloads in it.
 - **A Key Vault in the resource group**: It uses Azure RBAC authorization and has public network access disabled. LangSmith writes the data plane's bootstrap secret to it, and the data plane reads it through a private endpoint.
-- **Two role assignments for the service principal on the resource group**: A `langsmith-byoc` custom role with the actions LangSmith needs, and `User Access Administrator`. Both roles can only be used in that resource group, and both assignments carry your external ID as their description.
+- **Two role assignments for the service principal on the resource group**: A `langsmith-byoc-<key>-<suffix>` custom role with the actions LangSmith needs, and `User Access Administrator`. Both roles can only be used in that resource group, and both assignments carry your external ID as their description.
 
 ```hcl
 terraform {
@@ -100,7 +100,7 @@ output "langsmith_byoc_access" {
 }
 ```
 
-Replace the subscription ID and the region. The `data_planes` key (`prod` in the example) names the resource group: 1 to 63 lowercase letters, digits, and hyphens, starting with a letter. Apply the configuration with your external ID, for example `terraform apply -var 'external_id=<external-id>'`.
+Replace the subscription ID and the region. The `data_planes` key (`prod` in the example) names the resource group: 1 to 63 lowercase letters, digits, and hyphens, starting with a letter and ending with a letter or digit, with no consecutive hyphens. Apply the configuration with your external ID, for example `terraform apply -var 'external_id=<external-id>'`.
 
 Then read the outputs for the next step:
 
@@ -225,7 +225,7 @@ You can change the following settings of an Azure data plane while it is `provis
 
 ## Reduce access after deployment
 
-Once the data plane is `active`, you can replace the `langsmith-byoc` role with the narrower `langsmith-byoc-reduced` role. Set `reduced_access = true` for the data plane in the Terraform module and run `terraform apply`:
+Once the data plane is `active`, you can reduce the permissions of its `langsmith-byoc-<key>-<suffix>` custom role. Set `reduced_access = true` for the data plane in the Terraform module and run `terraform apply`:
 
 ```hcl
 data_planes = {
@@ -236,7 +236,7 @@ data_planes = {
 }
 ```
 
-Terraform creates the new role assignment before it removes the old one, so LangSmith keeps access. With the reduced role, LangChain can still upgrade, scale, and repair the data plane, but cannot delete the data plane, its databases, its storage accounts, or its network, and cannot write Key Vault secrets. Set `reduced_access` back to `false` before you delete or re-create the data plane.
+Terraform updates the custom role actions in place. The role assignment stays, so LangSmith keeps access. Azure applies the change in up to 5 minutes. With the reduced role, LangChain can still upgrade, scale, and repair the data plane, but cannot delete the data plane, its databases, its storage accounts, or its network, and cannot write Key Vault secrets. Set `reduced_access` back to `false` before you delete or re-create the data plane.
 
 ## Delete a data plane
 
