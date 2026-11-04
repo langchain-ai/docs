@@ -32,9 +32,20 @@ results = await client.aevaluate(
 Fetch all the unsuccessful examples:
 ```python
 # Identify unsuccessful examples
-runs = client.list_runs(project_name=results.experiment_name)
-successful_example_ids = [r.reference_example_id for r in runs]
-unsuccessful_examples = (e for e in client.list_examples(dataset_name="dataset") if e.id not in successful_examples)
+experiment = client.read_project(project_name=results.experiment_name)
+successful_example_ids = {
+    run.reference_example_id
+    async for run in client.runs.query(
+        project_ids=[str(experiment.id)],
+        min_start_time=experiment.start_time,
+        is_root=True,
+        has_error=False,
+        selects=["REFERENCE_EXAMPLE_ID"],
+    )
+}
+unsuccessful_examples = [
+    e for e in client.list_examples(dataset_name="dataset") if str(e.id) not in successful_example_ids
+]
 ```
 
 Next, re-run all the failed examples and log them to the same experiment:
