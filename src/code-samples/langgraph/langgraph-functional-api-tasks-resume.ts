@@ -3,8 +3,10 @@ import { entrypoint, task, MemorySaver } from "@langchain/langgraph";
 
 // Used only to simulate a transient failure. Do not use a variable like this in production.
 let attempts = 0;
+const called: string[] = [];
 
 const getInfo = task("getInfo", async () => {
+  called.push("getInfo");
   attempts += 1;
 
   if (attempts < 2) {
@@ -16,6 +18,7 @@ const getInfo = task("getInfo", async () => {
 const checkpointer = new MemorySaver();
 
 const slowTask = task("slowTask", async () => {
+  called.push("slowTask");
   await new Promise((resolve) => setTimeout(resolve, 1000));
   return "Ran slow task.";
 });
@@ -23,6 +26,7 @@ const slowTask = task("slowTask", async () => {
 const main = entrypoint(
   { checkpointer, name: "main" },
   async (inputs: Record<string, unknown>) => {
+    called.push("entrypoint");
     const slowTaskResult = await slowTask();
     await getInfo(); // throws on the first run
     return slowTaskResult;
@@ -41,11 +45,22 @@ try {
   // First run fails in getInfo.
 }
 
+// :remove-start:
+if (JSON.stringify(called) !== JSON.stringify(["entrypoint", "slowTask", "getInfo"])) {
+  throw new Error(`unexpected initial execution: ${called}`);
+}
+// :remove-end:
+called.length = 0;
 console.log(await main.invoke(null, config));
 // 'Ran slow task.'
+console.log(called);
+// ['entrypoint', 'getInfo']
 // :snippet-end:
 
 // :remove-start:
+if (JSON.stringify(called) !== JSON.stringify(["entrypoint", "getInfo"])) {
+  throw new Error(`completed slowTask ran again: ${called}`);
+}
 const resumed = await main.invoke(null, config);
 if (resumed !== "Ran slow task.") {
   throw new Error(`expected restored slow task, got ${resumed}`);
