@@ -1,0 +1,106 @@
+---
+title: "Browser Use integrations"
+description: "Integrate with Browser Use using LangChain Python."
+integration:
+  name: Browser Use
+  pypi: browser-use-sdk
+---
+
+[Browser Use](https://browser-use.com) runs browser agents and cloud browsers for AI applications:
+
+- [Browser Use Cloud agents](https://docs.browser-use.com/cloud/agent/quickstart) take a task in plain language, complete it in a real browser, and return the result.
+- [Cloud browsers](https://docs.browser-use.com/cloud/browser/quickstart) are remote Chrome instances you control over CDP, with stealth, proxies, live preview, and recording.
+- The open-source [`browser-use`](https://github.com/browser-use/browser-use) library runs browser agents on your own machine.
+
+This page shows how to give a LangChain agent a tool that hands web tasks to a Browser Use Cloud agent.
+
+## Installation and setup
+
+Get an API key from the [Browser Use Cloud dashboard](https://cloud.browser-use.com/settings?tab=api-keys&new=1) and set it in the `BROWSER_USE_API_KEY` environment variable:
+
+```python Set API key icon="key"
+import getpass
+import os
+
+if "BROWSER_USE_API_KEY" not in os.environ:
+    os.environ["BROWSER_USE_API_KEY"] = getpass.getpass("Enter your Browser Use API key: ")
+```
+
+Install the [Browser Use SDK](https://pypi.org/project/browser-use-sdk/):
+
+<CodeGroup>
+    ```bash pip
+    pip install -U browser-use-sdk langchain
+    ```
+    ```bash uv
+    uv add browser-use-sdk langchain
+    ```
+</CodeGroup>
+
+## Browser agent tool
+
+The tool below starts a Browser Use Cloud agent run, waits for it to finish, and returns the agent's answer. A finished run keeps its cloud browser alive for follow-up runs, so the tool stops that browser before returning.
+
+```python Define the tool icon="tool"
+from browser_use_sdk.v4 import BrowserUse
+from langchain.tools import tool
+
+
+@tool
+def browser_use_task(task: str) -> str:
+    """Complete a task in a real web browser and return the result.
+
+    Describe the goal in plain language and include any URL to start from.
+    """
+    with BrowserUse() as client:
+        run = client.runs.create(task)
+        result = client.runs.wait_for_completion(run.id)
+        # The run keeps its cloud browser alive for follow-up runs. Stop it.
+        for event in client.runs.events(run.id).events:
+            if event.type == "browser.ready":
+                client.browsers.stop(event.data["browser_session_id"])
+    if result.result is None:
+        return f"Browser task ended with status {result.status}: {result.error}"
+    return result.result
+```
+
+Call the tool directly:
+
+```python Call tool icon="rocket"
+browser_use_task.invoke({"task": "Open https://example.com and return the page title."})
+```
+
+```text
+Example Domain
+```
+
+### Use within an agent
+
+```python Agent with tool icon="robot"
+# pip install -qU "langchain[anthropic]" to call the model
+from langchain.agents import create_agent
+
+agent = create_agent(
+    model="claude-sonnet-4-6",
+    tools=[browser_use_task],
+)
+
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "What is the page title of https://example.com?"}]}
+)
+print(result["messages"][-1].content)
+```
+
+```text
+The page title of [https://example.com](https://example.com) is **"Example Domain"**.
+```
+
+Each tool call is a billed Browser Use Cloud run. See [Browser Use pricing](https://browser-use.com/pricing) for current rates.
+
+## Cloud browsers
+
+To drive a browser with your own Playwright or Puppeteer code instead of an agent, create a cloud browser and connect to its CDP URL. See the [Browser Use browser quickstart](https://docs.browser-use.com/cloud/browser/quickstart).
+
+## API reference
+
+For sessions, structured output, profiles, and other options, see the [Browser Use documentation](https://docs.browser-use.com).

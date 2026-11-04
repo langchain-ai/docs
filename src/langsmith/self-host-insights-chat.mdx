@@ -1,0 +1,70 @@
+---
+title: Configure Insights and Chat on self-hosted LangSmith
+sidebarTitle: Insights and Chat
+description: Configure encryption keys and model access for Insights and Chat on self-hosted LangSmith, disable either feature, or upgrade a legacy configuration.
+---
+
+[Insights](/langsmith/insights) analyzes traces, and [Chat](/langsmith/chat) (formerly Polly) helps you work with LangSmith data. Both are part of the base installation and are enabled by default in Helm chart version 0.15.1 or later. They do not require any [additional features](/langsmith/self-host-additional-features), such as Sandboxes, Fleet, or LangSmith Deployment.
+
+<Note>
+For charts before 0.15.1, Insights and Chat are not enabled by default. Use the configuration supported by your pinned chart, or upgrade before following this guide.
+</Note>
+
+Each feature requires its own Fernet encryption key and model access. If you followed the [Kubernetes installation guide](/langsmith/kubernetes), you already set the keys in `langsmith_config.yaml`. Continue with [Configure model access](#configure-model-access).
+
+## Set the encryption keys
+
+To generate one key per feature, see [Keys and secrets](/langsmith/kubernetes#keys-and-secrets). Do not commit encryption keys to version control.
+
+Provide the keys in one of two ways:
+
+- **Inline**: Set `insights.encryptionKey` and `polly.encryptionKey` in `langsmith_config.yaml`, as in the [minimum configuration](/langsmith/kubernetes#configure-your-helm-charts).
+- **Existing Secret**: Add `insights_encryption_key` and `polly_encryption_key` to your [existing LangSmith app Secret](/langsmith/self-host-using-an-existing-secret#parameters). Reference it through `config.existingSecretName`.
+
+Apply your Helm configuration:
+
+```bash
+helm upgrade -i langsmith langchain/langsmith --values langsmith_config.yaml --version <version> -n <namespace> --wait --debug
+```
+
+## Configure model access
+
+Insights and Chat call models through your [provider credentials and model configurations](/langsmith/model-configurations). For keyless Vertex AI on GKE, see [Configure GKE workload identity](/langsmith/self-host-gke-vertex-ai-workload-identity).
+
+## Disable Insights or Chat
+
+Disable either feature when your installation does not need it. Set the corresponding top-level flag to `false` in your [`langsmith_config.yaml`](/langsmith/kubernetes#configure-your-helm-charts). You do not need an encryption key for a disabled feature.
+
+```yaml
+insights:
+  enabled: false
+
+polly:
+  enabled: false
+```
+
+Apply your Helm configuration:
+
+```bash
+helm upgrade -i langsmith langchain/langsmith --values langsmith_config.yaml --version <version> -n <namespace> --wait --debug
+```
+
+Disabling Insights does not disable Engine or remove their shared deployment when `engine.enabled` is `true`.
+
+## Upgrade existing configurations
+
+This section applies only to installations upgrading from earlier chart versions.
+
+Current charts reject the legacy `config.insights`, `config.polly`, and `backend.agentBootstrap` settings. Remove these settings rather than setting them to `false`. Contact technical support through the [Support Portal](https://support.langchain.com) for legacy deployment migration guidance.
+
+Starting with chart 0.16.0, Insights and Engine share the `langsmith-insights-engine` image and deployment. This does not enable Engine. Move legacy `insights.apiServer`, `insights.queue`, `insights.postgres`, `insights.redis`, and `insights.namePrefix` values to `engineInsightsAgent`. Keep `insights.enabled` and `insights.encryptionKey` under `insights`.
+
+If you pin the retired `langsmith-clio` image, remove or update that pin before upgrading. For private registries, mirror `langsmith-insights-engine`. See [Mirroring images](/langsmith/self-host-mirroring-images#additional-images-for-engine).
+
+For the general upgrade procedure, see [Upgrade an installation](/langsmith/self-host-upgrades).
+
+## See also
+
+- [Self-host LangSmith on Kubernetes](/langsmith/kubernetes)
+- [Configure model access](/langsmith/model-configurations)
+- [Configure additional self-hosted features](/langsmith/self-host-additional-features)

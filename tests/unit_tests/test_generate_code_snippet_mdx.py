@@ -36,7 +36,7 @@ agent = create_agent(model="anthropic:claude-sonnet-5", tools=tools)
 
 TS_RAG_SAMPLE = """const embeddings = new OpenAIEmbeddings({ model: "text-embedding-3-small" });
 const agent = createAgent({ model: "anthropic:claude-sonnet-5", tools });
-"""
+"""  # noqa: E501
 
 PY_KEEP_SAMPLE = """# KEEP MODEL
 agent = create_agent(model="anthropic:claude-sonnet-5", tools=tools)
@@ -86,6 +86,37 @@ def test_provider_specific_chat_class_is_not_expanded() -> None:
     # rather than offering six tabs of code that cannot run.
     assert expanded is None
     assert 'ChatOpenAI(model="gpt-4o-mini")' in stripped
+
+
+def test_multiline_provider_specific_chat_class_is_not_expanded() -> None:
+    """A `model:` property on the line after `new ChatOpenAI({` is still bare."""
+    sample = (
+        "const model = new ChatOpenAI({\n"
+        '  model: "gpt-5.4-mini",\n'
+        "  temperature: 0,\n"
+        "}).bindTools(tools);\n"
+    )
+    expanded, stripped = maybe_expand_deepagents_quickstart_codegroup(
+        sample, language="ts", fence_lang="typescript"
+    )
+    assert expanded is None
+    assert 'model: "gpt-5.4-mini"' in stripped
+
+
+def test_agent_model_after_multiline_chat_class_is_expanded() -> None:
+    """Only the enclosing call decides, not an earlier closed one."""
+    sample = (
+        "const grader = new ChatOpenAI({\n"
+        '  model: "gpt-5.4-mini",\n'
+        "});\n"
+        'const agent = createAgent({ model: "openai:gpt-5.5", tools });\n'
+    )
+    expanded, _ = maybe_expand_deepagents_quickstart_codegroup(
+        sample, language="ts", fence_lang="typescript"
+    )
+    assert expanded is not None
+    assert expanded.count('model: "gpt-5.4-mini"') == TAB_COUNT
+    assert 'createAgent({ model: "google:gemini-3.6-flash"' in expanded
 
 
 def test_embeddings_only_sample_is_left_alone() -> None:

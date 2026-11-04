@@ -168,3 +168,26 @@ Check these directories inside your ClickHouse pod:
 - `/var/lib/clickhouse/shadow`
 
 If backups are present, copy them to external storage (for example, S3), then clear the directories. Disk space should start releasing within a few minutes.
+
+## Keep run statistics after traces expire
+
+After traces expire, LangSmith keeps their run statistics, such as run counts, latency, and error rates, until the extended (`longlived`) retention period passes. LangSmith then removes the remaining stored data, and those run statistics are no longer available. For how LangSmith resolves the `longlived` period, see [TTL configuration precedence](#ttl-configuration-precedence).
+
+<Note>
+This applies to [SmithDB](/langsmith/self-host-smithdb) installations on LangSmith 0.18 (Helm chart `0.18.0` or later).
+</Note>
+
+To keep run statistics available for longer, set `SMITHDB_COMPACTION__EXPIRY_CYCLE__RETENTION_CLEANUP_BUFFER` to a duration such as `30d` or `720h`. LangSmith waits this long past the `longlived` period before it removes the data. The default is `0s`.
+
+For example, with the default 400-day `longlived` period and a `30d` buffer, run statistics stay available for at least 430 days after LangSmith receives a trace.
+
+```yaml Helm
+smithdb:
+  compaction:
+    deployment:
+      extraEnv:
+        - name: SMITHDB_COMPACTION__EXPIRY_CYCLE__RETENTION_CLEANUP_BUFFER
+          value: "30d"
+```
+
+If SmithDB runs as a single pod, set the variable under `smithdb.single.deployment.extraEnv` instead.
