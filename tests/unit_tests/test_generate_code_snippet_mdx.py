@@ -36,7 +36,7 @@ agent = create_agent(model="anthropic:claude-sonnet-5", tools=tools)
 
 TS_RAG_SAMPLE = """const embeddings = new OpenAIEmbeddings({ model: "text-embedding-3-small" });
 const agent = createAgent({ model: "anthropic:claude-sonnet-5", tools });
-"""
+"""  # noqa: E501
 
 PY_KEEP_SAMPLE = """# KEEP MODEL
 agent = create_agent(model="anthropic:claude-sonnet-5", tools=tools)
