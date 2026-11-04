@@ -5,6 +5,7 @@ description: Define authored tools for managed deep agents projects.
 ---
 
 import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
+import MdaConnectionsUserTool from '/snippets/langsmith/mda-connections-user-tool.mdx';
 
 Custom tools are application code the agent can call for fetching real-time data, querying databases, executing code, and taking actions. Unlike [instructions](/langsmith/managed-deep-agents-instructions) and [skills](/langsmith/managed-deep-agents-skills), MDA does not discover them automatically.
 
@@ -192,9 +193,11 @@ To pause on a form your own tool posts in Slack instead, see [Agent-owned interr
 
 ## Use secrets and context
 
-Tools can read deployment secrets from environment variables. Put local values in `.env` for `mda dev`; `mda deploy` forwards non-reserved `.env` values as hosted deployment secrets.
+A tool reads fixed configuration, such as a region or an endpoint URL, from an environment variable. Put local values in `.env` for `mda dev`; `mda deploy` forwards non-reserved `.env` values as hosted deployment secrets.
 
-For per-run values such as request metadata or feature flags, use the normal LangChain runtime context patterns for tools. See [how to access context from within your tools](/oss/langchain/tools#access-context).
+Credentials belong in a [connection](/langsmith/managed-deep-agents-connections) instead. A connection keeps the value in your LangSmith workspace rather than the project, and it can resolve a different credential for each caller. See [Use tools that require authentication](#use-tools-that-require-authentication).
+
+For per-run values such as request metadata or feature flags, see [Access runtime context](#access-runtime-context).
 
 ## Deployment
 
@@ -227,7 +230,17 @@ Human-in-the-loop needs durable thread state to pause and resume. The managed ru
 
 ## Use tools that require authentication
 
-If a tool requires an API key or OAuth token, use a connection to resolve the credential at runtime. See [Manage connections](/langsmith/managed-deep-agents-connections).
+If a tool requires an API key or an OAuth token, resolve it at runtime with a [connection](/langsmith/managed-deep-agents-connections). `connections.get(...)` takes the connection slug and the credential owner, and returns the credential as a string.
+
+The second argument selects the owner. Pass `{"type": "agent"}` for one credential that the whole deployment shares, such as a team search key, or `{"type": "user"}` for the calling person's own credential, so the agent acts as them. For more information, see [Choose a credential owner](/langsmith/managed-deep-agents-connections#choose-a-credential-owner).
+
+This tool resolves the caller's own GitHub credential:
+
+<MdaConnectionsUserTool />
+
+A user-owned connection needs a grant from each caller. The first run for someone who has not authorized the service pauses on a [`credential_authorization_required` interrupt](/langsmith/managed-deep-agents-connections#handle-the-authorization-interrupt), which Slack and LangSmith Studio complete for the caller.
+
+Create the connection itself with `mda connections create`. For create modes, local development, and the authorization interrupt, see [Manage connections](/langsmith/managed-deep-agents-connections).
 
 ## Access runtime context
 
