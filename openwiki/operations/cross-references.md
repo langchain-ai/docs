@@ -1,11 +1,8 @@
 ---
 type: operations guide
-title: Cross-References and API Links
-description: Author, resolve, validate, and safely maintain scoped API documentation links using the @[...] cross-reference mechanism. Distinguishes source-level semantic-reference validation from rendered-site link checking.
+title: Cross-References and Link Resolution
+description: Author and maintain scoped API cross-references, validate them against local maps, and distinguish source resolution from generated-site route and anchor checks.
 tags: [documentation, cross-references, api-links, validation]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-21T08:20:13.723Z
 sources:
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
@@ -25,10 +22,13 @@ sources:
     resource: repo://src/oss/langchain/mcp/tools.mdx
   - id: openwiki-source-2ecfcd33b729fccd843ab705
     resource: repo://tests/unit_tests/test_handle_auto_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-21T08:20:13.723Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-11-03T08:13:57.434Z
+generated: { by: "openwiki/0.4.3", at: "2026-11-03T08:13:57.434Z" }
 ---
 
-# Cross-References and API Links
+# Cross-References and Link Resolution
 
 `@[Name]` is source-level Markdown/MDX syntax for an API-reference link. Rather than hard-coding a reference URL in every consumer page, authors use a semantic name and the preprocessing pipeline resolves that name in the active language scope. The link map owns API destinations; use ordinary Markdown or HTML links for documentation-site routes.
 
@@ -56,7 +56,7 @@ The resolver leaves an escaped marker unlinked, then removes the escape during i
 
 ## Resolution order and language scope
 
-`preprocess_markdown()` uses its `target_language` argument, then `TARGET_LANGUAGE`, then `python`; unless the caller provides `default_scope`, that target is the initial reference scope. It resolves references before CTA UTM decoration and conditional rendering, while language fences are still available to select a map. Conditional rendering then retains the matching `:::python` or `:::js` block and removes the other supported language block.
+`preprocess_markdown()` uses its `target_language` argument, then `TARGET_LANGUAGE`, then `python`; unless the caller provides `default_scope`, that target is the initial reference scope. It resolves references before CTA UTM decoration and conditional rendering, while language fences are still available to select a map. Before conditional rendering selects content, it validates the entire conditional-fence structure. A nested opener, stray closer, or unclosed block raises `ValueError` and stops preprocessing. For a structurally valid block, rendering retains matching `:::python` or `:::js` content and removes nonmatching supported content; unsupported labels are left unchanged.
 
 ```mermaid
 flowchart TD
@@ -77,7 +77,7 @@ flowchart TD
 
 This shows the line-oriented reference pass, which runs before conditional rendering removes language-specific content.
 
-A `:::python` or `:::js` line changes the active scope for following lines; a bare `:::` resets it to the default scope. Scope labels are normalized to lowercase. Use the supported `python` and `js` labels: only those scopes have flattened maps. Keys are exact, including case.
+A `:::python` or `:::js` line changes the active scope for following lines; a bare `:::` resets it to the default scope. The resolver lowercases any word label, but only `python` and `js` have flattened maps, so use those supported labels for references. Keys are exact, including case. An unsupported label can be retained by final conditional rendering but gives the resolver a scope with no map; it is not a safe way to make language-specific references.
 
 Language fences allow the same authored key to resolve to different destinations in each language branch. They also make language-only names safe: add an alias to both maps only when the same unfenced shared content must work in both builds. For example, the maps share `MCPAdapter`, but use `MCPAdapter.list_tools` for Python and `MCPAdapter.listTools` for JavaScript. Place each method reference in its corresponding language fence.
 
@@ -86,6 +86,8 @@ Language fences allow the same authored key to resolve to different destinations
 ### Fence and failure boundaries
 
 The resolver does not transform markers in code fences that begin with at least three backticks or tildes. Code-fence state takes precedence over conditional fences, so a `:::js`-looking line in an example cannot change the active scope. The implementation toggles state for every matching fence line rather than matching opening and closing delimiters. Keep fences balanced: an unclosed recognized fence leaves the rest of the document untransformed.
+
+That protection applies to the line-oriented autolink pass, not to final conditional rendering. Conditional validation and rendering scan the complete document without regular code-fence state, so a complete unescaped `:::python ... :::` or `:::js ... :::` sequence in a code example can still be interpreted later. Escape markers that must be displayed literally, and keep conditional blocks closed and non-nested.
 
 A missing key is non-fatal during preprocessing. The resolver writes an info-level log with the file, line, name, and active scope, then keeps the original marker in the output. Treat this as a source defect and run the semantic-reference validator rather than relying on a successful build.
 
@@ -122,6 +124,8 @@ The checker derives its default scopes from the source path:
 | Non-OSS content | `python` |
 
 A `:::python` or `:::js` fence narrows validation to that scope. A bare or unsupported conditional fence restores the path-derived defaults. Therefore, an unfenced reference in shared OSS content must exist in **every** applicable map, not merely one.
+
+This is deliberately a map-membership check, not a full preprocessor simulation. In particular, an unsupported fence resets the checker's scopes but makes the resolver select that unsupported scope. Use only `python` and `js` around references, then rely on preprocessing's structural conditional-fence validation for malformed, nested, stray, or unclosed conditional markers.
 
 The checker shares the resolver's reference and code-fence patterns. It skips `snippets/code-samples/`, paths containing `node_modules`, escaped references, and content inside recognized code fences. It warns and skips files that are not valid UTF-8. As with preprocessing, an unclosed recognized code fence excludes the remainder of that file from checking.
 
