@@ -51,11 +51,11 @@ LangSmith creates a VNet from the `vpc_cidr` range in the create request, and di
 | Subnet | Size | Use |
 |--------|------|-----|
 | AKS | `/20` | AKS nodes and pods. Outbound traffic goes through a NAT gateway with one static public IP address. |
-| PostgreSQL | `/24` | Private endpoints of the PostgreSQL servers. Its network security group allows TCP 5432 from the AKS subnet only. |
-| Redis | `/24` | Private endpoint of Redis. Its network security group allows TCP 10000 and 8500 to 8599 from the AKS subnet only. |
-| Private link | `/24` | Private endpoints of Blob storage, the Key Vault, and the LangSmith control plane. Its network security group allows TCP 443 from the AKS subnet only. |
+| Private endpoints | `/24` | Shared private endpoints for PostgreSQL, Redis, Blob storage, Key Vault, and the LangSmith control plane. |
 
-The AKS subnet takes one sixteenth of the VNet, and each other subnet takes 1/256 of it, so a `/18` VNet gives a `/22` AKS subnet and `/26` subnets for the rest. The Kubernetes service range comes from outside the VNet: `10.240.0.0/16`, or `192.168.0.0/16` if your VNet overlaps `10.240.0.0/16`.
+One network security group on the private endpoint subnet uses three application security groups to allow traffic from the AKS subnet only: TCP 5432 to PostgreSQL endpoints, TCP 10000 and 8500 to 8599 to Redis endpoints, and TCP 443 to Blob storage, Key Vault, and control plane endpoints.
+
+The AKS subnet takes one sixteenth of the VNet, and the private endpoint subnet takes 1/256 of it. A `/18` VNet gives a `/22` AKS subnet and a `/26` private endpoint subnet. The Kubernetes service range comes from outside the VNet: `10.240.0.0/16`, or `192.168.0.0/16` if your VNet overlaps `10.240.0.0/16`.
 
 Private DNS zones linked to the VNet resolve PostgreSQL, Redis, Key Vault, and Blob storage to their private endpoints.
 
@@ -97,7 +97,7 @@ Data plane workloads use user-assigned managed identities in your resource group
 |------|---------|----------------|
 | Control plane to Azure Resource Manager | HTTPS to the public Azure Resource Manager endpoint | A Microsoft Entra token of the LangSmith BYOC application in your tenant |
 | Control plane to the AKS API | Private Link. A private endpoint in LangChain's control plane network connects to your cluster's API server. The AKS API has no public endpoint. | Microsoft Entra token and Azure RBAC |
-| Data plane to control plane | Private Link. A private endpoint in the data plane's private link subnet connects to the LangSmith control plane. Private DNS zones in your resource group resolve the LangSmith API and telemetry hostnames to it. | A data plane token |
+| Data plane to control plane | Private Link. A private endpoint in the data plane's shared private endpoint subnet connects to the LangSmith control plane. Private DNS zones in your resource group resolve the LangSmith API and telemetry hostnames to it. | A data plane token |
 | Your users and applications to the data plane | The public or internal load balancer | LangSmith API keys and sign-in through the control plane |
 
 The data plane pulls LangSmith container images from LangChain's container registry through the NAT gateway.
