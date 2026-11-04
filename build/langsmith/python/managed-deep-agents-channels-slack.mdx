@@ -1,0 +1,432 @@
+---
+title: Connect a managed deep agent to Slack
+sidebarTitle: Slack
+description: Start Managed Deep Agents runs from Slack messages and send responses to Slack conversations.
+---
+
+import ManagedDeepAgentsPublicBetaNote from '/snippets/python/langsmith/managed-deep-agents-public-beta-note.mdx';
+
+A Slack channel lets people invoke a managed deep agent through app mentions, direct messages, and replies in an active Slack thread. Managed Deep Agents verifies Slack events, maps each conversation to a thread, runs the agent as the resolved caller, and posts the response back to Slack.
+
+Managed Deep Agents creates and configures the resources that connect Slack to the deployed agent. Add a channel declaration to the agent project, then deploy.
+
+<ManagedDeepAgentsPublicBetaNote />
+
+## Project structure
+
+```text
+my-agent/
+  agent.py
+  channels/
+    slack.py
+```
+
+
+
+
+## Add a Slack channel
+
+A managed deep agent deployment supports one Slack channel.
+
+The channel declaration lives at `channels/slack.py`.
+
+
+
+
+To include Slack when you create a project, pass `--channel slack`:
+
+```bash
+uvx --from managed-deepagents mda init my-agent --channel slack
+```
+
+
+
+
+To add Slack to an existing project, run the channel initialization command from the project root:
+
+```bash
+uv run mda channels init slack
+```
+
+
+
+
+```python channels/slack.py
+from managed_deepagents import channels
+
+channel = channels.slack()
+```
+
+
+
+
+## Configure your agent's appearance in Slack
+
+Set `app` in the channel declaration to control how the agent appears in Slack, as the [GitHub](/langsmith/python/managed-deep-agents-channels-github) and [Linear](/langsmith/python/managed-deep-agents-channels-linear) channels do.
+
+<ParamField path="app.name" type="string">
+  The agent name in Slack. The name must contain 1–35 characters and can contain letters, numbers, spaces, underscores, dashes, and periods. It cannot start or end with a space or dash.
+</ParamField>
+
+<ParamField path="app.description" type="string">
+  A description of what the agent does. The description can contain up to 139 characters.
+</ParamField>
+
+<ParamField path="app.icon" type="string">
+  A path to the agent icon shown in Slack, relative to the `channels/` directory. The icon must be a 512 by 512 pixel PNG file no larger than 1 MB. If you omit this parameter, Managed Deep Agents will generate an icon for you.
+</ParamField>
+
+<ParamField path="app.background_color" type="string">
+  The background color behind the agent icon as a six-digit hexadecimal color, such as `#1d4ed8`.
+</ParamField>
+
+
+
+
+For example, put an icon next to the channel declaration:
+
+```text
+my-agent/
+  agent.py
+  channels/
+    slack.py
+    support-agent.png
+```
+
+```python channels/slack.py
+from managed_deepagents import channels
+
+channel = channels.slack(
+    app={
+        "name": "Support Agent",
+        "description": "Answers customer questions about orders and returns",
+        "icon": "support-agent.png",
+        "background_color": "#1d4ed8",
+    },
+)
+```
+
+
+
+
+<Note>
+Earlier versions took these fields at the top level of `channels.slack()`. They still work but are deprecated and will be removed in 0.12, and you can't combine them with `app`.
+</Note>
+
+### Configure which messages start runs
+
+<ParamField path="trigger_mode" type='"mention" | "thread" | "all"' default='"mention"'>
+  Which channel messages reach the agent. Direct messages always do.
+  `"mention"` delivers messages that @-mention the agent. `"thread"` delivers one mention, then every later reply in that Slack thread, so people mention the agent once. `"all"` delivers every message in the channels the agent is in. New Slack apps use `"mention"`; when unset, a deployed agent keeps its current mode. Redeploy to change the mode of an existing Slack app. `trigger_on_all_messages=True` is a deprecated way to write `trigger_mode="all"`.
+</ParamField>
+
+<ParamField path="ignore_bots" type="bool" default="True">
+  Whether to ignore messages from other Slack bots, so automations don't trigger each other. With `False`, a bot must still @-mention the agent. `allow_bot_triggers=True` is a deprecated way to write `ignore_bots=False`, removed in 0.12.
+</ParamField>
+
+
+
+
+## Decide what a message starts
+
+By default, every message that reaches the agent starts a run with its text, and the channel posts the agent's final reply in the Slack thread. These options change that:
+
+| Option | Description |
+| --- | --- |
+| `on_event` | Maps event keys, such as `mention`, to handlers that decide what each event starts. A message kind without a handler starts a run with the message. |
+| `multitask_strategy` | Optional. What a message does while its thread has a run in progress: `enqueue` (default) waits for the run, `interrupt` cancels it and keeps its progress, `rollback` cancels it and discards its progress, and `reject` starts nothing. |
+| `auto_post` | Optional. Post the agent's final reply in the Slack thread. Defaults to `true`. Set it to `false` for an agent that posts its own messages. |
+| `on_finish` | Optional. Runs once a message is done, with the event, its thread, and how it finished: the run it started and how that run ended, why it started none, or that it failed. Runs in the background, and failures are logged. |
+
+
+
+
+```python channels/slack.py
+from managed_deepagents import channels
+
+
+def on_mention(event, thread):
+    return [{"input": event.text, "metadata": {"slack_channel": event.channel_id}}]
+
+
+channel = channels.slack(
+    trigger_mode="thread",
+    on_event={
+        "mention": on_mention,
+        # Replies in a followed thread that don't mention the agent start nothing.
+        "message": lambda event, thread: None,
+    },
+)
+```
+
+
+
+
+Handlers receive the event and its `thread`, and can be synchronous or asynchronous. They return what the [GitHub](/langsmith/python/managed-deep-agents-channels-github) and [Linear](/langsmith/python/managed-deep-agents-channels-linear) handlers return: a run input, a list of runs with options such as `context`, `metadata`, `thread`, `auto_post`, or `multitask_strategy`, `reply(message)` to answer without a run, or nothing to skip the event. A handler can also be an endpoint of your service, as on those channels.
+
+
+
+
+| Event key | When it fires |
+| --- | --- |
+| `mention` | A channel message @-mentions the agent. |
+| `directMessage` | Someone sends the agent a direct message. |
+| `message` | Any other channel message. Only `"thread"` and `"all"` trigger modes deliver these. |
+| `interaction` | Someone clicks a button the agent posted. |
+| `edit` / `delete` | A message in a thread the agent took a message from is edited or deleted. |
+| `reaction` | Someone adds or removes a reaction on such a message. Needs the `reactions:read` scope, which deploy adds to a managed Slack app. |
+| `shortcut` | Someone uses one of your Slack app's message shortcuts. |
+| `channel` | A channel the agent is in is created, renamed, archived, unarchived, or deleted. |
+
+The channel subscribes to `edit`, `delete`, `reaction`, `shortcut`, and `channel` events only when it has a handler for them, and never forwards the agent's own edits or reactions.
+
+A message event has the message's `text`, `user_id`, `channel_id`, `message_ts`, `thread_ts`, `files`, the sender as `actor`, the Slack workspace your app is installed in as `team_id`, and Slack's event as `payload`. The `thread` has its `id` and `channel.name`. `await thread.get_state()` returns the thread's state as Agent Server's `threads.get_state` does, such as the messages the agent already has, or `None` before the first run.
+
+
+
+
+### Start runs on other threads
+
+A message's run continues its Slack thread's conversation. Set `thread` on a run to start it elsewhere:
+
+| `thread` | Use it for |
+| --- | --- |
+| `{"mode": "ephemeral"}` | Standalone work that shouldn't build up history, such as a help bot answering each direct message on its own. The thread is deleted once the run ends. |
+| `{"mode": "persistent", "id": "<uuid>"}` | One conversation shared by many Slack threads, such as every thread in an on-call channel, or a thread your service keeps. |
+
+```python channels/slack.py
+import uuid
+
+from managed_deepagents import channels
+
+
+def answer_dm(event, thread):
+    # Each question stands alone, so nothing carries over between DMs.
+    return [{"input": event.text, "thread": {"mode": "ephemeral"}, "auto_post": True}]
+
+
+def on_mention(event, thread):
+    # Every thread in a Slack channel shares that channel's conversation.
+    channel_thread = uuid.uuid5(uuid.NAMESPACE_URL, f"slack:{event.team_id}:{event.channel_id}")
+    return [
+        {
+            "input": event.text,
+            "thread": {"mode": "persistent", "id": str(channel_thread)},
+            "auto_post": True,
+        }
+    ]
+
+
+channel = channels.slack(on_event={"directMessage": answer_dm, "mention": on_mention})
+```
+
+
+
+
+The run still shows its status, reaction, and pending decisions in the Slack thread the message came from, and **Stop** there cancels it. It posts its final reply there only with `auto_post` set to `true`, as above.
+
+
+
+
+## React to the message that starts a run
+
+When a run picks up an inbound message, the agent reacts to it with an emoji, so
+the sender knows it was seen before the agent has anything to say. The reaction
+never blocks or delays the reply.
+
+Every message gets the same emoji by default. Pass a function to choose one per
+message:
+
+<ParamField path="reactions" type="bool | str | Callable" default='"eyes"'>
+  Pass `False` to turn reactions off, a Slack emoji short name to use that emoji
+  instead, or a callable taking `{"text": ...}` and returning a short name. The
+  callable may be sync or async.
+</ParamField>
+
+```python
+from managed_deepagents import channels
+
+async def choose_emoji(context: dict) -> str:
+    return "bug" if "broken" in context["text"].lower() else "eyes"
+
+channel = channels.slack(app={"name": "Support Bot"}, reactions=choose_emoji)
+```
+
+
+
+
+Return a Slack short name without the surrounding colons. A name Slack does not
+recognize is chosen but never appears, so the reaction is simply missing. A
+chooser that throws, that takes longer than five seconds, or that returns
+anything else falls back to the default emoji, and the run continues either way.
+
+### Choose the emoji with a decision model
+
+A [decision model](/langsmith/llm-gateway-decision-models) scores a fixed set of
+options and answers with one of their keys, so the reaction reflects what the
+message says and there is no reply to parse. The answer is always one of the
+options you supplied. `TypeSafeClassifier`
+([Python](/oss/python/integrations/providers/typesafe),
+[JavaScript](/oss/javascript/integrations/providers/typesafe)) exposes this as a
+`Runnable`, and records traces and token usage in LangSmith.
+
+```bash
+uv add langchain-typesafe
+```
+
+```python
+from functools import lru_cache
+
+from langchain_typesafe import Choice, TypeSafeClassifier
+from managed_deepagents import channels
+
+# The description is what the model matches on, so describe the situation
+# rather than the picture. Keep an option for anything unremarkable.
+QUESTION = Choice(
+    instructions="Which emoji best acknowledges this message?",
+    criteria={
+        "bug": "A defect or incorrect behaviour.",
+        "rotating_light": "A declared incident or outage.",
+        "mag": "A code review, pull request, or diff to look at.",
+        "hourglass": "Waiting on someone or something else; blocked.",
+        "speech_balloon": "A question, or a request to explain something.",
+        "wave": "A greeting or hello.",
+        "eyes": "Anything that does not clearly fit another option.",
+    },
+)
+
+
+@lru_cache(maxsize=1)
+def classifier() -> TypeSafeClassifier:
+    return TypeSafeClassifier(model="typesafe/jev-latest")
+
+
+async def choose_emoji(context: dict) -> str:
+    answer = await classifier().ainvoke(
+        {"state": context["text"][:2000], "questions": {"emoji": QUESTION}}
+    )
+    emoji = answer.choices["emoji"]
+    # Below this the model has no real view, so prefer a generic reaction.
+    return emoji.choice if emoji.confidence >= 0.25 else "eyes"
+
+
+channel = channels.slack(app={"name": "Support Bot"}, reactions=choose_emoji)
+```
+
+
+
+
+Both build the classifier on first use rather than at import, because
+deployment imports this module to read the channel declaration and the
+classifier needs a key to construct.
+
+Set `TYPESAFE_API_KEY` on the deployment. To route through the LLM Gateway
+instead, set `TYPESAFE_BASE_URL=https://gateway.smith.langchain.com` and use a
+workspace-scoped LangSmith API key, with `TYPESAFE_API_KEY` in your workspace
+[provider secrets](/langsmith/llm-gateway-provider-authentication#add-a-provider-key).
+
+## Start a new Slack thread from a run
+
+A run can post at the top level of its Slack channel, which starts a new Slack thread, through the channel's `post`. Add a run to start one there at once, or hand the current conversation over to the new thread:
+
+```python
+origin = runtime.thread.origin
+await origin.channel.post(
+    {"type": "content", "content": "Moved here from the old thread."},
+    new_thread=True,
+    hand_off=True,
+)
+```
+
+
+
+
+- **`run`**: Starts a run in the new Slack thread with the run input you pass, as the current run's person.
+- **`hand_off`**: Moves the conversation, with its history, to the new Slack thread. Replies, **Stop**, and decision buttons there reach it. The old Slack thread gets a message with a link to the new one, and later messages there start no run.
+- **`to`**: Starts the new Slack thread in another channel the app is in, named by its channel ID: `SlackChannelTarget(conversation_id="C0123456789")`.
+
+
+
+
+## Deploy the agent
+
+During deployment, Managed Deep Agents provisions your agent in Slack from the channel declaration.
+
+<Steps>
+  <Step title="Deploy your agent">
+    Run the deployment command from the project root:
+
+    ```bash
+    uv run mda deploy
+    ```
+
+
+
+
+    Managed Deep Agents deploys the agent and sets up the resources it needs to appear in Slack.
+  </Step>
+  <Step title="Authorize Slack if prompted">
+    If you haven't authorized LangSmith before, the CLI displays an HTTPS authorization link. Open the link, select the Slack workspace, and approve the requested access.
+
+    Return to the terminal and press Enter. The CLI checks the authorization again and continues provisioning. If the Slack workspace requires admin approval, complete that approval before continuing.
+  </Step>
+  <Step title="Use the agent in Slack">
+    After the first deployment, your agent sends you a direct message in Slack. Reply to the message to start an agent run. The final response appears in the Slack conversation.
+  </Step>
+</Steps>
+
+<Note>
+Human-in-the-loop requests in Slack support only the `approve` and `reject` [decision types](/langsmith/python/managed-deep-agents-tools#human-in-the-loop).
+</Note>
+
+If Slack is already authorized, deployment completes without an authorization prompt.
+
+After you change the agent's name, description, icon, or background color in the Slack channel declaration, redeploy the agent to apply the changes in Slack.
+
+## Exchange files with Slack
+
+A Slack channel moves files in both directions. Uploads land in the agent's sandbox under `/workspace/attachments/`, and the agent sends a file back by calling `attach_file` with a path under `/workspace`. Declaring a Slack channel and a [sandbox](/langsmith/python/managed-deep-agents-sandboxes) is the whole setup.
+
+<Note>
+Slack file transfer requires `managed-deepagents>=0.8.0` and a sandbox. Without a sandbox, incoming files are not saved and `attach_file` is not offered to the model.
+</Note>
+
+Managed Deep Agents stages the files on the incoming message before the run, along with files shared earlier in the same Slack thread. The agent reads an attachment status message for the paths, then opens the files with its sandbox tools. That status and the file contents are labeled as data, not instructions.
+
+Attachment is never automatic, so state in the agent's [instructions](/langsmith/python/managed-deep-agents-instructions) when a file belongs in the reply:
+
+```markdown instructions.md
+When someone asks for a report, write the report to a file under `/workspace`,
+then call `attach_file` with that path so the file arrives in Slack.
+```
+
+Files stay scoped to the Slack thread they arrived in, because every thread gets its own sandbox. A direct message and a channel thread never share attachments. Within one thread, anyone reaches the files anyone else uploaded, since transfers use the bot's Slack access rather than the caller's.
+
+### Review transfer limits
+
+- **File size**: 200 MiB in each direction.
+- **Paths**: `attach_file` accepts paths under `/workspace` only.
+- **Thread history**: the scan covers recent messages in the thread. When it falls short, the attachment status reports that earlier files may be missing.
+- **Skipped files**: files stored outside Slack, and files deleted from Slack.
+- **Slack scopes**: a transfer blocked by a missing `files:read`, `files:write`, or history scope reports that you need to reconnect Slack.
+
+## See also
+
+- [Channels overview](/langsmith/python/managed-deep-agents-channels): understand how channels connect messaging services to an agent.
+- [Decision models](/langsmith/llm-gateway-decision-models): configure the model that scores reaction emoji.
+- [Set up the LLM Gateway](/langsmith/llm-gateway-admin-setup): add the provider key that reactions need.
+- [Agent-owned interrupts](/langsmith/python/managed-deep-agents-agent-owned-interrupts): post a Slack form from a tool and resume the run on submit.
+- [Sandboxes](/langsmith/python/managed-deep-agents-sandboxes): give the agent the filesystem that file transfers read and write.
+- [Deploy an agent](/langsmith/python/managed-deep-agents-deploy): configure and deploy a managed deep agent.
+- [CLI reference](/langsmith/python/managed-deep-agents-cli): review Managed Deep Agents commands and flags.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/managed-deep-agents-channels-slack.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

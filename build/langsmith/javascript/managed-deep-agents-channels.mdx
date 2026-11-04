@@ -1,0 +1,169 @@
+---
+title: Connect Managed Deep Agents to channels
+sidebarTitle: Overview
+description: Connect Managed Deep Agents to external messaging services that can start runs and receive responses.
+---
+
+import ManagedDeepAgentsPublicBetaNote from '/snippets/javascript/langsmith/managed-deep-agents-public-beta-note.mdx';
+
+A channel connects a managed deep agent to an external service. Events from the service can start agent runs. Some channels also send the agent's final response back to the originating conversation.
+
+<ManagedDeepAgentsPublicBetaNote />
+
+## Project structure
+
+Channel declarations live in the project-level `channels/` directory:
+
+
+
+```text
+my-agent/
+  agent.ts
+  channels/
+    slack.ts
+```
+
+
+## Understand channels
+
+A channel combines three parts of an external messaging integration:
+
+- **Inbound events**: Verify and normalize provider events, then start an agent run.
+- **Outbound messaging**: Optionally send the agent's response back to the originating conversation.
+- **Provisioning**: Create and configure the provider resources that connect the service to the deployed agent.
+
+For [GitHub](/langsmith/javascript/managed-deep-agents-channels-github), your handlers decide which events start runs, and your agent's tools control any replies or other actions. For [Linear](/langsmith/javascript/managed-deep-agents-channels-linear), your handlers decide which issue and comment events start runs, agent sessions start runs without a handler, and the channel posts the final response to the session or issue.
+
+The managed runtime handles the channel lifecycle:
+
+<img
+  className="block dark:hidden"
+  src="/images/managed-deep-agents-channels-lifecycle-light.png"
+  alt="A messaging provider sends an event to the managed runtime, which verifies and normalizes it, resolves the identity and thread, runs the agent, and, if configured, posts the response back to the provider."
+/>
+
+<img
+  className="hidden dark:block"
+  src="/images/managed-deep-agents-channels-lifecycle-dark.png"
+  alt="A messaging provider sends an event to the managed runtime, which verifies and normalizes it, resolves the identity and thread, runs the agent, and, if configured, posts the response back to the provider."
+/>
+
+Provider adapters determine which events are accepted, how provider conversations map to Managed Deep Agents threads, and how responses are delivered. The channel declaration exposes the supported configuration for that provider.
+
+## Add a channel
+
+To add a channel to an existing project, run `mda channels init` with the provider (`slack`, `github`, or `linear`) from the project root. It writes a starter declaration to `channels/<provider>.py` or `channels/<provider>.ts`, and stops if that file already exists:
+
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda channels init slack
+    ```
+
+    ```bash pnpm
+    pnpm exec mda channels init slack
+    ```
+
+    ```bash bun
+    bunx mda channels init slack
+    ```
+</CodeGroup>
+
+
+To start a new project with channels, pass `--channel` to `mda init` once per channel:
+
+
+
+<CodeGroup>
+    ```bash npm
+    npx managed-deepagents init my-agent --channel slack --channel github
+    ```
+
+    ```bash pnpm
+    pnpm dlx managed-deepagents init my-agent --channel slack --channel github
+    ```
+
+    ```bash bun
+    bunx managed-deepagents init my-agent --channel slack --channel github
+    ```
+</CodeGroup>
+
+
+GitHub and Linear channels are experimental.
+
+
+
+Each channel is its own module under `channels/` with a named `channel` export, created by a provider factory such as `channels.slack()`. The file name becomes the channel's name in the deployment, so names must be unique, and `channels/channel.ts` isn't allowed.
+
+
+Edit the declaration to decide which events start runs, then deploy or [set the channel up](#set-up-channels). Each provider guide covers its declaration, app configuration, and deployment.
+
+## Set up channels
+
+`mda deploy` sets up every channel the project declares: it creates or links the provider's app, such as the Slack app, GitHub App, or Linear app, points it at the deployment, and asks you to approve access in a browser when the provider needs it.
+
+To run that setup without deploying, run `mda channels setup` from the project root of an agent that is already deployed. Name a channel to set up only that one:
+
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda channels setup
+    npx mda channels setup github
+    ```
+
+    ```bash pnpm
+    pnpm exec mda channels setup
+    pnpm exec mda channels setup github
+    ```
+
+    ```bash bun
+    bunx mda channels setup
+    bunx mda channels setup github
+    ```
+</CodeGroup>
+
+
+In a terminal, the command shows where each channel stands, asks which ones to set up, and runs their setup. Without a terminal, or with `--json`, it only reports where each channel stands and sets nothing up. It exits with a non-zero status unless every channel is set up, so CI can run it before `mda deploy`, which stops before uploading when a channel isn't set up. For its options, see the [CLI reference](/langsmith/javascript/managed-deep-agents-cli#set-up-channels).
+
+## Distinguish channels from connectors
+
+A channel receives events that start agent runs and may deliver responses. An [MCP connector](/langsmith/javascript/managed-deep-agents-mcp-connectors) gives the agent tools from a remote MCP server. A project can use either or both.
+
+## Supported channels
+
+<CardGroup cols={2}>
+  <Card title="Slack" icon="brand-slack" href="/langsmith/javascript/managed-deep-agents-channels-slack">
+    Start runs from Slack mentions, direct messages, and thread replies.
+  </Card>
+  <Card title="GitHub" icon="brand-github" href="/langsmith/javascript/managed-deep-agents-channels-github">
+    Choose which GitHub issues, comments, pull requests, and workflow events start runs.
+  </Card>
+  <Card title="Linear" icon="layout-kanban" href="/langsmith/javascript/managed-deep-agents-channels-linear">
+    Answer mentions and delegated issues in agent sessions, and start runs from issue and comment events.
+  </Card>
+  <Card title="HTTP" icon="webhook" href="/langsmith/javascript/managed-deep-agents-channels-http">
+    Start runs from any service that can send a JSON webhook.
+  </Card>
+</CardGroup>
+
+An HTTP adapter can also live in a community-maintained package. See [Share a channel adapter as a package](/langsmith/javascript/managed-deep-agents-channels-http#share-a-channel-adapter-as-a-package) to publish reusable provider code that users import into their channel declarations.
+
+## See also
+
+- [Identity](/langsmith/javascript/managed-deep-agents-identity): authenticate callers and scope channel runs to the resolved user.
+- [Schedules](/langsmith/javascript/managed-deep-agents-schedules): deliver scheduled results through a configured channel.
+- [Deploy an agent](/langsmith/javascript/managed-deep-agents-deploy): deploy project changes and configure secrets.
+- [CLI reference](/langsmith/javascript/managed-deep-agents-cli): review channel project-file conventions.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/managed-deep-agents-channels.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
