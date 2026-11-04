@@ -18,20 +18,41 @@ Start with an [agent project](/langsmith/managed-deep-agents-quickstart) and its
 
 `channels.github` maps GitHub events to handlers and configures the App's access:
 
+:::python
 | Option | Description |
 | --- | --- |
-| `onEvent` / `on_event` | Maps event keys, such as `pull_request.opened`, to handlers. Events without a handler start no run. |
-| `multitaskStrategy` / `multitask_strategy` | Optional. What an event does while its conversation has a run in progress: `enqueue` (default) waits for the run, `interrupt` cancels it and keeps its progress, `rollback` cancels it and discards its progress, and `reject` starts nothing. |
+| `on_event` | Maps event keys, such as `pull_request.opened`, to handlers. Events without a handler start no run. |
+| `multitask_strategy` | Optional. What an event does while its conversation has a run in progress: `enqueue` (default) waits for the run, `interrupt` cancels it and keeps its progress, `rollback` cancels it and discards its progress, and `reject` starts nothing. |
 | `app.repositories` | Optional list of `owner/name` repositories from one owner. Events from other repositories start no run. Defaults to every repository in the App installation. The App token still reaches every repository in the installation, so install the App only where the agent may act. |
 | `app.permissions` | Optional additional `read` or `write` permissions. Managed Deep Agents requests the permissions required by your handlers automatically. |
-| `ignoreBots` / `ignore_bots` | Optional. Ignore issues, comments, pull requests, and reviews written by other apps and bots, such as Dependabot, so automations don't trigger each other. Defaults to `false`. CI, `push`, and `merge_group` events reach their handlers whoever sent them. The channel always ignores the App's own activity. |
-| `onReceived` / `on_received` | Optional. Runs as soon as a handled event reaches its thread, such as to [acknowledge it with a reaction](#acknowledge-an-event-with-a-reaction). |
-| `onFinish` / `on_finish` | Optional. Runs once a handled event is done, with the run it started and how that run ended. See [Report how a run ended](#report-how-a-run-ended). |
+| `ignore_bots` | Optional. Ignore issues, comments, pull requests, and reviews written by other apps and bots, such as Dependabot, so automations don't trigger each other. Defaults to `false`. CI, `push`, and `merge_group` events reach their handlers whoever sent them. The channel always ignores the App's own activity. |
+| `on_received` | Optional. Runs as soon as a handled event reaches its thread, such as to [acknowledge it with a reaction](#acknowledge-an-event-with-a-reaction). |
+| `on_finish` | Optional. Runs once a handled event is done, with the run it started and how that run ended. See [Report how a run ended](#report-how-a-run-ended). |
+:::
+
+:::js
+| Option | Description |
+| --- | --- |
+| `onEvent` | Maps event keys, such as `pull_request.opened`, to handlers. Events without a handler start no run. |
+| `multitaskStrategy` | Optional. What an event does while its conversation has a run in progress: `enqueue` (default) waits for the run, `interrupt` cancels it and keeps its progress, `rollback` cancels it and discards its progress, and `reject` starts nothing. |
+| `app.repositories` | Optional list of `owner/name` repositories from one owner. Events from other repositories start no run. Defaults to every repository in the App installation. The App token still reaches every repository in the installation, so install the App only where the agent may act. |
+| `app.permissions` | Optional additional `read` or `write` permissions. Managed Deep Agents requests the permissions required by your handlers automatically. |
+| `ignoreBots` | Optional. Ignore issues, comments, pull requests, and reviews written by other apps and bots, such as Dependabot, so automations don't trigger each other. Defaults to `false`. CI, `push`, and `merge_group` events reach their handlers whoever sent them. The channel always ignores the App's own activity. |
+| `onReceived` | Optional. Runs as soon as a handled event reaches its thread, such as to [acknowledge it with a reaction](#acknowledge-an-event-with-a-reaction). |
+| `onFinish` | Optional. Runs once a handled event is done, with the run it started and how that run ended. See [Report how a run ended](#report-how-a-run-ended). |
+:::
 
 Handlers receive two arguments and can be synchronous or asynchronous:
 
+:::python
 - **`event`**: The verified event, including `event.sender`, `event.repository`, the GitHub data in `event.payload`, and the handles its text mentions in `event.mentions`.
-- **`thread`**: The conversation's thread, with its ID at `thread.id`, the channel name at `thread.channel.name`, and `thread.interrupted`, which is set only when the channel asks the handler about a thread that waits on a decision. See [Tell people a run waits for input](#tell-people-a-run-waits-for-input). `await thread.getState()` (`get_state()` in Python) returns the thread's state, such as the messages the agent already has, or nothing before the first run.
+- **`thread`**: The conversation's thread, with its ID at `thread.id`, the channel name at `thread.channel.name`, and `thread.interrupted`, which is set only when the channel asks the handler about a thread that waits on a decision. See [Tell people a run waits for input](#tell-people-a-run-waits-for-input). `await thread.get_state()` returns the thread's state, such as the messages the agent already has, or `None` before the first run.
+:::
+
+:::js
+- **`event`**: The verified event, including `event.sender`, `event.repository`, the GitHub data in `event.payload`, and the handles its text mentions in `event.mentions`.
+- **`thread`**: The conversation's thread, with its ID at `thread.id`, the channel name at `thread.channel.name`, and `thread.interrupted`, which is set only when the channel asks the handler about a thread that waits on a decision. See [Tell people a run waits for input](#tell-people-a-run-waits-for-input). `await thread.getState()` returns the thread's state, such as the messages the agent already has, or `undefined` before the first run.
+:::
 
 :::python
 Return a run input to start a run: a nonblank string, a message, or state such as `{"messages": [...]}`. To set run options, return a list of runs such as `[{"input": prompt, "metadata": {"issue": 42}}]`, with `context`, `metadata`, `webhook`, `multitask_strategy`, or `thread`. See [Start runs on other threads](#start-runs-on-other-threads). Return `None` to skip the event.
@@ -42,7 +63,13 @@ Return a run input to start a run: a nonblank string, a message, or state such a
 
 Handlers run before GitHub receives the webhook response, so keep them short. If the conversation already has a run in progress, the handler runs once that run finishes. The agent itself runs in the background.
 
-Register event and action combinations under `onEvent` (`on_event` in Python), such as `issues.opened`:
+:::python
+Register event and action combinations under `on_event`, such as `issues.opened`:
+:::
+
+:::js
+Register event and action combinations under `onEvent`, such as `issues.opened`:
+:::
 
 | Event | Supported actions |
 | --- | --- |
@@ -245,7 +272,13 @@ uv run mda deploy
 </CodeGroup>
 :::
 
+:::python
+Follow the prompts to create the GitHub App and install it on your repositories, or to bring an existing App. Managed Deep Agents configures the webhook, subscribes to the events in `on_event`, and makes the App credential available to your agent.
+:::
+
+:::js
 Follow the prompts to create the GitHub App and install it on your repositories, or to bring an existing App. Managed Deep Agents configures the webhook, subscribes to the events in `onEvent`, and makes the App credential available to your agent.
+:::
 
 To deploy without a terminal, for example from CI or a coding agent, set `MDA_GITHUB_APP_OWNER` to the organization that should own the App, or to `@me` for your personal account. Deploy then prints a link for someone signed in to GitHub to create and install the App, and waits up to an hour for them.
 
@@ -397,9 +430,21 @@ To skip other bots, return early when `event.sender.type` is `Bot`.
 
 ### Acknowledge an event with a reaction
 
-People expect a sign that the agent saw their comment, such as a 👀 reaction, long before its first reply. React from `onReceived` (`on_received` in Python). It runs as soon as an event reaches its conversation's thread, while the handler may still wait for a busy conversation's run to finish.
+:::python
+People expect a sign that the agent saw their comment, such as a 👀 reaction, long before its first reply. React from `on_received`. It runs as soon as an event reaches its conversation's thread, while the handler may still wait for a busy conversation's run to finish.
+:::
 
+:::js
+People expect a sign that the agent saw their comment, such as a 👀 reaction, long before its first reply. React from `onReceived`. It runs as soon as an event reaches its conversation's thread, while the handler may still wait for a busy conversation's run to finish.
+:::
+
+:::python
+`on_received` runs for every handled event, including events that the handler then skips and events on a thread that waits on a decision. Apply the same filters as the handler:
+:::
+
+:::js
 `onReceived` runs for every handled event, including events that the handler then skips and events on a thread that waits on a decision. Apply the same filters as the handler:
+:::
 
 :::python
 ```python
@@ -440,7 +485,13 @@ export const channel = channels.github({
 ```
 :::
 
+:::python
+A failing `on_received` is logged and doesn't stop the run.
+:::
+
+:::js
 A failing `onReceived` is logged and doesn't stop the run.
+:::
 
 ### Tell people a run waits for input
 
@@ -448,11 +499,23 @@ A run can stop on a decision, such as a tool call that requires approval. The Ap
 
 While the thread waits, new events start no run. Each time the thread waits on a decision, whether the event's own run stopped or a new event arrived, the channel calls the event's handler again with `thread.interrupted` set, to decide whether the event gets a comment with the link. Return a run input to post it, or nothing to stay quiet, so the handler's filters, such as a mention check, decide who gets it. No run starts either way, so skip side effects, such as a GitHub call, while `thread.interrupted` is set. Events that aren't about one issue or pull request, such as `push`, get no comment.
 
+:::python
+To do more, such as labeling the issue, use `on_finish`, as in the next section.
+:::
+
+:::js
 To do more, such as labeling the issue, use `onFinish`, as in the next section.
+:::
 
 ### Report how a run ended
 
-`onFinish` (`on_finish` in Python) runs once each handled event is done, with the event, its thread, and how the event finished. Check the finish's `type`:
+:::python
+`on_finish` runs once each handled event is done, with the event, its thread, and how the event finished. Check the finish's `type`:
+:::
+
+:::js
+`onFinish` runs once each handled event is done, with the event, its thread, and how the event finished. Check the finish's `type`:
+:::
 
 - `run`: The event started a run, and `run` says how it ended. Its `status` uses LangGraph's names: `success`, `error`, `timeout`, or `interrupted`, which means the run was cancelled, such as by a newer event.
 - `skipped`: The event started no run, and `reason` says why, such as `ignored` when the handler skipped it or `waiting` when its thread waits on a decision.
@@ -506,7 +569,13 @@ export const channel = channels.github({
 
 Issue comment events already give the App write access to issues, so the hook needs no extra permission.
 
+:::python
+`on_finish` runs in the deployment process that took the event, so a restart while a run is in progress loses it. A run that resumes after a decision in Studio doesn't reach `on_finish` either. To learn reliably when each run ends, use a [completion webhook](#let-your-service-decide-what-starts).
+:::
+
+:::js
 `onFinish` runs in the deployment process that took the event, so a restart while a run is in progress loses it. A run that resumes after a decision in Studio doesn't reach `onFinish` either. To learn reliably when each run ends, use a [completion webhook](#let-your-service-decide-what-starts).
+:::
 
 ### Let your service decide what starts
 
@@ -557,7 +626,13 @@ The SDK exports the request and answer types, such as `GitHubEndpointRequest` an
 
 If the deployment sets `MDA_SERVICE_SECRET`, each request is signed with [Standard Webhooks](https://www.standardwebhooks.com/) headers (`webhook-id`, `webhook-timestamp`, and `webhook-signature`), so the service can verify it came from your deployment. Retries keep the same `webhook-id`.
 
+:::python
+Set `webhook` to have the Agent Server POST the finished run, with its status, metadata, and values, to your service. Unlike `on_finish`, the webhook survives deployment restarts.
+:::
+
+:::js
 Set `webhook` to have the Agent Server POST the finished run, with its status, metadata, and values, to your service. Unlike `onFinish`, the webhook survives deployment restarts.
+:::
 
 ## Customize the workflow
 
@@ -565,7 +640,13 @@ Set `webhook` to have the Agent Server POST the finished run, with its status, m
 
 Each issue or pull request has one thread. Its comments, reviews, and review comments continue the same conversation, and so do check and workflow events for exactly one pull request. Other events start a thread of their own. A redelivered webhook starts no run.
 
+:::python
+By default, an event that arrives while its conversation has a run in progress waits for that run to finish. To let a newer comment replace the work on an older one, set `multitask_strategy`:
+:::
+
+:::js
 By default, an event that arrives while its conversation has a run in progress waits for that run to finish. To let a newer comment replace the work on an older one, set `multitaskStrategy`:
+:::
 
 :::python
 ```python
@@ -612,11 +693,23 @@ const onComment = (event, thread) => [
 ```
 :::
 
+:::python
+`thread` takes `{"mode": "ephemeral"}` or `{"mode": "persistent", "id": ...}` with a UUID your service keeps, as a [schedule](/langsmith/managed-deep-agents-schedules) does. At most one run may start on the event's conversation. While the conversation waits on a decision, runs on other threads still start. Each run can also set its own `multitask_strategy`.
+:::
+
+:::js
 `thread` takes `{"mode": "ephemeral"}` or `{"mode": "persistent", "id": ...}` with a UUID your service keeps, as a [schedule](/langsmith/managed-deep-agents-schedules) does. At most one run may start on the event's conversation. While the conversation waits on a decision, runs on other threads still start. Each run can also set its own `multitaskStrategy`.
+:::
 
 ### Limit repositories and permissions
 
+:::python
+For example, restrict the channel to `acme/api` and add permission to read repository files. Set `app` alongside `on_event`:
+:::
+
+:::js
 For example, restrict the channel to `acme/api` and add permission to read repository files. Set `app` alongside `onEvent`:
+:::
 
 :::python
 ```python
