@@ -1,0 +1,123 @@
+---
+title: Deploy the open-source paid media agent
+sidebarTitle: Paid media agent
+description: Deploy the open-source paid media agent to your Slack workspace as a Managed Deep Agents project, with campaign analysis, scheduled reports, and reviewed changes.
+---
+
+import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
+
+[Paid Media Agent](https://github.com/langchain-ai/paid-media-agent) is an open-source agent for cross-channel ad analysis. Your team asks it questions in Slack, and it compares campaigns across your ad accounts and answers in the thread.
+
+The repository is a complete Managed Deep Agents project. You deploy it with `mda deploy`, and each capability it uses maps to a page in these docs. Live changes to ad accounts are off by default.
+
+<ManagedDeepAgentsPublicBetaNote />
+
+## Deploy the agent
+
+Before you start, make sure you have:
+
+- A [LangSmith Cloud](/langsmith/cloud) account and an [API key](/langsmith/create-account-api-key) that can deploy.
+- A key for your model provider. On the [LLM Gateway](/langsmith/llm-gateway), the agent uses your LangSmith key instead.
+- [uv](https://docs.astral.sh/uv/).
+
+To deploy the agent to your Slack workspace:
+
+<Steps>
+  <Step title="Install the project">
+
+```bash
+git clone https://github.com/langchain-ai/paid-media-agent.git
+cd paid-media-agent
+uv sync
+```
+
+  </Step>
+  <Step title="Connect a model and your ad accounts">
+
+```bash
+uv run paid-media-agent setup
+```
+
+The command opens a local console for choosing a model and connecting accounts. [Pipeboard](https://pipeboard.co/integrations) covers Google Ads, Meta Ads, LinkedIn Ads, Reddit Ads, and more. X Ads and OpenAI Ads connect directly and stay read-only.
+
+Settings go to `.env` and account mappings to `config/accounts.toml`. Git ignores both files.
+
+  </Step>
+  <Step title="Add your business context">
+
+The agent reads your goals, conversion definitions, and campaign briefs from `workspace/skills/company-context/`. Start from the [template](https://github.com/langchain-ai/paid-media-agent/blob/main/docs/customization.md#business-context), or ask your coding agent to follow `.agents/skills/paid-media-org-onboarding/SKILL.md`. Add this context before the first real analysis.
+
+  </Step>
+  <Step title="Deploy">
+
+```bash
+uv run paid-media-agent mda check
+uv run mda deploy
+```
+
+`mda check` validates the project locally. `mda deploy` builds `sandbox/setup.sh`, which installs Python tools and PDF libraries, into a snapshot. The sandbox is small, so it needs no separate publish step.
+
+The first deploy provisions the agent's Slack app. Authorize it in your Slack workspace when prompted.
+
+  </Step>
+  <Step title="Ask it a question">
+
+Mention the agent in a channel with a question, such as which campaigns had the largest increase in cost per lead last week. It reads the connected accounts, calculates the metrics in code, and answers in the thread.
+
+  </Step>
+</Steps>
+
+You can also hand the setup to a coding agent. Open the repository in yours and ask it to follow `AGENTS.md` and `.agents/skills/paid-media-onboarding/SKILL.md`.
+
+To try the agent first with no model key or ad accounts, run `uv run paid-media-agent demo --with-proposal`. The demo analyzes synthetic accounts and simulates a budget change.
+
+## Customize the paid media agent
+
+Most changes are edits to files in the repository. Common ones:
+
+- **Business context**: Goals, conversion definitions, and campaign briefs live in `workspace/skills/company-context/`.
+- **Reports**: The weekly and monthly reports run from `schedules/`, on Mondays and the first of each month at 13:00 UTC. Set `deliver_to` in a schedule to post the result to a Slack channel.
+- **Report design**: Colors, typography, and layout live in `workspace/skills/report-design/DESIGN.md`. Ask your coding agent to follow `.agents/skills/paid-media-design/SKILL.md` to keep the renderer in step.
+- **Slack app**: Set the name, description, and triggers in `channels/slack.py`.
+- **Memory**: Memory is off by default. Add a `memory.py` to turn on [memory](/langsmith/managed-deep-agents-memory) when every caller may share what the agent learns.
+- **Live changes**: Writes to ad accounts need a write policy from `config/write-policy.example.toml`, the [release checks](https://github.com/langchain-ai/paid-media-agent/blob/main/docs/operations/live-write-runbook.md), and an authorized reviewer.
+
+To try a change and ship it, use these [`mda` commands](/langsmith/managed-deep-agents-cli):
+
+| Command | What it does |
+| --- | --- |
+| `uv run mda dev` | Runs the agent locally and opens it in [LangSmith Studio](/langsmith/studio) |
+| `uv run mda deploy --name paid-media-agent-test` | Deploys a separate copy to test changes without touching the one your team uses |
+| `uv run mda deploy` | Ships your changes to the deployment your team uses |
+| `uv run mda logs` | Tails the logs of the deployed agent |
+| `uv run mda build` | Compiles what would ship into `.mda/build/` without deploying |
+
+For more information, see [Customization](https://github.com/langchain-ai/paid-media-agent/blob/main/docs/customization.md) and [Operations](https://github.com/langchain-ai/paid-media-agent/blob/main/OPERATIONS.md) in the repository.
+
+## Explore the project
+
+Each managed capability is a file or folder at the root of the repository. Read them to see how the agent uses each one.
+
+| Path | In this agent | Learn more |
+| --- | --- | --- |
+| `agent.py` | Builds the agent with `define_deep_agent` from one shared assembly of model, tools, middleware, and approval policy | [Agent definition](/langsmith/managed-deep-agents-agent-definition) |
+| `instructions.md` | The always-on prompt | [Instructions](/langsmith/managed-deep-agents-instructions) |
+| `skills/` | Skills for analysis, reports, report design, and change proposals, plus a paid-media wiki | [Skills](/langsmith/managed-deep-agents-skills) |
+| `sandbox/` | Python 3.13 with ripgrep, jq, and PDF libraries, built by `mda deploy` | [Sandboxes](/langsmith/managed-deep-agents-sandboxes) |
+| `channels/slack.py` | The managed Slack app for mentions, DMs, threads, and approval buttons | [Slack channel](/langsmith/managed-deep-agents-channels-slack) |
+| `schedules/` | The weekly and monthly reports | [Schedules](/langsmith/managed-deep-agents-schedules) |
+| `identity.py` | Authenticates callers with a LangSmith API key | [Identity](/langsmith/managed-deep-agents-identity) |
+| `src/paid_media_agent/` | Application code the agent entry imports, such as ad platform tools, metrics, and report rendering | [Tools](/langsmith/managed-deep-agents-tools) |
+
+## See how it works
+
+The model decides what to investigate. Code calculates the metrics and checks report figures against the source data. Large tool results stay in files, and the model reads summaries with the source, date window, and data quality flags.
+
+A campaign change starts as a proposal with a reason and a plan for checking the result. The tool that applies it pauses the run, and Slack shows approve and reject buttons. An approval covers the exact proposal reviewed, so an edit needs a new approval.
+
+## See also
+
+- [Paid media agent repository](https://github.com/langchain-ai/paid-media-agent)
+- [Design agent template](/langsmith/managed-deep-agents-design-agent)
+- [Managed Deep Agents project structure](/langsmith/managed-deep-agents-project-structure)
+- [Deploy a Managed Deep Agents project](/langsmith/managed-deep-agents-deploy)
