@@ -50,31 +50,6 @@ Start with an [agent project](/langsmith/managed-deep-agents-quickstart) and its
 | `onFinish` | Optional. Runs once a handled event is done, after the channel's own session activities such as "Stopped.", with the event, its thread, and how the event finished: the run it started and how that run ended, why it started none, or that it failed. Each also lists the decisions the thread waits on. Runs in the background, and failures are logged. |
 :::
 
-Handlers receive two arguments and can be synchronous or asynchronous:
-
-:::python
-- **`event`**: The verified event, including `event.issue_id`, `event.team`, `event.actor`, `event.session_id` for session events, and the Linear data in `event.payload`.
-- **`thread`**: The conversation's thread, with its ID at `thread.id` and the channel name at `thread.channel.name`. `await thread.get_state()` returns the thread's state, such as the messages the agent already has, or `None` before the first run.
-
-Return a run input to start a run: a nonblank string, a message, or state such as `{"messages": [...]}`. To set run options, return a list of runs such as `[{"input": prompt, "metadata": {"issue": "ENG-123"}}]`, with `context`, `metadata`, `webhook`, `multitask_strategy`, `auto_post`, or `thread`. See [Start runs on other threads](#start-runs-on-other-threads). Return `reply(message)` to answer without a run, or `None` to skip the event.
-:::
-:::js
-- **`event`**: The verified event, including `event.issueId`, `event.team`, `event.actor`, `event.sessionId` for session events, and the Linear data in `event.payload`.
-- **`thread`**: The conversation's thread, with its ID at `thread.id` and the channel name at `thread.channel.name`. `await thread.getState()` returns the thread's state, such as the messages the agent already has, or `undefined` before the first run.
-
-Return a run input to start a run: a nonblank string, a message, or state such as `{ messages: [...] }`. To set run options, return a list of runs such as `[{ input: prompt, metadata: { issue: "ENG-123" } }]`, with `context`, `metadata`, `webhook`, `multitaskStrategy`, `autoPost`, or `thread`. See [Start runs on other threads](#start-runs-on-other-threads). Return `reply(message)` to answer without a run, or `null` or `undefined` to skip the event.
-:::
-
-Keep handlers short. The run itself starts in the background.
-
-:::python
-A handler can also be an endpoint of your service: a URL, or a request with headers such as a credential (an `httpx.Request`). The channel POSTs `{"event": ..., "thread": ...}` as JSON, with the event's `key`, `deliveryId`, and Linear's `payload`, and the thread's `id` and `channel.name`. The service answers with `{"input": ...}`, optionally with `context`, `metadata`, and `webhook`, to start that run, with `{"type": "reply", "message": ...}` to answer without a run, or with `null` or HTTP 204 to start nothing. The channel asks the service after Linear has its webhook response, so a slow service doesn't time out the delivery. The SDK exports the request and answer types as `LinearEndpointRequest` and `EndpointAnswer`.
-:::
-
-:::js
-A handler can also be an endpoint of your service: a URL, or a request with headers such as a credential (a `Request`). The channel POSTs `{"event": ..., "thread": ...}` as JSON, with the event's `key`, `deliveryId`, and Linear's `payload`, and the thread's `id` and `channel.name`. The service answers with `{"input": ...}`, optionally with `context`, `metadata`, and `webhook`, to start that run, with `{"type": "reply", "message": ...}` to answer without a run, or with `null` or HTTP 204 to start nothing. The channel asks the service after Linear has its webhook response, so a slow service doesn't time out the delivery. The SDK exports the request and answer types as `LinearEndpointRequest` and `EndpointAnswer`.
-:::
-
 :::python
 Register event keys under `on_event`. They use Linear's names:
 :::
@@ -92,6 +67,72 @@ Register event keys under `onEvent`. They use Linear's names:
 | `Comment.create` | A comment is posted. |
 
 While `sessions` is on, comments that an agent session already delivers, such as the mention that opened it and replies in the session, do not also reach a `Comment.create` handler.
+
+A handler gets the verified `event` and its conversation's `thread`, and returns what to start. It can be synchronous or asynchronous. Keep it short: the run itself starts in the background.
+
+:::python
+```python channels/linear.py
+from managed_deepagents import channels, reply
+
+
+async def on_comment(event, thread):
+    # event: the verified webhook. Linear's own data is in event.payload.
+    body = event.payload["data"]["body"].strip()
+    if body == "/help":
+        return reply("Comment /triage and I'll triage this issue.")  # Answer, no run.
+    if body != "/triage":
+        return None  # Start nothing.
+
+    # thread: the issue's conversation, shared by its issue and comment events.
+    if await thread.get_state() is None:  # None before the first run
+        # A run input: a string, a message, or state such as {"messages": [...]}.
+        return f"Triage issue {event.issue_id}."
+
+    # A list of runs, to set run options such as metadata.
+    return [{"input": "Triage it again with the new comments.", "metadata": {"issue": event.issue_id}}]
+
+
+channel = channels.linear(on_event={"Comment.create": on_comment})
+```
+:::
+
+:::js
+```ts channels/linear.ts
+import { channels, reply } from "managed-deepagents";
+
+export const channel = channels.linear({
+  onEvent: {
+    "Comment.create": async (event, thread) => {
+      // event: the verified webhook. Linear's own data is in event.payload.
+      const body = event.payload.data.body.trim();
+      if (body === "/help") {
+        return reply("Comment /triage and I'll triage this issue."); // Answer, no run.
+      }
+      if (body !== "/triage") return null; // Start nothing.
+
+      // thread: the issue's conversation, shared by its issue and comment events.
+      if ((await thread.getState()) === undefined) {
+        // A run input: a string, a message, or state such as { messages: [...] }.
+        return `Triage issue ${event.issueId}.`;
+      }
+
+      // A list of runs, to set run options such as metadata.
+      return [
+        { input: "Triage it again with the new comments.", metadata: { issue: event.issueId } },
+      ];
+    },
+  },
+});
+```
+:::
+
+:::python
+Every event also has `event.team` and `event.actor`, the issue's team and who acted, and session events have `event.session_id`. To hand events to a service of yours instead, see [Let your service decide what starts](#let-your-service-decide-what-starts).
+:::
+
+:::js
+Every event also has `event.team` and `event.actor`, the issue's team and who acted, and session events have `event.sessionId`. To hand events to a service of yours instead, see [Let your service decide what starts](#let-your-service-decide-what-starts).
+:::
 
 ## Example: triage issues
 
@@ -410,12 +451,53 @@ const onComment = (event, thread) => [
 :::
 
 :::python
-`thread` takes `{"mode": "ephemeral"}` or `{"mode": "persistent", "id": ...}` with a UUID your service keeps, as a [schedule](/langsmith/managed-deep-agents-schedules) does. At most one run may start on the event's conversation. Only that run posts its response, unless a run sets `auto_post` to `true`. Each run can also set its own `multitaskStrategy`.
+`thread` takes `{"mode": "ephemeral"}` or `{"mode": "persistent", "id": ...}` with a UUID your service keeps, as a [schedule](/langsmith/managed-deep-agents-schedules) does. At most one run may start on the event's conversation. Only that run posts its response, unless a run sets `auto_post` to `true`. Each run can also set its own `multitask_strategy`.
 :::
 
 :::js
 `thread` takes `{"mode": "ephemeral"}` or `{"mode": "persistent", "id": ...}` with a UUID your service keeps, as a [schedule](/langsmith/managed-deep-agents-schedules) does. At most one run may start on the event's conversation. Only that run posts its response, unless a run sets `autoPost` to `true`. Each run can also set its own `multitaskStrategy`.
 :::
+
+### Let your service decide what starts
+
+If a service of yours already decides what an event should do, make that service the handler. Pass a URL, or a request with headers such as a credential, instead of a function:
+
+:::python
+```python
+import os
+
+import httpx
+from managed_deepagents import channels
+
+backend = httpx.Request(
+    "POST",
+    f"{os.environ['BACKEND_URL']}/linear/events",
+    headers={"x-api-key": os.environ["BACKEND_KEY"]},
+)
+
+channel = channels.linear(on_event={"Issue.create": backend, "Comment.create": backend})
+```
+:::
+
+:::js
+```ts
+const backend = new Request(`${process.env.BACKEND_URL}/linear/events`, {
+  headers: { "x-api-key": process.env.BACKEND_KEY! },
+});
+
+export const channel = channels.linear({
+  onEvent: { "Issue.create": backend, "Comment.create": backend },
+});
+```
+:::
+
+The channel asks the service after Linear has its webhook response, so a slow service doesn't time out the delivery. It POSTs `{"event": ..., "thread": ...}` as JSON, with the event's `key`, `deliveryId`, and Linear's `payload`, and the thread's `id` and `channel.name`. The service answers in one of three ways:
+
+- With `{"input": ..., "context": ..., "metadata": ..., "webhook": ...}` to start that run. Only `input` is required.
+- With `{"type": "reply", "message": ...}` to answer without a run.
+- With JSON `null` or HTTP 204 to start nothing.
+
+The SDK exports the request and answer types as `LinearEndpointRequest` and `EndpointAnswer`. Retries, timeouts, and request signing work as on the [GitHub channel](/langsmith/managed-deep-agents-channels-github#let-your-service-decide-what-starts).
 
 ### Review actions in Studio
 
