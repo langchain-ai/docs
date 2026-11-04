@@ -42,24 +42,62 @@ Start with an [agent project](/langsmith/managed-deep-agents-quickstart) and its
 | `onFinish` | Optional. Runs once a handled event is done, with the run it started and how that run ended. See [Report how a run ended](#report-how-a-run-ended). |
 :::
 
-Handlers receive two arguments and can be synchronous or asynchronous:
+A handler gets the verified `event` and its conversation's `thread`, and returns what to start. It can be synchronous or asynchronous:
 
 :::python
-- **`event`**: The verified event, including `event.sender`, `event.repository`, the GitHub data in `event.payload`, and the handles its text mentions in `event.mentions`.
-- **`thread`**: The conversation's thread, with its ID at `thread.id`, the channel name at `thread.channel.name`, and `thread.interrupted`, which is set only when the channel asks the handler about a thread that waits on a decision. See [Tell people a run waits for input](#tell-people-a-run-waits-for-input). `await thread.get_state()` returns the thread's state, such as the messages the agent already has, or `None` before the first run.
+```python channels/github.py
+from managed_deepagents import channels
+
+
+async def on_comment(event, thread):
+    # event: the verified delivery. GitHub's webhook body is in event.payload.
+    if event.sender.type == "Bot" or "@my-agent" not in event.mentions:
+        return None  # Start nothing.
+    body = event.payload["comment"]["body"]
+
+    # thread: this issue's or pull request's conversation.
+    state = await thread.get_state()  # None before the first run
+    if state is None:
+        # A run input: a string, a message, or state such as {"messages": [...]}.
+        return f"{event.sender.login} asked in {event.repository.full_name}: {body}"
+
+    # A list of runs, to set run options such as metadata or context.
+    return [{"input": body, "metadata": {"repository": event.repository.full_name}}]
+
+
+channel = channels.github(on_event={"issue_comment.created": on_comment})
+```
 :::
 
 :::js
-- **`event`**: The verified event, including `event.sender`, `event.repository`, the GitHub data in `event.payload`, and the handles its text mentions in `event.mentions`.
-- **`thread`**: The conversation's thread, with its ID at `thread.id`, the channel name at `thread.channel.name`, and `thread.interrupted`, which is set only when the channel asks the handler about a thread that waits on a decision. See [Tell people a run waits for input](#tell-people-a-run-waits-for-input). `await thread.getState()` returns the thread's state, such as the messages the agent already has, or `undefined` before the first run.
+```ts channels/github.ts
+import { channels } from "managed-deepagents";
+
+export const channel = channels.github({
+  onEvent: {
+    "issue_comment.created": async (event, thread) => {
+      // event: the verified delivery. GitHub's webhook body is in event.payload.
+      if (event.sender.type === "Bot" || !event.mentions.includes("@my-agent")) {
+        return null; // Start nothing.
+      }
+      const body = event.payload.comment.body;
+
+      // thread: this issue's or pull request's conversation.
+      const state = await thread.getState(); // undefined before the first run
+      if (state === undefined) {
+        // A run input: a string, a message, or state such as { messages: [...] }.
+        return `${event.sender.login} asked in ${event.repository.fullName}: ${body}`;
+      }
+
+      // A list of runs, to set run options such as metadata or context.
+      return [{ input: body, metadata: { repository: event.repository.fullName } }];
+    },
+  },
+});
+```
 :::
 
-:::python
-Return a run input to start a run: a nonblank string, a message, or state such as `{"messages": [...]}`. To set run options, return a list of runs such as `[{"input": prompt, "metadata": {"issue": 42}}]`, with `context`, `metadata`, `webhook`, `multitask_strategy`, or `thread`. See [Start runs on other threads](#start-runs-on-other-threads). Return `None` to skip the event.
-:::
-:::js
-Return a run input to start a run: a nonblank string, a message, or state such as `{ messages: [...] }`. To set run options, return a list of runs such as `[{ input: prompt, metadata: { issue: 42 } }]`, with `context`, `metadata`, `webhook`, `multitaskStrategy`, or `thread`. See [Start runs on other threads](#start-runs-on-other-threads). Return `null` or `undefined` to skip the event.
-:::
+`thread.interrupted` is set when the thread waits on a decision; see [Tell people a run waits for input](#tell-people-a-run-waits-for-input). Runs can also set `context`, `webhook`, `thread`, and their multitask strategy; see [Start runs on other threads](#start-runs-on-other-threads).
 
 Handlers run before GitHub receives the webhook response, so keep them short. If the conversation already has a run in progress, the handler runs once that run finishes. The agent itself runs in the background.
 
