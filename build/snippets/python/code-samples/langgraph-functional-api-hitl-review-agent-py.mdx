@@ -1,0 +1,95 @@
+```python
+from langchain.messages import AIMessage, HumanMessage, ToolMessage
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.func import entrypoint, task
+from langgraph.graph import add_messages
+from langgraph.types import Command
+
+
+checkpointer = InMemorySaver()
+
+
+@task
+def call_model(messages: list) -> AIMessage:
+    last = messages[-1]
+    if isinstance(last, ToolMessage):
+        return AIMessage(content="Search complete.")
+    return AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "search",
+                "args": {"query": "weather"},
+                "id": "call_1",
+                "type": "tool_call",
+            }
+        ],
+    )
+
+
+@task
+def call_tool(tool_call: dict) -> ToolMessage:
+    return ToolMessage(
+        content=f"result for {tool_call['args']}",
+        name=tool_call["name"],
+        tool_call_id=tool_call["id"],
+    )
+
+
+@entrypoint(checkpointer=checkpointer)
+def agent(messages, *, previous=None):
+    if previous is not None:
+        messages = add_messages(previous, messages)
+
+    model_response = call_model(messages).result()
+    while True:
+        if not model_response.tool_calls:
+            break
+
+        # Review tool calls
+        tool_results = []
+        tool_calls = []
+        updated_tool_calls = list(model_response.tool_calls)
+        for i, tool_call in enumerate(model_response.tool_calls):
+            review = review_tool_call(tool_call)
+            if isinstance(review, ToolMessage):
+                tool_results.append(review)
+            else:  # is a validated tool call
+                tool_calls.append(review)
+                updated_tool_calls[i] = review
+
+        if updated_tool_calls != list(model_response.tool_calls):
+            model_response = model_response.model_copy(
+                update={"tool_calls": updated_tool_calls}
+            )
+
+        # Execute remaining tool calls
+        tool_result_futures = [call_tool(tool_call) for tool_call in tool_calls]
+        remaining_tool_results = [fut.result() for fut in tool_result_futures]
+
+        # Append to message list
+        messages = add_messages(
+            messages,
+            [model_response, *tool_results, *remaining_tool_results],
+        )
+
+        # Call model again
+        model_response = call_model(messages).result()
+
+    # Generate final response
+    messages = add_messages(messages, model_response)
+    return entrypoint.final(value=model_response, save=messages)
+
+
+config = {"configurable": {"thread_id": "2"}}
+
+stream = agent.stream_events(
+    [HumanMessage("What's the weather?")], config, version="v3"
+)
+_ = stream.output
+print(stream.interrupts[0].value)
+# -> {'question': 'Is this correct?', 'tool_call': {'name': 'search', ...}}
+
+result = agent.invoke(Command(resume={"action": "continue"}), config)
+print(result)
+```
