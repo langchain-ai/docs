@@ -39,7 +39,7 @@ After the specified retention period, traces are no longer accessible in the tra
 
 **Where the tier is set**
 
-A default retention tier belongs to a tracing project. In an [agent-based workspace](/langsmith/agents), each of an agent's [environments](/langsmith/agent-environments) is its own tracing project, so the tier is set per environment: one agent can hold production traces at extended retention and development traces at base. To change the tier for a whole agent, set it on each environment. See [Change project-level default retention](/langsmith/billing#change-project-level-default-retention).
+A default retention tier belongs to a tracing project. In an [agent-based workspace](/langsmith/agent-registry), each of an agent's [environments](/langsmith/agent-environments) is its own tracing project, so the tier is set per environment: one agent can hold production traces at extended retention and development traces at base. To change the tier for a whole agent, set it on each environment. See [Change project-level default retention](/langsmith/billing#change-project-level-default-retention).
 
 ### Data retention auto-upgrades
 
@@ -178,13 +178,63 @@ This is thrown by our application and varies by organization based on their conf
 
 ### Run query endpoint
 
-The [`POST /runs/query`](/langsmith/smith-api/run/query-runs) endpoint has additional per-tenant rate limits based on query parameters. See [Query traces using the SDK](/langsmith/export-traces#rate-limits) for details.
+LangSmith exposes two versions of the run query endpoint with different rate limit profiles.
+
+**v2 (recommended):** `POST /v2/runs/query` ([`list_runs`](https://reference.langchain.com/python/langsmith/client/Client/list_runs) in Python, [`listRuns`](https://reference.langchain.com/javascript/langsmith/client/Client/listRuns) in JavaScript) is backed by SmithDB and has a flat per-API-key limit with no time-window tiers:
+
+| **Limit** | **Window** |
+|---|---|
+| 300 requests | 10 seconds |
+
+API key requests that set `sem_filter` (semantic search) are also limited to 10 requests per minute per workspace.
+
+**v1:** `POST /runs/query` has per-tenant rate limits that vary based on query parameters:
+
+| **Query type** | **Limit** | **Window** |
+|---|---|---|
+| Short time window (≤ 7 days) | 10 requests | 10 seconds |
+| Large time window (> 7 days) | 3 requests | 10 seconds |
+| Full-text search, short time window (≤ 7 days) | 3 requests | 10 seconds |
+| Full-text search, large time window (> 7 days) | 1 request | 10 seconds |
+| Select `child_run_ids`, short time window (≤ 7 days) | 3 requests | 10 seconds |
+| Select `child_run_ids`, large time window (> 7 days) | 1 request | 10 seconds |
+
+The time window is determined by `end_time - start_time`. If `end_time` is not provided, LangSmith will use the current time. Queries without a `start_time` are treated as large time window queries.
+
+To avoid hitting v1 rate limits and reduce query time:
+
+- **Set `start_time`**: omitting it triggers the large time window tier (3 requests per 10 seconds instead of 10). Use a window of 7 days or less when possible.
+- **Use `select`**: by default all fields are returned. Specifying only the fields you need (e.g., `select=["inputs", "outputs"]`) substantially reduces response size and query time.
+- **Set `limit`**: cap the number of results if you don't need to paginate through everything.
+- **Avoid full-text search**: `filter='search("...")'` has the strictest rate limits; use structured filters (e.g., `eq()`, `has()`) when possible.
+- **Avoid selecting `child_run_ids`**: this also triggers a stricter rate limit tier.
+
+### Run stats endpoint
+
+The [`POST /runs/stats`](/langsmith/smith-api/run/stats-runs) endpoint has per-tenant rate limits that vary based on the query time window:
+
+| **Query type** | **Limit** | **Window** |
+|---|---|---|
+| Short time window (≤ 14 days) | 10 requests | 10 seconds |
+| Large time window (> 14 days and < 90 days) | 3 requests | 10 seconds |
+| Extra-large time window (≥ 90 days) or no `start_time` | 1 request | 10 seconds |
+
+The time window is determined by `end_time - start_time`. If `end_time` is not provided, LangSmith uses the current time. Queries without a `start_time` are subject to the strictest limit.
+
+In the GCP-hosted US region, API key requests to this endpoint are also limited to 1 request per 10 seconds per API key.
+
+To avoid hitting rate limits:
+
+- **Set `start_time`**: use a window of 14 days or less when possible.
+- **Avoid open-ended queries**: always provide a `start_time` to stay in the less-restrictive tier.
 
 ### Workspace invite batch endpoint
 
 Workspace invite batch requests are rate limited per workspace to reduce bulk invitation abuse.
 
-### Handling 429s responses in your application
+The `POST /workspaces/current/members/batch` endpoint allows 2 requests per second per workspace. This limit applies to LangSmith Cloud only.
+
+### Handle 429 responses in your application
 
 Since some 429 responses are temporary and may succeed on a successive call, if you are directly calling the LangSmith API in your application we recommend implementing retry logic with exponential backoff and jitter.
 
@@ -220,7 +270,7 @@ The extended data retention traces limit has side effects. If the limit is alrea
 
 Actions that do not change trace retention are not counted against the extended-retention trace limit. You can still submit feedback in the LangSmith UI, add runs or threads to annotation queues, and run automation rules or evaluators with retention extension disabled when the limit is reached.
 
-### Updating usage limits
+### Update usage limits
 
 Usage limits can be updated from the `Settings` page under `Usage and Billing`. Limit values are cached, so it may take a minute or two before the new limits apply.
 

@@ -6,6 +6,16 @@ generated snippet MDX.
 
 Only single-snippet source files get links. Multi-snippet files are skipped until
 those samples are split into one file per snippet.
+
+Matching is stamp-based: the sample runner sets ``LANGSMITH_DOCS_SNIPPET`` to the
+snippet ID so the Python and JS LangSmith SDKs attach it as run metadata. The
+collector then requires that metadata value and does not fall back to an
+arbitrary LangGraph root in the time window (which previously shuffled links
+under parallel ``CODE_SAMPLE_JOBS``).
+
+When a successful sample run has no stamped root (for example a mock-only tool
+harness), any previous manifest entry for that snippet is removed so generated
+MDX does not keep a stale CTA.
 """
 
 from __future__ import annotations
@@ -19,6 +29,9 @@ from typing import Any
 
 MANIFEST_RELPATH = Path("src/code-samples/trace-links.json")
 DEFAULT_PROJECT = "docs-code-samples"
+# Env var name and metadata key (LangSmith copies non-secret LANGSMITH_* env
+# vars onto run metadata for Python and JS SDKs).
+DOCS_SNIPPET_ENV = "LANGSMITH_DOCS_SNIPPET"
 TRACE_CARD_BODY = "Open a public LangSmith run for this example."
 # Match the Card CTA (with or without body) and the older plain-markdown form so
 # regenerations replace either.
@@ -34,12 +47,8 @@ TRACE_LINK_RE = re.compile(
     r")\n?$",
 )
 _SNIPPET_START_RE = re.compile(r":snippet-start:\s*(\S+)")
-
-# Root run names that indicate an agent / LangGraph harness execution.
-_AGENT_NAME_RE = re.compile(
-    r"(langgraph|\bagent\b|deep.?agent|create_agent|create_deep_agent)",
-    re.IGNORECASE,
-)
+# Snippet IDs appear in LangSmith filter strings; keep the charset conservative.
+_SNIPPET_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
 def manifest_path(repo_root: Path) -> Path:
@@ -77,6 +86,17 @@ def snippet_ids_in_source(source_text: str) -> list[str]:
     return _SNIPPET_START_RE.findall(source_text)
 
 
+def primary_snippet_id(source_text: str) -> str | None:
+    """Return the sole snippet ID when the source is eligible for a trace link."""
+    ids = snippet_ids_in_source(source_text)
+    if len(ids) != 1:
+        return None
+    snippet_id = ids[0]
+    if not _SNIPPET_ID_RE.fullmatch(snippet_id):
+        return None
+    return snippet_id
+
+
 def strip_trace_link(mdx: str) -> str:
     """Remove a trailing View example trace link if present."""
     return TRACE_LINK_RE.sub("", mdx.rstrip()).rstrip() + "\n"
@@ -95,60 +115,38 @@ def append_trace_link(mdx: str, url: str | None) -> str:
     )
 
 
-def looks_like_agent_root(run: Any) -> bool:
-    """Return True if a LangSmith run looks like an agent / graph root."""
-    name = getattr(run, "name", None) or ""
-    if _AGENT_NAME_RE.search(name):
-        return True
-    return False
+def _run_metadata(run: Any) -> dict[str, Any]:
+    """Return metadata from a LangSmith run object or mapping."""
+    direct = getattr(run, "metadata", None)
+    if isinstance(direct, dict):
+        return direct
+    extra = getattr(run, "extra", None)
+    if isinstance(extra, dict):
+        meta = extra.get("metadata")
+        if isinstance(meta, dict):
+            return meta
+    if isinstance(run, dict):
+        meta = run.get("metadata")
+        if isinstance(meta, dict):
+            return meta
+        extra = run.get("extra")
+        if isinstance(extra, dict):
+            nested = extra.get("metadata")
+            if isinstance(nested, dict):
+                return nested
+    return {}
 
 
-def select_agent_root_run(client: Any, runs: list[Any]) -> Any | None:
-    """Pick the best agent-like root run from a time window.
-
-    Prefers named agent/LangGraph roots. Falls back to a chain root that has at
-    least one LLM child in the same trace.
-    """
-    scored: list[tuple[int, Any]] = []
-    for run in runs:
-        name = (getattr(run, "name", None) or "").lower()
-        score = 0
-        if "langgraph" in name:
-            score += 10
-        if "deep" in name and "agent" in name:
-            score += 10
-        if looks_like_agent_root(run):
-            score += 8
-        if getattr(run, "run_type", None) == "chain":
-            score += 1
-        if score:
-            scored.append((score, run))
-
-    scored.sort(key=lambda item: -item[0])
-    if scored:
-        return scored[0][1]
-
-    for run in runs:
-        if getattr(run, "run_type", None) != "chain":
-            continue
-        trace_id = getattr(run, "trace_id", None)
-        if not trace_id:
-            continue
-        llm_runs = list(
-            client.list_runs(
-                trace_id=trace_id,
-                run_type="llm",
-                limit=1,
-            )
-        )
-        if llm_runs:
-            return run
-    return None
+def run_has_docs_snippet(run: Any, snippet_id: str) -> bool:
+    """Return True when the run was stamped with the given docs snippet ID."""
+    return _run_metadata(run).get(DOCS_SNIPPET_ENV) == snippet_id
 
 
 def _run_start_time(run: Any) -> datetime | None:
     """Normalize a run's start_time to an aware UTC datetime, if present."""
     value = getattr(run, "start_time", None)
+    if value is None and isinstance(run, dict):
+        value = run.get("start_time")
     if value is None:
         return None
     if isinstance(value, datetime):
@@ -158,22 +156,70 @@ def _run_start_time(run: Any) -> datetime | None:
     return None
 
 
+def select_stamped_root_run(
+    runs: list[Any],
+    *,
+    snippet_id: str,
+    sample_start: datetime,
+) -> Any | None:
+    """Pick the stamped root run closest to the sample start time.
+
+    Requires ``LANGSMITH_DOCS_SNIPPET`` metadata equal to ``snippet_id``. Does not
+    fall back to an unstamped LangGraph or agent root.
+    """
+    if sample_start.tzinfo is None:
+        sample_start = sample_start.replace(tzinfo=timezone.utc)
+    else:
+        sample_start = sample_start.astimezone(timezone.utc)
+
+    stamped: list[tuple[float, datetime, Any]] = []
+    for run in runs:
+        if not run_has_docs_snippet(run, snippet_id):
+            continue
+        started = _run_start_time(run)
+        if started is None:
+            # Prefer timed matches; keep untimed stamped runs as a last resort.
+            stamped.append((float("inf"), sample_start, run))
+            continue
+        delta = abs((started - sample_start).total_seconds())
+        stamped.append((delta, started, run))
+
+    if not stamped:
+        return None
+    stamped.sort(key=lambda item: (item[0], item[1]))
+    return stamped[0][2]
+
+
+def docs_snippet_filter(snippet_id: str) -> str:
+    """Return a LangSmith ``list_runs`` filter for the docs snippet stamp."""
+    if not _SNIPPET_ID_RE.fullmatch(snippet_id):
+        raise ValueError(f"unsafe snippet id for filter: {snippet_id!r}")
+    return (
+        f'and(eq(metadata_key, "{DOCS_SNIPPET_ENV}"), '
+        f'eq(metadata_value, "{snippet_id}"))'
+    )
+
+
 def wait_for_agent_root_run(
     *,
     client: Any,
     project_name: str,
+    snippet_id: str,
     start_time: datetime,
     end_time: datetime | None = None,
     exclude_ids: set[str] | None = None,
     max_attempts: int = 6,
     delay_seconds: float = 2.0,
 ) -> Any | None:
-    """Poll LangSmith for an agent-like root run started at or after start_time.
+    """Poll LangSmith for the root run stamped with ``snippet_id``.
 
     When ``end_time`` is set, ignore roots that started after the sample finished
     (plus a small upload buffer). When ``exclude_ids`` is set, ignore runs already
     claimed by another sample—needed when samples run in parallel against one
     project.
+
+    Matching requires the ``LANGSMITH_DOCS_SNIPPET`` metadata stamp. There is no
+    fallback to an arbitrary agent-like root in the time window.
     """
     # Small buffer so clock skew / upload delay does not miss the run.
     window_start = start_time - timedelta(seconds=2)
@@ -181,7 +227,7 @@ def wait_for_agent_root_run(
         end_time + timedelta(seconds=15) if end_time is not None else None
     )
     excluded = exclude_ids or set()
-    last_runs: list[Any] = []
+    run_filter = docs_snippet_filter(snippet_id)
     for attempt in range(1, max_attempts + 1):
         client.flush()
         last_runs = list(
@@ -189,12 +235,16 @@ def wait_for_agent_root_run(
                 project_name=project_name,
                 start_time=window_start,
                 is_root=True,
+                filter=run_filter,
             )
         )
         candidates: list[Any] = []
         for run in last_runs:
             run_id = str(getattr(run, "id", "") or "")
             if run_id and run_id in excluded:
+                continue
+            # Defense in depth: never trust filter alone.
+            if not run_has_docs_snippet(run, snippet_id):
                 continue
             run_started = _run_start_time(run)
             if (
@@ -204,7 +254,11 @@ def wait_for_agent_root_run(
             ):
                 continue
             candidates.append(run)
-        selected = select_agent_root_run(client, candidates)
+        selected = select_stamped_root_run(
+            candidates,
+            snippet_id=snippet_id,
+            sample_start=start_time,
+        )
         if selected is not None:
             return selected
         if attempt < max_attempts:
@@ -255,7 +309,14 @@ def collect_trace_for_sample(
         )
         return None
 
-    snippet_id = snippet_ids[0]
+    snippet_id = primary_snippet_id(text)
+    if snippet_id is None:
+        print(
+            f"  … {rel_source}: snippet id {snippet_ids[0]!r} is not safe "
+            "for trace stamping; skip trace link"
+        )
+        return None
+
     if client is None:
         from langsmith import Client
 
@@ -264,12 +325,27 @@ def collect_trace_for_sample(
     run = wait_for_agent_root_run(
         client=client,
         project_name=project_name,
+        snippet_id=snippet_id,
         start_time=start_time,
         end_time=end_time,
         exclude_ids=exclude_ids,
     )
     if run is None:
-        print(f"  … {rel_source}: no agent root run found; skip trace link")
+        # Fail closed: drop any prior link. Keeping an unstamped/shuffled
+        # leftover after a successful sample run is worse than omitting the CTA
+        # (common for mock-only harnesses that never create a root run).
+        if snippet_id in manifest["snippets"]:
+            manifest["snippets"].pop(snippet_id, None)
+            save_manifest(repo_root, manifest)
+            print(
+                f"  … {rel_source}: no root run stamped with "
+                f"{DOCS_SNIPPET_ENV}={snippet_id}; cleared stale trace link"
+            )
+        else:
+            print(
+                f"  … {rel_source}: no root run stamped with "
+                f"{DOCS_SNIPPET_ENV}={snippet_id}; skip trace link"
+            )
         return None
 
     url = share_run_public_url(client, run)
@@ -279,6 +355,7 @@ def collect_trace_for_sample(
         "run_id": str(run.id),
         "trace_id": str(getattr(run, "trace_id", "") or ""),
         "run_name": getattr(run, "name", None),
+        "docs_snippet": snippet_id,
         "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     manifest["snippets"][snippet_id] = entry

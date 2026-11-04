@@ -24,12 +24,35 @@ ENCODING: str = "utf-8"
 _LINK_PATTERN: re.Pattern[str] = re.compile(r"(\[[^\]]+\])\(([^)\s#]+)(#[^)\s]*)?\)")
 _LinkChange = tuple[str, str]  # (old_url, new_url)
 
+# Pattern to match site-absolute links in Markdown (`[label](/route)`) and in
+# component attributes (`href="/route"`). Only the route is captured; anchors,
+# query strings, and link titles stay in place.
+_ROUTE_LINK_PATTERN: re.Pattern[str] = re.compile(r'(\]\(|\bhref=")(/[^\s)"#?]*)')
+
+# Pattern to match a string value in `docs.json`, except a redirect `source`,
+# which names a URL that no longer exists rather than a page.
+_DOCS_JSON_ROUTE_PATTERN: re.Pattern[str] = re.compile(
+    r'(?<!"source": )"(/?)([^"#\s]+)(#[^"]*)?"'
+)
+
+# Language directory names in `src/oss/` and in built URLs.
+_LANGUAGES: tuple[str, ...] = ("python", "javascript")
+
+# OSS products built once, without a python/javascript split. Mirrors the
+# exclusions in `DocumentationBuilder._rewrite_oss_links`.
+_UNVERSIONED_OSS: tuple[str, ...] = ("oss/deepagents/code", "oss/openwiki")
+
+_DOC_SUFFIXES: tuple[str, ...] = (".md", ".mdx", ".ipynb")
+
 
 logger = logging.getLogger(__name__)
 
 
 def _find_git_root(start: Path) -> Path:
     """Return the repository root - the closest ancestor containing `.git`.
+
+    `.git` is a directory in a regular checkout and a file in a worktree or
+    submodule, so either form marks the root.
 
     Args:
         start: A path *inside* the repository.
@@ -38,11 +61,11 @@ def _find_git_root(start: Path) -> Path:
         The absolute path to the repo's root directory.
 
     Raises:
-        RuntimeError: If no `.git` directory is found while traversing up the
+        RuntimeError: If no `.git` entry is found while traversing up the
             directory tree.
     """
     for candidate in (start, *start.parents):
-        if (candidate / ".git").is_dir():
+        if (candidate / ".git").exists():
             return candidate
     msg = f"Could not locate Git repository root from {start}."
     raise RuntimeError(msg)
@@ -59,6 +82,247 @@ def _rel_to_docs_root(path: Path, docs_root: Path) -> Path:
         A :class:`pathlib.Path` representing *path* relative to *docs_root*.
     """
     return path.resolve().relative_to(docs_root.resolve())
+
+
+def _route_forms(rel_path: Path) -> dict[str, str]:
+    """Return every site-absolute URL form that reaches a source file.
+
+    Internal links are written as routes (`/langsmith/page`), not file paths.
+    The build serves one source file at several routes, so a link to it can
+    take several forms:
+
+    - Shared OSS pages (`oss/langchain/x`) are reached by the unversioned
+      `/oss/langchain/x`, which the build expands per language, and by the
+      explicit `/oss/python/langchain/x` and `/oss/javascript/langchain/x`.
+    - Language-specific OSS pages (`oss/python/x`) are reached by
+      `/oss/python/x` and, in the Python build, by the unversioned `/oss/x`.
+    - Managed Deep Agents pages are reached by `/langsmith/managed-deep-agents*`
+      and by their `/langsmith/{python,javascript}/...` routes.
+    - Everything else, including Deep Agents Code and OpenWiki, is reached by
+      its path alone.
+
+    Args:
+        rel_path: The source file, relative to the docs root.
+
+    Returns:
+        A mapping of form name (`"unversioned"`, `"python"`, or `"javascript"`)
+        to route. A route keeps a trailing `/index`; see `_normalize_route`.
+    """
+    route = rel_path.with_suffix("").as_posix()
+    if route.startswith("oss/") and not any(
+        route == prefix or route.startswith(f"{prefix}/") for prefix in _UNVERSIONED_OSS
+    ):
+        rest = route.removeprefix("oss/")
+        language, _, sub = rest.partition("/")
+        if language in _LANGUAGES:
+            return {language: f"/{route}", "unversioned": f"/oss/{sub}"}
+        return {
+            "unversioned": f"/{route}",
+            **{lang: f"/oss/{lang}/{rest}" for lang in _LANGUAGES},
+        }
+    if rel_path.parent.as_posix() == "langsmith" and rel_path.name.startswith(
+        "managed-deep-agents"
+    ):
+        sub = route.removeprefix("langsmith/")
+        return {
+            "unversioned": f"/{route}",
+            **{lang: f"/langsmith/{lang}/{sub}" for lang in _LANGUAGES},
+        }
+    return {"unversioned": f"/{route}"}
+
+
+def _normalize_route(route: str) -> str:
+    """Return *route* without a trailing slash or `/index`, as the site serves it."""
+    route = route.rstrip("/")
+    route = route.removesuffix("/index")
+    return route or "/"
+
+
+def _has_doc_file(docs_root: Path, rel_stem: str) -> bool:
+    """Return whether a documentation source file exists at *rel_stem*."""
+    return any(
+        (docs_root / f"{rel_stem}{suffix}").is_file() for suffix in _DOC_SUFFIXES
+    )
+
+
+def _build_route_map(old_rel: Path, new_rel: Path, docs_root: Path) -> dict[str, str]:
+    """Map each route that reaches *old_rel* to the matching route for *new_rel*.
+
+    A link keeps its form: an unversioned link stays unversioned and a
+    `/oss/python/...` link stays explicit. Forms that cannot be rewritten
+    safely are logged and left out of the map, so links using them are left
+    unchanged:
+
+    - An unversioned link to a language-specific page also reaches its
+      counterpart in the other language, or a shared page, when one exists.
+    - A form with no equivalent at the destination, such as a
+      `/oss/javascript/...` link to a page moved into `oss/python/`.
+
+    Args:
+        old_rel: The file being moved, relative to the docs root.
+        new_rel: The destination, relative to the docs root.
+        docs_root: The root of the documentation tree.
+
+    Returns:
+        A mapping of old route to new route, both as written in `docs.json`
+        (keeping any trailing `/index`).
+    """
+    old_forms = _route_forms(old_rel)
+    new_forms = _route_forms(new_rel)
+    new_is_versioned = any(lang in new_forms for lang in _LANGUAGES)
+
+    old_language = next(
+        (lang for lang in _LANGUAGES if old_rel.parts[:2] == ("oss", lang)), None
+    )
+    route_map: dict[str, str] = {}
+    for form, old_route in old_forms.items():
+        if form == "unversioned" and old_language is not None:
+            sub = old_route.removeprefix("/oss/")
+            others = [
+                f"oss/{lang}/{sub}" for lang in _LANGUAGES if lang != old_language
+            ]
+            shadowing = [
+                s for s in [*others, f"oss/{sub}"] if _has_doc_file(docs_root, s)
+            ]
+            if shadowing:
+                logger.warning(
+                    "Left %s links unchanged: they also reach %s.",
+                    old_route,
+                    ", ".join(shadowing),
+                )
+                continue
+
+        new_route = new_forms.get(form)
+        if new_route is None and not new_is_versioned:
+            new_route = new_forms["unversioned"]
+        if new_route is None:
+            logger.warning(
+                "Left %s links unchanged: %s has no %s route.", old_route, new_rel, form
+            )
+            continue
+        if new_route != old_route:
+            route_map[old_route] = new_route
+    return route_map
+
+
+def _rewrite_route_links(
+    text: str, route_map: dict[str, str]
+) -> tuple[str, list[_LinkChange]]:
+    """Rewrite site-absolute links in *text* according to *route_map*.
+
+    Args:
+        text: Markdown or MDX source.
+        route_map: Old route to new route, from `_build_route_map`.
+
+    Returns:
+        The rewritten text and the `(old_url, new_url)` changes made.
+    """
+    normalized = {_normalize_route(old): new for old, new in route_map.items()}
+    changes: list[_LinkChange] = []
+
+    def _replacer(match: re.Match[str]) -> str:
+        prefix, url = match.groups()
+        new_route = normalized.get(_normalize_route(url))
+        if new_route is None:
+            return match.group(0)
+        new_url = _normalize_route(new_route)
+        if url.endswith("/") and not new_url.endswith("/"):
+            new_url += "/"
+        changes.append((url, new_url))
+        return f"{prefix}{new_url}"
+
+    return _ROUTE_LINK_PATTERN.sub(_replacer, text), changes
+
+
+def _rewrite_route_links_in_file(
+    doc_file: Path, route_map: dict[str, str], docs_root: Path, *, dry_run: bool
+) -> list[_LinkChange]:
+    """Rewrite site-absolute links in one Markdown, MDX, or notebook file.
+
+    Args:
+        doc_file: The file to scan. Notebooks are scanned in markdown cells only.
+        route_map: Old route to new route, from `_build_route_map`.
+        docs_root: The root of the documentation tree.
+        dry_run: Whether the operation is a preview (no disk writes).
+
+    Returns:
+        The `(old_url, new_url)` changes made.
+    """
+    changes: list[_LinkChange] = []
+    if doc_file.suffix.lower() == ".ipynb":
+        notebook = nbformat.read(doc_file, as_version=nbformat.NO_CONVERT)
+        for cell in notebook.cells:
+            if cell.cell_type != "markdown" or "source" not in cell:
+                continue
+            source = cell.source
+            text = "".join(source) if isinstance(source, list) else source
+            new_text, cell_changes = _rewrite_route_links(text, route_map)
+            if cell_changes:
+                cell.source = new_text
+                changes.extend(cell_changes)
+        if changes and not dry_run:
+            nbformat.write(notebook, doc_file)
+    else:
+        text = doc_file.read_text(encoding=ENCODING)
+        new_text, changes = _rewrite_route_links(text, route_map)
+        if changes and not dry_run:
+            doc_file.write_text(new_text, encoding=ENCODING)
+
+    if dry_run:
+        for old_url, new_url in changes:
+            logger.info(
+                "Would update link in %s: %s -> %s",
+                doc_file.relative_to(docs_root),
+                old_url,
+                new_url,
+            )
+    return changes
+
+
+def _rewrite_docs_json(
+    docs_root: Path, route_map: dict[str, str], *, dry_run: bool
+) -> list[_LinkChange]:
+    """Rewrite navigation entries and redirect destinations in `docs.json`.
+
+    Navigation entries name pages without a leading slash
+    (`"langsmith/page"`); redirect destinations use one. Redirect sources are
+    left alone, because they name URLs that should keep redirecting.
+
+    Args:
+        docs_root: The root of the documentation tree.
+        route_map: Old route to new route, from `_build_route_map`.
+        dry_run: Whether the operation is a preview (no disk writes).
+
+    Returns:
+        The `(old_value, new_value)` changes made.
+    """
+    docs_json = docs_root / "docs.json"
+    if not route_map or not docs_json.is_file():
+        return []
+
+    src = docs_json.read_text(encoding=ENCODING)
+    normalized = {_normalize_route(old): new for old, new in route_map.items()}
+    changes: list[_LinkChange] = []
+
+    def _replacer(match: re.Match[str]) -> str:
+        slash, value, anchor = match.groups()
+        new_route = route_map.get(f"/{value}")
+        if new_route is None:
+            # A redirect destination can name an index page by its folder.
+            folder_route = normalized.get(_normalize_route(f"/{value}"))
+            if folder_route is None:
+                return match.group(0)
+            new_route = _normalize_route(folder_route)
+        new_value = slash + new_route.removeprefix("/")
+        changes.append((slash + value, new_value))
+        if dry_run:
+            logger.info("Would update docs.json: %s -> %s", slash + value, new_value)
+        return f'"{new_value}{anchor or ""}"'
+
+    new_src = _DOCS_JSON_ROUTE_PATTERN.sub(_replacer, src)
+    if changes and not dry_run:
+        docs_json.write_text(new_src, encoding=ENCODING)
+    return changes
 
 
 def _update_internal_links_in_moved_file(
@@ -411,6 +675,27 @@ def _scan_and_rewrite(
                 notebook_file, old_abs, new_abs, docs_root, dry_run=dry_run
             )
         )
+
+    # Rewrite site-absolute links (`/langsmith/page`), the form internal links
+    # actually use. The passes above handle relative file links only.
+    try:
+        route_map = _build_route_map(
+            _rel_to_docs_root(old_abs, docs_root),
+            _rel_to_docs_root(new_abs, docs_root),
+            docs_root,
+        )
+    except ValueError:
+        logger.warning("Skipped site-absolute links: a path is outside %s.", docs_root)
+        route_map = {}
+    if route_map:
+        for doc_file in sorted(docs_root.rglob("*")):
+            if doc_file.suffix.lower() in _DOC_SUFFIXES and doc_file.is_file():
+                changes.extend(
+                    _rewrite_route_links_in_file(
+                        doc_file, route_map, docs_root, dry_run=dry_run
+                    )
+                )
+        changes.extend(_rewrite_docs_json(docs_root, route_map, dry_run=dry_run))
 
     return changes
 
