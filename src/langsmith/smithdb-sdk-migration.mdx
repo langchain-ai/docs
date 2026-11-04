@@ -4,9 +4,14 @@ sidebarTitle: SmithDB API migration
 description: Migrate your existing LangSmith SDK methods to their SmithDB-backed equivalents for faster agent observability.
 ---
 
+## Context
+In May 2026, we released [SmithDB](https://www.langchain.com/blog/introducing-smithdb?utm_source=docs), a new observability database built for modern AI agents. SmithDB delivers industry-leading performance across every key observability workload, making core LangSmith experiences dramatically faster.
+
+New SDK methods are required to query your traces with SmithDB. This guide helps you migrate your codebase.
+
 ## Migrate with an AI agent
 
-Copy the following prompt into your coding agent. It finds every SDK method and direct API call to the deprecated endpoints, waits for your approval, migrates them, and opens a pull request.
+Copy the following prompt into your coding agent. It finds every SDK method and direct API call to the deprecated endpoints, waits for your approval, then migrates them locally. It pushes and opens a pull request only if you approve.
 
 <Prompt
     description="Migrate off deprecated LangSmith endpoints"
@@ -39,6 +44,8 @@ Search the whole repo (app code, scripts, notebooks, tests, CI and infra config,
 - SDK calls in Python, TypeScript/JavaScript, Go and Java/Kotlin. In Go and Java some replacements keep a similar name under a new service, so match on the guide's before/after, not on the name alone.
 - Feedback creation (`create_feedback`, `createFeedback`, `Feedback.New`, `feedback().create()`): the method and endpoint keep their name, but the project (session) ID is now required. List every call that does not pass it.
 - Direct HTTP calls to the deprecated paths, with or without `/api/v1`, in raw or built URLs and any HTTP client (requests, httpx, fetch, axios, net/http, OkHttp, curl).
+- Files under tests, fixtures, templates or task folders count as call sites if they run against a real LangSmith (scripts, build steps, notebooks).
+- Match method names, not call syntax: a method can be passed as a reference (`asyncio.to_thread`, `functools.partial`, callbacks, `getattr`) with no parenthesis after it.
 
 Keep raw HTTP calls as raw HTTP calls: change only the path, request body, response handling and pagination, following the guide's cURL examples. Note each raw call that would be simpler with an SDK method, for phase 4.
 
@@ -59,7 +66,7 @@ Then STOP and wait for my approval.
 1. Upgrade each LangSmith SDK in use to its latest stable release (and its lockfile: uv.lock/poetry.lock, package-lock/pnpm-lock/yarn.lock, go.sum, Gradle/Maven). The guide's minimum is only the floor. If the latest release breaks something unrelated to this migration, use the newest version that works, never below the minimum, and say why in the PR.
 2. Migrate each call site from the table. The v2 queries take `project_ids` (UUIDs), not a project name. Resolve a plain project by name as the guide shows. If the project is an agent environment, an experiment or the workspace evaluators, propose resolving it with https://docs.langchain.com/langsmith/resolve-an-agent, and flag that it is beta and needs a newer SDK and server.
 3. Run tests, linters and the build for every language touched. Re-run the phase 2 search and show it finds nothing, or explain each leftover.
-4. Open a pull request: per file, what changed and why, plus anything left for review.
+4. Keep the changes local: commit them, do not push. Show me a summary: per file, what changed and why, plus anything left for review. Then STOP. Push and open a pull request only if I approve.
 
 **Phase 4: feedback and follow-ups**
 
@@ -70,12 +77,8 @@ Then STOP and wait for my approval.
 
 - If the guide does not cover a call site or parameter, search the rest of the LangSmith docs first (https://docs.langchain.com/langsmith, including the API reference). Then ask me, and include a proposed replacement with the doc link that backs it, or say you found nothing. Never apply an uncovered change without my go.
 - Do not call write endpoints or change LangSmith data while testing.
+- Never push a branch, open a pull request or post anything to GitHub without my go.
 </Prompt>
-
-## Context
-In May 2026, we released [SmithDB](https://www.langchain.com/blog/introducing-smithdb?utm_source=docs), a new observability database built for modern AI agents. SmithDB delivers industry-leading performance across every key observability workload, making core LangSmith experiences dramatically faster.
-
-New SDK methods are required to query your traces with SmithDB. This guide helps you migrate your codebase.
 
 ## Deprecation and removal
 
