@@ -25,7 +25,7 @@ Where [sandboxes](/oss/deepagents/sandboxes) are a code-first way for acting on 
 
 :::python
 <Note>
-    Interpreters require `langchain-quickjs>=0.2.0` and Python 3.11 or later.
+    Interpreters require `langchain-quickjs>=0.3.0` and Python 3.11 or later.
 </Note>
 :::
 
@@ -252,9 +252,11 @@ Every tool you expose through PTC is an outside capability that interpreter code
 <Note>
     **How code execution works**
 
-    Interpreter code runs in an embedded QuickJS context, not a separate VM or process. In Python, this runtime is provided by [`quickjs-rs`](https://github.com/langchain-ai/quickjs-rs), which documents the same-process execution boundary in its [Security guide](https://github.com/langchain-ai/quickjs-rs#security).
+    Interpreter code runs in QuickJS compiled to WebAssembly, provided by [`quickjs-rs`](https://github.com/langchain-ai/quickjs-rs). The WebAssembly sandbox is the isolation boundary: JavaScript executes in the guest's linear memory and cannot read or write the host process's memory. Each LangGraph thread gets its own WebAssembly instance, so interpreter state on one thread cannot reach another.
 
-    Treat interpreters as a capability-scoped execution layer, not a host-memory isolation boundary. For untrusted or semi-trusted code, run agents in isolated worker processes or containers and keep the PTC allowlist narrow.
+    The sandbox runs inside the host process on [wasmtime](https://wasmtime.dev/), so a wasmtime vulnerability is the remaining path out of the sandbox. Keep `wasmtime` updated. For hostile multi-tenant workloads, also run agents in isolated worker processes or containers. For details, see the `quickjs-rs` [Security guide](https://github.com/langchain-ai/quickjs-rs#security).
+
+    The sandbox contains the engine, not the capabilities you give it. Interpreter code can call every tool bridged into it, so keep the PTC allowlist narrow.
 </Note>
 :::
 

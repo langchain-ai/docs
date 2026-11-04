@@ -178,7 +178,7 @@ Now create the experiments and run completions on all examples. In the API, an "
 #  An experiment is a collection of runs with a reference to the dataset used
 #  API Reference: https://docs.langchain.com/langsmith/smith-api/tracer-sessions/create-tracer-session
 
-model_names = ("gpt-3.5-turbo", "gpt-5.4-mini")
+model_names = ("gpt-5.4-mini", "gpt-5.5")
 experiment_ids = []
 for model_name in model_names:
     resp = requests.post(
@@ -220,20 +220,29 @@ The following code adds feedback to the runs from the [single experiment example
 
 ```python
 # Fetch the runs from one of the experiments
-# API Reference: https://docs.langchain.com/langsmith/smith-api/run/query-runs
+# API Reference: https://docs.langchain.com/langsmith/smith-api/runs/query-runs
 experiment_id = experiment_ids[0]  # Evaluate the first experiment
 
+# Without min_start_time, the query only covers the last 24 hours.
+# Start from the experiment's start time so older experiments still return all runs.
+experiment = requests.get(
+    f"https://api.smith.langchain.com/api/v1/sessions/{experiment_id}",
+    headers={"x-api-key": os.environ["LANGSMITH_API_KEY"]}
+).json()
+
 runs_resp = requests.post(
-    "https://api.smith.langchain.com/api/v1/runs/query",
+    "https://api.smith.langchain.com/api/v2/runs/query",
     headers={"x-api-key": os.environ["LANGSMITH_API_KEY"]},
     json={
-        "session": [experiment_id],
+        "project_ids": [experiment_id],
+        "min_start_time": experiment["start_time"],
         "is_root": True,  # Only fetch root runs
-        "select": ["id", "reference_example_id", "outputs", "session_id"],
+        "selects": ["ID", "REFERENCE_EXAMPLE_ID", "OUTPUTS", "PROJECT_ID"],
+        "page_size": 1000,  # Up to 1000 runs per page; follow "next_cursor" for more
     }
 )
 
-runs = runs_resp.json()["runs"]
+runs = runs_resp.json()["items"]
 
 # Evaluate each run by comparing outputs to expected values
 for run in runs:
@@ -255,7 +264,7 @@ for run in runs:
         "run_id": str(run["id"]),
         "key": "correctness",  # The name of your evaluation metric
         "score": 1.0 if is_correct else 0.0,
-        "session_id": run["session_id"],  # Required: the run's tracing project UUID
+        "session_id": run["project_id"],  # Required: the run's tracing project UUID
         "comment": f"Expected: {expected_output}, Got: {actual_output}",  # Optional
     }
 
@@ -310,17 +319,29 @@ experiment_ids = [info["id"] for info in comparative_experiment["experiments_inf
 from collections import defaultdict
 example_id_to_runs_map = defaultdict(list)
 
-#  API Reference: https://docs.langchain.com/langsmith/smith-api/run/query-runs
+# Without min_start_time, the query only covers the last 24 hours.
+# Start from the earliest experiment's start time.
+min_start_time = min(
+    requests.get(
+        f"https://api.smith.langchain.com/api/v1/sessions/{experiment_id}",
+        headers={"x-api-key": os.environ["LANGSMITH_API_KEY"]}
+    ).json()["start_time"]
+    for experiment_id in experiment_ids
+)
+
+#  API Reference: https://docs.langchain.com/langsmith/smith-api/runs/query-runs
 runs = requests.post(
-    f"https://api.smith.langchain.com/api/v1/runs/query",
+    "https://api.smith.langchain.com/api/v2/runs/query",
     headers={"x-api-key": os.environ["LANGSMITH_API_KEY"]},
     json={
-        "session": experiment_ids,
+        "project_ids": experiment_ids,
+        "min_start_time": min_start_time,
         "is_root": True, # Only fetch root runs (spans) which contain the end outputs
-        "select": ["id", "reference_example_id", "outputs", "session_id"],
+        "selects": ["ID", "REFERENCE_EXAMPLE_ID", "OUTPUTS", "PROJECT_ID"],
+        "page_size": 1000,  # Up to 1000 runs per page; follow "next_cursor" for more
     }
 ).json()
-runs = runs["runs"]
+runs = runs["items"]
 for run in runs:
     example_id = run["reference_example_id"]
     example_id_to_runs_map[example_id].append(run)
@@ -340,7 +361,7 @@ for example_id, runs in example_id_to_runs_map.items():
             "score": 1 if i == 0 else 0,
             "run_id": str(run["id"]),
             "key": "ranked_preference",
-            "session_id": run["session_id"],  # Required: the run's tracing project UUID
+            "session_id": run["project_id"],  # Required: the run's tracing project UUID
             "feedback_group_id": str(feedback_group_id),
             "comparative_experiment_id": comparative_experiment_id,
         }

@@ -44,6 +44,12 @@ For advanced CORS configuration, see [how to add custom CORS configuration](/lan
 
 Defaults to `*` (all origins).
 
+## `DEFAULT_A2A_ASSISTANT_ID`
+
+Set `DEFAULT_A2A_ASSISTANT_ID` to the ID of the assistant whose [agent card](/langsmith/server-a2a#agent-card-discovery) the server returns from `/.well-known/agent-card.json` when the request has no `assistant_id` query parameter.
+
+If it is not set, requests to `/.well-known/agent-card.json` without an `assistant_id` query parameter return a `400` error. The `/a2a/{assistant_id}` endpoints take the assistant ID from the path and ignore this variable.
+
 ## Supported Datadog environment variables {#dd_api_key}
 
 Set these environment variables or secrets on the deployment to send Agent Server traces and logs to Datadog. Every variable takes effect only when `DD_API_KEY` is set, which wraps the application process in Datadog's [`ddtrace-run`](https://ddtrace.readthedocs.io/en/stable/installation_quickstart.html) tracer and log-collection agent.
@@ -63,6 +69,67 @@ For the full set of tracing options, see the [`DD_*` environment variables](http
 <Note>
 Enabling `DD_API_KEY` (and thus `ddtrace-run`) can override or interfere with other auto-instrumentation solutions (such as OpenTelemetry) that you may have instrumented into your application code.
 </Note>
+
+## `FF_OPTIMIZED_STREAMING`
+
+Set `FF_OPTIMIZED_STREAMING=true` on your deployment to use Redis Streams instead of Redis Pub/Sub for streaming run output.
+
+<Note>
+`FF_OPTIMIZED_STREAMING` requires Agent Server v0.7.93 or later.
+</Note>
+
+When enabled, the server stores all streaming events in Redis Streams. `RESUMABLE_STREAM_TTL_SECONDS` still controls how long Redis retains the stream data and defaults to `120` seconds.
+
+Non-resumable runs started before you enable the flag continue to stream through Redis Pub/Sub.
+
+Accepts boolean values `true` and `false`. Defaults to `false`.
+
+## `FF_PROFILE_IMPORTS`
+
+Set `FF_PROFILE_IMPORTS` to `true` to find out why a graph is slow to load. Defaults to `false`. Added in `langgraph-api==0.6.8`.
+
+Agent Server runs your graph code when it imports your graph modules at startup, so work that happens at import time delays readiness. Examples include network calls, database or client setup, reading large files, and heavy dependency imports. When a graph import takes longer than 3 seconds, the server logs a warning that suggests setting this variable.
+
+With the variable set, the server profiles the import of each Python module it loads from your configuration. This covers your graphs, custom app, auth handler, store, checkpointer, and encryption module. If any function inside an import takes at least 1 second, the server logs a `slow_import_profile` warning that lists up to 10 of the slowest. Each entry shows the function, its cumulative time, and where in your module it was called from. The report has the following format, with illustrative values:
+
+```text
+Slow startup for './agent.py:graph' (12.3s)
+
+    Slowest operations:
+       10.84s  connect_to_database      clients/db.py:42
+               ↳ from agent.py (module-level)
+```
+
+The report identifies the slow operation, so you can move it inside a function or initialize it lazily instead of running it at import time.
+
+Keep the following in mind:
+- Profiling adds overhead, so the reported times run higher than normal. Remove the variable once you've fixed the problem.
+- Calls made at the top level of a module are attributed to `(module-level)` with no line number.
+- Operations that take less than 1 second each don't appear in the report, even when many of them add up to a slow import.
+- Import profiling works for Python graphs only. JavaScript graphs aren't supported yet.
+- Only import time is profiled. Delays after your graph is imported, such as in your custom app lifespan, don't appear.
+
+## `LANGGRAPH_AES_KEY` and `LANGGRAPH_AES_JSON_KEYS`
+
+Set `LANGGRAPH_AES_KEY` to a 16, 24, or 32-byte key to encrypt checkpoints at rest. Set `LANGGRAPH_AES_JSON_KEYS` to a comma-separated list of JSON keys to also encrypt wherever they appear in thread, assistant, run, cron, and store data. `LANGGRAPH_AES_JSON_KEYS` requires `LANGGRAPH_AES_KEY`.
+
+For setup and key rotation, see [Configure AES encryption at rest](/langsmith/aes-encryption).
+
+## `LANGGRAPH_API_URL`
+
+Set `LANGGRAPH_API_URL` to the URL that clients use to reach the deployment. The server uses it as:
+
+- The base URL in [A2A agent cards](/langsmith/server-a2a#agent-card-discovery).
+- The `servers` entry in the OpenAPI spec served at `/openapi.json`.
+- The `langgraph_api_url` key in each run's metadata.
+
+If it is not set, the server builds agent card URLs from the incoming request. Set it when clients reach the server through a different host, such as a reverse proxy.
+
+## `LANGGRAPH_DEFAULT_RECURSION_LIMIT`
+
+Set `LANGGRAPH_DEFAULT_RECURSION_LIMIT` to the default [recursion limit](/oss/langgraph/graph-api#recursion-limit) for runs: the maximum number of supersteps a graph executes before it raises an error. A `recursion_limit` passed in a run's config overrides it.
+
+Defaults to `10011`.
 
 ## `LANGGRAPH_POSTGRES_POOL_MAX_SIZE`
 
@@ -169,11 +236,17 @@ OTel APM tracing was added in Agent Server version `0.5.32` and is currently in 
 
 ## `LS_MONGODB_URI`
 
-MongoDB connection URI for the MongoDB checkpointer backend.
+MongoDB connection URI for the MongoDB checkpointer backend. If `LS_MONGODB_URI` is not set, the server reads `MONGODB_URI`.
 
 The URI must point to a replica set member or `mongos` router and must include the database name in the path.
 
 See [Configure checkpointer backend](/langsmith/configure-checkpointer) for details.
+
+## `LSD_CACHE_PACKAGES_DISTRIBUTIONS`
+
+When `LSD_CACHE_PACKAGES_DISTRIBUTIONS` is `true`, the server caches the result of `importlib.metadata.packages_distributions()` once per process. Some packages call that function many times at import time, which slows graph loading, especially when Datadog tracing (`ddtrace`) is enabled. Set it to `false` if your deployment installs or removes packages at runtime.
+
+Defaults to `true`.
 
 ## `REDIS_KEY_PREFIX`
 
