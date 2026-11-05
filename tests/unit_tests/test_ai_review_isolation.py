@@ -190,13 +190,12 @@ def test_proxy_drops_headers_that_could_split_a_message() -> None:
     assert out["anthropic-version"] == "2023-06-01"
     back = response_headers(
         [
-            ("Content-Type", "text/event-stream"),
+            ("Content-Type", "text/event-stream; charset=utf-8"),
             ("Set-Cookie", "session=1"),
             ("request-id", "req_1\r\nSet-Cookie: x"),
-            ("anthropic-ratelimit-requests-remaining", "49"),
+            ("retry-after", "12"),
+            ("Retry-After", "soon\r\nX: 1"),
         ]
     )
-    assert back == [
-        ("Content-Type", "text/event-stream"),
-        ("anthropic-ratelimit-requests-remaining", "49"),
-    ]
+    assert back == [("Content-Type", "text/event-stream"), ("Retry-After", "12")]
+    assert response_headers([("Content-Type", "text/html\r\nX: 1")]) == []

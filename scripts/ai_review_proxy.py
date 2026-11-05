@@ -33,10 +33,9 @@ DROP_REQUEST = {
     "transfer-encoding",
     "content-length",
 }
-# Response headers worth returning to Claude Code. Everything else stays at the proxy.
-KEEP_RESPONSE = re.compile(
-    r"^(content-type|retry-after|request-id|x-request-id|anthropic-[a-z0-9-]+|x-ratelimit-[a-z0-9-]+)$"
-)
+# The content types Claude Code reads. The proxy sends one of these constants,
+# never the upstream's own string.
+CONTENT_TYPES = ("text/event-stream", "application/json", "text/plain")
 HEADER_NAME = re.compile(r"^[A-Za-z0-9-]{1,100}$")
 
 
@@ -77,11 +76,25 @@ def outbound_headers(incoming: dict[str, str], api_key: str, custom: dict[str, s
 
 
 def response_headers(upstream: list[tuple[str, str]]) -> list[tuple[str, str]]:
-    """The upstream response headers to return: allowlisted and well formed."""
-    out = []
+    """Response headers for the agent, built from constants and integers only.
+
+    No upstream header text is copied. Content type maps to a fixed string,
+    retry-after is re-emitted as an integer, and everything else is dropped,
+    so nothing the gateway returns can split the response.
+    """
+    out: list[tuple[str, str]] = []
     for name, value in upstream:
-        if KEEP_RESPONSE.fullmatch(name.lower()) and (h := safe_header(name, value)):
-            out.append(h)
+        key = name.lower()
+        if key == "content-type":
+            kind = next((c for c in CONTENT_TYPES if value.lower().startswith(c)), None)
+            if kind:
+                out.append(("Content-Type", kind))
+        elif key == "retry-after":
+            try:
+                seconds = int(float(value))
+            except ValueError:
+                continue
+            out.append(("Retry-After", str(max(0, min(seconds, 3600)))))
     return out
 
 
