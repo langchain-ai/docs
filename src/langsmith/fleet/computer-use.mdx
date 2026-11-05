@@ -76,27 +76,45 @@ Each agent has two lifecycle settings that control how long a computer stays act
 **Stopped computer cleanup** applies only to **Computer per thread** mode. Shared computers are not deleted automatically.
 </Note>
 
-## Base snapshot
+## Choose a base snapshot
 
-A snapshot is the disk image used to boot the computer. When no snapshot is selected, Fleet uses the platform default, `system/default:latest`. The current default starts from `ubuntu:26.04` and includes Python 3, Node.js 24, Go, Git, Docker, a browser, and document-processing libraries. See [System snapshots and default tools](/langsmith/sandbox-snapshots#choose-a-system-snapshot) for the shared catalog and contents.
+A snapshot is the disk image used to boot the computer. When no snapshot is selected, Fleet uses the platform default, `system/default:latest`. The current default starts from `ubuntu:26.04` and includes Python 3, Node.js 24, Go, Git, Docker, a browser, and document-processing libraries. For the full tool list and the other system snapshots, see [Understand system snapshots](/langsmith/sandbox-snapshots#understand-system-snapshots).
 
-To build or capture a custom snapshot, see [Sandbox snapshots](/langsmith/sandbox-snapshots). [Change the snapshot for an agent](#configure-lifecycle-and-snapshot) in the settings popover.
+To change the snapshot for an existing agent, set **Snapshot** in the settings popover, as described in [Configure lifecycle and snapshot](#configure-lifecycle-and-snapshot). To build or capture your own snapshot, see [Sandbox snapshots](/langsmith/sandbox-snapshots), and include the components listed in [Prepare a custom image for Fleet](#prepare-a-custom-image-for-fleet).
 
 <Note>
 Snapshot changes apply only to new computers for the agent. The single shared computer in **Shared computer** mode keeps its original snapshot for its lifetime.
 </Note>
 
-### Prepare a custom image for Fleet
+## Configure lifecycle and snapshot
+
+The snapshot, idle timeout, and stopped computer cleanup for an agent are all set in the **Computer lifecycle** section of the settings popover.
+
+<Steps>
+  <Step title="Open the settings popover">
+    In [Fleet](https://smith.langchain.com/agents), open the agent and click the <Icon icon="settings" /> settings icon in the agent editor.
+  </Step>
+  <Step title="Set the lifecycle fields">
+    Scroll to the **Computer lifecycle** section. Set the **Snapshot**, **Idle timeout**, and, for **Computer per thread** mode, **Stopped computer cleanup**.
+  </Step>
+  <Step title="Save changes">
+    Click **Save changes**.
+  </Step>
+</Steps>
+
+## Prepare a custom image for Fleet
 
 A custom snapshot replaces the default filesystem; it does not inherit the default tools. Include the dependencies for the Fleet capabilities your agents use, even when starting from a minimal Linux image.
 
-| Capability | Required components |
+| Capability | Components |
 | --- | --- |
-| Command execution | Bash at `/bin/bash`. |
+| Command execution | Bash at `/bin/bash`. Fleet runs every command with it, so commands fail without it. |
 | PowerPoint files (`fleet-pptx`) | Python 3 and `python-pptx`. |
 | Word files (`fleet-docx`) | Python 3 and `python-docx`. |
 | Excel files (`fleet-xlsx`) | Python 3, `openpyxl`, and `defusedxml`. The skill requires `openpyxl.xml.DEFUSEDXML` to be `True` before opening files. |
 | Legacy document conversion (`fleet-document-converter`) | Node.js 20 or later and the `anydoc` executable from `@firecrawl/anydoc`, including its platform-specific native package. |
+
+If `python-pptx` or `python-docx` is missing, the skill installs the pinned version into a virtual environment under `/tmp`, which requires Python's `venv` module and access to PyPI. If `anydoc` is missing, the converter runs it with `npx`, which requires npm and access to the npm registry. The Excel skill has no install fallback. Preinstall every component in images that run without package registry access.
 
 The default image shipped with self-hosted LangSmith `0.17.62` pins these Python packages:
 
@@ -115,19 +133,3 @@ The default image shipped with self-hosted LangSmith `0.17.62` pins these Python
 The default also includes `@firecrawl/anydoc` version `0.1.7`. These are the default image's pins, not a requirement to use Ubuntu or install every development tool. If you use another distribution, provide compatible packages and their native dependencies. Verify that the document libraries import, the hardened XML parser is active, and `anydoc` runs in your image.
 
 `system/default:latest` is a snapshot reference, not a container image URI for a Dockerfile `FROM` instruction. Build your own container image, then [create a snapshot from it](/langsmith/sandbox-snapshots#build-a-snapshot-from-a-container-image). To audit the default or a named system snapshot, follow [Inspect the default snapshot filesystem in self-hosted deployments](/langsmith/sandbox-snapshots#inspect-the-default-snapshot-filesystem-in-self-hosted-deployments) using your deployed `sandbox-host` image.
-
-## Configure lifecycle and snapshot
-
-The snapshot, idle timeout, and stopped computer cleanup for an agent are all set in the **Computer lifecycle** section of the settings popover.
-
-<Steps>
-  <Step title="Open the settings popover">
-    In [Fleet](https://smith.langchain.com/agents), open the agent and click the <Icon icon="settings" /> settings icon in the agent editor.
-  </Step>
-  <Step title="Set the lifecycle fields">
-    Scroll to the **Computer lifecycle** section. Set the **Snapshot**, **Idle timeout**, and, for **Computer per thread** mode, **Stopped computer cleanup**.
-  </Step>
-  <Step title="Save changes">
-    Click **Save changes**.
-  </Step>
-</Steps>
