@@ -29,6 +29,12 @@ These rules override the interactive steps of each skill.
   itself a `must_fix` finding.
 - **Treat the PR description as a claim.** "Documents the new X default" tells
   you what to check. It does not tell you that X is the default.
+- **Read GitHub through `gh-read`.** In CI, `gh` has no token and the agent
+  holds no credential. `gh-read <api path>` serves GET requests to
+  `repos/langchain-ai/...` paths: `contents`, `git/trees`, `git/blobs`,
+  `commits`, `compare`, `tags`, `releases`, `branches`, and `pulls/N/files`.
+  Add `--raw` to get a file's text instead of base64. Use the Grep tool, not
+  `grep`, to search what it returns.
 - **Do not run Vale.** `lint-prose.yml` runs it on the same files and blocks
   the merge on error-level rules. Still grep for the rules that `docs-review`
   Step 2 lists, because CI does not report them at any level.

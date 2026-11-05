@@ -18,6 +18,8 @@ Subcommands:
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import hashlib
 import json
 import os
@@ -545,11 +547,68 @@ def _load_dir(path: Path) -> list[tuple[str, object]]:
     return out
 
 
+# Generic credential shapes, checked even when the secret values are unknown.
+TOKEN_PATTERNS = [
+    re.compile(p)
+    for p in (
+        r"gh[pousr]_[A-Za-z0-9]{30,}",
+        r"github_pat_[A-Za-z0-9_]{40,}",
+        r"sk-ant-[A-Za-z0-9_-]{20,}",
+        r"AKIA[0-9A-Z]{16}",
+        r"xox[abprs]-[A-Za-z0-9-]{10,}",
+        r"-----BEGIN [A-Z ]*PRIVATE KEY-----",
+    )
+]
+
+
+def _encodings(secret: str) -> set[str]:
+    """Forms a model could write a secret in: literal, reversed, hex, base64."""
+    raw = secret.encode()
+    forms = {secret, secret[::-1], binascii.hexlify(raw).decode()}
+    # base64 output depends on alignment; strip the edge characters that
+    # depend on neighbouring bytes so a substring match still finds it.
+    for pad in range(3):
+        for enc in (base64.b64encode, base64.urlsafe_b64encode):
+            b = enc(b"\0" * pad + raw).decode().rstrip("=")
+            forms.add(b[(pad * 4 + 2) // 3 : -2] if len(b) > 8 else b)
+    return {f for f in forms if len(f) >= 8}
+
+
+def find_secret(text: str, secrets: list[str]) -> bool:
+    """True when text contains a known secret in any common encoding, or a token shape."""
+    if any(p.search(text) for p in TOKEN_PATTERNS):
+        return True
+    squashed = re.sub(r"\s+", "", text)
+    for secret in secrets:
+        if len(secret) < 8:
+            continue
+        for form in _encodings(secret):
+            if form in text or form in squashed:
+                return True
+    return False
+
+
 def cmd_sanitize(args: argparse.Namespace) -> int:
     """Rewrite raw findings with public fields only."""
     diff = read_diff(args.base, args.head)
     src, dst = Path(args.input).resolve(), Path(args.output).resolve()
     dst.mkdir(parents=True, exist_ok=True)
+    # Secret values reach this step only, never the agent. A hit anywhere
+    # withholds every pass, and the match itself is never printed.
+    secrets = []
+    for line in os.environ.get("AI_REVIEW_SECRETS", "").splitlines():
+        # A custom header line is "Name: value"; the value alone is the secret.
+        secrets += [line.strip(), line.partition(":")[2].strip()]
+    secrets = [s for s in secrets if s]
+    raw_text = " ".join(
+        p.read_text(errors="replace") for p in sorted(src.glob("*.json")) if p.is_file()
+    )
+    if find_secret(raw_text, secrets):
+        print("::error::A review pass wrote a credential-shaped value. All findings withheld.")
+        for skill in SKILLS:
+            withheld = {"skill": skill, "ok": False, "withheld": True, "findings": []}
+            (dst / f"{skill}.json").write_text(json.dumps(withheld))
+        return 1
     for skill in SKILLS:
         raw_path = src / f"{skill}.json"
         result: dict = {
