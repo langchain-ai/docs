@@ -30,7 +30,7 @@ Before you begin, you need:
 - The admin role, or an equivalent permission, in your Claude Console organization. Without it, you cannot view or manage destinations.
 - A LangSmith API key. You can use a [personal access token](/langsmith/administration-overview#personal-access-tokens-pats), or a [service key](/langsmith/administration-overview#service-keys) when you want tracing to be independent of your user account. To create a key, see [Create an account and API key](/langsmith/create-account-api-key).
 - In an agent-based workspace, the selected agent environment's [`tracer_session_name`](/langsmith/create-an-agent#use-an-environment-project), which goes in the destination's **Project** field.
-- For self-hosted LangSmith, an endpoint that the Claude Platform can reach: HTTPS on port 443, at a hostname that resolves to a public IP address.
+- For BYOC or self-hosted LangSmith, an endpoint that the Claude Platform can reach: HTTPS on port 443, at a hostname that resolves to a public IP address.
 
 ### Step 1. Add LangSmith as a destination
 
@@ -40,7 +40,7 @@ To add a destination:
 2. In the **Provider** drop-down, select **LangSmith**. The form changes to show the LangSmith fields.
 3. Complete the fields:
    - **Name**: (Optional) A label for the destination, such as `LangSmith`.
-   - **Region**: The region of your LangSmith deployment: **US**, **EU**, **APAC**, or **US on AWS**. For self-hosted LangSmith or BYOC, select **Self-hosted**. In **LangSmith URL**, enter your LangSmith API URL (`LANGSMITH_ENDPOINT`) plus `/otel`: `https://<your-langsmith-host>/api/v1/otel` for self-hosted or `https://<data_plane_host>/otel` for BYOC.
+   - **Region**: The region of your LangSmith deployment: **US**, **EU**, **APAC**, or **US on AWS**. For BYOC or self-hosted LangSmith, select **Self-hosted**. In **LangSmith URL**, enter your LangSmith API URL (`LANGSMITH_ENDPOINT`) plus `/otel`. For the URL on each deployment type, see [Find your OTLP endpoint](/langsmith/trace-with-opentelemetry#find-your-otlp-endpoint).
    - **API key**: Your LangSmith API key.
    - **Project**: The [environment's `tracer_session_name`](/langsmith/create-an-agent#use-an-environment-project) to send traces to. Set it explicitly in an agent-based workspace. If omitted, the integration uses `default`.
    - **LangSmith workspace ID**: (Optional) The ID of the LangSmith workspace to send traces to. If you leave it empty, traces go to the workspace that the API key belongs to. Organization-scoped service keys require it. To find the ID, see [Create an account and API key](/langsmith/create-account-api-key).
@@ -68,13 +68,16 @@ To check the setup:
 
 If the **Delivery** column on the Claude Console [OpenTelemetry settings page](https://platform.claude.com/settings/telemetry-destinations) shows **Failing**, hold the pointer over it to see the last error:
 
-- **HTTP 401**: The destination sends no API key.
-- **HTTP 403**: The API key is wrong, or it has expired or been deleted. LangSmith also returns 403 for an organization-scoped service key without a workspace ID.
-- **HTTP 404**: The endpoint URL is wrong. Set **OTLP endpoint URL** to your LangSmith API URL (`LANGSMITH_ENDPOINT`) plus `/otel`. Use `https://<your-langsmith-host>/api/v1/otel` for self-hosted LangSmith or `https://<data_plane_host>/otel` for BYOC. Do not include `/v1/traces`.
+| Error | Cause | Fix |
+|-------|-------|-----|
+| HTTP 401 | The destination sends no API key. | Set the `x-api-key` request header to your LangSmith API key. |
+| HTTP 403 | The API key is wrong, expired, or deleted, or it is an organization-scoped service key without a workspace ID. | Set `x-api-key` to a valid key. For an organization-scoped service key, also set `X-Tenant-Id` to the workspace ID. |
+| HTTP 404 | The endpoint URL is wrong. | Set **OTLP endpoint URL** to your LangSmith API URL (`LANGSMITH_ENDPOINT`) plus `/otel`, without `/v1/traces`. See [Find your OTLP endpoint](/langsmith/trace-with-opentelemetry#find-your-otlp-endpoint). |
+| Invalid address | The hostname does not resolve to a public IP address. BYOC data planes are private by default. | Expose the LangSmith endpoint at a public hostname over HTTPS on port 443. |
 
 For other errors, see [Delivery errors](https://platform.claude.com/docs/en/manage-claude/opentelemetry/api#delivery-errors) in the Anthropic docs.
 
-If the **Delivery** column shows **Disabled**, hold the pointer over it to see why. For example, the Claude Platform disables a destination whose hostname resolves to an IP address that is not public. See [Delivery and health](https://platform.claude.com/docs/en/manage-claude/opentelemetry/api#delivery-and-health) in the Anthropic docs.
+If the **Delivery** column shows **Disabled**, hold the pointer over it to see why. For example, the Claude Platform disables a destination when all deliveries fail for 24 hours or when the endpoint sends a redirect, and it drops spans while the destination is disabled. See [Delivery and health](https://platform.claude.com/docs/en/manage-claude/opentelemetry/api#delivery-and-health) in the Anthropic docs.
 
 <a id="trace-from-your-application"></a>
 
@@ -89,16 +92,7 @@ The Claude SDKs emit OTel spans in your agent for each request that they send an
 To send Claude SDK spans to LangSmith:
 
 1. [Install or upgrade the Claude SDK](https://platform.claude.com/docs/en/manage-claude/opentelemetry/sdk#install-the-sdk) and [register a tracer provider](https://platform.claude.com/docs/en/manage-claude/opentelemetry/sdk#register-a-tracer-provider).
-2. Configure an OTel exporter with your LangSmith API URL (`LANGSMITH_ENDPOINT`) plus `/otel` as the base endpoint:
-
-   | LangSmith deployment | OTel endpoint URL |
-   |----------------------|-------------------|
-   | GCP US | `https://api.smith.langchain.com/otel` |
-   | GCP EU | `https://eu.api.smith.langchain.com/otel` |
-   | GCP APAC | `https://apac.api.smith.langchain.com/otel` |
-   | AWS US | `https://aws.api.smith.langchain.com/otel` |
-   | Self-hosted | `https://<your-langsmith-host>/api/v1/otel` |
-   | BYOC | `https://<data_plane_host>/otel` |
+2. Configure an OTel exporter with your LangSmith API URL (`LANGSMITH_ENDPOINT`) plus `/otel` as the base endpoint. For the URL on each deployment type, see [Find your OTLP endpoint](/langsmith/trace-with-opentelemetry#find-your-otlp-endpoint).
 
    Set the following request headers:
    - `x-api-key`: Your LangSmith API key.
