@@ -34,7 +34,7 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Use model aliases: use full identifiers (e.g., `claude-sonnet-4-6`)
 - Use `>=` in prose for version minimums: write "v0.153.4 or later"; reserve `>=` for package specifiers in code (`langsmith>=0.3.13`)
 - Use "→" to separate UI navigation steps: write "Go to **Settings** > **API Keys**"
-- State LangChain prices, rates, or billing calculations: link to the pricing page (`https://www.langchain.com/pricing`) instead, because prices change outside the docs release cycle. Cloud-provider cost estimates for infrastructure you run, such as the BYOC data plane cost pages, are not LangChain pricing
+- State LangChain prices in dollars or other currencies, such as the price of an LSU, a plan, or a seat: link to the pricing page (`https://www.langchain.com/pricing`) instead, because prices change outside the docs release cycle. Usage rates stated in LSU are fine. Cloud-provider cost estimates for infrastructure you run, such as the BYOC data plane cost pages, are not LangChain pricing
 - Use FontAwesome icon names
 - Use nested double quotes in component attributes: use `default="['a', 'b']"` not `default='["a", "b"]'`
 - Use contractions ("do not" not "don't", "cannot" not "can't", "it is" not "it's")
