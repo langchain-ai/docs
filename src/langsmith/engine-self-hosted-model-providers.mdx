@@ -51,7 +51,7 @@ To use your own providers:
 
         Enable access to the required models in the selected AWS account and region. Grant the calling identity Mantle inference and model-subscription permissions. See [AmazonBedrockMantleInferenceAccess](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AmazonBedrockMantleInferenceAccess.html) for the required actions.
 
-        If no region is saved, Engine uses `us-east-1`, including with workload identity. It does not inherit the EKS cluster's region.
+        The optional **AWS region** field sets the region for your organization. For the default and how to set it with cloud identity, see [Set the Bedrock region](#set-the-bedrock-region).
 
         To use the cloud identity of Engine's pods instead, see [Use cloud identity for your model providers](#use-cloud-identity-for-your-model-providers).
       </Tab>
@@ -92,6 +92,31 @@ If Engine runs fail after you save:
 - **Rejected credentials:** **Test connection** reports which provider rejected them. Update the credentials and test again.
 - **Model not available:** enable the model in your provider account, then test again.
 
+## Set the Bedrock region
+
+Engine calls Amazon Bedrock in one AWS region. It uses the first of these that is set:
+
+1. The organization's `AWS_BEDROCK_REGION` secret. The **AWS region** field in the Bedrock credentials dialog saves this secret.
+1. `engine.bedrockRegion` in your Helm values.
+1. `us-east-1`.
+
+Engine does not use your cluster's region, the `AWS_REGION` environment variable, or AWS config files.
+
+With [cloud identity](#use-cloud-identity-for-your-model-providers), the credentials dialog asks for keys, so it cannot save a region. Set the region in your Helm values instead:
+
+```yaml
+engine:
+  bedrockRegion: us-west-2
+```
+
+The chart rejects a value that is not an AWS region name, such as a hostname or URL.
+
+To use a different region for one organization, add an organization secret named `AWS_BEDROCK_REGION` with the region name as its value. It overrides `engine.bedrockRegion` for every workspace in that organization.
+
+Under **Settings > Engine > Model providers**, Amazon Bedrock shows the region Engine calls. Enable the required models in that region. For [private connections](#connect-to-your-providers-privately), create the Bedrock VPC endpoint in that region.
+
+{/* TODO: before merging, add the Helm chart and LangSmith versions that first support engine.bedrockRegion. Older versions ignore it and use the organization secret or us-east-1. */}
+
 ## Use Bedrock Runtime
 
 To have Engine call Amazon Bedrock Runtime instead of Mantle, set two environment variables on both Engine workloads:
@@ -126,12 +151,13 @@ Instead of saving credentials, Amazon Bedrock, Google Vertex AI, and Azure AI Fo
 
 <Tabs>
   <Tab title="Amazon EKS">
-    Configure IAM roles for service accounts (IRSA). Trust the namespace and service account of both Engine workloads, and grant the role access to the Bedrock models Engine uses.
+    Configure IAM roles for service accounts (IRSA). Trust the namespace and service account of both Engine workloads, and grant the role access to the Bedrock models Engine uses. Set `engine.bedrockRegion` to the region that hosts those models. Without it, Engine uses `us-east-1`. See [Set the Bedrock region](#set-the-bedrock-region).
 
     ```yaml
     engine:
       workloadIdentityProviders:
         - bedrock
+      bedrockRegion: us-west-2
 
     engineInsightsAgent:
       apiServer:
@@ -210,7 +236,7 @@ Instead of saving credentials, Amazon Bedrock, Google Vertex AI, and Azure AI Fo
 A provider listed in `engine.workloadIdentityProviders` counts as configured without saved credentials, so any Organization Admin can select it. Scope the identity to the models Engine uses.
 </Warning>
 
-Saved credentials take precedence over cloud identity. When switching a provider, apply the cloud identity configuration before removing its saved credentials. Then remove only that provider's saved API keys or service account JSON under **Settings > Engine > Model providers**. For Bedrock, also remove any saved access key, secret access key, and session token. Keep the Azure AI Foundry resource name and any Bedrock region setting, then [test the provider](#test-a-provider) again.
+Saved credentials take precedence over cloud identity. When switching a provider, apply the cloud identity configuration before removing its saved credentials. Then remove only that provider's saved API keys or service account JSON under **Settings > Engine > Model providers**. For Bedrock, also remove any saved access key, secret access key, and session token. Keep the Azure AI Foundry resource name and the organization's `AWS_BEDROCK_REGION` secret, if set, then [test the provider](#test-a-provider) again.
 
 ## Use a model gateway
 
