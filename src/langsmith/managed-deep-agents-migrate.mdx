@@ -388,9 +388,9 @@ See [Deploy](/langsmith/managed-deep-agents-deploy).
 
 ## Read a managed agent trace
 
-A [LangSmith trace](/langsmith/view-traces) shows the agent run, graph steps, middleware hooks, and model or tool calls. After migration, use this hierarchy to distinguish Deep Agents behavior from the managed runtime around it. A deeper trace does not, by itself, mean more model calls.
+A [LangSmith trace](/langsmith/view-traces) shows the agent run and the calls inside it. Managed Deep Agents uses the same harness, so most rows are familiar Deep Agents middleware, with managed runtime behavior added around it.
 
-The following tree reproduces the structure of a Python managed agent trace. Names and ordering vary by SDK version, agent configuration, and authoring language:
+This Python trace shows several wrappers around one model call, not several agents or LLM requests. Exact names and ordering vary by version and configuration:
 
 ```text
 Agent run
@@ -409,37 +409,12 @@ Agent run
 └── _ParentNotifierMiddleware.after_agent
 ```
 
-### Distinguish hooks from model calls
+Read the tree as follows:
 
-The `model` graph step contains middleware wrappers around the model invocation. `wrap_model_call` is the synchronous hook; `awrap_model_call` is its asynchronous equivalent. Each wrapper can inspect or modify the request, call the next layer, and process its result. The nested rows are not separate agents or separate LLM requests. In this example, `ChatOpenAI` is the actual model call.
-
-`before_agent` and `after_agent` hooks run before and after the agent loop, respectively. They appear as separate graph steps rather than wrappers inside `model`. A hook can appear even when it has nothing to change for that run.
-
-Wrapper durations include time spent in their nested calls. Do not add those durations together or treat each wrapper's full duration as middleware overhead. Start with the actual model call, then inspect the surrounding spans for additional work. Middleware can make its own model calls, such as when summarization triggers; those appear as additional model spans.
-
-### Identify each layer
-
-Most rows come from the [Deep Agents middleware stack](/oss/deepagents/customization#middleware), not from migration itself:
-
-| Trace row | What it does |
-| --- | --- |
-| `PatchToolCallsMiddleware.before_agent` | Repairs dangling tool calls in the message history, such as calls left without a result after an interruption. |
-| `FilesystemMiddleware` | Adds filesystem tools and instructions, and handles large tool outputs. Seeing its model wrapper does not mean a file operation ran. |
-| `SubAgentMiddleware` | Adds the `task` tool and subagent instructions. An actual delegation appears under a `task` tool call, not merely because this wrapper appears. |
-| `_ParentNotifierMiddleware` | Reports completion or model-call failure to the parent of an asynchronous subagent. Deep Agents attaches it even to runs with no parent to notify. |
-| `SummarizationMiddleware` | Manages conversation context and summarizes when its configured threshold triggers. Its presence alone does not mean a summary was generated. |
-| `AnthropicPromptCachingMiddleware` | Applies Anthropic prompt-cache controls when using an Anthropic model. It passes other models through, so this row can appear above `ChatOpenAI`. |
-| `UnsupportedContentMiddleware` | Replaces multimodal content unsupported by the selected model with text placeholders. |
-
-The managed runtime also contributes behavior:
-
-| Trace row | What it does |
-| --- | --- |
-| `mda-channel-response-format` | Adds channel-specific response guidance. For Slack requests, this includes Markdown formatting instructions. |
-| `MemoryMiddleware` | In Managed Deep Agents, injects managed memory instructions and permitted hot memory when memory is enabled. Deep Agents also uses this name for its native memory middleware. |
-| `mda-schedule-delivery.after_agent` | In runtime versions that expose this hook, delivers results for trusted scheduled runs. It does nothing for ordinary runs, so its presence does not prove a schedule fired. Newer runtimes handle delivery outside this hook. |
-
-Treat internal names such as `_ParentNotifierMiddleware` as diagnostic details, not APIs to configure. Your own middleware can add more rows. To inspect a result, follow the actual model and tool calls and compare their inputs and outputs. See [View traces](/langsmith/view-traces) for the trace viewer controls.
+- **Hooks**: `before_agent` and `after_agent` run before and after the agent loop. Here, `PatchToolCallsMiddleware` repairs missing tool results, and `_ParentNotifierMiddleware` notifies an asynchronous subagent's parent when applicable.
+- **Model wrappers**: `awrap_model_call` is an asynchronous middleware hook around the model call. Filesystem and subagent middleware add tools and instructions; summarization manages conversation length; prompt caching applies provider cache controls; unsupported-content middleware replaces unsupported media with text placeholders. See [Deep Agents middleware](/oss/deepagents/customization#middleware).
+- **Managed behavior**: `mda-channel-response-format` adds Slack formatting guidance, and `MemoryMiddleware` injects managed memory when enabled. Older runtimes also show `mda-schedule-delivery`, which delivers scheduled results and does nothing for ordinary runs.
+- **Actual work**: `ChatOpenAI` is the model call in this example. A wrapper's presence does not mean its feature activated: subagent execution requires a `task` call, and summarization can add its own model call. Wrapper durations include their children, so do not add them together as separate overhead.
 
 ## See also
 
