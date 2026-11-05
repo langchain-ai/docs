@@ -49,10 +49,10 @@ once to link the tree, and again in each new git worktree.
 | `docs-edit` | Editing a page that already has an open PR: checking out that PR's own branch, forked PRs, reading the real diff, checking the edit against related pages. |
 | `docs-restructure` | Splitting a page that grew too long, moving sections between pages, retiring a page, or a topic documented in two places: the duplication map, choosing one owner, cutting rather than relocating. |
 | `docs-team-voice` | Drafting or revising prose in the house voice: sentence length, cross-link density, stating defaults, the revision pass. |
-| `docs-review` | Reviewing changed prose against Vale and the style guide, reporting the rule each finding breaks. `add-docs-page` invokes it before committing. |
+| `docs-review` | Reviewing changed prose against Vale and the style guide, reporting the rule each finding breaks. `add-docs-page` invokes it before committing. Its `ci-mode.md` sets the unattended PR-review rules and findings format. |
 | `docs-tooling-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, and how to edit safely. Required whenever a PR adds or changes a script, workflow, or check. |
 | `docs-code-samples` | Moving inline MDX code blocks into external, testable sample files. |
-| `verify-against-source` | Checking that a code sample, signature, default, or behavior claim is true: which repository owns each product, how to reach the private ones, and naming what stayed unverified. |
+| `verify-against-source` | Checking that a code sample, signature, default, or behavior claim is true: which repository owns each product, how to reach the private ones, checking that a PR documents what it claims, and naming what stayed unverified. |
 | `submit-integration` | Turning a structured integration issue submission into a listing. Invoked by CI. |
 | `update-integrations-prs` | Processing open integration PRs against the featuring policy. |
 
@@ -407,6 +407,7 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Use model aliases: use full identifiers (e.g., `claude-sonnet-4-6`)
 - Use `>=` in prose for version minimums: write "v0.153.4 or later"; reserve `>=` for package specifiers in code (`langsmith>=0.3.13`)
 - Use "→" to separate UI navigation steps: write "Go to **Settings** > **API Keys**"
+- State LangChain prices in dollars or other currencies, such as the price of an LSU, a plan, or a seat: link to the pricing page (`https://www.langchain.com/pricing`) instead, because prices change outside the docs release cycle. Usage rates stated in LSU are fine. Cloud-provider cost estimates for infrastructure you run, such as the BYOC data plane cost pages, are not LangChain pricing
 - Use FontAwesome icon names
 - Use nested double quotes in component attributes: use `default="['a', 'b']"` not `default='["a", "b"]'`
 - Use contractions ("do not" not "don't", "cannot" not "can't", "it is" not "it's")
