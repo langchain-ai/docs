@@ -92,6 +92,7 @@ LINK_MAPS: list[LinkMap] = [
             "ToolCallLimitMiddleware": "langchain/agents/middleware/tool_call_limit/ToolCallLimitMiddleware",
             "ProviderToolSearchMiddleware": "langchain/agents/middleware/provider_tool_search/ProviderToolSearchMiddleware",
             "ModelFallbackMiddleware": "langchain/agents/middleware/model_fallback/ModelFallbackMiddleware",
+            "ModelRefusalMiddleware": "langchain/agents/middleware/model_refusal/ModelRefusalMiddleware",
             "TodoListMiddleware": "langchain/agents/middleware/todo/TodoListMiddleware",
             "LLMToolSelectorMiddleware": "langchain/agents/middleware/tool_selection/LLMToolSelectorMiddleware",
             "ToolRetryMiddleware": "langchain/agents/middleware/tool_retry/ToolRetryMiddleware",
@@ -291,6 +292,7 @@ LINK_MAPS: list[LinkMap] = [
             # Exceptions
             "ContextOverflowError": "langchain-core/exceptions/ContextOverflowError",
             "OutputParserException": "langchain-core/exceptions/OutputParserException",
+            "ModelRefusalError": "langchain-core/exceptions/ModelRefusalError",
             "ModelError": "langchain-core/exceptions/ModelError",
             "ModelAuthenticationError": "langchain-core/exceptions/ModelAuthenticationError",
             "ModelPermissionDeniedError": "langchain-core/exceptions/ModelPermissionDeniedError",
