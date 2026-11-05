@@ -54,7 +54,7 @@ Each question's name becomes a feedback key on the evaluated run or thread. Lang
 | Choice | `value` | The name of the selected option |
 | Score | `score` | A number from 0 to the index of the highest level. For example, a question with four levels returns a score from 0 to 3. |
 
-Feedback stores only the score or value. The model's full answer, which includes `probabilities` and `confidence` for choice and score questions, appears in the evaluator's trace. LangSmith traces evaluators by default. If tracing is turned off for the evaluator, no trace is recorded. To open the trace on a tracing project, go to the **Evaluators** tab, click the evaluator, and click the **Evaluator traces** tab. In an experiment, hover over the score and click **Evaluator trace**. Because each answer is standard feedback, you can filter, chart, and alert on it, and trigger [automations](/langsmith/rules) from it, as you would with any other evaluator's feedback.
+Feedback stores only the score or value. The model's full answer, which includes `probabilities` and `confidence` for choice and score questions, appears in the evaluator's trace. LangSmith records this trace only when you turn on tracing for the evaluator. New evaluators start with tracing turned off. To turn on tracing and open the trace, see [Trace evaluator runs](/langsmith/evaluators#trace-evaluator-runs). Because each answer is standard feedback, you can filter, chart, and alert on it, and trigger [automations](/langsmith/rules) from it, as you would with any other evaluator's feedback.
 
 Question names follow the same limits as other feedback keys and must be unique within the evaluator.
 
