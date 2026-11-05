@@ -167,6 +167,8 @@ Cannot verify from here: <the specific fact>. Ask <who>: <the question>.
 ```
 
 Ask the PR author about product behavior: on these PRs the author is usually
-the engineer who built the feature. Ask the owner in `.github/OWNERS` about
-docs conventions and placement. Write the question so that someone can answer
+the engineer who built the feature. When the author is a bot, such as Fleet
+or Open SWE (a login ending in `[bot]` or starting with `app/`), ask the
+owner of the changed page in `.github/OWNERS` instead. Ask that owner about
+docs conventions and placement in every case. Write the question so that someone can answer
 it in one line.
