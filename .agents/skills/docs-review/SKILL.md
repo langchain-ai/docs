@@ -22,6 +22,10 @@ Two rules govern this whole skill:
   the goal. Do not stretch a rule to reach a finding, and do not restructure
   prose that is already fine.
 
+**In CI mode**, read [ci-mode.md](ci-mode.md) first. It replaces Step 1 and the
+Vale run in Step 2, and sets the output format for Step 6. Steps 3 to 5 apply
+unchanged.
+
 ## Step 1. Resolve the target
 
 Run `git fetch origin` first so `main` is current. Resolve in this order:
@@ -170,6 +174,11 @@ These are the rules that need reading:
   casings before reporting.
 - **Bold in body text** beyond UI labels. Match what the rest of the page does
   rather than an abstract standard.
+- **A sentence carrying two ideas.** Median sentence length on this site is 13
+  to 15 words (see `docs-team-voice`). A sentence over about 30 words that
+  joins two ideas with "so", "which", or a semicolon should be two sentences.
+  Write the split as the replacement. Skip a long sentence that holds one idea,
+  such as an exact value or a list.
 - **Repetition inside the diff.** The same list of items enumerated twice in one
   short section, or a sentence restating the one above it.
 - **Link text** that does not describe its destination, and two different labels
@@ -242,6 +251,16 @@ entry, broken link) versus what is a suggestion.
 
 If nothing turns up, say that plainly. "No findings" is a valid and useful
 result, and is more useful than a manufactured one.
+
+In CI mode, write the findings file that [ci-mode.md](ci-mode.md) describes
+instead of this report. Do not judge whether a fact is true: a default, a
+version floor, an environment variable, or a UI label belongs to
+`verify-against-source`, which runs alongside this skill. Keep each
+`replacement` to the change the cited rule requires, so it cannot carry an
+unchecked rewrite of a label or value along with it. Map the verdict onto severity: a merge blocker is
+`must_fix`, a missing requirement or cut condition is `major`, and the rest is
+`minor`. A finding from Steps 3 and 4 is `auto` only when it is one of the
+mechanical cases listed there.
 
 ## Running after an authoring skill
 
