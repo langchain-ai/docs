@@ -30,8 +30,8 @@ These rules override the interactive steps of each skill.
 - **Treat the PR description as a claim.** "Documents the new X default" tells
   you what to check. It does not tell you that X is the default.
 - **Do not run Vale.** `lint-prose.yml` runs it on the same files and blocks
-  the merge. Still grep for the Vale blind spots that `docs-review` Step 2
-  lists, because Vale cannot see them.
+  the merge on error-level rules. Still grep for the rules that `docs-review`
+  Step 2 lists, because CI does not report them at any level.
 - **Do not report what another required check already blocks.** Vale, broken
   links, and `check-pr-ai-attribution` each fail the PR on their own, so a
   finding that repeats one is noise.

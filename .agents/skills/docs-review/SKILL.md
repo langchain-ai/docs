@@ -102,27 +102,28 @@ Reading the diff text is not a substitute for either run. A patch shows added
 lines without their column offsets or their surrounding component, which is
 exactly what these rules turn on.
 
-Vale covers terminology, contractions, first person, future tense, Oxford
-commas, spaced em dashes, navigation-path arrows, and heading case. **Do not
-spend model judgment re-checking what Vale already checks**, with one exception:
-Vale does not scan every part of an MDX file, so a clean run is not proof of
-compliance. It misses content inside JSX components (`<Note>`, `<Tip>`, `<Tab>`,
-`<Step>`, `<Accordion>`) and inside table cells. A page can pass Vale with four
-spaced em dashes in it.
+Vale scans the whole MDX file, including text inside JSX components such as
+`<Note>` and `<Tab>`, and inside table cells. A clean run still does not prove
+compliance, because CI runs Vale at `MinAlertLevel = error` and only some rules
+are errors. The error-level rules, which block the merge, cover spaced em
+dashes, navigation-path arrows, vague link text, terminology, units, sentences
+that open with "But" or "So", and gendered language. **Do not spend model
+judgment re-checking those.**
 
-Grep the mechanical rules yourself over any file whose diff touches those
-places:
+The rest of the style guide passes CI wherever it appears, in plain prose as
+much as in a component. Contractions are not flagged at all, and first person,
+future tense, and filler are warnings or suggestions that CI never shows. Grep
+for them yourself over every changed line:
 
 ```bash
-grep -nE ' — | – ' <files>                      # spaced em dashes
 grep -nEi "\b(don't|can't|won't|isn't|it's|you'll)\b" <files>   # contractions
 grep -nE '\b(we|our|us|I)\b|\bwill [a-z]+\b' <files>          # first person, future tense
-grep -n '→' <files>                              # navigation arrows
+grep -nEi '\b(simply|just|easily|basically|obviously|very)\b' <files>  # filler
 ```
 
-Report a hit inside a component the same way you would report a Vale error: it
-would be one if Vale could see it. A `—` used as an empty table-cell marker is
-fine and is not a finding.
+Report a hit only on a line the diff changed. A contraction inside a quoted UI
+string or error message, such as `Can't reach the server`, is a literal and is
+not a finding.
 
 ## Step 3. Check structure against the style guide
 
@@ -174,11 +175,6 @@ These are the rules that need reading:
   casings before reporting.
 - **Bold in body text** beyond UI labels. Match what the rest of the page does
   rather than an abstract standard.
-- **A sentence carrying two ideas.** Median sentence length on this site is 13
-  to 15 words (see `docs-team-voice`). A sentence over about 30 words that
-  joins two ideas with "so", "which", or a semicolon should be two sentences.
-  Write the split as the replacement. Skip a long sentence that holds one idea,
-  such as an exact value or a list.
 - **Repetition inside the diff.** The same list of items enumerated twice in one
   short section, or a sentence restating the one above it.
 - **Link text** that does not describe its destination, and two different labels
@@ -255,7 +251,8 @@ result, and is more useful than a manufactured one.
 In CI mode, write the findings file that [ci-mode.md](ci-mode.md) describes
 instead of this report. Do not judge whether a fact is true: a default, a
 version floor, an environment variable, or a UI label belongs to
-`verify-against-source`, which runs alongside this skill. Keep each
+`verify-against-source`, and sentence length and rhythm belong to
+`docs-team-voice`. Both run alongside this skill. Keep each
 `replacement` to the change the cited rule requires, so it cannot carry an
 unchecked rewrite of a label or value along with it. Map the verdict onto severity: a merge blocker is
 `must_fix`, a missing requirement or cut condition is `major`, and the rest is
