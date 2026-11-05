@@ -169,9 +169,10 @@ jobs:
       # allowlisted GitHub reads through gh-read. Nothing runs as root.
       - name: Isolate the agent from every secret
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
-          ANTHROPIC_CUSTOM_HEADERS: ${{ secrets.ANTHROPIC_CUSTOM_HEADERS }}
+          # Model calls go through the LLM Gateway's direct Anthropic path, like
+          # the repo's other model workflows.
+          GATEWAY_KEY: ${{ secrets.DOCS_CI_GATEWAY_KEY }}
+          GATEWAY_URL: https://gateway.smith.langchain.com/anthropic
           GH_READ_TOKEN: ${{ secrets.LANGCHAINPLUS_READ_TOKEN }}
           RULES: ${{ steps.rules.outputs.dir }}
         run: |
@@ -182,8 +183,11 @@ jobs:
           sudo install -d -o aisecrets -g aisecrets -m 700 /etc/ai-review
           printf '%s' "$GH_READ_TOKEN" \
             | sudo -u aisecrets sh -c 'umask 077; cat > /etc/ai-review/gh_token'
-          jq -n --arg u "$ANTHROPIC_BASE_URL" --arg k "$ANTHROPIC_API_KEY" \
-            --arg h "$ANTHROPIC_CUSTOM_HEADERS" '{base_url: $u, api_key: $k, custom_headers: $h}' \
+          if [ -z "$GATEWAY_KEY" ] || [ -z "$GH_READ_TOKEN" ]; then
+            echo "::error::DOCS_CI_GATEWAY_KEY or LANGCHAINPLUS_READ_TOKEN is not available"; exit 1
+          fi
+          jq -n --arg u "$GATEWAY_URL" --arg k "$GATEWAY_KEY" \
+            '{base_url: $u, api_key: $k, custom_headers: ""}' \
             | sudo -u aisecrets sh -c 'umask 077; cat > /etc/ai-review/model.json'
 
           # Helper code is root-owned, so neither user can change it.
@@ -206,6 +210,9 @@ jobs:
             curl -s -o /dev/null http://127.0.0.1:8787/ && break
             sleep 0.5
           done
+          if ! curl -s -o /dev/null http://127.0.0.1:8787/; then
+            echo "::error::the model proxy did not start"; cat "$RUNNER_TEMP/proxy.log"; exit 1
+          fi
 
           sudo cp -a "$GITHUB_WORKSPACE" /home/aireview/repo
           sudo cp -a "$RULES" /home/aireview/rules
@@ -230,7 +237,9 @@ jobs:
           HEAD_SHA: ${{ needs.gate.outputs.head }}
           PR: ${{ needs.gate.outputs.pr }}
         run: |
-          set -uo pipefail
+          # GitHub runs steps with bash -e. A failed pass must still report, so
+          # turn errexit off here and fail at the end instead.
+          set +e -uo pipefail
           H=/home/aireview
           META=$(cat "$RUNNER_TEMP/meta.json")
           run_pass() {
@@ -280,6 +289,9 @@ jobs:
           mkdir -p "$RUNNER_TEMP/raw"
           sudo sh -c "cp $H/out/*.json '$RUNNER_TEMP/raw/' 2>/dev/null || true"
           sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/raw"
+          if ! ls "$RUNNER_TEMP/raw"/*.json > /dev/null 2>&1; then
+            echo "::error::no review pass wrote findings"; exit 1
+          fi
 
       # Secret values reach this step, never the agent. Any credential-shaped
       # value in the agents' output withholds everything and fails the run.
@@ -289,9 +301,8 @@ jobs:
           BASE: ${{ steps.rules.outputs.base }}
           HEAD_SHA: ${{ needs.gate.outputs.head }}
           AI_REVIEW_SECRETS: |
-            ${{ secrets.ANTHROPIC_API_KEY }}
+            ${{ secrets.DOCS_CI_GATEWAY_KEY }}
             ${{ secrets.LANGCHAINPLUS_READ_TOKEN }}
-            ${{ secrets.ANTHROPIC_CUSTOM_HEADERS }}
             ${{ github.token }}
         run: |
           python3 "$RULES/scripts/ai_review_post.py" sanitize \
