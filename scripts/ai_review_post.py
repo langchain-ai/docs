@@ -375,6 +375,7 @@ def render_summary(
     head: str,
     not_checked: list[str],
     stats: dict[str, int],
+    task_gaps: list[str] | None = None,
 ) -> str:
     """The single summary comment, replaced on every run."""
     inline_fps = {f.fingerprint for f in inline}
@@ -416,6 +417,12 @@ def render_summary(
     section("Must fix and major", blocking, collapsed=False)
     section("Minor", rules, collapsed=True)
     section("Voice suggestions", voice, collapsed=True)
+    if task_gaps:
+        out.append("")
+        out.append("**Does the PR do what it says?**")
+        out.extend(f"- {_clean(g, 400)}" for g in task_gaps[:10])
+    # A pass handing a claim to the accuracy pass is not something a reader needs.
+    not_checked = [n for n in not_checked if "verify-against-source" not in n]
     if not_checked:
         out.append("")
         out.append(f"<details><summary>Not checked ({len(not_checked)})</summary>\n")
@@ -630,9 +637,7 @@ def cmd_sanitize(args: argparse.Namespace) -> int:
                 rejected=rejected,
                 private=private,
                 findings=[_public_dict(f) for f in findings],
-                task_check=(data or {}).get("task_check")
-                if isinstance((data or {}).get("task_check"), dict)
-                else None,
+                task_check=_public_task_check((data or {}).get("task_check"), diff.added_text),
                 not_checked=[
                     _clean(n, 400)
                     for n in (data or {}).get("not_checked", [])
@@ -660,6 +665,23 @@ def _screen_strings(items: list[str], diff_text: str) -> tuple[list[str], int]:
             continue
         kept.append(s)
     return kept, len(items) - len(kept)
+
+
+TASK_ANSWERS = ("yes", "no", "partial", "unknown")
+
+
+def _public_task_check(tc: object, diff_text: str) -> dict | None:
+    """Keep the task check's fixed answers, and only screened free text."""
+    if not isinstance(tc, dict):
+        return None
+    out: dict = {
+        k: tc[k]
+        for k in ("documents_claimed_change", "covers_requirements", "contradicts_product")
+        if tc.get(k) in TASK_ANSWERS
+    }
+    gaps = [_clean(g, 400) for g in tc.get("gaps", []) if isinstance(g, str)][:10]
+    out["gaps"], _ = _screen_strings(gaps, diff_text)
+    return out
 
 
 def _public_dict(f: Finding) -> dict:
@@ -702,8 +724,16 @@ def cmd_post(args: argparse.Namespace) -> int:
     findings.sort(key=lambda f: (SEVERITY_RANK[f.severity], f.file, f.line or 0))
     inline = [f for f in findings if _inline_ok(f, diff)][:MAX_INLINE]
     label = choose_label(findings, diff, task_checks) if stats["failed"] == 0 else ""
+    gaps = [g for tc in task_checks for g in tc.get("gaps", []) if isinstance(g, str)]
+    gaps, _ = _screen_strings(gaps, diff.added_text)
     summary = render_summary(
-        findings, inline, label or "none (a pass failed)", args.head, not_checked, stats
+        findings,
+        inline,
+        label or "none (a pass failed)",
+        args.head,
+        not_checked,
+        stats,
+        task_gaps=gaps,
     )
 
     if args.dry_run:

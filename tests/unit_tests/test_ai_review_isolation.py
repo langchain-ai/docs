@@ -9,7 +9,7 @@ import pytest
 
 from scripts.ai_review_gh_read import main as gh_read_main
 from scripts.ai_review_gh_read import validate
-from scripts.ai_review_post import find_secret, main
+from scripts.ai_review_post import _public_task_check, find_secret, main
 from scripts.ai_review_proxy import make_handler, outbound_headers, parse_headers
 
 FAKE_TOKEN = "ghp_" + "FAKEfake" * 4 + "1234"  # built, so scanners do not flag the file
@@ -156,3 +156,18 @@ def test_sanitize_withholds_everything_on_a_hit(
         data = json.loads((out / f"{name}.json").read_text())
         assert data["withheld"] is True
         assert data["findings"] == []
+
+
+def test_task_check_keeps_only_screened_public_text() -> None:
+    """Free text in the task check passes the private-name screen like findings do."""
+    tc = {
+        "product_change": "Checked smith-backend retry handler",
+        "documents_claimed_change": "no",
+        "covers_requirements": "maybe",
+        "gaps": ["The description is out of date.", "Read langchainplus smith-go/x.go"],
+    }
+    out = _public_task_check(tc, diff_text="")
+    assert out == {
+        "documents_claimed_change": "no",
+        "gaps": ["The description is out of date."],
+    }
