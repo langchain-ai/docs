@@ -1,0 +1,56 @@
+```python
+import time
+
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.func import entrypoint, task
+
+# Used only to simulate a transient failure. Do not use a global like this in production.
+attempts = 0
+called: list[str] = []
+
+
+@task()
+def get_info():
+    global attempts
+    called.append("get_info")
+    attempts += 1
+
+    if attempts < 2:
+        raise ValueError("Failure")
+    return "OK"
+
+
+checkpointer = InMemorySaver()
+
+
+@task
+def slow_task():
+    called.append("slow_task")
+    time.sleep(1)
+    return "Ran slow task."
+
+
+@entrypoint(checkpointer=checkpointer)
+def main(inputs):
+    called.append("entrypoint")
+    slow_task_result = slow_task().result()
+    get_info().result()  # raises ValueError on the first run
+    return slow_task_result
+
+
+config = {"configurable": {"thread_id": "1"}}
+
+try:
+    main.invoke({"any_input": "foobar"}, config=config)
+except ValueError:
+    pass
+
+assert called == ["entrypoint", "slow_task", "get_info"]
+called.clear()
+
+print(main.invoke(None, config=config))
+# 'Ran slow task.'
+assert called == ["entrypoint", "get_info"]
+print(called)
+# ['entrypoint', 'get_info']
+```
