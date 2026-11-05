@@ -29,9 +29,15 @@ These rules override the interactive steps of each skill.
   itself a `must_fix` finding.
 - **Treat the PR description as a claim.** "Documents the new X default" tells
   you what to check. It does not tell you that X is the default.
+- **Read GitHub through `gh-read`.** In CI, `gh` has no token and the agent
+  holds no credential. `gh-read <api path>` serves GET requests to
+  `repos/langchain-ai/...` paths: `contents`, `git/trees`, `git/blobs`,
+  `commits`, `compare`, `tags`, `releases`, `branches`, and `pulls/N/files`.
+  Add `--raw` to get a file's text instead of base64. Use the Grep tool, not
+  `grep`, to search what it returns.
 - **Do not run Vale.** `lint-prose.yml` runs it on the same files and blocks
-  the merge. Still grep for the Vale blind spots that `docs-review` Step 2
-  lists, because Vale cannot see them.
+  the merge on error-level rules. Still grep for the rules that `docs-review`
+  Step 2 lists, because CI does not report them at any level.
 - **Do not report what another required check already blocks.** Vale, broken
   links, and `check-pr-ai-attribution` each fail the PR on their own, so a
   finding that repeats one is noise.
@@ -167,6 +173,8 @@ Cannot verify from here: <the specific fact>. Ask <who>: <the question>.
 ```
 
 Ask the PR author about product behavior: on these PRs the author is usually
-the engineer who built the feature. Ask the owner in `.github/OWNERS` about
-docs conventions and placement. Write the question so that someone can answer
+the engineer who built the feature. When the author is a bot, such as Fleet
+(a login ending in `[bot]`), ask the owner of the changed page in
+`.github/OWNERS` instead. Ask that owner about
+docs conventions and placement in every case. Write the question so that someone can answer
 it in one line.
