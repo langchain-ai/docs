@@ -874,9 +874,50 @@ agent = create_agent(
 
 List @[`ModelRefusalMiddleware`] after @[`ModelFallbackMiddleware`] so the fallback catches the error and retries on the next model. `ModelRetryMiddleware` does not retry refusals. When streaming, text the model sends before refusing can reach the client before the middleware raises.
 
-<Accordion title="Handle a refusal after fallback">
+#### Handle a refusal
 
-When every model refuses, `ModelRefusalMiddleware` raises @[`ModelRefusalError`]. To reply to the user instead of failing the run, add a middleware before @[`ModelFallbackMiddleware`] that catches the error:
+Choose how your application responds when the model refuses:
+
+<AccordionGroup>
+
+<Accordion title="Catch the error and continue">
+
+Catch @[`ModelRefusalError`] where you invoke the agent. The refused reply is not saved to the thread, so the next message continues the conversation normally, on the same model or a different one:
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ModelRefusalMiddleware
+from langchain_core.exceptions import ModelRefusalError
+from langgraph.checkpoint.memory import InMemorySaver
+
+agent = create_agent(
+    model="claude-sonnet-5-5",
+    tools=[],
+    middleware=[ModelRefusalMiddleware()],
+    checkpointer=InMemorySaver(),
+)
+config = {"configurable": {"thread_id": "1"}}
+
+try:
+    agent.invoke({"messages": [{"role": "user", "content": "..."}]}, config)
+except ModelRefusalError as error:
+    print(error)  # Tell the user the request was refused
+
+# The thread is still usable
+agent.invoke({"messages": [{"role": "user", "content": "Try something else"}]}, config)
+```
+
+</Accordion>
+
+<Accordion title="Fall back to another model">
+
+List @[`ModelFallbackMiddleware`] before `ModelRefusalMiddleware`, as in the example above. When the model refuses, the request is retried on the next model, which can be from the same provider or a different one. A fallback model can still refuse the same request, so combine this with one of the other options for when every model refuses.
+
+</Accordion>
+
+<Accordion title="Reply to the user after fallback">
+
+To reply to the user instead of failing the run when every model refuses, add a middleware before `ModelFallbackMiddleware` that catches the error:
 
 ```python
 from typing import Callable
@@ -916,9 +957,17 @@ agent = create_agent(
 )
 ```
 
-When `claude-sonnet-5-5` refuses, the request falls back to `gpt-6.1-sol`. If that model also refuses, `reply_on_refusal` returns the message. For other handling, such as recording the refusal in state or calling `interrupt()`, check the response for a [`refusal` content block](/oss/langchain/messages#content-block-reference) in your own middleware instead. See [Custom middleware](/oss/langchain/middleware/custom).
+When `claude-sonnet-5-5` refuses, the request falls back to `gpt-6.1-sol`. If that model also refuses, `reply_on_refusal` returns the message.
 
 </Accordion>
+
+<Accordion title="Write custom handling">
+
+For other handling, such as recording the refusal in state or calling `interrupt()` to ask a human how to continue, skip `ModelRefusalMiddleware` and check each response for a [`refusal` content block](/oss/langchain/messages#content-block-reference) in your own middleware. See [Custom middleware](/oss/langchain/middleware/custom).
+
+</Accordion>
+
+</AccordionGroup>
 
 :::
 
