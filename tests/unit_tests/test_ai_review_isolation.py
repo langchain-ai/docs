@@ -10,7 +10,12 @@ import pytest
 from scripts.ai_review_gh_read import main as gh_read_main
 from scripts.ai_review_gh_read import validate
 from scripts.ai_review_post import _public_task_check, find_secret, main
-from scripts.ai_review_proxy import make_handler, outbound_headers, parse_headers
+from scripts.ai_review_proxy import (
+    make_handler,
+    outbound_headers,
+    parse_headers,
+    response_headers,
+)
 
 FAKE_TOKEN = "ghp_" + "FAKEfake" * 4 + "1234"  # built, so scanners do not flag the file
 PLAIN = "a8f3k2m9q7w1z5x0c4v6b2n8"  # no token shape, so only value matching finds it
@@ -171,3 +176,27 @@ def test_task_check_keeps_only_screened_public_text() -> None:
         "documents_claimed_change": "no",
         "gaps": ["The description is out of date."],
     }
+
+
+def test_proxy_drops_headers_that_could_split_a_message() -> None:
+    """No CR, LF, or NUL crosses the proxy in either direction."""
+    out = outbound_headers(
+        {"anthropic-beta": "a\r\nX-Injected: 1", "anthropic-version": "2023-06-01"},
+        api_key="k",
+        custom={"X-Bad\r\nName": "v", "X-Ok": "v\n"},
+    )
+    assert "anthropic-beta" not in out
+    assert "X-Ok" not in out
+    assert out["anthropic-version"] == "2023-06-01"
+    back = response_headers(
+        [
+            ("Content-Type", "text/event-stream"),
+            ("Set-Cookie", "session=1"),
+            ("request-id", "req_1\r\nSet-Cookie: x"),
+            ("anthropic-ratelimit-requests-remaining", "49"),
+        ]
+    )
+    assert back == [
+        ("Content-Type", "text/event-stream"),
+        ("anthropic-ratelimit-requests-remaining", "49"),
+    ]

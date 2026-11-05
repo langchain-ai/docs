@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import http.client
 import json
+import re
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
@@ -32,7 +33,22 @@ DROP_REQUEST = {
     "transfer-encoding",
     "content-length",
 }
-DROP_RESPONSE = {"connection", "transfer-encoding", "content-length", "keep-alive"}
+# Response headers worth returning to Claude Code. Everything else stays at the proxy.
+KEEP_RESPONSE = re.compile(
+    r"^(content-type|retry-after|request-id|x-request-id|anthropic-[a-z0-9-]+|x-ratelimit-[a-z0-9-]+)$"
+)
+HEADER_NAME = re.compile(r"^[A-Za-z0-9-]{1,100}$")
+
+
+def safe_header(name: str, value: str) -> tuple[str, str] | None:
+    """Return the header if it cannot split a message, else None.
+
+    A CR, LF, or NUL in a name or value would let one header become several,
+    or end the header block early, so such headers are dropped.
+    """
+    if not HEADER_NAME.fullmatch(name) or any(c in value for c in "\r\n\0"):
+        return None
+    return name, value[:8192]
 
 
 def parse_headers(raw: str) -> dict[str, str]:
@@ -47,10 +63,26 @@ def parse_headers(raw: str) -> dict[str, str]:
 
 def outbound_headers(incoming: dict[str, str], api_key: str, custom: dict[str, str]) -> dict[str, str]:
     """Headers to send upstream: the client's, minus auth, plus the real credentials."""
-    headers = {k: v for k, v in incoming.items() if k.lower() not in DROP_REQUEST}
-    headers.update(custom)
+    headers = {}
+    for name, value in incoming.items():
+        if name.lower() in DROP_REQUEST:
+            continue
+        if (h := safe_header(name, value)) is not None:
+            headers[h[0]] = h[1]
+    for name, value in custom.items():
+        if (h := safe_header(name, value)) is not None:
+            headers[h[0]] = h[1]
     headers["x-api-key"] = api_key
     return headers
+
+
+def response_headers(upstream: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """The upstream response headers to return: allowlisted and well formed."""
+    out = []
+    for name, value in upstream:
+        if KEEP_RESPONSE.fullmatch(name.lower()) and (h := safe_header(name, value)):
+            out.append(h)
+    return out
 
 
 def make_handler(base_url: str, api_key: str, custom: dict[str, str]) -> type[BaseHTTPRequestHandler]:
@@ -83,9 +115,8 @@ def make_handler(base_url: str, api_key: str, custom: dict[str, str]) -> type[Ba
                 conn.request(self.command, prefix + self.path, body=body, headers=headers)
                 resp = conn.getresponse()
                 self.send_response(resp.status)
-                for name, value in resp.getheaders():
-                    if name.lower() not in DROP_RESPONSE:
-                        self.send_header(name, value)
+                for name, value in response_headers(resp.getheaders()):
+                    self.send_header(name, value)
                 self.end_headers()
                 while chunk := resp.read1(65536):
                     self.wfile.write(chunk)
