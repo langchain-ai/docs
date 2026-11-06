@@ -60,15 +60,15 @@ These volumes are storage for your agent's runtime. They are separate from the s
 
 Set volumes in one of two places:
 
-- **One deployment**: Set `volumes` and `volume_mounts` in the deployment's `resource_spec` through the [control plane API](/langsmith/api-ref-control-plane). You cannot add these volumes in the LangSmith UI. Saving deployment settings in the UI keeps the volumes and mounts that you set through the API.
+- **One deployment**: Set `volumes` and `volume_mounts` in the deployment's `resource_spec` through the [control plane API](/langsmith/api-ref-control-plane). These fields require listener 0.11.30 or later. See [Listener version requirements](#listener-version-requirements). You cannot add PersistentVolumeClaims or other general-purpose volumes in the LangSmith UI. Saving deployment settings in the UI keeps the volumes and mounts that you set through the API.
 - **Every deployment**: Add `volumes` and `volumeMounts` to the operator's base deployment template in your Helm values (`operator.templates.deployment`). For an example of editing that template, see [Configure authentication for private registries](/langsmith/enable-self-hosted-deployment#configure-authentication-for-private-registries).
 
-If both set a volume or volume mount with the same `name`, the deployment's `resource_spec` takes precedence.
+If the base template and the deployment's `resource_spec` both set a volume or volume mount with the same `name`, the deployment's `resource_spec` takes precedence.
 
 To mount a volume on one deployment:
 
-1. Create the PersistentVolumeClaim in the Kubernetes namespace where the deployment runs. For Amazon EFS, install the [Amazon EFS CSI driver](https://docs.aws.amazon.com/eks/latest/userguide/efs-csi.html), and use an EFS StorageClass with the `ReadWriteMany` access mode. That way every replica can mount the volume.
-1. Call `PATCH /v2/deployments/{deployment_id}` with the volume and its mount in `source_config.resource_spec`. Each `volumes` entry takes a `name` and exactly one volume source: `persistentVolumeClaim`, `csi`, `nfs`, `configMap`, `secret`, `emptyDir`, `projected`, or `downwardAPI`. The control plane passes the source object to Kubernetes unchanged, so write its keys in Kubernetes camelCase, for example `claimName`:
+1. Create the PersistentVolumeClaim in the Kubernetes namespace where the deployment runs. For Amazon EFS, install the [Amazon EFS CSI driver](https://docs.aws.amazon.com/eks/latest/userguide/efs-csi.html), and use an EFS StorageClass with the `ReadWriteMany` access mode. `ReadWriteMany` lets every replica mount the volume.
+1. Call `PATCH /v2/deployments/{deployment_id}` with the volume and its mount in `source_config.resource_spec`. Each `volumes` entry takes a `name` and exactly one volume source: `persistentVolumeClaim`, `csi`, `nfs`, `configMap`, `secret`, `emptyDir`, `projected`, or `downwardAPI`. The control plane passes the source object to Kubernetes unchanged. Write its keys in Kubernetes camelCase, for example `claimName`:
 
     ```json
     {
@@ -94,9 +94,9 @@ To mount a volume on one deployment:
 
     Volume names must be unique, valid DNS labels: lowercase letters, digits, and hyphens, up to 63 characters. Each `mountPath` must be an absolute path, and no two entries in `volume_mounts` can share one.
 
-    A `PATCH` that includes `resource_spec` replaces the whole object, so include your existing CPU, memory, and replica values. For more information, see [Resource spec](/langsmith/api-ref-control-plane#resource-spec).
+    A `PATCH` that includes `resource_spec` replaces the whole object. Include your existing `min_scale`, `max_scale`, `cpu`, `memory_mb`, and other `resource_spec` values. For more information, see [Resource spec](/langsmith/api-ref-control-plane#resource-spec).
 1. Poll the new revision until its `status` is `DEPLOYED`.
-1. Confirm that the app container can read and write at `mountPath` in both the API server and queue worker pods. A `Bound` PersistentVolumeClaim does not guarantee that the container's user has write permission on the volume. For example, run the following command against each pod:
+1. Confirm that the app container can read and write at `mountPath` in both the API server and queue worker pods. A `Bound` PersistentVolumeClaim does not guarantee that the container's user has write permission on the volume. To check write access, run the following command against each pod:
 
     ```bash
     kubectl exec <pod-name> -n <namespace> -- sh -c 'touch /mnt/shared/.write-test && rm /mnt/shared/.write-test'
