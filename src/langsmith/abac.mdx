@@ -12,12 +12,12 @@ ABAC (Attribute-Based Access Control) is an Enterprise feature for managing fine
 ABAC complements [Role-Based Access Control (RBAC)](/langsmith/rbac) by adding tag-based conditions to access decisions. While RBAC grants blanket permissions based on a user's role (e.g., "can read all projects"), ABAC lets you restrict or grant access based on resource tags (e.g., "can only read projects tagged with Environment=Development"). Within a project, ABAC can also restrict which traces a user can read based on root run metadata. For details, refer to [Control trace access with root run metadata](#control-trace-access-with-root-run-metadata).
 
 <Note>
-Roles, resource tags, and ABAC policies can be managed via the UI or [API](https://api.smith.langchain.com/docs#/access_policies). Once configured, policies are automatically enforced in both the API and the UI.
+Manage ABAC policies with the [visual editor](#create-a-policy-in-the-ui) or [API](https://api.smith.langchain.com/docs#/access_policies). The visual editor supports both resource tags and root run metadata conditions. Once configured, policies are automatically enforced in both the API and the UI.
 </Note>
 
 ## Before you begin
 
-* [Set up resource tags](/langsmith/set-up-resource-tags) in your workspace.
+* For tag-based conditions, [set up resource tags](/langsmith/set-up-resource-tags) in your workspace. Policies that use only root run metadata do not require resource tags.
 * ABAC supports two values for `attribute_name` in policies: `resource_tag_key`, which evaluates resource tags, and `root_run_metadata`, which evaluates the root run metadata of each trace in a project.
 
 ## Enable ABAC for self-hosted deployments
@@ -166,7 +166,45 @@ Policies can also be attached to [teams](/langsmith/teams#access-policies). A te
 
 ## Managing access policies
 
-Manage access policies in your organization settings or with the LangSmith API. Creating, editing, or deleting a policy requires `organization:access-control:manage`, which [Organization Admins](/langsmith/rbac#organization-admin) and [Organization Operators](/langsmith/rbac#organization-operator) hold. Before creating policies, [set up resource tags](/langsmith/set-up-resource-tags) in your workspace.
+Manage access policies in your organization settings or with the [LangSmith API](https://api.smith.langchain.com/docs#/access_policies). Creating, editing, or deleting a policy requires `organization:access-control:manage`, which [Organization Admins](/langsmith/rbac#organization-admin) and [Organization Operators](/langsmith/rbac#organization-operator) hold.
+
+### Create a policy in the UI
+
+The visual editor creates policies without writing JSON. In the editor, each **rule** corresponds to a [condition group](#condition-groups).
+
+To create a policy:
+
+1. Navigate to Organization **Settings** > **Access Policies** (labeled **ABAC** in the legacy settings navigation), then select **Policies**.
+2. Click **Create Policy**. The editor opens in **UI** mode. You can also switch to the **JSON** editor to enter a [policy definition](#access-policy-structure).
+3. Enter a **Name** and, optionally, a **Description**. Set **Effect** to **Allow** or **Deny**.
+4. Click **Add rule**, then select a **Resource Type** and **Permission**.
+5. Click **Add condition** and choose the condition source:
+   - **Resource tag**: Enter a **Tag Key**, operator, and **Tag Value**. [Create the resource tags](/langsmith/set-up-resource-tags) before using them in a policy.
+   - **Root-run metadata**: Select **Project** and `runs:read` first. Enter a **Metadata Key**, the `equals` operator, and a **Metadata Value**. For requirements and an example, refer to [Create a root run metadata policy in the UI](#create-a-root-run-metadata-policy-in-the-ui).
+6. Click **Save condition**. Add more conditions if needed, then click **Add rule** to return to the policy editor. All conditions within a rule must match. Multiple rules use OR logic.
+7. Under **Roles**, click **Add role**, select the workspace roles the policy applies to, and click **Add roles**. You can inspect each role's permissions before adding it.
+8. Click **Create policy**.
+
+A policy takes effect when attached to a role or [team](/langsmith/teams#access-policies). You can create a policy without attaching roles, then attach it later.
+
+### Edit a policy or its role attachments
+
+To update a policy:
+
+1. Open Organization **Settings** > **Access Policies** (or **ABAC**) > **Policies**.
+2. Click the edit icon in the policy's **Actions** column.
+3. Update its name, description, effect, rules, or conditions. Under **Roles**, use **Add role** to attach roles or the remove icon beside a role to detach it.
+4. Click **Save changes**.
+
+### Delete a policy
+
+To delete a policy, click its delete icon in the **Actions** column. Enter the policy's name to confirm, then click **Delete**.
+
+<Warning>
+Deleting a policy removes its role and team attachments. Deleting a deny policy may grant access; deleting an allow policy may remove access.
+</Warning>
+
+### Attach policies to teams
 
 Teams do not create policies. They attach existing ones:
 
@@ -213,6 +251,8 @@ When a user belongs to [teams](/langsmith/teams), LangSmith evaluates the permis
 
 A `root_run_metadata` condition limits which traces a user can read in a project, based on a key in each trace's root run metadata. Use it to hide some traces in a project, or to show users only the traces labeled for them, without moving traces into separate projects.
 
+You can configure these conditions with the [visual policy editor](#create-a-root-run-metadata-policy-in-the-ui) or the [API](https://api.smith.langchain.com/docs#/access_policies). You do not need to write JSON to use the visual editor.
+
 A `root_run_metadata` condition is valid only in a condition group with `permission: "runs:read"` and `resource_type: "project"`. It accepts the following fields:
 
 - **`attribute_key`**: A top-level key in the root run metadata. Nested keys are not supported, so the key cannot contain `.`.
@@ -224,6 +264,25 @@ Neither `attribute_key` nor `attribute_value` can contain a double quote or a ba
 A condition group can combine `root_run_metadata` conditions with `resource_tag_key` conditions. The tag conditions select the projects the group applies to, and the metadata conditions select the traces in those projects. All conditions in a group must match.
 
 Conditions evaluate only the root run, so all runs in a trace are visible or hidden together. Set the metadata key and value on the root run before ingestion. Root run metadata is immutable after ingestion, so you cannot add or change it later to make a trace match a policy. For how to add metadata, refer to [Add metadata and tags to traces](/langsmith/add-metadata-tags).
+
+### Create a root run metadata policy in the UI
+
+For example, to hide traces whose root run has `source` set to `customer`:
+
+1. Open Organization **Settings** > **Access Policies** (or **ABAC**) > **Policies**, then click **Create Policy**. In **UI** mode, enter `Hide Customer Traces` for **Name** and set **Effect** to **Deny**.
+2. Click **Add rule**. Select **Project** for **Resource Type** and `runs:read` for **Permission**.
+3. Click **Add condition** and change the source from **Resource tag** to **Root-run metadata**.
+4. Enter `source` for **Metadata Key**, keep the `equals` operator, and enter `customer` for **Metadata Value**.
+5. Click **Save condition**, then **Add rule**.
+6. Under **Roles**, add the workspace roles whose users should have these traces hidden. Click **Create policy**.
+
+This produces the [Hide traces by root run metadata](#7-hide-traces-by-root-run-metadata) example policy. Add resource tag conditions to the same rule to limit it to specific projects.
+
+<Note>
+The **Root-run metadata** option requires **Project**, `runs:read`, and root run metadata conditions enabled for your organization. If the option is disabled after selecting that resource type and permission, contact your LangChain representative.
+</Note>
+
+To [show users only the traces labeled for them](#8-show-users-only-the-traces-labeled-for-them), use **Allow** instead. Set **Metadata Key** to `allowed_ls_user_id` and **Metadata Value** to `${user.ls_user_id}`. Attach the policy to a role without `runs:read`; otherwise, the role's RBAC permission still grants access to other traces.
 
 ### How metadata conditions combine with RBAC
 
