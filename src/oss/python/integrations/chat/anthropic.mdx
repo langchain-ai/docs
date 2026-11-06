@@ -1225,6 +1225,55 @@ response = model.invoke(
 )
 ```
 
+### Prewarm a shared prefix
+
+Cache prewarming prepares a shared prompt prefix before the first user request. This moves cache creation out of the user's wait time. Use an explicit breakpoint on the shared content, not on the placeholder message.
+
+The following example reads your reference material from `reference.txt`. The prefix must meet the [model's minimum cacheable length](https://platform.claude.com/docs/en/build-with-claude/prompt-caching#cache-limitations).
+
+```python
+from pathlib import Path
+
+from langchain_anthropic import ChatAnthropic
+
+model = ChatAnthropic(model="claude-opus-5-5", streaming=False)
+shared_prefix = {
+    "role": "system",
+    "content": [
+        {
+            "type": "text",
+            "text": Path("reference.txt").read_text(),
+            "cache_control": {"type": "ephemeral"},
+        }
+    ],
+}
+
+warmup = model.invoke(
+    [shared_prefix, {"role": "user", "content": "warmup"}],
+    max_tokens=0,
+    stream=False,
+)
+print(warmup.usage_metadata["input_token_details"])
+
+response = model.invoke(
+    [shared_prefix, {"role": "user", "content": "Summarize the reference material."}],
+    max_tokens=256,
+)
+print(response.usage_metadata["input_token_details"])
+```
+
+A successful zero-output request returns an empty content array and usage metadata. Check `cache_read` and the cache-write counts, including `ephemeral_5m_input_tokens` and `ephemeral_1h_input_tokens`, to verify cache use. Keep the warmup response out of conversation history.
+
+Preserve the same model, shared prefix, tools, thinking configuration, and effort setting in the follow-up request. Changing cache-affecting settings can prevent a cache hit.
+
+<Warning>
+    `max_tokens=0` does not support streaming, enabled budget-based thinking, structured output, forced tool selection, or Message Batches. Use a separate non-streaming call. Do not disable cache-affecting settings solely for the warmup, because the follow-up prefix may no longer match.
+</Warning>
+
+Prewarming still incurs input charges. A cache hit refreshes the TTL, but it does not make the request free. `ChatAnthropic` does not schedule refreshes. If your application repeats warmups, bound the idle duration and spend, and stop when the prefix changes or refreshes miss the cache. For longer gaps, consider the one-hour TTL instead.
+
+For current model support, billing, and restrictions, see Anthropic's [prewarming guide](https://platform.claude.com/docs/en/build-with-claude/prompt-caching#pre-warming-the-cache).
+
 ### Explicit cache breakpoints
 
 For fine-grained control, mark individual content blocks with `cache_control`. This is useful when you need to cache different sections that change at different frequencies.
