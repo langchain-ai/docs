@@ -75,7 +75,7 @@ docs/
 │   ├── index.mdx               # Home page
 │   ├── style.css               # Custom CSS
 │   ├── langsmith/              # LangSmith product docs
-│   │   └── fleet/              #   Fleet (nav label: "No-code agents")
+│   │   └── fleet/              #   Fleet (nav: "No-code agents" > Fleet tab)
 │   ├── oss/                    # Open source docs
 │   │   ├── langchain/          #   LangChain framework
 │   │   ├── langgraph/          #   LangGraph framework
@@ -183,7 +183,7 @@ The Reference tab's LangSmith REST API group is OpenAPI-generated. See [Referenc
 
 ### PRODUCTS AND SETUP
 
-Five menu items. Only LangSmith setup has tabs; the rest are flat group lists.
+Five menu items. LangSmith setup and No-code agents have tabs. The rest are flat group lists.
 
 #### LangSmith setup
 
@@ -203,11 +203,11 @@ Six tabs, all files flat in `src/langsmith/`:
 | Menu item | Source | Groups |
 |-----------|--------|--------|
 | LLM Gateway | `src/langsmith/llm-gateway*.mdx` | Core capabilities, Administration and governance, Advanced |
-| No-code agents | `src/langsmith/fleet/` | Get started, Configure, Tools and automation, Advanced, Additional resources |
+| No-code agents | `src/langsmith/build-an-agent.mdx` (Agent Studio tab), `src/langsmith/fleet/` (Fleet tab) | Agent Studio: single page. Fleet: Get started, Configure, Tools and automation, Advanced, Additional resources |
 | Engine | `src/langsmith/engine*.mdx` | No groups |
 | Deep Agents Code | `src/oss/deepagents/code/` | Configuration |
 
-"No-code agents" is the nav label for Fleet. The source directory and URLs still use `fleet`.
+"No-code agents" holds two tabs: Agent Studio, for building agents in Studio, and Fleet. The Fleet source directory and URLs still use `fleet`. The Agent Studio page also appears in the Agent-based workspaces group through the `build-an-agent-link.mdx` stub, which points at `/langsmith/build-an-agent` with `url:` frontmatter.
 
 "Deep Agents Code" ships one set of pages at `/oss/deepagents/code/...` with no language split, even though it sits under `src/oss/deepagents/`. Conditional fences resolve against the Python branch.
 
@@ -227,8 +227,9 @@ Because nav names and directories diverge, use this to go from a file to its pla
 | `src/oss/reference/` | Build → Reference |
 | `src/oss/contributing/` | Build → Contribute |
 | `src/langsmith/managed-deep-agents*.mdx` | Build → Managed Deep Agents |
-| `src/langsmith/fleet/` | Products and setup → No-code agents |
-| `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx`, `create-an-agent.mdx`, `build-an-agent.mdx`, `deploy-to-agent-environment.mdx` | Products and setup → LangSmith setup → Overview → Agent-based workspaces |
+| `src/langsmith/fleet/` | Products and setup → No-code agents → Fleet |
+| `src/langsmith/build-an-agent.mdx` | Products and setup → No-code agents → Agent Studio |
+| `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx`, `create-an-agent.mdx`, `build-an-agent-link.mdx` (stub for `build-an-agent.mdx`), `deploy-to-agent-environment.mdx` | Products and setup → LangSmith setup → Overview → Agent-based workspaces |
 | `src/langsmith/*.mdx` (everything else) | Test, Deploy, Monitor, or LangSmith setup, depending on subject |
 
 ### Reference docs
