@@ -18,486 +18,446 @@ This page covers metrics SmithDB emits. Kubernetes signals such as OOM kills, co
 
 Start with these six metrics. If they are in their normal range, SmithDB is healthy. If one is not, the other metrics on this page help you find the cause.
 
-### `langsmith_ingestion_e2e_latency_seconds`
+<ResponseField name="langsmith_ingestion_e2e_latency_seconds" type="histogram · seconds">
+    Buckets: 0.05 to 60.
 
-LangSmith ingest queue workers · histogram · seconds · buckets 0.05 to 60
+    **Measures**
 
-**Measures**
+    For each run, the time from when the LangSmith platform backend received the run from the client to when SmithDB ingestion acknowledged the write to the ingest queue worker. For a completed run, the time starts when the platform backend received the update (PATCH). It includes the wait in Redis and all retries. The ingest queue worker records it only for successful writes. This is the delay that users see.
 
-For each run, the time from when the LangSmith platform backend received the run from the client to when SmithDB ingestion acknowledged the write to the ingest queue worker. For a completed run, the time starts when the platform backend received the update (PATCH). It includes the wait in Redis and all retries. The ingest queue worker records it only for successful writes. This is the delay that users see.
+    **Normal in a large deployment**
 
-**Normal in a large deployment**
+    p50 1.5 s. p95 4.6 s. In 95% of 10-minute windows, the p95 is below 7.5 s.
 
-p50 1.5 s. p95 4.6 s. In 95% of 10-minute windows, the p95 is below 7.5 s.
+    - The value changes little during the day. At peak traffic it is approximately 20% higher than at night.
+    - Approximately 3 times each day, the p95 doubles for 10 to 20 minutes. The highest spike in 7 days was 53 s.
 
-- The value changes little during the day. At peak traffic it is approximately 20% higher than at night.
-- Approximately 3 times each day, the p95 doubles for 10 to 20 minutes. The highest spike in 7 days was 53 s.
+    **How to read**
 
-**How to read**
+    This is the delay that users see. Short spikes are normal. If the value stays high, compare `langsmith_ingestion_api_to_worker_latency_seconds` and `langsmith_ingestion_worker_to_store_latency_seconds` to find the slow step. Use p95, because p99 often shows the highest bucket (60 s).
+</ResponseField>
 
-This is the delay that users see. Short spikes are normal. If the value stays high, compare `langsmith_ingestion_api_to_worker_latency_seconds` and `langsmith_ingestion_worker_to_store_latency_seconds` to find the slow step. Use p95, because p99 often shows the highest bucket (60 s).
+<ResponseField name="langsmith_asynq_ingestion_queue_retry" type="gauge · tasks">
+    Use max across pods.
 
-### `langsmith_asynq_ingestion_queue_retry`
+    **Measures**
 
-LangSmith platform backend · gauge · tasks · use max across pods
+    Tasks that an ingest queue worker could not write to SmithDB ingestion, and that wait for the next attempt. An ingest queue worker takes each task from the pending queue. If the write fails, the task goes to the retry set, not back to the pending queue. When the retry is due, the task goes back to the pending queue. Thus, the pending count does not include tasks in the retry set. The LangSmith platform backend reads the value from Redis every 30 seconds. After 12 failed attempts (approximately 2.5 hours), the ingest queue worker moves the task to the archive, and its runs are not stored.
 
-**Measures**
+    **Normal in a large deployment**
 
-Tasks that an ingest queue worker could not write to SmithDB ingestion, and that wait for the next attempt. An ingest queue worker takes each task from the pending queue. If the write fails, the task goes to the retry set, not back to the pending queue. When the retry is due, the task goes back to the pending queue. Thus, the pending count does not include tasks in the retry set. The LangSmith platform backend reads the value from Redis every 30 seconds. After 12 failed attempts (approximately 2.5 hours), the ingest queue worker moves the task to the archive, and its runs are not stored.
+    Median 2 tasks: 6 on weekdays, 0 on weekends. In 95% of 10-minute windows, the value is 63 or less. The highest value in 7 days was 1,600.
 
-**Normal in a large deployment**
+    - Retries are higher on weekdays and during working hours, when traffic is higher.
+    - Approximately 7 times each day, retries increase to tens or hundreds. Most of these increases go back to near 0 in 10 minutes.
+    - Sometimes retries stay at a low level (tens) for hours.
 
-Median 2 tasks: 6 on weekdays, 0 on weekends. In 95% of 10-minute windows, the value is 63 or less. The highest value in 7 days was 1,600.
+    **How to read**
 
-- Retries are higher on weekdays and during working hours, when traffic is higher.
-- Approximately 7 times each day, retries increase to tens or hundreds. Most of these increases go back to near 0 in 10 minutes.
-- Sometimes retries stay at a low level (tens) for hours.
+    Short increases are normal. If the value stays high, writes from ingest queue workers to SmithDB ingestion fail. Find the error in the ingest queue logs. A task that fails for approximately 2.5 hours goes to the archive, and its runs are lost.
+</ResponseField>
 
-**How to read**
+<ResponseField name="ingest_batch_latency" type="histogram · seconds">
+    **Measures**
 
-Short increases are normal. If the value stays high, writes from ingest queue workers to SmithDB ingestion fail. Find the error in the ingest queue logs. A task that fails for approximately 2.5 hours goes to the archive, and its runs are lost.
+    The time from when SmithDB ingestion receives data for one partition to when the L0 segment is durable and the response to the ingest queue worker is ready. It includes the wait for a flush (a maximum of 500 ms by design), the wait for a flush slot, and the flush itself. SmithDB ingestion splits each request into partitions and records one value for each partition.
 
-### `ingest_batch_latency`
+    **Normal in a large deployment**
 
-SmithDB ingestion · histogram · seconds
+    p50 0.6 s. p99 1.1 s. In 95% of 10-minute windows, the p99 is below 1.6 s.
 
-**Measures**
+    - This metric is very stable. It does not change between weekdays and weekends.
+    - At peak traffic, the p99 increases to approximately 1.4 s.
+    - Large spikes are rare: 3 in 7 days, each 20 to 30 minutes long, with a peak of 11 s.
 
-The time from when SmithDB ingestion receives data for one partition to when the L0 segment is durable and the response to the ingest queue worker is ready. It includes the wait for a flush (a maximum of 500 ms by design), the wait for a flush slot, and the flush itself. SmithDB ingestion splits each request into partitions and records one value for each partition.
+    **How to read**
 
-**Normal in a large deployment**
+    A p50 above 0.5 s is normal, because of the flush interval. If the p99 stays high, flushes are slow. Examine `ingest_flush_duration` and the flush semaphores.
+</ResponseField>
 
-p50 0.6 s. p99 1.1 s. In 95% of 10-minute windows, the p99 is below 1.6 s.
+<ResponseField name="server_requests_duration (query pods)" type="histogram · seconds">
+    **Measures**
 
-- This metric is very stable. It does not change between weekdays and weekends.
-- At peak traffic, the p99 increases to approximately 1.4 s.
-- Large spikes are rare: 3 in 7 days, each 20 to 30 minutes long, with a peak of 11 s.
+    The time of each request to a query pod. SmithDB records one value for each gRPC call, not for each user query. Not all calls are reads: query pods also receive feedback writes (`IngestFeedback`) and deletes (`DeleteRuns`), especially when the mutations pool is not enabled.
 
-**How to read**
+    **Normal in a large deployment**
 
-A p50 above 0.5 s is normal, because of the flush interval. If the p99 stays high, flushes are slow. Examine `ingest_flush_duration` and the flush semaphores.
+    - p50 44 ms. p99 2.6 s. In 95% of 10-minute windows, the p99 is below 6.7 s.
+    - Optional pools: stats-query p99 0.4 s, run-rules p99 1.1 s, mutations p99 0.2 s.
 
-### `server_requests_duration` (query pods)
+    - Approximately 6 times each day, the p99 doubles for 10 to 40 minutes. The highest value in 7 days was 11 s.
 
-SmithDB query · histogram · seconds
+    **How to read**
 
-**Measures**
+    Split by `path` to find the slow request type. If many request types are slow, examine `query_fanout_partitions` (compaction is late) and the admission queue (pods are out of memory).
+</ResponseField>
 
-The time of each request to a query pod. SmithDB records one value for each gRPC call, not for each user query. Not all calls are reads: query pods also receive feedback writes (`IngestFeedback`) and deletes (`DeleteRuns`), especially when the mutations pool is not enabled.
+<ResponseField name="compaction_jobs_scheduled, compaction_jobs_executed" type="counter · jobs">
+    **Measures**
 
-**Normal in a large deployment**
+    Scheduled: jobs that the compaction scheduler planned. Executed: jobs that compaction workers finished, with success or failure.
 
-- p50 44 ms. p99 2.6 s. In 95% of 10-minute windows, the p99 is below 6.7 s.
-- Optional pools: stats-query p99 0.4 s, run-rules p99 1.1 s, mutations p99 0.2 s.
+    **Normal in a large deployment**
 
-- Approximately 6 times each day, the p99 doubles for 10 to 40 minutes. The highest value in 7 days was 11 s.
+    In most 10-minute windows, compaction workers finish about as many jobs as the compaction scheduler plans (within approximately 7%). In some windows, compaction workers finish more jobs than the compaction scheduler plans, because they also finish jobs from earlier windows.
 
-**How to read**
+    - Over each hour, the two values are equal.
+    - Sometimes the compaction scheduler plans many jobs at once, for example after many deletes. Then scheduled is higher than executed for a short time. In 7 days, the gap reached approximately one hour of jobs. After the burst, executed is higher than scheduled until the gap is closed.
+    - In 7 days, executed was below 80% of scheduled for a total of less than 1 hour.
 
-Split by `path` to find the slow request type. If many request types are slow, examine `query_fanout_partitions` (compaction is late) and the admission queue (pods are out of memory).
+    **How to read**
 
-### `compaction_jobs_scheduled`, `compaction_jobs_executed`
+    A gap that closes again is normal. If executed stays below scheduled, there are not sufficient compaction workers. Examine the worker capacity and the pending queue.
+</ResponseField>
 
-SmithDB compaction scheduler · counter · jobs
+<ResponseField name="compaction_job_completion" type="counter · jobs">
+    **Measures**
 
-**Measures**
+    Job results that compaction workers report to the compaction scheduler. The compaction scheduler also counts a failure when a job is too large for every compaction worker, and when a compaction worker does not finish a job in time.
 
-Scheduled: jobs that the compaction scheduler planned. Executed: jobs that compaction workers finished, with success or failure.
+    **Normal in a large deployment**
 
-**Normal in a large deployment**
+    Failures: 0 in most 10-minute windows. Less than 0.05% of all jobs.
 
-In most 10-minute windows, compaction workers finish about as many jobs as the compaction scheduler plans (within approximately 7%). In some windows, compaction workers finish more jobs than the compaction scheduler plans, because they also finish jobs from earlier windows.
+    - Failures are single events. They do not follow traffic.
+    - Rarely, there is a short burst. The largest burst in 7 days was approximately 1% of the jobs in a 10-minute window.
 
-- Over each hour, the two values are equal.
-- Sometimes the compaction scheduler plans many jobs at once, for example after many deletes. Then scheduled is higher than executed for a short time. In 7 days, the gap reached approximately one hour of jobs. After the burst, executed is higher than scheduled until the gap is closed.
-- In 7 days, executed was below 80% of scheduled for a total of less than 1 hour.
+    **How to read**
 
-**How to read**
-
-A gap that closes again is normal. If executed stays below scheduled, there are not sufficient compaction workers. Examine the worker capacity and the pending queue.
-
-### `compaction_job_completion`
-
-SmithDB compaction scheduler · counter · jobs
-
-**Measures**
-
-Job results that compaction workers report to the compaction scheduler. The compaction scheduler also counts a failure when a job is too large for every compaction worker, and when a compaction worker does not finish a job in time.
-
-**Normal in a large deployment**
-
-Failures: 0 in most 10-minute windows. Less than 0.05% of all jobs.
-
-- Failures are single events. They do not follow traffic.
-- Rarely, there is a short burst. The largest burst in 7 days was approximately 1% of the jobs in a 10-minute window.
-
-**How to read**
-
-Single failures are normal. For example, two jobs can change the same segment, and one fails. If one `job_kind` fails again and again, or has no successes, that job kind does not work.
+    Single failures are normal. For example, two jobs can change the same segment, and one fails. If one `job_kind` fails again and again, or has no successes, that job kind does not work.
+</ResponseField>
 
 ## LangSmith ingestion pipeline
 
 LangSmith emits these metrics, not SmithDB. An ingest queue worker removes a task from Redis only after SmithDB ingestion stores the data, so SmithDB problems are visible here first.
 
-### `langsmith_asynq_ingestion_queue_pending`
+<ResponseField name="langsmith_asynq_ingestion_queue_pending" type="gauge · tasks">
+    Use max across pods.
 
-LangSmith platform backend · gauge · tasks · use max across pods
+    **Measures**
 
-**Measures**
+    Tasks in Redis that no ingest queue worker has taken yet. It is the sum over the ingestion queue and all its partitions. Tasks that wait for a retry are not included. The LangSmith platform backend reads the value from Redis every 30 seconds.
 
-Tasks in Redis that no ingest queue worker has taken yet. It is the sum over the ingestion queue and all its partitions. Tasks that wait for a retry are not included. The LangSmith platform backend reads the value from Redis every 30 seconds.
+    **Normal in a large deployment**
 
-**Normal in a large deployment**
+    Usually hundreds of tasks. Several times each day, the queue reaches tens of thousands of tasks. Most of these peaks last 10 minutes or less. The longest peak in 7 days lasted approximately 50 minutes. After a peak, the queue goes back to hundreds of tasks.
 
-Usually hundreds of tasks. Several times each day, the queue reaches tens of thousands of tasks. Most of these peaks last 10 minutes or less. The longest peak in 7 days lasted approximately 50 minutes. After a peak, the queue goes back to hundreds of tasks.
+    **How to read**
 
-**How to read**
+    Monitor the trend relative to traffic, not the number. A queue that increases while traffic is stable is a problem. A sudden decrease is healthy if retries stay stable.
+</ResponseField>
 
-Monitor the trend relative to traffic, not the number. A queue that increases while traffic is stable is a problem. A sudden decrease is healthy if retries stay stable.
+<ResponseField name="langsmith_asynq_queue_latency_seconds" type="gauge · seconds">
+    Use max across pods and across ingestion queues.
 
-### `langsmith_asynq_queue_latency_seconds`
+    **Measures**
 
-LangSmith platform backend · gauge · seconds · use max across pods and across ingestion queues
+    The age of the oldest task that waits in a queue for an ingest queue worker. The LangSmith platform backend reads the value from Redis every 30 seconds, for each queue. The ingestion queue has one series for the main queue and one for each partition queue (`ingestion-0`, `ingestion-1`, and so on). Tasks that wait for a retry are not in the queue, so the metric ignores them. When the retry is due, the task goes back into the queue, and its age starts again from zero.
 
-**Measures**
+    **Normal in a large deployment**
 
-The age of the oldest task that waits in a queue for an ingest queue worker. The LangSmith platform backend reads the value from Redis every 30 seconds, for each queue. The ingestion queue has one series for the main queue and one for each partition queue (`ingestion-0`, `ingestion-1`, and so on). Tasks that wait for a retry are not in the queue, so the metric ignores them. When the retry is due, the task goes back into the queue, and its age starts again from zero.
+    Usually less than 1 second. In 95% of 10-minute windows, less than 3 seconds. The highest value in 7 days was 38 seconds.
 
-**Normal in a large deployment**
+    **How to read**
 
-Usually less than 1 second. In 95% of 10-minute windows, less than 3 seconds. The highest value in 7 days was 38 seconds.
+    LangSmith deletes the run data in Redis after a fixed time (`REDIS_RUNS_EXPIRY_SECONDS`, 6 hours by default in the Helm chart). If a task waits longer, its runs are not stored. Compare this value with that time, and act long before the value reaches it. Because the age starts again after each retry, this metric shows only the wait for the current attempt. A task that fails again and again can expire while this value stays low. To find these tasks, monitor `langsmith_asynq_ingestion_queue_retry`.
+</ResponseField>
 
-**How to read**
+<ResponseField name="langsmith_asynq_ingestion_queue_archived" type="gauge · tasks">
+    Use max across pods.
 
-LangSmith deletes the run data in Redis after a fixed time (`REDIS_RUNS_EXPIRY_SECONDS`, 6 hours by default in the Helm chart). If a task waits longer, its runs are not stored. Compare this value with that time, and act long before the value reaches it. Because the age starts again after each retry, this metric shows only the wait for the current attempt. A task that fails again and again can expire while this value stays low. To find these tasks, monitor `langsmith_asynq_ingestion_queue_retry`.
+    **Measures**
 
-### `langsmith_asynq_ingestion_queue_archived`
+    Tasks that an ingest queue worker could not write to SmithDB ingestion on any attempt. The ingest queue worker moves these tasks to the archive. SmithDB did not store their runs. Redis keeps archived tasks for 90 days, with a maximum of 10,000 tasks for each queue. When the archive of a queue is full, new tasks replace the oldest tasks.
 
-LangSmith platform backend · gauge · tasks · use max across pods
+    **Normal in a large deployment**
 
-**Measures**
+    0.
 
-Tasks that an ingest queue worker could not write to SmithDB ingestion on any attempt. The ingest queue worker moves these tasks to the archive. SmithDB did not store their runs. Redis keeps archived tasks for 90 days, with a maximum of 10,000 tasks for each queue. When the archive of a queue is full, new tasks replace the oldest tasks.
+    **How to read**
 
-**Normal in a large deployment**
+    An increase means data loss. The value does not go back to 0 by itself, because archived tasks stay for 90 days. Thus, monitor increases, not the value. When the archive of a queue is full, the value stops increasing, and this gauge does not show new failures. Then use the ingest queue logs to find tasks that used all retries.
+</ResponseField>
 
-0.
+<ResponseField name="langsmith_ingestion_api_to_worker_latency_seconds" type="histogram · seconds">
+    Buckets: 0.05 to 60.
 
-**How to read**
+    **Measures**
 
-An increase means data loss. The value does not go back to 0 by itself, because archived tasks stay for 90 days. Thus, monitor increases, not the value. When the archive of a queue is full, the value stops increasing, and this gauge does not show new failures. Then use the ingest queue logs to find tasks that used all retries.
+    For each run, the time from when the LangSmith platform backend received the run from the client to when an ingest queue worker started the task. This is the wait in Redis. The two components use different clocks, so a small clock difference can change the value.
 
-### `langsmith_ingestion_api_to_worker_latency_seconds`
+    **Normal in a large deployment**
 
-LangSmith ingest queue workers · histogram · seconds · buckets 0.05 to 60
+    p50 33 ms, p95 0.2 s (busy hours: 7 s).
 
-**Measures**
+    **How to read**
 
-For each run, the time from when the LangSmith platform backend received the run from the client to when an ingest queue worker started the task. This is the wait in Redis. The two components use different clocks, so a small clock difference can change the value.
+    If this increases while worker-to-store latency is stable, there are not sufficient ingest queue workers. The problem is not in SmithDB.
+</ResponseField>
 
-**Normal in a large deployment**
+<ResponseField name="langsmith_ingestion_worker_to_store_latency_seconds" type="histogram · seconds">
+    Buckets: 0.05 to 60.
 
-p50 33 ms, p95 0.2 s (busy hours: 7 s).
+    **Measures**
 
-**How to read**
+    The time of one write call from an ingest queue worker to SmithDB ingestion (`store="smithdb"`). The value is for the full batch, and the ingest queue worker records it once for each run in the batch.
 
-If this increases while worker-to-store latency is stable, there are not sufficient ingest queue workers. The problem is not in SmithDB.
+    **Normal in a large deployment**
 
-### `langsmith_ingestion_worker_to_store_latency_seconds`
+    p50 1.1 s, p95 3.8 s.
 
-LangSmith ingest queue workers · histogram · seconds · buckets 0.05 to 60
+    **How to read**
 
-**Measures**
-
-The time of one write call from an ingest queue worker to SmithDB ingestion (`store="smithdb"`). The value is for the full batch, and the ingest queue worker records it once for each run in the batch.
-
-**Normal in a large deployment**
-
-p50 1.1 s, p95 3.8 s.
-
-**How to read**
-
-If this increases for `store="smithdb"`, the problem is in SmithDB or in its dependencies. Continue with the SmithDB ingestion metrics.
+    If this increases for `store="smithdb"`, the problem is in SmithDB or in its dependencies. Continue with the SmithDB ingestion metrics.
+</ResponseField>
 
 ## SmithDB ingestion
 
-### `ingest_flush_count`
+<ResponseField name="ingest_flush_count" type="counter · flushes">
+    **Measures**
 
-SmithDB ingestion · counter · flushes
+    The number of completed flushes to object storage, at L0 and at L1.
 
-**Measures**
+    **Normal in a large deployment**
 
-The number of completed flushes to object storage, at L0 and at L1.
+    Failures are rare: less than 0.01% of flushes.
 
-**Normal in a large deployment**
+    **How to read**
 
-Failures are rare: less than 0.01% of flushes.
+    A flat rate while traffic arrives means that writes do not reach storage. A continuous rate of failures means that object storage or the metastore has errors.
+</ResponseField>
 
-**How to read**
+<ResponseField name="ingest_flush_rows" type="histogram · rows">
+    **Measures**
 
-A flat rate while traffic arrives means that writes do not reach storage. A continuous rate of failures means that object storage or the metastore has errors.
+    The number of runs in each successful flush.
 
-### `ingest_flush_rows`
+    **Normal in a large deployment**
 
-SmithDB ingestion · histogram · rows
+    L0: p50 8 rows, p95 120 rows. L1: p50 60 rows, p95 5,000 rows.
 
-**Measures**
+    **How to read**
 
-The number of runs in each successful flush.
+    Small L0 flushes are normal, because most partitions receive few runs in 500 ms. If rows decrease while the flush rate stays the same, flushes occur too early.
+</ResponseField>
 
-**Normal in a large deployment**
+<ResponseField name="ingest_flush_duration" type="histogram · seconds">
+    **Measures**
 
-L0: p50 8 rows, p95 120 rows. L1: p50 60 rows, p95 5,000 rows.
+    The time of one flush, including the wait for a flush slot. It includes failed flushes.
 
-**How to read**
+    **Normal in a large deployment**
 
-Small L0 flushes are normal, because most partitions receive few runs in 500 ms. If rows decrease while the flush rate stays the same, flushes occur too early.
+    L0: p50 0.21 s, p99 0.44 s. L1: p50 1.5 s, p99 12 s (busy hours: 22 s).
 
-### `ingest_flush_duration`
+    **How to read**
 
-SmithDB ingestion · histogram · seconds
+    If this increases together with `object_store_op_duration`, the cause is object storage. If it increases alone, examine the flush semaphores and the metastore.
+</ResponseField>
 
-**Measures**
+<ResponseField name="ingest_flush_reason" type="counter · flushes">
+    **Measures**
 
-The time of one flush, including the wait for a flush slot. It includes failed flushes.
+    Why each flush started. `time` means that the flush timer fired. `size` means that the partition reached its row limit. `shutdown` means that the ingestion pod stopped.
 
-**Normal in a large deployment**
+    **Normal in a large deployment**
 
-L0: p50 0.21 s, p99 0.44 s. L1: p50 1.5 s, p99 12 s (busy hours: 22 s).
+    L0: almost all flushes are `time` (more than 99.9%). L1: approximately 97% `time`, 3% `size`.
 
-**How to read**
+    **How to read**
 
-If this increases together with `object_store_op_duration`, the cause is object storage. If it increases alone, examine the flush semaphores and the metastore.
+    More `size` flushes means more data for each partition. Many `shutdown` flushes outside of rollouts mean that pods restart.
+</ResponseField>
 
-### `ingest_flush_reason`
+<ResponseField name="ingest_pending_segment_entry_count" type="gauge · entries">
+    **Measures**
 
-SmithDB ingestion · counter · flushes
+    L0: request batches in memory that are not flushed yet. L1: L0 segments on the disk cache that are not merged into L1 yet. Both are sums over all partitions of the ingestion pod. SmithDB ingestion updates the values only at certain events, so a value can stay old for some time.
 
-**Measures**
+    **Normal in a large deployment (per pod)**
 
-Why each flush started. `time` means that the flush timer fired. `size` means that the partition reached its row limit. `shutdown` means that the ingestion pod stopped.
+    L0: average 65, peak 430. L1: average 20,000, peak 41,000.
 
-**Normal in a large deployment**
+    **How to read**
 
-L0: almost all flushes are `time` (more than 99.9%). L1: approximately 97% `time`, 3% `size`.
+    A large L1 value is normal, because SmithDB ingestion merges each partition only after 10 minutes or 25,000 rows. A value that increases continuously means that flushes are late.
+</ResponseField>
 
-**How to read**
+<ResponseField name="semaphore_permits_in_use, semaphore_max_permits" type="gauge · permits">
+    **Measures**
 
-More `size` flushes means more data for each partition. Many `shutdown` flushes outside of rollouts mean that pods restart.
+    SmithDB uses semaphores to limit how many operations of one kind run at the same time in a pod, for example L0 flushes or uploads to object storage. A semaphore has a fixed number of permits (`semaphore_max_permits`). An operation takes a permit before it starts and gives it back when it ends. When all permits are in use, new operations wait for a free permit. `semaphore_permits_in_use` shows how many permits are in use now. Ingestion names: `flush_l0` (200), `flush_l1` (10), `ingest_upload` (500), and others. Compaction workers: `compaction_worker`. All semaphores with the same name share one series.
 
-### `ingest_pending_segment_entry_count`
+    **Normal in a large deployment (per pod, maximum in the hour)**
 
-SmithDB ingestion · gauge · entries
+    `flush_l0`: 13 of 200, peak 151. `ingest_upload`: 19 of 500, peak 58. `flush_l1`: 3 of 10, peak 10.
 
-**Measures**
+    **How to read**
 
-L0: request batches in memory that are not flushed yet. L1: L0 segments on the disk cache that are not merged into L1 yet. Both are sums over all partitions of the ingestion pod. SmithDB ingestion updates the values only at certain events, so a value can stay old for some time.
+    Short peaks at the maximum are normal. If a value stays at the maximum, work waits in the SmithDB pod. You see this as latency, not as errors. In Datadog, filter on the semaphore name, because Datadog also uses the `name` tag for hosts.
+</ResponseField>
 
-**Normal in a large deployment (per pod)**
+<ResponseField name="server_requests_duration (ingestion pods)" type="histogram · seconds">
+    **Measures**
 
-L0: average 65, peak 430. L1: average 20,000, peak 41,000.
+    The time of each request to an ingestion pod. For gRPC streams, it includes the full stream, until the status is sent. `status` is the gRPC code (0 is success), `error`, or `cancelled`.
 
-**How to read**
+    **Normal in a large deployment**
 
-A large L1 value is normal, because SmithDB ingestion merges each partition only after 10 minutes or 25,000 rows. A value that increases continuously means that flushes are late.
+    p50 0.8 s, p99 3.4 s. Errors (status not 0): less than 0.01%.
 
-### `semaphore_permits_in_use`, `semaphore_max_permits`
+    **How to read**
 
-SmithDB ingestion, SmithDB compaction workers · gauge · permits
-
-**Measures**
-
-SmithDB uses semaphores to limit how many operations of one kind run at the same time in a pod, for example L0 flushes or uploads to object storage. A semaphore has a fixed number of permits (`semaphore_max_permits`). An operation takes a permit before it starts and gives it back when it ends. When all permits are in use, new operations wait for a free permit. `semaphore_permits_in_use` shows how many permits are in use now. Ingestion names: `flush_l0` (200), `flush_l1` (10), `ingest_upload` (500), and others. Compaction workers: `compaction_worker`. All semaphores with the same name share one series.
-
-**Normal in a large deployment (per pod, maximum in the hour)**
-
-`flush_l0`: 13 of 200, peak 151. `ingest_upload`: 19 of 500, peak 58. `flush_l1`: 3 of 10, peak 10.
-
-**How to read**
-
-Short peaks at the maximum are normal. If a value stays at the maximum, work waits in the SmithDB pod. You see this as latency, not as errors. In Datadog, filter on the semaphore name, because Datadog also uses the `name` tag for hosts.
-
-### `server_requests_duration` (ingestion pods)
-
-SmithDB ingestion · histogram · seconds
-
-**Measures**
-
-The time of each request to an ingestion pod. For gRPC streams, it includes the full stream, until the status is sent. `status` is the gRPC code (0 is success), `error`, or `cancelled`.
-
-**Normal in a large deployment**
-
-p50 0.8 s, p99 3.4 s. Errors (status not 0): less than 0.01%.
-
-**How to read**
-
-Errors here cause the ingest queue worker to retry the task. HTTP requests on these pods are health checks and metrics scrapes. Filter on `type="grpc"`.
+    Errors here cause the ingest queue worker to retry the task. HTTP requests on these pods are health checks and metrics scrapes. Filter on `type="grpc"`.
+</ResponseField>
 
 ## SmithDB query
 
-### `query_fanout_partitions`
+<ResponseField name="query_fanout_partitions" type="histogram · partitions">
+    **Measures**
 
-SmithDB query · histogram · partitions
+    The number of scan partitions that a query plan must open. A scan partition is approximately one segment, or a group of segments, that the query reads. SmithDB ingestion writes many small segments. Compaction merges them into fewer, larger segments. Thus, after compaction, a query for the same time range opens fewer scan partitions. One request can record many values, one for each sub-plan and time window.
 
-**Measures**
+    **Normal in a large deployment**
 
-The number of scan partitions that a query plan must open. A scan partition is approximately one segment, or a group of segments, that the query reads. SmithDB ingestion writes many small segments. Compaction merges them into fewer, larger segments. Thus, after compaction, a query for the same time range opens fewer scan partitions. One request can record many values, one for each sub-plan and time window.
+    p50 5, p99 50 (peak 94). The limit is 10,000.
 
-**Normal in a large deployment**
+    **How to read**
 
-p50 5, p99 50 (peak 94). The limit is 10,000.
+    If the p99 increases while traffic is stable, compaction is usually late. More segments for each time range give more partitions.
+</ResponseField>
 
-**How to read**
+<ResponseField name="query_fanout_limit_exceeded_total" type="counter · queries">
+    **Measures**
 
-If the p99 increases while traffic is stable, compaction is usually late. More segments for each time range give more partitions.
+    Queries that SmithDB query rejected because they must open more than 10,000 partitions.
 
-### `query_fanout_limit_exceeded_total`
+    **Normal in a large deployment**
 
-SmithDB query · counter · queries
+    query: almost never. stats-query: usually 0, with rare short bursts of tens of queries per hour.
 
-**Measures**
+    **How to read**
 
-Queries that SmithDB query rejected because they must open more than 10,000 partitions.
+    A continuous rate means that user queries fail. Examine compaction first. Very wide time ranges can also cause it.
+</ResponseField>
 
-**Normal in a large deployment**
+<ResponseField name="query_execution_max_mem_used_bytes" type="histogram · bytes">
+    **Measures**
 
-query: almost never. stats-query: usually 0, with rare short bursts of tens of queries per hour.
+    The peak memory of the largest single operator in a query plan. It is not the total memory of the query.
 
-**How to read**
+    **Normal in a large deployment**
 
-A continuous rate means that user queries fail. Examine compaction first. Very wide time ranges can also cause it.
+    p50 0.25 MB, p99 15 MB (peak 77 MB).
 
-### `query_execution_max_mem_used_bytes`
+    **How to read**
 
-SmithDB query · histogram · bytes
+    Use it to find request types that need much memory. Use pod memory, not this metric, to see if a pod is near its limit.
+</ResponseField>
 
-**Measures**
+<ResponseField name="query_admission_queue_length, query_admission_queue_duration_seconds, query_admission_queue_rejections_total" type="gauge · counter · histogram (seconds)">
+    **Measures**
 
-The peak memory of the largest single operator in a query plan. It is not the total memory of the query.
+    When the memory of a query pod is at its limit, new requests wait in the admission queue (100 places). Length: requests that wait now. Duration: how long they waited. Rejections: requests that found the queue full. Requests that SmithDB query admits immediately are not counted.
 
-**Normal in a large deployment**
+    **Normal in a large deployment**
 
-p50 0.25 MB, p99 15 MB (peak 77 MB).
+    Length: 0. stats-query sometimes 1 to 2. Duration and rejections: no data in 7 days.
 
-**How to read**
+    **How to read**
 
-Use it to find request types that need much memory. Use pod memory, not this metric, to see if a pod is near its limit.
-
-### `query_admission_queue_length`, `query_admission_queue_duration_seconds`, `query_admission_queue_rejections_total`
-
-SmithDB query · gauge · counter · histogram (seconds)
-
-**Measures**
-
-When the memory of a query pod is at its limit, new requests wait in the admission queue (100 places). Length: requests that wait now. Duration: how long they waited. Rejections: requests that found the queue full. Requests that SmithDB query admits immediately are not counted.
-
-**Normal in a large deployment**
-
-Length: 0. stats-query sometimes 1 to 2. Duration and rejections: no data in 7 days.
-
-**How to read**
-
-Any rejection means that a pod is out of memory. Add replicas or memory. If the pod has no memory limit, these metrics always stay at 0.
+    Any rejection means that a pod is out of memory. Add replicas or memory. If the pod has no memory limit, these metrics always stay at 0.
+</ResponseField>
 
 ## SmithDB compaction
 
 The compaction scheduler keeps its job queue in memory. The queue metrics come from the scheduler pod. The worker metrics come from each worker pod.
 
-### `compaction_queue_job_count`
+<ResponseField name="compaction_queue_job_count" type="gauge · jobs">
+    **Measures**
 
-SmithDB compaction scheduler · gauge · jobs
+    Jobs in the scheduler queue. `pending`: jobs that wait for a compaction worker. `inflight`: jobs that a compaction worker runs now. KEDA scales compaction workers on the pending sum.
 
-**Measures**
+    **Normal in a large deployment**
 
-Jobs in the scheduler queue. `pending`: jobs that wait for a compaction worker. `inflight`: jobs that a compaction worker runs now. KEDA scales compaction workers on the pending sum.
+    Pending: usually tens to a few hundred jobs. Short peaks reach tens of thousands of jobs, for example after many deletes. Inflight: tens of jobs, and it changes little.
 
-**Normal in a large deployment**
+    **How to read**
 
-Pending: usually tens to a few hundred jobs. Short peaks reach tens of thousands of jobs, for example after many deletes. Inflight: tens of jobs, and it changes little.
+    Short peaks are normal, for example after many deletes. A pending count that stays high for hours means that compaction is late.
+</ResponseField>
 
-**How to read**
+<ResponseField name="compaction_queue_oldest_pending_created_at_seconds" type="gauge · Unix timestamp">
+    **Measures**
 
-Short peaks are normal, for example after many deletes. A pending count that stays high for hours means that compaction is late.
+    The time when the oldest pending job went into the queue. It is a timestamp, not an age. Calculate the age with `time() - value`, and do not include 0.
 
-### `compaction_queue_oldest_pending_created_at_seconds`
+    **Normal in a large deployment**
 
-SmithDB compaction scheduler · gauge · Unix timestamp
+    Age: p50 2 hours, p95 3.5 hours, peak 4 hours.
 
-**Measures**
+    **How to read**
 
-The time when the oldest pending job went into the queue. It is a timestamp, not an age. Calculate the age with `time() - value`, and do not include 0.
+    In a large deployment, some jobs wait for hours. The compaction scheduler gives each compaction worker the first job in the queue that fits in the free capacity of that worker. It skips larger jobs and gives a smaller job from further back in the queue. Some jobs, for example message compaction jobs, need almost the full capacity of a compaction worker. These jobs wait until a compaction worker is almost idle. Thus, monitor the trend, not a fixed age. To find which job kind waits, compare `compaction_queue_job_count` and `compaction_queue_job_size` by `job_kind`. An age that increases continuously means that compaction does not keep up.
+</ResponseField>
 
-**Normal in a large deployment**
+<ResponseField name="compaction_job_latency_seconds" type="histogram · seconds">
+    Buckets: 0.1 to 900.
 
-Age: p50 2 hours, p95 3.5 hours, peak 4 hours.
+    **Measures**
 
-**How to read**
+    The time from when a job went into the queue to when it finished. It includes the wait in the queue.
 
-In a large deployment, some jobs wait for hours. The compaction scheduler gives each compaction worker the first job in the queue that fits in the free capacity of that worker. It skips larger jobs and gives a smaller job from further back in the queue. Some jobs, for example message compaction jobs, need almost the full capacity of a compaction worker. These jobs wait until a compaction worker is almost idle. Thus, monitor the trend, not a fixed age. To find which job kind waits, compare `compaction_queue_job_count` and `compaction_queue_job_size` by `job_kind`. An age that increases continuously means that compaction does not keep up.
+    **Normal in a large deployment**
 
-### `compaction_job_latency_seconds`
+    p50 4 s, p99 2 minutes. Busy hours: p99 up to 6 minutes.
 
-SmithDB compaction scheduler · histogram · seconds · buckets 0.1 to 900
+    **How to read**
 
-**Measures**
+    It increases when compaction workers are full and when jobs are slow. Compare it with worker capacity to find which one.
+</ResponseField>
 
-The time from when a job went into the queue to when it finished. It includes the wait in the queue.
+<ResponseField name="compaction_queue_jobs_skipped_capacity" type="counter · skips">
+    **Measures**
 
-**Normal in a large deployment**
+    Each time a compaction worker asks for work, the compaction scheduler looks through its queue. This counter increases for each job that does not fit in the free capacity of that compaction worker. One job can be counted many times.
 
-p50 4 s, p99 2 minutes. Busy hours: p99 up to 6 minutes.
+    **Normal in a large deployment**
 
-**How to read**
+    Approximately 30 times the number of executed jobs.
 
-It increases when compaction workers are full and when jobs are slow. Compare it with worker capacity to find which one.
+    **How to read**
 
-### `compaction_queue_jobs_skipped_capacity`
+    High values are normal, because the compaction scheduler counts each skip on each poll. Monitor the trend together with the oldest pending age, not the absolute value.
+</ResponseField>
 
-SmithDB compaction scheduler · counter · skips
+<ResponseField name="compaction_worker_capacity_used, compaction_worker_capacity_limit" type="gauge · capacity units (estimated bytes)">
+    **Measures**
 
-**Measures**
+    The estimated memory of the jobs that a compaction worker runs now, compared with the capacity of that compaction worker. The default capacity is 80% of the memory limit of the pod. The estimate comes from the input size of each job.
 
-Each time a compaction worker asks for work, the compaction scheduler looks through its queue. This counter increases for each job that does not fit in the free capacity of that compaction worker. One job can be counted many times.
+    **Normal in a large deployment (per worker)**
 
-**Normal in a large deployment**
+    Used: on average approximately 10% of the limit. The busiest worker is at its limit most of the time.
 
-Approximately 30 times the number of executed jobs.
+    **How to read**
 
-**How to read**
+    If most compaction workers stay near their limit, jobs wait and the pending queue increases. Add compaction workers, or give them more memory for larger jobs.
+</ResponseField>
 
-High values are normal, because the compaction scheduler counts each skip on each poll. Monitor the trend together with the oldest pending age, not the absolute value.
+<ResponseField name="compaction_worker_running_tasks" type="gauge · jobs">
+    **Measures**
 
-### `compaction_worker_capacity_used`, `compaction_worker_capacity_limit`
+    Jobs that a compaction worker runs now.
 
-SmithDB compaction workers · gauge · capacity units (estimated bytes)
+    **Normal in a large deployment**
 
-**Measures**
+    Hundreds of jobs over all compaction workers. Never 0 while jobs are pending.
 
-The estimated memory of the jobs that a compaction worker runs now, compared with the capacity of that compaction worker. The default capacity is 80% of the memory limit of the pod. The estimate comes from the input size of each job.
+    **How to read**
 
-**Normal in a large deployment (per worker)**
-
-Used: on average approximately 10% of the limit. The busiest worker is at its limit most of the time.
-
-**How to read**
-
-If most compaction workers stay near their limit, jobs wait and the pending queue increases. Add compaction workers, or give them more memory for larger jobs.
-
-### `compaction_worker_running_tasks`
-
-SmithDB compaction workers · gauge · jobs
-
-**Measures**
-
-Jobs that a compaction worker runs now.
-
-**Normal in a large deployment**
-
-Hundreds of jobs over all compaction workers. Never 0 while jobs are pending.
-
-**How to read**
-
-If the sum is 0 while jobs are pending, the compaction workers have stopped. Make sure that they can connect to the compaction scheduler.
+    If the sum is 0 while jobs are pending, the compaction workers have stopped. Make sure that they can connect to the compaction scheduler.
+</ResponseField>
 
 ## Migration
 
