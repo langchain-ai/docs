@@ -1,0 +1,30 @@
+```ts
+import { END, MemorySaver, START, StateGraph } from "@langchain/langgraph";
+
+const checkpointer = new MemorySaver();
+
+const app = new StateGraph(EmailAgentState)
+  .addNode("readEmail", readEmail)
+  .addNode("classifyIntent", classifyIntent, {
+    ends: ["searchDocumentation", "bugTracking", "draftReply"],
+  })
+  .addNode("searchDocumentation", searchDocumentation, {
+    ends: ["draftReply"],
+    retryPolicy: { maxAttempts: 3 },
+  })
+  .addNode("bugTracking", bugTracking, {
+    ends: ["draftReply"],
+    retryPolicy: { maxAttempts: 3 },
+  })
+  .addNode("draftReply", draftResponse, {
+    ends: ["humanReview", "sendReply"],
+  })
+  .addNode("humanReview", humanReview, {
+    ends: ["sendReply", END],
+  })
+  .addNode("sendReply", sendReply)
+  .addEdge(START, "readEmail")
+  .addEdge("readEmail", "classifyIntent")
+  .addEdge("sendReply", END)
+  .compile({ checkpointer });
+```
