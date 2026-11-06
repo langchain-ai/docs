@@ -5,13 +5,15 @@
 // :codegroup-tab: tools/search.ts
 import { TavilySearch } from "@langchain/tavily";
 import { tool } from "langchain";
+import { connections } from "managed-deepagents";
 import { z } from "zod";
 
 export const internetSearch = tool(
   async ({ query, maxResults = 5, topic = "general" }) => {
+    const tavilyApiKey = await connections.get("research-tavily", { type: "agent" });
     const tavilySearch = new TavilySearch({
       maxResults,
-      tavilyApiKey: process.env.TAVILY_API_KEY,
+      tavilyApiKey,
       topic,
     });
     return tavilySearch._call({ query });
@@ -27,3 +29,10 @@ export const internetSearch = tool(
   },
 );
 // :snippet-end:
+
+// :remove-start:
+if (internetSearch.name !== "internet_search") {
+  throw new Error(`Expected internet_search, got ${internetSearch.name}`);
+}
+console.log("✓ internet_search tool defined with connections.get");
+// :remove-end:
