@@ -203,11 +203,11 @@ Six tabs, all files flat in `src/langsmith/`:
 | Menu item | Source | Groups |
 |-----------|--------|--------|
 | LLM Gateway | `src/langsmith/llm-gateway*.mdx` | Core capabilities, Administration and governance, Advanced |
-| No-code agents | `src/langsmith/build-an-agent.mdx` (Agent Studio tab), `src/langsmith/fleet/` (Fleet tab) | Agent Studio: single page. Fleet: Get started, Configure, Tools and automation, Advanced, Additional resources |
+| No-code agents | `src/langsmith/build-an-agent.mdx` (Studio tab), `src/langsmith/fleet/` (Fleet tab) | Studio: single page. Fleet: Get started, Configure, Tools and automation, Advanced, Additional resources |
 | Engine | `src/langsmith/engine*.mdx` | No groups |
 | Deep Agents Code | `src/oss/deepagents/code/` | Configuration |
 
-"No-code agents" holds two tabs: Agent Studio, for building agents in Studio, and Fleet. The Fleet source directory and URLs still use `fleet`. The Agent Studio page also appears in the Agent-based workspaces group through the `build-an-agent-link.mdx` stub, which points at `/langsmith/build-an-agent` with `url:` frontmatter.
+"No-code agents" holds two tabs: Studio, for building agents in Studio, and Fleet. The Fleet source directory and URLs still use `fleet`. The Studio build page also appears in the Agent-based workspaces group through the `build-an-agent-link.mdx` stub, which points at `/langsmith/build-an-agent` with `url:` frontmatter.
 
 "Deep Agents Code" ships one set of pages at `/oss/deepagents/code/...` with no language split, even though it sits under `src/oss/deepagents/`. Conditional fences resolve against the Python branch.
 
@@ -228,7 +228,7 @@ Because nav names and directories diverge, use this to go from a file to its pla
 | `src/oss/contributing/` | Build → Contribute |
 | `src/langsmith/managed-deep-agents*.mdx` | Build → Managed Deep Agents |
 | `src/langsmith/fleet/` | Products and setup → No-code agents → Fleet |
-| `src/langsmith/build-an-agent.mdx` | Products and setup → No-code agents → Agent Studio |
+| `src/langsmith/build-an-agent.mdx` | Products and setup → No-code agents → Studio |
 | `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx`, `create-an-agent.mdx`, `build-an-agent-link.mdx` (stub for `build-an-agent.mdx`), `deploy-to-agent-environment.mdx` | Products and setup → LangSmith setup → Overview → Agent-based workspaces |
 | `src/langsmith/*.mdx` (everything else) | Test, Deploy, Monitor, or LangSmith setup, depending on subject |
 
