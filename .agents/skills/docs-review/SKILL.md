@@ -22,6 +22,10 @@ Two rules govern this whole skill:
   the goal. Do not stretch a rule to reach a finding, and do not restructure
   prose that is already fine.
 
+**In CI mode**, read [ci-mode.md](ci-mode.md) first. It replaces Step 1 and the
+Vale run in Step 2, and sets the output format for Step 6. Steps 3 to 5 apply
+unchanged.
+
 ## Step 1. Resolve the target
 
 Run `git fetch origin` first so `main` is current. Resolve in this order:
@@ -98,27 +102,28 @@ Reading the diff text is not a substitute for either run. A patch shows added
 lines without their column offsets or their surrounding component, which is
 exactly what these rules turn on.
 
-Vale covers terminology, contractions, first person, future tense, Oxford
-commas, spaced em dashes, navigation-path arrows, and heading case. **Do not
-spend model judgment re-checking what Vale already checks**, with one exception:
-Vale does not scan every part of an MDX file, so a clean run is not proof of
-compliance. It misses content inside JSX components (`<Note>`, `<Tip>`, `<Tab>`,
-`<Step>`, `<Accordion>`) and inside table cells. A page can pass Vale with four
-spaced em dashes in it.
+Vale scans the whole MDX file, including text inside JSX components such as
+`<Note>` and `<Tab>`, and inside table cells. A clean run still does not prove
+compliance, because CI runs Vale at `MinAlertLevel = error` and only some rules
+are errors. The error-level rules, which block the merge, cover spaced em
+dashes, navigation-path arrows, vague link text, terminology, units, sentences
+that open with "But" or "So", and gendered language. **Do not spend model
+judgment re-checking those.**
 
-Grep the mechanical rules yourself over any file whose diff touches those
-places:
+The rest of the style guide passes CI wherever it appears, in plain prose as
+much as in a component. Contractions are not flagged at all, and first person,
+future tense, and filler are warnings or suggestions that CI never shows. Grep
+for them yourself over every changed line:
 
 ```bash
-grep -nE ' — | – ' <files>                      # spaced em dashes
 grep -nEi "\b(don't|can't|won't|isn't|it's|you'll)\b" <files>   # contractions
 grep -nE '\b(we|our|us|I)\b|\bwill [a-z]+\b' <files>          # first person, future tense
-grep -n '→' <files>                              # navigation arrows
+grep -nEi '\b(simply|just|easily|basically|obviously|very)\b' <files>  # filler
 ```
 
-Report a hit inside a component the same way you would report a Vale error: it
-would be one if Vale could see it. A `—` used as an empty table-cell marker is
-fine and is not a finding.
+Report a hit only on a line the diff changed. A contraction inside a quoted UI
+string or error message, such as `Can't reach the server`, is a literal and is
+not a finding.
 
 ## Step 3. Check structure against the style guide
 
@@ -242,6 +247,17 @@ entry, broken link) versus what is a suggestion.
 
 If nothing turns up, say that plainly. "No findings" is a valid and useful
 result, and is more useful than a manufactured one.
+
+In CI mode, write the findings file that [ci-mode.md](ci-mode.md) describes
+instead of this report. Do not judge whether a fact is true: a default, a
+version floor, an environment variable, or a UI label belongs to
+`verify-against-source`, and sentence length and rhythm belong to
+`docs-team-voice`. Both run alongside this skill. Keep each
+`replacement` to the change the cited rule requires, so it cannot carry an
+unchecked rewrite of a label or value along with it. Map the verdict onto severity: a merge blocker is
+`must_fix`, a missing requirement or cut condition is `major`, and the rest is
+`minor`. A finding from Steps 3 and 4 is `auto` only when it is one of the
+mechanical cases listed there.
 
 ## Running after an authoring skill
 
