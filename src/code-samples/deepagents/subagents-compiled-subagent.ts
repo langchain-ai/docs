@@ -21,7 +21,7 @@ const specializedTools: never[] = [];
 const customGraph = createAgent({
   model: yourModel,
   tools: specializedTools,
-  prompt: "You are a specialized agent for data analysis...",
+  systemPrompt: "You are a specialized agent for data analysis...",
 });
 
 // Use it as a custom subagent
