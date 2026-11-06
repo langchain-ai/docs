@@ -26,9 +26,7 @@ Async subagents let a supervisor agent launch background tasks that return immed
 
 This builds on [subagents](/oss/deepagents/subagents), which run synchronously and block the supervisor until completion. Use async subagents when tasks are long-running, parallelizable, or need mid-flight steering.
 
-<Tip>
-Using [Managed Deep Agents](/langsmith/managed-deep-agents-overview)? Declare a subagent with `async: true` and Managed Deep Agents deploys and connects it for you. See [Async subagents in Managed Deep Agents](/langsmith/managed-deep-agents-subagents#async-subagents).
-</Tip>
+To run async subagents in a managed agent, declare them with `async: true`. See [Async subagents in Managed Deep Agents](/langsmith/managed-deep-agents-subagents#async-subagents).
 
 ```mermaid
 graph TB
@@ -128,14 +126,12 @@ A typical interaction follows this sequence. On Agent Server, the supervisor doe
 sequenceDiagram
     participant User
     participant Supervisor
-    participant Server as Agent Server
     participant Researcher
 
     User->>Supervisor: "Research topic X"
-    Supervisor->>Server: start_async_task(researcher, "topic X")
-    Server-->>Supervisor: task_id
-    Server->>Researcher: start run
-    Supervisor-->>User: "I have started the research. I will let you know when it is done."
+    Supervisor->>Researcher: start_async_task("topic X")
+    Researcher-->>Supervisor: task_id (immediately)
+    Supervisor-->>User: "I have started the research. You can keep chatting while it runs."
 
     Note over User,Supervisor: User keeps chatting with the supervisor
     Note over Researcher: Researcher working...
@@ -145,11 +141,11 @@ sequenceDiagram
     Supervisor-->>User: "The research is done. Here is what it found..."
 ```
 
-- **Launch** creates a new thread on the server and starts a run with input determined by the [launch mode](#choose-a-launch-mode). Isolated mode sends only the task description; fork mode also sends the parent's effective conversation history. The thread ID is returned as the task ID.
+- **Launch** creates a new thread on the server and starts a run with input determined by the [launch mode](#choose-a-launch-mode). Isolated mode sends only the task description; fork mode also sends the parent's effective conversation history. `start_async_task` returns the thread ID as the task ID.
 - **Check** fetches the task's current status, plus its result, error, or what it is asking the user.
 - **Update** creates a new run on the same thread. By default it interrupts the previous run, and the subagent restarts with the full conversation history plus the new instructions. The task ID stays the same.
 - **Cancel** calls `runs.cancel()` on the server and marks the task as `"cancelled"`.
-- **List** iterates over all tracked tasks. For non-terminal tasks, it fetches live status from the server in parallel. Terminal statuses (`success`, `error`, `timeout`, `cancelled`, `interrupted`) are returned from cache.
+- **List** iterates over all tracked tasks. For non-terminal tasks, it fetches live status from the server in parallel. For terminal statuses (`success`, `error`, `timeout`, `cancelled`, `interrupted`), it uses the cached status.
 
 :::python
 To let follow-ups wait, set `update_strategy="enqueue"`. **Update** then queues the new run behind the current one, and the task is `pending` until it starts. Cancelling the task also cancels earlier runs that are still active.
@@ -183,13 +179,13 @@ Task notifications require `deepagents>=1.16.0`, and notification metadata requi
 </Note>
 
 :::python
-Notifications are sent to the supervisor as a `HumanMessage`. They can include images and other multimodal media. Each notification carries metadata with the source `"async_subagent"` and a @[`TaskEvent`] (`task_id`, `agent_name`, `status`, `run_id`) as its data. Read it with `get_notification_metadata` to show notifications differently from user messages:
+The supervisor receives each notification as a `HumanMessage`. They can include images and other multimodal media. Each notification carries metadata with the source `"async_subagent"` and a @[`TaskEvent`] (`task_id`, `agent_name`, `status`, `run_id`) as its data. Read it with `get_notification_metadata` to show notifications differently from user messages:
 
 <AsyncSubagentsNotificationsPy />
 :::
 
 :::js
-Notifications are sent to the supervisor as a `HumanMessage`. They can include images and other multimodal media. Each notification carries metadata with the source `"async_subagent"` and a `TaskEvent` (`task_id`, `agent_name`, `status`, `run_id`) as its data. Read it with `getNotificationMetadata` to show notifications differently from user messages:
+The supervisor receives each notification as a `HumanMessage`. They can include images and other multimodal media. Each notification carries metadata with the source `"async_subagent"` and a `TaskEvent` (`task_id`, `agent_name`, `status`, `run_id`) as its data. Read it with `getNotificationMetadata` to show notifications differently from user messages:
 
 <AsyncSubagentsNotificationsJs />
 :::
