@@ -167,7 +167,7 @@ If the current run pauses for input or approval before the follow-up starts, the
 
 If a subagent paused for input or approval, **check** and **list** report it as `waiting`. Updating a `waiting` task drops its pending request, and cancelling one only marks it as `"cancelled"`, since it has no active run. See [Handle subagents waiting for input](#handle-subagents-waiting-for-input).
 
-On [Agent Server](/langsmith/agent-server), subagents notify the supervisor when they finish, fail, or need input. If the supervisor is busy, it receives the notification before its next model call. If it is idle and on the [same deployment](#single-deployment) as the subagent, a subagent that finishes or fails wakes it with a new run. A subagent waiting for input does not wake it; the supervisor receives that notification on its next run.
+On [Agent Server](/langsmith/agent-server), subagents notify the supervisor when they finish, fail, or need input. If the supervisor is busy, it receives the notification before its next model call. If the supervisor is idle and on the [same deployment](#single-deployment) as the subagent, a subagent that finishes or fails wakes it with a new run. A subagent waiting for input does not wake the supervisor. The supervisor receives that notification on its next run.
 
 <Note>
 :::python
@@ -179,13 +179,13 @@ Task notifications require `deepagents>=1.16.0`, and notification metadata requi
 </Note>
 
 :::python
-The supervisor receives each notification as a `HumanMessage`. They can include images and other multimodal media. Each notification carries metadata with the source `"async_subagent"` and a @[`TaskEvent`] (`task_id`, `agent_name`, `status`, `run_id`) as its data. Read it with `get_notification_metadata` to show notifications differently from user messages:
+The supervisor receives each notification as a `HumanMessage`. Notifications can include images and other multimodal media. Each notification carries metadata with the source `"async_subagent"` and a @[`TaskEvent`] (`task_id`, `agent_name`, `status`, `run_id`) as its data. Read it with `get_notification_metadata` to show notifications differently from user messages:
 
 <AsyncSubagentsNotificationsPy />
 :::
 
 :::js
-The supervisor receives each notification as a `HumanMessage`. They can include images and other multimodal media. Each notification carries metadata with the source `"async_subagent"` and a `TaskEvent` (`task_id`, `agent_name`, `status`, `run_id`) as its data. Read it with `getNotificationMetadata` to show notifications differently from user messages:
+The supervisor receives each notification as a `HumanMessage`. Notifications can include images and other multimodal media. Each notification carries metadata with the source `"async_subagent"` and a `TaskEvent` (`task_id`, `agent_name`, `status`, `run_id`) as its data. Read it with `getNotificationMetadata` to show notifications differently from user messages:
 
 <AsyncSubagentsNotificationsJs />
 :::
@@ -450,7 +450,7 @@ Subagents on the same deployment also receive the supervisor's trace headers. To
 
 **Problem**: The supervisor calls `check_async_task` in a loop right after launching, turning async execution into blocking.
 
-**Solution**: The supervisor does not need to check: on Agent Server, the subagent notifies it when the task finishes, fails, or needs input. The middleware's system prompt already tells the model not to poll. If polling persists, reinforce this in your supervisor's system prompt:
+**Solution**: The supervisor does not need to check. On Agent Server, the subagent notifies the supervisor when the task finishes, fails, or needs input. The `start_async_task` tool description already tells the model not to check status right after launching. If polling persists, reinforce this in your supervisor's system prompt:
 
 :::python
 <AsyncSubagentsTroubleshootingPollingPy />
@@ -464,13 +464,13 @@ Subagents on the same deployment also receive the supervisor's trace headers. To
 
 **Problem**: The supervisor reports a task status from earlier in the conversation instead of checking the task again.
 
-**Solution**: The middleware prompt tells the model that statuses in conversation history are stale. If this still occurs, add instructions to call `check_async_task` or `list_async_tasks` before reporting a task's status. With notifications on, the supervisor learns about each status change without checking.
+**Solution**: The `check_async_task` and `list_async_tasks` tool descriptions tell the model that statuses in conversation history are stale. If this still occurs, add instructions to call `check_async_task` or `list_async_tasks` before reporting a task's status. With notifications on, the supervisor learns about each status change without checking.
 
 ### Task ID lookup failures
 
 **Problem**: The supervisor truncates or reformats the task ID, causing `check_async_task` or `cancel_async_task` to fail.
 
-**Solution**: The middleware prompt instructs the model to always use the full task ID. If truncation persists, this is typically a model-specific issue -- try a different model or add "always show the full task_id, never truncate or abbreviate it" to your system prompt.
+**Solution**: The task ID argument of each tool tells the model to pass the full task ID. If truncation persists, this is typically a model-specific issue -- try a different model or add "always show the full task_id, never truncate or abbreviate it" to your system prompt.
 
 ### Subagent launches queue instead of running
 
