@@ -1,7 +1,7 @@
 ---
 title: Functional API overview
 sidebarTitle: Functional API
-description: Learn Functional API entrypoints and tasks, how checkpointing and replay work, and how to avoid common resume pitfalls.
+description: Wrap other frameworks with entrypoints and tasks for LangSmith Deployment. Covers checkpointing, resume rules, and common pitfalls.
 ---
 
 import LanggraphFunctionalApiOverviewHelloPy from '/snippets/javascript/code-samples/langgraph-functional-api-overview-hello-py.mdx';
@@ -16,9 +16,9 @@ import LanggraphFunctionalApiOverviewTaskExecJs from '/snippets/javascript/code-
 import LanggraphFunctionalApiOverviewEssayPy from '/snippets/javascript/code-samples/langgraph-functional-api-overview-essay-py.mdx';
 import LanggraphFunctionalApiOverviewEssayJs from '/snippets/javascript/code-samples/langgraph-functional-api-overview-essay-js.mdx';
 
-The **Functional API** adds LangGraph features ([persistence](/oss/javascript/langgraph/persistence), [memory](/oss/javascript/langgraph/add-memory), [human-in-the-loop](/oss/javascript/langgraph/interrupts), and [streaming](/oss/javascript/langgraph/streaming)) to ordinary functions. Use standard language control flow (`if` / `else`, loops, and function calls) instead of declaring a graph of nodes and edges.
+The **Functional API** wraps ordinary functions with LangGraph runtime features ([persistence](/oss/javascript/langgraph/persistence), [memory](/oss/javascript/langgraph/add-memory), [human-in-the-loop](/oss/javascript/langgraph/interrupts), and [streaming](/oss/javascript/langgraph/streaming)). Use it when you already have existing code or are using a different framework and want to [deploy it on LangSmith](/langsmith/deploy-other-frameworks) without rewriting that agent as a graph. Prefer the [Graph API](/oss/javascript/langgraph/graph-api) for building new agents.
 
-This page is the concept reference for entrypoints, tasks, checkpointing, and resume rules. For a design walkthrough, see [Thinking in the Functional API](/oss/javascript/langgraph/thinking-in-functional-api). For an ordered build path, see the [Build checklist for the Functional API](/oss/javascript/langgraph/use-functional-api).
+This page is the concept reference for entrypoints, tasks, checkpointing, and resume rules. For the wrap-and-deploy how-to, see [Deploy other frameworks](/langsmith/deploy-other-frameworks).
 
 The Functional API uses two building blocks:
 
@@ -28,16 +28,14 @@ The Functional API uses two building blocks:
 * **`task`**: Marks a discrete unit of work (for example, an API call). Tasks return a `Promise` that you await inside the entrypoint.
 
 
-## Functional API vs. Graph API
+## When to use the Functional API
 
-This comparison is optional if you already chose the Functional API. For a side-by-side decision guide, see [Choosing between Graph and Functional APIs](/oss/javascript/langgraph/choosing-apis). Both APIs share the same underlying runtime, so you can use them together in the same application.
+| Build | Use |
+| --- | --- |
+| New LangGraph agents and workflows | [Graph API](/oss/javascript/langgraph/graph-api) |
+| Existing agent in another framework (Claude Agent SDK, Strands, CrewAI, AutoGen, and similar) that you want on LangSmith Deployment | Functional API via [Deploy other frameworks](/langsmith/deploy-other-frameworks) |
 
-High-level differences:
-
-* **Control flow**: The Functional API uses standard language constructs. The [Graph API](/oss/javascript/langgraph/graph-api) uses nodes and edges.
-* **State**: The Graph API requires declaring [state](/oss/javascript/langgraph/graph-api#state) and often [reducers](/oss/javascript/langgraph/graph-api#reducers). The Functional API keeps state scoped to the function: tasks pass values as return values, with no shared state schema.
-* **Checkpointing**: The Graph API checkpoints after each [super-step](/oss/javascript/langgraph/graph-api#super-steps). The Functional API saves task results to the entrypoint checkpoint.
-* **Visualization**: The Graph API supports graph diagrams. The Functional API does not, because the graph is built at runtime.
+Compared with the Graph API, the Functional API uses ordinary language control flow (`if` / `else`, loops, and calls), keeps values scoped to the entrypoint and tasks instead of a shared [state](/oss/javascript/langgraph/graph-api#state) schema, saves task results on the entrypoint checkpoint rather than after each [super-step](/oss/javascript/langgraph/graph-api#super-steps), and has no static graph visualization.
 
 ## Entrypoint
 
@@ -70,14 +68,14 @@ Entrypoint **inputs** and **outputs** must be JSON-serializable when a checkpoin
 
 
 
-Call `invoke` for a final result. For streams, see [Stream with the Functional API](/oss/javascript/langgraph/functional-api-streaming).
+Call `invoke` for a final result. For streams, see [Streaming](/oss/javascript/langgraph/streaming).
 
 
-Resume after [`interrupt`](https://reference.langchain.com/javascript/langchain-langgraph/index/interrupt) by passing a resume value in [`Command`](https://reference.langchain.com/javascript/langchain-langgraph/index/Command). For recipes, see [Add human-in-the-loop with the Functional API](/oss/javascript/langgraph/functional-api-human-in-the-loop).
+Resume after [`interrupt`](https://reference.langchain.com/javascript/langchain-langgraph/index/interrupt) by passing a resume value in [`Command`](https://reference.langchain.com/javascript/langchain-langgraph/index/Command). For recipes, see [Interrupts](/oss/javascript/langgraph/interrupts).
 
 
 
-After an error, resume the same `thread_id` with `null`. See [Resume after an error](/oss/javascript/langgraph/functional-api-tasks#resume-after-an-error).
+After an error, resume the same `thread_id` with `null`.
 
 
 ### Short-term memory
@@ -86,14 +84,12 @@ When an `entrypoint` has a `checkpointer`, successive invocations on the same **
 
 
 
-Call `getPreviousState` inside the entrypoint. It returns the last value saved on this thread. On the first run it is `undefined`. To save a different value for the next run, use [`entrypoint.final`](https://reference.langchain.com/javascript/langchain-langgraph/index/entrypoint/final). See [Return a different saved value](/oss/javascript/langgraph/functional-api-memory#return-a-different-saved-value).
-
-For accumulate and inspecting checkpoints, see [Save state on a thread](/oss/javascript/langgraph/functional-api-memory#save-state-on-a-thread).
+Call `getPreviousState` inside the entrypoint. It returns the last value saved on this thread. On the first run it is `undefined`. To save a different value for the next run, use [`entrypoint.final`](https://reference.langchain.com/javascript/langchain-langgraph/index/entrypoint/final).
 
 
 ### Injectable parameters
 
-You can skip this until you add [memory](/oss/javascript/langgraph/functional-api-memory) or [custom streaming](/oss/javascript/langgraph/functional-api-streaming).
+You can skip this until you add [memory](/oss/javascript/langgraph/add-memory) or [custom streaming](/oss/javascript/langgraph/streaming).
 
 
 
@@ -101,10 +97,10 @@ The `entrypoint` function can take a second `config` argument. LangGraph also pr
 
 | Helper | Description |
 | --------- | ----------- |
-| **getPreviousState** | The return value from the previous invocation on the same thread (requires a checkpointer). See [short-term memory](/oss/javascript/langgraph/functional-api-memory#save-state-on-a-thread). |
+| **getPreviousState** | The return value from the previous invocation on the same thread (requires a checkpointer). See [short-term memory](#short-term-memory). |
 | **config** | A `LangGraphRunnableConfig` object with run-time configuration values. |
-| **config.store** | A store instance for [long-term memory](/oss/javascript/langgraph/functional-api-memory#save-facts-across-threads). |
-| **config.writer** | A writer for custom streaming. See [Stream with the Functional API](/oss/javascript/langgraph/functional-api-streaming). |
+| **config.store** | A store instance for [long-term memory](/oss/javascript/langgraph/add-memory). |
+| **config.writer** | A writer for custom streaming. See [Streaming](/oss/javascript/langgraph/streaming). |
 
 <Accordion title="Requesting injectable parameters">
 <LanggraphFunctionalApiOverviewInjectJs />
@@ -157,7 +153,7 @@ Use **tasks** when you need:
 * **Human-in-the-loop**: Wrap work you should not redo after a pause in a task, for example an LLM call. Resume after an [interrupt](/oss/javascript/langgraph/interrupts) restores the result. For randomness, see [Determinism](#determinism).
 * **Parallel execution**: Run independent I/O-bound work concurrently.
 * **Observability**: Track discrete steps in [LangSmith](/langsmith/observability).
-* **Retries**: Apply retry policies to discrete units of work. See [Configure Functional API tasks](/oss/javascript/langgraph/functional-api-tasks).
+* **Retries**: Apply retry policies to discrete units of work. See [Fault tolerance](/oss/javascript/langgraph/fault-tolerance).
 
 ## Resume and checkpointing
 
@@ -215,7 +211,7 @@ Invoke with a topic such as `"cat"`. The run writes the essay, then pauses at `i
 The `writeEssay` task result is restored, not recomputed.
 
 
-For stream, resume, and tool-call review, see [Add human-in-the-loop with the Functional API](/oss/javascript/langgraph/functional-api-human-in-the-loop).
+For stream, resume, and tool-call review, see [Interrupts](/oss/javascript/langgraph/interrupts).
 
 ## Common pitfalls
 
@@ -356,15 +352,12 @@ With multiple [`interrupt`](https://reference.langchain.com/javascript/langchain
 
 ## Learn more
 
-- [Thinking in the Functional API](/oss/javascript/langgraph/thinking-in-functional-api)
-- [Build checklist for the Functional API](/oss/javascript/langgraph/use-functional-api)
-- [Compose Functional API workflows](/oss/javascript/langgraph/functional-api-workflows)
-- [Configure Functional API tasks](/oss/javascript/langgraph/functional-api-tasks)
-- [Stream with the Functional API](/oss/javascript/langgraph/functional-api-streaming)
-- [Add human-in-the-loop with the Functional API](/oss/javascript/langgraph/functional-api-human-in-the-loop)
-- [Add memory with the Functional API](/oss/javascript/langgraph/functional-api-memory)
+- [Deploy other frameworks](/langsmith/deploy-other-frameworks)
 - [Graph API overview](/oss/javascript/langgraph/graph-api)
-- [Choosing between Graph and Functional APIs](/oss/javascript/langgraph/choosing-apis)
+- [Interrupts](/oss/javascript/langgraph/interrupts)
+- [Streaming](/oss/javascript/langgraph/streaming)
+- [Fault tolerance](/oss/javascript/langgraph/fault-tolerance)
+- [Memory](/oss/javascript/langgraph/add-memory)
 
 ---
 
