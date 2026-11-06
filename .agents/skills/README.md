@@ -43,7 +43,7 @@ the tree changes. Re-run the command after pulling, or symlink instead.
 | `add-docs-page` | Adding, moving, renaming, or deleting a page: source directory, frontmatter, `src/docs.json` navigation, redirects, verification. |
 | `docs-edit` | Editing a page that already has an open PR: checking out that PR's own branch instead of cutting a new one, forked PRs, reading the real diff. |
 | `docs-restructure` | Restructuring across pages: building a duplication map of the page family, choosing one owner per topic, cutting duplicated sections in favor of a pointer, and the anchors and redirects that breaks. |
-| `docs-team-voice` | Drafting or revising prose in the house voice: sentence length, cross-link density, stating defaults, and the revision pass. |
+| `docs-team-voice` | Drafting or revising prose in the house voice: sentence length, cross-link density, stating defaults, and the revision pass. In CI mode it reviews a PR's changed sentences and writes suggestions. |
 | `docs-review` | Reviewing changed prose against Vale and the style guide, reporting the rule each finding breaks. Runs on a PR, a branch, or the working tree, and unattended in CI through `ci-mode.md`. |
 | `docs-tooling-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, what stays in the repo, how to edit safely. |
 | `docs-code-samples` | Moving inline MDX code blocks into external, testable sample files: snippet markers, harness blocks, file placement, and the shared-module-scope trap in TypeScript. |

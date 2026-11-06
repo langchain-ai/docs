@@ -34,7 +34,7 @@ For local SSD, compare the pod's `ephemeral-storage` request with node allocatab
 kubectl get node NODE_NAME -o jsonpath='{.status.allocatable.ephemeral-storage}{"\n"}'
 ```
 
-Either provision larger nodes or select a smaller tier. A node also needs headroom above the pod request for images, logs, and Kubernetes reservations. If you moved to network-attached caches on 0.17 and pods still request node storage, an `ephemeral-storage` override from an older values file is still in place; remove it. The migration Job requests node storage regardless of cache type.
+Either provision larger nodes or select a smaller tier. A node also needs headroom above the pod request for images, logs, and Kubernetes reservations. If you moved to network-attached caches on 0.17 and pods still request node storage, an `ephemeral-storage` override from an older values file is still in place; remove it.
 
 **Object-store access is denied.** The workload identity binding does not match the ServiceAccount SmithDB actually runs as. The trust policy must name the release namespace and the ServiceAccount name, which defaults to `HELM_RELEASE-smithdb`. Confirm what the pod is using:
 

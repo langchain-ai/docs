@@ -48,7 +48,7 @@ once to link the tree, and again in each new git worktree.
 | `add-docs-page` | Adding, moving, renaming, or deleting a page: directory choice, frontmatter, `src/docs.json` navigation, redirects, verification. |
 | `docs-edit` | Editing a page that already has an open PR: checking out that PR's own branch, forked PRs, reading the real diff, checking the edit against related pages. |
 | `docs-restructure` | Splitting a page that grew too long, moving sections between pages, retiring a page, or a topic documented in two places: the duplication map, choosing one owner, cutting rather than relocating. |
-| `docs-team-voice` | Drafting or revising prose in the house voice: sentence length, cross-link density, stating defaults, the revision pass. |
+| `docs-team-voice` | Drafting or revising prose in the house voice: sentence length, cross-link density, stating defaults, the revision pass. In CI mode it reviews a PR's changed sentences and writes suggestions. |
 | `docs-review` | Reviewing changed prose against Vale and the style guide, reporting the rule each finding breaks. `add-docs-page` invokes it before committing. Its `ci-mode.md` sets the unattended PR-review rules and findings format. |
 | `docs-tooling-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, and how to edit safely. Required whenever a PR adds or changes a script, workflow, or check. |
 | `docs-code-samples` | Moving inline MDX code blocks into external, testable sample files. |
@@ -75,7 +75,7 @@ docs/
 │   ├── index.mdx               # Home page
 │   ├── style.css               # Custom CSS
 │   ├── langsmith/              # LangSmith product docs
-│   │   └── fleet/              #   Fleet (nav label: "No-code agents")
+│   │   └── fleet/              #   Fleet (nav: "No-code agents" > Fleet tab)
 │   ├── oss/                    # Open source docs
 │   │   ├── langchain/          #   LangChain framework
 │   │   ├── langgraph/          #   LangGraph framework
@@ -183,7 +183,7 @@ The Reference tab's LangSmith REST API group is OpenAPI-generated. See [Referenc
 
 ### PRODUCTS AND SETUP
 
-Five menu items. Only LangSmith setup has tabs; the rest are flat group lists.
+Five menu items. LangSmith setup and No-code agents have tabs. The rest are flat group lists.
 
 #### LangSmith setup
 
@@ -203,11 +203,11 @@ Six tabs, all files flat in `src/langsmith/`:
 | Menu item | Source | Groups |
 |-----------|--------|--------|
 | LLM Gateway | `src/langsmith/llm-gateway*.mdx` | Core capabilities, Administration and governance, Advanced |
-| No-code agents | `src/langsmith/fleet/` | Get started, Configure, Tools and automation, Advanced, Additional resources |
+| No-code agents | `src/langsmith/build-an-agent.mdx` (Studio tab), `src/langsmith/fleet/` (Fleet tab) | Studio: single page. Fleet: Get started, Configure, Tools and automation, Advanced, Additional resources |
 | Engine | `src/langsmith/engine*.mdx` | No groups |
 | Deep Agents Code | `src/oss/deepagents/code/` | Configuration |
 
-"No-code agents" is the nav label for Fleet. The source directory and URLs still use `fleet`.
+"No-code agents" holds two tabs: Studio, for building agents in Studio, and Fleet. The Fleet source directory and URLs still use `fleet`. The Studio build page also appears in the Agent-based workspaces group through the `build-an-agent-link.mdx` stub, which points at `/langsmith/build-an-agent` with `url:` frontmatter.
 
 "Deep Agents Code" ships one set of pages at `/oss/deepagents/code/...` with no language split, even though it sits under `src/oss/deepagents/`. Conditional fences resolve against the Python branch.
 
@@ -227,8 +227,9 @@ Because nav names and directories diverge, use this to go from a file to its pla
 | `src/oss/reference/` | Build → Reference |
 | `src/oss/contributing/` | Build → Contribute |
 | `src/langsmith/managed-deep-agents*.mdx` | Build → Managed Deep Agents |
-| `src/langsmith/fleet/` | Products and setup → No-code agents |
-| `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx`, `create-an-agent.mdx`, `build-an-agent.mdx`, `deploy-to-agent-environment.mdx` | Products and setup → LangSmith setup → Overview → Agent-based workspaces |
+| `src/langsmith/fleet/` | Products and setup → No-code agents → Fleet |
+| `src/langsmith/build-an-agent.mdx` | Products and setup → No-code agents → Studio |
+| `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx`, `create-an-agent.mdx`, `build-an-agent-link.mdx` (stub for `build-an-agent.mdx`), `deploy-to-agent-environment.mdx` | Products and setup → LangSmith setup → Overview → Agent-based workspaces |
 | `src/langsmith/*.mdx` (everything else) | Test, Deploy, Monitor, or LangSmith setup, depending on subject |
 
 ### Reference docs
