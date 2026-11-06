@@ -14,7 +14,7 @@ import SmithdbRunsListFromQueueAfterSh from '/snippets/code-samples/smithdb-migr
 List and count the runs in an annotation queue. The legacy `GET /api/v1/annotation-queues/{queue_id}/runs`, `GET /api/v1/annotation-queues/{queue_id}/run/{index}`, and `GET /api/v1/annotation-queues/{queue_id}/size` endpoints are deprecated, as are `total_size` and `total_archived`. Use the annotation queue items API instead: list or count the items in one review status, then fetch each run with the lookup keys on its item.
 
 <Note>
-In Python and TypeScript, the items API is on the new client resources (`client.annotation_queues.items` / `client.annotationQueues.items`), so the [Exceptions](/langsmith/smithdb-sdk-migration#exceptions) table applies. On self-hosted, listing items needs LangSmith v0.16.17 or later and `retrieve_placement` needs v0.16.20 or later. The count endpoint needs v0.17.1 or later; no 0.16 release includes it.
+In Python and TypeScript, the items API is on the new client resources (`client.annotation_queues.items` / `client.annotationQueues.items`), so the [Exceptions](/langsmith/smithdb-sdk-migration#exceptions) table applies. On self-hosted, listing items needs LangSmith v0.16.17 or later. `retrieve_placement` needs v0.16.20 or later. The count endpoint needs v0.17.1 or later. No 0.16 release includes it.
 </Note>
 
 ### Main changes
@@ -59,7 +59,7 @@ In Python and TypeScript, the items API is on the new client resources (`client.
   </Tab>
 </Tabs>
 
-There is no lookup by index. To read the run at a position, page through the list with `page_size` and the cursor from the previous page. To go the other way, from an item to its position, use `retrieve_placement` (`retrievePlacement` in TypeScript and Java, `GetPlacement` in Go, `GET /api/v1/platform/annotation-queues/{queue_id}/items/{item_id}/placement` in cURL). It returns the item's review status, zero-based position, and a cursor for listing from that point. The cursor counts runs and threads together, so pass it only to a list request without `item_type`.
+There is no lookup by index. To read the run at a position, page through the list with `page_size` and the cursor from the previous page. To find an item's position, use `retrieve_placement`. The method is `retrievePlacement` in TypeScript and Java, `GetPlacement` in Go, and `GET /api/v1/platform/annotation-queues/{queue_id}/items/{item_id}/placement` in cURL. It returns the item's review status, zero-based position, and a cursor for listing from that point. The cursor counts runs and threads together and ignores start-time bounds, so pass it only to a list request without `item_type`, `min_start_time`, or `max_start_time`.
 
 #### Review status
 
@@ -71,9 +71,9 @@ The items API requires a `status`. The legacy endpoints defaulted to `needs_my_r
 | `needs_others_review` | `needs_others_review` | Items you reviewed that still need other reviewers |
 | `completed` | `archived` | Items that met the queue's review requirements |
 
-The legacy `archived=true` flag on the list endpoint also maps to `archived`. `completed` is not accepted by the items API.
+The legacy `archived=true` flag on the list endpoint also maps to `archived`. The items API does not accept `completed`.
 
-`needs_my_review` and `needs_others_review` depend on who calls: an API key sees its own split, not a human reviewer's. Together they cover every item still in the queue.
+`needs_my_review` and `needs_others_review` are relative to the caller. A personal access token returns its owner's split. A service key returns the split for its service account, not for any human reviewer. Together they cover every item still in the queue.
 
 For counts, the legacy totals map to:
 
@@ -81,7 +81,7 @@ For counts, the legacy totals map to:
 |---|---|
 | `size` | `needs_my_review` or `needs_others_review` |
 | `total_size` | `all` |
-| `total_archived` | `archived` (`start_time` and `end_time` still bound when the item was archived) |
+| `total_archived` | `archived` (`start_time` and `end_time` still filter on when the item was archived) |
 
 #### Item type
 
@@ -89,7 +89,7 @@ The items API returns runs and threads. Pass `item_type` as `RUN` to list only r
 
 #### Response
 
-Each item holds the run's lookup keys (`run_id`, `project_id`, `start_time`) and queue metadata (`id`, `added_at`, `last_reviewed_time`, `reserved_by`, `completed_by`), not the run itself. To read a run's name, inputs, or outputs, pass those keys to the [run retrieve method](/langsmith/smithdb-sdk-migration-runs#runs-retrieve). The list is paginated with an opaque `next_cursor`; the SDKs iterate across pages for you.
+Each item holds the run's lookup keys (`run_id`, `project_id`, `start_time`) and queue metadata (`id`, `added_at`, `last_reviewed_time`, `reserved_by`, `completed_by`), not the run itself. To read a run's name, inputs, or outputs, pass those keys to the [run retrieve method](/langsmith/smithdb-sdk-migration-runs#runs-retrieve). The list returns an opaque `next_cursor` for pagination. The SDKs iterate across pages for you.
 
 The count endpoint returns `{"count": <n>}` instead of `{"size": <n>}`.
 
