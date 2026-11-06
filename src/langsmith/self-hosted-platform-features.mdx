@@ -40,6 +40,7 @@ The following `resource_spec` fields depend on the listener version:
 | Fractional `cpu` and `queue_cpu` values (for example, `0.5`) | Later than 0.12.x. Listener 0.12.x rejects fractional values. |
 | `redis_cpu` and `redis_cpu_limit` | 0.13.22 or later. Earlier listeners ignore these fields. |
 | `redis_memory_mb` below `2048` | 0.13.27 or later. Earlier listeners require at least `2048`. |
+| `volumes` and `volume_mounts` | 0.11.30 or later. |
 
 Upgrading the listener does not restart existing deployments. After you upgrade, `PATCH` each deployment with its full `resource_spec` to apply the new values. For the accepted ranges and `PATCH` behavior, see [Resource spec](/langsmith/api-ref-control-plane#resource-spec).
 
@@ -50,6 +51,56 @@ You set resources for each self-hosted deployment, including its Redis and Postg
 The `db_*` fields size the PostgreSQL instance that the control plane creates, and the `redis_*` fields size the Redis instance. If a deployment uses [custom PostgreSQL](#custom-postgresql) or [custom Redis](#custom-redis), the matching fields have no effect.
 
 There are no organization or workspace defaults for deployment resources. Fields you do not set fall back to the defaults for the deployment type, so send a full `resource_spec` when you create each deployment. See [Configure Agent Server for scale](/langsmith/agent-server-scale) for tuning guidance.
+
+## Volumes
+
+You can mount Kubernetes volumes into a deployment's pods. For example, mount a PersistentVolumeClaim backed by Amazon EFS, NFS, or another CSI driver. A mounted volume lets your agent read and write files that persist across restarts, or that several replicas share. The operator adds the volumes to the main container of both the API server and the queue worker pods.
+
+These volumes are storage for your agent's runtime. They are separate from the storage that the LangSmith platform itself uses, such as PostgreSQL, Redis, and blob storage. LangSmith does not provision the storage or create the PersistentVolumeClaim. You create both in your cluster, and the deployment only mounts them.
+
+Set volumes in one of two places:
+
+- **One deployment**: Set `volumes` and `volume_mounts` in the deployment's `resource_spec` through the [control plane API](/langsmith/api-ref-control-plane). These fields require listener 0.11.30 or later. See [Listener version requirements](#listener-version-requirements). You cannot add PersistentVolumeClaims or other general-purpose volumes in the LangSmith UI. Saving deployment settings in the UI keeps the volumes and mounts that you set through the API.
+- **Every deployment**: Add `volumes` and `volumeMounts` to the operator's base deployment template in your Helm values (`operator.templates.deployment`). For an example of editing that template, see [Configure authentication for private registries](/langsmith/enable-self-hosted-deployment#configure-authentication-for-private-registries).
+
+If the base template and the deployment's `resource_spec` both set a volume or volume mount with the same `name`, the deployment's `resource_spec` takes precedence.
+
+To mount a volume on one deployment:
+
+1. Create the PersistentVolumeClaim in the Kubernetes namespace where the deployment runs. For Amazon EFS, install the [Amazon EFS CSI driver](https://docs.aws.amazon.com/eks/latest/userguide/efs-csi.html), and use an EFS StorageClass with the `ReadWriteMany` access mode. `ReadWriteMany` lets every replica mount the volume.
+1. Call `PATCH /v2/deployments/{deployment_id}` with the volume and its mount in `source_config.resource_spec`. Each `volumes` entry takes a `name` and exactly one volume source: `persistentVolumeClaim`, `csi`, `nfs`, `configMap`, `secret`, `emptyDir`, `projected`, or `downwardAPI`. The control plane passes the source object to Kubernetes unchanged. Write its keys in Kubernetes camelCase, for example `claimName`:
+
+    ```json
+    {
+      "source_config": {
+        "resource_spec": {
+          "min_scale": 1,
+          "max_scale": 3,
+          "cpu": 1,
+          "memory_mb": 2048,
+          "volumes": [
+            {
+              "name": "shared-files",
+              "persistentVolumeClaim": { "claimName": "efs-claim" }
+            }
+          ],
+          "volume_mounts": [
+            { "name": "shared-files", "mountPath": "/mnt/shared" }
+          ]
+        }
+      }
+    }
+    ```
+
+    Volume names must be unique, valid DNS labels: lowercase letters, digits, and hyphens, up to 63 characters. Each `mountPath` must be an absolute path. No two entries in `volume_mounts` can use the same `mountPath`.
+
+    A `PATCH` that includes `resource_spec` replaces the whole object. Include your existing `min_scale`, `max_scale`, `cpu`, `memory_mb`, and other `resource_spec` values. For more information, see [Resource spec](/langsmith/api-ref-control-plane#resource-spec).
+1. Poll the new revision until its `status` is `DEPLOYED`.
+1. Confirm that the app container can read and write at `mountPath` in both the API server and queue worker pods. A `Bound` PersistentVolumeClaim does not guarantee that the container's user has write permission on the volume. To check write access, run the following command against each pod:
+
+    ```bash
+    kubectl exec <pod-name> -n <namespace> -- sh -c 'touch /mnt/shared/.write-test && rm /mnt/shared/.write-test'
+    ```
 
 ## PodDisruptionBudgets
 
