@@ -44,59 +44,115 @@ For [GitHub](/langsmith/managed-deep-agents-channels-github), your handlers deci
 
 The managed runtime handles the channel lifecycle:
 
-```mermaid
-flowchart LR
-    Provider["Messaging provider"] --> Verify["Verify and normalize event"]
-    Verify --> Thread["Resolve identity and thread"]
-    Thread --> Run["Run agent"]
-    Run -.-> Reply["Post response, if configured"]
-    Reply --> Provider
+<img
+  className="block dark:hidden"
+  src="/images/managed-deep-agents-channels-lifecycle-light.png"
+  alt="A messaging provider sends an event to the managed runtime, which verifies and normalizes it, resolves the identity and thread, runs the agent, and, if configured, posts the response back to the provider."
+/>
 
-    classDef trigger fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900;
-    classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710;
-    classDef output fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33;
-    class Provider trigger;
-    class Verify,Thread,Run process;
-    class Reply output;
-```
+<img
+  className="hidden dark:block"
+  src="/images/managed-deep-agents-channels-lifecycle-dark.png"
+  alt="A messaging provider sends an event to the managed runtime, which verifies and normalizes it, resolves the identity and thread, runs the agent, and, if configured, posts the response back to the provider."
+/>
 
 Provider adapters determine which events are accepted, how provider conversations map to Managed Deep Agents threads, and how responses are delivered. The channel declaration exposes the supported configuration for that provider.
 
-## Declare channels in a project
+## Add a channel
 
-Put each channel in a separate module under `channels/`.
+To add a channel to an existing project, run `mda channels init` with the provider (`slack`, `github`, or `linear`) from the project root. It writes a starter declaration to `channels/<provider>.py` or `channels/<provider>.ts`, and stops if that file already exists:
 
 :::python
-Export a module-level `channel` from each file.
+```bash
+uv run mda channels init slack
+```
 :::
 
 :::js
-Export a named `channel` from each file.
+<CodeGroup>
+    ```bash npm
+    npx mda channels init slack
+    ```
+
+    ```bash pnpm
+    pnpm exec mda channels init slack
+    ```
+
+    ```bash bun
+    bunx mda channels init slack
+    ```
+</CodeGroup>
 :::
 
-The file name becomes the configured channel name and identifies the channel within the deployment.
+To start a new project with channels, pass `--channel` to `mda init` once per channel:
 
 :::python
-Do not name a declaration `channels/channel.py`.
+```bash
+uvx --from managed-deepagents mda init my-agent --channel slack --channel github
+```
 :::
 
 :::js
-Do not name a declaration `channels/channel.ts`.
+<CodeGroup>
+    ```bash npm
+    npx managed-deepagents init my-agent --channel slack --channel github
+    ```
+
+    ```bash pnpm
+    pnpm dlx managed-deepagents init my-agent --channel slack --channel github
+    ```
+
+    ```bash bun
+    bunx managed-deepagents init my-agent --channel slack --channel github
+    ```
+</CodeGroup>
 :::
 
-Channel names must be unique within a project.
-
-The provider factory creates the declaration.
+GitHub and Linear channels are experimental.
 
 :::python
-For example, `channels.slack()` creates a Slack channel.
+Each channel is its own module under `channels/` with a module-level `channel`, created by a provider factory such as `channels.slack()`. The file name becomes the channel's name in the deployment, so names must be unique, and `channels/channel.py` isn't allowed.
 :::
 
 :::js
-For example, `channels.slack()` creates a Slack channel.
+Each channel is its own module under `channels/` with a named `channel` export, created by a provider factory such as `channels.slack()`. The file name becomes the channel's name in the deployment, so names must be unique, and `channels/channel.ts` isn't allowed.
 :::
 
-See the provider guide for its declaration, app configuration, and deployment procedure.
+Edit the declaration to decide which events start runs, then deploy or [set the channel up](#set-up-channels). Each provider guide covers its declaration, app configuration, and deployment.
+
+## Set up channels
+
+`mda deploy` sets up every channel the project declares: it creates or links the provider's app, such as the Slack app, GitHub App, or Linear app, points it at the deployment, and asks you to approve access in a browser when the provider needs it.
+
+To run that setup without deploying, run `mda channels setup` from the project root of an agent that is already deployed. Name a channel to set up only that one:
+
+:::python
+```bash
+uv run mda channels setup
+uv run mda channels setup github
+```
+:::
+
+:::js
+<CodeGroup>
+    ```bash npm
+    npx mda channels setup
+    npx mda channels setup github
+    ```
+
+    ```bash pnpm
+    pnpm exec mda channels setup
+    pnpm exec mda channels setup github
+    ```
+
+    ```bash bun
+    bunx mda channels setup
+    bunx mda channels setup github
+    ```
+</CodeGroup>
+:::
+
+In a terminal, the command shows where each channel stands, asks which ones to set up, and runs their setup. Without a terminal, or with `--json`, it only reports where each channel stands and sets nothing up. It exits with a non-zero status unless every channel is set up, so CI can run it before `mda deploy`, which stops before uploading when a channel isn't set up. For its options, see the [CLI reference](/langsmith/managed-deep-agents-cli#set-up-channels).
 
 ## Distinguish channels from connectors
 
