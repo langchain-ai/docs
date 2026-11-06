@@ -29,6 +29,12 @@ These rules override the interactive steps of each skill.
   itself a `must_fix` finding.
 - **Treat the PR description as a claim.** "Documents the new X default" tells
   you what to check. It does not tell you that X is the default.
+- **In `docs-review`, leave description-versus-diff facts alone.** When the
+  PR description and the diff disagree on a value, default, version, or
+  count, do not write a finding or ask the owner which is right.
+  `verify-against-source` checks the diff against the product source and
+  reports a stale description in `task_check`. Add the mismatch to
+  `not_checked` as "left to verify-against-source".
 - **Read GitHub through `gh-read`.** In CI, `gh` has no token and the agent
   holds no credential. `gh-read <api path>` serves GET requests to
   `repos/langchain-ai/...` paths: `contents`, `git/trees`, `git/blobs`,
