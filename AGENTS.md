@@ -191,7 +191,7 @@ Six tabs, all files flat in `src/langsmith/`:
 
 | Tab | Groups |
 |-----|--------|
-| Overview | Hosting, Agent-based workspaces |
+| Overview | Hosting, Agent Registry |
 | Account | Billing & usage |
 | Cloud | Reference |
 | BYOC | No groups |
@@ -207,7 +207,7 @@ Six tabs, all files flat in `src/langsmith/`:
 | Engine | `src/langsmith/engine*.mdx` | No groups |
 | Deep Agents Code | `src/oss/deepagents/code/` | Configuration |
 
-"No-code agents" holds two tabs: Studio, for building agents in Studio, and Fleet. The Fleet source directory and URLs still use `fleet`. The Studio build page also appears in the Agent-based workspaces group through the `build-an-agent-link.mdx` stub, which points at `/langsmith/build-an-agent` with `url:` frontmatter.
+"No-code agents" holds two tabs: Studio, for building agents in Studio, and Fleet. The Fleet source directory and URLs still use `fleet`. The Studio build page also appears in the Agent Registry group through the `build-an-agent-link.mdx` stub, which points at `/langsmith/build-an-agent` with `url:` frontmatter.
 
 "Deep Agents Code" ships one set of pages at `/oss/deepagents/code/...` with no language split, even though it sits under `src/oss/deepagents/`. Conditional fences resolve against the Python branch.
 
@@ -229,7 +229,7 @@ Because nav names and directories diverge, use this to go from a file to its pla
 | `src/langsmith/managed-deep-agents*.mdx` | Build → Managed Deep Agents |
 | `src/langsmith/fleet/` | Products and setup → No-code agents → Fleet |
 | `src/langsmith/build-an-agent.mdx` | Products and setup → No-code agents → Studio |
-| `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx`, `create-an-agent.mdx`, `build-an-agent-link.mdx` (stub for `build-an-agent.mdx`), `deploy-to-agent-environment.mdx` | Products and setup → LangSmith setup → Overview → Agent-based workspaces |
+| `src/langsmith/agent-registry.mdx`, `agent-environments.mdx`, `navigate-agents.mdx`, `create-an-agent.mdx`, `build-an-agent-link.mdx` (stub for `build-an-agent.mdx`), `deploy-to-agent-environment.mdx` | Products and setup → LangSmith setup → Overview → Agent Registry |
 | `src/langsmith/*.mdx` (everything else) | Test, Deploy, Monitor, or LangSmith setup, depending on subject |
 
 ### Reference docs
@@ -524,14 +524,6 @@ Reserve "the platform" for LangSmith. LangChain is the open agent engineering ec
 1. Create `src/oss/javascript/integrations/<component>/<provider>.mdx`
 2. Add the page to the component's index page (`src/oss/javascript/integrations/<component>/index.mdx`); only edit `src/docs.json` when creating a brand-new component group
 3. If the provider has an overview page at `src/oss/javascript/integrations/providers/<provider>.mdx`, add or update a section there linking to the new page (`/oss/integrations/<component>/<provider>`)
-
-**Availability callouts on agent-based workspace pages:** every page in the
-`Agent-based workspaces` group opens with the shared
-`/snippets/langsmith/agent-availability-note.mdx` callout, placed after the
-page's opening definition and before the first `##` heading. Do not hand-write
-a per-page variant. Agent-based workspaces are available on LangSmith Cloud
-and not on self-hosted, so do not label them beta or add a `Beta` tag to the
-group or its pages.
 
 **Add a reusable snippet:**
 
