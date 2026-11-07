@@ -1,0 +1,203 @@
+---
+title: SQL language reference
+description: Learn the SQL syntax, tables, scan bounds, and relationship macros available for querying LangSmith data in SmithDB.
+---
+
+SmithDB supports read-only, PostgreSQL-style SQL over LangSmith tracing data. Use SQL to filter runs, summarize traces and threads, and inspect feedback. Full PostgreSQL compatibility is not guaranteed.
+
+For workspace requirements, permissions, and HTTP requests, see [Query tracing data with SQL](/langsmith/query-traces-sql).
+
+## Use supported statements
+
+Send one statement per request. Supported statements include `SELECT`, `WITH` common table expressions (CTEs), `VALUES`, and schema discovery with `DESCRIBE`, `SHOW TABLES`, and `SHOW COLUMNS`.
+
+Writes, schema changes, `SET TIME ZONE`, `EXPLAIN`, and `EXPLAIN ANALYZE` are not supported.
+
+## Discover tables and columns
+
+Schema discovery returns the available relations and their columns. Send each statement as a separate request:
+
+```sql
+SHOW TABLES;
+```
+
+```sql
+DESCRIBE runs;
+```
+
+```sql
+SHOW COLUMNS FROM traces;
+```
+
+The tables use `workspace_id` and `project_id` to identify the [workspace](/langsmith/set-up-hierarchy#set-up-a-workspace) and [tracing project](/langsmith/observability-concepts#trace-containers). The request scope restricts these identifiers automatically.
+
+| Table | One row represents | ID column | Common fields |
+| --- | --- | --- | --- |
+| `runs` | A run (span) | `id` | `trace_id`, `parent_run_id`, `thread_id`, `is_root`, `name`, `run_type`, `status`, `start_time`, `end_time`, `tags`, `metadata`, `inputs`, `outputs`, `error` |
+| `traces` | A trace, with root attributes and aggregate usage | `trace_id` | `thread_id`, `name`, `run_type`, `status`, `start_time`, `end_time`, `tags`, `metadata`, `total_tokens`, `total_cost` |
+| `threads` | A thread, with aggregate usage | `thread_id` | `trace_count`, `first_start_time`, `last_start_time`, `total_tokens`, `total_cost` |
+| `feedbacks` | A feedback record | `id` | `run_id`, `thread_id`, `key`, `score`, `correction_score`, `coalesced_score`, `value`, `comment`, `modified_at` |
+
+Use schema discovery for the complete column list and SQL types. Do not assume the SQL schema matches the [run API format](/langsmith/run-data-format) field for field.
+
+## Bound scans
+
+Scan bounds limit how much history a query reads. Add a lower time bound before adding other filters or a `LIMIT`.
+
+| Relation | Required bound |
+| --- | --- |
+| `runs` | A `start_time` lower bound |
+| `traces` | A `start_time` lower bound, or a sole `trace_id` equality lookup |
+| `threads` | A `first_start_time` or `last_start_time` lower bound, a literal `thread_id` equality or `IN` lookup, or discovery through bounded runs correlated by workspace, project, and thread |
+
+A `LIMIT` does not replace a required scan bound. Each raw `runs` scan in a join, CTE, or subquery needs its own qualifying lower bound. A raw `runs` lookup by `id` still needs that bound; the sole-ID exception applies only inside relationship lambdas.
+
+An upper time bound is optional. Use `start_time >= TIMESTAMP '1970-01-01'` only when you need to scan all available run history.
+
+For recent runs, prefer `ORDER BY start_time DESC, id DESC`. Other sort orders can require more work.
+
+<Note>
+Time predicates on `traces` select traces by root start time. Usage totals include their child runs outside that window. Time predicates on `threads` select threads; usage totals cover their full available history.
+</Note>
+
+## Work with values
+
+SQL types and operators have the following compatibility rules:
+
+- **UUIDs**: Compare UUID columns directly with UUID string literals.
+- **Timestamps**: Run timestamps use UTC with microsecond precision.
+- **Latency**: The `latency` column uses microseconds.
+- **JSON**: Use `->` for JSON extraction and `->>` for text extraction. Missing paths and invalid JSON return SQL `NULL`. For a JSON `null` value, `->` preserves JSON `null`, while `->>` returns SQL `NULL`. Not all PostgreSQL `jsonb` operations are supported.
+- **Arrays**: SQL arrays use 1-based indexing. JSON array extraction uses zero-based indices, with negative indices counting from the end. Custom SQL array bounds are not supported.
+- **Conversions**: `TRY_CAST` returns `NULL` when a conversion fails.
+
+Run metadata supports JSON extraction:
+
+```sql
+SELECT id, name,
+       metadata -> 'model' AS model_json,
+       metadata -> 'model' ->> 'name' AS model_name
+FROM runs
+WHERE start_time >= TIMESTAMP '2026-10-01'
+  AND metadata ->> 'environment' = 'production'
+LIMIT 10;
+```
+
+## Search payloads
+
+Use `search(column, 'query')` in `WHERE` clauses to filter runs by full-text matches. It supports `runs.inputs`, `runs.outputs`, `runs.metadata`, and `runs.error`. The query must be a non-null string literal.
+
+Other predicates on `inputs`, `outputs`, and `error` are not supported. Use `search` to filter those payloads, then select the columns you need.
+
+```sql
+SELECT id, name, start_time, status
+FROM runs
+WHERE start_time >= TIMESTAMP '2026-10-01'
+  AND search(inputs, 'fix')
+ORDER BY start_time DESC, id DESC
+LIMIT 10;
+```
+
+## Filter related records
+
+Relationship macros filter a parent row by related records without an explicit join. Each predicate returns `TRUE` if at least one related record matches, otherwise `FALSE`, never `NULL`.
+
+| Predicate | Projection | Available on | Related records |
+| --- | --- | --- | --- |
+| `ANY_TRACE` | `MATCHING_TRACES` | `threads` | Member traces |
+| `ANY_RUN` | `MATCHING_RUNS` | `threads`, `traces` | Member runs, including roots |
+| `ANY_FEEDBACK` | `MATCHING_FEEDBACKS` | `threads`, `traces`, `runs` | Thread feedback, root-run feedback, or the run's own feedback, respectively |
+| `TRACE_ROOT_MATCH` | None | `runs` | The containing trace's root run, possibly the current run |
+| `TRACE_TREE_MATCH` | None | `runs` | Any run in the same trace, including the current run |
+
+Use `AND`, `OR`, and `NOT` to combine predicates. Separate calls can match different related records.
+
+`MATCHING_*` projections return lists of matching records, or an empty list when no records match. They do not require a corresponding `ANY_*` filter. List order is unspecified. Use `MATCHING_*` only in `SELECT` projections; `ANY_*` also supports `WHERE` filters.
+
+### Respect lambda restrictions
+
+A lambda names the related row, such as `f` in `f -> f.key = 'correctness'`.
+
+- **`ANY_RUN` and `MATCHING_RUNS`**: Require a `start_time` lower bound in the lambda, or a sole `id` equality lookup.
+- **`ANY_TRACE` and `MATCHING_TRACES`**: Require a `start_time` lower bound in the lambda, or a sole `trace_id` equality lookup.
+- **`ANY_*` and `MATCHING_*`**: Cannot nest relationship macros, reference parent columns, or contain subqueries.
+- **`TRACE_ROOT_MATCH` and `TRACE_TREE_MATCH`**: Support nesting up to four levels. Use these macros as filtering predicates.
+
+### Find runs with low feedback scores
+
+`ANY_FEEDBACK` selects runs that have matching feedback:
+
+```sql
+SELECT id, name
+FROM runs
+WHERE start_time >= TIMESTAMP '2026-10-01'
+  AND ANY_FEEDBACK(f -> f.key = 'correctness' AND f.score < 0.5)
+LIMIT 10;
+```
+
+To return feedback alongside each run, use `MATCHING_FEEDBACKS`:
+
+```sql
+SELECT id, name,
+       MATCHING_FEEDBACKS(f -> f.key = 'correctness') AS feedbacks
+FROM runs
+WHERE start_time >= TIMESTAMP '2026-10-01'
+LIMIT 10;
+```
+
+### Find traces containing failed tool runs
+
+`ANY_RUN` searches member runs. Bound both the trace scan and the related run scan:
+
+```sql
+SELECT trace_id, name
+FROM traces
+WHERE start_time >= TIMESTAMP '2026-10-01'
+  AND ANY_RUN(
+    r -> r.start_time >= TIMESTAMP '2026-10-01'
+      AND r.run_type = 'tool'
+      AND r.status = 'error')
+LIMIT 10;
+```
+
+### Find threads containing failed traces
+
+`ANY_TRACE` searches traces in each thread:
+
+```sql
+SELECT thread_id, trace_count
+FROM threads
+WHERE last_start_time >= TIMESTAMP '2026-10-01'
+  AND ANY_TRACE(t -> t.start_time >= TIMESTAMP '2026-10-01'
+                     AND t.status = 'error')
+LIMIT 10;
+```
+
+### Filter runs by their trace
+
+`TRACE_TREE_MATCH` checks all runs in the same trace, not only descendants of the current run:
+
+```sql
+SELECT id, name, trace_id
+FROM runs
+WHERE start_time >= TIMESTAMP '2026-10-01'
+  AND TRACE_TREE_MATCH(r -> r.run_type = 'tool' AND r.status = 'error')
+LIMIT 10;
+```
+
+`TRACE_ROOT_MATCH` checks the root run's own attributes and metrics, not aggregate trace totals:
+
+```sql
+SELECT id, name, trace_id
+FROM runs
+WHERE start_time >= TIMESTAMP '2026-10-01'
+  AND run_type = 'llm'
+  AND TRACE_ROOT_MATCH(root -> root.name = 'support-agent')
+LIMIT 10;
+```
+
+## See also
+
+- [Query tracing data with SQL](/langsmith/query-traces-sql)
+- [Observability concepts](/langsmith/observability-concepts)
+- [Trace query syntax](/langsmith/trace-query-syntax)
