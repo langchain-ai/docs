@@ -1,0 +1,118 @@
+---
+title: Track users
+sidebarTitle: Users
+description: Record the end user of each trace with the user_id metadata key, then view and filter traces by user in LangSmith.
+---
+
+import AgentTracingPrerequisite from '/snippets/langsmith/agent-tracing-prerequisite.mdx';
+import FilteringExperienceNote from '/snippets/langsmith/filtering-experience-note.mdx';
+
+A user in LangSmith is the person your application served in a trace. LangSmith reads the user from the `user_id` key in the [metadata](/langsmith/observability-concepts#metadata) of the trace's root run, the same way it groups traces into [threads](/langsmith/threads) with `thread_id`. Recording users lets you find every trace for a person who reports a problem.
+
+<Note>
+`user_id` identifies an end user of your application. It is different from `ls_user_id`, which identifies the LangSmith user the run is attributed to.
+</Note>
+
+## Record the user on a trace
+
+To record the user, add a `user_id` key to the metadata of the root run of each trace. Use a stable, opaque ID from your application, such as an internal account ID, rather than personal data such as an email address. Use the same value for the same user across traces so filtering by user returns all their traces.
+
+The [LangSmith SDK](/langsmith/reference) copies a run's metadata to the child runs it creates, so setting `user_id` on the root run also records it on every run in the trace. A `user_id` set on a child run overrides the copied value for that run. If you set `user_id` only on a child run, the trace top bar does not show a user, and the search bar does not suggest that user ID.
+
+<AgentTracingPrerequisite />
+
+<CodeGroup>
+
+```python Python
+from langsmith import traceable
+
+
+@traceable
+def retrieve_docs(question: str) -> list[str]:
+    return ["Traces record each step of a request."]
+
+
+@traceable
+def answer_question(question: str) -> str:
+    docs = retrieve_docs(question)
+    return " ".join(docs)
+
+
+# Pass the user at invocation time so each request records its own user.
+answer_question(
+    "What is a trace?",
+    langsmith_extra={"metadata": {"user_id": "user_123"}},
+)
+```
+
+```typescript TypeScript
+import { traceable } from "langsmith/traceable";
+
+const retrieveDocs = traceable(
+  async (question: string) => {
+    return ["Traces record each step of a request."];
+  },
+  { name: "retrieve_docs" }
+);
+
+async function handleRequest(question: string, userId: string) {
+  // Create the root run with this request's user in its metadata.
+  const answerQuestion = traceable(
+    async (question: string) => {
+      const docs = await retrieveDocs(question);
+      return docs.join(" ");
+    },
+    { name: "answer_question", metadata: { user_id: userId } }
+  );
+  return answerQuestion(question);
+}
+
+await handleRequest("What is a trace?", "user_123");
+```
+
+</CodeGroup>
+
+For other ways to set metadata, such as `tracing_context` or a wrapped client, see [Add metadata and tags to traces](/langsmith/add-metadata-tags). With LangChain or LangGraph, pass `user_id` in the `metadata` field of the run config when you invoke the agent. See [Trace LangChain agents](/langsmith/trace-with-langchain#add-metadata-and-tags-to-traces).
+
+## View the user on a trace
+
+LangSmith shows the user ID in three places:
+
+- **Trace top bar**: When you open a trace that is not part of a thread, the top bar shows a **User** chip with the user ID.
+- **Run header**: When a trace belongs to a thread, the header of the selected run shows the user ID recorded on that run. This applies in a thread's **Details** view and when you open the trace from the tracing table.
+- **Trajectory view**: Hover over a user message in a thread's **Trajectory** view to show the user ID below it. AI messages and tool responses do not show a user.
+
+Click a user ID to copy the full value. For more information on these views, see [View traces](/langsmith/view-traces).
+
+## Filter traces by user
+
+<FilteringExperienceNote />
+
+The `user_id` shorthand works in the search bar experience. In the **Add filter** experience, filter on the `user_id` metadata key.
+
+To find the runs, traces, or threads for one user, enter a `user_id` clause in the tracing search bar:
+
+```text
+user_id:user_123
+```
+
+The **Traces** table uses the **Root run** scope by default, which matches each trace by the user on its root run. See [Choose what a filter matches](/langsmith/filter-traces#choose-what-a-filter-matches).
+
+As you type, the search bar suggests the most common user IDs from the selected time range. You can also enter a user ID that is not in the list.
+
+`user_id` is shorthand for `metadata.user_id` and supports the same operators:
+
+- `-user_id:user_123` matches runs from every other user, including runs with no `user_id`.
+- `user_id:*` matches runs that have a `user_id` key.
+- `-user_id:*` matches runs with no `user_id` key, such as traces you have not instrumented yet.
+- `metadata.user_id:user_123` matches the same runs as `user_id:user_123`.
+
+For the full query syntax, see [Filter traces](/langsmith/filter-traces).
+
+## See also
+
+- [Configure threads](/langsmith/threads): group a user's traces into conversations with `thread_id`.
+- [View traces](/langsmith/view-traces): the Trajectory and Details views that show the user ID.
+- [Add metadata and tags to traces](/langsmith/add-metadata-tags): set `user_id` and other metadata keys.
+- [Filter traces](/langsmith/filter-traces): combine `user_id` with other fields in a query.
+- [Log user feedback using the SDK](/langsmith/attach-user-feedback): attach feedback from your users to their runs.
