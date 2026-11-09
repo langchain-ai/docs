@@ -1,25 +1,34 @@
 ---
 type: integration boundary
-title: Reference Documentation Boundaries
-description: Distinguishes externally generated SDK reference documentation from Mintlify OpenAPI endpoint documentation, and explains ownership, refresh, validation, and issue-routing responsibilities.
-tags: [api-reference, openapi, cross-references, mintlify, langsmith]
+title: Reference Documentation Integration
+description: Explains how this repository links to externally hosted SDK references, publishes Mintlify-generated OpenAPI endpoint surfaces, and uses package metadata to choose reference or package destinations. Covers ownership, refresh workflows, scoped link resolution, and validation boundaries.
+tags: [api-reference, openapi, cross-references, mintlify, langsmith, package-metadata]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-11-09T08:07:38.321Z
 sources:
   - id: openwiki-source-759309714d08144a07e1b2e0
     resource: repo://.github/ISSUE_TEMPLATE/04-reference-docs.yml
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
+  - id: openwiki-source-164e2da859b5277df81c7d94
+    resource: repo://.github/workflows/ci.yml
   - id: openwiki-source-5153f86e64d6ee0b305f72b3
     resource: repo://.github/workflows/refresh-langsmith-openapi.yml
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
+  - id: openwiki-source-e52f38a56cc76188818237f7
+    resource: repo://packages.yml
   - id: openwiki-source-17f3856bce97f37118963062
     resource: repo://pipeline/preprocessors/handle_auto_links.py
   - id: openwiki-source-dca59d03b9433eea9242c2e4
     resource: repo://pipeline/preprocessors/link_map.py
   - id: openwiki-source-06a4c757b1153b7de4f47a0e
     resource: repo://pipeline/preprocessors/markdown_preprocessor.py
+  - id: openwiki-source-0539c4d1a36abb10d1ed2fa9
+    resource: repo://pipeline/tools/partner_pkg_table.py
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
   - id: openwiki-source-0a0a6c8d7a88288e6b6b9b5b
@@ -40,32 +49,32 @@ sources:
     resource: repo://tests/unit_tests/test_check_cross_refs.py
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-03T08:13:57.434Z" }
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-11-03T08:13:57.434Z
+generated: { by: "openwiki/0.4.3", at: "2026-11-09T08:07:38.321Z" }
 ---
 
-# Reference Documentation Boundaries
+# Reference Documentation Integration
 
 This repository builds the authored documentation site at `docs.langchain.com`. It **does not build** [reference.langchain.com](https://reference.langchain.com/python/): generated API reference for LangChain, LangGraph, LangSmith, and integration packages is built and deployed elsewhere, with separate [Python](https://reference.langchain.com/python/) and [JavaScript/TypeScript](https://reference.langchain.com/javascript/) sites.
 
-There are two different reference integrations:
+There are three related but distinct integrations:
 
 1. Authored Markdown and MDX use semantic `@[symbol]` markers that preprocess into links to the external SDK reference site.
 2. `src/docs.json` declares OpenAPI inputs that Mintlify turns into endpoint pages during deployment.
+3. `packages.yml` supplies package metadata used by the generated integration listing to choose a hosted reference URL or a PyPI fallback. It is routing metadata, not a generator for package reference pages.
 
 ```mermaid
 flowchart TD
   Authored["Authored MDX semantic reference"] --> Preprocess["Documentation preprocessor"]
   Preprocess --> Map["Scoped link map"]
   Map --> External["reference.langchain.com"]
+  Packages["packages.yml metadata"] --> Listing["Generated integration listing"]
+  Listing --> PackageDest["Hosted reference URL or PyPI"]
   Spec["OpenAPI input"] --> Config["docs.json OpenAPI declaration"]
   Config --> Deploy["Mintlify deployment"]
   Deploy --> Endpoints["Generated endpoint pages"]
 ```
 
-This diagram shows the separate SDK-link and OpenAPI publication paths. Do not hand-author endpoint MDX as a substitute for a generated OpenAPI route.
+This diagram shows separate SDK-link, package-listing, and OpenAPI publication paths. Do not hand-author endpoint MDX as a substitute for a generated OpenAPI route, and do not infer package reference-page ownership from the integration listing.
 
 ## Link to the external SDK reference
 
@@ -77,9 +86,9 @@ Use semantic markers rather than hard-coded SDK-reference URLs:
 @[`StateGraph`]
 ```
 
-The preprocessor resolves these forms through `SCOPE_LINK_MAPS`. Its Python and JavaScript maps associate symbol names with `reference.langchain.com` URLs. Add or correct a map entry when an SDK symbol must be linkable; do not duplicate a destination in authored pages.
+The preprocessor resolves these forms through `SCOPE_LINK_MAPS`, which is assembled from the scoped `LINK_MAPS` entries in `pipeline/preprocessors/link_map.py`. Python and JavaScript maps associate symbol names with `reference.langchain.com` URLs; some LangSmith entries resolve to local `docs.langchain.com` routes because they point at this repository's OpenAPI-generated surface. Add or correct a map entry when a symbol must be linkable; do not duplicate a destination in authored pages.
 
-Autolinking runs before conditional rendering. It begins in the page default scope, switches inside `:::python` or `:::js` fences, and resets to the default at a bare `:::`. Ordinary fenced code is unchanged, and `\@[StateGraph]` renders as a literal marker after the escape is removed. An unknown name logs an informational message and remains unchanged rather than receiving a guessed URL. The unhandled `global` scope logs an error and falls back to Python.
+Autolinking runs before conditional rendering. It begins in the page default scope, switches inside `:::python` or `:::js` fences, and resets to the default at a bare `:::`. Ordinary fenced code is unchanged, and `\\@[StateGraph]` renders as a literal marker after the escape is removed. An unknown name logs an informational message and remains unchanged rather than receiving a guessed URL. The unhandled `global` scope logs an error and falls back to Python.
 
 ### Validate cross-references
 
@@ -90,6 +99,14 @@ make check-cross-refs
 This source-level check scans Markdown and MDX beneath `src/` with the same marker and fence patterns. It ignores ordinary code fences, escaped markers, `snippets/code-samples/`, and `node_modules`. Files in `oss/python/` and `oss/javascript/` are checked in their respective scopes; a shared `oss/` file is checked in both. Consequently, an unfenced reference in shared OSS content must resolve in every emitted language scope, while a language fence narrows the requirement. The command exits nonzero for unresolved names.
 
 This is distinct from rendered-site link checking: passing a Mintlify link check does not establish that every semantic marker has a scoped mapping.
+
+## Package metadata and reference destinations
+
+`packages.yml` describes package identity and publication metadata, including `repo`, optional `path`, display-name overrides, integration visibility, JavaScript package names, download data, provider-page overrides, and `has_reference_docs`. The file's comments define `has_reference_docs` as the opt-in for third-party packages whose reference documentation is hosted on `reference.langchain.com`; without it, the package URL falls back to PyPI.
+
+`pipeline/tools/partner_pkg_table.py` enriches this metadata and generates the provider overview. Its `reference_url` policy gives monorepo and `langchain-ai` packages a Python reference URL, permits a third-party package to use that destination only when `has_reference_docs` is true, and otherwise returns no reference URL so `package_url` uses PyPI. Integration package links use the canonical top-level `/python/<package>` form; non-integration packages use `/python/<package>/`. The generated listing is therefore a link-selection consumer of external reference documentation, not evidence that this repository generates those pages.
+
+The generated provider overview is refreshed by `uv run python pipeline/tools/partner_pkg_table.py` and must not be hand-edited. Change package routing in `packages.yml` (or the table policy when the behavior itself needs changing), then regenerate and review the resulting listing.
 
 ## Declare OpenAPI inputs, not endpoint pages
 
@@ -164,12 +181,10 @@ Focused tests cover cross-reference scope selection, shared-file validation, cus
 
 For missing pages, broken links, or incorrect signatures on `reference.langchain.com`, open the [Reference Documentation issue](https://github.com/langchain-ai/docs/issues/new?template=04-reference-docs.yml). The template requires an issue type, language, and detailed description, and collects a product plus an optional reference-page URL for routing. Fixes belong in external reference-generation tooling, not this repository.
 
-Change this repository for an authored marker, scoped map entry, preprocessor or source-check behavior, a `docs.json` declaration, an Agent Server specification update, or a reviewed LangSmith REST refresh. Preserve the boundary: external SDK reference is owned elsewhere; committed OpenAPI inputs retain their own update policy; and Mintlify, not hand-authored endpoint MDX, creates endpoint documentation.
+Change this repository for an authored marker, scoped map entry, preprocessor or source-check behavior, package-listing metadata or policy, a `docs.json` declaration, an Agent Server specification update, or a reviewed LangSmith REST refresh. Preserve the boundary: external SDK reference is owned elsewhere; package metadata only selects destinations; committed OpenAPI inputs retain their own update policy; and Mintlify, not hand-authored endpoint MDX, creates endpoint documentation.
 
 ## Related documentation
 
-- [Source Map](/openwiki/architecture/source-map.md) — repository ownership and generated-source boundaries.
+- [Build System](/openwiki/architecture/build-system.md) — preprocessing and generated artifacts.
 - [Mintlify Integration](/openwiki/integrations/mintlify.md) — deployment, previews, hosted artifacts, and rendered-site checks.
-- [Adding Pages](/openwiki/operations/adding-pages.md) — authoring, navigation, generated-input, and validation boundaries for page changes.
-- [Test Overview](/openwiki/testing/test-overview.md) — test layers and focused validation.
 - [LangSmith OpenAPI Refresh](/openwiki/workflows/langsmith-openapi-refresh.md) — processor policy and refresh-PR lifecycle.
