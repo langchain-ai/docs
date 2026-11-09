@@ -4,7 +4,7 @@ okf_version: "0.2"
 
 # Files
 
-- [Repository Wiki Quickstart](quickstart.md) - Route a documentation, generator, validation, or automation change to its durable owner and smallest meaningful check. Use this map before editing rendered output, a generated artifact, or a deployment surface.
+- [Repository Wiki Quickstart](quickstart.md) - Route a documentation, generator, validation, or automation change to its durable owner and smallest meaningful check. Use this map before editing authored source, generated output, pipeline code, scripts, tests, or OpenWiki pages.
 
 # Directories
 

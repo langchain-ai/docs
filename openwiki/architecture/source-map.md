@@ -3,9 +3,6 @@ type: architecture reference
 title: Repository Source Map
 description: Maps durable ownership boundaries for authored documentation, navigation, build output, generated content, automation, tests, agent skills, and external reference services. Use it to select the source of truth and regenerate derived artifacts rather than editing them.
 tags: [documentation, build, automation, repository]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-11-03T08:13:57.434Z
 sources:
   - id: openwiki-source-9361c44d74c0e18006d0d76f
     resource: repo://.agents/skills/README.md
@@ -17,6 +14,8 @@ sources:
     resource: repo://.github/workflows/refresh-external-versions.yml
   - id: openwiki-source-5153f86e64d6ee0b305f72b3
     resource: repo://.github/workflows/refresh-langsmith-openapi.yml
+  - id: openwiki-source-4de47c60d7e3210385c34d35
+    resource: repo://.github/workflows/update-package-downloads.yml
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
   - id: openwiki-source-15059b0f9cd678e06d6faff0
@@ -27,8 +26,12 @@ sources:
     resource: repo://docs-release-watch/tools/products.py
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
+  - id: openwiki-source-e52f38a56cc76188818237f7
+    resource: repo://packages.yml
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
+  - id: openwiki-source-0539c4d1a36abb10d1ed2fa9
+    resource: repo://pipeline/tools/partner_pkg_table.py
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
   - id: openwiki-source-99b53585619b83f258314f8b
@@ -39,6 +42,8 @@ sources:
     resource: repo://scripts/generate_code_snippet_mdx.py
   - id: openwiki-source-d22c99c9d9abf854bbf1a047
     resource: repo://scripts/generate_egress_ip_tables.py
+  - id: openwiki-source-2b15ecffacad911ef9db112f
+    resource: repo://scripts/test_code_samples.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
   - id: openwiki-source-b376e653ac97bac12d5a0385
@@ -47,10 +52,13 @@ sources:
     resource: repo://tests/unit_tests/test_check_version_claims.py
   - id: openwiki-source-30a490be0964e690a58135e7
     resource: repo://tests/unit_tests/test_egress_ip_inventory.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-03T08:13:57.434Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-09T08:07:38.321Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-11-09T08:07:38.321Z
 ---
 
-This repository owns the source and build pipeline for `docs.langchain.com`, hosted by Mintlify. It does **not** build `reference.langchain.com`: that generated API-reference site is an external boundary. The central safe-change rule is to identify the durable owner first. `src/` and configuration or metadata inputs are source; `build/` and explicitly generated documentation are outputs.
+This repository owns the source and build pipeline for `docs.langchain.com`, hosted by Mintlify. It does **not** build `reference.langchain.com`: that API reference site is generated and deployed outside this repository. The central safe-change rule is to identify the durable owner first. `src/` and configuration or metadata inputs are source; `build/` and explicitly generated documentation are outputs that must not be edited.
 
 ```mermaid
 flowchart TD
@@ -73,6 +81,7 @@ flowchart TD
 | --- | --- | --- |
 | Documentation prose, page frontmatter, reusable MDX, assets, and executable examples | `src/` | Edit the owning source. `src/langsmith/` owns LangSmith material, `src/oss/` owns open-source product material, `src/snippets/` owns reusable MDX, and `src/code-samples/` owns executable examples. |
 | Navigation, redirects, Mintlify settings, and OpenAPI declarations | `src/docs.json` | A page addition or move needs a deliberate navigation and redirect decision; directory layout is not the navigation model. |
+| Package registry metadata and integration presentation inputs | `packages.yml` plus the scripts and pipeline tools that consume it | Change package metadata at the registry; regenerate download, partner-package, or integration tables rather than hand-editing their generated content. |
 | Route shaping, preprocessing, language variants, and copied build content | `pipeline/` | Change implementation and its focused tests together, then rebuild. |
 | Deployment output | `build/` | Regenerate with `make build` or `make dev`; never patch it. |
 | Agent-wide editing invariants | `AGENTS.md` | Keep its derived instruction copies synchronized when changing the sections it identifies. |
@@ -80,11 +89,11 @@ flowchart TD
 | Automation, validations, and scheduled maintenance | `scripts/`, `Makefile`, `.github/workflows/`, and their focused tests | Treat script, workflow, input data, and test as one operational contract. |
 | Release-watch service | `docs-release-watch/` | It is separately deployed with `uv run mda deploy`, not an input to the Mintlify build. |
 
-The repository has two distinct documentation surfaces. The local pipeline emits the Mintlify site from `src/` to `build/`. `reference.langchain.com` is generated and deployed elsewhere; this repository provides an issue-routing path for defects in that external service, but has no reference build output to modify.
+The repository has two distinct documentation surfaces. The local pipeline emits the Mintlify site from `src/` to `build/`. `reference.langchain.com` is generated and deployed elsewhere; this repository provides an issue-routing path for defects in that external service, but has no reference build output to modify. Do not edit generated endpoint pages or any other generated deployment output; change their OpenAPI or upstream input instead.
 
 ## Source, navigation, and build control flow
 
-`src/docs.json` is more than a page list: it supplies site configuration and product/menu navigation. Product labels deliberately do not mirror source directories—for example, lifecycle menus draw from both `src/oss/` and `src/langsmith/`. Therefore source directory determines content ownership, while `docs.json` determines reader-facing placement. Adding a source page without registering it there does not make it discoverable.
+`src/docs.json` is more than a page list: it supplies site configuration and product/menu navigation. Product labels deliberately do not mirror source directories—for example, lifecycle menus draw from both `src/oss/` and `src/langsmith/`. `src/index.mdx` is the home page, while the reader-facing lifecycle and product menus are defined under `navigation.products` in `docs.json`. Therefore source directory determines content ownership, while `docs.json` determines reader-facing placement. Adding a source page without registering it there does not make it discoverable.
 
 The `docs` console entrypoint routes `build` and `dev` to the pipeline. A full `DocumentationBuilder.build_all()` deletes and recreates `build/`, produces Python and JavaScript OSS variants, emits the unversioned Deep Agents Code and OpenWiki surfaces once, builds LangSmith content and Managed Deep Agents language variants, then copies shared configuration and assets. The builder preprocesses Markdown before writing it, including language-specific snippet-import and link rewriting. This makes `build/` a reproducible artifact rather than a co-owned editing surface.
 
@@ -105,9 +114,9 @@ Some files under `src/` are committed so that they can be reviewed and deployed,
 
 ### Runnable examples to display snippets
 
-`src/code-samples/` is the owner of runnable example programs. `make test-code-samples` invokes their harness; `make code-snippets` first extracts marked regions into `src/code-samples-generated/`, then renders imported MDX into `src/snippets/code-samples/`. The intermediate directory is ignored, while the rendered MDX is committed. Edit and test the program, then regenerate and commit the rendered snippets; do not edit either output manually.
+`src/code-samples/` is the owner of runnable example programs. `make test-code-samples` runs them; `make code-snippets` first extracts marked regions into `src/code-samples-generated/`, then renders imported MDX into `src/snippets/code-samples/`. The intermediate directory is ignored, while the rendered MDX is committed. Edit and test the program, then regenerate and commit the rendered snippets; do not edit either output manually.
 
-The extractor recognizes `:snippet-start:`/`:snippet-end:` markers in Python, TypeScript, Java, Kotlin, Go, and shell files. It removes marked non-display regions and fails rather than silently producing a partial sample when a removal or snippet marker is unclosed. This keeps the display fragment mechanically tied to a runnable source program.
+The extractor recognizes `:snippet-start:`/`:snippet-end:` markers in Python, TypeScript, Java, Kotlin, Go, and shell files, plus removal markers and optional code-group metadata. It fails rather than silently producing a partial sample when a removal or snippet marker is unclosed. The sample harness can run concurrently, but serializes samples that share datasets, experiments, prompts, or other fixtures; tracing is opt-in through `CODE_SAMPLE_TRACING=1`.
 
 ### Egress address inventory to documentation tables
 
@@ -119,6 +128,10 @@ uv run python scripts/generate_egress_ip_tables.py --check
 ```
 
 Commit the JSON inventory and both regenerated pages together. The focused tests exercise malformed or duplicate records, check-mode drift, and byte-for-byte publication of the unversioned JSON artifact.
+
+### Package metadata and integration tables
+
+`packages.yml` is a metadata registry, not the API-reference source. Its package rows carry names, repositories, provider-page and JavaScript-package mappings, integration/highlight/reference-doc flags, and machine-maintained download timestamps. The weekly download workflow refreshes stale counts, regenerates the partner package table and integration download snippets, and uploads those files as an artifact. The package registry and its consumers therefore form one maintenance boundary: change the YAML or generator policy, then regenerate the derived MDX.
 
 ### OpenAPI and deployment-generated endpoint pages
 
@@ -146,15 +159,14 @@ The pull-request version workflow computes changed `src` MDX files from the merg
 2. **Build behavior change:** modify `pipeline/`, add focused tests under `tests/`, rebuild, and run the appropriate link check.
 3. **Code sample change:** modify and test `src/code-samples/`, run `make code-snippets`, and commit regenerated display MDX—not `src/code-samples-generated/`.
 4. **Egress change:** edit the JSON inventory, run the egress generator, commit its generated table blocks, and run check mode.
-5. **OpenAPI change:** update the specification or processor/workflow boundary; do not author Mintlify-generated endpoint pages.
-6. **Skill or agent procedure change:** decide whether it is a global invariant (`AGENTS.md`) or opt-in procedure (`.agents/skills/`), maintain required mirrors, and rerun `make skills` locally if using Claude Code.
-7. **Release-watch coverage change:** update registry, product skill, and schedule together, then run `uv run mda deploy` from `docs-release-watch/`.
+5. **Package or integration metadata change:** edit `packages.yml` or the owning generator, run the relevant download/table maintenance commands, and review generated MDX together.
+6. **OpenAPI change:** update the specification or processor/workflow boundary; do not author Mintlify-generated endpoint pages.
+7. **Skill or agent procedure change:** decide whether it is a global invariant (`AGENTS.md`) or opt-in procedure (`.agents/skills/`), maintain required mirrors, and rerun `make skills` locally if using Claude Code.
+8. **Release-watch coverage change:** update registry, product skill, and schedule together, then run `uv run mda deploy` from `docs-release-watch/`.
 
 ## Related pages
 
 - [Build system](/openwiki/architecture/build-system.md)
-- [Reference documentation](/openwiki/integrations/reference-docs.md)
+- [Versioning](/openwiki/concepts/versioning.md)
+- [Mintlify integration](/openwiki/integrations/mintlify.md)
 - [Agent skills](/openwiki/operations/agent-skills.md)
-- [Quickstart](/openwiki/quickstart.md)
-- [Code sample lifecycle](/openwiki/workflows/code-sample-lifecycle.md)
-- [Release watch](/openwiki/workflows/release-watch.md)
