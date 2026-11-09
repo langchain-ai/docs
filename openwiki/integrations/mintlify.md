@@ -3,45 +3,25 @@ type: integration
 title: Mintlify Integration
 description: Mintlify renders the generated documentation tree and creates selected deployment-time artifacts for docs.langchain.com. This page covers configuration, build handoff, route behavior, previews, validation, OpenAPI, and hosted checks.
 tags: [mintlify, documentation, navigation, openapi, deployment]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-11-03T08:13:57.434Z
 sources:
-  - id: openwiki-source-5c124605ed6e394bffee862c
-    resource: repo://.github/workflows/_check-links.yml
-  - id: openwiki-source-1bf310cf2d4f8606635de732
-    resource: repo://.github/workflows/check-external-doc-links.yml
-  - id: openwiki-source-477c95c54c9043bc75d26802
-    resource: repo://.github/workflows/check-llms-urls.yml
-  - id: openwiki-source-7346220ed051a41471043c07
-    resource: repo://.github/workflows/create-preview-branch.yml
-  - id: openwiki-source-f2608d0d515da097485b6ec5
-    resource: repo://.github/workflows/publish.yml
-  - id: openwiki-source-5153f86e64d6ee0b305f72b3
-    resource: repo://.github/workflows/refresh-langsmith-openapi.yml
   - id: openwiki-source-71ee7a4afbd2d6aa7b29f3d1
     resource: repo://htmltest-mint-export.yml
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
-  - id: openwiki-source-b481a230af378c0c50ed9994
-    resource: repo://pipeline/commands/dev.py
+  - id: openwiki-source-41f7c907e42a5efd3b3405cd
+    resource: repo://pipeline/commands/build.py
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
-  - id: openwiki-source-23775c3de52f3ab95a13cb8b
-    resource: repo://README.md
-  - id: openwiki-source-7c3064080adf2cb0048e51fc
-    resource: repo://scripts/check_llms_urls.py
-  - id: openwiki-source-ac5a96b2eaef63c5d8d74d9a
-    resource: repo://scripts/check-legacy-doc-links.sh
   - id: openwiki-source-49f717adb7cc59501f5c17ac
     resource: repo://scripts/filter_mint_broken_links.py
-  - id: openwiki-source-697851c98229599f97376bfb
-    resource: repo://scripts/process_langsmith_openapi.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-03T08:13:57.434Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-09T08:07:38.321Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-11-09T08:07:38.321Z
 ---
 
 # Mintlify Integration
@@ -49,19 +29,28 @@ generated: { by: "openwiki/0.4.3", at: "2026-11-03T08:13:57.434Z" }
 Mintlify is the static-site renderer and deployment integration for [docs.langchain.com](https://docs.langchain.com). Repository authors own `src/`, the builder, and the reproducible handoff; Mintlify consumes the generated `/build/` tree and `docs.json`, renders the site, and creates some deployment-only output. Edit `src/` and `src/docs.json`, not `build/`, a preview branch, or an OpenAPI endpoint page created by Mintlify. A full build deletes and recreates `build/`, so it has no durable authoring state.
 
 ```mermaid
-flowchart TD
-    Source["Authored src content and docs.json"] --> Builder["Documentation builder"]
-    Builder --> Build["Generated build tree"]
-    Build --> Local["Mint dev and local checks"]
-    Build --> Preview["Preview branch"]
-    Build --> Production["prod branch handoff"]
-    Preview --> Mint["Mintlify preview API"]
-    Production --> Mint
-    Spec["Configured OpenAPI inputs"] --> Mint
-    Mint --> Site["docs.langchain.com"]
+sequenceDiagram
+    participant Author as Authored src and docs.json
+    participant Make as Make targets
+    participant Pipeline as Python pipeline
+    participant Build as build/
+    participant Mint as Mint CLI
+    participant Filter as Link filter
+    participant HTML as htmltest
+
+    Author->>Make: make build
+    Make->>Pipeline: uv run pipeline build
+    Pipeline->>Build: remove and regenerate
+    Make->>Mint: make export from build/
+    Mint-->>Build: write export.zip
+    Make->>HTML: make htmltest after export
+    HTML-->>Make: check external links and page assets
+    Make->>Mint: make broken-links
+    Mint-->>Make: report links and redirects
+    Make->>Filter: filter known local false positives
 ```
 
-The diagram shows the generated-tree handoff and the deployment-only output boundary.
+The sequence shows the inspected local handoffs; Mintlify deployment remains the boundary for hosted OpenAPI routes and other deployment-generated output.
 
 ## Configuration and route contract
 
@@ -78,6 +67,15 @@ Choose the output family before adding a route or link. In particular, source lo
 ## Local development and validation
 
 `make dev` installs local npm dependencies and invokes `uv run pipeline dev`. Unless `--skip-build` is selected, the command builds first, then starts a `FileWatcher` from `src/` to `build/` and the globally installed Mint CLI as `mint dev --port 3000` in `build/`. The command fails when the initial build fails, Mint exits nonzero, or the watcher ends unexpectedly; interruption shuts down both processes. `--skip-build` only warns if `build/` is absent, so it does not prove a usable generated tree exists.
+
+The Make targets have deliberately different boundaries:
+
+| Target | Input and working directory | What it validates or produces |
+| --- | --- | --- |
+| `make build` | `src/`, repository root | Runs `uv run pipeline build`; the Python builder replaces `build/` with a fresh generated tree. |
+| `make export` | Fresh `build/`, then `build/` for the Mint command | Depends on `build`, runs `mint export` from `build/`, and writes `build/export.zip` by default. |
+| `make htmltest` | An existing `EXPORT_ZIP` | Unpacks the archive and checks external links, anchors, images, scripts, metadata, and generic HTML; it does not check internal links. It does not run `make export` itself. |
+| `make broken-links` / `make broken-links-with-anchors` | Fresh `build/`, then `build/` for Mint | Runs Mint's generated-tree link check with redirects, optionally anchors, filters only documented false positives, and fails on remaining indented link entries. |
 
 For route, redirect, or anchor changes, run:
 
