@@ -106,7 +106,7 @@ Amazon Bedrock supports three authentication methods. **IAM trusted entity is th
 #### IAM trusted entity (recommended)
 
 <Note>
-**Not available for [self-hosted LangSmith](/langsmith/self-hosted).** Use access keys or the Bedrock API key instead.
+**Not available for [self-hosted LangSmith](/langsmith/self-hosted) or for [BYOC](/langsmith/byoc) on GCP or Azure.** Use access keys or the Bedrock API key instead. On BYOC AWS data planes, follow [IAM trusted entity on BYOC](#iam-trusted-entity-on-byoc) instead of the steps below.
 </Note>
 
 With IAM trusted entity authentication, you create an IAM role in your AWS account and allow LangSmith to assume it. No access keys are stored in LangSmith. Instead, LangSmith uses [AWS STS](https://docs.aws.amazon.com/STS/latest/APIReference/welcome.html) to assume the role on each request.
@@ -150,15 +150,15 @@ For more details on trust policies, see the [AWS documentation](https://aws.amaz
 
 #### IAM trusted entity on BYOC
 
-On [BYOC](/langsmith/byoc) AWS data planes, two roles in your data plane's AWS account assume your role. LangSmith's AWS account does not. A playground role serves the Playground and LLM-as-a-judge evaluators, and the data plane's workload role serves the [LLM Gateway](/langsmith/llm-gateway-provider-authentication#use-an-iam-role). Both can only assume roles that carry the `LangSmithBedrock=true` tag, and only with an external ID.
+On [BYOC](/langsmith/byoc) AWS data planes, two roles in your data plane's AWS account assume your role. LangSmith's AWS account does not. A playground role serves the Playground and LLM-as-a-judge evaluators. The data plane's workload role serves the [LLM Gateway](/langsmith/llm-gateway-provider-authentication#use-an-iam-role). Both can only assume roles that carry the `LangSmithBedrock=true` tag, and only with an external ID.
 
-If your data plane uses [bring your own IAM](/langsmith/byoc-byoiam-aws), only data planes created with the latest version of the [`byoiam` Terraform module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/aws/byoiam) support this. On other data planes, use access keys or the Bedrock API key.
+If your data plane uses [bring your own IAM](/langsmith/byoc-byoiam-aws), it must be created with version `v0.17.67` or later of the [`byoiam` Terraform module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/aws/byoiam). Bring-your-own-IAM data planes created earlier don't support it, even after you re-apply the module. On those data planes, use access keys or the Bedrock API key.
 
 To set this up:
 
 1. Create an IAM role with permissions to invoke Bedrock models (e.g., `bedrock:InvokeModel`).
 2. Add the tag `LangSmithBedrock` with the value `true` to the role.
-3. Add a trust policy that allows both roles to assume your role, using your LangSmith workspace ID as the external ID. The roles' sessions carry tags, so the policy must also allow `sts:TagSession` in a separate statement without the `sts:ExternalId` condition. Otherwise AWS denies the role assumption. The Bedrock provider's secrets configuration shows both role ARNs:
+3. Add a trust policy that allows both roles to assume your role, using your LangSmith workspace ID as the external ID. The roles' sessions carry tags. The policy must also allow `sts:TagSession` in a separate statement without the `sts:ExternalId` condition, or AWS denies the role assumption. The Bedrock provider's secrets configuration shows both role ARNs:
 
 ```json
 {
