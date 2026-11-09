@@ -1,0 +1,39 @@
+```python
+from langchain.agents import create_agent
+from langchain.tools import tool
+from langgraph.checkpoint.memory import InMemorySaver
+
+research_agent = create_agent(
+    model=model,
+    tools=[web_search],
+    system_prompt="You are a research expert.",
+)
+
+math_agent = create_agent(
+    model=model,
+    tools=[add, multiply],
+    system_prompt="You are a math expert.",
+)
+
+
+@tool("research_expert", description="Research expert for current events and web lookups.")
+def call_research_agent(query: str) -> str:
+    result = research_agent.invoke({"messages": [{"role": "user", "content": query}]})
+    return result["messages"][-1].content
+
+
+@tool("math_expert", description="Math expert for calculations.")
+def call_math_agent(query: str) -> str:
+    result = math_agent.invoke({"messages": [{"role": "user", "content": query}]})
+    return result["messages"][-1].content
+
+
+supervisor = create_agent(
+    model=model,
+    tools=[call_research_agent, call_math_agent],
+    system_prompt=(
+        "Route research questions to research_expert and math to math_expert."
+    ),
+    checkpointer=InMemorySaver(),
+)
+```
