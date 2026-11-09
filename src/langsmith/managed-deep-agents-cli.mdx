@@ -98,7 +98,8 @@ The LangSmith API key authenticates the deploy. The agent's model provider also 
 | `mda dev [path]` | Compile a project and run it on the local LangGraph dev server. |
 | `mda connections …` | Manage authentication for tools and MCP connectors. |
 | `mda deploy [path]` | Compile, sync Context Hub context, upload, and deploy to LangSmith. |
-| `mda channels init slack` | Add a Slack channel declaration to the current project. |
+| `mda channels init <channel>` | Add a Slack, GitHub, or Linear channel declaration to the current project. |
+| `mda channels setup [channel]` | Set up the project's channels for its deployment without deploying. |
 | `mda logs [path]` | Tail Agent Server logs for a deployed agent. |
 | `mda delete [path]` / `mda destroy [path]` | Delete a deployed agent and the LangSmith resources it created. |
 :::
@@ -114,7 +115,8 @@ The LangSmith API key authenticates the deploy. The agent's model provider also 
 | `mda dev [path]` | Compile a project and run it on the local LangGraph dev server. |
 | `mda connections …` | Manage authentication for tools and MCP connectors. |
 | `mda deploy [path]` | Compile, sync Context Hub context, upload, and deploy to LangSmith. |
-| `mda channels init slack` | Add a Slack channel declaration to the current project. |
+| `mda channels init <channel>` | Add a Slack, GitHub, or Linear channel declaration to the current project. |
+| `mda channels setup [channel]` | Set up the project's channels for its deployment without deploying. |
 | `mda logs [path]` | Tail Agent Server logs for a deployed agent. |
 | `mda delete [path]` / `mda destroy [path]` | Delete a deployed agent and the LangSmith resources it created. |
 :::
@@ -154,7 +156,7 @@ uvx --from managed-deepagents mda init my-agent
 | `--memory agent\|none` | Optionally write a root memory declaration. If omitted, no memory file is created and durable memory is off. |
 | `--model SPEC` | Model the agent runs on, as `provider:model`. |
 | `--no-sandbox` | Leave out the managed sandbox declaration. |
-| `--channel slack` | Initialize the agent with a Slack channel declaration. Repeatable; `--channels` is an alias. |
+| `--channel slack\|github\|linear` | Initialize the agent with a channel declaration. Repeatable; `--channels` is an alias. GitHub and Linear are experimental. |
 
 To include Slack in a new project:
 
@@ -240,7 +242,59 @@ uv run mda channels init slack
 </CodeGroup>
 :::
 
-The command creates a Slack channel declaration in the `channels/` directory. The next `mda deploy` sets up the resources the agent needs to appear in Slack. For the complete workflow, see [Connect a Managed Deep Agent to Slack](/langsmith/managed-deep-agents-channels-slack).
+The command creates a Slack channel declaration in the `channels/` directory. The next `mda deploy` sets up the resources the agent needs to appear in Slack. For the complete workflow, see [Connect a managed deep agent to Slack](/langsmith/managed-deep-agents-channels-slack).
+
+## Set up channels
+
+`mda deploy` sets up the project's channels. To run that setup on its own against a deployed agent, run the following command from the project root:
+
+:::python
+```bash
+uv run mda channels setup
+```
+:::
+
+:::js
+<CodeGroup>
+    ```bash npm
+    npx mda channels setup
+    ```
+
+    ```bash pnpm
+    pnpm exec mda channels setup
+    ```
+
+    ```bash bun
+    bunx mda channels setup
+    ```
+</CodeGroup>
+:::
+
+In a terminal, the command asks which channels to set up and runs their setup, including any approval the provider needs in a browser. Without a terminal, or with `--json`, it only reports where each channel stands. It exits with a non-zero status unless every channel is set up.
+
+| Argument or flag | Use |
+| --- | --- |
+| `channel` | `slack`, `github`, or `linear`. Sets up only that channel. Defaults to every channel in the project. |
+| `--name NAME` | Deployment name. Defaults to the agent's `name`. |
+| `--workspace-id WORKSPACE_ID` | Workspace ID the deployment lives in. Overrides `LANGSMITH_WORKSPACE_ID`. |
+| `--env-file PATH` | Read environment variables from this file instead of the project's `.env`. Credentials the command asks for are saved back to it. |
+| `--json` | Print where each channel stands as JSON, without setting anything up. |
+
+With `--json`, the command prints a report like this:
+
+```json
+{
+  "deployment": { "name": "support-agent", "id": "<deployment-id>" },
+  "ready": false,
+  "channels": [
+    { "channel": "slack", "status": "ready", "experimental": false },
+    { "channel": "github", "status": "needs_setup", "experimental": true, "message": "<what is left to do>" }
+  ],
+  "deploy_blocker": "<why a deploy without a terminal would stop>"
+}
+```
+
+Each channel's `status` is `ready`, `needs_setup`, `no_app` for a channel that handles no events, or `error` when its setup couldn't be checked. `deploy_blocker` is `null` unless `mda deploy` without a terminal would stop before uploading.
 
 ## Build projects
 
@@ -518,7 +572,7 @@ Deploy runs these steps:
 10. Reconcile the managed LangSmith cron jobs for schedules unless `--no-wait` is set.
 11. Provision the declared Slack channel. If Slack authorization or workspace approval is required, display the action and continue after you complete it.
 
-A project with a Slack channel cannot use `--no-wait` because Slack provisioning requires the deployed Agent Server URL. For the complete workflow, see [Connect a Managed Deep Agent to Slack](/langsmith/managed-deep-agents-channels-slack).
+A project with a Slack channel cannot use `--no-wait` because Slack provisioning requires the deployed Agent Server URL. For the complete workflow, see [Connect a managed deep agent to Slack](/langsmith/managed-deep-agents-channels-slack).
 
 On success, the CLI prints the LangSmith deployment dashboard URL. For secrets routing and deploy tips, see [Deploy an agent](/langsmith/managed-deep-agents-deploy).
 
@@ -560,7 +614,7 @@ uv run mda logs
 
 ## Delete deployments
 
-Use `mda delete` to delete a deployed Managed Deep Agent and the LangSmith resources it created. `mda destroy` is an alias.
+Use `mda delete` to delete a deployed managed deep agent and the LangSmith resources it created. `mda destroy` is an alias.
 
 :::python
 ```bash
