@@ -114,17 +114,23 @@ Schedules use ephemeral threads by default. Managed Deep Agents creates a fresh 
 
 Use a persistent thread only when scheduled runs should accumulate durable thread state across invocations.
 
-A persistent thread ID must be the UUID of a thread that already exists on the deployment. Managed Deep Agents passes the value straight to the Agent Server, which rejects any ID that is not a UUID.
+A persistent schedule does not need a thread ID. When you omit `id`, Managed Deep Agents derives a stable thread ID from the agent name and the schedule name, and `mda deploy` creates that thread. Every run of the schedule uses the same thread.
 
-### Create the persistent thread
+Renaming the schedule file changes the derived ID, so the schedule starts on a new thread and loses its history.
 
-Create the thread before you deploy the schedule. Open the deployment in [LangSmith Studio](/langsmith/studio), create a new thread, and copy its thread ID. `mda deploy` prints the deployment URL, and LangSmith lists it on the deployment page.
+To use a specific thread, set `id` to a UUID. `mda deploy` rejects an ID that is not a UUID, creates the thread if it does not exist, and fails if another caller owns it.
 
-Neither Managed Deep Agents nor the `mda` CLI creates the thread, so this is a one-time manual step for each persistent schedule.
+<Note>
+:::python
+Persistent schedules without an `id` require `managed-deepagents>=0.10.2`. Earlier versions require the UUID of a thread that already exists on the deployment.
+:::
+
+:::js
+Persistent schedules without an `id` require `managed-deepagents` version 0.10.2 or later. Earlier versions require the UUID of a thread that already exists on the deployment.
+:::
+</Note>
 
 ### Declare the persistent schedule
-
-Use that thread ID in the schedule declaration.
 
 <Note>
 The following example requires [durable memory](/langsmith/managed-deep-agents-memory).
@@ -137,7 +143,7 @@ from managed_deepagents import define_schedule
 schedule = define_schedule(
     cron="0 3 * * *",
     prompt="Review the current project memory and list follow-up tasks.",
-    thread={"mode": "persistent", "id": "<thread-uuid>"},
+    thread={"mode": "persistent"},
 )
 ```
 :::
@@ -149,7 +155,7 @@ import { defineSchedule } from "managed-deepagents";
 export const schedule = defineSchedule({
   cron: "0 3 * * *",
   prompt: "Review the current project memory and list follow-up tasks.",
-  thread: { mode: "persistent", id: "<thread-uuid>" },
+  thread: { mode: "persistent" },
 });
 ```
 :::
@@ -504,7 +510,7 @@ Schedule limits require `managed-deepagents>=0.9.3`.
 - `cron must be a standard 5-field expression`: Use five cron fields, not seconds-based cron syntax.
 - `schedule is not static`: Replace computed values with literals or top-level literal constants.
 - `failed to create cron for schedule`: Open the deployment URL in LangSmith and confirm the deployed Agent Server is healthy.
-- `Invalid thread ID: must be a UUID (HTTP 422)`: A persistent schedule declares a thread ID that is not a UUID. Replace it with the UUID of an existing thread. See [Choose thread behavior](#choose-thread-behavior).
+- `Invalid thread ID: must be a UUID (HTTP 422)`: A persistent schedule declares a thread ID that is not a UUID. Replace it with a UUID, or omit `id`. See [Choose thread behavior](#choose-thread-behavior).
 - `Schedule limit reached`: The owner has reached the runtime schedule limit. Delete a schedule, or raise the limit. See [Schedule limits](#schedule-limits).
 
 :::python
