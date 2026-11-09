@@ -26,7 +26,7 @@ Async subagents let a supervisor agent launch background tasks that return immed
 
 This builds on [subagents](/oss/deepagents/subagents), which run synchronously and block the supervisor until completion. Use async subagents when tasks are long-running, parallelizable, or need mid-flight steering.
 
-To run async subagents in a managed agent, declare them with `async: true`. See [Async subagents in Managed Deep Agents](/langsmith/managed-deep-agents-subagents#async-subagents).
+To run async subagents in a managed agent, enable them with `async: true`. See [Async subagents in Managed Deep Agents](/langsmith/managed-deep-agents-subagents#async-subagents).
 
 ```mermaid
 graph TB
@@ -50,7 +50,7 @@ Async subagents run on any server that implements the [Agent Protocol](https://g
 | **Execution model**  | Supervisor blocks until subagent completes                      | Returns a task ID immediately; supervisor continues                                   |
 | **Where it runs**    | Inside the supervisor's run                                     | On its own thread on a server (Agent Server or another Agent Protocol server)         |
 | **Concurrency**      | Parallel but blocking                                           | Parallel and non-blocking                                                             |
-| **Results**          | Returned as the tool result                                     | Subagent notifies the supervisor, or the supervisor calls `check_async_task`          |
+| **Results**          | Returned as the tool result                                     | On Agent Server, the subagent notifies the supervisor; otherwise the supervisor calls `check_async_task` |
 | **Mid-task updates** | Not possible                                                    | Send follow-up instructions via `update_async_task`                                   |
 | **Cancellation**     | Not possible without stopping the supervisor                    | Cancel a task via `cancel_async_task`                                                 |
 | **Statefulness**     | Stateless -- no persistent state between invocations            | Stateful -- maintains state on its own thread across interactions                     |
@@ -120,7 +120,7 @@ The supervisor's LLM calls these tools like any other tool. The middleware handl
 
 ### Understand the lifecycle
 
-A typical interaction follows this sequence. On Agent Server, the supervisor does not need to check on the task: when the subagent finishes, it notifies the supervisor.
+A typical interaction follows this sequence. On Agent Server, the supervisor does not need to check on the task: when the subagent finishes, the task notifies the supervisor.
 
 ```mermaid
 sequenceDiagram
@@ -167,7 +167,8 @@ If the current run pauses for input or approval before the follow-up starts, the
 
 If a subagent paused for input or approval, **check** and **list** report it as `waiting`. Updating a `waiting` task drops its pending request, and cancelling one only marks it as `"cancelled"`, since it has no active run. See [Handle subagents waiting for input](#handle-subagents-waiting-for-input).
 
-On [Agent Server](/langsmith/agent-server), subagents notify the supervisor when they finish, fail, or need input. If the supervisor is busy, it receives the notification before its next model call. A subagent that finishes or fails wakes an idle supervisor with a new run, if both are on the [same deployment](#single-deployment). Only subagents that are deep agents wake an idle supervisor. A subagent waiting for input does not wake the supervisor. The supervisor receives that notification on its next run.
+On [Agent Server](/langsmith/agent-server), subagents notify the supervisor when they finish, fail, or need input. While the supervisor is busy, it receives those notification before its next model call. A subagent that finishes or fails wakes an idle supervisor with a new run, if both are on the [same deployment](#single-deployment). Only subagents that are deep agents wake an idle supervisor. A subagent waiting for input does not wake the supervisor. The supervisor receives that notification on its next run.
+
 
 <Note>
 :::python
