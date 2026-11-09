@@ -1,11 +1,11 @@
 ---
 type: documentation operations
-title: Adding, Moving, and Retiring Documentation Pages
+title: Adding and Moving Documentation Pages
 description: Safely add, move, rename, or retire documentation pages by selecting the owning source family, declaring emitted routes in navigation, preserving old URLs, and validating generated output.
 tags: [documentation, operations, navigation, redirects, build-system]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-11-03T08:13:57.434Z
+    at: 2026-11-09T08:07:38.321Z
 sources:
   - id: openwiki-source-18732c72f962c06354cb62db
     resource: repo://.agents/skills/add-docs-page/SKILL.md
@@ -37,7 +37,7 @@ sources:
     resource: repo://scripts/refresh_integration_downloads.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
-generated: { by: "openwiki/0.4.3", at: "2026-11-03T08:13:57.434Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-09T08:07:38.321Z" }
 ---
 
 # Adding, Moving, and Retiring Documentation Pages
@@ -118,6 +118,8 @@ Use site paths beginning with `/`. The removed-pages script is useful additional
 ```bash
 python3 scripts/check_removed_pages_redirects.py --base-ref origin/main src/docs.json
 ```
+
+The pull-request workflow runs the same class of check against base and head `docs.json`, verifies that navigation paths resolve to source files, and reports missing redirects or sources as a PR failure. Treat that check as a backstop, not a replacement for reviewing route families and menu placement.
 
 ## Change inputs owned by generators
 
