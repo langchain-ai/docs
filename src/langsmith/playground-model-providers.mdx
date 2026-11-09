@@ -150,13 +150,15 @@ For more details on trust policies, see the [AWS documentation](https://aws.amaz
 
 #### IAM trusted entity on BYOC
 
-On [BYOC](/langsmith/byoc) AWS data planes where LangSmith manages the IAM roles, two roles in your data plane's AWS account assume your role, not LangSmith's AWS account: a playground role for the Playground, and the data plane's workload role for the [LLM Gateway](/langsmith/llm-gateway-provider-authentication#use-an-iam-role). Both can only assume roles that carry the `LangSmithBedrock=true` tag, and only with an external ID.
+On [BYOC](/langsmith/byoc) AWS data planes, two roles in your data plane's AWS account assume your role. LangSmith's AWS account does not. A playground role serves the Playground and LLM-as-a-judge evaluators, and the data plane's workload role serves the [LLM Gateway](/langsmith/llm-gateway-provider-authentication#use-an-iam-role). Both can only assume roles that carry the `LangSmithBedrock=true` tag, and only with an external ID.
+
+If your data plane uses [bring your own IAM](/langsmith/byoc-byoiam-aws), only data planes created with the latest version of the [`byoiam` Terraform module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/aws/byoiam) support this. On other data planes, use access keys or the Bedrock API key.
 
 To set this up:
 
 1. Create an IAM role with permissions to invoke Bedrock models (e.g., `bedrock:InvokeModel`).
 2. Add the tag `LangSmithBedrock` with the value `true` to the role.
-3. Add a trust policy that allows both roles to assume your role, using your LangSmith workspace ID as the external ID. The Bedrock provider's secrets configuration shows both role ARNs. The policy must also allow `sts:TagSession`, because the roles' sessions carry tags:
+3. Add a trust policy that allows both roles to assume your role, using your LangSmith workspace ID as the external ID. The roles' sessions carry tags, so the policy must also allow `sts:TagSession` in a separate statement without the `sts:ExternalId` condition. Otherwise AWS denies the role assumption. The Bedrock provider's secrets configuration shows both role ARNs:
 
 ```json
 {
@@ -167,18 +169,25 @@ To set this up:
       "Principal": {
         "AWS": ["<playground-role-arn>", "<gateway-role-arn>"]
       },
-      "Action": ["sts:AssumeRole", "sts:TagSession"],
+      "Action": "sts:AssumeRole",
       "Condition": {
         "StringEquals": {
           "sts:ExternalId": "<your-langsmith-workspace-id>"
         }
       }
+    },
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": ["<playground-role-arn>", "<gateway-role-arn>"]
+      },
+      "Action": "sts:TagSession"
     }
   ]
 }
 ```
 
-4. In the Playground, enter the role ARN in the Bedrock provider's **IAM Trusted Entity** section, as described in step 3 above.
+4. In the Playground, enter the role ARN in the Bedrock provider's **IAM Trusted Entity** section, as described in step 3 of [IAM trusted entity (recommended)](#iam-trusted-entity-recommended).
 
 #### Access keys
 
