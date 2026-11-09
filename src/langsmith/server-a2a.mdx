@@ -11,7 +11,22 @@ The A2A endpoint is available in [Agent Server](/langsmith/agent-server) at `/a2
 ## Protocol version
 
 Agent Server speaks the A2A **v1.0** JSON-RPC binding and also accepts the v0.3 method names, so
-existing v0.3 clients keep working. The agent card declares one interface:
+existing v0.3 clients keep working. On servers that support wire-version negotiation, send
+`A2A-Version: 1.0` to select v1 response shapes, including streaming responses.
+Missing, empty, or `0.3` headers retain legacy response shapes. Method names alone do not
+select v1 wire shapes.
+
+Negotiation compares major and minor versions, ignoring a numeric patch component.
+For example, `1.0.1` selects v1 output, and `0.3.1` selects legacy output.
+Unsupported major/minor versions and malformed header values return JSON-RPC error `-32009`.
+Surrounding whitespace is ignored.
+
+<Note>
+Older Agent Server releases ignore `A2A-Version`. Confirm that your server supports
+wire-version negotiation before relying on the header.
+</Note>
+
+The agent card declares one interface:
 
 ```json
 "supportedInterfaces": [
@@ -24,12 +39,15 @@ existing v0.3 clients keep working. The agent card declares one interface:
 ```
 
 <Warning>
-The method name you send also selects the enum case in the response. A v1.0 name returns
-SCREAMING_SNAKE_CASE (`TASK_STATE_WORKING`, `ROLE_AGENT`); a v0.3 name returns lowercase
-(`working`, `agent`). Pick one family per client and stay on it.
-
-The envelope varies by method, not by family: `SendMessage` wraps the task in `result.task`, while
+Without v1 wire negotiation, method names select the enum case in the response.
+A v1.0 name returns SCREAMING_SNAKE_CASE (`TASK_STATE_WORKING`, `ROLE_AGENT`);
+a v0.3 name returns lowercase (`working`, `agent`). Pick one family per client and stay on it.
+The envelope also depends on the method: `SendMessage` wraps the task in `result.task`, while
 `GetTask` and all v0.3 methods return it directly on `result`. `ListTasks` returns `result.tasks`.
+
+With v1 wire negotiation, both method families return SCREAMING_SNAKE_CASE enums.
+Send methods wrap the task in `result.task`, task lookups return it directly on `result`,
+and `ListTasks` returns `result.tasks`.
 </Warning>
 
 ## Supported methods
@@ -771,14 +789,14 @@ Read this before you build against a capability:
 
 | Gap | What you observe |
 |---|---|
-| Response wire shape is still v0.3 | Tasks, messages and parts carry `kind` and `mimeType` instead of v1.0 member-presence discrimination |
-| Streaming events are flat | SSE emits v0.3 objects with `final`, not `statusUpdate` / `artifactUpdate` wrappers |
-| `tool_results` is snake_case | v1.0 expects `toolResults`. Kept deliberately, because live A2UI clients read this key |
-| Timestamps | Serialized as `+00:00` rather than an ISO 8601 `Z` suffix |
+| Legacy response wire shape | Without v1 negotiation, tasks, messages, and parts retain `kind` and nested file fields. V1 output omits protocol `kind` and uses `url` / `raw`, `mediaType`, and `filename` |
+| Legacy streaming events | Without v1 negotiation, SSE emits flat objects with `final`. V1 output uses `statusUpdate` / `artifactUpdate` wrappers |
+| Tool result envelopes | Legacy output keeps `tool_results` for existing clients. V1 output uses `toolResults` only for server-generated envelopes; application data stays unchanged |
+| Timestamps | Legacy output keeps its existing format. V1 output uses UTC timestamps ending in `Z` |
 | `SubscribeToTask` | Returns `-32601` where the spec requires `-32001` |
 | Push notification config | Returns `-32601` where the spec requires `-32003` |
 | Errors carry no `data` | No `google.rpc.ErrorInfo` reason or domain is attached |
-| `A2A-Version` request header | Not read, so an unsupported version is processed instead of returning `-32009` |
+| `A2A-Version` on older releases | Older releases ignore the header. Servers with wire-version negotiation reject unsupported versions with `-32009` |
 | Agent card caching | No `Cache-Control`, `ETag` or `Last-Modified` headers |
 | `GetExtendedAgentCard` | Served, but never advertised via `capabilities.extendedAgentCard` |
 
