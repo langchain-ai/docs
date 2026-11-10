@@ -1,0 +1,53 @@
+```go After
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/langchain-ai/langsmith-go"
+)
+
+ctx := context.Background()
+client := langsmith.NewClient()
+
+queueID := "<queue-id>"
+count, err := client.AnnotationQueues.Items.GetCount(ctx, queueID, langsmith.AnnotationQueueItemGetCountParams{
+	Status: langsmith.F("needs_my_review"),
+})
+if err != nil {
+	panic(err.Error())
+}
+fmt.Println(count.Count)
+
+// Items carry the run's lookup keys, not its contents.
+iter := client.AnnotationQueues.Items.ListAutoPaging(ctx, queueID, langsmith.AnnotationQueueItemListParams{
+	Status:   langsmith.F(langsmith.AnnotationQueueItemListParamsStatusNeedsMyReview),
+	ItemType: langsmith.F(langsmith.AnnotationQueueItemListParamsItemTypeRun),
+})
+for iter.Next() {
+	item := iter.Current()
+	startTime, err := time.Parse(time.RFC3339Nano, item.StartTime)
+	if err != nil {
+		panic(err.Error())
+	}
+	run, err := client.Runs.GetV2(ctx, item.RunID, langsmith.RunGetV2Params{
+		ProjectID: langsmith.F(item.ProjectID),
+		StartTime: langsmith.F(startTime),
+		Selects: langsmith.F([]langsmith.RunGetV2ParamsSelect{
+			langsmith.RunGetV2ParamsSelectName,
+			langsmith.RunGetV2ParamsSelectStatus,
+			langsmith.RunGetV2ParamsSelectInputs,
+			langsmith.RunGetV2ParamsSelectOutputs,
+		}),
+	})
+	if err != nil {
+		panic(err.Error())
+	}
+	fmt.Println(run.Name, run.Status)
+}
+if err := iter.Err(); err != nil {
+	panic(err.Error())
+}
+```
