@@ -1,20 +1,24 @@
 ---
 type: maintenance workflow
-title: Maintain the LangSmith Egress IP Inventory
-description: Maintain the canonical public egress-address inventory, its deterministic version, and the generated allowlist tables for LangSmith SaaS and LangSmith Deployment. Use this workflow to make safe inventory changes, validate generated content, and confirm publication of the machine-readable artifact.
+title: Egress IP Inventory Generation
+description: Explain the canonical LangSmith egress-address inventory, deterministic generation and stale-output checks, and the public documentation surfaces that publish it for human and machine consumers.
 tags: [langsmith, egress-ip, allowlist, generated-content, documentation]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-11-02T08:15:40.431Z
+    at: 2026-11-09T08:07:38.321Z
 sources:
   - id: openwiki-source-4d9cccca7700db7220ec055e
     resource: repo://.github/workflows/_test.yml
+  - id: openwiki-source-1bf310cf2d4f8606635de732
+    resource: repo://.github/workflows/check-external-doc-links.yml
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
+  - id: openwiki-source-ac5a96b2eaef63c5d8d74d9a
+    resource: repo://scripts/check-legacy-doc-links.sh
   - id: openwiki-source-d22c99c9d9abf854bbf1a047
     resource: repo://scripts/generate_egress_ip_tables.py
   - id: openwiki-source-14ddbca0a6ca28352d5f6a22
@@ -23,7 +27,7 @@ sources:
     resource: repo://src/langsmith/cloud.mdx
   - id: openwiki-source-30a490be0964e690a58135e7
     resource: repo://tests/unit_tests/test_egress_ip_inventory.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-02T08:15:40.431Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-09T08:07:38.321Z" }
 ---
 
 ## Ownership and published surfaces
@@ -49,7 +53,7 @@ flowchart TD
   Build --> Public["build langsmith JSON artifact"]
 ```
 
-*The inventory drives both human-readable tables and the machine-readable artifact; the builder copies the JSON to the public LangSmith output.*
+*This flow shows how one inventory feeds the generated human-readable tables and the machine-readable LangSmith artifact.*
 
 ## Inventory contract
 
@@ -116,6 +120,10 @@ The generator replaces the material strictly between them. Missing, duplicated, 
 
 Consumers should allowlist every matching CIDR, including allocated reserve addresses that may be used later, and should review additions and removals before changing firewall rules. This is why an apparently unused published entry is not necessarily removable.
 
+## Public documentation checks
+
+The repository's test workflow runs `make test`, which executes the unit-test suite. The focused egress tests cover the generator's no-write check path and the build publication boundary. Separately, the pull-request workflow `check-external-doc-links.yml` runs `scripts/check-legacy-doc-links.sh` when Markdown or MDX documentation changes; it scans source docs for links to retired documentation sites. That link-hygiene check does not replace the egress generator's hash and table drift check.
+
 ## Tests and failure triage
 
 The focused suite is `tests/unit_tests/test_egress_ip_inventory.py`. It proves four distinct boundaries:
@@ -133,4 +141,4 @@ uv run pytest tests/unit_tests/test_egress_ip_inventory.py -vv
 
 `make test` runs the unit-test suite used by CI, and its egress tests exercise the same check path. For a table/hash failure, do not repair the output manually: correct the canonical JSON or its permitted metadata, run the generator without `--check`, and commit the resulting files. For marker or schema errors, restore the one-block page contract or valid JSON shape first; regeneration cannot choose a safe replacement boundary or infer missing metadata.
 
-For broader repository conventions, see [Repository Source Map](/openwiki/architecture/source-map.md), [Developer Commands and CLI Tools](/openwiki/operations/cli-tools.md), and [Testing Overview](/openwiki/testing/test-overview.md).
+For broader repository conventions, see [Testing Overview](/openwiki/testing/test-overview.md) and [LangSmith agent documentation workflow](/openwiki/workflows/langsmith-agent-documentation.md).

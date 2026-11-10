@@ -12,7 +12,7 @@ def fetch_order_status(order_id: str) -> str:
 
 
 agent = create_agent(
-    ChatOpenAI(model="gpt-4o-mini"),
+    ChatOpenAI(model="gpt-5.4-mini"),
     tools=[fetch_order_status],
 )
 
