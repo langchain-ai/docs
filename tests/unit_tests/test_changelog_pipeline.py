@@ -131,13 +131,6 @@ def test_ticket_re_skips_model_names() -> None:
     assert not cp.TICKET_RE.search("now uses gpt-6.1-sol")
 
 
-def test_custom_headers_parses_name_value_lines() -> None:
-    """Gateway headers come one per line; blank and malformed lines are skipped."""
-    raw = "X-Gateway-Key: abc:123\n\nnot a header\n  X-Team : docs  "
-    assert cp._custom_headers(raw) == {"X-Gateway-Key": "abc:123", "X-Team": "docs"}
-    assert cp._custom_headers(None) == {}
-
-
 class _FakeStream:
     """Stands in for the SDK's message stream context manager."""
 
@@ -233,6 +226,52 @@ def test_release_held_by_flag_state() -> None:
     assert sorted(kept) == ["3"]
     assert sorted(dropped) == ["2", "4", "5"]
     assert "not found in Eppo" in dropped["4"]
+
+
+def test_released_prs_are_marked_for_grouping_and_writing() -> None:
+    """Released PRs carry a marker, so stale "behind a flag" notes do not drop them."""
+    pr = {
+        "title": "feat: custom views",
+        "body": "Behind a flag, default off.",
+        "files": ["a.ts"],
+        "omitted_files": [],
+        "diff": "+x",
+    }
+    prs = {1: pr, 2: {**pr, "title": "fix: other"}}
+    results = {n: {"pass1": {"reason": "flag off", "evidence": []}} for n in prs}
+    notes = cp._group_notes([1, 2], prs, results, frozenset({1}))
+    assert notes.splitlines()[0].startswith("#1 | [released] feat: custom views")
+    assert "[released]" not in notes.splitlines()[1]
+
+    group = {"label": "Custom views", "layer": "highlight", "prs": [1]}
+    assert 'released="true"' in cp._group_prompt(group, prs, frozenset({1}))
+    assert 'released="true"' not in cp._group_prompt(group, prs)
+    assert "[released]" in cp.GROUP_SYSTEM
+    assert 'released="true"' in cp.ENTRY_SYSTEM
+    assert 'released="true"' in cp.HIGHLIGHT_SYSTEM
+    assert cp.ROLLOUT_FACT in cp._group_prompt(group, prs, frozenset({1}))
+    assert "<rollout>" not in cp._group_prompt(group, prs)
+
+
+def test_eppo_state_overrides_a_dropped_released_group() -> None:
+    """A released PR's group publishes unless an earlier entry announced it."""
+    groups = [
+        {"prs": [1], "layer": "drop", "announced_before": False},
+        {"prs": [2], "layer": "drop", "announced_before": True},
+        {"prs": [3], "layer": "drop", "announced_before": False},
+        {"prs": [4, 5], "layer": "drop"},
+        {"prs": [6], "layer": "highlight", "announced_before": False},
+    ]
+    assert cp._keep_released(groups, frozenset({1, 2, 5, 6})) == 2
+    assert [g["layer"] for g in groups] == [
+        "change",  # released, not announced: Eppo wins over the stale notes
+        "drop",  # released, but last week's entry already announced it
+        "drop",  # not released: the model's drop stands
+        "change",  # one released PR is enough; a missing field means not announced
+        "highlight",  # not dropped: unchanged
+    ]
+    # Declared and required: the name appears once in properties, once in required.
+    assert json.dumps(cp.GROUP_SCHEMA).count('"announced_before"') == 2
 
 
 def test_write_held_orders_by_pr_number(tmp_path: Path) -> None:
@@ -362,6 +401,47 @@ def test_text_reasons_catch_internal_tooling_and_environments(
     """LangChain's own dev tooling and environments never reach the changelog."""
     group = {"title": "", "entry": entry}
     assert cp._text_reasons(group, {}) == [f"internal name: {leak}"]
+
+
+@pytest.mark.parametrize(
+    ("entry", "leak"),
+    [
+        ("Pass `enableColumnReordering: false` to `useDataGrid`.", "useDataGrid"),
+        ("DataGridV2 column headers can now be dragged.", "DataGridV2"),
+        ("Approval runs on each reconciler tick.", "reconciler"),
+        ("It can no longer crowd out other customers.", "other customers"),
+    ],
+)
+def test_text_reasons_catch_frontend_code_and_hosting_internals(
+    entry: str, leak: str
+) -> None:
+    """Component names and how Cloud is run never reach the Cloud changelog."""
+    group = {"title": "", "entry": entry}
+    assert cp._text_reasons(group, {}) == [f"internal name: {leak}"]
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        "Users and useful defaults stay the same.",
+        "Call `/v2/runs/analytics` with OpenAI or GPT-6.",
+    ],
+)
+def test_component_re_skips_ordinary_words_and_versioned_routes(entry: str) -> None:
+    """The case-sensitive patterns leave plain words and API routes alone."""
+    assert cp._text_reasons({"title": "", "entry": entry}, {}) == []
+
+
+def test_latest_bullets_skips_the_week_being_written(tmp_path: Path) -> None:
+    """A rerun after the new week is inserted still compares against last week."""
+    changelog = tmp_path / "changelog.mdx"
+    changelog.write_text(
+        '<Update label="Oct 19-26">\n- This week.\n</Update>\n'
+        '<Update label="Oct 12-19">\n- Last week.\n</Update>\n'
+        '<Update label="Oct 5-12">\n- Older.\n</Update>\n'
+    )
+    assert cp._latest_bullets(changelog, skip="Oct 19-26") == ["Last week."]
+    assert cp._latest_bullets(changelog, skip="Oct 26-Nov 2") == ["This week."]
 
 
 def test_rollout_reasons_flag_partial_availability() -> None:

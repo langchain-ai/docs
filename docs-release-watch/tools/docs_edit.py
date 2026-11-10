@@ -1,13 +1,15 @@
 """Validate surgical docs edits and check whether docs already cover a symbol.
 
 Catches whole-page rewrites and accidental edits to the wrong language fence.
+Also rebases a stale old→new edit onto the live base when the page moved.
 """
 
 from __future__ import annotations
 
+import difflib
 import json
 import re
-from typing import Any
+from typing import Any, Optional
 
 import httpx
 from langchain.tools import tool
@@ -55,6 +57,71 @@ def line_churn_ratio(old_content: str, new_content: str) -> float:
     changed = (len(old_lines) - shared) + (len(new_lines) - shared)
     baseline = max(len(old_lines), len(new_lines), 1)
     return changed / baseline
+
+
+def _find_subsequence(haystack: list[str], needle: list[str]) -> Optional[int]:
+    """Return the start index of needle in haystack, or None if missing/ambiguous."""
+    if not needle:
+        return None
+    n = len(needle)
+    hits = [
+        index
+        for index in range(0, len(haystack) - n + 1)
+        if haystack[index : index + n] == needle
+    ]
+    if len(hits) != 1:
+        return None
+    return hits[0]
+
+
+def rebase_edit_onto_base(
+    old_content: str, new_content: str, base_content: str
+) -> Optional[str]:
+    """Replay the old→new line edit onto ``base_content``.
+
+    Returns the rebased file text when every changed hunk still has a unique
+    anchor on the live base. Returns ``None`` when the edit cannot be applied
+    cleanly (page rewrote under the agent, ambiguous anchors, or pure inserts
+    without surrounding context).
+    """
+    if old_content == base_content:
+        return new_content
+    if old_content == new_content:
+        return None
+
+    old_lines = (old_content or "").splitlines(keepends=True)
+    new_lines = (new_content or "").splitlines(keepends=True)
+    result = list((base_content or "").splitlines(keepends=True))
+    matcher = difflib.SequenceMatcher(
+        a=old_lines, b=new_lines, autojunk=False
+    )
+
+    # Apply from the bottom of the file so earlier anchors stay stable.
+    for tag, i1, i2, j1, j2 in reversed(matcher.get_opcodes()):
+        if tag == "equal":
+            continue
+        old_block = old_lines[i1:i2]
+        new_block = new_lines[j1:j2]
+        if tag == "insert":
+            # Anchor the insert after the preceding equal line when present.
+            if i1 <= 0:
+                return None
+            anchor = old_lines[i1 - 1 : i1]
+            anchor_at = _find_subsequence(result, anchor)
+            if anchor_at is None:
+                return None
+            insert_at = anchor_at + len(anchor)
+            result[insert_at:insert_at] = new_block
+            continue
+        index = _find_subsequence(result, old_block)
+        if index is None:
+            return None
+        result[index : index + len(old_block)] = new_block
+
+    rebased = "".join(result)
+    if rebased == base_content:
+        return None
+    return rebased
 
 
 def validate_language_scope(

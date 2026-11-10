@@ -1,6 +1,7 @@
 # Files
 
-- [Adding and Moving Documentation Pages](adding-pages.md) - Safely add, move, rename, or retire authored documentation pages by selecting their source owner, updating navigation and redirects, and validating emitted routes.
-- [Agent Skills and Automation Procedures](agent-skills.md) - Use the canonical repository skill tree, select and validate focused procedures, and operate integration-listing automation within its authorization, trust, and review boundaries.
-- [Local Tooling and Commands](cli-tools.md) - Install and operate the local documentation pipeline, Make targets, Mintlify checks, Vale prose linting, executable samples, and agent-skill links. Select the command layer and validation boundary that match the change.
-- [Cross-References and API Links](cross-references.md) - Author, resolve, validate, and safely maintain scoped API documentation links using the @[...] cross-reference mechanism. Distinguishes source-level semantic-reference validation from rendered-site link checking.
+- [Adding and Moving Documentation Pages](adding-pages.md) - Safely add, move, rename, or retire documentation pages by selecting the owning source family, declaring emitted routes in navigation, preserving old URLs, and validating generated output.
+- [Agent Skills and Review Boundaries](agent-skills.md) - Explains how repository skills are discovered, how the always-on agent contract differs from task-specific procedures, and how documentation review remains bounded by trusted instructions and human approval.
+- [Developer CLI and Make Targets](cli-tools.md) - Practical local entrypoints for installing dependencies, developing and building the documentation site, validating generated output, linting, testing, and maintaining runnable samples. Choose commands by their source, generated-site, or remote-service boundary.
+- [Cross-References and Link Resolution](cross-references.md) - Author and maintain scoped API cross-references, validate them against local maps, and distinguish source resolution from generated-site route and anchor checks.
+- [Validate Package Version Claims](version-claims.md) - Verify that package versions named in authored documentation exist on PyPI or npm. Covers claim discovery, ecosystem resolution, failure semantics, ignore exceptions, focused use, and the checker’s deliberate limits.

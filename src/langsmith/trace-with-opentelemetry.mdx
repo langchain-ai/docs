@@ -44,9 +44,18 @@ flowchart TD
 
 The OpenTelemetry SDK instruments your agent code and emits spans. Spans travel via the OTLP protocol to an OpenTelemetry Collector, which batches and routes them to one or more destinations simultaneously  (_fanout_). LangSmith receives spans at its OTLP endpoint and displays them as traces in the dashboard.
 
-<Note>
-Update the LangSmith URL appropriately for self-hosted installations or regional SaaS in the requests below: GCP EU uses `eu.api.smith.langchain.com`; GCP APAC uses `apac.api.smith.langchain.com`; AWS US uses `aws.api.smith.langchain.com`.
-</Note>
+## Find your OTLP endpoint
+
+The OTLP base URL is your LangSmith API URL (`LANGSMITH_ENDPOINT`) plus `/otel`:
+
+| LangSmith deployment | OTLP base URL |
+| --- | --- |
+| GCP US | `https://api.smith.langchain.com/otel` |
+| GCP EU | `https://eu.api.smith.langchain.com/otel` |
+| GCP APAC | `https://apac.api.smith.langchain.com/otel` |
+| AWS US | `https://aws.api.smith.langchain.com/otel` |
+| BYOC | `https://<data_plane_host>/otel` |
+| Self-hosted | `https://<host>/api/v1/otel` |
 
 <a id="trace-a-langchain-application"></a>
 
@@ -79,7 +88,7 @@ If you're using LangChain or LangGraph, use the built-in integration to trace yo
    LANGSMITH_ENDPOINT=https://api.smith.langchain.com
    LANGSMITH_API_KEY=<your_langsmith_api_key>
    LANGSMITH_AGENT_ID="<your-agent-id>"
-   LANGSMITH_AGENT_ENVIRONMENT="production"
+   LANGSMITH_AGENT_ENVIRONMENT="local"
    # For LangSmith API keys linked to multiple workspaces, set the LANGSMITH_WORKSPACE_ID environment variable to specify which workspace to use.
    ```
 
@@ -134,11 +143,9 @@ For non-LangChain agents or custom instrumentation, you can trace your agent in 
    </CodeGroup>
 
    <Note>
-   `OTEL_EXPORTER_OTLP_ENDPOINT` is a base URL. OTLP/HTTP exporters append the signal path (`/v1/traces`) themselves, so do not include it: setting the base endpoint to `https://api.smith.langchain.com/otel/v1/traces` sends traces to `/otel/v1/traces/v1/traces`, which returns `404`. Include the full path only with the per-signal `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` variable or a collector exporter's `traces_endpoint`, which are used exactly as given.
-   </Note>
+   `OTEL_EXPORTER_OTLP_ENDPOINT` is a base URL: your LangSmith API URL (`LANGSMITH_ENDPOINT`) plus `/otel`. For the value on each deployment type, see [Find your OTLP endpoint](#find-your-otlp-endpoint). OTLP/HTTP exporters append the signal path (`/v1/traces`) themselves, so do not include it. Setting the base endpoint to `https://api.smith.langchain.com/otel/v1/traces` sends traces to `/otel/v1/traces/v1/traces`, which returns `404`.
 
-   <Note>
-   If you're self-hosting LangSmith, replace the base endpoint with your LangSmith api endpoint and append `/api/v1`. For example: `OTEL_EXPORTER_OTLP_ENDPOINT=https://ai-company.com/api/v1/otel`
+   Include the full path only with the per-signal `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` variable or a collector exporter's `traces_endpoint`, which are used exactly as given.
    </Note>
 
    For an agent-based workspace, set the registered agent identifier and environment in the exporter headers:
@@ -147,7 +154,7 @@ For non-LangChain agents or custom instrumentation, you can trace your agent in 
 
    ```bash Shell
    OTEL_EXPORTER_OTLP_ENDPOINT=https://api.smith.langchain.com/otel
-   OTEL_EXPORTER_OTLP_HEADERS="x-api-key=<your langsmith api key>,Langsmith-Agent-Id=<your-agent-id>,Langsmith-Agent-Environment=production"
+   OTEL_EXPORTER_OTLP_HEADERS="x-api-key=<your langsmith api key>,Langsmith-Agent-Id=<your-agent-id>,Langsmith-Agent-Environment=local"
    ```
 
    </CodeGroup>
@@ -459,7 +466,7 @@ If a span sets more than one attribute for the same cache or reasoning field, La
 | `gen_ai.assistant.message`  | `outputs.messages[]` | Assistant message in conversation                                |
 | `gen_ai.tool.message`       | `outputs.messages[]` | Tool response message                                            |
 | `gen_ai.choice`             | `outputs`            | Model choice/response with finish reason                         |
-| `exception`                 | `status`, `error`    | Sets status to "error" and extracts exception message/stacktrace |
+| `exception`                 | `status`, `error`    | Uses the first exception event to populate `error`, even without a message |
 
 #### Event attribute extraction
 
@@ -480,10 +487,18 @@ For choice events:
 * `tool_calls.{n}.function.arguments` → tool function arguments
 * `tool_calls.{n}.type` → tool call type
 
-For exception events:
+For exception events, LangSmith uses the first `exception` event on the span:
 
 * `exception.message` → error message
 * `exception.stacktrace` → error stacktrace (appended to message)
+
+Event attributes apply in order. A nonempty message after a stacktrace replaces it. If the message is still empty, LangSmith uses the first nonempty value from `exception.type`, the span's `error.type`, or `Exception (no message)`.
+
+Without an exception event, span status `ERROR` sets the run's `error` to:
+
+* **Status description**: Prefixed with `<error.type>: ` when the span has `error.type`
+* **Span's `error.type`**: Used when the status description is empty.
+* **`OTel span status ERROR (no description)`**: Used when both are empty.
 
 ## Implementation examples
 

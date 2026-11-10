@@ -3,6 +3,10 @@ title: Prebuilt middleware
 description: Prebuilt middleware for common agent use cases
 ---
 
+import MiddlewareSubagentCompiledJs from '/snippets/code-samples/middleware-subagent-compiled-js.mdx';
+import MiddlewareSubagentCompiledPy from '/snippets/code-samples/middleware-subagent-compiled-py.mdx';
+import MiddlewareSubagentJs from '/snippets/code-samples/middleware-subagent-js.mdx';
+import MiddlewareSubagentPy from '/snippets/code-samples/middleware-subagent-py.mdx';
 import RubricConfigurePy from '/snippets/code-samples/rubric-configure-py.mdx';
 
 LangChain provides prebuilt middleware for common use cases. Each middleware is production-ready and configurable for your specific needs.
@@ -23,6 +27,7 @@ The following middleware work with any LLM provider:
 | [Tool retry](#tool-retry) | Automatically retry failed tool calls with exponential backoff. |
 | [Model retry](#model-retry) | Automatically retry failed model calls with exponential backoff. |
 | [Model fallback](#model-fallback) | Automatically fallback to alternative models when primary fails. |
+| [Model refusal](#model-refusal) | Raise an error when the model refuses, instead of treating the refusal as a final answer. |
 | [Summarization](#summarization) | Automatically summarize conversation history when approaching token limits. |
 | [Human-in-the-loop](#human-in-the-loop) | Pause execution for human approval of tool calls. |
 | [Model call limit](#model-call-limit) | Limit the number of model calls to prevent excessive costs. |
@@ -34,7 +39,7 @@ The following middleware work with any LLM provider:
 | [Shell tool](#shell-tool) | Expose a persistent shell session to agents for command execution. |
 | [Filesystem](#filesystem-middleware) | Provide agents with a filesystem for storing context and long-term memories. |
 | [Subagent](#subagent) | Add the ability to spawn subagents. |
-| [Rubric grading (Beta)](#rubric-grading) | Apply LLM-as-a-judge grading so agents self-evaluate and iterate until a rubric is satisfied. |
+| [Rubric grading](#rubric-grading) | Apply LLM-as-a-judge grading so agents self-evaluate and iterate until a rubric is satisfied. |
 | [File search](#file-search) | Provide Glob and Grep search tools over filesystem files. |
 | [Context editing](#context-editing) | Manage conversation context by trimming or clearing tool uses. |
 | [LLM tool emulator](#llm-tool-emulator) | Emulate tool execution using an LLM for testing purposes. |
@@ -842,6 +847,133 @@ The middleware accepts a variable number of string arguments representing fallba
 :::
 
 </Accordion>
+
+:::python
+### Model refusal
+
+<Note>
+    `ModelRefusalMiddleware` requires `langchain>=1.4.9`.
+</Note>
+
+Raise @[`ModelRefusalError`] when the model refuses, instead of returning the refusal as the agent's final answer. Providers report a refusal, such as a safety-policy refusal, as a successful response, so without this middleware the agent run ends as if it succeeded. Model refusal is useful for the following:
+
+- Failing a run clearly when the model refuses.
+- Retrying a refused request on another model with [Model fallback](#model-fallback).
+
+The middleware checks each model response for a [`refusal` content block](/oss/langchain/messages#content-block-reference), which OpenAI, Anthropic, and Gemini models produce. It also catches refusals that fail to parse under a structured `response_format`. It does not detect refusals the model writes as ordinary text.
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ModelFallbackMiddleware, ModelRefusalMiddleware
+
+agent = create_agent(
+    model="claude-sonnet-5-5",
+    tools=[],
+    middleware=[
+        ModelFallbackMiddleware("gpt-6.1-sol"),
+        ModelRefusalMiddleware(),
+    ],
+)
+```
+
+List @[`ModelRefusalMiddleware`] after @[`ModelFallbackMiddleware`] so the fallback catches the error and retries on the next model. `ModelRetryMiddleware` does not retry refusals. When streaming, text the model sends before refusing can reach the client before the middleware raises.
+
+#### Handle a refusal
+
+Choose how your application responds when the model refuses:
+
+<AccordionGroup>
+
+<Accordion title="Catch the error and continue">
+
+Catch @[`ModelRefusalError`] where you invoke the agent. The refused reply is not saved to the thread, so the next message continues the conversation normally, on the same model or a different one:
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ModelRefusalMiddleware
+from langchain_core.exceptions import ModelRefusalError
+from langgraph.checkpoint.memory import InMemorySaver
+
+agent = create_agent(
+    model="claude-sonnet-5-5",
+    tools=[],
+    middleware=[ModelRefusalMiddleware()],
+    checkpointer=InMemorySaver(),
+)
+config = {"configurable": {"thread_id": "1"}}
+
+try:
+    agent.invoke({"messages": [{"role": "user", "content": "..."}]}, config)
+except ModelRefusalError as error:
+    print(error)  # Tell the user the request was refused
+
+# The thread is still usable
+agent.invoke({"messages": [{"role": "user", "content": "Try something else"}]}, config)
+```
+
+</Accordion>
+
+<Accordion title="Fall back to another model">
+
+List @[`ModelFallbackMiddleware`] before `ModelRefusalMiddleware`, as in the example above. When the model refuses, the request is retried on the next model, which can be from the same provider or a different one. A fallback model can still refuse the same request, so combine this with one of the other options for when every model refuses.
+
+</Accordion>
+
+<Accordion title="Reply to the user after fallback">
+
+To reply to the user instead of failing the run when every model refuses, add a middleware before `ModelFallbackMiddleware` that catches the error:
+
+```python
+from typing import Callable
+
+from langchain.agents import create_agent
+from langchain.agents.middleware import (
+    ModelFallbackMiddleware,
+    ModelRefusalMiddleware,
+    ModelRequest,
+    ModelResponse,
+    wrap_model_call,
+)
+from langchain.messages import AIMessage
+from langchain_core.exceptions import ModelRefusalError
+
+
+@wrap_model_call
+def reply_on_refusal(
+    request: ModelRequest,
+    handler: Callable[[ModelRequest], ModelResponse],
+) -> ModelResponse:
+    try:
+        return handler(request)
+    except ModelRefusalError:
+        # Every model refused: reply to the user instead of failing the run
+        return ModelResponse(result=[AIMessage("I cannot help with that request.")])
+
+
+agent = create_agent(
+    model="claude-sonnet-5-5",
+    tools=[],
+    middleware=[
+        reply_on_refusal,
+        ModelFallbackMiddleware("gpt-6.1-sol"),
+        ModelRefusalMiddleware(),
+    ],
+)
+```
+
+When `claude-sonnet-5-5` refuses, the request falls back to `gpt-6.1-sol`. If that model also refuses, `reply_on_refusal` returns the message.
+
+</Accordion>
+
+<Accordion title="Write custom handling">
+
+For other handling, such as recording the refusal in state or calling `interrupt()` to ask a human how to continue, skip `ModelRefusalMiddleware` and check each response for a [`refusal` content block](/oss/langchain/messages#content-block-reference) in your own middleware. See [Custom middleware](/oss/langchain/middleware/custom).
+
+</Accordion>
+
+</AccordionGroup>
+
+:::
 
 ### Summarization
 
@@ -2440,168 +2572,44 @@ Handing off tasks to subagents isolates context, keeping the main (supervisor) a
 The subagents middleware from [Deep Agents](/oss/deepagents/overview) allows you to supply subagents through a `task` tool.
 
 :::python
-```python
-from langchain.tools import tool
-from langchain.agents import create_agent
-from deepagents.middleware.subagents import SubAgentMiddleware
-
-
-@tool
-def get_weather(city: str) -> str:
-    """Get the weather in a city."""
-    return f"The weather in {city} is sunny."
-
-agent = create_agent(
-    model="claude-sonnet-4-6",
-    middleware=[
-        SubAgentMiddleware(
-            default_model="claude-sonnet-4-6",
-            default_tools=[],
-            subagents=[
-                {
-                    "name": "weather",
-                    "description": "This subagent can get weather in cities.",
-                    "system_prompt": "Use the get_weather tool to get the weather in a city.",
-                    "tools": [get_weather],
-                    "model": "gpt-5.5",
-                    "middleware": [],
-                }
-            ],
-        )
-    ],
-)
-```
+<MiddlewareSubagentPy />
 :::
 
 :::js
-```typescript
-import { tool } from "langchain";
-import { createAgent } from "langchain";
-import { createSubAgentMiddleware } from "deepagents";
-import { z } from "zod";
-
-const getWeather = tool(
-  async ({ city }: { city: string }) => {
-    return `The weather in ${city} is sunny.`;
-  },
-  {
-    name: "get_weather",
-    description: "Get the weather in a city.",
-    schema: z.object({
-      city: z.string(),
-    }),
-  },
-);
-
-const agent = createAgent({
-  model: "claude-sonnet-4-6",
-  middleware: [
-    createSubAgentMiddleware({
-      defaultModel: "claude-sonnet-4-6",
-      defaultTools: [],
-      subagents: [
-        {
-          name: "weather",
-          description: "This subagent can get weather in cities.",
-          systemPrompt: "Use the get_weather tool to get the weather in a city.",
-          tools: [getWeather],
-          model: "gpt-5.5",
-          middleware: [],
-        },
-      ],
-    }),
-  ],
-});
-```
+<MiddlewareSubagentJs />
 :::
 
+:::python
+A declarative subagent requires a **name**, **description**, **model**, and **tools**. You can also set a **system prompt** and additional **middleware**. This can be particularly useful when you want to give the subagent an additional state key to share with the main agent.
+:::
+
+:::js
 A subagent is defined with a **name**, **description**, **system prompt**, and **tools**. You can also provide a subagent with a custom **model**, or with additional **middleware**. This can be particularly useful when you want to give the subagent an additional state key to share with the main agent.
+:::
 
 For more complex use cases, you can also provide your own prebuilt LangGraph graph as a subagent.
 
 :::python
-```python
-from langchain.agents import create_agent
-from deepagents.middleware.subagents import SubAgentMiddleware
-from deepagents import CompiledSubAgent
-from langgraph.graph import StateGraph
-
-# Create a custom LangGraph graph
-def create_weather_graph():
-    workflow = StateGraph(...)
-    # Build your custom graph
-    return workflow.compile()
-
-weather_graph = create_weather_graph()
-
-# Wrap it in a CompiledSubAgent
-weather_subagent = CompiledSubAgent(
-    name="weather",
-    description="This subagent can get weather in cities.",
-    runnable=weather_graph
-)
-
-agent = create_agent(
-    model="claude-sonnet-4-6",
-    middleware=[
-        SubAgentMiddleware(
-            default_model="claude-sonnet-4-6",
-            default_tools=[],
-            subagents=[weather_subagent],
-        )
-    ],
-)
-```
+<MiddlewareSubagentCompiledPy />
 :::
 
 :::js
-```typescript
-import { tool, createAgent } from "langchain";
-import { createSubAgentMiddleware, type SubAgent } from "deepagents";
-import { z } from "zod";
-
-const getWeather = tool(
-  async ({ city }: { city: string }) => {
-    return `The weather in ${city} is sunny.`;
-  },
-  {
-    name: "get_weather",
-    description: "Get the weather in a city.",
-    schema: z.object({
-      city: z.string(),
-    }),
-  },
-);
-
-const weatherSubagent: SubAgent = {
-  name: "weather",
-  description: "This subagent can get weather in cities.",
-  systemPrompt: "Use the get_weather tool to get the weather in a city.",
-  tools: [getWeather],
-  model: "gpt-5.5",
-  middleware: [],
-};
-
-const agent = createAgent({
-  model: "claude-sonnet-4-6",
-  middleware: [
-    createSubAgentMiddleware({
-      defaultModel: "claude-sonnet-4-6",
-      defaultTools: [],
-      subagents: [weatherSubagent],
-    }),
-  ],
-});
-```
+<MiddlewareSubagentCompiledJs />
 :::
 
+:::python
+`SubAgentMiddleware` exposes only the subagents you provide. Configure each subagent's model and tools in its specification. Use `create_deep_agent` to include the default `general-purpose` subagent and the default Deep Agents middleware stack.
+:::
+
+:::js
 In addition to any user-defined subagents, the main agent has access to a `general-purpose` subagent at all times. This subagent has the same instructions as the main agent and all the tools it has access to. The primary purpose of the `general-purpose` subagent is context isolation—the main agent can delegate a complex task to this subagent and get a concise answer back without bloat from intermediate tool calls.
+:::
 
 :::python
 ### Rubric grading
 
 <Note>
-`RubricMiddleware` requires `deepagents>=0.6.5`. It is in [**beta**](/oss/versioning); the API may change in the future.
+`RubricMiddleware` requires `deepagents>=0.6.5`.
 </Note>
 
 Some tasks have a clear definition of "done" that an agent cannot reliably hit on the first try. `RubricMiddleware` lets you declare _what done looks like_ as a rubric and have the agent self-evaluate and iterate until the rubric is satisfied or a maximum iteration cap is hit.

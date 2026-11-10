@@ -1,7 +1,7 @@
 from managed_deepagents import define_deep_agent
 from tools.docs_edit import check_docs_coverage
 from tools.github_prs import create_draft_docs_pr, get_docs_file
-from tools.linear_issues import create_linear_issue
+from tools.linear_issues import create_linear_issue, note_ship_failure_on_linear_issue
 from tools.releases import (
     get_eligible_release,
     get_release_diff,
@@ -27,6 +27,7 @@ _READ_TOOLS = [
 _WRITE_TOOLS = [
     create_linear_issue,
     create_draft_docs_pr,
+    note_ship_failure_on_linear_issue,
 ]
 
 _RESEARCH_SYSTEM_PROMPT = """\
@@ -51,7 +52,9 @@ skip the feature (already documented) unless the docs statement is wrong.
 Return one JSON research report in the shape required by the release-research
 skill (product, head_tag, base_tag, features[], skipped[]). Every feature that
 needs docs must include evidence that will pass the write-tool GitHub
-verification gate. Do not invent symbols or paths.
+verification gate. Prefer symbol over quote. Quotes must be exact substrings
+from get_product_source_file, never paraphrases of issues or release notes.
+Do not invent symbols or paths.
 """
 
 agent = define_deep_agent(

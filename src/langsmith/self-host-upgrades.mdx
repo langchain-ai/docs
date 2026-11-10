@@ -108,6 +108,98 @@ langsmith-queue-d58cb64f7-87d68          1/1     Running     0          15h
 
    ![LangSmith UI](/langsmith/images/langsmith-ui.png)
 
+## Upgrade separate sandbox clusters
+
+When Sandboxes run in a [separate cluster](/langsmith/self-host-sandbox-separate-cluster), each upgrade involves two Helm releases: `langsmith` in the LangSmith cluster and `langsmith-sandbox` in the sandbox cluster. Keep both on the same LangSmith release:
+
+- **Order**: Upgrade `langsmith` first, then `langsmith-sandbox` within days. Do not run the sandbox hosts on a newer release than the control plane, except while the runtime upgrade rolls out. If the release notes for a version give a different order, follow them. LangSmith [warns in the UI](/langsmith/self-host-sandbox-separate-cluster#watch-for-a-release-mismatch) when the runtime falls behind for more than 72 hours or runs ahead for more than 30 minutes.
+- **Version**: Use the newest `langsmith-sandbox` chart whose appVersion equals the appVersion of your `langsmith` chart. The two charts pair by appVersion, never by chart version. See [Release policy](/langsmith/release-versions#pair-the-sandbox-runtime-chart).
+- **Pinning**: Pin both releases to exact chart versions. Never use a version range.
+
+To find the runtime chart version that matches your `langsmith` release:
+
+```bash
+helm repo update
+APP=$(helm get metadata langsmith --kube-context <langsmith-context> -n <langsmith-namespace> -o json | jq -r .appVersion)
+helm search repo langchain/langsmith-sandbox --versions --devel -o json \
+  | jq -r --arg a "$APP" '[.[] | select(.name == "langchain/langsmith-sandbox" and .app_version == $a)][0].version // error("no langsmith-sandbox chart for appVersion \($a)")'
+```
+
+Every host upgrade restarts the hosts one at a time, and each restart suspends the Sandboxes running on that host. See [Understand a rolling upgrade](/langsmith/self-host-sandbox-operations#understand-a-rolling-upgrade).
+
+### Upgrade with the Helm CLI
+
+Run two commands, each against its own cluster, `langsmith` first:
+
+```bash
+helm upgrade langsmith langchain/langsmith \
+  --kube-context <langsmith-context> \
+  --namespace <langsmith-namespace> \
+  --version <langsmith-chart-version> \
+  --values langsmith_config.yaml \
+  --wait
+
+helm upgrade langsmith-sandbox langchain/langsmith-sandbox \
+  --kube-context <sandbox-context> \
+  --namespace langsmith-sandbox \
+  --version <matching-sandbox-chart-version> \
+  --values langsmith_sandbox_config.yaml \
+  --wait \
+  --timeout <timeout>
+```
+
+- **No automatic rollback for the runtime**: Do not pass `--atomic` or `--rollback-on-failure` to the `langsmith-sandbox` upgrade. Hosts drain one at a time, so a slow rollout can exceed the `--wait` timeout without having failed, and a rollback restarts every host again.
+- **Timeout**: Set `--timeout` to about the number of hosts times `sandboxHost.deployment.terminationGracePeriodSeconds` (300 seconds by default), plus the time a host takes to start. To follow the rollout, run `kubectl rollout status` with a similar timeout.
+- **Reused values**: If you reuse the previous release's values, prefer `--reset-then-reuse-values` to `--reuse-values`. `--reuse-values` keeps the previous chart's defaults, including its image tags.
+
+### Upgrade with Argo CD or Flux
+
+- **Two changes**: Bump `langsmith` in one Git change. After its sync succeeds and the application is Healthy (Flux: the HelmRelease is `Ready`), bump `langsmith-sandbox` to the exact matching version in a second change.
+- **No combined change**: One change that bumps both charts syncs them at the same time. If the `langsmith` upgrade is then blocked, for example by a failing pre-upgrade hook, the hosts run ahead of the control plane until it goes through.
+- **No floating versions**: Never let the runtime chart float. Do not use a range, `*`, or `*-0`, and do not omit `version` in a Flux HelmRelease.
+
+### Upgrade with your own infrastructure as code
+
+Model the two charts as two Helm releases with an explicit dependency, such as `depends_on` in Terraform, so `langsmith` applies before `langsmith-sandbox`. Pin both to exact chart versions.
+
+### Check the upgrade
+
+After both upgrades:
+
+1. Check that both releases report the same `APP VERSION`. Argo CD does not update Helm release records, so skip this step there; step 3 checks the same thing:
+
+   ```bash
+   helm list --kube-context <langsmith-context> -n <langsmith-namespace> --filter '^langsmith$'
+   helm list --kube-context <sandbox-context> -n langsmith-sandbox --filter '^langsmith-sandbox$'
+   ```
+
+1. Check that the `platform-backend` and `sandbox-host` rollouts finished:
+
+   ```bash
+   kubectl --context <langsmith-context> -n <langsmith-namespace> rollout status deployment/langsmith-platform-backend
+   kubectl --context <sandbox-context> -n langsmith-sandbox rollout status deployment/langsmith-sandbox-sandbox-host --timeout=<timeout>
+   ```
+
+1. Check that the image tags each cluster runs match that `APP VERSION`:
+
+   ```bash
+   kubectl --context <langsmith-context> -n <langsmith-namespace> get deployment langsmith-platform-backend \
+     -o jsonpath='{.spec.template.spec.containers[?(@.name=="platform-backend")].image}{"\n"}'
+   kubectl --context <sandbox-context> -n langsmith-sandbox get deployment langsmith-sandbox-sandbox-host \
+     -o jsonpath='{.spec.template.spec.containers[?(@.name=="sandbox-host")].image}{"\n"}'
+   ```
+
+The commands assume the release names `langsmith` and `langsmith-sandbox`.
+
+### Roll back the runtime
+
+Roll back only the `langsmith-sandbox` release, with `helm rollback` or by reverting its Git change. Do not roll back the `langsmith` release: its database migrations only move forward, so fix forward instead. A host rollback restarts every host, like an upgrade. It is not always safe: if the newer hosts already wrote sandbox data in a format that older hosts cannot read, roll forward instead. If you are unsure, contact support before you roll hosts back.
+
+### Change the topology or uninstall
+
+- **Move from the embedded runtime**: Set `sandboxes.external.enabled: true` on the `langsmith` release first, then install `langsmith-sandbox` against the same JuiceFS metadata store and bucket. See [Move an existing installation to a separate cluster](/langsmith/self-host-sandbox-separate-cluster#move-an-existing-installation-to-a-separate-cluster).
+- **Uninstall**: Uninstall `langsmith-sandbox` first, then uninstall or reconfigure `langsmith`. See [Uninstall](/langsmith/self-host-sandbox-separate-cluster#uninstall).
+
 ## Upgrade from v16 to v17
 
 Chart v17 changes the values for SmithDB, sandboxes, and Engine. Update your values file before you run `helm upgrade`. Chart v17 fails to render the SmithDB, sandbox, and Engine values below until you change them. If you deploy with the Terraform modules, follow the upgrade steps in the [AWS](/langsmith/self-host-terraform-aws-deploy#upgrade-from-chart-v16-to-v17), [GCP](/langsmith/self-host-terraform-gcp-deploy), or [Azure](/langsmith/self-host-terraform-azure-deploy) deploy guide, which apply these changes to the module's values files.

@@ -34,6 +34,7 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Use model aliases: use full identifiers (e.g., `claude-sonnet-4-6`)
 - Use `>=` in prose for version minimums: write "v0.153.4 or later"; reserve `>=` for package specifiers in code (`langsmith>=0.3.13`)
 - Use "→" to separate UI navigation steps: write "Go to **Settings** > **API Keys**"
+- State LangChain prices in dollars or other currencies, such as the price of an LSU, a plan, or a seat: link to the pricing page (`https://www.langchain.com/pricing`) instead, because prices change outside the docs release cycle. Usage rates stated in LSU are fine. Cloud-provider cost estimates for infrastructure you run, such as the BYOC data plane cost pages, are not LangChain pricing
 - Use FontAwesome icon names
 - Use nested double quotes in component attributes: use `default="['a', 'b']"` not `default='["a", "b"]'`
 - Use contractions ("do not" not "don't", "cannot" not "can't", "it is" not "it's")
@@ -99,11 +100,15 @@ These are common nouns, not proper nouns. Write them lowercase in prose, includi
 
 ### Product and feature name capitalization
 
-Capitalize a word when it refers to a **product or brand name**. Use lowercase when it refers to a **common noun**: a thing you build, an instance, or a type.
+Capitalize a word when it refers to a **product or brand name**, or to a **named feature** of a product. Use lowercase when it refers to a **common noun**: a thing you build, an instance, or a type.
 
 **Capitalize** product and brand names:
 
 - LangChain, LangGraph, LangSmith, Deep Agents, Fleet, Engine
+
+**Capitalize** named features of a product:
+
+- Agent Registry (a named feature of LangSmith)
 
 **Lowercase** common nouns (things you create, instances, or types):
 
@@ -113,7 +118,7 @@ Capitalize a word when it refers to a **product or brand name**. Use lowercase w
 - "Build agents across the agent development lifecycle" (the lifecycle is a process, not a product; marketing materials capitalize it, docs do not)
 - "LangChain provides the open agent engineering platform" (the phrase describes what LangChain provides; it is not a product name)
 
-When in doubt, ask: is this word the product's proper name, or is it describing a thing the user creates or works with? If the latter, use lowercase.
+When in doubt, ask: is this word the proper name of a product or a named feature, or is it describing a thing the user creates or works with? If the latter, use lowercase.
 
 Spell out "agent development lifecycle" in prose. Do not use the "ADLC" acronym, which appears in marketing materials but not in the documentation.
 

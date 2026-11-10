@@ -17,7 +17,7 @@ seen = []
 # :snippet-start: async-subagents-notifications-py
 for message in state["messages"]:
     if event := message.additional_kwargs.get("deepagents_notification"):
-        print(event["agent_name"], event["status"])  # success, error, timeout, or waiting
+        print(event["agent_name"], event["status"])  # success, error, timeout, cancelled, or waiting
         # :remove-start:
         seen.append(event["status"])
         # :remove-end:

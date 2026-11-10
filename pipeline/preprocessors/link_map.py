@@ -92,6 +92,7 @@ LINK_MAPS: list[LinkMap] = [
             "ToolCallLimitMiddleware": "langchain/agents/middleware/tool_call_limit/ToolCallLimitMiddleware",
             "ProviderToolSearchMiddleware": "langchain/agents/middleware/provider_tool_search/ProviderToolSearchMiddleware",
             "ModelFallbackMiddleware": "langchain/agents/middleware/model_fallback/ModelFallbackMiddleware",
+            "ModelRefusalMiddleware": "langchain/agents/middleware/model_refusal/ModelRefusalMiddleware",
             "TodoListMiddleware": "langchain/agents/middleware/todo/TodoListMiddleware",
             "LLMToolSelectorMiddleware": "langchain/agents/middleware/tool_selection/LLMToolSelectorMiddleware",
             "ToolRetryMiddleware": "langchain/agents/middleware/tool_retry/ToolRetryMiddleware",
@@ -291,6 +292,7 @@ LINK_MAPS: list[LinkMap] = [
             # Exceptions
             "ContextOverflowError": "langchain-core/exceptions/ContextOverflowError",
             "OutputParserException": "langchain-core/exceptions/OutputParserException",
+            "ModelRefusalError": "langchain-core/exceptions/ModelRefusalError",
             "ModelError": "langchain-core/exceptions/ModelError",
             "ModelAuthenticationError": "langchain-core/exceptions/ModelAuthenticationError",
             "ModelPermissionDeniedError": "langchain-core/exceptions/ModelPermissionDeniedError",
@@ -502,6 +504,7 @@ LINK_MAPS: list[LinkMap] = [
             # Functional API
             "task": "langgraph/func/task",
             "@task": "langgraph/func/task",
+            "entrypoint": "langgraph/func/entrypoint",
             "@entrypoint": "langgraph/func/entrypoint",
             "entrypoint.final": "langgraph/func/entrypoint/final",
             # Configuration
@@ -700,7 +703,9 @@ LINK_MAPS: list[LinkMap] = [
             "createReactAgent": "langchain-langgraph/prebuilt/createReactAgent",
             "createSupervisor": "langchain-langgraph-supervisor/createSupervisor",
             "entrypoint": "langchain-langgraph/index/entrypoint",
+            "@entrypoint": "langchain-langgraph/index/entrypoint",
             "entrypoint.final": "langchain-langgraph/index/entrypoint/final",
+            "CachePolicy": "langchain-langgraph/index/CachePolicy",
             "get_state_history": "langchain-langgraph/pregel/Pregel/getStateHistory",
             "get_state": "langchain-langgraph/pregel/Pregel/getState",
             "getStateHistory": "langchain-langgraph/pregel/Pregel/getStateHistory",

@@ -7,9 +7,9 @@ description: Write or revise documentation prose so it reads like the rest of th
 
 `AGENTS.md` holds the rules a linter can check: no contractions, no first
 person, no future tense, sentence-case headings, Oxford commas, spacing around
-dashes. Vale enforces most of them and `make lint_prose` is the gate, though
-Vale does not scan inside JSX components such as `<Note>` and `<Tip>`, so a
-clean run there proves nothing. This skill covers what a linter cannot check:
+dashes. `make lint_prose` is the gate, but it fails only on error-level Vale
+rules. Contractions, first person, future tense, and filler pass it, so a clean
+run does not prove the page follows them. This skill covers what a linter cannot check:
 rhythm, density, and the shape of a sentence that carries information.
 
 The targets below are measured from this repository's own pages, not invented.
@@ -119,7 +119,9 @@ Read the draft once looking only for these:
   condition, its actor, or its exact value reads cleanly and says something
   else. Restore the fact and split the sentence.
 - **A first mention with no link**, and repeat mentions that are linked again.
-- **A claim you did not verify.** Check it against the source, or cut it.
+- **A claim you did not verify.** Check it against the product source with the
+  `verify-against-source` skill, or cut it. Another docs page is not a source.
+  Name every claim you could not confirm in the PR body.
 - **A fact that disagrees with a related page.** Grep `src/` for the feature and
   read the pages that cover it from another angle, such as a CLI reference or a
   permissions table. The `docs-edit` skill covers what to look for.
@@ -134,3 +136,35 @@ make lint_prose FILES="<changed files>"
 
 For a full review against the style guide, with the rule each finding breaks,
 use the `docs-review` skill.
+
+## CI mode
+
+In CI mode, this skill reviews a PR's prose for voice and writes findings
+instead of editing. Read
+[ci-mode.md](../docs-review/ci-mode.md) first: its rules and findings format
+apply, with `"skill": "docs-team-voice"`.
+
+Apply the revision pass above to lines the diff added or changed, and report
+only these:
+
+- **A sentence that carries two ideas.** The tell is a join with "so",
+  "which", "and" between two clauses, or a semicolon, usually past 20 words.
+  Write the split as the replacement. A long sentence that holds one idea,
+  such as an exact value, a condition, or a list, is fine.
+- **A sentence a reader has to parse twice**: a construction such as "so ...
+  that", a stacked clause, or an abstraction where a concrete example from the
+  same page would say it plainer. Write the plainer sentence.
+- **Hedges and filler**, as listed in the revision pass.
+- **A default or condition buried in a subordinate clause** where a bare fact
+  would state it.
+- **A vague identifier** where the diff itself names the exact one elsewhere.
+- **Passive voice where the actor is known.**
+
+Every finding is `minor` and `suggest`. Never `auto`, because rewording can
+change meaning, and never `human`. Keep each replacement to the sentence it
+fixes, and keep every fact, condition, and exact value in it.
+
+Report at most five findings per file, choosing the ones a reader would notice
+most. Skip a sentence that is already clear, even if a rule could be stretched
+to reach it. Leave rules, links, structure, and facts to `docs-review` and
+`verify-against-source`, which run alongside this pass.
