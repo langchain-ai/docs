@@ -228,7 +228,7 @@ Allowlist every address in the column for your region so your private network ca
 
 GCP US, EU, and APAC are moving to the additional addresses in the last row (`34.56.47.75`, `34.32.254.168`, and `34.151.160.163`). Add those addresses now. The current GCP addresses keep serving these hostnames until February 10, 2027. After that date, the hostnames use only the additional addresses. Remove a current GCP address from your allowlist only after the hostname no longer resolves to it. The AWS US and Azure addresses are not changing.
 
-This list is only for LangSmith Cloud. A BYOC or self-hosted deployment uses the load balancer in your own environment. If your private network reaches Cloud over the public internet, including through a BYOC control plane connection, allowlist the Cloud addresses for your region. PrivateLink and Private Service Connect do not use these addresses.
+This list is only for LangSmith Cloud. A BYOC or self-hosted deployment uses the load balancer in your own environment. If your private network reaches Cloud over the public internet, including through a BYOC control plane connection, allowlist the Cloud addresses for your region. AWS PrivateLink, GCP Private Service Connect, and Azure Private Link do not use these addresses.
 
 ## Private connectivity (Enterprise)
 
@@ -236,7 +236,7 @@ This list is only for LangSmith Cloud. A BYOC or self-hosted deployment uses the
 [**Enterprise only.**](/langsmith/pricing-plans) Private connectivity is available exclusively for Enterprise customers. Contact your account representative or [sales@langchain.dev](mailto:sales@langchain.dev) to enable this feature.
 </Callout>
 
-Enterprise customers can connect to LangSmith without exposing traffic to the public internet using **AWS PrivateLink** or **GCP Private Service Connect (PSC)**.
+Enterprise customers can connect to LangSmith without exposing traffic to the public internet using **AWS PrivateLink**, **GCP Private Service Connect (PSC)**, or **Azure Private Link**.
 
 ### AWS PrivateLink
 
@@ -457,6 +457,87 @@ From a VM in your VPC:
 ```bash
 curl https://<REGION>.p.api.smith.langchain.com/ok
 ```
+
+### Azure Private Link
+
+Customers on **Azure** can connect to the LangSmith Azure SaaS API through [Azure Private Link](https://learn.microsoft.com/en-us/azure/private-link/private-link-overview). A private endpoint in your virtual network (VNet) connects to the LangSmith Private Link service.
+
+#### Request access
+
+Contact your account representative or [sales@langchain.dev](mailto:sales@langchain.dev) with your Azure subscription ID and desired endpoint region. LangChain adds your subscription to the Private Link service auto-approval list. LangChain also provides the service resource ID.
+
+Wait for LangChain to confirm that subscription access is enabled before creating your private endpoint. New connections from an allowlisted subscription are approved automatically. Connections from other subscriptions require manual approval.
+
+#### Create a private endpoint
+
+Use an existing subnet in your VNet. Set the endpoint location to the subnet's region. Replace the placeholders with your Azure resource details and the service resource ID provided by LangChain.
+
+The following Terraform example uses the [AzureRM provider](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/private_endpoint):
+
+```hcl Terraform
+resource "azurerm_private_endpoint" "langsmith" {
+  name                = "langsmith-private-endpoint"
+  location            = "<YOUR_SUBNET_REGION>"
+  resource_group_name = "<YOUR_RESOURCE_GROUP>"
+  subnet_id           = "<YOUR_SUBNET_ID>"
+
+  private_service_connection {
+    name                           = "langsmith"
+    private_connection_resource_id = "<LANGSMITH_PRIVATE_LINK_SERVICE_RESOURCE_ID>"
+    is_manual_connection           = false
+  }
+}
+
+output "langsmith_private_endpoint_id" {
+  value = azurerm_private_endpoint.langsmith.id
+}
+```
+
+Apply the configuration and wait until the connection status is `Approved` before testing connectivity. If the connection remains `Pending`, send the private endpoint ID to LangChain to confirm subscription access and resolve the pending request.
+
+#### Configure DNS
+
+Configure private DNS so that `azure.api.smith.langchain.com` resolves to your private endpoint's IP address inside your VNet. Add the following resources to the same Terraform configuration:
+
+```hcl Terraform
+resource "azurerm_private_dns_zone" "langsmith" {
+  name                = "azure.api.smith.langchain.com"
+  resource_group_name = "<YOUR_RESOURCE_GROUP>"
+}
+
+resource "azurerm_private_dns_a_record" "langsmith" {
+  name                = "@"
+  zone_name           = azurerm_private_dns_zone.langsmith.name
+  resource_group_name = "<YOUR_RESOURCE_GROUP>"
+  ttl                 = 60
+  records             = [azurerm_private_endpoint.langsmith.private_service_connection[0].private_ip_address]
+}
+
+resource "azurerm_private_dns_zone_virtual_network_link" "langsmith" {
+  name                  = "langsmith-api"
+  resource_group_name   = "<YOUR_RESOURCE_GROUP>"
+  private_dns_zone_name = azurerm_private_dns_zone.langsmith.name
+  virtual_network_id    = "<YOUR_VNET_ID>"
+  registration_enabled  = false
+
+  depends_on = [azurerm_private_dns_a_record.langsmith]
+}
+```
+
+If you use custom DNS servers, configure them to resolve `azure.api.smith.langchain.com` to the private endpoint IP. Linking an Azure private DNS zone alone does not configure your custom resolver.
+
+This example configures private access to the API hostname only. For private access to the LangSmith UI or other services, contact LangChain for additional hostnames.
+
+#### Verify connectivity
+
+From a VM or container in your VNet, confirm that DNS returns the private endpoint IP and HTTPS succeeds:
+
+```bash
+nslookup azure.api.smith.langchain.com
+curl --fail --show-error https://azure.api.smith.langchain.com/ok
+```
+
+Keep using `https://azure.api.smith.langchain.com` as your LangSmith API endpoint. API keys and workspace permissions still apply.
 
 ## API rate limits
 
