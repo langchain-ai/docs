@@ -38,7 +38,7 @@ def load_inventory(path):
             raise ValueError("Each address must contain service, cloud, region, cidr")
         for key, allowed in {
             "service": PAGES,
-            "cloud": ("gcp", "aws"),
+            "cloud": ("gcp", "aws", "azure"),
             "region": ("us", "eu", "apac"),
         }.items():
             if not isinstance(entry[key], str) or entry[key] not in allowed:
@@ -57,7 +57,7 @@ def load_inventory(path):
 
 def render_table(addresses, service):
     columns = {}
-    for cloud in ("gcp", "aws"):
+    for cloud in ("gcp", "aws", "azure"):
         for region in ("us", "eu", "apac"):
             values = [
                 entry["cidr"].removesuffix("/32")

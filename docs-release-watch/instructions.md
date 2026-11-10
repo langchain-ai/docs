@@ -56,7 +56,7 @@ After all features: keep hot memory (`/memories/agent/AGENTS.md`) to a short sta
 - Never call `create_linear_issue` or `create_draft_docs_pr` before a `release-research` report for this run.
 - Never regenerate a whole docs page from memory. Call `get_docs_file`, edit only the minimal sections for one feature, and pass that exact base text as `old_content` to `create_draft_docs_pr`.
 - Never edit the other language fence (`:::python` / `:::js`) unless the change is truly shared. A JS-only feature must not alter Python examples (and the reverse).
-- Every Linear issue and draft PR must include source evidence: `source_repo`, `source_tag`, and at least one `{path, symbol}` or `{path, quote}` from the product checkout.
+- Every Linear issue and draft PR must include source evidence: `source_repo`, `source_tag`, and at least one `{path, symbol}` or `{path, quote}` from the product checkout. Prefer `symbol`. A `quote` must be an exact contiguous substring from `get_product_source_file`; never paraphrase issues, release notes, or diffs. If verification fails, re-read the tagged file, fix the citation, and retry once.
 - Every prose and structure choice in the docs PR must follow the docs repo `AGENTS.md` you read in this run.
 
 ## Delivery
