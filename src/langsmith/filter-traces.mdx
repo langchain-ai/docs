@@ -461,13 +461,11 @@ Results must match every applied filter, the AI condition, and the time range. T
 
 ### Search with AI using the SDK
 
-The SDK streaming APIs accept `ai_search` for runs, traces, and threads. In the SDK, `ai_search` is matched only against the conversation; it is not translated into filters, so pass structured conditions in a filter. Use these APIs to search conversations from scripts, with the same [organization opt-in and data-handling requirements](#enable-ai-search) as the UI.
+To run the same search as the UI from a script, call `ai_search.parse` with a description and the projects to search. It returns a plan without running the search: the `scope` to query (`runs`, `traces`, or `threads`), the filters, the `ai_search` condition, and any time bounds. Pass those fields to the matching streaming query method. AI search in the SDK has the same [organization opt-in and data-handling requirements](#enable-ai-search) as the UI.
 
 <Note>
-The following examples require `langsmith>=0.14.14` for Python or `langsmith>=0.11.3` for TypeScript.
+`ai_search.parse` requires a version of the SDK that includes it. The query examples require `langsmith>=0.14.14` for Python or `langsmith>=0.11.3` for TypeScript.
 </Note>
-
-Pass a nonempty description of at most 2,000 UTF-8 bytes in `ai_search`, and add a filter to require structured conditions as well: `filter` for runs and threads, or `trace_filter` and `tree_filter` for traces. Results must match the description and every filter.
 
 <Tabs>
   <Tab title="Python">
@@ -476,22 +474,31 @@ Pass a nonempty description of at most 2,000 UTF-8 bytes in `ai_search`, and add
 from langsmith import Langsmith
 
 client = Langsmith()
+project_id = "<project-id>"
 
-for run in client.runs.streaming.query_v2_items(
-    project_ids=["<project-id>"],
-    ai_search="tool call failed",
-    filter='eq(run_type, "llm")',
-    selects=["ID", "NAME"],
-):
-    print(run.id, run.name)
+plan = client.ai_search.parse(
+    project_ids=[project_id],
+    ai_search="threads where the agent didn't complete the task and spent more than $1",
+    scope="threads",
+)
+
+params = {
+    key: value
+    for key, value in {
+        "filter": plan.filter,
+        "trace_filter": plan.trace_filter,
+        "tree_filter": plan.tree_filter,
+        "thread_filter": plan.thread_filter,
+        "ai_search": plan.ai_search,
+        "min_start_time": plan.min_start_time,
+        "max_start_time": plan.max_start_time,
+    }.items()
+    if value is not None
+}
+
+for thread in client.threads.streaming.query_items(project_id=project_id, **params):
+    print(thread.thread_id)
 ```
-
-To search traces or threads, call the matching method:
-
-- **Traces**: `client.traces.streaming.query_items(project_id="<project-id>", ai_search="tool call failed")`
-- **Threads**: `client.threads.streaming.query_items(project_id="<project-id>", ai_search="user asks for a refund")`
-
-With `AsyncLangsmith`, use `async for` with the same methods.
 
   </Tab>
   <Tab title="TypeScript">
@@ -500,24 +507,44 @@ With `AsyncLangsmith`, use `async for` with the same methods.
 import Langsmith from "langsmith";
 
 const client = new Langsmith();
+const projectId = "<project-id>";
 
-for await (const run of client.runs.streaming.queryV2Items({
-  project_ids: ["<project-id>"],
-  ai_search: "tool call failed",
-  filter: 'eq(run_type, "llm")',
-  selects: ["ID", "NAME"],
-})) {
-  console.log(run.id, run.name);
+const plan = await client.aiSearch.parse({
+  project_ids: [projectId],
+  ai_search: "threads where the agent didn't complete the task and spent more than $1",
+  scope: "threads",
+});
+
+const params = Object.fromEntries(
+  Object.entries({
+    filter: plan.filter,
+    trace_filter: plan.trace_filter,
+    tree_filter: plan.tree_filter,
+    thread_filter: plan.thread_filter,
+    ai_search: plan.ai_search,
+    min_start_time: plan.min_start_time,
+    max_start_time: plan.max_start_time,
+  }).filter(([, value]) => value != null),
+);
+
+for await (const thread of client.threads.streaming.queryItems({ project_id: projectId, ...params })) {
+  console.log(thread.thread_id);
 }
 ```
 
-To search traces or threads, call the matching method:
-
-- **Traces**: `client.traces.streaming.queryItems({ project_id: "<project-id>", ai_search: "tool call failed" })`
-- **Threads**: `client.threads.streaming.queryItems({ project_id: "<project-id>", ai_search: "user asks for a refund" })`
-
 </Tab>
 </Tabs>
+
+`ai_search.parse` accepts:
+
+- **`project_ids`**: The tracing projects to search. Pass the same projects to the query method.
+- **`ai_search`**: The description, at most 2,000 UTF-8 bytes.
+- **`scope`** (optional): `runs`, `traces`, or `threads`. When omitted, LangSmith infers it from the description and defaults to `traces`. Send the plan to the query method for the returned `scope`: `client.runs.streaming.query_v2_items`, `client.traces.streaming.query_items`, or `client.threads.streaming.query_items`.
+- **`allow_clarification`** (optional): When `true`, an ambiguous description returns `clarification.options` instead of a plan. Each option has a `label` and its own plan fields.
+
+Fields the description does not set are omitted, or `null` for `ai_search`. When the plan has no `min_start_time` or `max_start_time`, the query method uses its own default time range. Querying runs takes `project_ids`; querying traces or threads takes a single `project_id`.
+
+You can also call the query methods directly with your own `ai_search` and filters, without `ai_search.parse`. In that case `ai_search` is matched only against the conversation, so pass structured conditions in a filter.
 
 The `query_v2_items` / `queryV2Items` and `query_items` / `queryItems` methods follow pagination cursors and return assembled runs, traces, or threads. The lower-level `query_v2` / `queryV2` and `query` methods return server-sent events containing JSON patches instead.
 
