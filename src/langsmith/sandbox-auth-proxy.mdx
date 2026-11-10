@@ -184,7 +184,7 @@ Add a `proxy_config` when creating a sandbox, or update an existing sandbox by p
 | Field | Description |
 |-------|-------------|
 | `rules` | Header-injection, provider-auth, relay, and attribution rules. Enabled header rules are matched first-match-wins in list order; `aws` and `gcp` rules match their providers' hosts regardless of position. Attribution adds public headers independently of ordinary rule matching |
-| `callbacks` | Dynamic credential lookups; see [Callback credential example](#callback-credential-example) |
+| `callbacks` | Dynamic credentials or selected attribution headers; see [Callback credential example](#callback-credential-example) and [callback attribution](#refresh-attribution-through-a-callback) |
 | `access_control` | `allow_list` or `deny_list`; see [Allow and deny lists](#allow-and-deny-lists) |
 | `description` | Optional, up to 1024 characters. What this configuration lets the sandbox reach, for handing to an agent |
 
@@ -316,7 +316,7 @@ Attribution requires API and sandbox-host versions that support the `attribution
 </Note>
 
 <Warning>
-Every proxied destination, including third-party services, receives these values. LangSmith stores and returns them in plaintext. Never use access tokens, JWTs, secrets, or personal data. Attribution labels are not authenticated identity or an all-protocol egress enforcement mechanism.
+Every proxied destination, including third-party services, receives these values. The API returns literal values unchanged, although the configuration is encrypted at rest. Avoid sensitive values, including tokens and personal data. JWT-shaped strings follow the same size and syntax constraints as other literals; they are not categorically rejected. Attribution labels are not authenticated identity or an all-protocol egress enforcement mechanism.
 </Warning>
 
 Add an attribution rule to `proxy_config.rules` when creating or updating a sandbox:
@@ -386,13 +386,65 @@ Attribution rules have the following constraints, even when disabled:
 
 An enabled attribution rule with nonempty headers cannot coexist with a nonempty `no_proxy` list or an enabled relay rule. Remove the conflict or disable attribution. Disabled attribution and empty header lists do not impose these conflicts.
 
+### Refresh attribution through a callback
+
+A callback with `attribution_headers` supplies selected headers for every proxy-handled HTTP(S) request. Use this mode for values that expire, rather than repeatedly updating literal configuration. It runs alongside destination credentials, not only when ordinary rules fail to match.
+
+<Note>
+Callback attribution requires compatible API, SDK, and sandbox-host versions. Upgrade hosts before enabling this mode. Older hosts reject the configuration, leaving the previous configuration active on a failed live update. Verify successful propagation before relying on attribution.
+</Note>
+
+To configure callback attribution, add a callback to `proxy_config.callbacks`:
+
+```json
+{
+  "proxy_config": {
+    "callbacks": [{
+      "url": "https://callback.example.com/attribution",
+      "ttl_seconds": 240,
+      "request_headers": [{"name": "Authorization", "type": "opaque", "value": "callback-verification-secret"}],
+      "attribution_headers": ["X-LangSmith-Agent-Access-Token"]
+    }]
+  }
+}
+```
+
+The callback must omit `match_hosts` and `full_request`. Ordinary credential callbacks still require scoped host patterns; a bare `*` remains invalid. Configure at most one attribution callback, with at most 16 combined callback and active literal header names. Names must be unique, ignoring case. Callback attribution also conflicts with `no_proxy` and active relay rules. Remove the callback to disable it.
+
+Selected names follow the literal name restrictions, except that callback attribution also permits `X-LangSmith-Agent-Access-Token`. This exception does not permit other authentication headers or change literal rules.
+
+The callback response must contain exactly the selected headers and their earliest absolute expiration:
+
+```json
+{
+  "headers": {"X-LangSmith-Agent-Access-Token": "issued-value"},
+  "expires_at": "2026-11-10T12:05:00Z"
+}
+```
+
+Replace the illustrative value and timestamp with freshly issued values and their actual expiration. The proxy enforces these response constraints:
+
+- **Values**: Nonempty, valid HTTP field values, up to 8192 bytes each.
+- **Response size**: At most 64 KiB, with no missing, extra, or case-duplicate header names.
+- **Expiration**: An RFC 3339 `expires_at` more than 30 seconds in the future.
+- **Caching**: Per sandbox, callback configuration, destination host, and port. Entries expire after `ttl_seconds` or 30 seconds before `expires_at`, whichever comes first.
+- **Failures**: Callback errors, invalid responses, and failed refreshes block the covered request. The proxy never reuses stale values or forwards the request without required attribution.
+
+Refresh happens on the next request after cache expiration, not in the background. Returned values stay in proxy memory rather than becoming API-readable literal configuration. The callback receives destination host and port plus signed sandbox identity, not request headers or body previews. Verify the callback request signature, audience, body, and sandbox identity before issuing values. The receiving gateway must validate the token; the proxy does not parse JWT claims as an expiration authority.
+
+<Warning>
+These headers travel inside the origin-bound HTTP request, not the outer `CONNECT` request. A CONNECT-only gateway cannot read HTTPS headers without TLS interception. Before sending access tokens, ensure your gateway handles HTTP and HTTPS, strips tokens before untrusted origins, and prevents direct bypasses. Attribution alone does not provide those guarantees.
+</Warning>
+
+Create or update attribution callbacks through the API or CLI JSON configuration. The UI preserves API-configured attribution callbacks when editing literal labels; it does not create or edit them.
+
 ### Understand connection coverage
 
 Attribution covers transparent HTTP on port 80 and hostname-based HTTPS on port 443. It also covers HTTP and HTTPS through an explicit proxy, including HTTPS `CONNECT` requests on nonstandard ports.
 
 HTTPS interception requires the client to trust the proxy CA and the proxy host to trust the destination certificate. A private CA trusted only inside the sandbox does not establish host-side trust. Certificate-pinned clients can fail. Non-TLS protocols over explicit `CONNECT`, such as SSH or PostgreSQL, are unsupported while attribution is active. The proxy does not fall back to an untagged tunnel when interception fails.
 
-Attribution does not tag raw TCP, sandbox links, or traffic that bypasses HTTP(S) handling, such as transparent connections on other ports. It does not expand the protocols or destinations permitted by your network policy. Reconnect existing opaque tunnels, or restart the sandbox, after enabling attribution.
+Attribution does not tag raw TCP, direct sandbox links, or traffic that bypasses HTTP(S) handling, such as transparent connections on other ports. HTTP proxy requests rewritten to a sandbox destination remain covered after authorization checks. Attribution does not expand the protocols or destinations permitted by your network policy. Reconnect existing opaque tunnels, or restart the sandbox, after enabling attribution.
 
 ## Authenticate AWS requests
 
