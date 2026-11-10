@@ -1,7 +1,7 @@
 ---
 title: Sandbox auth proxy
 sidebarTitle: Auth proxy
-description: Inject credentials into outbound requests and control which destinations a sandbox can reach.
+description: Inject credentials or public attribution headers into outbound requests and control which destinations a sandbox can reach.
 ---
 
 The auth proxy lets sandbox code call external APIs (OpenAI, Anthropic, GitHub, etc.) without hardcoding credentials. When configured on a sandbox, an egress proxy running outside the sandbox automatically injects authentication headers into matching outbound requests using your workspace secrets or write-only credentials you provide in the proxy config.
@@ -30,7 +30,7 @@ The same `proxy_config` that injects credentials also controls which destination
 ### How egress works
 
 - **Access control applies to every outbound TCP connection**, HTTP or not.
-- **HTTPS to a host matched by a rule or callback is decrypted by the proxy** so it can inject headers; sandboxes trust the proxy's CA. HTTPS to unmatched hosts and every non-HTTP connection, including PostgreSQL, SSH, and Redis, passes through unchanged. Ports 80 and 443 are reserved for HTTP and TLS; a non-HTTP protocol on either port does not work.
+- **HTTPS to a host matched by a rule or callback is decrypted by the proxy** so it can inject headers; sandboxes trust the proxy's CA. An active [attribution rule](#add-public-attribution-headers) also triggers interception for every proxy-handled HTTPS destination. Without attribution, HTTPS to unmatched hosts passes through unchanged. Direct non-HTTP connections, including PostgreSQL, SSH, and Redis, pass through unchanged on their normal ports. Ports 80 and 443 are reserved for HTTP and TLS; a non-HTTP protocol on either port does not work.
 - **Use hostnames for direct connections by default.** Raw TCP to a public literal IP requires an explicitly matching IP or CIDR entry in `allow_list` and is unavailable in deny-list mode. HTTPS to a literal IP is dropped because the proxy needs a hostname in the TLS handshake. Cleartext HTTP on port 80 can use a literal IP.
 - **Only TCP leaves the sandbox.** UDP (including QUIC) and ICMP are dropped.
 
@@ -183,7 +183,7 @@ Add a `proxy_config` when creating a sandbox, or update an existing sandbox by p
 
 | Field | Description |
 |-------|-------------|
-| `rules` | Header-injection and provider-auth rules. Enabled header rules are matched first-match-wins in list order; `aws` and `gcp` rules match their providers' hosts regardless of position |
+| `rules` | Header-injection, provider-auth, relay, and attribution rules. Enabled header rules are matched first-match-wins in list order; `aws` and `gcp` rules match their providers' hosts regardless of position. Attribution adds public headers independently of ordinary rule matching |
 | `callbacks` | Dynamic credential lookups; see [Callback credential example](#callback-credential-example) |
 | `access_control` | `allow_list` or `deny_list`; see [Allow and deny lists](#allow-and-deny-lists) |
 | `description` | Optional, up to 1024 characters. What this configuration lets the sandbox reach, for handing to an agent |
@@ -193,13 +193,13 @@ Each rule specifies:
 | Field | Description |
 |-------|-------------|
 | `name` | Required. Identifier for the rule |
-| `type` | Omit for header injection; `aws` or `gcp` for provider auth; `relay` to send matching connections through a [relay](/langsmith/relays) |
-| `match_hosts` | Required for header rules; rejected on `aws` and `gcp` rules. Bare hostnames, or a leading `*.` wildcard in front of a registrable domain (`*.github.com`, not `*.com` or `*`). No scheme, path, or port. The wildcard does not match the apex domain |
+| `type` | Omit for header injection; `aws` or `gcp` for provider auth; `relay` to send matching connections through a [relay](/langsmith/relays); `attribution` for public metadata |
+| `match_hosts` | Required for header rules; rejected on `aws`, `gcp`, and attribution rules. Bare hostnames, or a leading `*.` wildcard in front of a registrable domain (`*.github.com`, not `*.com` or `*`). No scheme, path, or port. The wildcard does not match the apex domain |
 | `match_paths` | Paths to match (empty = all paths). Header rules only. Patterns are matched against the request path without the query string; see [Match rules by path or header](#match-rules-by-path-or-header) |
 | `match_headers` | Request headers that must all be present, each written `"name: value"` with a lowercase name and an exact value. Header rules only; see [Match rules by path or header](#match-rules-by-path-or-header) |
-| `headers` | Headers to inject, each with a `name`, `type`, and `value`. Header rules only |
+| `headers` | Headers to inject, each with a `name`, `type`, and `value`. Header and attribution rules only; attribution requires `plaintext` |
 | `aws` / `gcp` | Provider credentials; see [Authenticate AWS requests](#authenticate-aws-requests) and [Authenticate GCP requests](#authenticate-gcp-requests) |
-| `env_vars` | Environment variables to set in the sandbox while the rule is enabled |
+| `env_vars` | Environment variables to set in the sandbox while the rule is enabled. Not supported on attribution rules |
 | `enabled` | Defaults to `true` |
 | `description` | Optional, up to 1024 characters. What this rule lets the sandbox reach |
 
@@ -306,6 +306,93 @@ Every sandbox also has the common CA-bundle environment variables pointed at the
   "env_vars": {"GH_TOKEN": "proxy-injected"}
 }
 ```
+
+## Add public attribution headers
+
+An attribution rule adds public metadata to every outbound HTTP(S) request handled by the proxy. Use it for labels such as `X-Agent-ID` or `X-Cost-Center`, alongside destination-specific credentials.
+
+<Note>
+Attribution requires API and sandbox-host versions that support the `attribution` rule type. For self-hosted or BYOC deployments, upgrade every sandbox host before enabling attribution through the API or UI. Older hosts reject active attribution rules and can reject the entire proxy configuration, including credentials and access controls. Disabled attribution rules and attribution rules with no headers are not sent to hosts.
+</Note>
+
+<Warning>
+Every proxied destination, including third-party services, receives these values. LangSmith stores and returns them in plaintext. Never use access tokens, JWTs, secrets, or personal data. Attribution labels are not authenticated identity or an all-protocol egress enforcement mechanism.
+</Warning>
+
+Add an attribution rule to `proxy_config.rules` when creating or updating a sandbox:
+
+```json
+{
+  "proxy_config": {
+    "rules": [
+      {
+        "name": "agent-attribution",
+        "type": "attribution",
+        "headers": [
+          {"name": "X-Agent-ID", "type": "plaintext", "value": "agent_123"}
+        ]
+      }
+    ]
+  }
+}
+```
+
+The rule defaults to `enabled: true`. Set `enabled: false` to retain the labels without injecting them. Removing the rule or setting `headers: []` also disables attribution.
+
+Attribution is additive, not a wildcard credential rule. Ordinary header rules still use first-match-wins matching. The proxy applies attribution after static and callback headers, replacing same-name headers without regard to case, and before provider signing.
+
+<Warning>
+Updating `proxy_config` replaces the whole configuration; it does not append a rule. Preserve existing rules, `access_control`, `callbacks`, and other settings in the replacement.
+</Warning>
+
+### Configure attribution with the SDK or UI
+
+The Python and TypeScript SDK helpers build the same attribution rule. These examples require a LangSmith SDK release that exports `attribution` from `langsmith.sandbox` or `langsmith/sandbox`, respectively.
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import attribution, proxy_config
+
+config = proxy_config(
+    rules=[attribution(headers={"X-Cost-Center": "engineering"})]
+)
+```
+
+```ts TypeScript
+import { attribution, proxyConfig } from "langsmith/sandbox";
+
+const config = proxyConfig({
+  rules: [attribution({ headers: { "X-Cost-Center": "engineering" } })],
+});
+```
+
+</CodeGroup>
+
+Pass `config` as `proxy_config` in Python or `proxyConfig` in TypeScript when creating or updating a sandbox. For the [CLI](/langsmith/sandbox-cli#proxy-configuration), save the inner `proxy_config` object to a file and pass `--proxy-config @proxy.json`.
+
+In the sandbox create or edit form, use **Add attribution header** under **Attribution Headers (optional)**. Enter a header name and public value. Clear **Enable attribution rule** to retain the values without injecting them, or remove every row to delete the rule. Editing requires a ready sandbox.
+
+### Validate attribution settings
+
+Attribution rules have the following constraints, even when disabled:
+
+- **Rule count**: At most one attribution rule per configuration, including disabled rules.
+- **Header count**: Up to 16 headers.
+- **Header names**: Between 3 and 128 ASCII characters, starting with `X-`. Use only letters, digits, and hyphens. Names must be unique, ignoring case.
+- **Reserved names**: Authentication, routing, provider, and platform names are rejected, including `X-Api-Key`, `X-Forwarded-For`, `X-Amz-*`, and `X-LangSmith-*`. `X-Sandbox-ID` is allowed as a public label.
+- **Header values**: Literal `plaintext` values of at most 1024 bytes. Empty values are allowed. Values cannot contain line breaks, braces, or secret templates. Workspace-secret references and opaque values are not supported.
+- **Matching and credentials**: Do not set `match_hosts`, `match_paths`, `match_headers`, `env_vars`, or provider, relay, or rewrite settings on the attribution rule itself. Keep credential rules separate.
+
+An enabled attribution rule with nonempty headers cannot coexist with a nonempty `no_proxy` list or an enabled relay rule. Remove the conflict or disable attribution. Disabled attribution and empty header lists do not impose these conflicts.
+
+### Understand connection coverage
+
+Attribution covers transparent HTTP on port 80 and hostname-based HTTPS on port 443. It also covers HTTP and HTTPS through an explicit proxy, including HTTPS `CONNECT` requests on nonstandard ports.
+
+HTTPS interception requires the client to trust the proxy CA and the proxy host to trust the destination certificate. A private CA trusted only inside the sandbox does not establish host-side trust. Certificate-pinned clients can fail. Non-TLS protocols over explicit `CONNECT`, such as SSH or PostgreSQL, are unsupported while attribution is active. The proxy does not fall back to an untagged tunnel when interception fails.
+
+Attribution does not tag raw TCP, sandbox links, or traffic that bypasses HTTP(S) handling, such as transparent connections on other ports. It does not expand the protocols or destinations permitted by your network policy. Reconnect existing opaque tunnels, or restart the sandbox, after enabling attribution.
 
 ## Authenticate AWS requests
 
