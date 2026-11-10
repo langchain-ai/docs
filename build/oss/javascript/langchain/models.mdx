@@ -700,6 +700,7 @@ Models can be requested to provide their response in a format matching a given s
     - **Include raw**: Use [`includeRaw: true`](https://reference.langchain.com/javascript/langchain-core/language_models/chat_models/BaseChatModel/withStructuredOutput) to get both the parsed output and the raw [`AIMessage`](https://reference.langchain.com/javascript/langchain-core/messages/AIMessage)
     - **Validation**: Zod and Standard Schema objects provide automatic validation, while JSON Schema requires manual validation
     - **Standard Schema**: Any schema library implementing the [Standard Schema](https://standardschema.dev/) spec is supported and validated at runtime
+    - **Refusals**: If the model refuses, structured output throws `ModelRefusalError`, unless you set `includeRaw: true`. See [Handle a model refusal](#handle-a-model-refusal) and [Structured output](/oss/javascript/langchain/structured-output#model-refusal).
 
     See your [provider's integration page](/oss/javascript/integrations/providers/overview) for supported methods and configuration options.
 </Note>
@@ -761,6 +762,40 @@ It can be useful to return the raw [`AIMessage`](https://reference.langchain.com
 
 </Accordion>
 
+
+
+### Handle a model refusal
+
+Providers report a refusal, such as a safety-policy refusal, as a successful response rather than an error. A plain model call returns the message with a [`refusal` content block](/oss/javascript/langchain/messages#content-block-reference). `withStructuredOutput` throws [`ModelRefusalError`](https://reference.langchain.com/javascript/langchain-core/errors/ModelRefusalError) from `@langchain/core/errors` instead of a parsing error. The error's `rawMessage` holds the refused response.
+
+```typescript
+import { ModelRefusalError } from "@langchain/core/errors";
+
+const modelWithStructure = model.withStructuredOutput(Movie);
+
+try {
+  await modelWithStructure.invoke("Provide details about the movie Inception");
+} catch (error) {
+  if (ModelRefusalError.isInstance(error)) {
+    console.log(error.message); // Model refused to produce the requested output (category='cyber'): ...
+    const refused = error.rawMessage;
+  }
+}
+```
+
+With `includeRaw: true`, `withStructuredOutput` does not throw. A refusal returns `parsed: null`, so check `raw` for the refusal block:
+
+```typescript
+const modelWithStructure = model.withStructuredOutput(Movie, { includeRaw: true });
+const response = await modelWithStructure.invoke("Provide details about the movie Inception");
+const refusal = response.raw.contentBlocks.find((block) => block.type === "refusal");
+```
+
+LangChain detects refusals from OpenAI, Anthropic, and Gemini (`@langchain/google`) models. For a blocked prompt, Gemini sends no message. In that case, `@langchain/google` throws an error instead of returning a refusal block, with or without `includeRaw`. `ModelRefusalError.isInstance` returns `true` for that error. For agents, `responseFormat` in `createAgent` throws `ModelRefusalError` when you add [`modelRefusalMiddleware`](/oss/javascript/langchain/middleware/built-in#model-refusal). See [Structured output](/oss/javascript/langchain/structured-output#model-refusal) and [Handle a refusal](/oss/javascript/langchain/middleware/built-in#handle-a-refusal).
+
+<Note>
+    Refusal handling requires `@langchain/core>=1.3.7`, `@langchain/openai>=1.8.3`, `@langchain/anthropic>=1.6.3`, and `@langchain/google>=0.2.14`.
+</Note>
 
 
 ---
