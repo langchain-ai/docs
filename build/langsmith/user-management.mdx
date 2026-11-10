@@ -1,16 +1,19 @@
 ---
 title: User management
 sidebarTitle: User management
+description: Configure role-based access control, SAML SSO, and SCIM user provisioning for your LangSmith organization.
 keywords: ['scim']
 ---
 
 import SaasRegionUrls from '/snippets/python/langsmith/saas-region-urls.mdx';
 
-This page covers user management features in LangSmith, including access control, authentication, and automated user provisioning:
+Organization Admins control who can sign in to a LangSmith organization and what each user can do in its workspaces. This page covers three independent features, all available on the Enterprise plan:
 
-- [Set up access control](#set-up-access-control): Configure role-based access control (RBAC) to manage user permissions within workspaces, including creating custom roles and assigning them to users.
-- [SAML SSO (Enterprise plan)](#set-up-saml-sso-for-your-organization): Set up Single Sign-On authentication for Enterprise customers using SAML 2.0, including configuration for popular identity providers.
-- [SCIM User Provisioning (Enterprise plan)](#set-up-scim-for-your-organization): Automate user provisioning and deprovisioning between your identity provider and LangSmith using SCIM.
+- [Access control](#set-up-access-control): Create custom roles and assign roles to workspace members. Without it, every user has the `Admin` role.
+- [SAML SSO](#set-up-saml-sso-for-your-organization): Let users sign in through your identity provider (IdP) on LangSmith Cloud. Self-hosted deployments use [OAuth2.0 and OIDC](/langsmith/self-host-sso) instead.
+- [SCIM provisioning](#set-up-scim-for-your-organization): Add, update, and remove users and their roles automatically from your IdP.
+
+To use all three, set them up in the order listed. SCIM group names reference role names. On cloud, SCIM requires SAML SSO.
 
 ## Set up access control
 
@@ -401,7 +404,7 @@ Most links do not need this parameter. Opening a LangSmith URL directly, then si
 ## Set up SCIM for your organization
 
 <Note>
-Looking for a lighter-weight alternative to SCIM that doesn't require IdP admin involvement to push groups? See [SSO Groups Sync](#sso-groups-sync-alternative) below—it reads group memberships directly from the SSO token at login time and reuses the same naming convention.
+[SSO Groups Sync](#sso-groups-sync-alternative) is an alternative to SCIM that does not require your IdP to push groups. It reads group memberships from the SSO token at each sign-in and uses the same group naming convention.
 </Note>
 
 System for Cross-domain Identity Management (SCIM) is an open standard that allows for the automation of user provisioning. Using SCIM, you can automatically provision and de-provision users in your LangSmith [organization and workspaces](/langsmith/administration-overview), keeping user access synchronized with your organization's identity provider.
@@ -423,9 +426,7 @@ SCIM eliminates the need for manual user management and ensures that user access
 - **Scaling team access control**: Efficiently manage large teams with many workspaces and custom roles.
 - **Role assignment**: Select specific [Organization Roles](/langsmith/rbac#organization-roles) and [Workspace Roles](/langsmith/rbac#workspace-roles) for groups of users.
 
-### Requirements
-
-#### Prerequisites
+### Prerequisites
 
 - Your organization must be on an Enterprise plan.
 - Your Identity Provider (IdP) must support SCIM 2.0.
@@ -442,25 +443,6 @@ SCIM eliminates the need for manual user management and ensures that user access
 SCIM connections typically require HTTP/1.1 or later. If your client uses HTTP/1.0, you may encounter a `426 Upgrade Required` error.
 </Note>
 
-#### Role precedence
-
-When a user belongs to multiple groups for the same workspace, the following precedence applies:
-
-1. **Organization Admin groups** take highest precedence. Users in these groups will be `Admin` in all workspaces.
-2. **Most recently created workspace-specific group** takes precedence over other workspace groups.
-
-<Note>
-When a group is deleted or a user is removed from a group, their access is updated according to their remaining group membership, following the precedence rules.
-
-SCIM group membership overrides manually assigned roles or roles assigned via Just-in-time (JIT) provisioning. We recommend disabling JIT provisioning to avoid conflicts. For more details, refer to [Manage user access in SSO organizations](/langsmith/jit-invite-sso#scim-integration).
-</Note>
-
-#### Email verification
-
-In cloud only, creating a new user with SCIM triggers an email to the user.
-They must verify their email address by clicking the link in this email.
-The link expires in 24 hours, and can be resent if needed by removing and re-adding the user via SCIM.
-
 ### Attributes and mapping
 
 LangSmith maps a group to access by its name:
@@ -474,45 +456,39 @@ LangSmith maps a group to access by its name:
 Renaming groups is **not** supported via SCIM. Group names are persistent because they must match role names and/or workspace names in LangSmith.
 </Warning>
 
-Group membership maps to LangSmith workspace membership and workspace roles with a specific naming convention. By default, the separator between components is a colon (`:`), but you can [configure a custom separator](#configure-custom-separator) for your organization.
+A group name tells LangSmith which organization role to grant and, optionally, which workspace role to grant in which workspace. Each group name takes one of two forms:
 
-<Note>
-You can omit spaces in the **organization role name** portion of a group name. This helps with identity providers that disallow spaces in group names. For example, LangSmith accepts `OrganizationAdmins` and `OrganizationUser` as equivalents of `Organization Admins` and `Organization User`. This flexibility applies only to the organization role name token. Workspace names and workspace role names treat spaces as literal characters, so space-omitted variants do not match their spaced counterparts.
-</Note>
+| Group type | Format | Grants |
+| --- | --- | --- |
+| Organization Admin | `<prefix>Organization Admin` or `<prefix>Organization Admins` | `Organization Admin`, plus `Admin` in every workspace |
+| Workspace | `<prefix><org_role><separator><workspace><separator><workspace_role>` | The organization role, plus the workspace role in the named workspace |
 
-**Organization Admin Groups**
+Each part of the format works as follows:
 
-Format: `<optional_prefix>Organization Admin` or `<optional_prefix>Organization Admins`
+- **`<prefix>`** (optional): Any text before the organization role name, such as `LS:` or `Groups-`.
+- **`<org_role>`**: An organization role name, such as `Organization User`. You can omit the spaces in this part, so `OrganizationUser` matches `Organization User`. This helps with IdPs that disallow spaces in group names.
+- **`<separator>`**: A colon (`:`) by default. You can [configure a custom separator](#configure-custom-separator) for your organization.
+- **`<workspace>`**: The workspace name as it appears in LangSmith. Spaces are literal characters here, so `ProdTeam` does not match `Prod Team`. If the workspace name contains the separator, such as `my-team` with separator `-`, LangSmith tries every possible split to find a valid workspace and role.
+- **`<workspace_role>`**: A workspace role name: `Admin`, `Editor`, `Viewer`, or the name of a [custom role](/langsmith/rbac#custom-roles). Matching ignores case, but spaces are literal characters here too. The full UI label, such as `Workspace Editor`, does not match. With SCIM, LangSmith rejects a group whose role name does not match, and your IdP reports a provisioning error for that group. With [SSO Groups Sync](#sso-groups-sync-alternative), LangSmith skips the group and reports no error.
 
-Examples:
+<Tip>
+Use the [group name generator](https://enterprise-hub.langchain.com/tools/role-provisioning) to build correctly formatted group names for your workspaces and roles.
+</Tip>
 
-- `LS:Organization Admins`
-- `LS:OrganizationAdmins` (spaces omitted—useful for IdPs that disallow spaces in group names)
-- `Groups-Organization Admins`
-- `Organization Admin`
+The following examples use the default colon separator unless noted:
 
-**Workspace-Specific Groups**
-
-Format: `<optional_prefix><org_role_name><separator><workspace_name><separator><workspace_role_name>`
-
-The separator defaults to `:` (colon). Supported separators are: `:` (colon), `-` (hyphen), `_` (underscore), ` ` (space), `&` (ampersand).
-
-Examples with default colon separator:
-
-- `LS:Organization User:Production:Annotators`
-- `LS:OrganizationUser:Production:Annotators` (spaces omitted in role name token)
-- `Groups-Organization User:Engineering:Developers`
-- `Organization User:Marketing:Viewers`
-
-Examples with hyphen separator:
-
-- `LS-Organization User-Production-Annotators`
-- `LS-OrganizationUser-Production-Annotators` (spaces omitted in role name token)
-- `Organization User-Engineering-Developers`
-
-<Note>
-If your workspace names contain the separator character (e.g., workspace `my-team` with separator `-`), LangSmith will automatically try all possible splits to find a valid workspace and role combination.
-</Note>
+| Group name | Result |
+| --- | --- |
+| `LS:Organization Admins` | Organization Admin |
+| `LS:OrganizationAdmins` | Organization Admin, with spaces omitted |
+| `Groups-Organization Admins` | Organization Admin, with a `Groups-` prefix |
+| `Organization Admin` | Organization Admin, with no prefix |
+| `LS:Organization User:Production:Admin` | `Admin` in the `Production` workspace |
+| `LS:OrganizationUser:Production:Editor` | `Editor` in `Production`, with spaces omitted from the organization role |
+| `LS:Organization User:Engineering:Viewer` | `Viewer` in the `Engineering` workspace |
+| `LS:Organization User:Production:Annotators` | Custom role `Annotators` in `Production` |
+| `LS-Organization User-Production-Admin` | `Admin` in `Production`, with the separator set to `-` |
+| `Organization User-Engineering-Viewer` | `Viewer` in `Engineering`, with the separator set to `-` and no prefix |
 
 #### Configure custom separator
 
@@ -563,6 +539,29 @@ While specific instructions depending on the identity provider may vary, these m
 1. Groups must follow the naming convention described in the [Group Naming Convention](#group-naming-convention) section.
    If your company has a group naming policy, you should instead map from the `description` identity provider attribute and
    set the description based on the [Group Naming Convention](#group-naming-convention) section.
+
+### Provisioning behavior
+
+Once SCIM is running, LangSmith applies the following rules: Role precedence decides which role a user holds when their groups conflict. Email verification covers how new users on cloud activate their accounts.
+
+#### Role precedence
+
+When a user belongs to multiple groups for the same workspace, the following precedence applies:
+
+1. **Organization Admin groups** take highest precedence. Users in these groups will be `Admin` in all workspaces.
+2. **Most recently created workspace-specific group** takes precedence over other workspace groups.
+
+<Note>
+When a group is deleted or a user is removed from a group, their access is updated according to their remaining group membership, following the precedence rules.
+
+SCIM group membership overrides manually assigned roles or roles assigned via Just-in-time (JIT) provisioning. We recommend disabling JIT provisioning to avoid conflicts. For more details, refer to [Manage user access in SSO organizations](/langsmith/jit-invite-sso#scim-integration).
+</Note>
+
+#### Email verification
+
+In cloud only, creating a new user with SCIM triggers an email to the user.
+They must verify their email address by clicking the link in this email.
+The link expires in 24 hours, and can be resent if needed by removing and re-adding the user via SCIM.
 
 ### Step 1 - configure SAML SSO (Cloud only)
 
