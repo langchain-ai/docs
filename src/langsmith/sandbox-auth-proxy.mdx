@@ -388,7 +388,7 @@ An enabled attribution rule with nonempty headers cannot coexist with a nonempty
 
 ### Refresh attribution through a callback
 
-A callback with `attribution_headers` supplies selected headers for every proxy-handled HTTP(S) request. Use this mode for values that expire, rather than repeatedly updating literal configuration. It runs alongside destination credentials, not only when ordinary rules fail to match.
+A callback with `attribution_headers` supplies selected headers for every proxy-handled HTTP(S) request. Use this mode for non-sensitive metadata that expires, rather than repeatedly updating literal configuration. It runs alongside destination credentials, not only when ordinary rules fail to match.
 
 <Note>
 Callback attribution requires compatible API, SDK, and sandbox-host versions. Upgrade hosts before enabling this mode. Older hosts reject the configuration, leaving the previous configuration active on a failed live update. Verify successful propagation before relying on attribution.
@@ -403,7 +403,7 @@ To configure callback attribution, add a callback to `proxy_config.callbacks`:
       "url": "https://callback.example.com/attribution",
       "ttl_seconds": 240,
       "request_headers": [{"name": "Authorization", "type": "opaque", "value": "callback-verification-secret"}],
-      "attribution_headers": ["X-LangSmith-Agent-Access-Token"]
+      "attribution_headers": ["X-Agent-ID"]
     }]
   }
 }
@@ -411,13 +411,13 @@ To configure callback attribution, add a callback to `proxy_config.callbacks`:
 
 The callback must omit `match_hosts` and `full_request`. Ordinary credential callbacks still require scoped host patterns; a bare `*` remains invalid. Configure at most one attribution callback, with at most 16 combined callback and active literal header names. Names must be unique, ignoring case. Callback attribution also conflicts with `no_proxy` and active relay rules. Remove the callback to disable it.
 
-Selected names follow the literal name restrictions, except that callback attribution also permits `X-LangSmith-Agent-Access-Token`. This exception does not permit other authentication headers or change literal rules.
+Selected names follow the same restrictions as literal names. The API and proxy reject `X-LangSmith-Agent-Access-Token`, including case variants. Use destination-specific credential callbacks for authentication headers.
 
 The callback response must contain exactly the selected headers and their earliest absolute expiration:
 
 ```json
 {
-  "headers": {"X-LangSmith-Agent-Access-Token": "issued-value"},
+  "headers": {"X-Agent-ID": "build-runner"},
   "expires_at": "2026-11-10T12:05:00Z"
 }
 ```
@@ -430,10 +430,10 @@ Replace the illustrative value and timestamp with freshly issued values and thei
 - **Caching**: Per sandbox, callback configuration, destination host, and port. Entries expire after `ttl_seconds` or 30 seconds before `expires_at`, whichever comes first.
 - **Failures**: Callback errors, invalid responses, and failed refreshes block the covered request. The proxy never reuses stale values or forwards the request without required attribution.
 
-Refresh happens on the next request after cache expiration, not in the background. Returned values stay in proxy memory rather than becoming API-readable literal configuration. The callback receives destination host and port plus signed sandbox identity, not request headers or body previews. Verify the callback request signature, audience, body, and sandbox identity before issuing values. The receiving gateway must validate the token; the proxy does not parse JWT claims as an expiration authority.
+Refresh happens on the next request after cache expiration, not in the background. Returned values stay in proxy memory rather than becoming API-readable literal configuration. The callback receives destination host and port plus signed sandbox identity, not request headers or body previews. Verify the callback request signature, audience, body, and sandbox identity before issuing values.
 
 <Warning>
-These headers travel inside the origin-bound HTTP request, not the outer `CONNECT` request. A CONNECT-only gateway cannot read HTTPS headers without TLS interception. Before sending access tokens, ensure your gateway handles HTTP and HTTPS, strips tokens before untrusted origins, and prevents direct bypasses. Attribution alone does not provide those guarantees.
+These headers travel inside the origin-bound HTTP request, not the outer `CONNECT` request. Every covered destination receives them and can echo them back to sandbox code. Name restrictions cannot detect secrets placed under an allowed metadata name. Do not return secrets in attribution headers. Attribution does not enforce gateway routing or strip headers before destinations.
 </Warning>
 
 Create or update attribution callbacks through the API or CLI JSON configuration. The UI preserves API-configured attribution callbacks when editing literal labels; it does not create or edit them.
