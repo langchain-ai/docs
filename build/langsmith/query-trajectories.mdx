@@ -1,0 +1,288 @@
+---
+title: Query trajectories using the SDK
+sidebarTitle: Query trajectories
+description: Retrieve trace and thread conversations, or query trajectories and their stored messages with the LangSmith SDK.
+tag: "SDK"
+---
+
+A [trajectory](/langsmith/observability-concepts#trajectories) is the ordered conversation extracted from your traced runs. Use the LangSmith SDK to retrieve messages for a known trace or thread, or find trajectories across a project.
+
+The SDK exposes two methods for trajectories:
+
+| Method | Use when |
+|--------|----------|
+| `client.trajectories.retrieve()` | You know the trace or thread ID and want its conversation. |
+| `client.trajectories.query()` | You want to iterate through trajectories, with optional aggregates and stored messages. |
+
+Both methods take a project ID. In Python, both methods are async, including when accessed through `Client`. The examples use the LangSmith `Client` ([Python](https://reference.langchain.com/python/langsmith/client/Client), [TypeScript](https://reference.langchain.com/javascript/langsmith/client/Client)).
+
+These methods return messages, not complete run objects. To retrieve runs instead, see [Query traces using the SDK](/langsmith/export-traces). To browse thread summaries or list a thread's traces, see [Query threads](/langsmith/query-threads).
+
+<Note>
+The trajectory SDK methods are not yet released. This draft requires the SDK releases before publication.
+</Note>
+
+## Authenticate requests
+
+Both endpoints require a [LangSmith API key](/langsmith/create-account-api-key) and access to the tracing project. Include the workspace ID in `X-Tenant-Id` to select the workspace. The caller needs all three project permissions:
+
+- **`runs:read`**: Read runs in the project.
+- **`runs:read-inputs`**: Read run inputs.
+- **`runs:read-outputs`**: Read run outputs.
+
+Missing input or output permission rejects the whole request, rather than returning redacted messages. See [Access control](/langsmith/user-management).
+
+Set `LANGSMITH_API_KEY` and `LANGSMITH_WORKSPACE_ID` in your environment. For other regions or self-hosted deployments, also set `LANGSMITH_ENDPOINT` to your API base URL.
+
+Initialize the client and resolve the project ID:
+
+<CodeGroup>
+
+```python Python
+from langsmith import Client
+
+client = Client()
+project = await client.aread_project(project_name="my-project")
+project_id = str(project.id)
+```
+
+```typescript TypeScript
+import { Client } from "langsmith";
+
+const client = new Client();
+const project = await client.readProject({ projectName: "my-project" });
+const projectId = project.id;
+```
+
+</CodeGroup>
+
+The Python snippets run inside an async function or an environment that supports top-level `await`. Set `trace_id` / `traceId` to an existing trace UUID and `thread_id` / `threadId` to an existing thread identifier.
+
+## Retrieve a trace or thread
+
+`client.trajectories.retrieve()` extracts one conversation scope. Choose the scope with these request fields:
+
+- **`project_id`**: Required project UUID.
+- **`trace_id`**: Trace UUID. Without `thread_id`, returns the exact trace trajectory.
+- **`thread_id`**: Thread identifier. Without `trace_id`, returns a paginated thread trajectory.
+- **`thread_id` and `trace_id`**: Returns that trace's deduplicated contribution within the thread, rather than its full repeated conversation history.
+
+Provide at least one of `trace_id` or `thread_id`. A thread identifier must not be empty.
+
+### Retrieve an exact trace
+
+Send a trace ID without thread pagination options:
+
+<CodeGroup>
+
+```python Python
+trajectory = await client.trajectories.retrieve(
+    project_id=project_id,
+    trace_id=trace_id,
+)
+for message in trajectory.messages or []:
+    print(message.role, message.content)
+```
+
+```typescript TypeScript
+const trajectory = await client.trajectories.retrieve({
+  project_id: projectId,
+  trace_id: traceId,
+});
+for (const message of trajectory.messages ?? []) {
+  console.log(message.role, message.content);
+}
+```
+
+</CodeGroup>
+
+The default response contains `messages`, `next_cursor`, and `prev_cursor`. Each message has a `role` and `content`. Content can be a string or an array of structured content blocks. Optional message fields include `name`, `id`, `tool_call_id`, and `_raw`, when available.
+
+### Paginate a thread
+
+Thread pages count trace scopes, not messages. The default `page_size` is `10`; the supported range is `1` through `100`.
+
+To retrieve the first page:
+
+<CodeGroup>
+
+```python Python
+page = await client.trajectories.retrieve(
+    project_id=project_id,
+    thread_id=thread_id,
+    page_size=10,
+)
+if page.next_cursor:
+    next_page = await client.trajectories.retrieve(
+        project_id=project_id,
+        thread_id=thread_id,
+        page_size=10,
+        cursor=page.next_cursor,
+    )
+```
+
+```typescript TypeScript
+const page = await client.trajectories.retrieve({
+  project_id: projectId,
+  thread_id: threadId,
+  page_size: 10,
+});
+if (page.next_cursor) {
+  const nextPage = await client.trajectories.retrieve({
+    project_id: projectId,
+    thread_id: threadId,
+    page_size: 10,
+    cursor: page.next_cursor,
+  });
+  console.log(nextPage.messages);
+}
+```
+
+</CodeGroup>
+
+The SDK does not automatically paginate `retrieve()`. Read `next_cursor` or `prev_cursor` from the response and pass it as `cursor` to load another page. A null cursor means there is no page in that direction. Keep the same project, thread, format, include options, and page size. Treat cursors as opaque values; incompatible cursors can restart pagination.
+
+You can also open a thread page at an anchor:
+
+- **`start_trace_id`**: Start at this trace UUID within the thread, including the anchor trace.
+- **`start_at`**: Start at an RFC3339 timestamp.
+- **`cursor`**: Continue from a response cursor instead of specifying an anchor.
+
+These three fields are mutually exclusive. When you supply `trace_id`, do not supply `start_trace_id`, `start_at`, `cursor`, or `page_size`.
+
+### Choose the response format
+
+The `format` and `include` fields control the response shape:
+
+| Request option | Default | Behavior |
+|----------------|---------|----------|
+| `format` | `"messages"` | Accepts `"messages"` or `"ui"`. UI format returns typed `items`. |
+| `include.conversation` | `["root"]` | Accepts `"root"` and `"subagent"`. Subagent previews require `"root"` too. An empty array requests no conversations. |
+| `include.system_messages` | `true` for messages, `false` for UI | Overrides whether to include system messages. |
+| `include.tool_definitions` | `false` | Includes recorded tool definitions in `message.available_tools`, when available. |
+
+With `format: "messages"` and root-only conversations, the response has a `messages` array. Adding `include.conversation: ["root", "subagent"]` changes the response to an `items` array, even in messages format. UI format also uses `items`.
+
+Each item has `type: "message"` or `type: "subagent_preview"`:
+
+- **`message`**: Contains a `message` object and optional `metadata`, such as `trace_id`, `run_id`, model, token, cost, and latency information.
+- **`subagent_preview`**: Contains a `subagent_preview` object with `conversation_key`, `preview_messages`, `total_messages`, and `total_tool_calls`. An optional `response` contains `source` (`"tool_result"` or `"final_messages"`) and `messages`.
+
+All three response shapes include nullable `next_cursor` and `prev_cursor` fields.
+
+## Query trajectories across a project
+
+`client.trajectories.query()` iterates through thread and trace trajectories. The SDK fetches subsequent JSON pages automatically. Use it to select aggregates or retrieve stored messages across multiple trajectories.
+
+### Select trajectories and messages
+
+This request selects trace counts and up to 50 stored messages per trajectory:
+
+<CodeGroup>
+
+```python Python
+async for trajectory in client.trajectories.query(
+    project_id=project_id,
+    page_size=20,
+    select=["trace_count"],
+    message_select=["content_text", "name"],
+    max_messages_per_trajectory=50,
+):
+    print(trajectory.scope_kind, trajectory.scope_id)
+    for entry in trajectory.messages or []:
+        print(entry.message.role, entry.message.content)
+```
+
+```typescript TypeScript
+for await (const trajectory of client.trajectories.query({
+  project_id: projectId,
+  page_size: 20,
+  select: ["trace_count"],
+  message_select: ["content_text", "name"],
+  max_messages_per_trajectory: 50,
+})) {
+  console.log(trajectory.scope_kind, trajectory.scope_id);
+  for (const entry of trajectory.messages ?? []) {
+    console.log(entry.message?.role, entry.message?.content);
+  }
+}
+```
+
+</CodeGroup>
+
+The JSON response contains `items` and a nullable `next_cursor`. Each item has `scope_kind` (`"thread"` or `"trace"`) and `scope_id`, plus the selected aggregates. A thread scope uses its thread identifier; a trace scope uses its trace UUID.
+
+When `message_select` is nonempty, each item also has a `messages` array, possibly empty. Each entry contains `offset`, `trace_id`, `source_run_id`, `source_run_start_time`, and a nested `message` object. The nested object contains `role` and `content`, plus selected optional fields when recorded. Selecting `content_text` populates `message.content`, not a top-level `content_text` field. Selecting `tool_definitions` populates `message.available_tools`.
+
+### Set query options
+
+- **`project_id`**: Required tracing project UUID.
+- **`min_start_time`**: Inclusive RFC3339 lower bound on trace start time. Defaults to 24 hours before the request.
+- **`max_start_time`**: Exclusive RFC3339 upper bound on trace start time. Defaults to the current time.
+- **`page_size`**: Maximum trajectories per page. Defaults to `20`; accepts `1` through `100`.
+- **`cursor`**: The response's `next_cursor` to fetch the next page.
+- **`trace_filter`**: Matches trajectories containing a trace whose root run matches the expression.
+- **`tree_filter`**: Matches trajectories containing a run anywhere in a trace that matches the expression.
+- **`thread_filter`**: Matches the thread summary. When set, returns only thread trajectories.
+- **`select`**: Trajectory aggregate columns. Empty or omitted uses the default columns.
+- **`message_select`**: Message columns. Empty or omitted returns no messages.
+- **`max_messages_per_trajectory`**: Message cap per trajectory, from `1` through `1000`. Requires nonempty `message_select`.
+- **`main_conversations_only`**: Limits messages to main conversations. Defaults to `false` and requires nonempty `message_select` when `true`.
+
+Use [trace query syntax](/langsmith/trace-query-syntax) for run filter expressions. Set explicit time bounds when querying older data. The SDK preserves query options when fetching subsequent pages. For direct HTTP requests, preserve those options and stop when `next_cursor` is null.
+
+The supported `select` columns are `min_start_time`, `max_start_time`, `trace_count`, `first_trace_id`, `last_trace_id`, `latency_p50`, `latency_p99`, `total_tokens`, `total_cost`, `num_errored_turns`, `conversation_count`, and `message_count`. Latency percentiles use seconds.
+
+The supported `message_select` columns are `offset`, `role`, `message_id`, `tool_call_id`, `name`, `content_text`, `source_run_id`, `source_run_start_time`, `trace_id`, `conversation_key`, `message_key`, `message_type`, `dotted_order`, `anchor_id`, `ls_agent_type`, `inserted_at`, and `tool_definitions`. The API always includes message offset, role, content, source run ID, source run start time, and trace ID when requesting messages.
+
+A trajectory item can contain `messages_cursor` when it has more messages than the requested cap. This is a per-trajectory message continuation token, not the page's `next_cursor`. Do not pass it as `cursor` to either endpoint in this guide.
+
+### Stream a page
+
+The SDK examples above use buffered JSON responses. To read raw server-sent events, send an HTTP request to `POST /v1/trajectories/query` with `Accept: text/event-stream`. Do not use the SDK query iterator to consume JSON Patch events.
+
+Set `PROJECT_ID` to the project UUID and `LANGSMITH_ENDPOINT` to your API base URL, such as `https://api.smith.langchain.com`:
+
+```bash
+jq -n --arg project_id "$PROJECT_ID" \
+  '{project_id: $project_id, message_select: ["content_text"]}' |
+  curl --fail-with-body --silent --show-error --no-buffer \
+    --request POST "${LANGSMITH_ENDPOINT}/v1/trajectories/query" \
+    --header "X-Api-Key: ${LANGSMITH_API_KEY}" \
+    --header "X-Tenant-Id: ${LANGSMITH_WORKSPACE_ID}" \
+    --header 'Content-Type: application/json' \
+    --header 'Accept: text/event-stream' \
+    --data-binary @-
+```
+
+The stream sends JSON Patch arrays in `data` events. Apply them in order: the initial empty page, trajectory items, their messages, and finally `next_cursor`. An `end` event marks completion. Handle error events too; an HTTP success status alone does not mean the stream completed.
+
+Streaming avoids the buffered JSON page size limit. It still returns one page, with the same trajectory count and message selection options. Fetch subsequent pages using `next_cursor`.
+
+## Handle limitations and errors
+
+Trajectory extraction depends on the recorded message format. See [Trajectory view integrations](/langsmith/trajectory-view-integrations) for supported instrumentation and metadata.
+
+Projects with trace-level access conditions do not support thread trajectory retrieval or batch trajectory queries. These requests return `403`. An exact-trace request can succeed only when its root run satisfies the access condition; a hidden trace returns `404`.
+
+The batch request body has a 64 KiB limit. Buffered batch responses also have a deployment-configured size limit. If a batch page returns `413`, reduce `page_size` or `max_messages_per_trajectory`, select fewer fields, or request streaming.
+
+Both endpoints can return `400` for malformed requests, `401` for missing or invalid authentication, `403` for insufficient permissions, `404` for an inaccessible or missing project or trace, and `422` for invalid options. Check the error response before retrying with the same request.
+
+## See also
+
+- [Trajectory view integrations](/langsmith/trajectory-view-integrations)
+- [Query threads](/langsmith/query-threads)
+- [Trace query syntax](/langsmith/trace-query-syntax)
+- [LangSmith API reference](/langsmith/smith-api)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/query-trajectories.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
