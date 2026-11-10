@@ -1,0 +1,169 @@
+---
+title: Cloud (SaaS)
+sidebarTitle: Overview
+description: Learn how LangChain hosts and operates LangSmith Cloud, including its regions, data storage locations, and regional architecture.
+icon: cloud
+iconType: solid
+---
+
+The **Cloud** hosting option is a fully managed model where LangChain hosts and operates all LangSmith infrastructure and services:
+
+- **Fully managed infrastructure**: LangChain handles all infrastructure, updates, scaling, and maintenance.
+- [**LangSmith UI**](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=langsmith-cloud): Full access to [observability](/langsmith/observability), [evaluation](/langsmith/evaluation), [agent deployment management](/langsmith/deployment), and [Studio](/langsmith/studio).
+- **Deploy Agent Servers from GitHub**: Connect your repositories and deploy [Agent Servers](/langsmith/deployment) to the Cloud with a few clicks.
+- **Automated CI/CD for Agent Servers**: The build and deployment process for your [Agent Servers](/langsmith/deployment) is handled automatically by the platform.
+
+LangChain manages the LangSmith platform (UI, APIs, and datastores), your Agent Servers, and CI/CD for your apps. All of them run in LangChain's cloud on AWS, Azure, or GCP, depending on your [region](#regions).
+
+<Callout icon="rocket" color="#4F46E5" iconType="regular">
+If you're ready to deploy your app to LangSmith Cloud, follow the [Cloud deployment quickstart](/langsmith/deployment-quickstart) or the [full setup guide](/langsmith/deploy-to-cloud). This page explains the Cloud managed architecture for reference.
+</Callout>
+
+![Cloud deployment: LangChain hosts and manages all components including the UI, APIs, and your Agent Servers.](/langsmith/images/langgraph-cloud-architecture.png)
+
+## Cloud architecture and scalability
+
+<Note>
+This section is only relevant for cloud-managed LangSmith in the [regions listed below](#regions). For information on the Self-hosted LangSmith solution, refer to the [Self-hosted documentation](/langsmith/self-hosted).
+</Note>
+
+LangSmith Cloud runs in five regions on Google Cloud Platform (GCP), Amazon Web Services (AWS), and Microsoft Azure. The platform is designed to be highly scalable. Many customers run production workloads on LangSmith for LLM application observability, evaluation, and agent deployment.
+
+### Regions
+
+Each region has its own URLs. Your organization's data is stored in the region where you signed up, with the exceptions listed in [Regional storage](#regional-storage).
+
+| Region | URL | API URL |
+| --- | --- | --- |
+| GCP US (default) | [https://smith.langchain.com](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=langsmith-cloud) | `https://api.smith.langchain.com` |
+| GCP EU | [https://eu.smith.langchain.com](https://eu.smith.langchain.com) | `https://eu.api.smith.langchain.com` |
+| GCP APAC | [https://apac.smith.langchain.com](https://apac.smith.langchain.com) | `https://apac.api.smith.langchain.com` |
+| AWS US | [https://aws.smith.langchain.com](https://aws.smith.langchain.com) | `https://aws.api.smith.langchain.com` |
+| Azure US | [https://azure.smith.langchain.com](https://azure.smith.langchain.com) | `https://azure.api.smith.langchain.com` |
+
+### Regional storage
+
+Cloud-managed LangSmith stores trace and application data in the cloud location of the region where sign-up occurred. Each region uses a regional trace datastore for trace ingestion and analytics. Two kinds of data are stored elsewhere:
+
+- **Authentication data**: [Supabase](https://supabase.com) hosts authentication and authorization data on AWS, in the location listed in the Supabase column. This location can differ from the region's cloud location. For example, the Azure US region runs in Azure `centralus` (Iowa), while its authentication data is in AWS `us-east-1` (N. Virginia).
+- **Billing data**: Payment and billing information is stored in the US, as described in [Region-independent storage](#region-independent-storage).
+
+| Region | Cloud location | Supabase | Trace datastore | [LangSmith Deployment](/langsmith/deployment) domain |
+| --- | --- | --- | --- | --- |
+| GCP US | GCP us-central1 (Iowa) | AWS us-east-1 (N. Virginia) | [ClickHouse Cloud](https://clickhouse.com/cloud), us-central1 (Iowa) | `*.us.langgraph.app` |
+| GCP EU | GCP europe-west4 (Netherlands) | AWS eu-central-1 (Germany) | ClickHouse Cloud, europe-west4 (Netherlands) | `*.eu.langgraph.app` |
+| GCP APAC | GCP australia-southeast1 (Sydney) | AWS ap-southeast-2 (Sydney) | ClickHouse Cloud, australia-southeast1 (Sydney) | `*.apac.langgraph.app` |
+| AWS US | AWS us-east-2 (Ohio) | AWS us-east-2 (Ohio) | ClickHouse Cloud, us-east-2 (Ohio) | `*.aws.us.langgraph.app` |
+| Azure US | Azure centralus (Iowa) | AWS us-east-1 (N. Virginia) | SmithDB, centralus (Iowa) | `*.azure.us.langgraph.app` |
+
+Agent Servers on LangSmith Deployment run in the same cloud location as the rest of the region.
+
+<Tip>
+See the [Regions FAQ](/langsmith/regions-faq) for more information.
+</Tip>
+
+### Region-independent storage
+
+Data listed here is stored exclusively in the US:
+
+- Payment and billing information with Stripe and Metronome
+
+### Architecture
+
+Every region runs the same LangSmith components. The following sections list the cloud services that host them in each region. The Azure US region uses SmithDB where the diagram shows ClickHouse.
+
+<div style={{ textAlign: 'center' }}>
+<img
+    className="block dark:hidden"
+    src="/langsmith/images/cloud-arch-light.png"
+    alt="Light mode overview"
+/>
+
+<img
+    className="hidden dark:block"
+    src="/langsmith/images/cloud-arch-dark.png"
+    alt="Dark mode overview"
+/>
+</div>
+
+### GCP services
+
+The following applies to the **US, EU, and APAC** SaaS regions on GCP.
+
+LangSmith is composed of the following services, all hosted on Google Kubernetes Engine (GKE):
+
+- LangSmith Frontend: serves the LangSmith UI.
+- LangSmith Backend: serves the LangSmith API.
+- LangSmith Platform Backend: handles authentication and other high-volume tasks. (Internal service)
+- LangSmith Playground: handles forwarding requests to various LLM providers for the Playground feature.
+- LangSmith Queue: handles processing of asynchronous tasks. (Internal service)
+
+LangSmith uses the following GCP storage services:
+
+- Google Cloud Storage (GCS) for runs inputs and outputs.
+- Google Cloud SQL PostgreSQL for transactional workloads.
+- Google Cloud Memorystore for Redis for queuing and caching.
+- Clickhouse Cloud on GCP for trace ingestion and analytics. Our services connect to Clickhouse Cloud, which is hosted in the same GCP region, via a private endpoint.
+
+Some additional GCP services we use include:
+
+- Google Cloud Load Balancer for routing traffic to the LangSmith services.
+- Google Cloud CDN for caching static assets.
+- Google Cloud Armor for security and rate limits. For more information on rate limits we enforce, please refer to [Rate limits](/langsmith/cloud-rate-limits).
+
+### AWS services
+
+The following applies to the **AWS US** SaaS region in `us-east-2` (Ohio). The same logical LangSmith components run on **Amazon EKS** instead of GKE.
+
+LangSmith is composed of the following services, all hosted on Amazon EKS:
+
+- LangSmith Frontend: serves the LangSmith UI.
+- LangSmith Backend: serves the LangSmith API.
+- LangSmith Platform Backend: handles authentication and other high-volume tasks. (Internal service)
+- LangSmith Playground: handles forwarding requests to various LLM providers for the Playground feature.
+- LangSmith Queue: handles processing of asynchronous tasks. (Internal service)
+
+LangSmith uses the following AWS storage and data services:
+
+- Amazon S3 for runs inputs and outputs.
+- Amazon RDS for PostgreSQL for transactional workloads.
+- Amazon ElastiCache for Redis for queuing and caching.
+- ClickHouse Cloud over AWS PrivateLink in `us-east-2` for trace ingestion and analytics, consistent with the [regional storage](#regional-storage) table above.
+
+Some additional AWS services we use include:
+
+- Elastic Load Balancing (Network Load Balancers) and Istio ingress for routing traffic to the LangSmith services. Documented API rate limits are enforced at the Istio ingress gateway. For details, see [Rate limits](/langsmith/cloud-rate-limits).
+- Amazon CloudFront for caching static assets (including the web UI hostname `aws.smith.langchain.com`).
+- AWS WAF on CloudFront for managed rule groups at the edge (for example, AWS Managed Rules common protections and Bot Control).
+
+### Azure services
+
+The following applies to the **Azure US** SaaS region in `centralus` (Iowa). The same logical LangSmith components run on **Azure Kubernetes Service (AKS)** instead of GKE. Authentication data is the exception: Supabase hosts it separately, in AWS `us-east-1` (N. Virginia).
+
+LangSmith is composed of the following services, all hosted on AKS:
+
+- LangSmith Frontend: serves the LangSmith UI.
+- LangSmith Backend: serves the LangSmith API.
+- LangSmith Platform Backend: handles authentication and other high-volume tasks. (Internal service)
+- LangSmith Playground: handles forwarding requests to various LLM providers for the Playground feature.
+- LangSmith Queue: handles processing of asynchronous tasks. (Internal service)
+
+LangSmith uses the following Azure storage and data services:
+
+- Azure Blob Storage for runs inputs and outputs.
+- Azure Database for PostgreSQL flexible server for transactional workloads.
+- Azure Managed Redis for queuing and caching.
+- SmithDB for trace ingestion and analytics, storing its data in Azure Blob Storage in `centralus`. This region does not use ClickHouse Cloud.
+
+LangSmith also uses an Istio ingress gateway on AKS to route traffic to the LangSmith services.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/cloud.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
