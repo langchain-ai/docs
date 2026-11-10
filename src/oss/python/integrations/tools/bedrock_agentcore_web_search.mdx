@@ -7,7 +7,7 @@ integration:
   pypi: langchain-aws
 ---
 
-[Amazon Bedrock AgentCore Web Search](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-target-connector-web-search-tool.html) gives agents current information from the web with a source URL on every result. It is an AWS service-managed connector, so it authenticates with the AWS credentials you already have and takes no search API key of its own.
+[Amazon Bedrock AgentCore Web Search](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-target-connector-web-search-tool.html) gives agents current information from the web with a source URL on every result. It authenticates with the AWS credentials you already have and takes no search API key of its own. By default, the toolkit calls the [Web Search API](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/web-search-api.html) directly. It can also search through an AgentCore Gateway target.
 
 ## Overview
 
@@ -21,7 +21,7 @@ integration:
 
 | [Returns artifact](/oss/langchain/tools) | Native async | Return data | Pricing |
 |:-----------------------------------------------:|:------------:|:-----------:|:-------:|
-| ❌ | ✅ | Title, URL, Published date, Extract | Pay-per-use (AWS) |
+| ✅ (with `return_sources=True`) | ✅ | Title, URL, Published date, Extract | Pay-per-use (AWS) |
 
 ### Available tools
 
@@ -42,13 +42,13 @@ The integration lives in the `langchain-aws` package, which wraps the `bedrock-a
     ```
 </CodeGroup>
 
-Web search needs `langchain-aws` 1.7.9 or later and `bedrock-agentcore` 1.23.0 or later.
+The Web Search API needs `langchain-aws` 1.9.3 or later and `bedrock-agentcore` 1.26.0 or later.
 
-Install `bedrock-agentcore` explicitly, as above. `langchain_aws.tools` imports the web search toolkit inside a `try`/`except ImportError`, so on an install without `bedrock-agentcore`, or with a version below 1.23.0, the export is skipped rather than raising, and `create_web_search_toolkit` is simply absent from `langchain_aws.tools`. If the import fails, check both installed versions before anything else.
+Install `bedrock-agentcore` explicitly, as above. `langchain_aws.tools` imports the web search toolkit inside a `try`/`except ImportError`, so on an install without `bedrock-agentcore`, or with a version below 1.26.0, the export is skipped rather than raising, and `create_web_search_toolkit` is simply absent from `langchain_aws.tools`. If the import fails, check both installed versions before anything else.
 
-### Create a gateway with a web search target
+### Optional: create a gateway with a web search target
 
-Unlike the other AgentCore tools in this package, web search reaches the service through an [AgentCore Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-target-connectors.html) target, so a gateway has to exist before the toolkit can call it. You only do this once, and the same gateway serves every agent in the account.
+The Web Search API needs no resources, so skip this step unless you want to search through an [AgentCore Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-target-connectors.html) target instead. You only do this once, and the same gateway serves every agent in the account.
 
 ```python
 from bedrock_agentcore.gateway.client import GatewayClient
@@ -69,11 +69,13 @@ client.create_web_search_target(gateway_identifier=gateway["gatewayId"])
 
 The target is named `amazon-web-search` by default, and Gateway [prefixes every tool with its target name](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-tool-naming.html), so the tool on the gateway is `amazon-web-search___WebSearch`. The toolkit finds it for you; the name matters only if you go looking for it in the gateway's tool list.
 
-Web search is available in `us-east-1`, `eu-west-1`, and `ap-northeast-1`. The [service documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-target-connector-web-search-tool.html) carries the current list.
+The Web Search API is available in `us-east-1`, `us-east-2`, `us-west-2`, `eu-west-1`, `ap-northeast-1`, and `ap-southeast-2`. The Web Search Tool connector is offered in a different set of Regions. The [service documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/web-search-api.html#web-search-api-regions) carries the current lists.
 
 ### Credentials
 
-Two different principals each need one permission, and mixing them up is the most common setup error:
+With the Web Search API, your own credentials need `bedrock-agentcore:InvokeWebSearch` on `arn:aws:bedrock-agentcore:<region>:aws:tool/web-search.v1`. For the full setup, see [Get started with AgentCore Web Search](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/web-search-api-get-started.html).
+
+Through a gateway, two different principals each need one permission, and mixing them up is the most common setup error:
 
 - **Your own credentials** need `bedrock-agentcore:InvokeGateway` on the gateway ARN.
 - **The gateway's execution role** needs `bedrock-agentcore:InvokeWebSearch` on `arn:aws:bedrock-agentcore:<region>:aws:tool/web-search.v1`, and a trust policy that lets `bedrock-agentcore.amazonaws.com` assume it. It needs nothing else.
@@ -96,6 +98,12 @@ The factory is **synchronous**, unlike the browser and code interpreter factorie
 ```python
 from langchain_aws.tools import create_web_search_toolkit
 
+toolkit, tools = create_web_search_toolkit(region="us-east-1")
+```
+
+With no gateway argument, the toolkit calls the Web Search API. To search through a gateway instead, pass it:
+
+```python
 toolkit, tools = create_web_search_toolkit(
     region="us-east-1",
     gateway_id="my-web-search-gateway-abc123",
@@ -120,18 +128,20 @@ toolkit, tools = create_web_search_toolkit(
 ```python
 search = tools[0]
 
-results = search.invoke({"query": "latest boto3 release notes", "max_results": 5})
+results = search.invoke({"query": "boto3 latest release changelog", "max_results": 5})
 print(results)
 ```
 
 Results come back as numbered text blocks, one per hit, each carrying a title, a URL, a publication date when the index reports one, and an extract:
 
 ```text
-1. boto3 1.43.56 release notes
-   URL: https://github.com/boto/boto3/blob/develop/CHANGELOG.rst
-   Published: 12:31PM, Friday, July 24 2026, PDT
-   Adds support for ...
+1. Releases · boto/boto3
+   URL: https://github.com/boto/boto3/releases
+   Published: 2023-12-16T00:00:00Z
+   Additional navigation options Code Issues Pull requests ...
 ```
+
+Through a gateway, the publication date comes in the connector's own form, such as `12:31PM, Friday, July 24 2026, PDT`.
 
 ### Use within an agent
 
@@ -140,13 +150,10 @@ from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
 from langchain_aws.tools import create_web_search_toolkit
 
-toolkit, tools = create_web_search_toolkit(
-    region="us-east-1",
-    gateway_id="my-web-search-gateway-abc123",
-)
+toolkit, tools = create_web_search_toolkit(region="us-east-1")
 
 llm = init_chat_model(
-    "us.anthropic.claude-sonnet-4-20250514-v1:0",
+    "us.anthropic.claude-sonnet-5-5",
     model_provider="bedrock_converse",
 )
 
@@ -180,9 +187,11 @@ search.invoke({
 })
 ```
 
-A root domain also matches its subdomains. `include_domains` can only narrow a search, never widen it: if the gateway target was created with its own include list, the two intersect, and disjoint lists return nothing.
+A root domain also matches its subdomains. Pass bare domain names. The Web Search API rejects the whole request when a domain includes a scheme, a path, or a wildcard, such as `https://github.com`, `github.com/boto/boto3`, or `*.github.com`. Both date bounds are inclusive.
 
-To enforce a domain policy that the agent cannot relax, set it on the target instead of leaving it to the model. Those lists are applied server-side and are not visible to the agent:
+`include_domains` can only narrow a search, never widen it: if the gateway target was created with its own include list, the two intersect, and disjoint lists return nothing.
+
+To enforce a policy that the agent cannot relax, set it on the toolkit, as in the next section. Through a gateway, you can also set a domain policy on the target. Those lists are applied server-side and are not visible to the agent:
 
 ```python
 client.create_web_search_target(
@@ -190,6 +199,26 @@ client.create_web_search_target(
     include_domains=["docs.aws.amazon.com", "boto3.amazonaws.com"],
 )
 ```
+
+## Rules the model cannot change
+
+Rules set on the toolkit apply to every search, on either route. A call from the model can narrow them but never widen them:
+
+```python
+toolkit, tools = create_web_search_toolkit(
+    region="us-east-1",
+    exclude_domains=["example.com"],
+    published_after="2026-10-01T00:00:00Z",
+    model_filters=False,
+    max_searches=4,
+    return_sources=True,
+)
+```
+
+- `include_domains`, `exclude_domains`, `published_after`, and `published_before` apply to every search. The model's exclude list is added to the toolkit's, its include list is kept only inside the toolkit's, and its date bounds apply only when they are stricter.
+- `model_filters=False` gives the model a query-only argument schema.
+- `max_searches` caps the searches one toolkit runs. After that, the tool returns `Search limit of 4 reached. Answer with what you have.`
+- `return_sources=True` returns results as a tool artifact: a list of dicts with `title`, `url`, `published_date`, `published_at`, and `text`.
 
 ## Error handling
 
@@ -221,5 +250,6 @@ with toolkit:
 For detailed documentation of all features and configurations, see:
 
 - [langchain-aws API reference](https://reference.langchain.com/python/langchain-aws)
+- [AgentCore Web Search API documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/web-search-api.html)
 - [AgentCore Web Search tool documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-target-connector-web-search-tool.html)
 - [AgentCore Gateway tool naming](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-tool-naming.html)
