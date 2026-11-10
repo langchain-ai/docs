@@ -5,7 +5,7 @@ from deepagents import RubricMiddleware, create_deep_agent
 from langgraph.checkpoint.memory import InMemorySaver
 
 agent = create_deep_agent(
-    model="openai:gpt-5.5",
+    model="openai:gpt-6.1",
     middleware=[
         RubricMiddleware(
             model="anthropic:claude-haiku-4-5",

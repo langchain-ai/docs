@@ -32,7 +32,7 @@ formatted_prompt = prompt.invoke({"question": "What is the color of the sky?"})
 
 response = oai_client.chat.completions.create(
     # KEEP MODEL
-    model="gpt-5.5",
+    model="gpt-6.1",
     messages=convert_to_openai_messages(formatted_prompt.messages),
 )
 # :snippet-end:

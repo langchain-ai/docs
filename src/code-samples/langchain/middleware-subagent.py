@@ -33,7 +33,7 @@ agent = create_agent(
                         "Use the get_weather tool to get the weather in a city."
                     ),
                     "tools": [get_weather],
-                    "model": "gpt-5.5",
+                    "model": "gpt-6.1",
                     "middleware": [],
                 }
             ],

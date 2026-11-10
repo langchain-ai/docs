@@ -21,7 +21,7 @@ const contextSchema = z.object({
 });
 
 const agent = createAgent({
-  model: new ChatOpenAI({ model: "gpt-5.5" }),
+  model: new ChatOpenAI({ model: "gpt-6.1" }),
   tools: [getUserName],
   checkpointer: new MemorySaver(),
   contextSchema,

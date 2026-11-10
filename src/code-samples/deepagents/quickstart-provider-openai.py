@@ -28,7 +28,7 @@ Use this to run an internet search for a given query. You can specify the max nu
 """
 
 agent = create_deep_agent(
-    model="openai:gpt-5.5",
+    model="openai:gpt-6.1",
     tools=[internet_search],
     system_prompt=research_instructions,
 )

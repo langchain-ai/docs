@@ -25,7 +25,7 @@ import { createDeepAgent } from "deepagents";
 import { isAIMessage } from "@langchain/core/messages";
 
 const agent = await createDeepAgent({
-  model: "openai:gpt-5.5",
+  model: "openai:gpt-6.1",
   systemPrompt:
     "You are a coordinator. For every request, call task() with subagent_type set to researcher.",
   subagents: [researchSubagent],

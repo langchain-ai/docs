@@ -87,7 +87,7 @@ def perform_search(query: str, max_results: int = 5, include_raw: bool = False) 
 
 
 research_instructions = "You are a research coordinator."
-your_model = "openai:gpt-5.5"
+your_model = "openai:gpt-6.1"
 specialized_tools: list = []
 # :remove-end:
 
@@ -102,7 +102,7 @@ def internet_search(query: str) -> str:
 
 
 research_instructions = "You are a research coordinator."
-your_model = "openai:gpt-5.5"
+your_model = "openai:gpt-6.1"
 specialized_tools: list = []
 
 # Create a custom agent graph
@@ -202,7 +202,7 @@ agent = create_deep_agent(
             "description": "General-purpose agent for research and multi-step tasks",
             "system_prompt": "You are a general-purpose assistant.",
             "tools": [internet_search],
-            "model": "openai:gpt-5.5",  # Different model for delegated tasks
+            "model": "openai:gpt-6.1",  # Different model for delegated tasks
         },
     ],
 )
@@ -301,7 +301,7 @@ subagents = [
         "description": "Analyzes financial data and market trends",
         "system_prompt": "You are an expert financial analyst...",
         "tools": [get_stock_price, analyze_fundamentals],
-        "model": "openai:gpt-5.5",  # Better for numerical analysis
+        "model": "openai:gpt-6.1",  # Better for numerical analysis
     },
 ]
 # :snippet-end:

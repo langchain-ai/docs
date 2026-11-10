@@ -8,7 +8,7 @@ process.env.LANGCHAIN_TRACING_V2 = "false";
 import { createDeepAgent } from "deepagents";
 
 const agent = createDeepAgent({
-  model: "openai:gpt-5.5",
+  model: "openai:gpt-6.1",
   name: "main-agent",
   systemPrompt:
     "You are a project coordinator with no creative writing knowledge. " +

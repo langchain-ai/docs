@@ -3,7 +3,7 @@ import { createDeepAgent } from "deepagents";
 import { createCodeInterpreterMiddleware } from "@langchain/quickjs";
 
 const agent = createDeepAgent({
-  model: "openai:gpt-5.5",
+  model: "openai:gpt-6.1",
   subagents: [{
     name: "architect",
     description: "Proposes a database schema design with tradeoff analysis",

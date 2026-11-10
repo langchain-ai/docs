@@ -13,7 +13,7 @@ from tools.search import internet_search
 # KEEP MODEL
 agent = define_deep_agent(
     name="research-assistant",
-    model="openai:gpt-5.5",
+    model="openai:gpt-6.1",
     tools=[internet_search],
 )
 # :snippet-end:

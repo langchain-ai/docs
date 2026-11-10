@@ -56,7 +56,7 @@ def correctness_evaluator(inputs: dict, outputs: dict, reference_outputs: dict):
     evaluator = create_llm_as_judge(
         prompt=CORRECTNESS_PROMPT,
         # KEEP MODEL
-        model="openai:gpt-5.5",
+        model="openai:gpt-6.1",
         feedback_key="correctness",
     )
     return evaluator(
@@ -94,7 +94,7 @@ def correctness_evaluator(inputs: dict, outputs: dict, reference_outputs: dict):
     evaluator = create_llm_as_judge(
         prompt=CORRECTNESS_PROMPT,
         # KEEP MODEL
-        model="openai:gpt-5.5",
+        model="openai:gpt-6.1",
         feedback_key="correctness",
     )
     return evaluator(

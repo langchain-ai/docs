@@ -10,7 +10,7 @@ import { internetSearch } from "./tools/search";
 export const agent = defineDeepAgent({
   name: "research-assistant",
   // KEEP MODEL
-  model: "openai:gpt-5.5",
+  model: "openai:gpt-6.1",
   tools: [internetSearch],
 });
 // :snippet-end:

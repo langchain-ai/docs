@@ -42,7 +42,7 @@ function storeItemToText(item: { value: unknown }): string {
 
 const testStore = new InMemoryStore();
 const testAgent = await createDeepAgent({
-  model: "openai:gpt-5.5",
+  model: "openai:gpt-6.1",
   store: testStore,
   backend: new CompositeBackend(new StateBackend(), {
     "/memories/": new StoreBackend({
