@@ -1,0 +1,45 @@
+```typescript
+const PUBLIC_RUN_SELECTS = [
+  "ID",
+  "NAME",
+  "RUN_TYPE",
+  "STATUS",
+  "START_TIME",
+] as const;
+
+// Share a trace.
+const share = await client.runs.share.create(runId, {
+  session_id: projectId,
+  trace_id: traceId,
+});
+if (!share.share_token) {
+  throw new Error("The server did not return a share token");
+}
+const shareToken = share.share_token;
+
+// Query the public trace and use its stored start time for a point read.
+const response = await client.public.runs.query(shareToken, {
+  selects: [...PUBLIC_RUN_SELECTS],
+});
+const runs = response.items ?? [];
+const item = runs.find((candidate) => candidate.id === runId);
+if (!item?.start_time) {
+  throw new Error("The public run or its start_time was not found");
+}
+const run = await client.public.runs.retrieve(runId, {
+  share_token: shareToken,
+  selects: [...PUBLIC_RUN_SELECTS],
+  start_time: item.start_time,
+});
+
+// Retrieve the deployment-aware public URL for an authenticated run.
+const authenticatedRun = await client.runs.retrieve(runId, {
+  project_id: projectId,
+  start_time: item.start_time,
+  selects: ["SHARE_URL"],
+});
+const shareUrl = authenticatedRun.share_url;
+
+// Remove public access by root trace ID.
+await client.runs.share.delete(traceId, { session_id: projectId });
+```
