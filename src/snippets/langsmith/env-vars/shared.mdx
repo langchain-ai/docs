@@ -280,9 +280,17 @@ Specify `REDIS_URI_CUSTOM` to use a custom Redis instance. The value of `REDIS_U
 
 ## `REDIS_MAX_CONNECTIONS`
 
-The maximum size of the Redis connection pool (per replica) can be controlled using the `REDIS_MAX_CONNECTIONS` environment variable. By setting this variable, you can determine the upper bound on the number of simultaneous connections the server will establish with the Redis instance.
+The maximum size of the Redis connection pool (per replica) can be controlled using the `REDIS_MAX_CONNECTIONS` environment variable. This pool does not hold every connection a replica opens to Redis. For example, with [`FF_OPTIMIZED_STREAMING`](#ff_optimized_streaming) enabled, stream reads use a separate pool sized by [`REDIS_STREAM_READ_MAX_CONNECTIONS`](#redis_stream_read_max_connections).
 
-For example, if a deployment is scaled up to 10 replicas and `REDIS_MAX_CONNECTIONS` is configured to `150`, then up to `1500` connections to Redis can be established.
+Defaults to `2000`.
+
+## `REDIS_STREAM_READ_MAX_CONNECTIONS`
+
+`REDIS_STREAM_READ_MAX_CONNECTIONS` sets the maximum size of the Redis connection pool that each replica uses to read streams. It applies only when [`FF_OPTIMIZED_STREAMING`](#ff_optimized_streaming) is enabled. Each open stream takes a connection from this pool while it waits for events.
+
+This pool is separate from [`REDIS_MAX_CONNECTIONS`](#redis_max_connections). With `FF_OPTIMIZED_STREAMING` enabled, each replica can open up to `REDIS_STREAM_READ_MAX_CONNECTIONS` Redis connections on top of that pool.
+
+If a replica has more open streams than the pool has connections, streams wait for a free connection and their events arrive late. Raise the value when that happens, as long as the Redis `maxclients` limit has room for the extra connections from every replica.
 
 Defaults to `2000`.
 
