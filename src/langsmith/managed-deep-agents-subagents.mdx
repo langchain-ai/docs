@@ -169,42 +169,49 @@ Subagent MCP selection requires `managed-deepagents` version 0.10.2 or later.
 | `[]` or `null` | No MCP tools | No MCP tools |
 :::
 
-`mcp` selects whole `define_mcp` definitions, not single servers. In the example below, `[mcp]` gives the docs researcher the tools of every server in `tools/mcp`. An async subagent connects only to the servers it selects and asks only for their credentials. A subagent in fork mode cannot set `mcp`.
+An async subagent connects only to the servers it selects and asks only for their credentials. A subagent in fork mode cannot set `mcp`.
 
 :::python
-```python tools/mcp.py
-from managed_deepagents import define_mcp
+```python agent.py
+from managed_deepagents import connections, define_deep_agent, define_mcp
 
-mcp = define_mcp(
+knowledge = define_mcp(
     servers={
-        "langchainDocs": {
+        "langchainDocs": {"transport": "http", "url": "https://docs.langchain.com/mcp"},
+        "notion": {
             "transport": "http",
-            "url": "https://docs.langchain.com/mcp",
+            "url": "https://mcp.notion.com/mcp",
+            "connection": connections.get("engineering-notion", {"type": "user"}),
         },
     },
 )
-```
 
-```python agent.py
-from managed_deepagents import define_deep_agent
-
-from tools.mcp import mcp
+planning = define_mcp(
+    servers={
+        "linear": {
+            "transport": "http",
+            "url": "https://mcp.linear.app/mcp",
+            "connection": connections.get("engineering-linear", {"type": "user"}),
+        },
+    },
+)
 
 agent = define_deep_agent(
     name="research-assistant",
     model="openai:gpt-5.5",
+    mcp=[knowledge, planning],
     subagents=[
         {
-            "name": "docs-researcher",
-            "description": "Answers questions from the LangChain docs.",
-            "system_prompt": "Search the docs and cite the pages you use.",
-            "mcp": [mcp],
+            "name": "researcher",
+            "description": "Answers questions from the docs and the team wiki.",
+            "system_prompt": "Search the docs and Notion, and cite the pages you use.",
+            "mcp": [knowledge],
         },
         {
-            "name": "reviewer",
-            "description": "Reviews a draft for accuracy and clarity.",
-            "system_prompt": "Review the draft and list concrete fixes.",
-            "mcp": [],
+            "name": "planner",
+            "description": "Turns findings into Linear issues.",
+            "system_prompt": "Create one Linear issue for each follow-up.",
+            "mcp": [planning],
         },
     ],
 )
@@ -212,39 +219,46 @@ agent = define_deep_agent(
 :::
 
 :::js
-```ts tools/mcp.ts
-import { defineMcp } from "managed-deepagents";
+```ts agent.ts
+import { connections, defineDeepAgent, defineMcp } from "managed-deepagents";
 
-export const mcp = defineMcp({
+const knowledge = defineMcp({
   servers: {
-    langchainDocs: {
+    langchainDocs: { transport: "http", url: "https://docs.langchain.com/mcp" },
+    notion: {
       transport: "http",
-      url: "https://docs.langchain.com/mcp",
+      url: "https://mcp.notion.com/mcp",
+      connection: connections.get("engineering-notion", { type: "user" }),
     },
   },
 });
-```
 
-```ts agent.ts
-import { defineDeepAgent } from "managed-deepagents";
-
-import { mcp } from "./tools/mcp.js";
+const planning = defineMcp({
+  servers: {
+    linear: {
+      transport: "http",
+      url: "https://mcp.linear.app/mcp",
+      connection: connections.get("engineering-linear", { type: "user" }),
+    },
+  },
+});
 
 export const agent = defineDeepAgent({
   name: "research-assistant",
   model: "openai:gpt-5.5",
+  mcp: [knowledge, planning],
   subagents: [
     {
-      name: "docs-researcher",
-      description: "Answers questions from the LangChain docs.",
-      systemPrompt: "Search the docs and cite the pages you use.",
-      mcp: [mcp],
+      name: "researcher",
+      description: "Answers questions from the docs and the team wiki.",
+      systemPrompt: "Search the docs and Notion, and cite the pages you use.",
+      mcp: [knowledge],
     },
     {
-      name: "reviewer",
-      description: "Reviews a draft for accuracy and clarity.",
-      systemPrompt: "Review the draft and list concrete fixes.",
-      mcp: [],
+      name: "planner",
+      description: "Turns findings into Linear issues.",
+      systemPrompt: "Create one Linear issue for each follow-up.",
+      mcp: [planning],
     },
   ],
 });
