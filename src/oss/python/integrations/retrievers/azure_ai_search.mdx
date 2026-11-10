@@ -10,9 +10,9 @@ integration:
 
 [Azure AI Search](https://learn.microsoft.com/azure/search/search-what-is-azure-search) (formerly known as `Azure Cognitive Search`) is a Microsoft cloud search service that gives developers infrastructure, APIs, and tools for information retrieval of vector, keyword, and hybrid queries at scale.
 
-`AzureAISearchRetriever` is an integration module that returns documents from an unstructured query. It's based on the BaseRetriever class and it targets the 2023-11-01 stable REST API version of Azure AI Search, which means it supports vector indexing and queries.
+`AzureAISearchRetriever` returns documents from an unstructured query. It sends the query as a full-text `search` request to the 2023-11-01 stable REST API version of Azure AI Search. It does not embed the query or run a vector query. For vector or hybrid retrieval, use `AzureSearch.as_retriever()` from the [vector store integration](/oss/integrations/vectorstores/azuresearch).
 
-This guide will help you get started with the Azure AI Search [retriever](/oss/langchain/retrieval). For detailed documentation of all `AzureAISearchRetriever` features and configurations head to the [API reference](https://reference.langchain.com/python/langchain-azure-ai).
+This guide shows how to get started with the Azure AI Search [retriever](/oss/langchain/retrieval). For all `AzureAISearchRetriever` features and configurations, see the [API reference](https://reference.langchain.com/python/langchain-azure-ai).
 
 ## Setup
 
@@ -26,7 +26,7 @@ To use this module, you need:
   + API keys are generated when you create the search service. If you're just querying an index, you can use the query API key, otherwise use an admin API key. See [Find your API keys](https://learn.microsoft.com/azure/search/search-security-api-keys?tabs=rest-use%2Cportal-find%2Cportal-query#find-existing-keys) for details.
   + Azure AD Token can be used with Azure Managed Identity. See [Connect your app to Azure AI Search using identities](https://learn.microsoft.com/en-us/azure/search/keyless-connections?tabs=python%2Cazure-cli) for details.
 
-We can then set the search service name, index name, and API key as environment variables (alternatively, you can pass them as arguments to `AzureAISearchRetriever`). The search index provides the searchable content.
+Set the search service name, index name, and API key as environment variables, or pass them as arguments to `AzureAISearchRetriever`. The search index provides the searchable content.
 
 With an API Key
 
@@ -86,7 +86,7 @@ retriever = AzureAISearchRetriever(
 ## Usage
 
 Now you can use it to retrieve documents from Azure AI Search.
-This is the method you would call to do so. It will return all documents relevant to the query.
+Call `invoke` to retrieve documents. It returns up to `top_k` documents that match the query.
 
 ```python
 retriever.invoke("here is my unstructured query string")
@@ -96,7 +96,7 @@ retriever.invoke("here is my unstructured query string")
 
 This section demonstrates using the retriever over built-in sample data. You can skip this step if you already have a vector index on your search service.
 
-Start by providing the endpoints and keys. Since we're creating a vector index in this step, specify a text embedding model to get a vector representation of the text. This example assumes Azure OpenAI with a deployment of text-embedding-ada-002. Because this step creates an index, be sure to use an admin API key for your search service.
+Start by providing the endpoints and keys. Because this step creates a vector index, specify a text embedding model to get a vector representation of the text. This example assumes Azure OpenAI with a deployment of text-embedding-3-small. Because this step creates an index, be sure to use an admin API key for your search service.
 
 ```python
 import os
@@ -111,10 +111,10 @@ os.environ["AZURE_AI_SEARCH_API_KEY"] = "<YOUR_SEARCH_SERVICE_ADMIN_API_KEY>"
 azure_endpoint: str = "<YOUR_AZURE_OPENAI_ENDPOINT>"
 azure_openai_api_key: str = "<YOUR_AZURE_OPENAI_API_KEY>"
 azure_openai_api_version: str = "2023-05-15"
-azure_deployment: str = "text-embedding-ada-002"
+azure_deployment: str = "text-embedding-3-small"
 ```
 
-We'll use an embedding model from Azure OpenAI to turn our documents into embeddings stored in the Azure AI Search vector store. We'll also set the index name to `langchain-vector-demo`. This will create a new vector store associated with that index name.
+Use an embedding model from Azure OpenAI to turn the documents into embeddings stored in the Azure AI Search vector store. Setting the index name to `langchain-vector-demo` creates a new vector store associated with that index name.
 
 ```python
 embeddings = AzureOpenAIEmbeddings(
@@ -131,7 +131,7 @@ vector_store: AzureSearch = AzureSearch(
 )
 ```
 
-Next, we'll load data into our newly created vector store. For this example, we load the `state_of_the_union.txt` file. We'll split the text in 400 token chunks with no overlap. Finally, the documents are added to our vector store as embeddings.
+Next, load data into the new vector store. This example loads the `state_of_the_union.txt` file and splits the text into 400-character chunks with no overlap. The chunks are then added to the vector store as embeddings.
 
 ```python
 from pathlib import Path
@@ -145,7 +145,7 @@ docs = text_splitter.create_documents([text])
 vector_store.add_documents(documents=docs)
 ```
 
-Next, we'll create a retriever. The current `index_name` variable is `langchain-vector-demo` from the last step. If you skipped vector store creation, provide your index name in the parameter. In this query, the top result is returned.
+Next, create a retriever. The current `index_name` variable is `langchain-vector-demo` from the last step. If you skipped vector store creation, provide your index name in the parameter. In this query, the top result is returned.
 
 ```python
 retriever = AzureAISearchRetriever(
@@ -153,7 +153,7 @@ retriever = AzureAISearchRetriever(
 )
 ```
 
-Now we can retrieve the data that is relevant to our query from the documents we uploaded.
+Now retrieve the data that is relevant to the query from the uploaded documents.
 
 ```python
 retriever.invoke("does the president have a plan for covid-19?")
@@ -193,8 +193,6 @@ chain = (
 ```python
 chain.invoke("does the president have a plan for covid-19?")
 ```
-
----
 
 ## API reference
 
