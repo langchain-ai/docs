@@ -160,7 +160,8 @@ You can also explicitly set `vertexai=True` or `vertexai=False` to override auto
 | `GEMINI_API_KEY` | API key (fallback) | Both (see `GOOGLE_GENAI_USE_VERTEXAI`) |
 | `GOOGLE_GENAI_USE_VERTEXAI` | Force Gemini Enterprise Agent Platform backend (`true`/`false`) | Gemini Enterprise Agent Platform |
 | `GOOGLE_CLOUD_PROJECT` | GCP project ID | Gemini Enterprise Agent Platform |
-| `GOOGLE_CLOUD_LOCATION` | GCP region (default: `us-central1`) | Gemini Enterprise Agent Platform |
+| `GOOGLE_CLOUD_LOCATION` | GCP region (default: `us-central1`; use `global`, `us`, or `eu` for the [Interactions API](#interactions-api)) | Gemini Enterprise Agent Platform |
+| `LANGCHAIN_GOOGLE_USE_INTERACTIONS_API` | Route requests through the [Interactions API](#interactions-api) (`true`/`false`) | Both |
 
 To enable automated tracing of your model calls, set your [LangSmith](/langsmith/observability) API key:
 
@@ -947,6 +948,407 @@ response = llm_with_search.invoke(
 ```
 
 This uses Gemini's native JSON schema mode for structuring the output while allowing tools like Google Search for grounding—all in a single LLM call.
+
+## Interactions API
+
+<Note>
+    Interactions API support requires `langchain-google-genai>=4.6.0`.
+</Note>
+
+Google provides the [Interactions API](https://ai.google.dev/gemini-api/docs/interactions) as a unified interface for calling Gemini models and server-hosted [agents](/oss/langchain/agents). It supports server-side conversation state, structured execution steps for reasoning and server tools, built-in tools such as File Search and remote MCP servers, and asynchronous background execution.
+
+`ChatGoogleGenerativeAI` supports the Interactions API on both the Gemini Developer API and Gemini Enterprise Agent Platform. On Gemini Enterprise Agent Platform, set `location` (or `GOOGLE_CLOUD_LOCATION`) to a supported endpoint: `global`, `us`, or `eu`.
+
+### Enable the Interactions API
+
+Set `use_interactions_api=True` when initializing `ChatGoogleGenerativeAI` or @[`init_chat_model`], export `LANGCHAIN_GOOGLE_USE_INTERACTIONS_API=true`, or configure an Interactions-specific feature.
+
+When `use_interactions_api` is omitted (`None`), `ChatGoogleGenerativeAI` routes requests to the Interactions API if any of the following conditions apply:
+
+- **Environment variable**: `LANGCHAIN_GOOGLE_USE_INTERACTIONS_API` is `true`, `1`, or `yes` (`false`, `0`, or `no` disables routing).
+- **Output format**: `output_version="interactions/v1"` is set on the model or call.
+- **Conversation state**: `use_previous_interaction_id=True`, `previous_interaction_id`, `continuation_token`, or `automatic_continuation` is set.
+- **Agents and execution**: `agent`, `agent_config`, `background`, `environment`, or `webhook_config` is set, or `model` starts with `deep-research-` or `antigravity-`.
+- **Interactions-only tools**: `tools` includes a `file_search`, `mcp_server`, or `retrieval` tool definition.
+
+Pass `use_interactions_api=False` on an individual invocation to override model-level or environment settings and send that request through `generateContent`.
+
+<CodeGroup>
+    ```python ChatGoogleGenerativeAI
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    model = ChatGoogleGenerativeAI(
+        model="gemini-4-hydrogen",
+        use_interactions_api=True,  # [!code highlight]
+    )
+
+    response = model.invoke("Explain context engineering in one sentence.")
+    response.content_blocks
+
+    # Override a single call to route through generateContent
+    fallback = model.invoke(
+        "Translate 'good morning' into Spanish.",
+        use_interactions_api=False,  # [!code highlight]
+    )
+    ```
+
+    ```python init_chat_model
+    from langchain.chat_models import init_chat_model
+
+    model = init_chat_model(
+        "google_genai:gemini-4-hydrogen",
+        use_interactions_api=True,  # [!code highlight]
+    )
+
+    response = model.invoke("Explain context engineering in one sentence.")
+    response.content_blocks
+    ```
+
+    ```python Environment variable
+    import os
+
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    os.environ["LANGCHAIN_GOOGLE_USE_INTERACTIONS_API"] = "true"  # [!code highlight]
+
+    model = ChatGoogleGenerativeAI(model="gemini-4-hydrogen")
+    response = model.invoke("Explain context engineering in one sentence.")
+
+    # Per-call flags take precedence over the environment variable
+    fallback = model.invoke("Reply with OK.", use_interactions_api=False)
+    ```
+
+    ```python Gemini Enterprise Agent Platform
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    model = ChatGoogleGenerativeAI(
+        model="gemini-4-hydrogen",
+        project="your-project-id",
+        location="global",  # Use global, us, or eu [!code highlight]
+        use_interactions_api=True,  # [!code highlight]
+    )
+
+    response = model.invoke("Explain context engineering in one sentence.")
+    response.content_blocks
+    ```
+</CodeGroup>
+
+### Configure output formats
+
+Access normalized [standard content blocks](/oss/langchain/messages#standard-content-blocks) on any response through `.content_blocks`, or set `output_version` to control how `ChatGoogleGenerativeAI` formats @[`AIMessage`] blocks:
+
+- **`output_version="v1"`**: Stores normalized LangChain v1 blocks (`text`, `reasoning`, `tool_call`, `server_tool_call`, `server_tool_result`, and multimodal blocks) on the message and sets `response_metadata["output_version"] = "v1"`.
+- **`output_version="interactions/v1"`**: Routes requests through the Interactions API and emits structured step blocks on the message, including inline `server_tool_call` and `server_tool_result` blocks for every server tool (`google_search`, `code_execution`, `url_context`, `google_maps`, `file_search`, and `mcp_server`), character-indexed `citation` annotations on `text` blocks, and `reasoning` blocks with thought signatures in `extras["signature"]`.
+
+<Tabs>
+    <Tab title="Standard v1">
+        ```python
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        model = ChatGoogleGenerativeAI(
+            model="gemini-4-hydrogen",
+            use_interactions_api=True,
+            output_version="v1",  # [!code highlight]
+            include_thoughts=True,
+        )
+
+        response = model.invoke("What is 3^3? Answer in one sentence.")
+        [block["type"] for block in response.content_blocks]
+        ```
+
+        ```text
+        ['reasoning', 'text']
+        ```
+    </Tab>
+
+    <Tab title="Interactions v1">
+        ```python
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        # Setting output_version="interactions/v1" enables the Interactions API
+        model = ChatGoogleGenerativeAI(
+            model="gemini-4-hydrogen",
+            output_version="interactions/v1",  # [!code highlight]
+        )
+
+        response = model.invoke(
+            "Use Google Search to find who created Python.",
+            tools=[{"type": "google_search"}],
+        )
+        [block["type"] for block in response.content_blocks]
+        ```
+
+        ```text
+        ['reasoning', 'server_tool_call', 'server_tool_result', 'text']
+        ```
+
+        Thinking models may include `reasoning` blocks before server tool calls to preserve thought signatures across turns.
+    </Tab>
+</Tabs>
+
+### Manage server-side conversation state
+
+The Interactions API supports optional server-side persistence so you can continue multi-turn conversations without resending prior messages.
+
+- **`store=False` (stateless default)**: `ChatGoogleGenerativeAI` defaults `store` to `False` on standalone calls to match the stateless retention behavior of `generateContent`. On stateless responses, `response_metadata["stored"]` is `False` and `response_metadata["interaction_id"]` is `None`.
+- **`store=True` (server persistence)**: `ChatGoogleGenerativeAI` sets `store=True` when `use_previous_interaction_id=True`, `previous_interaction_id`, `background=True`, or `agent` is active. You can also pass `store=True` at initialization or per call to persist an interaction; stored responses populate `response_metadata["interaction_id"]` (and `AIMessage.id`) and set `response_metadata["stored"]` to `True`.
+
+<Note>
+    Passing `store=False` with `previous_interaction_id` or `background=True` raises an error because stateful continuation and background polling require stored interactions.
+</Note>
+
+#### Chain turns with `use_previous_interaction_id`
+
+Set `use_previous_interaction_id=True` to chain multi-turn histories, client tool loops, and [LangGraph](/oss/langgraph/quickstart) threads on the server. On each invocation, `ChatGoogleGenerativeAI` finds the latest stored Google `AIMessage` in the message list, attaches its `interaction_id` as `previous_interaction_id`, and sends the trailing messages alongside interaction-scoped settings such as system instructions, `tools`, and generation parameters.
+
+```python
+from langchain.messages import HumanMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+model = ChatGoogleGenerativeAI(
+    model="gemini-4-hydrogen",
+    use_previous_interaction_id=True,  # [!code highlight]
+)
+
+msg_1 = HumanMessage("Hi, my name is Maya.")
+ai_1 = model.invoke([msg_1])
+ai_1.response_metadata["interaction_id"]  # Server-assigned ID
+ai_1.response_metadata["stored"]          # True
+
+# Sends only msg_2 with previous_interaction_id set from ai_1
+msg_2 = HumanMessage("What is my name?")
+ai_2 = model.invoke([msg_1, ai_1, msg_2])
+print(ai_2.text)
+```
+
+```text
+Your name is Maya!
+```
+
+#### Pass `previous_interaction_id`
+
+To continue or branch from a stored interaction without keeping prior messages in memory, run the first turn with `store=True` and pass `response_metadata["interaction_id"]` as `previous_interaction_id` alongside the new `HumanMessage` or @[`ToolMessage`]:
+
+```python
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+model = ChatGoogleGenerativeAI(
+    model="gemini-4-hydrogen",
+    use_interactions_api=True,
+)
+
+first = model.invoke("Hi, I live in Lisbon.", store=True)  # [!code highlight]
+interaction_id = first.response_metadata["interaction_id"]
+
+second = model.invoke(
+    "Which city do I live in?",
+    previous_interaction_id=interaction_id,  # [!code highlight]
+)
+print(second.text)
+```
+
+```text
+You live in Lisbon!
+```
+
+### Bind built-in server tools
+
+Bind server-executed tools to `ChatGoogleGenerativeAI` with `bind_tools` or pass them per call with `tools=[...]`:
+
+- **`google_search`**: Grounds responses on live web results (`{"type": "google_search"}`), populating citations and `response_metadata["grounding_metadata"]`.
+- **`code_execution`**: Executes generated Python in a server sandbox (`{"type": "code_execution"}`), returning `code_interpreter` `server_tool_call` and `server_tool_result` blocks in `.content_blocks`.
+- **`url_context`**: Fetches and analyzes web pages referenced in the prompt (`{"type": "url_context"}`).
+- **`google_maps`**: Grounds location queries on Google Maps (`{"type": "google_maps"}`), with optional `latitude`, `longitude`, and `enable_widget` fields.
+- **`file_search`**: Retrieves passages and file citations from [File Search](https://ai.google.dev/gemini-api/docs/file-search) stores (`{"type": "file_search", "file_search_store_names": [...]}`), with optional `top_k` and `metadata_filter` fields. Including this tool routes requests to the Interactions API.
+- **`mcp_server`**: Invokes tools exposed by a remote MCP server (`{"type": "mcp_server", "name": "...", "url": "..."}`), with optional `headers` and `allowed_tools` fields (`"allowed_tools": [{"tools": [...]}]`). `ChatGoogleGenerativeAI` redacts request headers from LangSmith trace parameters, and including this tool routes requests to the Interactions API.
+
+<CodeGroup>
+    ```python Code execution
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    model = ChatGoogleGenerativeAI(
+        model="gemini-4-hydrogen",
+        use_interactions_api=True,
+        output_version="v1",
+    )
+
+    response = model.bind_tools([{"type": "code_execution"}]).invoke(  # [!code highlight]
+        "Use Python to calculate 3^3."
+    )
+    response.content_blocks
+    ```
+
+    ```python Google Search and URL context
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    model = ChatGoogleGenerativeAI(
+        model="gemini-4-hydrogen",
+        output_version="interactions/v1",
+    )
+
+    model_with_tools = model.bind_tools(
+        [
+            {"type": "google_search"},  # [!code highlight]
+            {"type": "url_context"},  # [!code highlight]
+        ]
+    )
+    response = model_with_tools.invoke(
+        "Summarize https://example.com and check who maintains reserved example domains."
+    )
+    response.content_blocks
+    ```
+
+    ```python Google Maps
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    model = ChatGoogleGenerativeAI(
+        model="gemini-4-hydrogen",
+        use_interactions_api=True,
+    )
+
+    model_with_maps = model.bind_tools(
+        [
+            {
+                "type": "google_maps",  # [!code highlight]
+                "latitude": 48.858844,
+                "longitude": 2.294351,
+            }
+        ]
+    )
+    response = model_with_maps.invoke(
+        "Name two Italian restaurants within a 5-minute walk."
+    )
+    response.content_blocks
+    ```
+
+    ```python File Search
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    model = ChatGoogleGenerativeAI(model="gemini-4-hydrogen")
+
+    # file_search routes to the Interactions API without extra flags
+    model_with_files = model.bind_tools(
+        [
+            {
+                "type": "file_search",  # [!code highlight]
+                "file_search_store_names": ["fileSearchStores/my-store-name"],
+                "top_k": 5,
+                "metadata_filter": 'author="Robert Graves"',
+            }
+        ]
+    )
+    response = model_with_files.invoke("Summarize the book 'I, Claudius'.")
+    response.content_blocks
+    ```
+
+    ```python Remote MCP
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    model = ChatGoogleGenerativeAI(
+        model="gemini-4-hydrogen",
+        output_version="interactions/v1",
+    )
+
+    # mcp_server routes to the Interactions API and redacts headers in traces
+    model_with_mcp = model.bind_tools(
+        [
+            {
+                "type": "mcp_server",  # [!code highlight]
+                "name": "deployment-tracker",
+                "url": "https://mcp.example.com/mcp",
+                "headers": {"Authorization": "Bearer your-token"},
+                "allowed_tools": [{"tools": ["get_deployment_status"]}],
+            }
+        ]
+    )
+    response = model_with_mcp.invoke("Check the latest deployment status.")
+    response.content_blocks
+    ```
+</CodeGroup>
+
+### Set a service tier
+
+Pass `service_tier` (`"flex"`, `"standard"`, or `"priority"`) alongside `use_interactions_api=True` at initialization or per request to select the billing and latency tier for an Interactions call. Because `service_tier` works on both `generateContent` and the Interactions API, setting it alone does not switch endpoints. When the server reports the resolved tier on a stored interaction, `ChatGoogleGenerativeAI` records it in `response.response_metadata["service_tier"]`.
+
+<CodeGroup>
+    ```python Instantiation
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    model = ChatGoogleGenerativeAI(
+        model="gemini-4-hydrogen",
+        use_interactions_api=True,  # [!code highlight]
+        service_tier="flex",  # [!code highlight]
+    )
+
+    response = model.invoke("Summarize this transcript in three bullet points.")
+    ```
+
+    ```python Invocation
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    model = ChatGoogleGenerativeAI(model="gemini-4-hydrogen")
+
+    response = model.invoke(
+        "Summarize this transcript in three bullet points.",
+        use_interactions_api=True,  # [!code highlight]
+        service_tier="priority",  # [!code highlight]
+    )
+    ```
+</CodeGroup>
+
+For tier eligibility and error behavior, see [Choose a service tier](#choose-a-service-tier).
+
+### Run managed background agents
+
+Server-hosted Gemini agents such as the [Deep Research agent](https://ai.google.dev/gemini-api/docs/deep-research) (`deep-research-preview-04-2026` and `deep-research-max-preview-04-2026`) are in preview and run exclusively on the Interactions API.
+
+Configure background agent and model runs with these options:
+
+- **`agent`**: Hosted agent identifier, such as `"deep-research-preview-04-2026"`. Setting `agent` routes to the Interactions API, sets `store=True`, and defaults `background=True` for `deep-research-*` agents.
+- **`agent_config`**: Optional configuration dictionary passed to the agent, such as `{"thinking_summaries": "auto"}` or `{"collaborative_planning": True}`.
+- **`background`**: Runs the interaction asynchronously on the server when `True`. By default, `invoke` and `ainvoke` poll until the interaction reaches a terminal status, bounded by `timeout` (`600` seconds by default on Interactions requests).
+- **`polling_interval`**: Positive float setting the delay in seconds between `interactions.get` status checks (`2.0` by default). Configure on the model or per call.
+- **`poll`**: Per-call boolean (`True` by default). Set `poll=False` to return right after submitting a background job so your application can inspect `response_metadata["interaction_id"]` and `response_metadata["status"]`, poll `model.client.interactions.get(...)`, or cancel the run.
+
+<CodeGroup>
+    ```python Poll until complete
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    research_agent = ChatGoogleGenerativeAI(
+        model="gemini-4-hydrogen",
+        agent="deep-research-preview-04-2026",  # [!code highlight]
+        agent_config={"thinking_summaries": "auto"},
+        background=True,  # [!code highlight]
+        polling_interval=5.0,  # [!code highlight]
+        timeout=900,
+    )
+
+    report = research_agent.invoke("Research the history of Google TPUs.")
+    report.content_blocks
+    ```
+
+    ```python Submit without blocking
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    research_agent = ChatGoogleGenerativeAI(
+        model="gemini-4-hydrogen",
+        agent="deep-research-preview-04-2026",
+        background=True,
+    )
+
+    submitted = research_agent.invoke(
+        "Research the history of Google TPUs.",
+        poll=False,  # [!code highlight]
+    )
+    interaction_id = submitted.response_metadata["interaction_id"]
+    submitted.response_metadata["status"]  # 'in_progress'
+
+    # Poll or cancel using the underlying GenAI client
+    status = research_agent.client.interactions.get(id=interaction_id)
+    if status.status == "in_progress":
+        research_agent.client.interactions.cancel(id=interaction_id)
+    ```
+</CodeGroup>
 
 ## Token usage tracking
 
