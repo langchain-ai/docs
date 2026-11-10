@@ -27,7 +27,7 @@ val myConfiguredLlm =
             .metadata(
                 mapOf(
                     "ls_provider" to "openai",
-                    "ls_model_name" to "gpt-6.1",
+                    "ls_model_name" to "gpt-6.1-sol",
                     "ls_temperature" to 0.7,
                     "ls_max_tokens" to 4096,
                     "ls_stop" to listOf("END"),

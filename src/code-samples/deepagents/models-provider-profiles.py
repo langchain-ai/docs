@@ -9,10 +9,10 @@ register_provider_profile(
     ProviderProfile(init_kwargs={"temperature": 0}),
 )
 
-# Model-level override: gpt-6.1 additionally gets a specific reasoning effort.
+# Model-level override: gpt-6.1-sol additionally gets a specific reasoning effort.
 # Inherits temperature=0 from the provider-level profile above.
 register_provider_profile(
-    "openai:gpt-6.1",
+    "openai:gpt-6.1-sol",
     ProviderProfile(init_kwargs={"reasoning_effort": "medium"}),
 )
 # :snippet-end:

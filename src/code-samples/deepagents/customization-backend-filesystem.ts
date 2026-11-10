@@ -2,7 +2,7 @@
 import { createDeepAgent, FilesystemBackend } from "deepagents";
 
 const agent = createDeepAgent({
-  model: "openai:gpt-6.1",
+  model: "openai:gpt-6.1-sol",
   backend: new FilesystemBackend({ rootDir: ".", virtualMode: true }),
 });
 // :snippet-end:

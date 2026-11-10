@@ -52,7 +52,7 @@ def writes_outside_workspace(request: ToolCallRequest) -> bool:
 
 
 agent = create_deep_agent(
-    model="openai:gpt-6.1",
+    model="openai:gpt-6.1-sol",
     interrupt_on={
         "write_file": {
             "allowed_decisions": ["approve", "edit", "reject"],

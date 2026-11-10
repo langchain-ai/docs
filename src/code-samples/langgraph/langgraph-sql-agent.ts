@@ -58,7 +58,7 @@ console.log(`Sample output: ${JSON.stringify(sampleResults)}`);
 import { ChatOpenAI } from "@langchain/openai";
 
 const model = process.env.OPENAI_API_KEY
-  ? new ChatOpenAI({ model: "gpt-6.1" })
+  ? new ChatOpenAI({ model: "gpt-6.1-sol" })
   : null;
 // :remove-end:
 

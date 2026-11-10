@@ -27,7 +27,7 @@ return { answer: resp.choices[0].message.content?.trim() ?? "" };
 const judge = createLLMAsJudge({
 prompt: CORRECTNESS_PROMPT,
 // KEEP MODEL
-model: "openai:gpt-6.1",
+model: "openai:gpt-6.1-sol",
 feedbackKey: "correctness",
 });
 

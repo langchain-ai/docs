@@ -22,7 +22,7 @@ const agent = await createDeepAgent({
       description: "General-purpose agent for research and multi-step tasks",
       systemPrompt: "You are a general-purpose assistant.",
       tools: [internetSearch],
-      model: "openai:gpt-6.1", // Different model for delegated tasks
+      model: "openai:gpt-6.1-sol", // Different model for delegated tasks
     },
   ],
 });

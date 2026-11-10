@@ -8,7 +8,7 @@ from langgraph.store.memory import InMemoryStore
 store = InMemoryStore()  # Good for local dev; omit for LangSmith Deployment
 
 agent = create_deep_agent(
-    model="openai:gpt-6.1",
+    model="openai:gpt-6.1-sol",
     backend=CompositeBackend(
         default=StateBackend(),
         routes={

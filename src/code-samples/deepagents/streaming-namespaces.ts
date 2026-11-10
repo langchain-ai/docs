@@ -2,7 +2,7 @@
 import { createDeepAgent } from "deepagents";
 
 const agent = createDeepAgent({
-  model: "openai:gpt-6.1",
+  model: "openai:gpt-6.1-sol",
   systemPrompt: "You are a helpful research assistant",
   subagents: [
     {

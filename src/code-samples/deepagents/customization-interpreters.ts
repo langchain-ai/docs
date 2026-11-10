@@ -3,7 +3,7 @@ import { createDeepAgent } from "deepagents";
 import { createCodeInterpreterMiddleware } from "@langchain/quickjs";
 
 const agent = createDeepAgent({
-  model: "openai:gpt-6.1",
+  model: "openai:gpt-6.1-sol",
   middleware: [createCodeInterpreterMiddleware()],
 });
 // :snippet-end:

@@ -27,6 +27,6 @@ const agent = await createDeepAgent({
 const result = await agent.invoke(
   { messages: [{ role: "user", content: "Hello!" }] },
   // KEEP MODEL
-  { context: { model: "openai:gpt-6.1" } },
+  { context: { model: "openai:gpt-6.1-sol" } },
 );
 // :snippet-end:

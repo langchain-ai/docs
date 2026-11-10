@@ -3,9 +3,9 @@
 # :snippet-start: customization-profiles-py
 from deepagents import HarnessProfile, register_harness_profile
 
-# Append a system-prompt suffix whenever gpt-6.1 is selected.
+# Append a system-prompt suffix whenever gpt-6.1-sol is selected.
 register_harness_profile(
-    "openai:gpt-6.1",
+    "openai:gpt-6.1-sol",
     HarnessProfile(system_prompt_suffix="Respond in under 100 words."),
 )
 # :snippet-end:

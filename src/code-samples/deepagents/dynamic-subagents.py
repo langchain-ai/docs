@@ -11,7 +11,7 @@ from deepagents import create_deep_agent
 from langchain_quickjs import CodeInterpreterMiddleware
 
 agent = create_deep_agent(
-    model="openai:gpt-6.1",
+    model="openai:gpt-6.1-sol",
     subagents=[{
         "name": "reviewer",
         "description": "Reviews code for security issues, citing lines and severity",
@@ -32,7 +32,7 @@ from deepagents import create_deep_agent
 from langchain_quickjs import CodeInterpreterMiddleware
 
 agent = create_deep_agent(
-    model="openai:gpt-6.1",
+    model="openai:gpt-6.1-sol",
     subagents=[
         {
             "name": "bug-fixer",
@@ -59,7 +59,7 @@ from deepagents import create_deep_agent
 from langchain_quickjs import CodeInterpreterMiddleware
 
 agent = create_deep_agent(
-    model="openai:gpt-6.1",
+    model="openai:gpt-6.1-sol",
     subagents=[{
         "name": "reviewer",
         "description": "Reviews code for security issues, citing lines and severity",
@@ -74,7 +74,7 @@ from deepagents import create_deep_agent
 from langchain_quickjs import CodeInterpreterMiddleware
 
 agent = create_deep_agent(
-    model="openai:gpt-6.1",
+    model="openai:gpt-6.1-sol",
     subagents=[
         {
             "name": "reviewer",
@@ -96,7 +96,7 @@ from deepagents import create_deep_agent
 from langchain_quickjs import CodeInterpreterMiddleware
 
 agent = create_deep_agent(
-    model="openai:gpt-6.1",
+    model="openai:gpt-6.1-sol",
     subagents=[{
         "name": "architect",
         "description": "Proposes a database schema design with tradeoff analysis",
@@ -111,7 +111,7 @@ from deepagents import create_deep_agent
 from langchain_quickjs import CodeInterpreterMiddleware
 
 agent = create_deep_agent(
-    model="openai:gpt-6.1",
+    model="openai:gpt-6.1-sol",
     subagents=[
         {
             "name": "writer",
@@ -133,7 +133,7 @@ from deepagents import create_deep_agent
 from langchain_quickjs import CodeInterpreterMiddleware
 
 agent = create_deep_agent(
-    model="openai:gpt-6.1",
+    model="openai:gpt-6.1-sol",
     subagents=[{
         "name": "analyzer",
         "description": "Analyzes code for unused exports, functions, and dead code paths",
@@ -148,7 +148,7 @@ from deepagents import create_deep_agent
 from langchain_quickjs import CodeInterpreterMiddleware
 
 agent = create_deep_agent(
-    model="openai:gpt-6.1",
+    model="openai:gpt-6.1-sol",
     subagents=[{"name": "reviewer", "description": "Reviews code", "system_prompt": "Review code."}],
     middleware=[CodeInterpreterMiddleware(subagents=False)],
 )

@@ -32,7 +32,7 @@ def read_data(table: str) -> str:
 
 
 agent = create_agent(
-    model="gpt-6.1",
+    model="gpt-6.1-sol",
     tools=[write_file, execute_sql, read_data],
     middleware=[
         HumanInTheLoopMiddleware(
