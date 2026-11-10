@@ -82,9 +82,12 @@ The LangSmith API key authenticates the deploy. The agent's model provider also 
 | `mda build [path]` | Compile a project into a managed LangGraph app without deploying. |
 | `mda evals …` | Initialize a Harbor workspace and continue eval authoring in a coding agent. |
 | `mda dev [path]` | Compile a project and run it on the local LangGraph dev server. |
+| `mda chat [path]` | Chat with the agent from the terminal through a local dev server. |
 | `mda connections …` | Manage authentication for tools and MCP connectors. |
 | `mda deploy [path]` | Compile, sync Context Hub context, upload, and deploy to LangSmith. |
+| `mda pull [path]` | Pull instructions and skills from Context Hub into a local project. |
 | `mda channels init slack` | Add a Slack channel declaration to the current project. |
+| `mda channels setup [channel]` | Set up the project's channels for a deployed agent without deploying. |
 | `mda logs [path]` | Tail Agent Server logs for a deployed agent. |
 | `mda delete [path]` / `mda destroy [path]` | Delete a deployed agent and the LangSmith resources it created. |
 
@@ -285,6 +288,35 @@ When a sandbox is configured, `mda dev` tries the configured provider. If provid
 
 For local development, `mda dev` stages the project `.env` file into `.mda/build/.env` so LangGraph can load model provider keys and other runtime credentials.
 
+## Chat from the terminal
+
+Use `mda chat` to talk to the agent from the terminal. It reuses a local dev server that is already running, or starts one for the session:
+
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda chat
+    ```
+
+    ```bash pnpm
+    pnpm exec mda chat
+    ```
+
+    ```bash bun
+    bunx mda chat
+    ```
+</CodeGroup>
+
+
+| Argument or flag | Use |
+| --- | --- |
+| `path` | Project directory. Defaults to the current directory. |
+| `--url URL` | Agent Server URL to use instead of the local one. Must be a local dev server or a tunnel to one, because `mda chat` sends no credentials. |
+| `--assistant ID` | Assistant ID. Defaults to the one `mda dev` staged, then the agent `name`. |
+| `-t`, `--thread ID` | Continue an existing thread. |
+| `--env-file PATH` | Read environment variables from this file instead of the project `.env` when `mda chat` starts a dev server. Requires `mda` 0.10.0 or later. |
+
 ## Manage connections
 
 A connection links a managed deep agent to an external service. The credential lives in the LangSmith workspace, so it rotates without a redeploy, and a user-owned connection resolves the credential of whoever called the agent. Tools and MCP connectors resolve connections at runtime with `connections.get(...)`.
@@ -416,6 +448,83 @@ Deploy runs these steps:
 A project with a Slack channel cannot use `--no-wait` because Slack provisioning requires the deployed Agent Server URL. For the complete workflow, see [Connect a Managed Deep Agent to Slack](/langsmith/javascript/managed-deep-agents-channels-slack).
 
 On success, the CLI prints the LangSmith deployment dashboard URL. For secrets routing and deploy tips, see [Deploy an agent](/langsmith/javascript/managed-deep-agents-deploy).
+
+## Pull context from LangSmith
+
+Use `mda pull` to copy `instructions.md` and `skills/` from the deployed agent's [Context Hub](/langsmith/javascript/managed-deep-agents-context-hub) entry into a local project. Use it after someone edits the agent's instructions or skills in LangSmith and you want those changes in your local project.
+
+<Note>
+`mda pull` requires `mda` 0.10.2 or later.
+</Note>
+
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda pull --dry-run
+    ```
+
+    ```bash pnpm
+    pnpm exec mda pull --dry-run
+    ```
+
+    ```bash bun
+    bunx mda pull --dry-run
+    ```
+</CodeGroup>
+
+
+`mda pull` lists each file it adds, overwrites, or deletes, then asks before it changes files. It does not change agent code or memories, and it makes no remote writes.
+
+| Argument or flag | Use |
+| --- | --- |
+| `path` | Project directory. Defaults to the current directory. |
+| `-n`, `--name NAME` | Deployment name. Defaults to the agent `name`. |
+| `--dry-run` | Show the changes without changing files. |
+| `-y`, `--yes` | Apply the changes without asking. Required without a terminal. |
+| `--workspace-id ID` | Workspace to read from. Overrides `LANGSMITH_WORKSPACE_ID`. |
+| `--agent-environment ENV` | Agent environment to read from. Defaults to `LANGSMITH_AGENT_ENVIRONMENT` in `.env`. |
+| `--env-file PATH` | Read credentials from this file instead of the project `.env`. |
+
+## Set up channels without deploying
+
+Use `mda channels setup` to add a channel to an agent that is already deployed. It runs the same channel setup as `mda deploy`, without deploying.
+
+To check channel status without changing anything, add `--json`. The command exits with a non-zero code if a channel is not set up, so you can use it as a check in CI.
+
+<Note>
+`mda channels setup` requires `mda` 0.10.1 or later and is experimental.
+</Note>
+
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda channels setup
+    ```
+
+    ```bash pnpm
+    pnpm exec mda channels setup
+    ```
+
+    ```bash bun
+    bunx mda channels setup
+    ```
+</CodeGroup>
+
+
+In a terminal, the command asks which channels to set up. Without a terminal, or with `--json`, it only reports the state of each channel. It exits non-zero unless every channel is set up.
+
+| Argument or flag | Use |
+| --- | --- |
+| `channel` | Channel to set up, such as `slack`. Defaults to every channel in the project. |
+| `-n`, `--name NAME` | Deployment name. Defaults to the agent `name`. |
+| `--json` | Print the state of each channel as JSON. Does not set anything up. |
+| `--workspace-id ID` | Workspace of the deployment. Overrides `LANGSMITH_WORKSPACE_ID`. |
+| `--agent-environment ENV` | Agent environment to target. Defaults to `LANGSMITH_AGENT_ENVIRONMENT` in `.env`. |
+| `--env-file PATH` | Read environment variables from this file instead of the project `.env`. |
+
+`mda deploy` also sets up the channels of an existing deployment before it uploads the new revision. A channel that cannot be set up stops the deploy before the upload.
 
 ## Read deployment logs
 
