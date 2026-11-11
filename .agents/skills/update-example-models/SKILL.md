@@ -179,8 +179,9 @@ hub conflict, not a bad model ID.
 - Adding hidden `:remove-` overrides so CI tests different model kwargs than
   the published snippet (for example forcing `use_responses_api` only in the
   harness). If a flag is required, put it in the published code; if the SDK
-  already auto-routes (langchain-openai v1.7.0 or later routes GPT-6 models
-  with tools to the Responses API), bump the pin and drop the workaround.
+  already auto-routes, bump the pin and drop the workaround:
+  - Python: `langchain-openai` v1.7.0 or later
+  - TypeScript: `@langchain/openai` v1.6.0 or later
   Bare IDs like `gpt-6.1-sol` still need an `openai:` prefix for
   `initChatModel` / `createAgent` string models
 
