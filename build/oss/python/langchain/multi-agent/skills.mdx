@@ -58,7 +58,7 @@ def load_skill(skill_name: str) -> str:
     ...
 
 agent = create_agent(
-    model="gpt-5.5",
+    model="gpt-6.1-sol",
     tools=[load_skill],
     system_prompt=(
         "You are a helpful assistant. "

@@ -152,7 +152,7 @@ const expertiseBasedToolMiddleware = createMiddleware({
     if (userLevel === "expert") {
       const tools = [advancedSearch, dataAnalysis];
       return handler(
-        request.replace("openai:gpt-5.5", tools)
+        request.replace("openai:gpt-6.1-sol", tools)
       );
     }
     const tools = [simpleSearch, basicCalculator];

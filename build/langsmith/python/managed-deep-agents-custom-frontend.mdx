@@ -42,7 +42,7 @@ from managed_deepagents import define_deep_agent
 
 agent = define_deep_agent(
     name="research-assistant",  # [!code highlight]
-    model="openai:gpt-5.5",
+    model="openai:gpt-6.1-sol",
 )
 ```
 
