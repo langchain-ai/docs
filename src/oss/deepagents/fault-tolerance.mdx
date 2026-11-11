@@ -15,7 +15,11 @@ Different errors need different handling strategies:
 :::python
 | LLM-recoverable errors (tool failures, parsing issues) | LLM | Convert to error `ToolMessage` and let the model adjust | @[ToolErrorMiddleware] |
 | Model refusals | System or developer | Fall back to another model, then catch the error | @[ModelFallbackMiddleware], @[ModelRefusalMiddleware] |
-::: | User-fixable errors (missing information, unclear instructions) | Human | Pause with `interrupt()` | [Human-in-the-loop](/oss/deepagents/human-in-the-loop) |
+:::
+:::js
+| Model refusals | System or developer | Fall back to another model, then catch the error | @[modelFallbackMiddleware], @[modelRefusalMiddleware] |
+:::
+| User-fixable errors (missing information, unclear instructions) | Human | Pause with `interrupt()` | [Human-in-the-loop](/oss/deepagents/human-in-the-loop) |
 | Provider outage | System (automatic) | Fall back to an alternative model | @[ModelFallbackMiddleware] |
 | Excessive calls (runaway loops) | System (automatic) | Cap model and tool calls per run | @[ModelCallLimitMiddleware], @[ToolCallLimitMiddleware] |
 | Unexpected errors | Developer | Let them bubble up | No middleware; let the exception propagate |
@@ -399,6 +403,24 @@ A provider can refuse a request, for example under a safety policy, and still re
 Model-level `with_fallbacks` does not catch refusals, because the middleware detects them after the model call returns. Use @[`ModelFallbackMiddleware`] instead.
 
 When every model refuses, catch `ModelRefusalError` where you invoke the agent. The refused reply is not saved to the thread, so you can tell the user and continue the conversation. For this and other options, see [Handle a refusal](/oss/langchain/middleware/built-in#handle-a-refusal). For how subagent refusals reach the parent agent, see [Model refusals](/oss/deepagents/subagents#model-refusals).
+
+<Note>
+Raising on model refusals by default requires `deepagents>=0.7.33`.
+</Note>
+:::
+
+:::js
+### Model refusals
+
+A provider can refuse a request, for example under a safety policy, and still return a successful response. Deep Agents throw @[`ModelRefusalError`] when the model refuses, so the run does not look like a successful run even though it was a refusal. @[`modelRefusalMiddleware`] runs after your middleware. A @[`modelFallbackMiddleware`] you pass therefore retries the refused request on the next model first. The run throws only when no fallback is left. The fallback model can be from the same provider or a different one, and it can still refuse the same request.
+
+Model-level `withFallbacks` does not catch refusals, because the middleware detects them after the model call returns. Use @[`modelFallbackMiddleware`] instead.
+
+When every model refuses, catch `ModelRefusalError` where you invoke the agent. The refused reply is not saved to the thread, so you can tell the user and continue the conversation. For this and other options, see [Handle a refusal](/oss/langchain/middleware/built-in#handle-a-refusal). For how subagent refusals reach the parent agent, see [Model refusals](/oss/deepagents/subagents#model-refusals).
+
+<Note>
+Throwing on model refusals by default requires `deepagents>=1.16.4`.
+</Note>
 :::
 
 ## Error handling
