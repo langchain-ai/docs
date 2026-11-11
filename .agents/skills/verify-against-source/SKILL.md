@@ -13,9 +13,6 @@ A reviewer who knows the product catches some of it; the rest reaches readers.
 Published docs, a README, and a model's recollection are all secondary sources.
 Prefer evidence you produced in this session.
 
-**In CI mode**, read [ci-mode.md](../docs-review/ci-mode.md) first. It sets the
-rules for an unattended run and the findings format that Step 4 writes.
-
 ## Step 0. Check that the PR does what it says
 
 When reviewing a PR, start with what it claims to document, before any single
@@ -81,18 +78,26 @@ is weaker than the one above it.
 | Deep Agents | [langchain-ai/deepagents](https://github.com/langchain-ai/deepagents) | Also the source of the eval matrix the docs publish |
 | LangSmith SDK | [langchain-ai/langsmith-python](https://github.com/langchain-ai/langsmith-python) and [langchain-ai/langsmith-javascript](https://github.com/langchain-ai/langsmith-javascript) | The Python and JavaScript client libraries |
 | LangSmith platform | langchain-ai/langchainplus (private) | `smith-backend/` (Python API), `smith-go/` (Go services), `smith-frontend/` (UI labels and flows), `host-backend/`, `lc_config/` for settings and their defaults |
-| Agent Server | langchain-ai/langchainplus (private), under `langgraph-api/` | Not in the OSS langgraph repo. Read the `langgraph-api/` copy in langchainplus first: it is current, and CI can reach it. The standalone langchain-ai/langgraph-api repo is the source of the Agent Server OpenAPI spec PRs, and CI cannot read it |
+| Agent Server | langchain-ai/langchainplus (private), under `langgraph-api/` | Not in the OSS langgraph repo. Also the source of the Agent Server OpenAPI spec PRs |
 | Helm charts | [langchain-ai/helm](https://github.com/langchain-ai/helm) | `charts/langsmith/values.yaml` for defaults, `templates/_helpers.tpl` for the value-to-environment-variable mapping |
 | OpenEvals | [langchain-ai/openevals](https://github.com/langchain-ai/openevals) | Prebuilt evaluators |
 
-Two traps worth naming:
+Three traps worth naming:
 
 - **A private repo is still readable through `gh`.** `gh api` works on
-  langchainplus and langgraph-api with the usual credentials. Anything you read
-  there is private evidence: keep it out of public text. See
-  [Private evidence](../docs-review/ci-mode.md#private-evidence).
-- **langchain-ai/deployments is archived.** Its GitOps content moved into
-  langchainplus. A skill, script, or note that still points at it is stale.
+  langchainplus with the usual credentials. GitHub code search is unreliable on
+  a repo that size, so fall back to the git trees API and fetch a path directly.
+  Anything you read there is private evidence: keep it out of public text. See
+  [Private evidence](#private-evidence).
+- **langchain-ai/deployments and langchain-ai/langgraph-api are archived.**
+  Their content moved into langchainplus. A skill, script, or note that still
+  points at either one is stale.
+- **An Agent Server change can ship in two release lines.** Releases are tagged
+  `langgraph-api==<version>`. `main` carries the next minor version, and a fix
+  cherry-picked onto the `langgraph-api/rc` branch ships one version earlier.
+  To confirm a release includes a change, compare the PR's merge commit with
+  the tag: `gh api "repos/langchain-ai/langchainplus/compare/<sha>...langgraph-api%3D%3D<version>" --jq .status`
+  returns `ahead` or `identical` when the tag contains it.
 
 A self-hosted LangSmith claim usually spans two repositories: the chart sets a
 value, and the backend decides what to do with it. Check both before describing
@@ -144,28 +149,24 @@ closes:
 Writing "not verified: the visible label of this control" is a better outcome
 than a confident sentence a reader discovers is wrong.
 
-In CI mode, the findings file replaces the PR body:
+## Private evidence
 
-- Each claim that is wrong or missing becomes a finding with its evidence rung
-  in `evidence.kind`. A factual fix is never `auto`.
-- A claim you could not settle becomes a `human` finding in the
-  [unverified question](../docs-review/ci-mode.md#unverified-questions) form.
-- `task_check` holds the Step 0 answers:
+This repository, its PRs, and its Actions logs are public. Source in
+langchainplus, langgraph-api, or any other private repository is private.
 
-  ```json
-  {
-    "product_change": "Public-safe name of the change, or null if none was found.",
-    "documents_claimed_change": "yes",
-    "covers_requirements": "partial",
-    "contradicts_product": "no",
-    "gaps": ["The version floor for the TypeScript package is not stated."]
-  }
-  ```
+- Do not put private file paths, symbols, code, flag names, or unreleased
+  feature names in docs, commits, PR text, or review comments. Write the
+  conclusion: "The default is 30 seconds, not 60 (checked against product
+  source)."
+- Public text may describe only behavior the change itself documents. A tool,
+  option, limit, or behavior you learned from private source that the change
+  does not mention stays out of public text, even with no path or name
+  attached. "The product also ships a handoff tool the page omits" discloses
+  an unreleased feature.
+- Put the repository, path, symbol, and commit you read in a private channel,
+  such as a Linear issue.
 
-  Each answer is `yes`, `no`, `partial`, or `unknown`.
-- Claims you checked and found true are not findings. Record each one in
-  `verified`, so the Linear issue shows what was checked and not only what
-  failed.
+Never print private source in a CI log. Logs are public too.
 
 ## Related
 

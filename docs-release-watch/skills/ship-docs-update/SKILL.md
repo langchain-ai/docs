@@ -38,7 +38,7 @@ Before calling any write tool:
 }
 ```
 
-Each item needs `path` plus `symbol` or `quote`. Empty evidence is rejected.
+Each item needs `path` plus `symbol` or `quote`. Empty evidence is rejected. Prefer `symbol`. If you use `quote`, it must be an exact contiguous substring from `get_product_source_file` for that path at the tag. Paraphrases of issues, release notes, or diffs fail verification.
 
 ## Steps
 
@@ -59,6 +59,15 @@ Each item needs `path` plus `symbol` or `quote`. Empty evidence is rejected.
    - `old_content` must be the exact string returned by `get_docs_file` (empty string only for a brand-new file)
    - Keep the edit surgical: the tool rejects diffs that rewrite too much of an existing page or change the other language fence
 4. Record the Linear URL and PR URL in product memory before starting the next feature. Only treat the ship as successful when both tools returned a `url`.
+
+## If evidence verification fails
+
+When `create_linear_issue` or `create_draft_docs_pr` raises that a symbol/quote was not found:
+
+1. Call `get_product_source_file` for the cited path at the release tag (or the correct path from the research report / diff).
+2. Replace the bad item with a `symbol` that appears in that file, or a short exact `quote` copied from the tool output.
+3. Retry the write tool once with the corrected `evidence_json`.
+4. If you still cannot find a real citation in tagged source, skip shipping that feature and say so. Do not invent a quote.
 
 ## If `create_draft_docs_pr` fails
 

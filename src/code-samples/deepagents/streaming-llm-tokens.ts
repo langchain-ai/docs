@@ -2,7 +2,7 @@
 import { createDeepAgent } from "deepagents";
 
 const agent = createDeepAgent({
-  model: "openai:gpt-5.5",
+  model: "openai:gpt-6.1-sol",
   systemPrompt:
     "You are a project coordinator with no research knowledge. " +
     "For every user request, you must call the task() tool with " +

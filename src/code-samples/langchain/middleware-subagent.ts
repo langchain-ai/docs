@@ -34,7 +34,7 @@ const agent = createAgent({
           description: "This subagent can get weather in cities.",
           systemPrompt: "Use the get_weather tool to get the weather in a city.",
           tools: [getWeather],
-          model: "gpt-5.5",
+          model: "gpt-6.1-sol",
           middleware: [],
         },
       ],

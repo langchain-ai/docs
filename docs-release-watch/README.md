@@ -51,7 +51,7 @@ docs-release-watch/
 ## Prerequisites
 
 - LangSmith workspace with Managed Deep Agents beta access
-- LangSmith API key with Gateway access. Shipping uses `langsmith:anthropic/claude-opus-4-6`; research uses `langsmith:anthropic/claude-sonnet-4-6` (Anthropic must be configured as a workspace Provider Secret)
+- LangSmith API key with Gateway access. Shipping uses `langsmith:anthropic/claude-opus-4-6`; research uses `langsmith:anthropic/claude-sonnet-4-6` (Anthropic must be configured as a workspace Provider Secret). The `langsmith:` provider talks to the gateway through `langchain-openai` (declared in `pyproject.toml`)
 - GitHub **fine-grained** personal access token for `langchain-ai/docs` (the org blocks classic PATs). Needs Contents read/write and Pull requests read/write. Authorize SSO for `langchain-ai` if prompted.
 - Linear API key with **Read** and **Write** (or Create issues) on team `DOC`. New issues are assigned to the API key owner. Override with `LINEAR_ASSIGNEE_ID` if needed.
 
