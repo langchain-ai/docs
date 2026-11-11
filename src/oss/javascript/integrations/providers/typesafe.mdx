@@ -56,7 +56,7 @@ Earlier versions configured `questions` on `TypeSafeClassifier` and passed only 
 ```typescript
 import { TypeSafeClassifier } from "@langchain/typesafe";
 
-const classifier = new TypeSafeClassifier({ dangerouslyAllowBrowser: false });
+const classifier = new TypeSafeClassifier();
 
 const response = await classifier.invoke({
   state:
@@ -89,8 +89,6 @@ console.log(response.scores.severity.score);
 
 Answers are keyed by the question IDs you supplied in `response.answers`, and grouped by type on `nouls`, `choices`, `scores`, and `boxes`. Answers are typed from the questions you pass: `response.choices.team.choice` is typed as `"infra" | "billing"`, and an unknown question ID is a type error. The response also carries the `model` that answered, optional `usage_metadata`, and the TypeSafe `requestId`.
 
-The grouped accessors are non-enumerable getters. Object spread and JSON serialization omit them; use `answers` when storing or transmitting the response.
-
 In version 0.1, token usage is `usage_metadata`, with `input_tokens`, `output_tokens`, and `total_tokens`. It replaces the earlier `usage` object. Check that it is defined before reading it:
 
 ```typescript
@@ -119,8 +117,6 @@ Pass request configuration, such as `signal`, `tags`, and `metadata`, as the sec
 ## Handle errors
 
 The package exports `TypeSafeError`, `TypeSafeAPIError`, `TypeSafeAuthenticationError`, and `TypeSafeRateLimitError`. Use their `isInstance(error)` methods to identify failures. Avoid logging API error bodies indiscriminately: they can contain submitted state.
-
-`invoke` also throws if a question is invalid, or if the response leaves a question unanswered or answers it with the wrong type.
 
 TypeSafe receives the state you submit, including message content and tool-call arguments. Remove secrets or sensitive data before invoking the classifier.
 
@@ -259,24 +255,21 @@ const classifier = new TypeSafeClassifier();
 const triageMiddleware = createMiddleware({
   name: "TriageMiddleware",
   stateSchema: z.object({ triage: z.custom<ChoiceAnswer>().optional() }),
-  async beforeAgent(state, runtime) {
-    const response = await classifier.invoke(
-      {
-        state: state.messages,
-        questions: {
-          triage: {
-            type: "choice",
-            instructions: "Which team should handle this conversation?",
-            criteria: {
-              billing: "Payments, invoices, and subscriptions.",
-              infra: "Deploys, availability, and incidents.",
-              other: "Requests that belong to another team.",
-            },
+  async beforeAgent(state) {
+    const response = await classifier.invoke({
+      state: state.messages,
+      questions: {
+        triage: {
+          type: "choice",
+          instructions: "Which team should handle this conversation?",
+          criteria: {
+            billing: "Payments, invoices, and subscriptions.",
+            infra: "Deploys, availability, and incidents.",
+            other: "Requests that belong to another team.",
           },
         },
       },
-      { signal: runtime.signal }
-    );
+    });
     return { triage: response.choices.triage };
   },
 });
