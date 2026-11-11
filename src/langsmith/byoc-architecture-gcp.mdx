@@ -31,7 +31,7 @@ LangSmith creates the following in your GCP project:
 
 - **Network**: A VPC with a GKE subnet, Cloud NAT with a static egress IP address, and private services access.
 - **GKE**: A regional, private GKE Standard cluster with Workload Identity and shielded nodes.
-- **Cloud SQL for PostgreSQL**: Private IP only, high availability, TLS, and IAM database login, so no database password exists.
+- **Cloud SQL for PostgreSQL**: One instance for LangSmith and one for the SmithDB metastore. Private IP only, high availability, TLS, and IAM database login, so no database password exists.
 - **Memorystore for Redis Cluster**: TLS and IAM auth, reached through Private Service Connect.
 - **Cloud Storage**: A bucket with public access prevention enforced.
 - **DNS and ingress**: Cloud DNS zones for the data plane hostname, cert-manager with Let's Encrypt, External Secrets with Secret Manager, and an Istio ingress gateway.
@@ -77,7 +77,7 @@ None of the data stores has a public endpoint.
 
 | Store | Configuration |
 |-------|---------------|
-| Cloud SQL for PostgreSQL | Enterprise edition, regional with a standby in another zone, with automatic storage growth. Private IP only. TLS required. IAM database login, so no application password exists. Automated backups (7 kept) and point-in-time recovery (7 days). Deletion protection on. At teardown, Cloud SQL takes a final backup, kept for 365 days, and keeps the automated backups. Holds the LangSmith and SmithDB metastore databases. |
+| Cloud SQL for PostgreSQL | Enterprise edition, regional with a standby in another zone, with automatic storage growth. Private IP only. TLS required. IAM database login, so no application password exists. Automated backups (7 kept) and point-in-time recovery (7 days). Deletion protection on. At teardown, Cloud SQL takes a final backup, kept for 365 days, and keeps the automated backups. Two instances: one holds the LangSmith database, the other the SmithDB metastore. |
 | Memorystore for Redis Cluster | One shard with one replica. IAM auth and TLS. Reached through a Private Service Connect endpoint. Deletion protection on. |
 | Cloud Storage | One regional bucket for LangSmith blobs and SmithDB data. Uniform bucket-level access, with public access prevention enforced. Lifecycle rules delete objects under the TTL prefixes. Teardown keeps the bucket and its objects. |
 | Secret Manager | Regional secrets for the data plane configuration and Postgres, plus one for sandboxes when they are enabled. Labeled with the data plane ID. The control plane writes them at create and deletes them at teardown. |
@@ -100,12 +100,12 @@ Not on by default: application-layer Secrets encryption with your Cloud KMS key,
 
 ## In-cluster resources
 
-- **LangSmith**: The LangSmith Helm chart, with SmithDB. Every LangSmith pod runs as the workload service account through Workload Identity. SmithDB reaches Cloud SQL through a Cloud SQL Auth Proxy sidecar.
+- **LangSmith**: The LangSmith Helm chart, with SmithDB. Every LangSmith pod runs as the workload service account through Workload Identity. SmithDB reaches its metastore instance through a Cloud SQL Auth Proxy sidecar.
 - **KEDA**: Autoscales the LangSmith services.
 - **External Secrets Operator**: A ClusterSecretStore on Secret Manager, usable only from the LangSmith namespace. It syncs the data plane secrets every hour.
 - **cert-manager and trust-manager**: cert-manager uses a Let's Encrypt issuer with DNS-01 challenges in the data plane zones only. trust-manager builds one CA bundle with the public CAs and the Cloud SQL and Memorystore CAs.
 - **Istio**: Base, istiod, and the ingress gateway.
-- **Postgres setup job**: Creates the IAM database user and grants it the database owner roles. It keeps no password.
+- **Postgres setup job**: Creates the databases and the IAM database user, and grants it the database owner roles. It keeps no password.
 
 ## DNS and ingress
 
@@ -184,7 +184,7 @@ Set `byo_iam = true` in the module before you create data planes in the project,
 ### What LangChain can and cannot access
 
 - **Can**: Create, change, and delete the data plane resources through the provisioner, which for most kinds means resources whose names start with `langsmith-`. Read the project's IAM policy and service accounts. Act as cluster admin on GKE clusters tagged `managed_by: langsmith`, through `container.admin`. This is how LangSmith installs and upgrades the application.
-- **Cannot, by role**: The provisioner has no `storage.objects.get`, so it cannot read objects in the bucket. It can list and delete them. It has no `secretmanager.versions.access`, so it cannot read secrets. It has no Cloud SQL user or database login permissions, and no permissions outside the project.
+- **Cannot, by role**: The provisioner has no `storage.objects.get`, so it cannot read objects in the bucket. It can list and delete them. It has no `secretmanager.versions.access`, so it cannot read secrets. It has no permissions on Cloud SQL databases or users, no database login permissions, and no permissions outside the project.
 
 These are limits of the provisioner's roles, not deny policies. The provisioner can still set IAM policies on `langsmith-` buckets, on every DNS zone and Artifact Registry repository in the project and, without `byo_iam`, on service accounts.
 
@@ -193,7 +193,7 @@ Use a project that holds only LangSmith resources. Name conditions limit the pro
 
 - **Service accounts**: IAM checks a service account by its numeric unique ID, so a condition cannot limit service account permissions by account name. Without `byo_iam`, the provisioner's `setIamPolicy` and `actAs` apply to every service account in the project, so it could act as any of them.
 - **Project role grants**: Without `byo_iam`, the provisioner can grant the project roles listed above to any principal, including itself. With `cloudsql.admin` or `secretmanager.secretAccessor`, it could reach every Cloud SQL instance or secret in the project.
-- **DNS zones, Artifact Registry repositories, and Cloud SQL databases**: The provisioner can change, delete, and set the IAM policy of any DNS zone and its records, and any Artifact Registry repository, in the project. It can delete and change any Cloud SQL database, though it cannot connect to one.
+- **DNS zones and Artifact Registry repositories**: The provisioner can change, delete, and set the IAM policy of any DNS zone and its records, and any Artifact Registry repository, in the project.
 - **Postgres setup**: IAM checks of Cloud SQL users carry no instance name. With `byo_iam`, the Postgres setup account can create and update database users, including the `postgres` password, on every Cloud SQL instance in the project. Without `byo_iam`, its project grant of `cloudsql.admin` covers every Cloud SQL instance in the project.
 - **Your own `langsmith-` resources**: The name conditions cannot tell your resources from LangSmith's if their names also start with `langsmith-`.
 </Warning>
