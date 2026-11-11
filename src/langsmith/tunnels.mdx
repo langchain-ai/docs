@@ -122,6 +122,7 @@ You can use a tunnel URL in place of a service address in:
 - [Model configurations](/langsmith/model-configurations) and [custom model endpoints](/langsmith/custom-endpoint), as the base URL. This covers the Playground, experiments, and online evaluators that use the model.
 - [LangSmith Fleet](/langsmith/fleet), as a model's base URL or an MCP server URL.
 - MCP servers that use OAuth, for the token endpoint. The authorization endpoint must stay reachable from the browser, so it cannot be a tunnel URL.
+- Agents [deployed to LangSmith Cloud](/langsmith/deploy-to-cloud), from your agent's own code. See [Call a tunnel from a deployment](#call-a-tunnel-from-a-deployment).
 
 Keep the following in mind:
 
@@ -129,6 +130,38 @@ Keep the following in mind:
 - Requests through a tunnel do not follow redirects.
 - A model reached through a tunnel needs its own API key in its configuration. LLM auth proxy credentials are not sent through a tunnel.
 - Your target must start responding within 30 seconds. A single request can stream for up to 1 hour, and request bodies can be up to 32 MiB.
+
+### Call a tunnel from a deployment
+
+An agent deployed to LangSmith Cloud calls a tunnel URL from its own code. Send the deployment's LangSmith API key in the `X-Api-Key` header. You don't need to create a key: the control plane sets `LANGSMITH_API_KEY` on every Cloud deployment (see [LangSmith integration](/langsmith/control-plane#langsmith-integration)).
+
+```python
+import os
+
+import httpx
+
+TUNNEL_URL = "https://<handle>.tunnels.smith.langchain.com"
+
+response = httpx.get(
+    TUNNEL_URL,
+    headers={"X-Api-Key": os.environ["LANGSMITH_API_KEY"]},
+)
+```
+
+LangSmith checks the key, removes it, and forwards the request to your service. A request without the key returns `403` with `connection access denied`.
+
+If your service expects its own `X-Api-Key` or `Cookie` header, send it as `X-Tunnel-Origin-X-Api-Key` or `X-Tunnel-Origin-Cookie`. LangSmith renames it back before the request reaches your service:
+
+```python
+headers = {
+    "X-Api-Key": os.environ["LANGSMITH_API_KEY"],
+    "X-Tunnel-Origin-X-Api-Key": os.environ["MY_SERVICE_API_KEY"],
+}
+```
+
+An `Authorization` header needs no renaming, because it passes through unchanged.
+
+Any deployment in the tunnel's organization can call the tunnel, in any workspace. Deployments can call tunnels only on LangSmith Cloud, like every other tunnel consumer.
 
 ## Security
 
