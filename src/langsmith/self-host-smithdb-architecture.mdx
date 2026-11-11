@@ -32,13 +32,13 @@ Use this table to find each component in your cluster. Run `kubectl get deploy,s
 | SmithDB cluster manager | `langsmith-smithdb-cluster-manager` | Decides which SmithDB pod handles which tenant and project, so that related requests go to the same pod. |
 | SmithDB query | `langsmith-smithdb-query`<br />`langsmith-smithdb-stats-query`<br />`langsmith-smithdb-run-rules`<br />`langsmith-smithdb-mutations` | Answers queries, and applies feedback and deletes. The optional pools keep heavy load away from UI and API reads. |
 | SmithDB ingestion | `langsmith-smithdb-ingestion` | Stores new runs, and serves the newest runs to queries. |
-| SmithDB compaction scheduler | `langsmith-smithdb-compaction` | Plans compaction work, and runs garbage collection and retention. Runs as a single instance. |
+| SmithDB compaction scheduler | `langsmith-smithdb-compaction` | Plans compaction work, and runs garbage collection and retention. |
 | SmithDB compaction worker | `langsmith-smithdb-compaction-worker` | Does the compaction work: merges and rewrites stored data. |
 | SmithDB metastore migration | `langsmith-smithdb-metastore-migration` | Prepares the metastore during install and upgrade. |
 | SmithDB migration | `langsmith-smithdb-migration` | Copies historical data from ClickHouse. Optional. |
 | Redis, PostgreSQL, ClickHouse | `langsmith-redis`<br />`langsmith-postgres`<br />`langsmith-clickhouse` | LangSmith datastores. They run in the cluster only if you do not use external services. |
 
-Names come from the chart templates (`<release>-smithdb-<component>`). Confirm them against your deployment.
+Names come from the chart templates: `<release>-<component>` for LangSmith and `<release>-smithdb-<component>` for SmithDB. Confirm them against your deployment.
 
 ## Write path
 
@@ -54,7 +54,7 @@ Names come from the chart templates (`<release>-smithdb-<component>`). Confirm t
   alt="The platform backend adds a task to Redis. An ingest queue worker writes the runs to SmithDB ingestion, which writes segments to object storage and segment rows to the metastore, then acknowledges the write."
 />
 
-The platform backend receives runs from the SDK and adds a *task* (a batch of runs) to the ingestion queue in Redis (1). An ingest queue worker takes the task (2) and sends its runs to SmithDB ingestion (3). Ingestion keeps the rows in memory for a short time. Then it writes them to object storage as a *segment* (4). A segment is a data file that SmithDB never changes after it writes it. Ingestion also records each segment in the *metastore*, a PostgreSQL database (5). When the segment is in object storage and in the metastore, the data is durable. Ingestion then sends an *ack* to the worker (6), and the worker removes the task from Redis. If the write fails, the task stays in Redis, and the worker tries it again later. Thus, a slow write is first visible as a larger queue in Redis. Later, ingestion merges small segments into larger segments and gives them to compaction. Until then, ingestion keeps copies of the new segments on its *disk cache*. The disk cache never holds the only copy of the data.
+The platform backend receives runs from the SDK and adds a *task* (a batch of runs) to the ingestion queue in Redis (1). An ingest queue worker takes the task (2) and sends its runs to SmithDB ingestion (3). Ingestion keeps the rows in memory for a short time. Then it writes them to object storage as a *segment* (4). A segment is a data file that SmithDB never changes after it writes it. Ingestion also records each segment in the *metastore*, a PostgreSQL database (5). When the segment is in object storage and in the metastore, the data is durable. Ingestion then sends an *ack* to the worker (6), and the worker removes the task from Redis. If the write fails, the task stays in Redis, and the worker tries it again later. After a fixed number of failed attempts, the worker gives up, and the runs of the task are lost. Runs also expire in Redis after a fixed time. Thus, a slow write is first visible as a larger queue in Redis. Later, ingestion merges small segments into larger segments and gives them to compaction. Until then, ingestion keeps copies of the new segments on its *disk cache*. The disk cache never holds the only copy of the data.
 
 ## Read path
 
@@ -88,6 +88,23 @@ The platform backend sends trace queries to SmithDB query, including trace reads
 
 Feedback has its own path, because SmithDB stores feedback apart from runs. The platform backend receives feedback from the SDK and the UI, directly or through the backend. It adds a task to the *feedback queue* in Redis (1). This queue is not the ingestion queue. An ingest queue worker takes the task (2) and sends the feedback to the SmithDB mutations or query pool (3). SmithDB stores each feedback as a row in the metastore (4). Then it sends the ack (5), and the worker removes the task from Redis. Queries read new feedback directly from the metastore, thus feedback is visible immediately. Later, a *feedback compaction* job reads the new rows (6) and writes the feedback into files next to the run segments in object storage (7).
 
+## Delete path
+
+Deletes have their own path, because SmithDB never changes a segment. LangSmith sends run deletes to the SmithDB mutations or query pool. Deletes from the v2 API go through a task in Redis and an ingest queue worker. SmithDB query finds the rows to delete and records them in the metastore as a *deletion vector*. Queries then hide these rows. Later, compaction rewrites the affected segments without the deleted rows.
+
+## Component failures
+
+| Failure | What happens | Recovery |
+|---|---|---|
+| An ingestion pod stops | Writes in progress fail, and ingest queue workers try them again. Acknowledged data is safe. Queries read the newest segments of that pod from object storage. | Automatic. |
+| A query pod is replaced | The disk cache of the new pod is empty. Queries are slower until the cache fills. | Automatic. |
+| The compaction scheduler stops | Writes and queries continue. Compaction, garbage collection, and retention stop. Queries become slower as small segments accumulate. The scheduler plans its jobs again when it starts. | Automatic when the scheduler starts. |
+| Compaction workers stop | Compaction jobs wait in the queue. Queries become slower as small segments accumulate. | Automatic when workers start. |
+| The cluster manager stops | SmithDB and LangSmith services continue with the last assignment. New or removed pods are not used until the cluster manager starts. | Automatic when the cluster manager starts. |
+| The metastore is slow or unavailable | Writes become slower or fail, and the Redis queue becomes larger. Queries become slower or fail. | Repair the database. The queue then becomes smaller. |
+| Object storage is slow or unavailable | Writes become slower or fail, and the Redis queue becomes larger. Reads of segments that are not on a disk cache become slower or fail. | Repair access to object storage. |
+| Redis is unavailable | LangSmith cannot queue new runs and feedback. | Repair Redis. |
+
 ## Terms
 
 | Term | Meaning |
@@ -95,13 +112,18 @@ Feedback has its own path, because SmithDB stores feedback apart from runs. The 
 | Run | One step of a trace, for example an LLM call or a tool call. |
 | Feedback | A score or a comment on a run, from a user, an evaluator, or an automation rule. |
 | Task | One unit of work in a Redis queue, for example a batch of runs or of feedback. Each worker pod processes several tasks at the same time. |
-| Ingestion queue, feedback queue | The two Redis queues on the trace path. The ingestion queue holds runs. The feedback queue holds feedback. The ingest queue workers process both. |
+| Ingestion queue, feedback queue | Redis queues that the ingest queue workers process. The ingestion queue holds runs. The feedback queue holds feedback. |
 | Segment | One data file in object storage, plus its row in the metastore. SmithDB never changes a segment after it writes it. |
-| Partition | The runs of one tenant, one project, and one day. Ingestion writes each partition to its own segments. |
 | Ack | The message from SmithDB to the worker that the data is durable. The worker removes the task from Redis only after the ack. |
 | Metastore | The PostgreSQL database of SmithDB. It keeps a record of each segment, and stores new feedback. |
-| Disk cache | The local disk of a SmithDB pod. It holds copies of data only, never the only copy. |
+| Disk cache | The cache volume of a SmithDB pod, on a local SSD or a network disk. It holds copies of data only, never the only copy. |
 | Query pool | A group of SmithDB query pods for one type of request: query, stats-query, run-rules, or mutations. |
-| Delete | SmithDB never changes a segment. Thus, a delete does not remove rows immediately. The query service finds the rows and records them in the metastore as a deletion vector. Queries then hide these rows. Later, compaction rewrites the segment without them. |
 | Compaction | Background work that merges small segments into larger segments, writes feedback into files, and removes expired and deleted data. |
 | Slice | A range of the key space that the cluster manager gives to a SmithDB pod. For ingestion, the key is the tenant and the project. For queries, the key is the tenant. |
+
+## See also
+
+- [Enable SmithDB on self-hosted LangSmith](/langsmith/self-host-smithdb)
+- [SmithDB metrics reference](/langsmith/self-host-smithdb-metrics)
+- [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale)
+- [Troubleshoot SmithDB](/langsmith/self-host-smithdb-troubleshooting)
