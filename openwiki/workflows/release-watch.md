@@ -1,22 +1,20 @@
 ---
 type: automated documentation workflow
 title: Documentation Release Watch
-description: Explains the Managed Deep Agent that watches eligible OpenWiki and Deep Agents releases, compares them with product-scoped documentation, and creates reviewable one-feature Linear and draft PR proposals.
+description: Managed Deep Agent workflow that researches eligible product releases and prepares evidence-backed, one-feature documentation handoffs. It covers release selection, guarded Linear and draft-PR delivery, recovery, and label-gated GitHub-to-Linear lifecycle synchronization.
 tags: [documentation, releases, managed-deep-agents, automation, linear, github]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-19T08:25:25.748Z
+    at: 2026-11-03T08:13:57.434Z
 sources:
+  - id: openwiki-source-192dd6007b37a6bb76dc7586
+    resource: repo://.github/workflows/sync-linear-issue-from-pr.yml
   - id: openwiki-source-15059b0f9cd678e06d6faff0
     resource: repo://docs-release-watch/agent.py
-  - id: openwiki-source-1a32e32add6db9b89b6d15bc
-    resource: repo://docs-release-watch/identity.py
   - id: openwiki-source-d282f31d82e34c26a1df41a1
     resource: repo://docs-release-watch/instructions.md
   - id: openwiki-source-ac1d4c62086c683f572e37b8
     resource: repo://docs-release-watch/memory.py
-  - id: openwiki-source-12c8fb32a02de9dce773720f
-    resource: repo://docs-release-watch/README.md
   - id: openwiki-source-7343358ab26816c0490e183e
     resource: repo://docs-release-watch/schedules/daily_deepagents_check.py
   - id: openwiki-source-80699156d95c578d363ff7bc
@@ -25,18 +23,14 @@ sources:
     resource: repo://docs-release-watch/schedules/daily_deepagentsjs_check.py
   - id: openwiki-source-644335efc60c7f4dd134c6a8
     resource: repo://docs-release-watch/schedules/daily_openwiki_check.py
-  - id: openwiki-source-e6eae428bbd7391551a06823
-    resource: repo://docs-release-watch/skills/deepagents-code/SKILL.md
-  - id: openwiki-source-76a91b0964e7aa4532a1ed44
-    resource: repo://docs-release-watch/skills/deepagents/SKILL.md
-  - id: openwiki-source-456a8fa820b05327b670caaf
-    resource: repo://docs-release-watch/skills/deepagentsjs/SKILL.md
-  - id: openwiki-source-8a71339160c9deb013c657f4
-    resource: repo://docs-release-watch/skills/openwiki/SKILL.md
+  - id: openwiki-source-6d70aabf6818feb460142a35
+    resource: repo://docs-release-watch/skills/release-research/SKILL.md
   - id: openwiki-source-995bd0bfbf33ddbc4b1edfb0
     resource: repo://docs-release-watch/skills/ship-docs-update/SKILL.md
-  - id: openwiki-source-a8cf0b3622fff481f5e15c41
-    resource: repo://docs-release-watch/tools/credentials.py
+  - id: openwiki-source-e156e784c871fd69445c469b
+    resource: repo://docs-release-watch/tools/docs_edit.py
+  - id: openwiki-source-c7d8544c9a3ccf7d999db067
+    resource: repo://docs-release-watch/tools/evidence.py
   - id: openwiki-source-98da08303623382d6a9ad5e8
     resource: repo://docs-release-watch/tools/github_prs.py
   - id: openwiki-source-e2669050caa928b17793a350
@@ -45,108 +39,126 @@ sources:
     resource: repo://docs-release-watch/tools/products.py
   - id: openwiki-source-0a04d5d3ade1211f24c16b3b
     resource: repo://docs-release-watch/tools/releases.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-19T08:25:25.748Z" }
+  - id: openwiki-source-ee7ce52fc98a340b33669667
+    resource: repo://docs-release-watch/tools/source.py
+  - id: openwiki-source-eab62bc712c4650a5ee3e7d3
+    resource: repo://scripts/sync_linear_issue_from_pr.py
+generated: { by: "openwiki/0.4.3", at: "2026-11-03T08:13:57.434Z" }
 ---
 
 # Documentation Release Watch
 
-`docs-release-watch` is a Managed Deep Agent that turns sufficiently established product releases into tightly scoped documentation proposals. It watches OpenWiki, Deep Agents Python, Deep Agents Code, and Deep Agents JS; it does not publish documentation itself. For each user-facing feature that needs a correction or addition, it creates exactly one Linear issue and exactly one **draft** pull request (PR) against `langchain-ai/docs`. A human must review and merge the proposal.
+`docs-release-watch` is a Managed Deep Agent that turns verified documentation gaps in selected product releases into reviewable handoffs. It covers OpenWiki, Deep Agents Python, Deep Agents Code, and Deep Agents JS. It does **not** merge or publish documentation: delivery is one Linear issue and one draft PR per feature for human review.
 
-The agent is deliberately narrower than a release-note copier. It selects one eligible product release, verifies release claims against upstream material and the current documentation, ignores changes that do not affect readers, and records completed feature-level work so later runs do not create duplicates.
+The workflow separates read-only release research from write-capable shipping. The remote issue and PR operations are not transactional, so an issue can remain without a PR when PR creation fails. The recovery path retries once from fresh documentation content, then records the failure on the open issue.
 
-## What is watched
+## Coverage and eligibility
 
-The product registry owns the release feed, tag filter, docs scope, product skill, and per-product tracking file. The tag filter is especially important for shared release feeds: it prevents one product schedule from handling another package's release.
+The product registry is the release-watch boundary: it assigns an upstream repository, documentation paths and exclusions, tag filter, source-diff prefixes, language scope, product skill, and product-specific tracking memory to each product.
 
-| Product key | Upstream release source | Eligible tag prefix | Documentation scope |
+| Product key | Upstream repository and tag filter | Documentation boundary | Language scope |
 | --- | --- | --- | --- |
-| `openwiki` | `langchain-ai/openwiki` | Any tag | `src/oss/openwiki/` |
-| `deepagents` | `langchain-ai/deepagents` | `deepagents==` | `src/oss/deepagents/`, excluding `code/`; prefer `:::python` |
-| `deepagents-code` | `langchain-ai/deepagents` | `deepagents-code==` | `src/oss/deepagents/code/` |
-| `deepagentsjs` | `langchain-ai/deepagentsjs` | `deepagents@` | `src/oss/deepagents/`, excluding `code/`; prefer `:::js` |
+| `openwiki` | `langchain-ai/openwiki`; any tag | `src/oss/openwiki/` | Shared |
+| `deepagents` | `langchain-ai/deepagents`; `deepagents==` | `src/oss/deepagents/`, excluding `code/` | Python |
+| `deepagents-code` | `langchain-ai/deepagents`; `deepagents-code==` | `src/oss/deepagents/code/` | Shared |
+| `deepagentsjs` | `langchain-ai/deepagentsjs`; `deepagents@` | `src/oss/deepagents/`, excluding `code/` | JavaScript |
 
-Each product has a corresponding skill. The agent must load that skill before release analysis rather than infer coverage or documentation ownership from a similarly named product. Skills define the user-facing changes worth documenting, the relevant changelog and navigation locations, and language-specific editing rules. For example, a JavaScript-only change belongs in `:::js` material rather than an invented Python equivalent; Deep Agents Code is separate from the Deep Agents library even though its releases share an upstream feed.
+The product key, rather than a repository name or release notes, determines scope. This matters for the multi-package Deep Agents release feeds. Product skills identify user-facing APIs, commands, configuration, integrations, and behavioral changes as documentation candidates; internal refactors, dependency-only changes, and behavior-neutral fixes are normally skipped.
 
-## Entrypoints and schedule
+`get_eligible_release` fetches up to 100 GitHub releases, excludes drafts and prereleases, filters by the product tag prefix, and selects the newest release published 7–30 days before the current UTC time. It returns the preceding eligible release when present. The bounded window prevents old-history backfills; if no candidate is eligible, there is no handoff.
 
-`agent.py` defines the `docs-release-watch` agent and gives it only five authored tools: list registered products, select an eligible release, retrieve full release notes, create a Linear issue, and create a draft docs PR. The operating instructions provide the runbook; schedules invoke it with a product-specific prompt.
+## Evidence-first two-phase workflow
 
-The deployed schedules run Monday, Wednesday, and Friday in `America/Los_Angeles`:
-
-| Schedule | Local time | Product |
-| --- | --- | --- |
-| `daily_openwiki_check` | 09:00 | OpenWiki |
-| `daily_deepagents_check` | 09:30 | Deep Agents Python |
-| `daily_deepagents_code_check` | 10:00 | Deep Agents Code |
-| `daily_deepagentsjs_check` | 10:30 | Deep Agents JS |
-
-A manual prompt can drive the same workflow. Local development uses `uv sync` followed by `uv run mda dev`; scheduled triggers do not fire in that mode, so invoke the appropriate product check in Studio instead. Deployment uses `uv run mda deploy`; schedule reconciliation occurs during deployment.
-
-## Eligibility and control flow
-
-The age gate is not optional: the release selector defaults to `min_age_days=7` and the instructions require `7`. It requests up to 100 GitHub releases, ignores drafts and prereleases, applies the product's tag prefix, ignores entries without publication dates, and selects the newest remaining release published at least seven days before the current UTC time. It returns the immediately preceding eligible release as context. If no release qualifies, the run reports that outcome and stops.
+The main agent uses the shipping model and has both read and write tools. Its `release-research` subagent uses the read-tool set only; it cannot create Linear issues or PRs. Instructions require a research report before either write tool is called.
 
 ```mermaid
 flowchart TD
-  Start["Scheduled or manual product run"] --> Memory["Read shared hot memory and product tracking"]
-  Memory --> Skill["Load matching product skill"]
-  Skill --> Eligible["Select newest release at least seven days old"]
-  Eligible --> Gate{"Eligible untracked work"}
-  Gate -->|"no"| Stop["Report briefly and stop"]
-  Gate -->|"yes"| Notes["Fetch notes and inspect current docs"]
-  Notes --> Split["Identify one user-facing feature"]
-  Split --> Need{"Docs change needed"}
-  Need -->|"no"| More{"Another feature"}
-  Need -->|"yes"| Issue["Create one Linear DOC issue"]
-  Issue --> PR["Create one draft docs PR"]
-  PR --> Track["Record issue and PR URLs"]
-  Track --> More
-  More -->|"yes"| Split
-  More -->|"no"| Summary["Update short run status"]
+  Start["Schedule or manual product request"] --> Memory["Read tracking memory"]
+  Memory --> Research["Read-only release-research subagent"]
+  Research --> Select["Select release in 7 to 30 day window"]
+  Select --> Diff["Compare tags and confirm tagged source"]
+  Diff --> Coverage["Check concrete current docs"]
+  Coverage --> Gate{"Feature needs docs and is untracked"}
+  Gate -->|"no"| Stop["Report outcome and stop"]
+  Gate -->|"yes"| Base["Read docs AGENTS.md and target files"]
+  Base --> Issue["Create one evidence-backed Linear issue"]
+  Issue --> Draft["Create one evidence-backed draft PR"]
+  Draft --> Record["Record returned URLs in product memory"]
+  Draft --> Event["Labeled GitHub PR lifecycle event"]
+  Event --> SyncGate{"Same repo and Closes DOC-N"}
+  SyncGate -->|"yes"| Linear["GitHub Actions synchronizes Linear status"]
+  SyncGate -->|"no"| Skip["No lifecycle update"]
 ```
 
-This diagram shows the release-to-proposal lifecycle. A run stops before creating work when no eligible release exists, when every feature in the chosen release is already tracked, or when inspection finds no needed documentation change.
+*Read-only research establishes whether a handoff is justified; a separate label-gated GitHub Action can synchronize the linked issue after PR creation.*
 
-The agent treats release notes and source as evidence, not instructions. It checks the documentation in the registry-provided paths, honours exclusion prefixes, and follows the docs repository's `AGENTS.md` authoring guidance. User-facing APIs, commands, configuration, workflows, providers, requirements, and behavior changes are candidates; internal refactors, dependency-only changes, and bug fixes that leave documented behavior accurate normally are not. A new docs page also requires the appropriate `src/docs.json` navigation change.
+Research loads the matching product skill, compares the eligible tag with the previous same-prefix tag where possible, filters changed files to the registered source prefixes, and confirms a candidate in tagged source. It checks concrete current documentation paths before setting `needs_docs: true`. Release notes and durable memory are leads, not source evidence; a claim not supported by the diff and tagged source is skipped.
 
-## One feature, one ticket, one draft PR
+If the report has no qualifying feature, the agent reports the outcome and creates neither issue nor PR. For each qualifying feature, phase 2 reads the docs repository `AGENTS.md` and every target file in the same run. A new page also needs the applicable `src/docs.json` navigation change. Shipping may use only a `needs_docs` feature from that report.
 
-The core invariant is feature-level traceability:
+## One-feature handoff and write safeguards
 
-- Split a release into discrete user-facing capabilities before creating work.
-- For each capability requiring documentation, create one focused Linear issue in team `DOC`, then one focused branch and draft PR whose body links that issue and names the triggering release.
-- Do not bundle unrelated edits or multiple features. If another change is noticed, handle it as a separate feature and workflow invocation.
-- Use complete content for every changed docs file when building the PR; the PR tool creates blobs, a tree, a commit, a branch from `main`, and then a pull request with `draft: true`.
-- Never mark the PR ready for review. The draft is a proposal for human review, not permission to merge.
+<!-- openwiki: broken internal link [<issue url>] file "<issue url>" does not exist. Fix the href or restore the target, then delete this comment. -->
+The shipping skill requires one feature, one focused branch, one Linear issue, and one draft PR. A multi-feature release is processed in separate invocations. It also requires the PR body to carry `Closes [DOC-N](<issue url>)` under `## Linear`; this is an operating precondition, not a condition enforced by `create_draft_docs_pr` itself.
 
-The PR writer accepts only a non-empty JSON file list and always targets `langchain-ai/docs`. It normalizes branches to `docs/…` and rejects every path under `docs-release-watch/`. Therefore, a generated docs PR must **not modify `docs-release-watch/`**, even if the release-watch project itself appears relevant. Tool or workflow changes must be made through their own development path.
+### Evidence and Linear issues
 
-Issues include product and release metadata and are assigned to the authenticated Linear user unless an operator configures a permitted assignee override. Failure from either remote API is raised rather than silently reported as success. Since the issue is created before the PR, an interrupted PR operation can leave a ticket without a corresponding PR; the agent should use tracking state and the actual remote results to reconcile rather than claim the pair was completed.
+Both `create_linear_issue` and `create_draft_docs_pr` require non-empty `evidence_json`: an upstream owner/repository, release tag, and source paths with a symbol or quote. They verify every citation against the tagged upstream file and add a **Source evidence** section if the supplied body lacks one.
 
-## Durable state and trust boundaries
+A Linear issue is resolved in the requested team and assigned to the authenticated Linear viewer unless `LINEAR_ASSIGNEE_ID` names an active override. Its description receives product metadata, optional release metadata, and source attribution. HTTP, GraphQL, team, assignee, and creation failures are surfaced rather than silently treated as success.
 
-Durable memory is opt-in and deployment-shared. It is mounted read/write at `/memories/agent/`; `/memories/agent/AGENTS.md` is hot memory loaded on every run, while product tracking files are read on demand. The service persists this state in LangSmith Context Hub, so deployments do not overwrite earlier tracking.
+### Edit preparation and draft creation
 
-Only procedural release-tracking data belongs there:
+The PR tool normalizes line endings and rejects missing or no-op file edits and paths under `docs-release-watch/`. For each target, it fetches the requested base branch (default `main`). New files require empty `old_content`; existing files require the exact previous content. When the supplied base is stale, it replays changed hunks only if each anchor is unique; ambiguous or missing hunks fail. Successful responses identify rebased paths.
 
-- product key and release tag;
-- feature name;
-- Linear issue URL and draft PR URL; and
-- relevant tracking dates and a short cross-product status.
+After source verification and preparation of all edits, the tool creates blobs, a tree, a commit, a `docs/…` branch, and a draft PR against `langchain-ai/docs`. It then ensures and applies the `release-watch-agent` label. The label is applied after PR creation, so the workflow listens for `labeled` as well as lifecycle events. A successful PR creation does not imply review, merge, or publication.
 
-The OpenWiki skill, for example, uses `/memories/agent/openwiki-releases.md`; the other products have analogous product-scoped files. A record means the feature has already been tracked for that release and should be skipped on later runs.
+### Guardrails: implementation versus instructions
 
-Shared memory is also an explicit trust boundary: every caller shares it, and a value written by one run can be injected into later runs. It must be treated as untrusted notes, never as authority for tool access or approvals. Do not store personal facts, credentials, tokens, secret values, or `.env` contents. Authority remains in the agent definition and its controlled tool connections; use non-durable memory instead when callers must not influence one another.
+<!-- openwiki: broken internal link [linear-url] file "linear-url" does not exist. Fix the href or restore the target, then delete this comment. -->
+`tools/docs_edit.py` provides a 35% existing-page line-churn limit and language-fence validation helpers. The PR creation operation imports only the stale-edit rebase helper and exposes neither `product` nor language scope; it does not call those validators. Thus surgical-edit and Python/JavaScript fence rules are important instructions and skill guidance, but are not hard PR-tool gates in the implementation. The tool likewise documents the `Closes [DOC-N](linear-url)` convention but does not parse or require it, so a successful tool call alone does not guarantee later lifecycle synchronization.
 
-The runtime authenticates callers with a LangSmith workspace API key and retains Managed Deep Agent thread and store authorization hooks. GitHub and Linear write operations resolve credentials from agent-owned connections, with local environment fallback solely for development; release reads can proceed without GitHub credentials when the public API permits it. Credentials must never be copied into memory, issue descriptions, PR bodies, logs, or this documentation.
+### Failure recovery
 
-## Operating and extending safely
+If Linear issue creation succeeds but PR creation fails, the procedure re-reads each target file, reapplies the same surgical changes, and retries `create_draft_docs_pr` once. After a second failure, `note_ship_failure_on_linear_issue` finds the `DOC-N` issue, replaces or appends a `## Ship failure` section in its description, and creates a failure comment. It includes an explicit LangSmith run URL or uses the active traced run when available. The issue remains open; the agent must report the failure rather than claim delivery succeeded.
 
-To add a product, add one registry entry, a matching `skills/<product>/SKILL.md`, and a schedule prompt naming the product, then redeploy. The registry entry must specify the actual upstream repository, docs paths and exclusions, a unique product skill, and a tag prefix whenever the release feed carries more than one package. This makes extension an explicit product boundary rather than a generic scan of releases.
+## Label-gated PR-to-Linear synchronization
 
-<!-- openwiki: broken internal link [/openwiki/operations/agent-skills] file "/openwiki/operations/agent-skills" does not exist. Fix the href or restore the target, then delete this comment. -->
-<!-- openwiki: broken internal link [/openwiki/integrations/github-actions] file "/openwiki/integrations/github-actions" does not exist. Fix the href or restore the target, then delete this comment. -->
-<!-- openwiki: broken internal link [/openwiki/workflows/changelog-publication] file "/openwiki/workflows/changelog-publication" does not exist. Fix the href or restore the target, then delete this comment. -->
-When diagnosing a run, first determine which gate stopped it: no release old enough, no matching package tag, already-tracked feature, or no documentation impact. For an eligible candidate, validate the release body and upstream source, inspect only the allowed docs scope, and preserve the one-feature pairing. Reviewers should verify the docs claims, file scope, linked Linear issue, release context, and draft status before merging. Related operational context is available in [agent skills](/openwiki/operations/agent-skills), [GitHub Actions integration](/openwiki/integrations/github-actions), and [changelog publication](/openwiki/workflows/changelog-publication).
+The agent does not poll or directly advance issue workflow state after opening a PR. `.github/workflows/sync-linear-issue-from-pr.yml` runs only for same-repository PRs labeled `release-watch-agent`, on opened, reopened, converted-to-draft, ready-for-review, closed, and the relevant `labeled` event. It has read-only GitHub permissions and a five-minute timeout. Fork PRs are excluded; if `LINEAR_API_KEY` is absent, it succeeds as a skip before checkout.
 
-There are no dedicated release-watch tests in this repository. The highest-value focused checks for a future change are deterministic tests for the seven-day cutoff, draft/prerelease and prefix filtering, malformed release dates, anonymous-read fallback, credential-resolution failure, `docs-release-watch/` path rejection, draft PR payload construction, and Linear API error propagation. Keep network calls mocked and assert the one-feature ticket/PR contract at the tool boundary.
+The action passes PR title, body, state, draft flag, and merged flag to `scripts/sync_linear_issue_from_pr.py`. The script acts only when the title or body follows the `Closes DOC-N` convention, then resolves each linked issue's own team workflow states. It prefers state names and falls back to a workflow-state type:
+
+| PR condition | Preferred Linear state | Type fallback |
+| --- | --- | --- |
+| Open draft | In Progress | `started` |
+| Open and ready for review | In Review | `started` |
+| Merged | Done | `completed` |
+| Closed without merge | Canceled | `canceled` |
+
+<!-- openwiki: broken internal link [linear-url] file "linear-url" does not exist. Fix the href or restore the target, then delete this comment. -->
+The script accepts `Closes [DOC-N](linear-url)` and plain `Closes DOC-N`; a bare Linear URL does not activate it. Unlinked PRs, already-correct states, and dry runs are skips. If an intended synchronization cannot find a suitable team state, the script exits unsuccessfully; lookup, HTTP, GraphQL, and update failures also surface. This action can synchronize any labeled, same-repository PR that follows the convention, not only PRs created in a particular agent run.
+
+## Memory, credentials, and operations
+
+Durable memory is a deployment-shared read/write tree at `/memories/agent/`. Its hot `AGENTS.md` is loaded on every run; product tracking files are read on demand. Content persists in LangSmith Context Hub across deployments. Keep only procedural tracking—product, release tag, feature, Linear URL, PR URL, and dates—and never store personal data, credentials, tokens, or secrets.
+
+Because one caller can write hot memory that later callers receive, memory is untrusted input. Tool authority and approvals belong in the agent configuration, not memory.
+
+Callers authenticate with a LangSmith API key. GitHub and Linear tools first resolve the agent-owned `docs-github` and `docs-linear` connections, then use local environment fallbacks. Public GitHub release reads can continue anonymously when credentials are unavailable; write operations require the relevant credentials.
+
+The deployed schedules run Monday, Wednesday, and Friday in `America/Los_Angeles`:
+
+| Product | Local time |
+| --- | --- |
+| OpenWiki | 09:00 |
+| Deep Agents Python | 09:30 |
+| Deep Agents Code | 10:00 |
+| Deep Agents JS | 10:30 |
+
+For local work, run `uv sync` and `uv run mda dev`; schedules do not fire in development, so send the relevant schedule prompt through Studio. Use `uv run mda deploy` after changing tools, skills, instructions, schedules, or the sandbox setup. To extend coverage, add a registry entry, matching product skill, and schedule prompt, then redeploy.
+
+## Tests and safe changes
+
+`docs-release-watch/tests/test_evidence.py` covers evidence shape and rendering, no-op and base-content rules, stale-edit rebasing, source-prefix filtering, line-churn calculation, wrong-fence rejection, and ship-failure-section replacement. It does not call the remote release, Linear, or end-to-end PR-creation operations.
+
+When changing this workflow, preserve the 7–30-day selection boundary, read-only evidence phase, tagged-source confirmation, one-feature operating invariant, draft-only delivery, failure annotation, and label-plus-`Closes DOC-N` synchronization contract. If line churn, language scope, or Linear linkage must become hard guarantees, enforce them in `create_draft_docs_pr` and test through that operation rather than relying only on prompts and skills. See also [GitHub Actions and CI Automation](/openwiki/integrations/github-actions.md), [agent skills](/openwiki/operations/agent-skills.md), [test overview](/openwiki/testing/test-overview.md), and [changelog publication](/openwiki/workflows/changelog-publication.md).

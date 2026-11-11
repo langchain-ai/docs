@@ -16,8 +16,12 @@ and current branch if that is empty.
 
 Two rules govern this whole skill:
 
-- **Review the diff, not the page.** Prose that was already there is not in
-  scope, however much you would have written it differently.
+- **Review the diff in the context of the page.** Read the whole page, and
+  the sibling pages in its `src/docs.json` group, before judging a change.
+  Report on changed lines, and on existing content the change makes wrong:
+  a sentence it contradicts, a section it now duplicates, a pointer it
+  breaks, or a flow it interrupts. Existing prose the change does not affect
+  is not in scope, however much you would have written it differently.
 - **Skip rules that do not clearly apply.** A short report of real findings is
   the goal. Do not stretch a rule to reach a finding, and do not restructure
   prose that is already fine.
@@ -98,27 +102,28 @@ Reading the diff text is not a substitute for either run. A patch shows added
 lines without their column offsets or their surrounding component, which is
 exactly what these rules turn on.
 
-Vale covers terminology, contractions, first person, future tense, Oxford
-commas, spaced em dashes, navigation-path arrows, and heading case. **Do not
-spend model judgment re-checking what Vale already checks**, with one exception:
-Vale does not scan every part of an MDX file, so a clean run is not proof of
-compliance. It misses content inside JSX components (`<Note>`, `<Tip>`, `<Tab>`,
-`<Step>`, `<Accordion>`) and inside table cells. A page can pass Vale with four
-spaced em dashes in it.
+Vale scans the whole MDX file, including text inside JSX components such as
+`<Note>` and `<Tab>`, and inside table cells. A clean run still does not prove
+compliance, because CI runs Vale at `MinAlertLevel = error` and only some rules
+are errors. The error-level rules, which block the merge, cover spaced em
+dashes, navigation-path arrows, vague link text, terminology, units, sentences
+that open with "But" or "So", and gendered language. **Do not spend model
+judgment re-checking those.**
 
-Grep the mechanical rules yourself over any file whose diff touches those
-places:
+The rest of the style guide passes CI wherever it appears, in plain prose as
+much as in a component. Contractions are not flagged at all, and first person,
+future tense, and filler are warnings or suggestions that CI never shows. Grep
+for them yourself over every changed line:
 
 ```bash
-grep -nE ' — | – ' <files>                      # spaced em dashes
 grep -nEi "\b(don't|can't|won't|isn't|it's|you'll)\b" <files>   # contractions
 grep -nE '\b(we|our|us|I)\b|\bwill [a-z]+\b' <files>          # first person, future tense
-grep -n '→' <files>                              # navigation arrows
+grep -nEi '\b(simply|just|easily|basically|obviously|very)\b' <files>  # filler
 ```
 
-Report a hit inside a component the same way you would report a Vale error: it
-would be one if Vale could see it. A `—` used as an empty table-cell marker is
-fine and is not a finding.
+Report a hit only on a line the diff changed. A contraction inside a quoted UI
+string or error message, such as `Can't reach the server`, is a literal and is
+not a finding.
 
 ## Step 3. Check structure against the style guide
 
@@ -215,8 +220,15 @@ Only when the diff triggers them:
 - New internal links: root-relative, and free of `/python/` or `/javascript/`?
 - A new code block: does it carry a real language tag, and are imports sorted?
 - A page or heading that changed URL: is there a redirect?
+- A new JSX tag: is it a Mintlify built-in or imported on the page? Look up a
+  tag new to `src/` on [Mintlify components](https://mintlify.com/docs/components).
+  An invented tag renders as nothing, so report it as blocking.
+- A PR target: does the description reference its Linear issue with
+  `Closes DOC-N` or `Refs DOC-N`, when one exists? Does it end with a plain AI-disclosure
+  sentence and carry no `Generated with` badge? `check-pr-ai-attribution`
+  fails a PR with a badge.
 
-The `add-docs-page` skill covers all five in detail. Point at it rather than
+The `add-docs-page` skill covers the page mechanics in detail. Point at it rather than
 restating the procedure in a finding.
 
 ## Step 6. Report

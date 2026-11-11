@@ -1,71 +1,40 @@
 ---
-type: testing guidance
-title: Builder and Pipeline Tests
-description: Focused offline tests for builder routing, preprocessing, parser conversion, helper tools, and watcher behavior. Use artifact assertions for deterministic contracts, then add a generated-site check when a change affects Mintlify-visible output.
-tags: [testing, pytest, builder, preprocessing, watcher, cli]
+type: testing guide
+title: Builder Test Boundaries
+description: Guidance for testing DocumentationBuilder route selection, docs.json-sensitive OSS variants, Markdown rewrites, snippets, and copy safety. It distinguishes deterministic unit contracts from generated-site and deployment review.
+tags: [testing, pytest, builder, documentation-pipeline, routing]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-10-29T08:15:48.231Z
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
-  - id: openwiki-source-6e6efa1569f158fcdb678ef0
-    resource: repo://pipeline/cli.py
   - id: openwiki-source-41f7c907e42a5efd3b3405cd
     resource: repo://pipeline/commands/build.py
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
-  - id: openwiki-source-636af982f42ea94123d2d7e9
-    resource: repo://pipeline/core/watcher.py
-  - id: openwiki-source-17f3856bce97f37118963062
-    resource: repo://pipeline/preprocessors/handle_auto_links.py
   - id: openwiki-source-06a4c757b1153b7de4f47a0e
     resource: repo://pipeline/preprocessors/markdown_preprocessor.py
-  - id: openwiki-source-3ae8d89866d72418f1bdab6b
-    resource: repo://pipeline/preprocessors/utm_links.py
-  - id: openwiki-source-f9f449ee32cba8a0afe3e645
-    resource: repo://pipeline/tools/lexer.py
-  - id: openwiki-source-a210b0c642944a7ad93f3b40
-    resource: repo://pipeline/tools/parser.py
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-  - id: openwiki-source-2ecfcd33b729fccd843ab705
-    resource: repo://tests/unit_tests/test_handle_auto_links.py
-  - id: openwiki-source-2f15ccdb144af3cca87e162b
-    resource: repo://tests/unit_tests/test_lexer.py
-  - id: openwiki-source-1e48075742e124afeca28fef
-    resource: repo://tests/unit_tests/test_parser.py
-  - id: openwiki-source-5255204fc494ae04cd6ba685
-    resource: repo://tests/unit_tests/test_utm_links.py
-  - id: openwiki-source-16b92823fdcb07d686f2e27f
-    resource: repo://tests/unit_tests/test_watcher.py
   - id: openwiki-source-0d0e77eb273a56717af74faa
     resource: repo://tests/unit_tests/utils.py
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-10-19T08:25:25.748Z
-generated: { by: "openwiki/0.4.3", at: "2026-10-19T08:25:25.748Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-10-29T08:15:48.231Z" }
 ---
 
-## Scope and validation boundary
+`DocumentationBuilder` is the deterministic boundary from authored `src/` inputs to the disposable `build/` tree. Builder unit tests should prove observable local contracts: routes created and deliberately absent, final transformed text, copied bytes, and raised errors. They do **not** prove that Mintlify accepts the complete tree, that every `docs.json` redirect resolves in the renderer, or that a deployed site serves and navigates the result correctly.
 
-`DocumentationBuilder` turns authored `src/` inputs into disposable `build/` artifacts. Its most useful tests assert observable output: emitted and forbidden routes, transformed Markdown, copied bytes, and error propagation. A passing unit fixture establishes local builder or helper behavior; it does **not** prove that Mintlify accepts the complete output graph, redirects resolve, or the deployed site renders it.
-
-Start with the narrowest relevant module:
+Run the focused suite while changing this boundary:
 
 ```bash
 make test TEST_FILE=tests/unit_tests/test_builder.py
-make test TEST_FILE=tests/unit_tests/test_handle_auto_links.py
-make test TEST_FILE=tests/unit_tests/test_utm_links.py
-make test TEST_FILE=tests/unit_tests/test_lexer.py
-make test TEST_FILE=tests/unit_tests/test_parser.py
-make test TEST_FILE=tests/unit_tests/test_watcher.py
 ```
 
-`make test` runs pytest with Internet sockets disabled while allowing Unix sockets. This makes these tests deliberately local: fixtures, mocks, and filesystem artifacts are appropriate evidence for transformations and routing, but not for the Mint runtime, npm publication availability, or a live filesystem observer.
+The target runs pytest with Internet sockets disabled (Unix sockets remain allowed), so these tests are intentionally hermetic. Use [Conditional Rendering Tests](/openwiki/testing/conditional-rendering.md) for regex and preprocessing edge cases, [Documentation Build System](/openwiki/architecture/build-system.md) for lifecycle ownership, and [Documentation Routes and Language Versioning](/openwiki/concepts/versioning.md) for the route model.
 
-For build-system architecture and operations, see [Build System](/openwiki/architecture/build-system.md), [Preprocessing](/openwiki/concepts/preprocessing.md), [CLI Tools](/openwiki/operations/cli-tools.md), and [Testing Overview](/openwiki/testing/test-overview.md).
+## Use an isolated artifact fixture
 
-## Fixture discipline and route families
-
-Use `File` and `file_system()` from `tests/unit_tests/utils.py` for builder fixtures. The context manager creates isolated `src/` and `build/` directories, writes either UTF-8 `content` or binary `bytes`, provides `list_build_files()` and `build_file_exists()`, and removes the tree at exit. Read an emitted artifact when the contract is a transformation; use bytes for copy behavior; assert both the required artifact and routes that must not exist.
+`File` and `file_system()` in `tests/unit_tests/utils.py` create a temporary directory containing `src/` and `build/`, populate source files from UTF-8 `content` or binary `bytes`, and remove the directory at context exit. The yielded object provides `list_build_files()` and `build_file_exists()`. This is the right fixture boundary for a source-to-artifact assertion.
 
 ```python
 with file_system([
@@ -76,101 +45,81 @@ with file_system([
 
     assert fs.build_file_exists("oss/python/guide.mdx")
     assert fs.build_file_exists("oss/javascript/guide.mdx")
-    assert not fs.build_file_exists("oss/guide.mdx")
 ```
+
+Always assert both sides of a routing rule: required artifacts, prohibited sibling artifacts, and the selected and excluded language text in each relevant output. Read output files instead of testing a private helper alone when the change affects more than a string transformation.
+
+## Route selection: test the decision, not just the path
 
 ```mermaid
 flowchart TD
-    Source["Source file"] --> Kind{"Routing family"}
-    Kind --> Oss["Ordinary OSS"]
-    Kind --> Product["Unversioned OSS product"]
-    Kind --> Managed["Managed Deep Agents"]
-    Kind --> Shared["Shared or ordinary content"]
-    Oss --> Pair["Python and JavaScript outputs"]
-    Product --> Once["One source relative output"]
-    Managed --> ManagedPair["Two LangSmith outputs"]
-    Shared --> Single["One source relative output"]
-    Pair --> Transform["Preprocess and rewrite"]
-    Once --> Transform
-    ManagedPair --> Transform
-    Single --> Transform
+    Source["Source file"] --> Family{"Route family"}
+    Family --> SharedOss["Shared OSS Markdown"]
+    SharedOss --> Nav{"Exactly one language in docs.json navigation"}
+    Nav -->|"Yes"| OneVariant["One OSS language artifact"]
+    Nav -->|"No"| TwoVariants["Python and JavaScript artifacts"]
+    Family --> Owned["Owned OSS language tree"]
+    Owned --> Matching["Matching language artifact"]
+    Family --> Product["OpenWiki or Deep Agents Code"]
+    Product --> Plain["One unprefixed OSS artifact"]
+    Family --> Managed["Managed Deep Agents"]
+    Managed --> ManagedVariants["Two LangSmith language artifacts"]
 ```
 
-This is the route selection that a small builder fixture should protect.
+This is the full-build routing model. `build_file()` uses the same shared-OSS navigation decision, but a whole-tree property—cleanup, discovery, owned-language filtering, shared copying, and final overlay precedence—belongs in a `build_all()` fixture.
 
-- Most `oss/` content emits a Python and a JavaScript artifact. Source files already below `oss/python/` or `oss/javascript/` are included only in the matching full-build pass and have that source-language segment removed from the emitted path.
-- `oss/deepagents/code/` and `oss/openwiki/` are intentional single-output products. They use the Python conditional target, retain links within their own roots, and still rewrite links to ordinary OSS pages to Python routes.
-- A direct `langsmith/managed-deep-agents*.md` or `.mdx` page emits only `langsmith/python/...` and `langsmith/javascript/...`; there is no unversioned emitted page. The full-build discovery pass selects `.mdx` files, so use `.mdx` when exercising full discovery.
-- `docs.json`; selected root pages; every path under `snippets`, `images`, `.well-known`, or `fonts`; and `.js` or `.css` files are shared and emitted once. JSX and TSX snippet components remain shared.
+### Shared OSS pages and `docs.json`
 
-The supported input set has 22 extensions, including Markdown, JSON/YAML, common image/video/font formats, CSS/JS, JSX/TSX, text, and HTML. Unsupported extensions and `TEMPLATE.mdx` are silently skipped. `docs.yml` is exceptional: it is loaded with `yaml.safe_load` and written as indented `docs.json`; parse and I/O failures are logged and re-raised.
+Ordinary shared Markdown below `oss/` is not necessarily duplicated. The builder recursively collects `oss/python/...` and `oss/javascript/...` strings from `src/docs.json` navigation and caches the result until the file modification time changes. A `.md` or `.mdx` page listed in exactly one language emits only for that language; a page listed in both or neither emits both. Non-Markdown OSS inputs always use both passes. Missing or invalid `docs.json` safely falls back to both variants.
 
-## Builder lifecycle and extension boundaries
+Test the four useful cases in one small fixture: Python-only nav, JavaScript-only nav, both, and neither. Also test targeted `build_file()` for a one-language page so dev-time routing cannot drift from full builds. A navigation entry for `widgets` can stand for `widgets/index`, but must not select that shared index where `src/oss/<language>/widgets.mdx` or `.md` owns the language route. This collision case requires a fixture with the navigation entry, shared index, and language-owned file.
 
-`build_all()` deletes and recreates `build/`, then builds ordinary OSS language trees, unversioned Deep Agents Code and OpenWiki, ordinary LangSmith, Managed Deep Agents variants, shared files, and finally the npm component overlay. The overlay copies published `@langchain/docs-sandbox` files after source shared files, so it wins at the same destination: `PatternEmbed.jsx` and `ExampleEmbed.jsx` map to `build/snippets/pattern-embed.jsx` and `build/snippets/example-embed.jsx`, while `ChatLangChainEmbed.js` maps to the build root. Missing package directories or mapped files warn rather than fail. This lifecycle does not generate `llms.txt` or `llms-full.txt`.
+Language-owned source trees are separate from navigation membership. During `build_all()`, a file under `oss/python/` or `oss/javascript/` participates only in its matching pass and its source language segment is removed from the output remainder. Assert the opposite language path is absent.
 
-Use `build_file()` for a fast route regression: it requires an existing file and raises `AssertionError` when missing. `build_files()` delegates a singleton to `build_file()`; with multiple paths it uses a CI-disabled progress bar. Use `build_all()` whenever collection, source-language filtering, stale-output cleanup, shared-file discovery, or npm-overlay precedence matters.
+### Explicit route exceptions
 
-Whole-tree collection is security-sensitive. `_safe_source_files()` excludes every symlink—even one to a regular file—and rejects resolved paths outside the collection root. A regression fixture should create an outside secret and a symlink under an eligible source subtree, then assert neither collection nor output contains the link or secret.
+- `oss/deepagents/code/` and `oss/openwiki/` build once at their source-relative, unprefixed paths. Their content is processed with the Python target, so test a conditional fixture as well as absence of both language-prefixed product routes. Links back into either product remain unprefixed; links to ordinary OSS content resolve to Python.
+- Direct top-level `langsmith/managed-deep-agents*.md` and `.mdx` sources build to both `langsmith/python/...` and `langsmith/javascript/...`, never to an unversioned artifact. The full-build collector discovers only direct `.mdx` matches; use `.mdx` in a `build_all()` discovery test. Unversioned URLs are a `docs.json` redirect concern, not generated pages.
+- `docs.json`; selected root pages; paths containing `snippets`, `images`, `.well-known`, or `fonts`; and `.js`/`.css` files are shared and are copied or processed at source-relative locations. Markdown snippets deliberately take a special multi-copy path described below.
 
-## Markdown and preprocessing contracts
+## Transformations: inspect final content
 
-For normal Markdown and MDX, `_process_markdown_file()` reads content, calls `preprocess_markdown()`, performs snippet-import and route rewrites, adds the source footer when eligible, and writes `.md` as `.mdx`. Errors are logged and re-raised. The footer is omitted for root `index.mdx` and every path containing `snippets`; footer construction itself is best-effort and leaves content unchanged if it fails.
+For `.md` and `.mdx`, the builder calls `preprocess_markdown()`, then—when there is a language target—rewrites Markdown snippet imports, rewrites OSS links, and rewrites Managed Deep Agents links. It then appends the source-contribution footer when eligible. `.md` writes an `.mdx` artifact. Processing errors are logged and re-raised; assert the exception for a failing input rather than accepting partial output.
 
-`preprocess_markdown()` resolves scoped autolinks, adds UTM parameters to eligible LangSmith CTA links, and filters conditional blocks. An omitted target comes from `TARGET_LANGUAGE`, defaulting to `python`. Protect changes at two layers: a narrow unit test for syntax and a builder artifact test that proves the consuming route received the correct result.
+`preprocess_markdown()` resolves autolinks, adds eligible LangSmith CTA UTM parameters, and filters `:::python` and `:::js` branches. With no explicit target, it reads `TARGET_LANGUAGE` and defaults to `python`. Keep syntax-level branch, autolink, and CTA tests in their dedicated preprocessor suites; add a builder fixture when target selection affects an emitted route, import, or link.
 
-- `_rewrite_oss_links()` rewrites Markdown links and HTML `href` values from bare `/oss/...` to `/oss/python/...` or `/oss/javascript/...`. It preserves existing prefixes, paths containing `images`, and Deep Agents Code/OpenWiki routes to avoid broken double-prefixes and preserve unversioned products.
-- `_rewrite_managed_deep_agents_links()` inserts the target language for bare `/langsmith/managed-deep-agents...` links while preserving already-prefixed paths.
-- `_rewrite_snippet_imports_for_language()` rewrites default imports of `/snippets/*.md` or `.mdx` to language-specific copies, but leaves named component imports and already-prefixed imports unchanged.
-- A Markdown snippet produces three copies: the default source-relative copy with Python-resolved absolute links for unversioned consumers, plus Python and JavaScript copies. Snippets get no source footer.
+Test rewrites through their expected output forms:
 
-### Focused preprocessing modules
+- A bare absolute `/oss/...` Markdown destination or quoted HTML `href` gains `python` or `javascript` for the current target. Existing language prefixes, image paths, and the Deep Agents Code and OpenWiki product paths are preserved. Include a pre-prefixed path to catch double insertion.
+- A bare `/langsmith/managed-deep-agents...` link gains the current language segment, while an already-prefixed destination stays pinned to its authored language.
+- The contribution footer is omitted for root `index.mdx` and every snippet path. It is best-effort: if its source-relative URL cannot be made, the original processed content remains.
 
-`test_handle_auto_links.py` patches `SCOPE_LINK_MAPS` with a small map and verifies that `@[Name]` is rewritten outside code fences but preserved inside backtick or tilde fences, including extended and indented fences. It also protects scope handling around conditional fences, escaped references, whitespace preservation, and the conservative behavior of an unclosed code fence: subsequent text remains unprocessed.
+`docs.yml` is another output contract, not a byte copy: `yaml.safe_load` produces indented `docs.json`; parse and I/O failures are re-raised. `TEMPLATE.mdx` and unsupported extensions are skipped. For an asset-copy test, supply `bytes` and compare output bytes; do not use a Markdown fixture to prove `copy2` behavior.
 
-`test_utm_links.py` covers the CTA classification boundary. Only the root and `/agents` paths on `https://smith.langchain.com` receive the documentation UTM parameters and a path-derived `utm_content`; functional routes, API-domain URLs, unrelated domains, and fenced-code links remain unchanged. Existing query parameters and optional Markdown link titles must survive.
+## Snippet imports and overlay invariants
 
-## Lexer, parser, and CLI helper tests
+A Markdown snippet produces three usable forms: the default `snippets/...` artifact with Python-targeted links for unversioned importers, plus `snippets/python/...` and `snippets/javascript/...` copies. Each language copy receives conditional filtering and OSS and Managed Deep Agents link rewrites. A language-targeted page importing `from '/snippets/example.mdx'` is rewritten to its matching language copy; already scoped imports remain unchanged. The import rule applies to Markdown snippet extensions, not component imports such as `.jsx`.
 
-The migration parser is a separate tool path from the builder. The lexer emits typed, line-numbered tokens with tab-expanded indentation and always ends with EOF. `test_lexer.py` protects recognition of headings, code fences, list markers, blockquotes, tabs, admonitions, and conditional delimiters, especially indentation in tabs and whitespace before a conditional close.
+Use a nested versioned page that imports a snippet containing an `/oss/` link. After `build_all()`, assert both generated pages import their respective snippet copies and that all snippet routes are absolute, language-prefixed routes. This catches the historical failure where a fixed relative snippet link broke for a nested consumer.
 
-`test_parser.py` exercises lexer-to-AST-to-Mintlify conversion. Keep end-to-end `to_mint()` examples for syntax conversions such as admonitions to accordions, tab blocks, list markers, and preserved code/HTML. Keep structural parser assertions for conditional-block content and source ranges. Malformed structural tokens in nested contexts are expected to raise `ParseError` with source-line context; test the error rather than allowing a hang or silently accepting an orphaned close or fence.
+Full builds copy shared files before `_copy_npm_snippets()`. The npm overlay is therefore the last writer: package `PatternEmbed.jsx` and `ExampleEmbed.jsx` replace corresponding `build/snippets/` files, and `ChatLangChainEmbed.js` is written at the build root. A missing package directory or mapped package file is a warning, not a build failure. Test changed overlay precedence only with `build_all()` and a controlled package layout.
 
-The `pipeline` CLI selects synchronous or coroutine handlers and propagates integer return values as process status. Its `build` subcommand calls `build_command()`, which returns 1 when `src/` is absent and otherwise runs `DocumentationBuilder.build_all()` and returns 0. Test a CLI or command change at this dispatch/exit boundary separately from builder routing; a parser-level migration test does not validate a generated site.
+## Lifecycle, safety, and the right validation level
 
-## Watcher seams and limits
+`build_all()` deletes and recreates `build/`, then builds ordinary OSS language passes, unversioned Deep Agents Code and OpenWiki, ordinary LangSmith, Managed Deep Agents variants, shared files, and finally the npm overlay. `build_file()` routes one existing file and raises `AssertionError` when it is missing. `build_files()` delegates a singleton to `build_file()`; multiple paths use a progress bar disabled in CI. The command wrapper returns 1 before construction if the source directory is absent, otherwise creates the build directory, invokes `build_all()`, and returns 0.
 
-`DocsFileHandler` ignores backup names ending in `~`, `.bak`, or `.orig`, and hidden temporary names ending in `.tmp`, `.temp`, or `.swp`. For supported extensions, modification events enqueue paths through the event loop; creation delegates to the same handling. `test_watcher.py` currently focuses on this pure filter, using a fresh event loop and no real observer.
+Source collection is a security invariant: `_safe_source_files()` rejects every symlink, including one to a regular file, and rejects a resolved path outside its requested root. A unit test should make an external target and a symlink under an eligible directory, then assert collection and output exclude it.
 
-```mermaid
-flowchart TD
-    Event["Supported source event"] --> Queue["Async queue"]
-    Queue --> Pending["Deduplicate paths"]
-    Pending --> Delay["Wait 0.2 seconds"]
-    Delay --> Count{"One file"}
-    Count -->|"yes"| One["One worker build"]
-    Count -->|"no"| Batch["At most four workers"]
-    One --> Touch["Touch routed artifacts"]
-    Batch --> Touch
-```
+| Question | Required evidence |
+| --- | --- |
+| Did routing, branch selection, rewrite order, copying, rejection, or an exception path behave as intended for a small input? | **Unit test** using `file_system()` and `test_builder.py`. |
+| Does a clean generated tree have working internal links, anchors, and redirect destinations? | **Real Mintlify build/check**: run `make broken-links-with-anchors`. It depends on a fresh build, runs Mint from `build/`, checks anchors and redirects, filters known standalone-snippet reports, and fails on remaining reports. |
+| Does Mintlify render, host redirects, and client navigation correctly in the actual published environment? | **Deployment review**. Inspect the deployed site; neither an isolated builder test nor the local Mint check proves this. |
 
-This is the incremental preview flow after a supported create or modification event.
-
-`FileWatcher` cancels and reschedules its debounce task, rebuilds pending files in workers, then touches expected outputs for hot reload. Test that seam with a controlled queue and mocked build/touch work rather than wall-clock timing or a live watchdog observer. The incremental path has known routing gaps: deletion removes only the source-relative build path rather than every language-derived path, and LangSmith touch routing is unversioned, so Managed Deep Agents variants are not reliably removed or touched. A full build clears stale derived output and is the recovery path.
-
-## Rendered-site check and change checklist
-
-Run the focused module first. Add a generated-site check when changing `docs.json`, redirects, cross-family links, route classification, snippets/overlays, anchors, or any renderer-facing output:
+For a routing or output-graph change, first run the focused unit suite, then run:
 
 ```bash
 make broken-links-with-anchors
 ```
 
-This target first rebuilds, runs Mint from `build/`, checks anchors and redirects, filters known standalone-snippet reports, and fails on remaining broken-link entries. It validates the generated tree—not deployment behavior—and the filtering does not replace a focused consumer fixture for language-specific snippet imports.
-
-1. Choose the smallest fixture or mocked boundary that proves the local contract.
-2. Assert expected artifacts, forbidden sibling routes, and transformed final content for each relevant target language.
-3. Use `build_all()` for full-lifecycle behavior and `build_file()` for a focused routing regression.
-4. Keep autolink, UTM, lexer, parser, and watcher tests syntax-specific and offline.
-5. Do not treat mocked workers, temporary filesystems, or Mint's local check as proof of deployed rendering.
-6. Follow a change that alters the output graph with `make broken-links-with-anchors`.
+A local Mint check validates the generated tree, not deployment behavior. In particular, redirects in `docs.json` must point at emitted artifacts and be checked by Mint, while final hosting behavior still needs deployment review.

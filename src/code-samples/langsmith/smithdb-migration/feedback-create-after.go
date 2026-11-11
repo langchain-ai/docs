@@ -4,6 +4,9 @@ package main
 
 import (
 	"context"
+	// :remove-start:
+	"time"
+	// :remove-end:
 
 	"github.com/langchain-ai/langsmith-go"
 	"github.com/langchain-ai/langsmith-go/shared"
@@ -27,14 +30,15 @@ if err != nil {
 	panic(err.Error())
 }
 sessionID = sessions.Items[0].ID
-found, err := client.Runs.Query(ctx, langsmith.RunQueryParams{
-	Session: langsmith.F([]string{sessionID}),
-	Limit:   langsmith.F(int64(1)),
+found, err := client.Runs.QueryV2(ctx, langsmith.RunQueryV2Params{
+	ProjectIDs:   langsmith.F([]string{sessionID}),
+	MinStartTime: langsmith.F(time.Now().UTC().AddDate(0, 0, -30)),
+	PageSize:     langsmith.F(int64(1)),
 })
 if err != nil {
 	panic(err.Error())
 }
-runID = found.Runs[0].ID
+runID = found.Items[0].ID
 // :remove-end:
 _, err = client.Feedback.New(ctx, langsmith.FeedbackNewParams{
 	FeedbackCreateSchema: langsmith.FeedbackCreateSchemaParam{

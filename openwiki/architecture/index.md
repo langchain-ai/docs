@@ -1,4 +1,4 @@
 # Files
 
-- [Documentation Build System](build-system.md) - How the Python pipeline turns authored source files into the disposable Mintlify build tree, including routing, preprocessing, local development, and validation.
-- [Source Directory Map](source-map.md) - Maps authored documentation families to emitted routes and separates builder output from explicit Mintlify navigation, redirects, generated API reference, and product taxonomy. Use it to find the correct source of truth before changing a route, menu item, redirect, or reference surface.
+- [Build and Preprocessing Architecture](build-system.md) - How the pipeline CLI converts authored Markdown, MDX, and notebooks, preprocesses links and conditionals, and materializes language-aware Mintlify output. Covers full builds, incremental development, migration boundaries, validation, failures, and safe extension points.
+- [Repository Source Map](source-map.md) - Maps durable ownership boundaries for authored documentation, navigation, build output, generated content, automation, tests, agent skills, and external reference services. Use it to select the source of truth and regenerate derived artifacts rather than editing them.

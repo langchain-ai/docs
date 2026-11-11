@@ -1,6 +1,7 @@
 # Files
 
-- [Adding and Maintaining Documentation Pages](adding-pages.md) - Safely add, move, retire, or regenerate documentation pages by selecting the source owner, maintaining navigation and redirects, and validating emitted routes.
-- [Agent Authoring Skills](agent-skills.md) - Use the repository's canonical task-specific skill library, keep global rules in AGENTS.md, and validate or distribute skills safely across supported agent environments.
-- [CLI Tools and Make Targets](cli-tools.md) - Operational reference for the documentation pipeline CLI, the separately installed Mintlify CLI, Make targets, validation, runnable examples, snippet generation, and trace-link refreshes.
-- [Cross-References and Links](cross-references.md) - Safely author, move, redirect, and validate documentation links. Covers scoped API autolinks, route-aware link moves, and the separate source and rendered-site validation gates.
+- [Adding and Moving Documentation Pages](adding-pages.md) - Safely add, move, rename, or retire documentation pages by selecting the owning source family, declaring emitted routes in navigation, preserving old URLs, and validating generated output.
+- [Agent Skills and Review Boundaries](agent-skills.md) - Explains how repository skills are discovered, how the always-on agent contract differs from task-specific procedures, and how documentation review remains bounded by trusted instructions and human approval.
+- [Developer CLI and Make Targets](cli-tools.md) - Practical local entrypoints for installing dependencies, developing and building the documentation site, validating generated output, linting, testing, and maintaining runnable samples. Choose commands by their source, generated-site, or remote-service boundary.
+- [Cross-References and Link Resolution](cross-references.md) - Author and maintain scoped API cross-references, validate them against local maps, and distinguish source resolution from generated-site route and anchor checks.
+- [Validate Package Version Claims](version-claims.md) - Verify that package versions named in authored documentation exist on PyPI or npm. Covers claim discovery, ecosystem resolution, failure semantics, ignore exceptions, focused use, and the checker’s deliberate limits.

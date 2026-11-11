@@ -2,7 +2,7 @@
 
 🦜 **Welcome!** This repository contains the documentation build pipeline for LangChain projects.
 
-* 🏠 [`docs.langchain.com`](https://docs.langchain.com) is our docs home, centralizing LangChain, LangGraph, LangSmith, and LangChain Labs (Deep Agents, Open SWE, Open Agent Platform). This site is hosted on [Mintlify](https://mintlify.com).
+* 🏠 [`docs.langchain.com`](https://docs.langchain.com) is our docs home, centralizing documentation for LangChain, LangGraph, LangSmith, and LangChain Labs (Deep Agents, Open SWE, Open Agent Platform). This site is hosted on [Mintlify](https://mintlify.com).
 * 🛠️ [`reference.langchain.com`](https://reference.langchain.com/python/) hosts generated API reference for LangChain, LangGraph, LangSmith, and integration packages. That site is **not** built from this repository (no reference build scripts or output live here).
   * [`Python reference`](https://reference.langchain.com/python/)
   * [`JavaScript/TypeScript reference`](https://reference.langchain.com/javascript/)

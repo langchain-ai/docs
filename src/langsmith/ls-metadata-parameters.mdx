@@ -542,80 +542,78 @@ Once you've added `ls_` metadata parameters to your traces, you can use them to 
 
 ### Use the API
 
-Use the [`Client`](https://docs.smith.langchain.com/reference/python/client/langsmith.client.Client) class with the [`list_runs()`](https://docs.smith.langchain.com/reference/python/client/langsmith.client.Client#langsmith.client.Client.list_runs) method (Python) or [`listRuns()`](https://docs.smith.langchain.com/reference/js/classes/client.Client#listruns) method (TypeScript) to query traces based on metadata values. The [filter syntax](/langsmith/trace-query-syntax) supports equality checks, comparisons, and logical operators.
+In an agent-based workspace, replace `my-app` below with the [environment's `tracer_session_name`](/langsmith/create-an-agent#use-an-environment-project).
+
+Use the [`Client`](https://reference.langchain.com/python/langsmith/client/Client) class with the `client.runs.query()` method to query traces based on metadata values. It takes a project ID and looks back 1 day unless you pass `min_start_time`. The [filter syntax](/langsmith/trace-query-syntax) supports equality checks, comparisons, and logical operators. For more examples, see [Query traces using the SDK](/langsmith/export-traces).
 
 <CodeGroup>
 
 ```python Python
+import asyncio
+from datetime import datetime, timedelta, timezone
+
 from langsmith import Client
 
-client = Client()
 
-# Filter runs by provider
-runs = client.list_runs(
-    project_name="my-app",
-    filter='metadata_key = "ls_provider" AND metadata_value = "openai"'
-)
+async def main():
+    client = Client()
+    project_id = str(client.read_project(project_name="my-app").id)
+    since = datetime.now(timezone.utc) - timedelta(days=7)
 
-# Filter by specific model
-runs = client.list_runs(
-    project_name="my-app",
-    filter='metadata_key = "ls_model_name" AND metadata_value = "gpt-5.5"'
-)
+    async def query(filter: str):
+        return [
+            run
+            async for run in client.runs.query(
+                project_ids=[project_id], min_start_time=since, filter=filter
+            )
+        ]
 
-# Filter root runs only (top-level traces)
-runs = client.list_runs(
-    project_name="my-app",
-    filter='metadata_key = "ls_run_depth" AND metadata_value = 0'
-)
+    # Filter runs by provider
+    runs = await query('and(eq(metadata_key, "ls_provider"), eq(metadata_value, "openai"))')
 
-# Filter by temperature threshold
-runs = client.list_runs(
-    project_name="my-app",
-    filter='metadata_key = "ls_temperature" AND metadata_value > 0.5'
-)
+    # Filter by specific model
+    runs = await query('and(eq(metadata_key, "ls_model_name"), eq(metadata_value, "gpt-5.5"))')
+
+    # Filter root runs only (top-level traces)
+    runs = await query('and(eq(metadata_key, "ls_run_depth"), eq(metadata_value, 0))')
+
+    # Filter by temperature threshold
+    runs = await query('and(eq(metadata_key, "ls_temperature"), gt(metadata_value, 0.5))')
+
+
+asyncio.run(main())
 ```
 
 ```typescript TypeScript
 import { Client } from "langsmith";
 
 const client = new Client();
+const projectId = (await client.readProject({ projectName: "my-app" })).id;
+const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+async function query(filter: string) {
+  const runs = [];
+  for await (const run of client.runs.query({
+    project_ids: [projectId],
+    min_start_time: since,
+    filter,
+  })) {
+    runs.push(run);
+  }
+  return runs;
+}
 
 // Filter runs by provider
-const runsByProvider: any[] = [];
-for await (const run of client.listRuns({
-  projectName: "my-app",
-  filter: 'metadata_key = "ls_provider" AND metadata_value = "openai"'
-})) {
-  runsByProvider.push(run);
-}
+const runsByProvider = await query('and(eq(metadata_key, "ls_provider"), eq(metadata_value, "openai"))');
 
 // Filter by specific model
-const runsByModel: any[] = [];
-for await (const run of client.listRuns({
-  projectName: "my-app",
-  filter: 'metadata_key = "ls_model_name" AND metadata_value = "gpt-5.5"'
-})) {
-  runsByModel.push(run);
-}
+const runsByModel = await query('and(eq(metadata_key, "ls_model_name"), eq(metadata_value, "gpt-5.5"))');
 
 // Filter root runs only (top-level traces)
-const rootRuns: any[] = [];
-for await (const run of client.listRuns({
-  projectName: "my-app",
-  filter: 'metadata_key = "ls_run_depth" AND metadata_value = 0'
-})) {
-  rootRuns.push(run);
-}
+const rootRuns = await query('and(eq(metadata_key, "ls_run_depth"), eq(metadata_value, 0))');
 
 // Filter by temperature threshold
-const highTempRuns: any[] = [];
-for await (const run of client.listRuns({
-  projectName: "my-app",
-  filter: 'metadata_key = "ls_temperature" AND metadata_value > 0.5'
-})) {
-  highTempRuns.push(run);
-}
+const highTempRuns = await query('and(eq(metadata_key, "ls_temperature"), gt(metadata_value, 0.5))');
 ```
 
 </CodeGroup>

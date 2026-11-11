@@ -7,9 +7,9 @@ description: Write or revise documentation prose so it reads like the rest of th
 
 `AGENTS.md` holds the rules a linter can check: no contractions, no first
 person, no future tense, sentence-case headings, Oxford commas, spacing around
-dashes. Vale enforces most of them and `make lint_prose` is the gate, though
-Vale does not scan inside JSX components such as `<Note>` and `<Tip>`, so a
-clean run there proves nothing. This skill covers what a linter cannot check:
+dashes. `make lint_prose` is the gate, but it fails only on error-level Vale
+rules. Contractions, first person, future tense, and filler pass it, so a clean
+run does not prove the page follows them. This skill covers what a linter cannot check:
 rhythm, density, and the shape of a sentence that carries information.
 
 The targets below are measured from this repository's own pages, not invented.
@@ -119,7 +119,9 @@ Read the draft once looking only for these:
   condition, its actor, or its exact value reads cleanly and says something
   else. Restore the fact and split the sentence.
 - **A first mention with no link**, and repeat mentions that are linked again.
-- **A claim you did not verify.** Check it against the source, or cut it.
+- **A claim you did not verify.** Check it against the product source with the
+  `verify-against-source` skill, or cut it. Another docs page is not a source.
+  Name every claim you could not confirm in the PR body.
 - **A fact that disagrees with a related page.** Grep `src/` for the feature and
   read the pages that cover it from another angle, such as a CLI reference or a
   permissions table. The `docs-edit` skill covers what to look for.

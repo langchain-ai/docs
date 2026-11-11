@@ -1,4 +1,4 @@
 # Files
 
-- [Documentation Preprocessing](preprocessing.md) - Build-time transformations that turn authored Markdown and MDX into language-specific documentation artifacts. Covers scoped cross-references, CTA attribution, conditional content, output-time route rewrites, and strict cross-reference validation.
-- [Language Versions and Route Variants](versioning.md) - Explains how source ownership produces Python and JavaScript documentation routes, including unversioned exceptions and Managed Deep Agents. Covers conditional selection, scoped cross-references, link rewriting, navigation, redirects, and route-validation boundaries.
+- [Markdown Preprocessing](preprocessing.md) - Build-time Markdown and MDX transformations for scoped API references, LangSmith CTA attribution, validated language branches, and route-aware output. Documents the ordering, fence failure semantics, and strict source cross-reference validation that protect generated documentation.
+- [Content Versioning and Navigation Model](versioning.md) - Explains how source ownership, docs.json navigation, and the documentation builder map authored files to public language routes. Covers lifecycle menus, redirects, unversioned exceptions, preprocessing, and safe verification.

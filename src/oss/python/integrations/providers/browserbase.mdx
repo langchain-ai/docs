@@ -3,218 +3,90 @@ title: "Browserbase integrations"
 description: "Integrate with Browserbase using LangChain Python."
 ---
 
+[Browserbase](https://www.browserbase.com) runs cloud browsers for agents, with [session recordings](https://docs.browserbase.com/platform/browser/observability/observability) and a [live view](https://docs.browserbase.com/platform/browser/observability/session-live-view) for debugging. The same API key covers [Search](https://docs.browserbase.com/platform/search/overview) and [Fetch](https://docs.browserbase.com/platform/fetch/overview), which find and read pages without starting a browser session.
 
-[Browserbase](https://browserbase.com) is the complete platform to run agents that use the web like humans.
-
-Power your AI data retrievals with:
-- [Serverless Infrastructure](https://docs.browserbase.com/under-the-hood) providing reliable browsers to extract data from complex UIs
-- [Stealth Mode](https://docs.browserbase.com/features/stealth-mode) with included fingerprinting tactics and automatic captcha solving
-- [Session Debugger](https://docs.browserbase.com/features/sessions) to inspect your Browser Session with networks timeline and logs
-- [Live Debug](https://docs.browserbase.com/features/session-live-view) to quickly debug your automation
+This page covers using Browserbase with [Deep Agents](/oss/deepagents/overview): a Stagehand-driven cloud browser, plus Search and Fetch as agent tools.
 
 ## Installation and setup
 
-- Get an API key from [browserbase.com](https://browserbase.com) and set it in the `BROWSERBASE_API_KEY` environment variable.
-- Install the [Browserbase SDK](https://github.com/browserbase/python-sdk):
+Get an API key from [Browserbase](https://www.browserbase.com) and set it as an environment variable:
 
 ```bash
-pip install browserbase
+export BROWSERBASE_API_KEY="your-browserbase-api-key"
 ```
 
-## Deep Agents integration
+Install the [Browserbase Python SDK](https://github.com/browserbase/sdk-python):
 
-[Deep Agents](/oss/deepagents/overview) work well with Browserbase by exposing browser capabilities as Python tools rather than routing through the CLI. The integration pattern gives the main planner cheap, stateless tools for search and page retrieval, while delegating expensive rendered and interactive browser work to a dedicated `browser-specialist` subagent.
+<CodeGroup>
+```bash pip
+pip install "browserbase>=1.21.0"
+```
 
-### Install
+```bash uv
+uv add "browserbase>=1.21.0"
+```
+</CodeGroup>
+
+## Deep Agents
+
+A [deep agent](/oss/deepagents/overview) can use Browserbase in two ways: a cloud browser that it drives through Stagehand tools, and Search and Fetch tools for pages that do not need a browser. For when to give an agent a browser, see [Browser use](/oss/deepagents/browser-use).
+
+### Browser tools with Stagehand
+
+The [Stagehand integration](/oss/integrations/tools/stagehand) adds `run`, `snapshot`, and `screenshot` through native Python middleware. Pass a configured Stagehand client to `StagehandMiddleware`, then include it in your agent's `middleware` list. No MCP server or custom browser system prompt is needed.
+
+Your application owns the browser and can keep it open across runs to reuse tabs and logins. For installation, a complete agent, and cleanup, see [Use with a deep agent](/oss/integrations/tools/stagehand#use-with-a-deep-agent). For session isolation, see [Choose a browser scope](/oss/deepagents/browser-use#choose-a-browser-scope).
+
+### Search and fetch tools
+
+Expose Search and Fetch as agent tools. Those APIs find and read pages without starting a browser session. Fetch does not execute JavaScript.
+
+Install the agent packages and set the model-provider credential before running this example:
+
+<CodeGroup>
+```bash pip
+pip install "browserbase>=1.21.0" deepagents langchain-openai
+```
+
+```bash uv
+uv add "browserbase>=1.21.0" deepagents langchain-openai
+```
+</CodeGroup>
 
 ```bash
-pip install deepagents browserbase stagehand langchain-openai python-dotenv
+export OPENAI_API_KEY="your-openai-api-key"
 ```
 
-### Architecture
-
-The recommended pattern uses four tools:
-
-| Tool | Description | When to use |
-|------|-------------|-------------|
-| `browserbase_search` | Web search via Browserbase Search API | Discovery — always try this first |
-| `browserbase_fetch` | Headless page retrieval via Browserbase Fetch API | Static pages, quick reads, no JS needed |
-| `browserbase_rendered_extract` | Full browser session via Stagehand | JS-heavy or rendered pages (read-only) |
-| `browserbase_interactive_task` | Stagehand agent for multi-step browser tasks | Clicks, form fills, login flows |
-
-The cheap tools (`search`, `fetch`) live on the main planner. The expensive browser tools live on the `browser-specialist` subagent, isolating noisy session output from the main thread.
-
-### Environment variables
-
-```bash
-export BROWSERBASE_API_KEY="bb_..."
-
-# Optional: model overrides
-export DEEPAGENT_MODEL="gpt-5.5"
-export DEEPAGENT_BASE_URL="https://<your-openai-compatible-gateway>"
-export STAGEHAND_MODEL="google/gemini-3-flash-preview"
-export STAGEHAND_AGENT_MODEL="anthropic/claude-sonnet-4-6"
-```
-
-### Define the tools
+The example uses OpenAI's [GPT-5.5 snapshot](https://developers.openai.com/api/docs/models/gpt-5.5). Omit `provider` on `search.web` to use your project's default search provider:
 
 ```python
-import asyncio
 import os
+
 from browserbase import Browserbase
-from bs4 import BeautifulSoup
-from langchain.tools import tool
-from stagehand import AsyncStagehand
-
-@tool
-def browserbase_search(query: str, num_results: int = 5) -> str:
-    """Search the web with Browserbase. Use this first for discovery before opening pages."""
-    bb = Browserbase(api_key=os.environ["BROWSERBASE_API_KEY"])
-    response = bb.search.web(query=query, num_results=max(1, min(num_results, 10)))
-    results = [
-        {"title": r.title, "url": r.url}
-        for r in getattr(response, "results", [])
-    ]
-    return str({"query": query, "results": results})
-
-
-@tool
-def browserbase_fetch(url: str, use_proxy: bool = False, max_chars: int = 12000) -> str:
-    """Fetch page content without a browser session. Best for static pages and quick reads."""
-    bb = Browserbase(api_key=os.environ["BROWSERBASE_API_KEY"])
-    response = bb.fetch_api.create(url=url, proxies=use_proxy)
-    content = str(getattr(response, "content", ""))
-    soup = BeautifulSoup(content, "html.parser")
-    for tag in soup(["script", "style"]):
-        tag.decompose()
-    text = (soup.body or soup).get_text("\n", strip=True)[:max_chars]
-    return str({"url": url, "status_code": response.status_code, "text": text})
-
-
-@tool
-def browserbase_rendered_extract(start_url: str, instruction: str) -> str:
-    """Open a full Browserbase browser session and extract rendered content with Stagehand."""
-    return asyncio.run(_rendered_extract(start_url, instruction))
-
-
-@tool
-def browserbase_interactive_task(start_url: str, task: str) -> str:
-    """Open a Browserbase-hosted Stagehand session and execute a multi-step browser task."""
-    return asyncio.run(_interactive_task(start_url, task))
-
-
-async def _rendered_extract(start_url: str, instruction: str) -> str:
-    client = AsyncStagehand(browserbase_api_key=os.environ["BROWSERBASE_API_KEY"])
-    resp = await client.sessions.start(model_name=os.getenv("STAGEHAND_MODEL", "google/gemini-3-flash-preview"))
-    session_id = resp.data.session_id
-    try:
-        await client.sessions.navigate(id=session_id, url=start_url, frame_id="")
-        result = await client.sessions.extract(id=session_id, instruction=instruction)
-        return str({"session_id": session_id, "result": getattr(getattr(result, "data", None), "result", None)})
-    finally:
-        await client.sessions.end(id=session_id)
-
-
-async def _interactive_task(start_url: str, task: str) -> str:
-    model = os.getenv("STAGEHAND_AGENT_MODEL", "anthropic/claude-sonnet-4-6")
-    client = AsyncStagehand(browserbase_api_key=os.environ["BROWSERBASE_API_KEY"])
-    resp = await client.sessions.start(model_name=model)
-    session_id = resp.data.session_id
-    try:
-        await client.sessions.navigate(id=session_id, url=start_url, frame_id="")
-        result = await client.sessions.execute(
-            id=session_id,
-            execute_options={"instruction": task, "max_steps": 20},
-            agent_config={"model": model, "instructions": "Execute the browser task precisely and stop when done."},
-            timeout=300.0,
-        )
-        return str(result)
-    finally:
-        await client.sessions.end(id=session_id)
-```
-
-### Build the agent
-
-```python
-import uuid
 from deepagents import create_deep_agent
-from langgraph.checkpoint.memory import MemorySaver
-from langchain_openai import ChatOpenAI
+from langchain.tools import tool
 
-BROWSER_SUBAGENT = {
-    "name": "browser-specialist",
-    "description": "Handles JS-heavy browsing, rendered extraction, and interactive browser tasks through Browserbase.",
-    "system_prompt": (
-        "You are a Browserbase browsing specialist. "
-        "Use browserbase_rendered_extract for read-only work on rendered pages. "
-        "Use browserbase_interactive_task only for stateful actions such as clicking, typing, or submitting forms. "
-        "Return concise summaries with the relevant page URL and whether the task succeeded."
-    ),
-    "tools": [browserbase_rendered_extract, browserbase_interactive_task],
-}
+bb = Browserbase(api_key=os.environ["BROWSERBASE_API_KEY"])
+
+
+@tool
+def web_search(query: str) -> str:
+    """Search the web and return result titles and URLs."""
+    response = bb.search.web(query=query, num_results=5)
+    return "\n".join(f"{result.title}: {result.url}" for result in response.results)
+
+
+@tool
+def fetch_page(url: str) -> str:
+    """Fetch a page as markdown without opening a browser."""
+    return bb.fetch_api.create(url=url, format="markdown").content
+
 
 agent = create_deep_agent(
-    model=ChatOpenAI(model="gpt-5.5", api_key=os.environ["OPENAI_API_KEY"]),
-    tools=[browserbase_search, browserbase_fetch],
-    subagents=[BROWSER_SUBAGENT],
-    system_prompt=(
-        "You are a research-oriented Deep Agent with Browserbase tools. "
-        "Start with browserbase_search for discovery. "
-        "Prefer browserbase_fetch for quick reads of static pages. "
-        "Delegate JS-heavy or interactive work to the browser-specialist subagent."
-    ),
-    # Gate interactive browser actions behind human approval
-    interrupt_on={
-        "browserbase_interactive_task": {
-            "allowed_decisions": ["approve", "edit", "reject"]
-        }
-    },
-    checkpointer=MemorySaver(),
+    model="openai:gpt-5.5-2026-04-23",
+    tools=[web_search, fetch_page],
+    system_prompt="Search to find pages, then fetch the pages you need to read.",
 )
 ```
 
-### Run with human-in-the-loop approval
-
-`interrupt_on` pauses execution before any `browserbase_interactive_task` call so you can review the proposed action before the agent commits it.
-
-```python
-from langgraph.types import Command
-
-config = {"configurable": {"thread_id": str(uuid.uuid4())}}
-result = agent.invoke(
-    {"messages": [{"role": "user", "content": "Research the Browserbase Fetch API and explain when to escalate to a full browser session."}]},
-    config=config,
-    version="v2",
-)
-
-# Resume after each interrupt (approve / edit / reject)
-while result.interrupts:
-    interrupt_value = result.interrupts[0].value
-    for action in interrupt_value["action_requests"]:
-        print(f"Pending: {action['name']}\nArgs: {action['args']}")
-    decision = input("Decision [approve/edit/reject]: ").strip().lower()
-    result = agent.invoke(
-        Command(resume={"decisions": [{"type": decision}]}),
-        config=config,
-        version="v2",
-    )
-```
-
-### Decision tree: which tool to use
-
-```
-User query
-  └─ Is a specific URL already known?
-       ├─ No  → browserbase_search (discover URLs first)
-       └─ Yes ↓
-            Is the page JavaScript-rendered?
-              ├─ No  → browserbase_fetch (fast, stateless)
-              └─ Yes ↓
-                   Does the task require interaction (click / login / form)?
-                     ├─ No  → browserbase_rendered_extract (read-only full browser)
-                     └─ Yes → browserbase_interactive_task (Stagehand agent, triggers interrupt_on)
-```
-
-### Full example
-
-See the complete runnable example in the [deepagents repository](https://github.com/browserbase/integrations/tree/main/examples/integrations/langchain/deepagents-browserbase).
+For a complete example that combines Search, Fetch, and Stagehand, see Browserbase's [Deep Agents guide](https://docs.browserbase.com/integrations/langchain/deepagents).

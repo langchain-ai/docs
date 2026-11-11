@@ -26,7 +26,7 @@ docs/
 │   ├── index.mdx               # Home page
 │   ├── style.css               # Custom CSS
 │   ├── langsmith/              # LangSmith product docs
-│   │   └── fleet/              #   Fleet (nav label: "No-code agents")
+│   │   └── fleet/              #   Fleet (nav: "No-code agents" > Fleet tab)
 │   ├── oss/                    # Open source docs (LangChain, LangGraph, Deep Agents, OpenWiki)
 │   ├── snippets/               # Reusable MDX snippets
 │   ├── images/                 # Documentation images
@@ -64,6 +64,7 @@ description: SEO summary, no markdown allowed (no links, backticks, formatting)
 
 ## Syntax
 
-- Language-specific content: `:::python` or `:::js` fences (generates separate Python and TypeScript pages)
+- Language-specific content: `:::python` or `:::js` fences (every shared `src/oss/` page builds both languages; a page listed in only one language nav builds only that language)
+- Components: only Mintlify built-ins (<https://mintlify.com/docs/components>) or tags imported on the page; anything else renders as nothing (`make check-mdx`)
 - Code highlighting: `# [!code highlight]`, `# [!code ++]`, `# [!code --]`
 - API reference links: `@[ClassName]` for the first mention of SDK classes or methods

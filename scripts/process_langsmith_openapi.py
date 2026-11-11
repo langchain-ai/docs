@@ -80,6 +80,7 @@ HIDDEN_TAGS: set[str] = {
 HIDDEN_PATHS: set[str] = {
     "/api/v1/ok",
     "/ok",
+    "/v2/sql/query",
 }
 
 # Path prefixes that should always be hidden regardless of tag.

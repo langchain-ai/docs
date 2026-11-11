@@ -1,4 +1,4 @@
-.PHONY: all dev build export htmltest export-htmltest format lint test install install_vale clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples update-code-sample-traces check-cross-refs skills
+.PHONY: all check-mdx dev build export htmltest export-htmltest format lint test install install_vale clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples update-code-sample-traces check-cross-refs check-legacy-links skills
 
 # Default target
 all: help
@@ -69,7 +69,7 @@ PYTHON_FILES=.
 
 lint:
 	uv run ruff format $(PYTHON_FILES) --diff
-	uv run ruff check $(PYTHON_FILES) --diff
+	uv run ruff check $(PYTHON_FILES)
 	uv run ty check
 	uv run codespell src
 
@@ -191,6 +191,15 @@ broken-links-with-anchors: build
 			echo "✅ No broken links"; \
 		fi
 
+check-legacy-links:
+	@bash scripts/check-legacy-doc-links.sh
+
+# check-mdx: Fails on JSX components that are neither built in nor imported, and on
+# foreign syntax such as :::note. mint exits 0 on warnings with --no-build, so count them.
+check-mdx: build
+	@cd build && mint validate --no-build --disable all --enable unknown-component,foreign-syntax --format json 2>/dev/null | \
+		python3 -c 'import json, sys; r = json.load(sys.stdin); [print("%s:%s: %s" % (d["file"], d["line"], d["message"])) for d in r["diagnostics"]]; sys.exit(bool(r["diagnostics"]))'
+
 check-openapi: build
 	@echo "Checking openapi spec validity"
 	@command -v mint >/dev/null 2>&1 || { echo "Error: mint is not installed. Run 'npm install -g mint@latest'"; exit 1; }
@@ -206,6 +215,9 @@ code-snippets:
 # Run code samples. By default runs all; pass FILES to test specific paths.
 #   make test-code-samples
 #   make test-code-samples FILES="src/code-samples/langchain/return-a-string.py"
+# Set CODE_SAMPLE_PATHS to space-separated directories under src/code-samples/
+# to run one product's samples (CI runs one matrix leg per product this way):
+#   CODE_SAMPLE_PATHS="src/code-samples/langsmith" make test-code-samples
 # Set CODE_SAMPLE_JOBS=N (default 4) to run samples concurrently.
 # Samples that share a LangSmith dataset/fixture (evaluate-rag-*,
 # experiment-runs-query-*) stay serialized within their group.
@@ -258,6 +270,7 @@ help:
 	@echo "  make broken-links       - Check for broken links in built documentation"
 	@echo "  make check-cross-refs   - Check for unresolved @[ref] cross-references"
 	@echo "  make broken-links-with-anchors - Same as above, also validates anchor links"
+	@echo "  make check-mdx          - Check build/ for unknown components and foreign syntax"
 	@echo "  make format             - Format code"
 	@echo "  make lint               - Lint code"
 	@echo "  make lint_md            - Lint markdown files"

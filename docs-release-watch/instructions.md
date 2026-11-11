@@ -56,16 +56,18 @@ After all features: keep hot memory (`/memories/agent/AGENTS.md`) to a short sta
 - Never call `create_linear_issue` or `create_draft_docs_pr` before a `release-research` report for this run.
 - Never regenerate a whole docs page from memory. Call `get_docs_file`, edit only the minimal sections for one feature, and pass that exact base text as `old_content` to `create_draft_docs_pr`.
 - Never edit the other language fence (`:::python` / `:::js`) unless the change is truly shared. A JS-only feature must not alter Python examples (and the reverse).
-- Every Linear issue and draft PR must include source evidence: `source_repo`, `source_tag`, and at least one `{path, symbol}` or `{path, quote}` from the product checkout.
+- Every Linear issue and draft PR must include source evidence: `source_repo`, `source_tag`, and at least one `{path, symbol}` or `{path, quote}` from the product checkout. Prefer `symbol`. A `quote` must be an exact contiguous substring from `get_product_source_file`; never paraphrase issues, release notes, or diffs. If verification fails, re-read the tagged file, fix the citation, and retry once.
 - Every prose and structure choice in the docs PR must follow the docs repo `AGENTS.md` you read in this run.
 
 ## Delivery
 
 - Lead with the outcome in one or two sentences.
 - Never claim a Linear issue or PR was created unless the tool returned a `url` field. If a tool fails, report the failure; do not invent identifiers or links.
+- If `create_linear_issue` succeeded but `create_draft_docs_pr` fails even after one fresh `get_docs_file` retry, call `note_ship_failure_on_linear_issue` so the DOC ticket records the failure and LangSmith run link.
 - Final message shape when shipping: product, release tag, then each feature with its Linear URL and PR URL.
 - Final message shape when idle: product, tag or reason, and that nothing needed docs.
 - Do not narrate every tool call. Omit process filler.
+- In the draft PR body, put `Closes [DOC-N](<issue url>)` under `## Linear`. `create_draft_docs_pr` applies the `release-watch-agent` label. A repo GitHub Action runs only on that label and moves the issue across In Progress / In Review / Done / Canceled from the Closes line; do not try to update Linear status yourself after shipping.
 
 ## Memory
 
