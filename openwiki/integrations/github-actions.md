@@ -1,11 +1,11 @@
 ---
 type: CI automation guide
-title: GitHub Actions and CI Automation
-description: Maps validation, credentialed previews, and scheduled or maintainer-authorized GitHub Actions automation. Explains trust boundaries, review-PR writers, code-sample execution, integration submission, Linear synchronization, and OpenWiki maintenance.
-tags: [github-actions, ci, automation, testing, langsmith]
+title: GitHub Actions Integration
+description: Maps repository validation, reusable workflows, trust boundaries, and scheduled or maintainer-authorized GitHub Actions automation. Explains how credentials, App tokens, generated-file checks, and review pull requests are bounded.
+tags: [github-actions, ci, automation, testing, security]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-11-03T08:13:57.434Z
+    at: 2026-11-09T08:07:38.321Z
 sources:
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
@@ -13,8 +13,12 @@ sources:
     resource: repo://.github/workflows/_lint.yml
   - id: openwiki-source-4d9cccca7700db7220ec055e
     resource: repo://.github/workflows/_test.yml
+  - id: openwiki-source-5e9ca8e4c3cab7d91998bc9e
+    resource: repo://.github/workflows/changelog-weekly.yml
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
+  - id: openwiki-source-e5f6e5898a8adc49a6fc21a1
+    resource: repo://.github/workflows/docs-ai-review.yml
   - id: openwiki-source-1db901655f02af312133801d
     resource: repo://.github/workflows/integration-submission.yml
   - id: openwiki-source-6d4b4e707b8d60b6ccfa3425
@@ -23,7 +27,7 @@ sources:
     resource: repo://.github/workflows/sync-linear-issue-from-pr.yml
   - id: openwiki-source-eab62bc712c4650a5ee3e7d3
     resource: repo://scripts/sync_linear_issue_from_pr.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-03T08:13:57.434Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-09T08:07:38.321Z" }
 ---
 
 ## Authority map
@@ -34,21 +38,26 @@ The local composite action `.github/actions/uv_setup` is the common Python boots
 
 ```mermaid
 flowchart TD
-  Change["Pull request or main push"] --> CI["Read-only CI gates"]
-  Internal["Same-repository sample pull request"] --> Samples["Isolated sample matrix"]
-  Schedule["Monthly sample schedule"] --> Full["Full sample matrix"]
-  Full --> Trace["Standing trace review PR"]
-  Full --> Observe["Scheduled failure observer"]
-  Observe --> Linear["Product-scoped Linear ticket"]
-  Daily["Daily OpenAPI schedule"] --> ApiPr["Standing OpenAPI review PR"]
-  Weekly["Monday changelog schedule"] --> ChangePr["Dated changelog review PR"]
-  Approved["Maintainer-approved integration issue"] --> Listing["Integration review PR"]
-  Wiki["Daily OpenWiki schedule"] --> WikiPr["OpenWiki review PR"]
-  ReleasePr["Labeled same-repository release-watch PR"] --> LinearSync["Linked Linear state"]
+  Change["Pull request or main push"] --> CI["Reusable tests lint links and read-only checks"]
+  Docs["Docs pull request"] --> Gate["AI review gate"]
+  Gate -->|"same repository and eligible"| Review["Three isolated review passes"]
+  Review --> Sanitize["Credential scan and public-field reduction"]
+  Sanitize --> Post["Review comment or dry-run summary"]
+  Fork["Fork pull request"] -->|"no secrets or AI review"| Skip["Skipped credentialed path"]
+  Maintainer["Maintainer label or manual dispatch"] --> Integration["Integration agent"]
+  Integration -->|"real diff"| App1["GitHub App token"]
+  App1 --> PR1["Integration review PR"]
+  Weekly["Monday changelog schedule"] --> Changelog["Changelog generator"]
+  Changelog -->|"non-dry run"| App2["GitHub App token"]
+  App2 --> PR2["Changelog review PR"]
+  Wiki["Monday OpenWiki schedule"] --> WikiRun["Full-history OpenWiki update"]
+  WikiRun --> App3["GitHub App token"]
+  App3 --> PR3["OpenWiki review PR"]
+  ReleasePr["Labeled same-repository release-watch PR"] --> Linear["Read-only guarded Linear sync"]
   Main["Main push"] --> Publish["prod build handoff"]
 ```
 
-*Read-only validation does not write repository state; write-capable paths produce bounded deployment or review artifacts.*
+*Read-only validation and review analysis do not write repository state; App-token paths create bounded pull requests after generation, while fork paths do not receive credentialed execution.*
 
 ### Credential and fork boundary
 
@@ -59,6 +68,14 @@ Workflow permissions reinforce that distinction: core checks request read access
 ### Pull-request attribution policy
 
 **Check PR AI Attribution** runs on opened, edited, reopened, and synchronized pull requests with no permissions. It rejects the linked `Generated with [Claude Code](` badge and a Claude `Co-Authored-By` trailer using an Anthropic noreply address in the PR description. The failure message directs authors to disclose involvement as a plain sentence instead. This check matters because a squash merge uses the PR description as the commit message and would otherwise carry that badge or trailer into `main` history.
+
+## AI documentation review boundary
+
+`docs-ai-review.yml` is a separate, opt-in review path for authored documentation changes. Pull-request runs cover opened, synchronized, reopened, and ready-for-review events affecting `src/**/*.mdx` or `src/**/*.md`; the repository variable `AI_REVIEW_ENABLED` must be `true`. Manual dispatch accepts a PR number and defaults to a dry run. The gate rejects forks, draft or closed PRs when posting is possible, ordinary bot-authored PRs, the `skip-ai-review` label, and authors listed in the base branch's docs-team entry in `.github/OWNERS`. It uses read-only permissions in the gate and review jobs, and cancels superseded runs for the same PR.
+
+The review job checks out the PR commit but archives the skills, `AGENTS.md`, and review/posting helpers from the base branch. Three passes run concurrently as an unprivileged `aireview` user with only repository reads through the allowlisted `gh-read` helper; model calls go through a local proxy owned by a separate secret-holding user. The agent cannot read the credentials, push, commit, use arbitrary GitHub or network commands, or change the trusted rules. Findings are scanned for credential-shaped values and reduced to public fields before a 30-day artifact is uploaded. The final job, which alone has pull-request and issue write permission, posts the sanitized review or writes it to the run summary for a dry run.
+
+This is intentionally different from `pull_request_target`: untrusted PR metadata is never allowed to replace the base-branch review instructions or gain write-capable secrets. Missing credentials, a failed proxy, or no review pass producing findings fails the workflow; an individual pass may fail while the other passes still produce a reviewable result.
 
 ## Core CI gates
 
@@ -154,7 +171,7 @@ Before force-pushing a same-day branch, the workflow refuses to overwrite a bran
 
 ### OpenWiki maintenance
 
-**OpenWiki Update** runs daily at 08:00 UTC or manually. It checks out full history because `openwiki code --update` needs to diff against the commit it last documented; a shallow clone would make that change summary empty. The job installs OpenWiki with Mermaid and jsdom validation support, runs the update through the configured LLM gateway, and optionally traces its own run to LangSmith.
+**OpenWiki Update** runs Mondays at 08:00 UTC or manually. It checks out full history because `openwiki code --update` needs to diff against the commit it last documented; a shallow clone would make that change summary empty. The job installs OpenWiki with Mermaid and jsdom validation support, runs the update through the configured LLM gateway, and optionally traces its own run to LangSmith.
 
 The workflow creates its `openwiki/update` PR with a GitHub App token, limiting the committed paths to `openwiki`, `AGENTS.md`, and its workflow definition. As with the other App-token writers, this allows pull-request workflows to run; it proposes documentation for review rather than merging it.
 

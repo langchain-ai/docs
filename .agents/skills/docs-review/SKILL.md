@@ -16,15 +16,15 @@ and current branch if that is empty.
 
 Two rules govern this whole skill:
 
-- **Review the diff, not the page.** Prose that was already there is not in
-  scope, however much you would have written it differently.
+- **Review the diff in the context of the page.** Read the whole page, and
+  the sibling pages in its `src/docs.json` group, before judging a change.
+  Report on changed lines, and on existing content the change makes wrong:
+  a sentence it contradicts, a section it now duplicates, a pointer it
+  breaks, or a flow it interrupts. Existing prose the change does not affect
+  is not in scope, however much you would have written it differently.
 - **Skip rules that do not clearly apply.** A short report of real findings is
   the goal. Do not stretch a rule to reach a finding, and do not restructure
   prose that is already fine.
-
-**In CI mode**, read [ci-mode.md](ci-mode.md) first. It replaces Step 1 and the
-Vale run in Step 2, and sets the output format for Step 6. Steps 3 to 5 apply
-unchanged.
 
 ## Step 1. Resolve the target
 
@@ -247,17 +247,6 @@ entry, broken link) versus what is a suggestion.
 
 If nothing turns up, say that plainly. "No findings" is a valid and useful
 result, and is more useful than a manufactured one.
-
-In CI mode, write the findings file that [ci-mode.md](ci-mode.md) describes
-instead of this report. Do not judge whether a fact is true: a default, a
-version floor, an environment variable, or a UI label belongs to
-`verify-against-source`, and sentence length and rhythm belong to
-`docs-team-voice`. Both run alongside this skill. Keep each
-`replacement` to the change the cited rule requires, so it cannot carry an
-unchecked rewrite of a label or value along with it. Map the verdict onto severity: a merge blocker is
-`must_fix`, a missing requirement or cut condition is `major`, and the rest is
-`minor`. A finding from Steps 3 and 4 is `auto` only when it is one of the
-mechanical cases listed there.
 
 ## Running after an authoring skill
 

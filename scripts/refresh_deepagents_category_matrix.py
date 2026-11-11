@@ -102,6 +102,7 @@ INCLUDED_MODELS: frozenset[str] = frozenset({
     "openai:gpt-5.4-pro",
     "openai:gpt-5.5",
     "openai:gpt-5.5-pro",
+    "openai:gpt-6.1-sol",
     "openrouter:anthropic/claude-opus-4.6",
     "openrouter:anthropic/claude-opus-4.7",
     "openrouter:anthropic/claude-opus-4.7-fast",
@@ -118,6 +119,7 @@ INCLUDED_MODELS: frozenset[str] = frozenset({
     "openrouter:openai/gpt-5.4-pro",
     "openrouter:openai/gpt-5.5",
     "openrouter:openai/gpt-5.5-pro",
+    "openrouter:openai/gpt-6.1-sol",
     "openrouter:z-ai/glm-5",
     "openrouter:z-ai/glm-5.1",
 })

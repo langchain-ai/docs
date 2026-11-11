@@ -1,59 +1,54 @@
 ---
 title: Attribute-based access control
 sidebarTitle: Attribute-based access control
+description: Grant or restrict access to LangSmith resources based on resource tags and root run metadata, using access policies that build on role-based access control.
 ---
 
-This reference explains LangSmith's Attribute-Based Access Control (ABAC) system, which enables fine-grained access control based on resource attributes, complementing [RBAC](/langsmith/rbac). For automated user provisioning into roles, see [SCIM](/langsmith/user-management#set-up-scim-for-your-organization).
+Attribute-based access control (ABAC) lets organization administrators grant or restrict access to LangSmith resources based on the resources' attributes.
+
+It builds on [role-based access control (RBAC)](/langsmith/rbac). A role grants a permission across a whole workspace, such as reading every project. An access policy narrows or extends that permission to the resources whose attributes match, such as projects tagged `Environment=Development`.
+
+Access policies can match two kinds of attributes:
+
+- **Resource tags** (`resource_tag_key`): The [resource tags](/langsmith/set-up-resource-tags) on projects, datasets, prompts, and other workspace resources.
+- **Root run metadata** (`root_run_metadata`): The metadata on the root run of each trace. Use it to control which traces a user can read within a project. For details, refer to [Control trace access with root run metadata](#control-trace-access-with-root-run-metadata).
 
 <Note>
-ABAC (Attribute-Based Access Control) is an Enterprise feature for managing fine-grained access control. If you are interested in this feature, [contact our sales team](https://www.langchain.com/contact-sales). Other plans default to using the Admin role for all users.
-</Note>
-
-ABAC complements [Role-Based Access Control (RBAC)](/langsmith/rbac) by adding tag-based conditions to access decisions. While RBAC grants blanket permissions based on a user's role (e.g., "can read all projects"), ABAC lets you restrict or grant access based on resource tags (e.g., "can only read projects tagged with Environment=Development"). Within a project, ABAC can also restrict which traces a user can read based on root run metadata. For details, refer to [Control trace access with root run metadata](#control-trace-access-with-root-run-metadata).
-
-<Note>
-Roles, resource tags, and ABAC policies can be managed via the UI or [API](https://api.smith.langchain.com/docs#/access_policies). Once configured, policies are automatically enforced in both the API and the UI.
+ABAC is available on Enterprise plans. If you are interested in this feature, [contact our sales team](https://www.langchain.com/contact-sales). Other plans default to using the Admin role for all users.
 </Note>
 
 ## Before you begin
 
-* [Set up resource tags](/langsmith/set-up-resource-tags) in your workspace.
-* ABAC supports two values for `attribute_name` in policies: `resource_tag_key`, which evaluates resource tags, and `root_run_metadata`, which evaluates the root run metadata of each trace in a project.
+You must have:
 
-## Enable ABAC for self-hosted deployments
+- **ABAC enabled for your organization**: On LangSmith Cloud, ABAC is part of the Enterprise plan. On a self-hosted deployment, [enable ABAC](#enable-abac-on-a-self-hosted-deployment) first.
+- **Permission to manage policies**: Creating, editing, or deleting a policy requires `organization:access-control:manage`, which [Organization Admins](/langsmith/rbac#organization-admin) and [Organization Operators](/langsmith/rbac#organization-operator) hold.
+- **Resource tags**: For tag-based conditions, [set up resource tags](/langsmith/set-up-resource-tags) in your workspace. Policies that use only root run metadata do not require resource tags.
+- **API credentials**: To manage policies with the API, use a personal access token (PAT) from a user with `organization:access-control:manage`, or an organization-scoped service key with Organization Admin permissions. Send requests to your API URL. For LangSmith Cloud, find the API URL for your region in [Regional storage](/langsmith/cloud#regional-storage). For a self-hosted deployment, use `https://<your-langsmith-domain>/api`.
 
-1. ABAC requires a [self-hosted](/langsmith/self-hosted) LangSmith deployment running Helm chart 0.11.28 or later (application version 0.12.1). Once you've upgraded, use one of the following options to enable ABAC:
+## Enable ABAC on a self-hosted deployment
 
-    - **Enable for a specific organization:** Run the following against your LangSmith PostgreSQL database, replacing `<organization_id>` with the ID copied from the organization settings page in the UI:
+ABAC on a [self-hosted](/langsmith/self-hosted) deployment requires Helm chart 0.11.28 or later (application version 0.12.1). After you upgrade, use one of the following options to enable it:
 
-        ```sql
-        UPDATE organizations SET config = config || '{"can_use_abac": true}' WHERE id = '<organization_id>' AND NOT is_personal;
-        ```
+- **Enable for a specific organization**: Run the following against your LangSmith PostgreSQL database, replacing `<organization_id>` with the ID copied from the organization settings page in the UI:
 
-    - **Enable for all organizations:** Add the following environment variable to `commonEnv` in your `values.yaml`:
-
-        ```yaml
-        DEFAULT_ORG_FEATURE_CAN_USE_ABAC: "true"
-        ```
-
-        <Note>
-        This environment variable has no effect on personal organizations, because [RBAC](/langsmith/rbac) is not enabled for personal organizations.
-        </Note>
-
-1. Set up authentication. To manage access policies via the API, you need a Personal Access Token (PAT) from a user with `organization:access-control:manage`, such as an [Organization Admin](/langsmith/rbac#organization-admin) or [Organization Operator](/langsmith/rbac#organization-operator), or an organization-scoped service key with Organization Admin permissions. Set the following environment variables before running any scripts:
-
-    ```bash
-    export LANGSMITH_API_KEY="your_admin_api_key"
-    # Required for self-hosted or regional SaaS deployments:
-    # export LANGCHAIN_ENDPOINT="https://eu.api.smith.langchain.com"
-    # export LANGCHAIN_ENDPOINT="https://aws.api.smith.langchain.com"
-    # export LANGCHAIN_ENDPOINT="https://apac.api.smith.langchain.com"
-    # export LANGCHAIN_ENDPOINT="https://langsmith.yourdomain.com/api"
+    ```sql
+    UPDATE organizations SET config = config || '{"can_use_abac": true}' WHERE id = '<organization_id>' AND NOT is_personal;
     ```
+
+- **Enable for all organizations**: Add the following environment variable to `commonEnv` in your `values.yaml`:
+
+    ```yaml
+    DEFAULT_ORG_FEATURE_CAN_USE_ABAC: "true"
+    ```
+
+    <Note>
+    This environment variable has no effect on personal organizations because [RBAC](/langsmith/rbac) is not enabled for personal organizations.
+    </Note>
 
 ## Access policy structure
 
-An access policy defines conditions under which access is granted or denied. Here is the structure:
+An access policy is a JSON object that sets an effect, one or more condition groups, and the roles the policy applies to:
 
 ```json
 {
@@ -82,8 +77,8 @@ An access policy defines conditions under which access is granted or denied. Her
 
 The `effect` determines what happens when conditions match:
 
-- **`allow`** - Grant access when conditions match
-- **`deny`** - Block access when conditions match
+- **`allow`**: Grant access when conditions match.
+- **`deny`**: Block access when conditions match.
 
 <Note>
 Deny policies always take precedence. If both an allow and deny policy match, access is denied.
@@ -91,12 +86,13 @@ Deny policies always take precedence. If both an allow and deny policy match, ac
 
 ### Condition groups
 
-The `condition_groups` array contains one or more condition groups. Multiple condition groups are evaluated with **OR logic** - if any group matches, the policy applies.
+The `condition_groups` array contains one or more condition groups. LangSmith evaluates multiple condition groups with **OR logic**. If any group matches, the policy applies.
 
-Each condition group specifies:
-- **`permission`** - The permission this group applies to
-- **`resource_type`** - The resource type to match
-- **`conditions`** - Array of conditions (evaluated with **AND logic** within the group)
+Each condition group has the following fields:
+
+- **`permission`**: The permission this group applies to.
+- **`resource_type`**: The resource type to match.
+- **`conditions`**: An array of conditions, evaluated with **AND logic** within the group.
 
 #### Resource types and permissions
 
@@ -110,21 +106,20 @@ Each condition group specifies:
 | `mcp_server` | `mcp-servers:read`, `mcp-servers:invoke`, `mcp-servers:update`, `mcp-servers:delete`. See [Fleet tool access control](/langsmith/fleet/access-and-oversight#tool-access-control). |
 | `fleet_integration` | `mcp-servers:read`, `mcp-servers:invoke`. See [Fleet tool access control](/langsmith/fleet/access-and-oversight#tool-access-control). |
 
-<Note>
-Runs do not have their own tags. Run permissions (`runs:read`, `runs:read-inputs`, `runs:read-outputs`, `runs:create`, `runs:share`, `runs:delete`) are evaluated against the parent project's tags. For how the input and output permissions affect responses, refer to [Control access to run inputs and outputs](#control-access-to-run-inputs-and-outputs).
-</Note>
+Some resource types are evaluated differently:
 
-<Note>
-Cloning copies examples from a source dataset to a target dataset. The `datasets:clone` permission is checked for both datasets: once using the source dataset’s tags, and once using the target dataset’s tags. To clone successfully, a policy must grant `datasets:clone` access to both datasets.
-</Note>
+- **Runs**: Runs do not have their own tags. Run permissions (`runs:read`, `runs:read-inputs`, `runs:read-outputs`, `runs:create`, `runs:share`, `runs:delete`) are evaluated against the parent project's tags. For how the input and output permissions affect responses, refer to [Control access to run inputs and outputs](#control-access-to-run-inputs-and-outputs).
+- **Agent environments**: In an [agent-based workspace](/langsmith/agent-registry), a tracing project is one [environment](/langsmith/agent-environments) of an agent. A `project` condition group applies to each environment separately rather than to the agent as a whole.
+- **Dataset clones**: Cloning copies examples from a source dataset to a target dataset. LangSmith checks `datasets:clone` twice, once against each dataset's tags. A policy must grant `datasets:clone` on both datasets.
 
 #### Conditions
 
-Each condition in the `conditions` array specifies:
-- **`attribute_name`** - `resource_tag_key` to match resource tags, or `root_run_metadata` to match root run metadata
-- **`attribute_key`** - The tag key or metadata key to match (e.g., `Environment`, `Application`)
-- **`operator`** - The comparison operator
-- **`attribute_value`** - The value to compare against
+Each condition in the `conditions` array has the following fields:
+
+- **`attribute_name`**: `resource_tag_key` to match resource tags, or `root_run_metadata` to match root run metadata.
+- **`attribute_key`**: The tag key or metadata key to match, such as `Environment` or `Application`.
+- **`operator`**: The comparison operator.
+- **`attribute_value`**: The value to compare against.
 
 The operators below apply to `resource_tag_key` conditions. `root_run_metadata` conditions support only `equals`. For their rules, refer to [Control trace access with root run metadata](#control-trace-access-with-root-run-metadata).
 
@@ -164,11 +159,45 @@ Policies can be attached to [workspace roles](/langsmith/rbac#workspace-roles) (
 
 Policies can also be attached to [teams](/langsmith/teams#access-policies). A team's policies apply to its members in the workspaces the team can access.
 
+To provision users into roles automatically from your identity provider, see [SCIM](/langsmith/user-management#set-up-scim-for-your-organization).
+
 ## Managing access policies
 
-Manage access policies in your organization settings or with the LangSmith API. Creating, editing, or deleting a policy requires `organization:access-control:manage`, which [Organization Admins](/langsmith/rbac#organization-admin) and [Organization Operators](/langsmith/rbac#organization-operator) hold. Before creating policies, [set up resource tags](/langsmith/set-up-resource-tags) in your workspace.
+Manage access policies in your organization settings with the visual editor, or with the [LangSmith API](https://api.smith.langchain.com/docs#/access_policies). Both require `organization:access-control:manage`.
 
-Teams do not create policies. They attach existing ones:
+### Create an access policy in the UI
+
+In the visual editor, each **rule** corresponds to a [condition group](#condition-groups).
+
+To create an access policy:
+
+1. Go to **Settings**, and select **Organization**. Then go to **Permissions** > **Access Policies**. In some versions of the settings page, this page is listed as **ABAC** under **Access and Security**.
+2. Under **ABAC**, select the **Policies** tab, and then click **Create Policy**.
+3. Enter a **Name** and, optionally, a **Description**.
+4. Set **Effect** to **Allow** or **Deny**.
+5. Click **Add rule**, and then select a **Resource Type** and **Permission**.
+6. Click **Add condition**, and choose the condition source:
+   - **Resource tag**: Enter a **Tag Key**, operator, and **Tag Value**. [Create the resource tags](/langsmith/set-up-resource-tags) before using them in a policy.
+   - **Root-run metadata**: First select **Project** for **Resource Type** and `runs:read` for **Permission**. Enter a **Metadata Key** and a **Metadata Value**. The operator is fixed to `equals`, and **Metadata Value** is prefilled with `${user.ls_user_id}`, which matches the current user. Replace it with a literal value to match a fixed value instead. For requirements and an example, refer to [Create a root run metadata policy in the UI](#create-a-root-run-metadata-policy-in-the-ui).
+7. Click **Save condition**, add any more conditions, and then click **Add rule** to return to the policy editor. All conditions within a rule must match, and multiple rules use OR logic.
+8. (Optional) Attach the policy to roles. A policy has no effect until you attach it to a role or [team](/langsmith/teams#access-policies). In the dialog under **Roles**, click **Add role**. Select the workspace roles the policy applies to, and click **Add roles**. You can inspect each role's permissions before adding it. You can also attach a policy to roles later.
+9. To finish, click **Create policy**.
+
+<Tip>
+To write the policy as JSON instead, click the **JSON editor** icon (<Icon icon="code" />) beside **UI** in the policy editor. The JSON editor shows the policy built so far in the [access policy structure](#access-policy-structure).
+</Tip>
+
+### Edit or delete an access policy
+
+On the **Policies** tab, use the icons in a policy's **Actions** column. To edit a policy, including attaching or detaching roles, click its edit icon, make your changes, and click **Save changes**. To delete a policy, click its delete icon, enter the policy's name to confirm, and click **Delete**.
+
+<Warning>
+Deleting a policy removes its role and team attachments. Deleting a deny policy may grant access. Deleting an allow policy may remove access.
+</Warning>
+
+### Attach policies to teams
+
+[Teams](/langsmith/teams) do not create policies. They attach existing ones:
 
 - Attaching a policy to a team requires `organization:teams:manage-policies`.
 - A Workspace Admin can attach an existing policy to a team as a [workspace-only policy](/langsmith/teams#add-workspace-only-members-and-policies) in their workspace, with `workspaces:teams:manage-policies`.
@@ -177,23 +206,21 @@ Teams do not create policies. They attach existing ones:
 
 [RBAC](/langsmith/rbac) permissions and ABAC policies are both considered when determining access to resources:
 
-- ABAC **deny** policies override RBAC permissions
-- ABAC **allow** policies can grant access even without RBAC permissions
-- If no ABAC policies match, the system falls back to RBAC
+- ABAC **deny** policies override RBAC permissions.
+- ABAC **allow** policies can grant access even without RBAC permissions.
+- If no ABAC policies match, the system falls back to RBAC.
 
 When a user belongs to [teams](/langsmith/teams), LangSmith evaluates the permissions and policies from the user's role and every team together. A matching deny policy from any source still blocks access.
 
-### Policy evaluation outcomes
-
-**Feature combinations:**
+The access model depends on which features are enabled for the organization:
 
 | RBAC enabled | ABAC enabled | Behavior |
 |--------------|--------------|----------|
 | ✗ | ✗ | All workspace members have Admin-level access |
-| ✓ | ✗ | Standard RBAC - access based on role permissions |
-| ✓ | ✓ | RBAC + ABAC - fine-grained tag-based access control |
+| ✓ | ✗ | Standard RBAC (access based on role permissions) |
+| ✓ | ✓ | RBAC + ABAC (fine-grained, attribute-based access control) |
 
-**When both RBAC and ABAC are enabled:**
+When both RBAC and ABAC are enabled, each request resolves as follows:
 
 | RBAC permits | Allow policy matches | Deny policy matches | Result |
 |--------------|---------------------|---------------------|--------|
@@ -207,7 +234,9 @@ When a user belongs to [teams](/langsmith/teams), LangSmith evaluates the permis
 
 ## Control access to run inputs and outputs
 
-`runs:read` controls whether a user can see a run. `runs:read-inputs` and `runs:read-outputs` control whether they can see its inputs and outputs. Access policies for these permissions use `resource_type: "project"` and are evaluated against each run's parent project, so you can hide inputs, outputs, or both in some projects while leaving other projects in the workspace unchanged. RBAC and ABAC combine for these permissions the same way they do for any other permission. For more details, refer to [How ABAC works with RBAC](#how-abac-works-with-rbac).
+`runs:read` controls whether a user can see a run. `runs:read-inputs` and `runs:read-outputs` control whether the user can see the run's inputs and outputs. Message and trajectory views require both.
+
+Policies for these permissions use `resource_type: "project"` and evaluate the tags of each run's parent project. Use them to hide inputs, outputs, or both in sensitive projects while leaving other projects in the workspace unchanged. RBAC and ABAC combine for these permissions the same way they do for any other permission, as described in [How ABAC works with RBAC](#how-abac-works-with-rbac). For an example, refer to [Hide run inputs and outputs in sensitive projects](#6-hide-run-inputs-and-outputs-in-sensitive-projects).
 
 ## Control trace access with root run metadata
 
@@ -224,6 +253,27 @@ Neither `attribute_key` nor `attribute_value` can contain a double quote or a ba
 A condition group can combine `root_run_metadata` conditions with `resource_tag_key` conditions. The tag conditions select the projects the group applies to, and the metadata conditions select the traces in those projects. All conditions in a group must match.
 
 Conditions evaluate only the root run, so all runs in a trace are visible or hidden together. Set the metadata key and value on the root run before ingestion. Root run metadata is immutable after ingestion, so you cannot add or change it later to make a trace match a policy. For how to add metadata, refer to [Add metadata and tags to traces](/langsmith/add-metadata-tags).
+
+### Create a root run metadata policy in the UI
+
+<Note>
+The **Root-run metadata** option requires the **Project** resource type and the `runs:read` permission. Root run metadata conditions must also be enabled for your organization. This option is not available in the self-hosted UI; on self-hosted installations, create root run metadata policies with the [API](#7-hide-traces-by-root-run-metadata) instead. On cloud, if the option is disabled after you select that resource type and permission, contact your LangChain representative.
+</Note>
+
+The following example creates a deny policy that hides traces whose root run has `source` set to `customer`.
+
+To create the policy:
+
+1. Open the policy editor, as in steps 1 and 2 of [Create an access policy in the UI](#create-an-access-policy-in-the-ui). Enter `Hide Customer Traces` for **Name** and set **Effect** to **Deny**.
+2. Click **Add rule**. Select **Project** for **Resource Type** and `runs:read` for **Permission**.
+3. Click **Add condition** and change the source from **Resource tag** to **Root-run metadata**.
+4. Enter `source` for **Metadata Key**. The operator is fixed to `equals`. Replace the prefilled `${user.ls_user_id}` in **Metadata Value** with `customer`.
+5. Click **Save condition**, then **Add rule**.
+6. Under **Roles**, add the workspace roles that should not see these traces. Click **Create policy**.
+
+This produces the [Hide traces by root run metadata](#7-hide-traces-by-root-run-metadata) example policy. Add resource tag conditions to the same rule to limit it to specific projects.
+
+To [show users only the traces labeled for them](#8-show-users-only-the-traces-labeled-for-them), use **Allow** instead. Set **Metadata Key** to `allowed_ls_user_id` and keep the prefilled `${user.ls_user_id}` for **Metadata Value**. Attach the policy to a role without `runs:read`. If the role has `runs:read`, its RBAC permission still grants access to other traces.
 
 ### How metadata conditions combine with RBAC
 

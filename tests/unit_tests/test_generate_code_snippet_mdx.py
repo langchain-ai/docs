@@ -53,7 +53,7 @@ def test_embeddings_model_is_not_expanded_python() -> None:
     embeddings_call = 'OpenAIEmbeddings(model="text-embedding-3-small")'
     assert expanded.count(embeddings_call) == TAB_COUNT
     # The chat model is the one each tab varies.
-    assert 'create_agent(model="openai:gpt-5.5"' in expanded
+    assert 'create_agent(model="openai:gpt-6.1-sol"' in expanded
     assert 'create_agent(model="google_genai:gemini-3.6-flash"' in expanded
 
 
@@ -65,7 +65,7 @@ def test_embeddings_model_is_not_expanded_typescript() -> None:
     assert expanded is not None
     embeddings_call = 'new OpenAIEmbeddings({ model: "text-embedding-3-small" })'
     assert expanded.count(embeddings_call) == TAB_COUNT
-    assert 'createAgent({ model: "openai:gpt-5.5"' in expanded
+    assert 'createAgent({ model: "openai:gpt-6.1-sol"' in expanded
     # The Google tab routes to @langchain/google, whose provider key is "google".
     # Python has no equivalent key and stays on "google_genai" (see the
     # python test above), so the two tables intentionally differ.
@@ -109,7 +109,7 @@ def test_agent_model_after_multiline_chat_class_is_expanded() -> None:
         "const grader = new ChatOpenAI({\n"
         '  model: "gpt-5.4-mini",\n'
         "});\n"
-        'const agent = createAgent({ model: "openai:gpt-5.5", tools });\n'
+        'const agent = createAgent({ model: "openai:gpt-6.1-sol", tools });\n'
     )
     expanded, _ = maybe_expand_deepagents_quickstart_codegroup(
         sample, language="ts", fence_lang="typescript"
