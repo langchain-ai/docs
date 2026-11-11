@@ -309,14 +309,14 @@ Every sandbox also has the common CA-bundle environment variables pointed at the
 
 ## Add public attribution headers
 
-An attribution rule adds public metadata to every outbound HTTP(S) request handled by the proxy. Use it for labels such as `X-Agent-ID` or `X-Cost-Center`, alongside destination-specific credentials.
+An attribution rule adds public metadata, such as `X-Agent-ID` or `X-Cost-Center`, to every outbound HTTP(S) request the proxy handles. Use it when your egress gateway or a destination needs to identify which agent sent a request. Attribution runs alongside destination-specific credentials.
 
 <Note>
-Attribution requires API and sandbox-host versions that support the `attribution` rule type. For self-hosted or BYOC deployments, upgrade every sandbox host before enabling attribution through the API or UI. Older hosts reject active attribution rules and can reject the entire proxy configuration, including credentials and access controls. Disabled attribution rules and attribution rules with no headers are not sent to hosts.
+Attribution requires API and sandbox-host versions that support the `attribution` rule type. For self-hosted or BYOC deployments, upgrade every sandbox host before enabling attribution through the API or UI. Older hosts reject active attribution rules and can reject the entire proxy configuration, including credentials and access controls. The API does not send disabled or empty attribution rules to hosts.
 </Note>
 
 <Warning>
-Every proxied destination, including third-party services, receives these values. The API returns literal values unchanged, although the configuration is encrypted at rest. Avoid sensitive values, including tokens and personal data. JWT-shaped strings follow the same size and syntax constraints as other literals; they are not categorically rejected. Attribution labels are not authenticated identity or an all-protocol egress enforcement mechanism.
+Every proxied destination, including third-party services, receives these values. The API returns them unchanged, although the configuration is encrypted at rest. Do not use tokens, personal data, or other sensitive values. The API does not reject token-shaped strings such as JWTs. Attribution labels are not an authenticated identity and do not enforce egress policy.
 </Warning>
 
 Add an attribution rule to `proxy_config.rules` when creating or updating a sandbox:
@@ -341,9 +341,7 @@ The rule defaults to `enabled: true`. Set `enabled: false` to retain the labels 
 
 Attribution is additive, not a wildcard credential rule. Ordinary header rules still use first-match-wins matching. The proxy applies attribution after static and callback headers, replacing same-name headers without regard to case, and before provider signing.
 
-<Warning>
-Updating `proxy_config` replaces the whole configuration; it does not append a rule. Preserve existing rules, `access_control`, `callbacks`, and other settings in the replacement.
-</Warning>
+Updating `proxy_config` replaces the whole configuration. It does not append a rule. Preserve existing rules, `access_control`, `callbacks`, and other settings in the replacement.
 
 ### Configure attribution with the SDK or UI
 
@@ -371,7 +369,7 @@ const config = proxyConfig({
 
 Pass `config` as `proxy_config` in Python or `proxyConfig` in TypeScript when creating or updating a sandbox. For the [CLI](/langsmith/sandbox-cli#proxy-configuration), save the inner `proxy_config` object to a file and pass `--proxy-config @proxy.json`.
 
-In the sandbox create or edit form, use **Add attribution header** under **Attribution Headers (optional)**. Enter a header name and public value. Clear **Enable attribution rule** to retain the values without injecting them, or remove every row to delete the rule. Editing requires a ready sandbox.
+In the sandbox create or edit form, use **Add attribution header** under **Attribution Headers (optional)**. Enter a header name and public value. Clear the **Enable attribution rule** checkbox to keep the values without injecting them, or remove every row to delete the rule. You can edit attribution only on a ready sandbox.
 
 ### Validate attribution settings
 
@@ -422,7 +420,7 @@ The callback response must contain exactly the selected headers and their earlie
 }
 ```
 
-Replace the illustrative value and timestamp with freshly issued values and their actual expiration. The proxy enforces these response constraints:
+The proxy enforces these response constraints:
 
 - **Values**: Nonempty, valid HTTP field values, up to 8192 bytes each.
 - **Response size**: At most 64 KiB, with no missing, extra, or case-duplicate header names.
@@ -433,7 +431,7 @@ Replace the illustrative value and timestamp with freshly issued values and thei
 Refresh happens on the next request after cache expiration, not in the background. Returned values stay in proxy memory rather than becoming API-readable literal configuration. The callback receives destination host and port plus signed sandbox identity, not request headers or body previews. Verify the callback request signature, audience, body, and sandbox identity before issuing values.
 
 <Warning>
-These headers travel inside the origin-bound HTTP request, not the outer `CONNECT` request. Every covered destination receives them and can echo them back to sandbox code. Name restrictions cannot detect secrets placed under an allowed metadata name. Do not return secrets in attribution headers. Attribution does not enforce gateway routing or strip headers before destinations.
+These headers travel inside the origin-bound HTTP request, not the outer `CONNECT` request. Covered destinations can echo these headers back to sandbox code. Name restrictions cannot detect secrets placed under an allowed metadata name. Do not return secrets in attribution headers. Attribution does not enforce gateway routing or strip headers before destinations.
 </Warning>
 
 Create or update attribution callbacks through the API or CLI JSON configuration. The UI preserves API-configured attribution callbacks when editing literal labels; it does not create or edit them.
