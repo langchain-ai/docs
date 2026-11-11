@@ -44,7 +44,8 @@ def get_account_info(runtime: ToolRuntime[UserContext]) -> str:
     return "User not found"
 
 
-model = ChatOpenAI(model="gpt-6.1-sol")
+# GPT-6.1 Sol tool calling requires the Responses API.
+model = ChatOpenAI(model="gpt-6.1-sol", use_responses_api=True)
 agent = create_agent(
     model,
     tools=[get_account_info],

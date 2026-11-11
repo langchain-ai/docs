@@ -38,7 +38,8 @@ con.close()
 # :remove-start:
 from langchain.chat_models import init_chat_model
 
-model = init_chat_model("openai:gpt-6.1-sol")
+# GPT-6.1 Sol tool calling requires the Responses API.
+model = init_chat_model("openai:gpt-6.1-sol", use_responses_api=True)
 # :remove-end:
 
 # :snippet-start: sql-agent-tools-py
@@ -279,8 +280,8 @@ from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
 from langchain.tools import tool
 
-# Initialize an LLM
-model = init_chat_model("gpt-6.1-sol")
+# Initialize an LLM. GPT-6.1 Sol tool calling requires the Responses API.
+model = init_chat_model("openai:gpt-6.1-sol", use_responses_api=True)
 
 # Get the database, store it locally
 url = "https://storage.googleapis.com/benchmarks-artifacts/chinook/Chinook.db"

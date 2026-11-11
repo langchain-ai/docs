@@ -20,7 +20,11 @@ def configurable_model(
     handler: Callable[[ModelRequest], ModelResponse],
 ) -> ModelResponse:
     model_name = request.runtime.context.model
-    model = init_chat_model(model_name)
+    # GPT-6.1 Sol tool calling requires the Responses API.
+    model_kwargs = (
+        {"use_responses_api": True} if model_name.startswith("openai:") else {}
+    )
+    model = init_chat_model(model_name, **model_kwargs)
     return handler(request.override(model=model))
 
 

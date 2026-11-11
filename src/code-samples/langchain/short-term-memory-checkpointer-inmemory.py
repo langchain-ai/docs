@@ -13,6 +13,17 @@ agent = create_agent(
     tools=[get_user_info],
     checkpointer=InMemorySaver(),  # [!code highlight]
 )
+# :remove-start:
+# GPT-6.1 Sol tool calling requires the Responses API. Keep the published
+# snippet on a routable model string so CodeGroup tabs still expand.
+from langchain_openai import ChatOpenAI
+
+agent = create_agent(
+    model=ChatOpenAI(model="gpt-6.1-sol", use_responses_api=True),
+    tools=[get_user_info],
+    checkpointer=InMemorySaver(),
+)
+# :remove-end:
 
 thread_config = {"configurable": {"thread_id": "1"}}
 response = agent.invoke(

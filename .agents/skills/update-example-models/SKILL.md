@@ -176,3 +176,7 @@ hub conflict, not a bad model ID.
   `scripts/refresh_deepagents_category_matrix.py --write` after real evals
 - Leaving prose link text on the old name after the href moves (for example
   "GPT-5.5 snapshot" pointing at `gpt-6.1-sol`)
+- Using `gpt-6.1-sol` (or other GPT-6 Sol/Astra models) with tools on Chat
+  Completions: tool calling requires the Responses API
+  (`use_responses_api=True` / `useResponsesApi: true`). Bare IDs like
+  `gpt-6.1-sol` also need an `openai:` prefix for `initChatModel`/`createAgent`

@@ -22,7 +22,8 @@ model = None
 if os.environ.get("OPENAI_API_KEY"):
     from langchain.chat_models import init_chat_model
 
-    model = init_chat_model("openai:gpt-6.1-sol")
+    # GPT-6.1 Sol tool calling requires the Responses API.
+    model = init_chat_model("openai:gpt-6.1-sol", use_responses_api=True)
 # :remove-end:
 
 # :snippet-start: langgraph-sql-agent-tools-py
