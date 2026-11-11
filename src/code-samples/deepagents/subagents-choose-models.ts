@@ -27,7 +27,7 @@ const subagents = [
     description: "Analyzes financial data and market trends",
     systemPrompt: "You are an expert financial analyst...",
     tools: [getStockPrice, analyzeFundamentals],
-    model: "openai:gpt-5.5", // Better for numerical analysis
+    model: "openai:gpt-6.1-sol", // Better for numerical analysis
   },
 ];
 // :snippet-end:

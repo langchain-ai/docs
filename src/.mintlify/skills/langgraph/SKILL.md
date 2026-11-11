@@ -59,20 +59,6 @@ result = graph.invoke(
 )
 ```
 
-### Functional API (for simple pipelines)
-
-```python
-from langgraph.func import entrypoint, task
-
-@task
-def step_one(input: str) -> str:
-    return f"processed: {input}"
-
-@entrypoint()
-def pipeline(input: str) -> str:
-    return step_one(input).result()
-```
-
 ### Add human-in-the-loop
 
 ```python
@@ -92,7 +78,7 @@ def human_approval(state: MessagesState):
 | `compile()` | Compile a graph builder into an executable graph |
 | `interrupt()` | Pause execution and wait for human input |
 | Checkpointer | Persist state for durable execution and time-travel |
-| Graph API vs Functional API | Graph API for complex workflows; Functional API for linear pipelines |
+| Functional API | Wrap agents from other frameworks for LangSmith Deployment; prefer the Graph API for new LangGraph workflows |
 
 ## Key documentation
 

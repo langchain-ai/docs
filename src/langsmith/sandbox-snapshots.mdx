@@ -6,21 +6,58 @@ description: Build and capture reusable filesystem images for sandboxes.
 
 A **snapshot** is a reusable sandbox filesystem. Build a custom snapshot from a container image when you want to boot sandboxes from a custom filesystem image.
 
-You can also capture a snapshot from a running sandbox—install packages, write data files, or configure state, then snapshot the result and reuse it as a new starting point.
+You can also capture a snapshot from a running sandbox. Install packages, write data files, or configure state. Then snapshot the result, and reuse it as a new starting point.
 
 ![Sandboxes snapshots page](/images/langsmith/sandboxes/sb-snapshots.png)
 
-## Understand the default snapshot
+## Understand system snapshots
 
-When you create a sandbox without selecting a snapshot, LangSmith uses a built-in default snapshot. The default provides an Ubuntu 24.04 filesystem with common development tools. LangSmith may update the packages and tools included in the default snapshot over time.
+When you create a sandbox without selecting a snapshot, LangSmith uses the built-in `system/default:latest` snapshot. The current default starts from the `ubuntu:26.04` container image and includes the tools listed below. Older self-hosted releases can contain a different Ubuntu version and package set.
+
+### Inspect the default tools
+
+The default filesystem includes the following tools. This list summarizes installed capabilities, not a complete software bill of materials (SBOM).
+
+| Category | Included tools |
+| --- | --- |
+| Languages and package managers | Python 3 with pip and venv, uv and uvx, Node.js 24 with npm, pnpm, Yarn, Go, and Ruby. |
+| Source control | Git, GitHub CLI (`gh`), and the `gh stack` extension. |
+| Build and container tools | `build-essential`, CMake, pkg-config, Docker, Docker Buildx, Docker Compose, and BuildKit. |
+| Shell and file utilities | Bash, Zsh, tmux, ttyd, ripgrep, fd, jq, bat, tree, zip, unzip, rsync, and common Linux utilities. |
+| Networking and data tools | curl, wget, OpenSSH client and server, DNS and network diagnostics, SQLite, and the PostgreSQL client. |
+| Browser automation | Chrome for Testing and `agent-browser`. |
+| Document processing | `python-docx`, `python-pptx`, `openpyxl` with `defusedxml`, and `anydoc`. See [Fleet document dependencies](/langsmith/fleet/computer-use#prepare-a-custom-image-for-fleet). |
+| LangSmith tools | LangSmith CLI and the Custom Apps development server. |
+
+Package versions can change between LangSmith releases. For an audit of the exact installed packages and transitive dependencies, inspect the filesystem from your deployed image as described in [Inspect the default snapshot filesystem in self-hosted deployments](#inspect-the-default-snapshot-filesystem-in-self-hosted-deployments).
+
+### Choose a system snapshot
+
+System snapshots are LangSmith-maintained, read-only starting filesystems shared across workspaces. Use `system/default:latest` for general workloads, or [build a custom snapshot](#build-a-snapshot-from-a-container-image) from your own container image. The other system snapshots back specific LangSmith features, which select them automatically. They are listed here so you can audit their contents.
+
+References use the form `system/<name>:<tag>`. Omitting the tag selects `latest`. The `system/` namespace is reserved: you cannot build, capture, retag, or delete snapshots in it. A snapshot captured from a sandbox that uses a system snapshot belongs to your workspace.
+
+| Snapshot reference | Used by | Base and additional contents |
+| --- | --- | --- |
+| `system/default:latest` | General development and [Fleet computers](/langsmith/fleet/computer-use) | Ubuntu 26.04 with the [default tools](#inspect-the-default-tools). |
+| `system/custom-apps:latest` | [Custom apps](/langsmith/custom-apps) | The default filesystem plus a prepared app starter and installed dependencies in `/workspace/app`. |
+| `system/code-evaluators:latest` | Python and JavaScript [code evaluators](/langsmith/code-evaluator-ui) | The default filesystem plus NumPy, pandas, jsonschema, SciPy, scikit-learn, and the LangSmith Python and JavaScript SDKs. |
+| `system/prebuilt-voice-evaluator:latest` | Managed [voice metrics evaluation](/langsmith/evaluators#voice-evaluation) | The default filesystem plus NumPy in `/opt/venv`, `ffmpeg`, `ffprobe`, and voice evaluation modules in `/opt/langsmith_eval`. |
+| `system/taskset-runner:latest` | Taskset execution | The default filesystem plus Harbor and `smith-harbor` in a Python 3.12 environment at `/opt/smith-harbor/.venv`, with `langgraph-cli` cached for offline use. |
+
+The available catalog depends on your LangSmith version. On self-hosted deployments, it comes from the `sandbox-host` image in your LangSmith release; see the [self-hosted changelog](/langsmith/self-hosted-changelog).
+
+LangSmith can update the contents behind `latest`; existing sandboxes retain their original snapshot ID. Use a snapshot ID instead of a mutable tag when you need to reuse a specific version.
 
 ### Inspect the default snapshot filesystem in self-hosted deployments
 
 In a self-hosted deployment, LangSmith creates the default snapshot from a filesystem embedded in the sandbox runtime container image, `sandbox-host`:
 
-1. During the `sandbox-host` image build, LangSmith starts with Ubuntu 24.04 and installs the default development tools.
+1. During the `sandbox-host` image build, LangSmith starts with `ubuntu:26.04` and installs the default tools.
 2. LangSmith packages that filesystem as a compressed 16 GiB ext4 file at `/opt/sandbox-host/bin/builder-base.ext4.gz`.
-3. When `sandbox-host` starts, LangSmith uses the embedded filesystem to create the default snapshot.
+3. When `sandbox-host` starts, LangSmith registers the embedded filesystems as system snapshots.
+
+Current host images also contain `/opt/sandbox-host/bin/system-snapshots.json`. This manifest records each snapshot's name, tag, payload path, filesystem checksum, capacity, architecture, and run configuration. Named variants have compressed files under `/opt/sandbox-host/bin/system-snapshots/`. To audit a variant, copy the file at its manifest `payload_path` instead of the default payload. Save the copy locally as `builder-base.ext4.gz` to reuse the decompression and extraction commands below.
 
 The compressed ext4 file, rather than a separately pulled container image, is the source of the default snapshot filesystem.
 
@@ -201,7 +238,7 @@ The **AWS IAM role** authentication method appears only when your LangSmith depl
 </Note>
 
 <Note>
-**BYOC deployments:** AWS IAM role authentication works on [BYOC](/langsmith/byoc) AWS data planes with no extra setup. Follow the steps below. If your data plane uses [bring your own IAM](/langsmith/byoc-byoiam), apply the latest version of the [`byoiam` Terraform module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/aws/byoiam) first. It grants the workload role permission to assume your ECR role.
+**BYOC deployments:** AWS IAM role authentication works on [BYOC](/langsmith/byoc) AWS data planes with no extra setup. Follow the steps below. If your data plane uses [bring your own IAM](/langsmith/byoc-byoiam-aws), apply the latest version of the [`byoiam` Terraform module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/aws/byoiam) first. It grants the workload role permission to assume your ECR role.
 </Note>
 
 To register an ECR role:
@@ -479,7 +516,7 @@ const sb = await client.createSandbox({ snapshotName: "ml-ready" });
 
 </CodeGroup>
 
-Pass at most one of `snapshot_id` / `snapshot_name` (or `snapshotId` / `snapshotName` in TypeScript). Omit both to use the default runtime.
+Pass at most one of `snapshot_id` / `snapshot_name` (or `snapshotId` / `snapshotName` in TypeScript). Omit both to use `system/default:latest`.
 </Tip>
 
 ### Tune capture timing

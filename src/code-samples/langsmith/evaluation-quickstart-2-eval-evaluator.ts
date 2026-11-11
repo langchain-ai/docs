@@ -26,7 +26,7 @@ async function target(inputs: Record<string, any>): Promise<Record<string, any>>
 const judge = createLLMAsJudge({
   prompt: CORRECTNESS_PROMPT,
   // KEEP MODEL
-  model: "openai:gpt-5.5",
+  model: "openai:gpt-6.1-sol",
   feedbackKey: "correctness",
 });
 
