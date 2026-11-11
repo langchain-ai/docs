@@ -379,32 +379,44 @@ After access is granted, create a PSC endpoint and configure DNS using either th
 
 #### Create a PSC endpoint
 
-Create a forwarding rule in your VPC targeting the service attachment:
+Reserve an internal IP address in your subnet, then create a forwarding rule that uses that address and targets the service attachment. Create both in the same region as the service attachment. Replace `<SERVICE_ATTACHMENT_URI>` with the URI for your region from the [service attachment URIs](#service-attachment-uris) table.
 
 <CodeGroup>
 ```bash gcloud CLI
+# Reserve an internal IP address for the PSC endpoint
+gcloud compute addresses create langsmith-psc-ip \
+  --region=<REGION> \
+  --subnet=<YOUR_SUBNET>
+
 # Create the PSC endpoint
 gcloud compute forwarding-rules create langsmith-psc-endpoint \
   --region=<REGION> \
   --network=<YOUR_VPC_NETWORK> \
-  --subnet=<YOUR_SUBNET> \
-  --target-service-attachment=projects/langchain-prod/regions/<REGION>/serviceAttachments/gateway-psc-publish \
-  --load-balancing-scheme=""
+  --address=langsmith-psc-ip \
+  --target-service-attachment=<SERVICE_ATTACHMENT_URI>
 
-# Get the assigned IP address
-gcloud compute forwarding-rules describe langsmith-psc-endpoint \
+# Get the endpoint IP address
+gcloud compute addresses describe langsmith-psc-ip \
   --region=<REGION> \
-  --format="value(IPAddress)"
+  --format="value(address)"
 ```
 
 ```hcl Terraform
+resource "google_compute_address" "langsmith_psc" {
+  name         = "langsmith-psc-ip"
+  project      = "<YOUR_PROJECT_ID>"
+  region       = "<REGION>"
+  subnetwork   = "<YOUR_SUBNET>"
+  address_type = "INTERNAL"
+}
+
 resource "google_compute_forwarding_rule" "langsmith_psc" {
   name                  = "langsmith-psc-endpoint"
   project               = "<YOUR_PROJECT_ID>"
   region                = "<REGION>"
   network               = "<YOUR_VPC_NETWORK>"
-  subnetwork            = "<YOUR_SUBNET>"
-  target                = "projects/langchain-prod/regions/<REGION>/serviceAttachments/gateway-psc-publish"
+  ip_address            = google_compute_address.langsmith_psc.id
+  target                = "<SERVICE_ATTACHMENT_URI>"
   load_balancing_scheme = ""
 }
 ```
