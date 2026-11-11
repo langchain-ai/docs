@@ -1,0 +1,67 @@
+---
+title: Migrate feedback config listing to v2
+description: Migrate feedback configuration list requests from the LangSmith v1 API to the v2 API.
+---
+
+<Prompt
+    description="Migrate feedback configuration list requests to the v2 API"
+    icon="arrow-right"
+    actions={["copy"]}
+>
+Migrate this codebase from `GET /api/v1/feedback-configs` to `GET /api/v2/feedback-configs`.
+
+1. Read the v2 response as an object with `items` and `next_cursor`, not as a bare array.
+2. Replace `offset` pagination with the opaque `cursor` returned in `next_cursor`. Request pages in sequence and do not parse or alter the cursor.
+3. Rename `limit` to `page_size`. The default is `20`, and valid values range from `1` through `100`.
+4. Replace `sort_by_desc=true` with `sort_order=desc` and `sort_by_desc=false` with `sort_order=asc`.
+5. Keep `key` and `name_contains` filters. Remove `read_after_write`.
+6. Remove code that reads the `x-pagination-total` header. The v2 API does not return a total count.
+7. Update SDK calls to the canonical `list` method, or use the explicit v2 method for the language in use.
+
+Search the codebase for `/api/v1/feedback-configs`, `offset`, `limit`, `sort_by_desc`, `read_after_write`, `x-pagination-total`, and v1 SDK list methods.
+
+Apply these changes to every match. Flag code that depends on a total count or cannot use sequential cursor pagination.
+</Prompt>
+
+The v2 endpoint returns a cursor-paginated response. It replaces offset pagination and the total count header.
+
+`GET /api/v1/feedback-configs` is deprecated. Migrate list requests to `GET /api/v2/feedback-configs` before 31 March 2027.
+
+## Update the request and response
+
+The v2 endpoint uses a cursor for sequential pagination. It returns an object with `items` and `next_cursor`.
+
+| v1 | v2 |
+| --- | --- |
+| `GET /api/v1/feedback-configs` | `GET /api/v2/feedback-configs` |
+| A bare array | An object with `items` and `next_cursor` |
+| `offset` | `cursor` from the previous response |
+| `limit` | `page_size`, which defaults to `20` and accepts `1` through `100` |
+| `sort_by_desc=true` or `sort_by_desc=false` | `sort_order=desc` or `sort_order=asc` |
+| `x-pagination-total` response header | No total count replacement |
+| `read_after_write` | Remove this parameter |
+
+Keep the `key` and `name_contains` query parameters.
+
+For the first request, omit `cursor`. When `next_cursor` has a value, send it unchanged as `cursor` in the next request. Stop when `next_cursor` is `null`.
+
+Do not calculate page positions or jump to a later page. The cursor is opaque and applies only to the preceding response sequence.
+
+## Update SDK calls
+
+Each SDK has an explicit v1 method. Use the canonical `list` method for v2. It aliases the v2 method.
+
+| Language | V1 method | V2 method | Canonical method |
+| --- | --- | --- | --- |
+| Python | `list_v1` | `list_v2` | `list` |
+| TypeScript | `listV1` | `listV2` | `list` |
+| Java | `listV1` | `listV2` | `list` |
+| Go | `ListV1` | `ListV2` | `List` |
+
+`list_v1`, `listV1`, and `ListV1` call `GET /api/v1/feedback-configs`. Their v2 counterparts and the canonical list methods call `GET /api/v2/feedback-configs`.
+
+## Remove total count dependencies
+
+The v1 endpoint returns `x-pagination-total`. The v2 endpoint does not return a total count in a header or response field.
+
+Remove UI, API, and batch logic that depends on a total before the first request. Use `next_cursor` to determine whether another page is available.
