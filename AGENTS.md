@@ -52,7 +52,7 @@ once to link the tree, and again in each new git worktree.
 | `docs-review` | Reviewing changed prose against Vale and the style guide, reporting the rule each finding breaks. `add-docs-page` invokes it before committing. |
 | `docs-tooling-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, and how to edit safely. Required whenever a PR adds or changes a script, workflow, or check. |
 | `docs-code-samples` | Moving inline MDX code blocks into external, testable sample files. |
-| `verify-against-source` | Checking that a code sample, signature, default, or behavior claim is true: which repository owns each product, how to reach the private ones, and naming what stayed unverified. |
+| `verify-against-source` | Checking that a code sample, signature, default, or behavior claim is true: which repository owns each product, how to reach the private ones, checking that a PR documents what it claims, and naming what stayed unverified. |
 | `submit-integration` | Turning a structured integration issue submission into a listing. Invoked by CI. |
 | `update-integrations-prs` | Processing open integration PRs against the featuring policy. |
 
@@ -75,7 +75,7 @@ docs/
 │   ├── index.mdx               # Home page
 │   ├── style.css               # Custom CSS
 │   ├── langsmith/              # LangSmith product docs
-│   │   └── fleet/              #   Fleet (nav label: "No-code agents")
+│   │   └── fleet/              #   Fleet (nav: "No-code agents" > Fleet tab)
 │   ├── oss/                    # Open source docs
 │   │   ├── langchain/          #   LangChain framework
 │   │   ├── langgraph/          #   LangGraph framework
@@ -183,7 +183,7 @@ The Reference tab's LangSmith REST API group is OpenAPI-generated. See [Referenc
 
 ### PRODUCTS AND SETUP
 
-Five menu items. Only LangSmith setup has tabs; the rest are flat group lists.
+Five menu items. LangSmith setup and No-code agents have tabs. The rest are flat group lists.
 
 #### LangSmith setup
 
@@ -203,11 +203,11 @@ Six tabs, all files flat in `src/langsmith/`:
 | Menu item | Source | Groups |
 |-----------|--------|--------|
 | LLM Gateway | `src/langsmith/llm-gateway*.mdx` | Core capabilities, Administration and governance, Advanced |
-| No-code agents | `src/langsmith/fleet/` | Get started, Configure, Tools and automation, Advanced, Additional resources |
+| No-code agents | `src/langsmith/build-an-agent.mdx` (Studio tab), `src/langsmith/fleet/` (Fleet tab) | Studio: single page. Fleet: Get started, Configure, Tools and automation, Advanced, Additional resources |
 | Engine | `src/langsmith/engine*.mdx` | No groups |
 | Deep Agents Code | `src/oss/deepagents/code/` | Configuration |
 
-"No-code agents" is the nav label for Fleet. The source directory and URLs still use `fleet`.
+"No-code agents" holds two tabs: Studio, for building agents in Studio, and Fleet. The Fleet source directory and URLs still use `fleet`. The Studio build page also appears in the Agent-based workspaces group through the `build-an-agent-link.mdx` stub, which points at `/langsmith/build-an-agent` with `url:` frontmatter.
 
 "Deep Agents Code" ships one set of pages at `/oss/deepagents/code/...` with no language split, even though it sits under `src/oss/deepagents/`. Conditional fences resolve against the Python branch.
 
@@ -227,8 +227,9 @@ Because nav names and directories diverge, use this to go from a file to its pla
 | `src/oss/reference/` | Build → Reference |
 | `src/oss/contributing/` | Build → Contribute |
 | `src/langsmith/managed-deep-agents*.mdx` | Build → Managed Deep Agents |
-| `src/langsmith/fleet/` | Products and setup → No-code agents |
-| `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx`, `create-an-agent.mdx`, `build-an-agent.mdx`, `deploy-to-agent-environment.mdx` | Products and setup → LangSmith setup → Overview → Agent-based workspaces |
+| `src/langsmith/fleet/` | Products and setup → No-code agents → Fleet |
+| `src/langsmith/build-an-agent.mdx` | Products and setup → No-code agents → Studio |
+| `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx`, `create-an-agent.mdx`, `build-an-agent-link.mdx` (stub for `build-an-agent.mdx`), `deploy-to-agent-environment.mdx` | Products and setup → LangSmith setup → Overview → Agent-based workspaces |
 | `src/langsmith/*.mdx` (everything else) | Test, Deploy, Monitor, or LangSmith setup, depending on subject |
 
 ### Reference docs
@@ -407,6 +408,7 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Use model aliases: use full identifiers (e.g., `claude-sonnet-4-6`)
 - Use `>=` in prose for version minimums: write "v0.153.4 or later"; reserve `>=` for package specifiers in code (`langsmith>=0.3.13`)
 - Use "→" to separate UI navigation steps: write "Go to **Settings** > **API Keys**"
+- State LangChain prices in dollars or other currencies, such as the price of an LSU, a plan, or a seat: link to the pricing page (`https://www.langchain.com/pricing`) instead, because prices change outside the docs release cycle. Usage rates stated in LSU are fine. Cloud-provider cost estimates for infrastructure you run, such as the BYOC data plane cost pages, are not LangChain pricing
 - Use FontAwesome icon names
 - Use nested double quotes in component attributes: use `default="['a', 'b']"` not `default='["a", "b"]'`
 - Use contractions ("do not" not "don't", "cannot" not "can't", "it is" not "it's")

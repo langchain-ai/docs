@@ -40,7 +40,7 @@ async function buildRagChain() {
   // Index chunks
   await vectorStore.addDocuments(allSplits);
 
-  const model = new ChatOpenAI({ model: "gpt-4o-mini" });
+  const model = new ChatOpenAI({ model: "gpt-5.4-mini" });
 
   return createAgent({
     model,

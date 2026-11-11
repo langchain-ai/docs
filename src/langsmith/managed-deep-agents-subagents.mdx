@@ -139,6 +139,142 @@ A subagent starts from the agent's configuration and replaces what its definitio
 
 A subagent in fork mode starts with a copy of the agent's conversation and also uses the agent's instructions, middleware, skills, and memory. See [Choose a launch mode](/oss/deepagents/async-subagents#choose-a-launch-mode).
 
+### Select MCP servers
+
+Set `mcp` on a subagent to choose which [MCP server](/langsmith/managed-deep-agents-mcp-connectors) definitions give it tools. `mcp` does not affect the subagent's other tools.
+
+<Note>
+:::python
+Subagent MCP selection requires `managed-deepagents>=0.10.2`.
+:::
+
+:::js
+Subagent MCP selection requires `managed-deepagents` version 0.10.2 or later.
+:::
+</Note>
+
+:::python
+| `mcp` value | Subagent | Async subagent |
+| --- | --- | --- |
+| Omitted | Inherits the agent's tools | Inherits the agent's MCP servers |
+| List of definitions | Keeps MCP tools only from these definitions. The agent must also load them. | Loads only these definitions |
+| `[]` or `None` | No MCP tools | No MCP tools |
+:::
+
+:::js
+| `mcp` value | Subagent | Async subagent |
+| --- | --- | --- |
+| Omitted | Inherits the agent's tools | Inherits the agent's MCP servers |
+| List of definitions | Keeps MCP tools only from these definitions. The agent must also load them. | Loads only these definitions |
+| `[]` or `null` | No MCP tools | No MCP tools |
+:::
+
+An async subagent connects only to the servers it selects and asks only for their credentials.
+
+Only a [graph factory](/langsmith/managed-deep-agents-agent-definition#select-configuration-per-run) can set `mcp` on the agent.
+
+:::python
+```python agent.py expandable
+from managed_deepagents import ManagedServerRuntime, connections, define_deep_agent, define_mcp
+
+knowledge = define_mcp(
+    servers={
+        "langchainDocs": {"transport": "http", "url": "https://docs.langchain.com/mcp"},
+        "notion": {
+            "transport": "http",
+            "url": "https://mcp.notion.com/mcp",
+            "connection": connections.get("engineering-notion", {"type": "user"}),
+        },
+    },
+)
+
+planning = define_mcp(
+    servers={
+        "linear": {
+            "transport": "http",
+            "url": "https://mcp.linear.app/mcp",
+            "connection": connections.get("engineering-linear", {"type": "user"}),
+        },
+    },
+)
+
+def agent(runtime: ManagedServerRuntime):
+    return define_deep_agent(
+        name="research-assistant",
+        model="openai:gpt-5.5",
+        mcp=[knowledge, planning],
+        subagents=[
+            {
+                "name": "researcher",
+                "description": "Answers questions from the docs and the team wiki.",
+                "system_prompt": "Search the docs and Notion, and cite the pages you use.",
+                "mcp": [knowledge],
+            },
+            {
+                "name": "planner",
+                "description": "Turns findings into Linear issues.",
+                "system_prompt": "Create one Linear issue for each follow-up.",
+                "mcp": [planning],
+            },
+        ],
+    )
+```
+:::
+
+:::js
+```ts agent.ts expandable
+import {
+  connections,
+  defineDeepAgent,
+  defineMcp,
+  type ManagedServerRuntime,
+} from "managed-deepagents";
+
+const knowledge = defineMcp({
+  servers: {
+    langchainDocs: { transport: "http", url: "https://docs.langchain.com/mcp" },
+    notion: {
+      transport: "http",
+      url: "https://mcp.notion.com/mcp",
+      connection: connections.get("engineering-notion", { type: "user" }),
+    },
+  },
+});
+
+const planning = defineMcp({
+  servers: {
+    linear: {
+      transport: "http",
+      url: "https://mcp.linear.app/mcp",
+      connection: connections.get("engineering-linear", { type: "user" }),
+    },
+  },
+});
+
+export function agent(_runtime: ManagedServerRuntime) {
+  return defineDeepAgent({
+    name: "research-assistant",
+    model: "openai:gpt-5.5",
+    mcp: [knowledge, planning],
+    subagents: [
+      {
+        name: "researcher",
+        description: "Answers questions from the docs and the team wiki.",
+        systemPrompt: "Search the docs and Notion, and cite the pages you use.",
+        mcp: [knowledge],
+      },
+      {
+        name: "planner",
+        description: "Turns findings into Linear issues.",
+        systemPrompt: "Create one Linear issue for each follow-up.",
+        mcp: [planning],
+      },
+    ],
+  });
+}
+```
+:::
+
 ## Async subagents
 
 The agent starts an async subagent with `start_async_task` and keeps working while the subagent runs on its own thread. The subagent reports back when it finishes.
