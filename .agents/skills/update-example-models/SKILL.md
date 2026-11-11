@@ -176,5 +176,3 @@ hub conflict, not a bad model ID.
   `scripts/refresh_deepagents_category_matrix.py --write` after real evals
 - Leaving prose link text on the old name after the href moves (for example
   "GPT-5.5 snapshot" pointing at `gpt-6.1-sol`)
-  stale
-- Changing migration-guide or changelog historical IDs "for consistency"
