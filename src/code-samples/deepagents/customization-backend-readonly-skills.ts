@@ -7,7 +7,7 @@ import {
   StoreBackend,
 } from "deepagents";
 
-const store = new InMemoryStore(); // Good for local dev; omit for LangSmith Agent Servers
+const store = new InMemoryStore(); // Good for local dev; omit for LangSmith Agent Server
 
 const agent = createDeepAgent({
   model: "openai:gpt-5.5",
