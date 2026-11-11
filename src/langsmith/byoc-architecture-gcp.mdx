@@ -186,14 +186,15 @@ Set `byo_iam = true` in the module before you create data planes in the project,
 - **Can**: Create, change, and delete the data plane resources through the provisioner, which for most kinds means resources whose names start with `langsmith-`. Read the project's IAM policy and service accounts. Act as cluster admin on GKE clusters tagged `managed_by: langsmith`, through `container.admin`. This is how LangSmith installs and upgrades the application.
 - **Cannot, by role**: The provisioner has no `storage.objects.get`, so it cannot read objects in the bucket. It can list and delete them. It has no `secretmanager.versions.access`, so it cannot read secrets. It has no Cloud SQL user or database login permissions, and no permissions outside the project.
 
-These are limits of the provisioner's roles, not deny policies. The provisioner can still set IAM policies on buckets and DNS zones and, without `byo_iam`, on service accounts.
+These are limits of the provisioner's roles, not deny policies. The provisioner can still set IAM policies on `langsmith-` buckets, on every DNS zone and Artifact Registry repository in the project and, without `byo_iam`, on service accounts.
 
 <Warning>
-Use a project that holds only LangSmith resources, or set `byo_iam`. Name conditions limit the provisioner to `langsmith-` resources for most kinds, but not everywhere:
+Use a project that holds only LangSmith resources. Name conditions limit the provisioner to `langsmith-` resources for most kinds, but not everywhere. If the project also holds other resources, `byo_iam` removes the service account and project role grant access below, but not the rest:
 
 - **Service accounts**: IAM checks a service account by its numeric unique ID, so a condition cannot limit service account permissions by account name. Without `byo_iam`, the provisioner's `setIamPolicy` and `actAs` apply to every service account in the project, so it could act as any of them.
 - **Project role grants**: Without `byo_iam`, the provisioner can grant the project roles listed above to any principal, including itself. With `cloudsql.admin` or `secretmanager.secretAccessor`, it could reach every Cloud SQL instance or secret in the project.
-- **Postgres setup**: Without `byo_iam`, the project grant of `cloudsql.admin` to the Postgres setup account covers every Cloud SQL instance in the project.
+- **DNS zones, Artifact Registry repositories, and Cloud SQL databases**: The provisioner can change, delete, and set the IAM policy of any DNS zone and its records, and any Artifact Registry repository, in the project. It can delete and change any Cloud SQL database, though it cannot connect to one.
+- **Postgres setup**: IAM checks of Cloud SQL users carry no instance name. With `byo_iam`, the Postgres setup account can create and update database users, including the `postgres` password, on every Cloud SQL instance in the project. Without `byo_iam`, its project grant of `cloudsql.admin` covers every Cloud SQL instance in the project.
 - **Your own `langsmith-` resources**: The name conditions cannot tell your resources from LangSmith's if their names also start with `langsmith-`.
 </Warning>
 
