@@ -41,6 +41,8 @@ def test_egress_tables_detect_inventory_drift(tmp_path: Path) -> None:
     table = render_table(data["addresses"], "langsmith")
     assert "34.59.65.98" in table
     assert "35.197.29.146" not in table
+    assert "AZURE US" in table
+    assert "9.234.98.209" in table
 
 
 @pytest.mark.parametrize(
@@ -51,7 +53,7 @@ def test_egress_tables_detect_inventory_drift(tmp_path: Path) -> None:
         ("cidr", "34.59.65.97"),
         ("cidr", "2001:4860:4860::8888/128"),
         ("service", "unknown"),
-        ("cloud", "azure"),
+        ("cloud", "unknown"),
         ("region", "<script>"),
         ("unexpected", "field"),
     ],
