@@ -158,12 +158,9 @@ def test_partition_by_serial_group_keeps_prompt_siblings_ordered(
     """Prompt-engineering samples form one chain in lexical path order."""
     root = tmp_path
     samples = [
-        root
-        / "src/code-samples/langsmith/prompt-engineering-quickstart-0-create.ts",
-        root
-        / "src/code-samples/langsmith/prompt-engineering-quickstart-1-test.ts",
-        root
-        / "src/code-samples/langsmith/prompt-engineering-quickstart-2-iterate.ts",
+        root / "src/code-samples/langsmith/prompt-engineering-quickstart-0-create.ts",
+        root / "src/code-samples/langsmith/prompt-engineering-quickstart-1-test.ts",
+        root / "src/code-samples/langsmith/prompt-engineering-quickstart-2-iterate.ts",
         root / "src/code-samples/langsmith/prompt-engineering-quickstart.py",
         root / "src/code-samples/langsmith/unrelated.py",
     ]
