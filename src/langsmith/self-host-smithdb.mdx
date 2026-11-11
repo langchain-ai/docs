@@ -53,17 +53,19 @@ Examples in these guides cover managed Kubernetes on AWS, GCP, and Azure. They d
 
 ## Components
 
-Enabling SmithDB in the default cluster mode adds the following workloads to your cluster. Three services cache trace data on disk, on a network-attached volume or local SSD; the other two services are small and run on general compute. See [Cache storage](/langsmith/self-host-smithdb-infrastructure#cache-storage). To run SmithDB as one pod instead, see [Choose a deployment mode](/langsmith/self-host-smithdb-scale#choose-a-deployment-mode).
+Enabling SmithDB in the default cluster mode adds the following workloads to your cluster. Three services cache trace data on disk, on a network-attached volume or local SSD; the other two services are small and run on general compute. See [Cache storage](/langsmith/self-host-smithdb-infrastructure#cache-storage). To run SmithDB as one pod instead, see [Choose a deployment mode](/langsmith/self-host-smithdb-scale#choose-a-deployment-mode). For what each component does and how it works with LangSmith, see [SmithDB architecture](/langsmith/self-host-smithdb-architecture).
 
-| Component | Type | What it does | Disk cache | Scaling |
-| --- | --- | --- | --- | --- |
-| Ingestion | Service | Writes incoming traces to object storage | Yes | Horizontal |
-| Query | Service | Serves trace reads for the LangSmith UI and API | Yes | Horizontal |
-| Compaction worker | Service | Reorganizes stored traces in the background so queries stay fast | Yes | Horizontal |
-| Compaction | Service | Schedules the background work that compaction workers carry out | No | Single instance |
-| Cluster manager | Service | Coordinates the other SmithDB services | No | Single instance |
-| Metastore migration | Job | Prepares the SmithDB metastore during installation | No | Runs once |
-| Migration | Job | Backfills ClickHouse history; runs only if you [migrate historical data](/langsmith/self-host-smithdb-migrate) | No | Parallelism |
+| Component | Type | Disk cache | Scaling |
+| --- | --- | --- | --- |
+| Ingestion | Service | Yes | Horizontal |
+| Query | Service | Yes | Horizontal |
+| Compaction worker | Service | Yes | Horizontal |
+| Compaction | Service | No | Single instance |
+| Cluster manager | Service | No | Single instance |
+| Metastore migration | Job | No | Runs once |
+| Migration | Job, only if you [migrate historical data](/langsmith/self-host-smithdb-migrate) | No | Parallelism |
+
+SmithDB keeps all data in object storage and the metastore. Its pods hold only copies of data and work in progress, so Kubernetes can replace any pod without data loss, and each component recovers automatically when it starts again. LangSmith keeps writes in Redis until SmithDB confirms them, and sends them again if they fail. If the metastore, object storage, or Redis is unavailable, writes wait until it recovers. A very long outage can exceed the retry limit.
 
 ## Storage requirements
 
