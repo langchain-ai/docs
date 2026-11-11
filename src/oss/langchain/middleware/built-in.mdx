@@ -35,6 +35,8 @@ The following middleware work with any LLM provider:
 | [PII detection](#pii-detection) | Detect and handle Personally Identifiable Information (PII). |
 | [To-do list](#to-do-list) | Equip agents with task planning and tracking capabilities. |
 | [LLM tool selector](#llm-tool-selector) | Use an LLM to select relevant tools before calling main model. |
+| [Model router](#model-router) | Use a decision model to choose the model for each agent run. |
+| [Auto mode](#auto-mode) | Use a decision model to block risky tool calls before they run. |
 | [Provider tool search](#provider-tool-search) | Defer tools behind providers' server-side tool search, surfacing them on demand. |
 | [Shell tool](#shell-tool) | Expose a persistent shell session to agents for command execution. |
 | [Filesystem](#filesystem-middleware) | Provide agents with a filesystem for storing context and long-term memories. |
@@ -2284,6 +2286,74 @@ const agent = createAgent({
 :::
 
 </Accordion>
+
+:::python
+### Model router
+
+<Note>
+`ModelRouterMiddleware` is in beta and requires `langchain>=1.5.0`. Its API may change without notice.
+</Note>
+
+Choose the model for each agent run with a decision model. Before the run starts, the middleware asks the decision model to pick one of your named `ModelChoice` entries based on the latest human message, then uses that model for every model call in the run. The answer is stored in agent state as `model_route`.
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ModelChoice, ModelRouterMiddleware
+from langchain_typesafe import TypeSafeClassifier
+
+router = ModelRouterMiddleware(
+    classifier=TypeSafeClassifier(),
+    choices={
+        "fast": ModelChoice(
+            model="openai:gpt-6-luna",
+            criteria="Direct lookups, extraction, and localized changes with explicit targets.",
+        ),
+        "powerful": ModelChoice(
+            model="openai:gpt-6.1-sol",
+            criteria="Architecture, novel root-cause reasoning, and high-stakes decisions.",
+        ),
+    },
+    instructions="Choose the least costly model that can complete the task safely.",
+)
+
+agent = create_agent("openai:gpt-6-luna", middleware=[router])
+```
+:::
+
+:::python
+### Auto mode
+
+<Note>
+`AutoModeMiddleware` is in beta and requires `langchain>=1.5.0`. Its API may change without notice.
+</Note>
+
+Block risky tool calls with a decision model. Before each call to a tool you list, the middleware asks the decision model for the probability that the call is risky or not authorized by the user. Calls with a probability of `0.5` or higher return an error `ToolMessage` instead of running. Tools you do not list run without classification. Auto mode blocks calls; to have a person approve them, use [Human-in-the-loop](#human-in-the-loop).
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import AutoModeMiddleware
+from langchain.tools import tool
+from langchain_typesafe import TypeSafeClassifier
+
+
+@tool
+def delete_all_backups() -> str:
+    """Delete every backup. This action cannot be undone."""
+    return "Backups deleted."
+
+
+agent = create_agent(
+    "openai:gpt-6.1-sol",
+    tools=[delete_all_backups],
+    middleware=[
+        AutoModeMiddleware(
+            tools=[delete_all_backups],
+            classifier=TypeSafeClassifier(),
+        )
+    ],
+)
+```
+:::
 
 
 :::python
