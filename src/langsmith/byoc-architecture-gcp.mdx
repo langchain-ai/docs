@@ -163,7 +163,7 @@ Crossplane creates one Google service account per workload class for each data p
 | `lsa-<hash>` / `langsmith-workload` | LangSmith application and SmithDB | Project: `redis.dbConnectionUser`, `cloudsql.client`, `cloudsql.instanceUser`. Bucket: `storage.objectAdmin`. Token Creator on itself, to sign Cloud Storage URLs. |
 | `lse-<hash>` / `langsmith-external-secrets` | External Secrets Operator | `secretmanager.secretAccessor`, with a condition for each of the data plane's secret IDs. With `byo_iam`: secrets whose IDs start with `ls-`. |
 | `lsc-<hash>` / `langsmith-cert-manager` | cert-manager | `dns.admin` on the data plane's DNS zones only, never on the project. |
-| `lsp-<hash>` / `langsmith-postgres-setup` | Postgres setup job | Project: `cloudsql.admin`, only on Cloud SQL instances tagged `managed_by: langsmith`. With `byo_iam`: `cloudsql.users.create`, `list`, and `update` (custom role `langsmithByocPostgresSetup`) on tagged instances, and `cloudsql.viewer` on instances whose names start with `langsmith-`. |
+| `lsp-<hash>` / `langsmith-postgres-setup` | Postgres setup job | Project: `cloudsql.admin`, only on Cloud SQL instances tagged `managed_by: langsmith`. With `byo_iam`: `cloudsql.users.create`, `list`, and `update` (custom role `langsmithByocPostgresSetup`), on tagged instances from module v0.17.79 and on every instance in the project before it, and `cloudsql.viewer` on instances whose names start with `langsmith-`. |
 | `lsn-<hash>` / `langsmith-node` | GKE nodes | Project: `container.defaultNodeServiceAccount`, `artifactregistry.reader`. |
 | `lsh-<hash>` / `langsmith-sandbox-host` | Sandbox nodes, with sandboxes enabled | Project: `container.defaultNodeServiceAccount`, `artifactregistry.reader`, `redis.dbConnectionUser`. Bucket: `storage.objectAdmin` on the `smithbox/` managed folder only. |
 
@@ -184,7 +184,7 @@ Set `byo_iam = true` in the module before you create data planes in the project,
 ### What LangChain can and cannot access
 
 - **Can**: Create, change, and delete the data plane resources through the provisioner, which for most kinds means resources whose names start with `langsmith-`. Read the project's IAM policy and service accounts. Act as cluster admin on GKE clusters tagged `managed_by: langsmith`, through `container.admin`. This is how LangSmith installs and upgrades the application.
-- **Cannot, by role**: The provisioner has no `storage.objects.get`, so it cannot read objects in the bucket. It can list and delete them. It has no `secretmanager.versions.access`, so it cannot read secrets. It has no permissions on Cloud SQL databases or users, no database login permissions, and no permissions outside the project. The Postgres setup account's Cloud SQL permissions apply only to the data plane's instances, which LangSmith tags `managed_by: langsmith`, so it cannot manage users or settings on your other Cloud SQL instances.
+- **Cannot, by role**: The provisioner has no `storage.objects.get`, so it cannot read objects in the bucket. It can list and delete them. It has no `secretmanager.versions.access`, so it cannot read secrets. It has no permissions on Cloud SQL databases or users, no database login permissions, and no permissions outside the project. The Postgres setup account's Cloud SQL permissions apply only to the data plane's instances, which LangSmith tags `managed_by: langsmith`, so it cannot manage users or settings on your other Cloud SQL instances. With `byo_iam`, this needs module v0.17.79 or later.
 
 These are limits of the provisioner's roles, not deny policies. The provisioner can still set IAM policies on `langsmith-` buckets, on every DNS zone and Artifact Registry repository in the project and, without `byo_iam`, on service accounts.
 
@@ -194,6 +194,7 @@ Use a project that holds only LangSmith resources. Name conditions limit the pro
 - **Service accounts**: IAM checks a service account by its numeric unique ID, so a condition cannot limit service account permissions by account name. Without `byo_iam`, the provisioner's `setIamPolicy` and `actAs` apply to every service account in the project, so it could act as any of them.
 - **Project role grants**: Without `byo_iam`, the provisioner can grant the project roles listed above to any principal, including itself. With `cloudsql.admin` or `secretmanager.secretAccessor`, it could reach every Cloud SQL instance or secret in the project.
 - **DNS zones and Artifact Registry repositories**: The provisioner can change, delete, and set the IAM policy of any DNS zone and its records, and any Artifact Registry repository, in the project.
+- **Postgres setup with `byo_iam` before module v0.17.79**: Earlier releases grant the Postgres setup account its Cloud SQL user permissions on every Cloud SQL instance in the project, including setting the `postgres` password. Re-apply the module at v0.17.79 or later to limit them to the data plane's tagged instances.
 - **Your own `langsmith-` resources**: The name conditions cannot tell your resources from LangSmith's if their names also start with `langsmith-`.
 </Warning>
 
