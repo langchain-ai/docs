@@ -165,7 +165,16 @@ hub conflict, not a bad model ID.
 
 - Replacing only under `src/**/*.mdx` and skipping `scripts/` / `tests/`
 - Guessing `NEW_ID` by editing `OLD_ID` character-by-character
-- Mechanical dated-snapshot rewrites (`-2026-04-23` kept after a rename)
+- Mechanical dated-snapshot rewrites (`-YYYY-MM-DD` kept after a rename)
 - Updating generated snippet MDX by hand and leaving the CodeGroup tab table
+  stale
+- Changing migration-guide or changelog historical IDs "for consistency"
+- Relabeling eval matrices, suggested-models tables, capability floors
+  (`gpt-5.5+`), or "supported models" lists: those are measured or product
+  facts, not example IDs. Keep the old ID until new evidence exists; for the
+  Deep Agents matrix, regenerate with
+  `scripts/refresh_deepagents_category_matrix.py --write` after real evals
+- Leaving prose link text on the old name after the href moves (for example
+  "GPT-5.5 snapshot" pointing at `gpt-6.1-sol`)
   stale
 - Changing migration-guide or changelog historical IDs "for consistency"
