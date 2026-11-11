@@ -78,7 +78,7 @@ def human_approval(state: MessagesState):
 | `compile()` | Compile a graph builder into an executable graph |
 | `interrupt()` | Pause execution and wait for human input |
 | Checkpointer | Persist state for durable execution and time-travel |
-| Functional API | Wrap agents from other frameworks for LangSmith Deployment; prefer the Graph API for new LangGraph workflows |
+| Functional API | Wrap agents from other frameworks for LangSmith Agent Servers; prefer the Graph API for new LangGraph workflows |
 
 ## Key documentation
 

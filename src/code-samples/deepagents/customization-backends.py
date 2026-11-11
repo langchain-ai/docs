@@ -44,7 +44,7 @@ agent = create_deep_agent(
     backend=StoreBackend(
         namespace=lambda rt: (rt.server_info.user.identity,),
     ),
-    store=InMemoryStore(),  # Good for local dev; omit for LangSmith Deployment
+    store=InMemoryStore(),  # Good for local dev; omit for LangSmith Agent Servers
 )
 # :snippet-end:
 

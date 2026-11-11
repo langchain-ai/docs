@@ -11,14 +11,14 @@ Use this page as a reference while planning a rollout or troubleshooting an exis
 - Platform layers and application core services.
 - AWS managed services, IRSA roles, and cluster infrastructure.
 - Network topology, ingress options, and TLS/DNS strategies.
-- LangSmith Deployment add-on.
+- LangSmith Agent Servers add-on.
 - Module dependency graph and opt-in security modules.
 
 If you are ready to install, start with the [deployment walkthrough](/langsmith/self-host-terraform-aws-deploy).
 
 ## Platform layers
 
-LangSmith on AWS deploys in two stages with one optional add-on. The infrastructure stage provisions the cloud foundation. The application stage installs the LangSmith Helm chart. The LangSmith Deployment add-on is opt-in and adds the host-backend, listener, and operator services for managing LangGraph applications from the UI.
+LangSmith on AWS deploys in two stages with one optional add-on. The infrastructure stage provisions the cloud foundation. The application stage installs the LangSmith Helm chart. The LangSmith Agent Servers add-on is opt-in and adds the host-backend, listener, and operator services for managing LangGraph applications from the UI.
 
 <img src="/images/self-hosted-terraform/aws-architecture.png" alt="LangSmith on AWS service layout" />
 
@@ -26,7 +26,7 @@ LangSmith on AWS deploys in two stages with one optional add-on. The infrastruct
 |---|---|---|
 | Infrastructure | AWS infrastructure | VPC + private/public subnets + single NAT gateway, EKS cluster + managed node group + cluster autoscaler, RDS PostgreSQL, ElastiCache Redis, S3 bucket + VPC Gateway Endpoint, ALB + ALB controller + EBS CSI driver + metrics server, k8s-bootstrap (KEDA, ESO, Envoy Gateway by default). Optional: Network Firewall, WAF, CloudTrail, ALB access logs, SmithDB, sandboxes. |
 | Application | LangSmith application | backend, frontend, playground, queue, ace-backend, clickhouse. Storage: RDS PostgreSQL (metadata) + S3 (trace blobs via VPC endpoint). Ingress: the Terraform ALB forwards to Envoy Gateway (default), Istio, or NGINX. With `enable_envoy_gateway = false`, the ALB controller provisions its own ALB for the Ingress. |
-| Add-on (`enable_deployments = true`) | LangSmith Deployment | host-backend, listener, operator. Per deployed graph: api-server, queue, redis, postgres (operator-managed). Requires KEDA (installed alongside infrastructure via k8s-bootstrap). |
+| Add-on (`enable_deployments = true`) | LangSmith Agent Servers | host-backend, listener, operator. Per deployed graph: api-server, queue, redis, postgres (operator-managed). Requires KEDA (installed alongside infrastructure via k8s-bootstrap). |
 
 ## Component to storage mapping
 
@@ -71,7 +71,7 @@ The Helm chart runs three jobs at install and upgrade time:
 | `langsmith-backend-ch-migrations` | ClickHouse schema migrations |
 | `langsmith-backend-auth-bootstrap` | Creates the initial org and admin account from `initial_org_admin_password` in `langsmith-config` |
 
-## LangSmith Deployment add-on
+## LangSmith Agent Servers add-on
 
 When `enable_deployments = true`, three additional services are installed and a `LangGraphPlatform` CRD is registered. Each deployment the user creates in the LangSmith UI produces a Kubernetes Deployment in the `langsmith` namespace, managed by the operator.
 
@@ -129,7 +129,7 @@ Two Terraform modules install the cluster-level services LangSmith depends on. T
 | `cluster-autoscaler` | `eks` | `kube-system` | Yes | Scales EC2 node groups based on pod scheduling pressure. |
 | `ebs-csi-driver` | `eks` | `kube-system` | Yes | Provisions EBS volumes for PersistentVolumeClaims (used by ClickHouse). |
 | Karpenter | `eks` | `karpenter` | Yes | Provisions SmithDB's NVMe instance-store and compute nodes. Installed only when `enable_smithdb = true`. |
-| KEDA | `k8s-bootstrap` | `keda` | No | Kubernetes Event-driven Autoscaling. Scales `queue` and `ingest-queue` on Redis queue depth. Required for the LangSmith Deployment add-on. |
+| KEDA | `k8s-bootstrap` | `keda` | No | Kubernetes Event-driven Autoscaling. Scales `queue` and `ingest-queue` on Redis queue depth. Required for the LangSmith Agent Servers add-on. |
 | Envoy Gateway | `k8s-bootstrap` | `envoy-gateway-system` | No | Default ingress gateway behind the ALB. Skipped when you select Istio, NGINX, or ALB Ingress. |
 | cert-manager | `k8s-bootstrap` | `cert-manager` | Optional | Automates TLS certificate issuance. With `tls_certificate_source = letsencrypt` it uses an HTTP-01 issuer through the ALB and needs no IRSA. With `create_cert_manager_irsa = true` it uses DNS-01 through Route 53 with an IRSA role. Installed only in those two cases. |
 | External Secrets Operator | `k8s-bootstrap` | `external-secrets` | Yes | Syncs SSM parameters into the `langsmith-config` Kubernetes Secret. |

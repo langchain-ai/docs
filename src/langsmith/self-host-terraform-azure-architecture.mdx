@@ -18,7 +18,7 @@ LangSmith on Azure deploys in stages. Each stage adds a capability layer on top 
 |---|---|---|
 | Infrastructure | Azure infrastructure | VNet, AKS, Postgres, Redis, Blob, Key Vault, cert-manager, KEDA, ingress controller, optional SmithDB metastore |
 | Application | LangSmith base | frontend, backend, platform-backend, queue, ingest-queue, ace-backend, clickhouse, playground |
-| LangSmith Deployment add-on | LangSmith Deployment | host-backend, listener, operator + per-deployment pods |
+| LangSmith Agent Servers add-on | LangSmith Agent Servers | host-backend, listener, operator + per-deployment pods |
 | Fleet add-on | Fleet | fleet-tool-server, fleet-trigger-server, in-cluster Fleet Redis |
 | Insights + Polly add-on | Insights + Polly | Insights analytics (ClickHouse-backed), Polly eval agent (static `standalone-polly` pods) |
 | LLM Gateway add-on | LLM Gateway (beta) | agent-gateway, plus presidio-analyzer with PII redaction |
@@ -130,11 +130,11 @@ In-cluster ClickHouse is dev/POC only (single pod, no replication, no backups). 
 | `langsmith-backend-ch-migrations` | ClickHouse schema migrations |
 | `langsmith-backend-auth-bootstrap` | Creates the initial org and admin account from `initial_org_admin_password` in `langsmith-config-secret` |
 
-## LangSmith Deployment add-on
+## LangSmith Agent Servers add-on
 
 | Service | Purpose | Workload Identity |
 |---|---|---|
-| `langsmith-host-backend` | LangSmith Deployment control plane API. Manages deployment lifecycle, serves deployment metadata. | Yes |
+| `langsmith-host-backend` | LangSmith Agent Servers control plane API. Manages deployment lifecycle, serves deployment metadata. | Yes |
 | `langsmith-listener` | Watches host-backend for state changes, creates and updates `LangGraphPlatform` CRDs. | Yes |
 | `langsmith-operator` | Kubernetes operator. Azure-specific: injects `azure.workload.identity/use: "true"` + `langsmith-ksa` so every agent pod accesses Blob Storage via Workload Identity. | No |
 
@@ -228,8 +228,8 @@ Every pod that reads blob storage env vars must have:
 | `langsmith-platform-backend` | Application | Yes |
 | `langsmith-queue` | Application | Yes |
 | `langsmith-ingest-queue` | Application | Yes |
-| `langsmith-host-backend` | LangSmith Deployment add-on | Yes |
-| `langsmith-listener` | LangSmith Deployment add-on | Yes |
+| `langsmith-host-backend` | LangSmith Agent Servers add-on | Yes |
+| `langsmith-listener` | LangSmith Agent Servers add-on | Yes |
 | `langsmith-fleet-tool-server` | Fleet add-on | Yes |
 | `langsmith-fleet-trigger-server` | Fleet add-on | Yes |
 | `langsmith-agent-gateway` | LLM Gateway add-on | Yes |
@@ -238,7 +238,7 @@ Every pod that reads blob storage env vars must have:
 | `langsmith-playground` | Application | No |
 | `langsmith-ace-backend` | Application | No |
 | `langsmith-clickhouse` | Application | No |
-| `langsmith-operator` | LangSmith Deployment add-on | No |
+| `langsmith-operator` | LangSmith Agent Servers add-on | No |
 
 All federated credentials are registered in `infra/modules/k8s-cluster/main.tf` under `service_accounts_for_workload_identity`. Each name is `<release>-<component>`, where `<release>` is the chart fullname (`langsmith` by default). Terraform registers the two LLM Gateway credentials whether or not `enable_llm_gateway` is set. The `v0.16.*` module tags register all except the two LLM Gateway credentials. SmithDB uses its own ServiceAccount and identity. Adding a new pod that accesses blob storage requires adding its ServiceAccount name to that list and running `make apply`.
 
@@ -329,10 +329,10 @@ Four sizing profiles are available.
 | Pool | VM Size | vCPU | RAM | Min | Max | Purpose |
 |---|---|---|---|---|---|---|
 | default | `Standard_D8s_v5` | 8 | 32 GB | 1 | 10 | Core LangSmith, system pods (set min 3 for production) |
-| large | `Standard_D16s_v5` | 16 | 64 GB | 0 | 2 | ClickHouse (in-cluster), LangSmith Deployment agent pods |
+| large | `Standard_D16s_v5` | 16 | 64 GB | 0 | 2 | ClickHouse (in-cluster), LangSmith Agent Servers agent pods |
 
 <Note>
-ClickHouse (when in-cluster) requests 1 to 4 CPU and 2 to 16 GB RAM depending on profile. With [LangChain Managed ClickHouse](/langsmith/langsmith-managed-clickhouse), the `large` pool is only needed for agent pods that the LangSmith Deployment operator spawns.
+ClickHouse (when in-cluster) requests 1 to 4 CPU and 2 to 16 GB RAM depending on profile. With [LangChain Managed ClickHouse](/langsmith/langsmith-managed-clickhouse), the `large` pool is only needed for agent pods that the LangSmith Agent Servers operator spawns.
 </Note>
 
 ## Optional modules

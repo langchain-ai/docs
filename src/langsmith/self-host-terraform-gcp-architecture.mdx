@@ -11,7 +11,7 @@ Use this page as a reference while planning a rollout or troubleshooting an exis
 - Platform layers and deployment tiers (light versus production).
 - Module descriptions and dependencies.
 - Networking, Workload Identity, and traffic flow.
-- Add-ons: LangSmith Deployment, Fleet, Insights, Polly, SmithDB, and Sandboxes.
+- Add-ons: LangSmith Agent Servers, Fleet, Insights, Polly, SmithDB, and Sandboxes.
 - GCP managed services and Secret Manager integration.
 
 If you are ready to install, start with the [deployment walkthrough](/langsmith/self-host-terraform-gcp-deploy).
@@ -26,14 +26,14 @@ LangSmith on GCP deploys in up to five stages. Each stage adds a capability laye
 |---|---|---|
 | 1 | GCP infrastructure | VPC, GKE, Cloud SQL, Memorystore, GCS, K8s bootstrap, cert-manager, KEDA, Envoy Gateway |
 | 2 | LangSmith base | frontend, backend, platform-backend, queue, ace-backend, clickhouse, playground |
-| 3 | LangSmith Deployment | host-backend, listener, operator + per-deployment pods |
+| 3 | LangSmith Agent Servers | host-backend, listener, operator + per-deployment pods |
 | 4 | Fleet | standalone-fleet-api-server, standalone-fleet-queue, fleet-tool-server, fleet-trigger-server |
 | 5 | Insights + Polly | Insights analytics (ClickHouse-backed), Polly eval agent |
 
 SmithDB (`enable_smithdb`) and Sandboxes (`enable_sandboxes`) are optional add-ons outside these stages. Each adds its own node pools and managed services to the same cluster and namespace.
 
 <Note>
-Fleet is the current form of the feature formerly called Agent Builder. Enable it with `enable_fleet`. Unlike the deprecated `enable_agent_builder` path, it does not require the LangSmith Deployment layer. The two flags are mutually exclusive and share the same encryption key. See [Enable add-ons](/langsmith/self-host-terraform-gcp-deploy#enable-add-ons) in the deployment guide.
+Fleet is the current form of the feature formerly called Agent Builder. Enable it with `enable_fleet`. Unlike the deprecated `enable_agent_builder` path, it does not require the LangSmith Agent Servers layer. The two flags are mutually exclusive and share the same encryption key. See [Enable add-ons](/langsmith/self-host-terraform-gcp-deploy#enable-add-ons) in the deployment guide.
 </Note>
 
 ## Module descriptions
@@ -135,7 +135,7 @@ In-cluster ClickHouse is dev/POC only (single pod, no replication, no backups). 
 | `langsmith-backend-ch-migrations` | ClickHouse schema migrations |
 | `langsmith-backend-auth-bootstrap` | Creates the initial org and admin account |
 
-## LangSmith Deployment add-on
+## LangSmith Agent Servers add-on
 
 | Service | Purpose | Workload Identity |
 |---|---|---|
@@ -182,7 +182,7 @@ When `postgres_source = "external"` and `redis_source = "external"` (the recomme
 | Service | Namespace | Installed by | Required for |
 |---|---|---|---|
 | Envoy Gateway | `envoy-gateway-system` | `ingress` module (`install_ingress = true`, default) | All ingress |
-| KEDA | `keda` | `k8s-bootstrap` module when `enable_langsmith_deployment = true` | LangSmith Deployment add-on and later |
+| KEDA | `keda` | `k8s-bootstrap` module when `enable_langsmith_deployment = true` | LangSmith Agent Servers add-on and later |
 | cert-manager | `cert-manager` | `k8s-bootstrap` module when `tls_certificate_source = "letsencrypt"` or `install_cert_manager = true` | Let's Encrypt TLS |
 
 <Note>
@@ -240,7 +240,7 @@ Envoy Gateway  (envoy-gateway-system, external LoadBalancer IP)
   │
   ├── /                     → frontend:80
   ├── /api/*                → backend:1984
-  └── /api/v1/deployments/* → host-backend:1985  (LangSmith Deployment add-on)
+  └── /api/v1/deployments/* → host-backend:1985  (LangSmith Agent Servers add-on)
 
 Internal traffic (private IPs, never leaving VPC):
   backend       → Cloud SQL:5432    via private IP
@@ -316,7 +316,7 @@ kubectl get svc -n envoy-gateway-system
 kubectl get pods -n cert-manager
 kubectl get certificate -n langsmith
 
-# KEDA (LangSmith Deployment add-on)
+# KEDA (LangSmith Agent Servers add-on)
 kubectl get pods -n keda
 
 # Cloud SQL connectivity test

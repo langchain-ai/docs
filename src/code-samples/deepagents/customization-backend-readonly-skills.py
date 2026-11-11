@@ -5,7 +5,7 @@ from deepagents import FilesystemPermission, create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
 from langgraph.store.memory import InMemoryStore
 
-store = InMemoryStore()  # Good for local dev; omit for LangSmith Deployment
+store = InMemoryStore()  # Good for local dev; omit for LangSmith Agent Servers
 
 agent = create_deep_agent(
     model="openai:gpt-5.5",

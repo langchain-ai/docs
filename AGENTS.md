@@ -608,7 +608,7 @@ Notes:
 
 ### Update the egress IP inventory
 
-The LangSmith and LangSmith Deployment egress IP tables on `/langsmith/cloud` and
+The LangSmith and LangSmith Agent Servers egress IP tables on `/langsmith/cloud` and
 `/langsmith/cloud-platform-features` are generated from
 `src/langsmith/egress-ip-addresses.json` by `scripts/generate_egress_ip_tables.py`. The JSON is
 also published as-is at `/langsmith/egress-ip-addresses.json` for customers to poll.

@@ -414,7 +414,7 @@ LINK_MAPS: list[LinkMap] = [
             "TasksStreamPart": "langgraph/types/TasksStreamPart",
             "DebugStreamPart": "langgraph/types/DebugStreamPart",
             "Topic": "langgraph/channels/topic/Topic",
-            # LangSmith Deployment SDK
+            # LangSmith Agent Servers SDK
             # Main client
             "get_client": "langchain-core/tracers/langchain/get_client",
             "get_sync_client": "langgraph-sdk/_sync/client/get_sync_client",
@@ -731,7 +731,7 @@ LINK_MAPS: list[LinkMap] = [
             "ToolRuntime": "langchain/index/Runtime",
             "RunnableLambda": "langchain-core/runnables/RunnableLambda",
             "PIIMiddleware": "langchain/index/piiMiddleware",
-            # LangSmith Deployment SDK - JS
+            # LangSmith Agent Servers SDK - JS
             "LangGraphSDK": "langgraph-sdk/",
             "ThreadsClient": "langchain-langgraph-sdk/client/ThreadsClient",
             "ThreadsClient.create": "langchain-langgraph-sdk/client/ThreadsClient/create",
@@ -796,7 +796,7 @@ LINK_MAPS: list[LinkMap] = [
         },
     },
     {
-        # LangSmith Deployment Agent Server API - Python scope
+        # LangSmith Agent Servers API - Python scope
         "host": "/langsmith/",
         "scope": "python",
         "links": {
@@ -811,7 +811,7 @@ LINK_MAPS: list[LinkMap] = [
         },
     },
     {
-        # LangSmith Deployment Agent Server API - JS scope
+        # LangSmith Agent Servers API - JS scope
         "host": "/langsmith/",
         "scope": "js",
         "links": {
