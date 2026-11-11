@@ -46,17 +46,17 @@ GCP data planes store and query traces in [SmithDB](/langsmith/self-host-smithdb
 1. **Users to the data plane**: Users reach `https://<first 8 characters of the data plane ID>.gcp.langchain-byoc.com`. The hostname points at the Istio ingress gateway on a public or internal load balancer, which you choose when you create the data plane.
 1. **Data plane to control plane**: The data plane reaches the LangSmith API at `us-central1.p.api.smith.langchain.com` through a Private Service Connect endpoint in its VPC. This path carries the heartbeat, sign-in and auth calls, and telemetry. It does not use the internet.
 1. **Control plane to GCP APIs**: The control plane acts as one LangChain identity, `byoc-crossplane@langchain-prod.iam.gserviceaccount.com`. It impersonates your provisioner service account, so every GCP API call in your project is made as the provisioner. The LangSmith API writes the data plane secrets to Secret Manager, and Crossplane creates, updates, and deletes the other resources.
-1. **Control plane to GKE**: Crossplane installs and updates the in-cluster resources through the cluster's DNS-based control plane endpoint. Each request needs a Google token for an identity with access to the cluster. Crossplane's Helm and Kubernetes providers cannot impersonate the provisioner, so the control plane service account itself holds `roles/container.admin` on your project.
+1. **Control plane to GKE**: Crossplane installs and updates the in-cluster resources through the cluster's DNS-based control plane endpoint. Each request needs a Google token for an identity with access to the cluster. Crossplane's Helm and Kubernetes providers cannot impersonate the provisioner, so the control plane service account itself holds `roles/container.admin`. Your Terraform module grants it only on GKE clusters tagged `managed_by: langsmith`, and LangSmith tags each data plane cluster when it creates it.
 1. **DNS delegation**: The control plane writes the NS delegation for the data plane hostname in LangChain's parent zone, `gcp.langchain-byoc.com`. This record is in LangChain's project, not yours.
 
 ## Create and delete lifecycle
 
-1. Your Terraform creates the provisioner service account and its roles, and lets the control plane service account impersonate it.
+1. Your Terraform creates the provisioner service account and its roles, creates the `managed_by: langsmith` tag, and lets the control plane service account impersonate the provisioner.
 1. You create the data plane with the API.
 1. The control plane checks its access, writes the data plane secrets to Secret Manager, and hands the data plane to Crossplane.
-1. Crossplane builds the network, GKE, Cloud SQL, Memorystore, Cloud Storage, and DNS, then installs LangSmith.
+1. Crossplane builds the network, GKE, Cloud SQL, Memorystore, Cloud Storage, and DNS, tags the GKE cluster `managed_by: langsmith`, then installs LangSmith.
 1. The data plane sends a heartbeat, and LangSmith shows it as `active`.
-1. When you delete the data plane, the control plane lifts deletion protection, Crossplane deletes the resources, and the control plane deletes the secrets.
+1. When you delete the data plane, the control plane lifts deletion protection, Crossplane deletes the resources, and the control plane deletes the secrets. The Cloud Storage bucket and the Cloud SQL backups stay. For more information, see [What teardown keeps](/langsmith/byoc-onboarding-gcp#what-teardown-keeps).
 
 ## Network
 
@@ -77,9 +77,9 @@ None of the data stores has a public endpoint.
 
 | Store | Configuration |
 |-------|---------------|
-| Cloud SQL for PostgreSQL | Enterprise edition, regional with a standby in another zone, with automatic storage growth. Private IP only. TLS required. IAM database login, so no application password exists. Automated backups (7 kept) and point-in-time recovery (7 days). Deletion protection on. Holds the LangSmith and SmithDB metastore databases. |
+| Cloud SQL for PostgreSQL | Enterprise edition, regional with a standby in another zone, with automatic storage growth. Private IP only. TLS required. IAM database login, so no application password exists. Automated backups (7 kept) and point-in-time recovery (7 days). Deletion protection on. At teardown, Cloud SQL takes a final backup, kept for 365 days, and keeps the automated backups. Holds the LangSmith and SmithDB metastore databases. |
 | Memorystore for Redis Cluster | One shard with one replica. IAM auth and TLS. Reached through a Private Service Connect endpoint. Deletion protection on. |
-| Cloud Storage | One regional bucket for LangSmith blobs and SmithDB data. Uniform bucket-level access, with public access prevention enforced. Lifecycle rules delete objects under the TTL prefixes. |
+| Cloud Storage | One regional bucket for LangSmith blobs and SmithDB data. Uniform bucket-level access, with public access prevention enforced. Lifecycle rules delete objects under the TTL prefixes. Teardown keeps the bucket and its objects. |
 | Secret Manager | Regional secrets for the data plane configuration and Postgres, plus one for sandboxes when they are enabled. Labeled with the data plane ID. The control plane writes them at create and deletes them at teardown. |
 
 ## GKE and compute
@@ -134,12 +134,16 @@ The [`langsmith-byoc-service-account` Terraform module](https://github.com/langc
 |----------|--------------|
 | `langsmith-byoc-provisioner` service account | The service account LangSmith provisions as. Its description is your external ID. |
 | Token Creator on the provisioner | Lets `byoc-crossplane@langchain-prod.iam.gserviceaccount.com` impersonate the provisioner. No other LangChain identity is trusted. |
-| `langsmithByocProvisioner` custom role | The permissions to create, update, and delete data plane resources, bound on the project. |
-| `langsmithByocProjectIamGranter` custom role | `resourcemanager.projects.getIamPolicy` and `setIamPolicy`. An IAM condition lets the provisioner add or remove only these project roles: `artifactregistry.reader`, `cloudsql.admin`, `cloudsql.client`, `cloudsql.instanceUser`, `container.admin`, `container.defaultNodeServiceAccount`, `redis.dbConnectionUser`, and `secretmanager.secretAccessor`. |
+| `langsmithByocProvisioner` custom role | The permissions to create, update, and delete data plane resources that a name condition cannot limit, bound on the project. |
+| `langsmithByocNamed<Kind>` custom roles | One role per resource kind: Cloud SQL instances, GKE clusters, networks, subnets, Cloud Routers, addresses, forwarding rules, Memorystore for Redis clusters, service connection policies, Cloud Storage, and Secret Manager. Each is bound with an IAM condition on the resource name, so the provisioner can create, change, and delete only resources whose names start with `langsmith-`, and secrets whose IDs start with `ls-`. |
+| `managed_by: langsmith` tag | A project tag. The provisioner can bind it only to GKE clusters whose names start with `langsmith-`. |
+| `roles/container.admin` for the control plane | Granted to `byoc-crossplane@langchain-prod.iam.gserviceaccount.com` with the condition that the cluster has the `managed_by: langsmith` tag. It covers the GKE API and the Kubernetes API. |
+| `langsmithByocClusterConnect` custom role | `container.clusters.connect` for the control plane service account, limited to clusters whose names start with `langsmith-`. The DNS-based endpoint checks it without the cluster's tags. Connecting gives no access inside a cluster. |
+| `langsmithByocProjectIamGranter` custom role | `resourcemanager.projects.getIamPolicy` and `setIamPolicy`. An IAM condition lets the provisioner add or remove only these project roles: `artifactregistry.reader`, `cloudsql.admin`, `cloudsql.client`, `cloudsql.instanceUser`, `container.defaultNodeServiceAccount`, `redis.dbConnectionUser`, and `secretmanager.secretAccessor`. The condition limits which roles, not to whom. |
 | `langsmithByocServiceAccountUser` custom role | `iam.serviceAccounts.actAs`, so GKE nodes and workloads can run as the data plane service accounts. IAM does not evaluate conditions for `actAs`, so this binding has none. |
 | Project APIs | With `enable_apis` (default `true`): Compute Engine, GKE, Cloud DNS, IAM, IAM Service Account Credentials, Network Connectivity, Memorystore for Redis, Secret Manager, Service Directory, Service Networking, and Cloud SQL Admin. |
 
-The custom role ID prefix is `langsmithByoc` by default. Set `custom_role_id_prefix` to change it. For the full permission list of each role, see the module's [README](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/gcp/langsmith-byoc-service-account) and source.
+The custom role ID prefix is `langsmithByoc` by default. Set `custom_role_id_prefix` if the project already has roles with those IDs. Apply one copy of the module per project, because it creates the project's `managed_by` tag key. For the full permission list of each role, see the module's [README](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/gcp/langsmith-byoc-service-account) and source.
 
 ### Checks at create
 
@@ -163,13 +167,13 @@ Crossplane creates one Google service account per workload class for each data p
 | `lsn-<hash>` / `langsmith-node` | GKE nodes | Project: `container.defaultNodeServiceAccount`, `artifactregistry.reader`. |
 | `lsh-<hash>` / `langsmith-sandbox-host` | Sandbox nodes, with sandboxes enabled | Project: `container.defaultNodeServiceAccount`, `artifactregistry.reader`, `redis.dbConnectionUser`. Bucket: `storage.objectAdmin` on the `smithbox/` managed folder only. |
 
-Crossplane also grants `roles/container.admin` on the project to `byoc-crossplane@langchain-prod.iam.gserviceaccount.com`. With `byo_iam`, your Terraform makes this grant.
+Your Terraform module grants `byoc-crossplane@langchain-prod.iam.gserviceaccount.com` its `roles/container.admin`, on tagged clusters only, with or without `byo_iam`. Crossplane makes no grant to it.
 
 With `byo_iam`, do not give your own secrets in the project IDs that start with `ls-`, or External Secrets can read them.
 
 ### Bring your own IAM
 
-Set `byo_iam = true` in the module before you create data planes in the project, and create the data plane with `byoiam_enabled` set to `true`. Do not change `byo_iam` while data planes exist. With `byo_iam`:
+Set `byo_iam = true` in the module before you create data planes in the project, and create the data plane with `byoiam_enabled` set to `true`. Use it when the project also holds resources that are not LangSmith's. Do not change `byo_iam` while data planes exist. With `byo_iam`:
 
 - Your Terraform creates the six service accounts and their project roles.
 - The provisioner role loses `iam.serviceAccounts.create`, `delete`, `update`, and `setIamPolicy`. It keeps `get`, `list`, and `getIamPolicy`.
@@ -179,13 +183,18 @@ Set `byo_iam = true` in the module before you create data planes in the project,
 
 ### What LangChain can and cannot access
 
-- **Can**: Create, change, and delete the data plane resources through the provisioner. Read the project's IAM policy and service accounts. Act as cluster admin on GKE clusters in the project, through `container.admin`. This is how LangSmith installs and upgrades the application.
-- **Cannot, by role**: The provisioner has no `storage.objects.get`, so it cannot read objects in the bucket. It can list and delete them for teardown. It has no `secretmanager.versions.access`, so it cannot read secrets. It has no Cloud SQL user or database login permissions, and no permissions outside the project.
+- **Can**: Create, change, and delete the data plane resources through the provisioner, which for most kinds means resources whose names start with `langsmith-`. Read the project's IAM policy and service accounts. Act as cluster admin on GKE clusters tagged `managed_by: langsmith`, through `container.admin`. This is how LangSmith installs and upgrades the application.
+- **Cannot, by role**: The provisioner has no `storage.objects.get`, so it cannot read objects in the bucket. It can list and delete them. It has no `secretmanager.versions.access`, so it cannot read secrets. It has no Cloud SQL user or database login permissions, and no permissions outside the project.
 
 These are limits of the provisioner's roles, not deny policies. The provisioner can still set IAM policies on buckets and DNS zones and, without `byo_iam`, on service accounts.
 
 <Warning>
-Use a project that holds only LangSmith resources. IAM conditions cannot limit service account permissions by account name. Without `byo_iam`, the provisioner's `setIamPolicy` and `actAs` apply to every service account in the project, so it could act as any of them. The project grants of `container.admin` to the control plane service account and `cloudsql.admin` to the Postgres setup account also cover every GKE cluster and Cloud SQL instance in the project.
+Use a project that holds only LangSmith resources, or set `byo_iam`. Name conditions limit the provisioner to `langsmith-` resources for most kinds, but not everywhere:
+
+- **Service accounts**: IAM checks a service account by its numeric unique ID, so a condition cannot limit service account permissions by account name. Without `byo_iam`, the provisioner's `setIamPolicy` and `actAs` apply to every service account in the project, so it could act as any of them.
+- **Project role grants**: Without `byo_iam`, the provisioner can grant the project roles listed above to any principal, including itself. With `cloudsql.admin` or `secretmanager.secretAccessor`, it could reach every Cloud SQL instance or secret in the project.
+- **Postgres setup**: Without `byo_iam`, the project grant of `cloudsql.admin` to the Postgres setup account covers every Cloud SQL instance in the project.
+- **Your own `langsmith-` resources**: The name conditions cannot tell your resources from LangSmith's if their names also start with `langsmith-`.
 </Warning>
 
 ### Remove access
@@ -193,7 +202,7 @@ Use a project that holds only LangSmith resources. IAM conditions cannot limit s
 To remove LangChain's access to your project:
 
 - **Recommended**: Delete the data plane in LangSmith. Wait until it is gone, then run `terraform destroy` if no other data planes use the project.
-- **Immediate**: Remove both LangChain grants: the Token Creator binding on the provisioner (or the provisioner itself), and the project `roles/container.admin` grant to `byoc-crossplane@langchain-prod.iam.gserviceaccount.com`. LangSmith then cannot change or delete the data plane. The resources stay, and you must delete them yourself.
+- **Immediate**: Remove the LangChain grants: the Token Creator binding on the provisioner (or the provisioner itself), and the tag-conditioned `roles/container.admin` and `langsmithByocClusterConnect` grants to `byoc-crossplane@langchain-prod.iam.gserviceaccount.com`. LangSmith then cannot change or delete the data plane. The resources stay, and you must delete them yourself.
 
 ## See also
 
