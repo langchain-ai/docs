@@ -1,0 +1,240 @@
+---
+title: Give self-hosted deployments their own identities and secrets
+sidebarTitle: Per-deployment identities
+description: Create a Kubernetes ServiceAccount and a Secrets Store CSI SecretProviderClass for each self-hosted LangSmith deployment, so each agent gets its own cloud identity and mounted secrets.
+---
+
+On self-hosted LangSmith, each [deployment](/langsmith/deployment) can declare its own Kubernetes `ServiceAccount` and Secrets Store CSI `SecretProviderClass`. The operator creates them in the deployment's namespace. Select the `ServiceAccount` in **Deployment Settings** to run the deployment's pods as that account.
+
+Use this to give each agent its own cloud identity through workload identity. Each agent can then mount its secrets from Azure Key Vault, AWS Secrets Manager, or Google Secret Manager as files. This avoids relying on the installation's default service account configuration.
+
+This feature is for standalone self-hosted installations that use the bundled operator. Deployments on a remote listener do not support it.
+
+<Note>
+Per-deployment identities require LangSmith Helm chart version 0.18.0-rc.55 or later. This minimum is a release candidate.
+</Note>
+
+## How it works
+
+You add up to 16 manifests to a deployment in the LangSmith UI. Only two kinds are accepted:
+
+- `v1` `ServiceAccount`, which carries the workload identity annotation for your cloud.
+- `secrets-store.csi.x-k8s.io/v1` `SecretProviderClass`, which tells the Secrets Store CSI driver which secrets to fetch.
+
+The operator creates each object with the deployment as its owner. It refuses to adopt or update an existing object that the deployment does not control. It also refuses to roll out a deployment that uses a `ServiceAccount` or `SecretProviderClass` created by a different deployment.
+
+Saving the manifests redeploys the deployment. A rollback does not restore earlier manifests, because they belong to the deployment rather than to a revision.
+
+LangSmith stores the manifests in plaintext in its database and in the deployment's custom resource. Do not put credentials in labels, annotations, or parameters. While the feature is enabled, the deployment detail API returns saved manifests only to users who can update the deployment. Service principals, list responses, and legacy deployment responses do not receive them.
+
+## Prerequisites
+
+- LangSmith Deployment enabled on your installation. See [Enable LangSmith Deployment](/langsmith/enable-self-hosted-deployment).
+- LangSmith Helm chart version [0.18.0-rc.55](https://github.com/langchain-ai/helm/releases/tag/langsmith-0.18.0-rc.55) or later, with LangSmith and operator images from the same release.
+- The [Secrets Store CSI driver](https://secrets-store-csi-driver.sigs.k8s.io/getting-started/installation) and the provider for your cloud, installed on the cluster. The LangSmith chart does not install either.
+- Workload identity configured for your cluster.
+
+## Enable the feature
+
+The feature defaults to `false`. Set `config.deployment.extraManifestsEnabled` in your [`langsmith_config.yaml`](/langsmith/kubernetes#configure-your-helm-charts):
+
+```yaml
+config:
+  deployment:
+    enabled: true
+    extraManifestsEnabled: true
+operator:
+  enabled: true
+```
+
+The chart then turns the feature on in the LangSmith backend and in the operator, and grants the operator `get`, `create`, `patch`, and `delete` on `secretproviderclasses`. When you set `operator.rbac.create` to `false`, grant those permissions yourself.
+
+Do not set `LGP_EXTRA_MANIFESTS_ENABLED` through environment values. The chart sets it on every component that needs it.
+
+## Add manifests to a deployment
+
+Create the deployment first. To configure its identity and secret mounts:
+
+<Steps>
+  <Step title="Open the deployment settings">
+    In the LangSmith UI, open the deployment and select **Deployment Settings**. The **Kubernetes Resources** section holds the manifests editor.
+  </Step>
+  <Step title="Write the manifests">
+    Enter the manifests in **Extra Kubernetes Manifests** as YAML documents separated by `---`. Every `metadata.name` must start with the prefix that the editor shows, which is the deployment's resource name followed by `-`.
+
+    Do not set `metadata.namespace`. The operator always uses the deployment's namespace.
+  </Step>
+  <Step title="Mount the secrets">
+    Under **Secret mounts**, each `SecretProviderClass` from the editor has a **Mount path**. Set a path, for example `/mnt/secrets`. Each secret appears as a file under that path.
+  </Step>
+  <Step title="Select the service account">
+    Set **Service account name** to the `ServiceAccount` from your manifests. When you edit the manifests to define exactly one `ServiceAccount`, LangSmith suggests its name. This fills an empty field or replaces the previous automatic suggestion, but preserves a manual choice.
+  </Step>
+  <Step title="Save and redeploy">
+    Select **Save and redeploy** once. LangSmith applies the manifests, the mount, and the service account change in a single redeploy.
+  </Step>
+</Steps>
+
+<Frame caption="Configure manifests and a secret mount in a local LangSmith instance. The recording uses placeholder cloud values and does not show a Kubernetes rollout.">
+  <img src="/images/self-hosted-deployment-identities.gif" width="960" alt="Add ServiceAccount and SecretProviderClass manifests, confirm the automatically selected service account, set the mount path to /mnt/secrets, and save the deployment settings" />
+</Frame>
+
+## Examples
+
+Each example uses `my-agent-0123abcd-` as the prefix. Replace it with the prefix that the editor shows for your deployment. Replace every other value in angle brackets with your own.
+
+The workload identity binding on your cloud must name the exact `ServiceAccount` and the deployment's namespace. Find the namespace with `kubectl get lgp -A`.
+
+<Tabs>
+  <Tab title="Azure Key Vault">
+    Install the [Azure Key Vault provider](https://azure.github.io/secrets-store-csi-driver-provider-azure/docs/getting-started/installation/) and set up [Microsoft Entra Workload ID](https://learn.microsoft.com/en-us/azure/aks/workload-identity-overview):
+
+    1. Create a user-assigned managed identity, and grant it `Key Vault Secrets User` on the vault.
+    2. Add a federated identity credential to the managed identity. Set the issuer to your cluster's OIDC issuer URL, the subject to `system:serviceaccount:<namespace>:my-agent-0123abcd-kv`, and the audience to `api://AzureADTokenExchange`.
+
+    ```yaml
+    apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: my-agent-0123abcd-kv
+      annotations:
+        azure.workload.identity/client-id: <managed-identity-client-id>
+    ---
+    apiVersion: secrets-store.csi.x-k8s.io/v1
+    kind: SecretProviderClass
+    metadata:
+      name: my-agent-0123abcd-kv
+    spec:
+      provider: azure
+      parameters:
+        clientID: <managed-identity-client-id>
+        tenantId: <tenant-id>
+        keyvaultName: <vault-name>
+        objects: |
+          array:
+            - |
+              objectName: <secret-name>
+              objectType: secret
+    ```
+
+    `clientID` is required. `usePodIdentity` and `useVMManagedIdentity` may only be `"false"`.
+  </Tab>
+  <Tab title="AWS Secrets Manager">
+    Install the [AWS Secrets and Configuration Provider](https://docs.aws.amazon.com/secretsmanager/latest/userguide/integrating_csi_driver.html). Give the `ServiceAccount` an IAM role that can read the secret, through [IAM roles for service accounts](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html) or [EKS Pod Identity](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html).
+
+    With IAM roles for service accounts, annotate the `ServiceAccount` with the role:
+
+    ```yaml
+    apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: my-agent-0123abcd-aws
+      annotations:
+        eks.amazonaws.com/role-arn: arn:aws:iam::<account-id>:role/<role-name>
+    ---
+    apiVersion: secrets-store.csi.x-k8s.io/v1
+    kind: SecretProviderClass
+    metadata:
+      name: my-agent-0123abcd-aws
+    spec:
+      provider: aws
+      parameters:
+        region: <region>
+        objects: |
+          - objectName: "<secret-name>"
+            objectType: "secretsmanager"
+    ```
+
+    With EKS Pod Identity, create a pod identity association for the `ServiceAccount` instead of the annotation, and add `usePodIdentity: "true"` to `parameters`.
+  </Tab>
+  <Tab title="Google Secret Manager">
+    Install the [Google Secret Manager provider](https://github.com/GoogleCloudPlatform/secrets-store-csi-driver-provider-gcp) and enable [Workload Identity Federation for GKE](https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity) on the cluster and node pools. The example links a Kubernetes `ServiceAccount` to a Google IAM service account:
+
+    1. Create the Google IAM service account. Grant it `roles/secretmanager.secretAccessor` on the secret only.
+    2. Grant `roles/iam.workloadIdentityUser` on that IAM service account to `serviceAccount:<project-id>.svc.id.goog[<namespace>/my-agent-0123abcd-gcp]`.
+    3. Set `iam.gke.io/gcp-service-account` to that IAM service account's email, as shown below.
+
+    ```yaml
+    apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: my-agent-0123abcd-gcp
+      annotations:
+        iam.gke.io/gcp-service-account: <gsa-name>@<project-id>.iam.gserviceaccount.com
+    ---
+    apiVersion: secrets-store.csi.x-k8s.io/v1
+    kind: SecretProviderClass
+    metadata:
+      name: my-agent-0123abcd-gcp
+    spec:
+      provider: gcp
+      parameters:
+        secrets: |
+          - resourceName: "projects/<project-id>/secrets/<secret-name>/versions/latest"
+            path: "<file-name>"
+    ```
+
+    The `gcp` provider is required. The GKE Secret Manager add-on uses the `gke` provider, which LangSmith does not accept. When you set `auth`, it must be `pod-adc`.
+  </Tab>
+</Tabs>
+
+## Rules
+
+LangSmith rejects a save that breaks these rules. The operator validates the manifests again before applying them:
+
+- **Names**: Use lowercase Kubernetes DNS subdomain names with the required prefix. Do not repeat a name within the same kind.
+- **Metadata**: `metadata` may set only `name`, `labels`, and `annotations`. Label and annotation keys must be valid Kubernetes qualified names, and their values must be strings. Label values must also be valid Kubernetes label values. Keys that start with `lgp-operator.io/` or `apps.langchain.ai/` are reserved.
+- **Service accounts**: A `ServiceAccount` may set only `automountServiceAccountToken` besides `apiVersion`, `kind`, and `metadata`. Set `automountServiceAccountToken` to a boolean.
+- **Secret provider classes**: A `SecretProviderClass` `spec` may contain only `provider` and `parameters`. LangSmith rejects `secretObjects`, so the provider does not sync a Kubernetes `Secret`.
+- **Parameters**: All values must be strings. Each provider accepts only the following keys.
+
+| Provider | Allowed `parameters` |
+|----------|----------------------|
+| `aws` | `objects`, `region`, `failoverRegion`, `pathTranslation`, `usePodIdentity`, `preferredAddressType` |
+| `azure` | `clientID`, `tenantId`, `keyvaultName`, `cloudName`, `objects`, `usePodIdentity`, `useVMManagedIdentity` |
+| `gcp` | `secrets`, `auth` |
+
+## Update or remove manifests
+
+Edit the manifests in **Deployment Settings** and save. Clearing the editor removes every manifest.
+
+Before removing a `ServiceAccount`, clear **Service account name** or select another account. Clearing the field returns to the installation's default service account configuration.
+
+The operator deletes a removed object only after the rollout completes and no references remain. It checks the current server configuration, all Deployment templates in the namespace, and all existing pods. This includes scaled-to-zero templates and terminating pods. Remove remaining references to allow deletion.
+
+When a saved `SecretProviderClass` that has a mount is missing from the manifests, **Deployment Settings** shows a warning before you save. Saving removes that mount. When you rename a `SecretProviderClass`, set the **Mount path** for the new name before you save.
+
+Deleting a deployment deletes its objects through Kubernetes garbage collection. This can remove the objects while the deployment's pods are still draining.
+
+Setting `config.deployment.extraManifestsEnabled` back to `false` leaves existing objects as they are. Clear the manifests and remove their references while the feature is on to remove the objects.
+
+Before downgrading to a version that does not preserve extra manifests, disable the feature. Restore a supporting version and the intended manifests before you enable it again.
+
+## Check the status
+
+The operator reports progress in the `ExtraManifestsReady` condition on the deployment's `LGP` resource:
+
+```bash
+kubectl get lgp <name> -n <namespace> \
+  -o jsonpath='{.status.conditions[?(@.type=="ExtraManifestsReady")]}'
+```
+
+| Reason | Meaning |
+|--------|---------|
+| `Applied` | Every manifest is applied. |
+| `InvalidManifests` | A manifest breaks a rule. Fix the manifest. |
+| `ReferenceForbidden` | The deployment uses a `ServiceAccount` or `SecretProviderClass` that another deployment created. |
+| `ApplyFailed` | The operator cannot apply a manifest, for example because the `SecretProviderClass` CRD is not installed. Fix the cluster or the manifest. |
+| `ApplyRetrying` | The operator retries an error, such as a timeout or field ownership conflict. A conflict can require you to resolve field ownership. |
+| `PrunePending` | The rollout or deletion is pending, or a removed object still has references. Remove remaining references and wait for the rollout and pod termination. |
+| `PruneFailed` | The operator could not delete a removed object. |
+| `Disabled` | The feature is off in the operator while the deployment still declares manifests. |
+
+`InvalidManifests`, `ReferenceForbidden`, `ApplyFailed`, and `ApplyRetrying` keep the previous revision running. `PrunePending` and `PruneFailed` do not block the rollout. The condition is absent when no manifests, inventory, or forbidden references remain.
+
+When a pod stays in `ContainerCreating`, run `kubectl describe pod`. Inspect the `FailedMount` event message. Check the driver and provider installation, workload identity binding and permissions, and secret name and location.
+
+## See also
+
+- [Enable LangSmith Deployment](/langsmith/enable-self-hosted-deployment)
+- [Self-hosted platform features](/langsmith/self-hosted-platform-features)
