@@ -177,11 +177,14 @@ hub conflict, not a bad model ID.
 - Leaving prose link text on the old name after the href moves (for example
   "GPT-5.5 snapshot" pointing at `gpt-6.1-sol`)
 - Adding hidden `:remove-` overrides so CI tests different model kwargs than
-  the published snippet (for example forcing `use_responses_api` only in the
-  harness). If a flag is required, put it in the published code; if the SDK
-  already auto-routes, bump the pin and drop the workaround:
-  - Python: `langchain-openai` v1.7.0 or later
-  - TypeScript: `@langchain/openai` v1.6.0 or later
+  the published snippet. If a flag is required, put it in the published code.
+  GPT-6 Sol/Astra models treat tool calling as Responses-only:
+  - Python: `langchain-openai` v1.7.0 or later auto-routes GPT-6 + tools
+  - TypeScript: current `@langchain/openai` still needs
+    `useResponsesApi: true` on `ChatOpenAI` / `initChatModel` when tools
+    are used (it marks GPT-6 as a reasoning model but does not prefer
+    Responses). Put that flag in the published sample, not a `:remove-`
+    harness override.
   Bare IDs like `gpt-6.1-sol` still need an `openai:` prefix for
   `initChatModel` / `createAgent` string models
 

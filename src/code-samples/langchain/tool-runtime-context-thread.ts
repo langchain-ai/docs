@@ -21,7 +21,8 @@ const contextSchema = z.object({
 });
 
 const agent = createAgent({
-  model: new ChatOpenAI({ model: "gpt-6.1-sol" }),
+  // GPT-6 models need the Responses API for tool calling in @langchain/openai.
+  model: new ChatOpenAI({ model: "gpt-6.1-sol", useResponsesApi: true }),
   tools: [getUserName],
   checkpointer: new MemorySaver(),
   contextSchema,
