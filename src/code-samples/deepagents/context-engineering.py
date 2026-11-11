@@ -196,7 +196,7 @@ research_subagent = {
 from langchain.messages import AIMessage
 
 _research_agent = create_deep_agent(
-    model="openai:gpt-5.5",
+    model="openai:gpt-6.1-sol",
     system_prompt=(
         "You are a coordinator. For every request, call task() with "
         "subagent_type set to researcher."
@@ -249,7 +249,7 @@ from langchain.messages import AIMessage
 
 _test_store = InMemoryStore()
 _test_agent = create_deep_agent(
-    model="openai:gpt-5.5",
+    model="openai:gpt-6.1-sol",
     store=_test_store,
     backend=CompositeBackend(
         default=StateBackend(),

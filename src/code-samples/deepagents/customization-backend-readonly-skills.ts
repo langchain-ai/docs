@@ -10,7 +10,7 @@ import {
 const store = new InMemoryStore(); // Good for local dev; omit for LangSmith Deployment
 
 const agent = createDeepAgent({
-  model: "openai:gpt-5.5",
+  model: "openai:gpt-6.1-sol",
   backend: new CompositeBackend(new StateBackend(), {
     "/skills/": new StoreBackend({
       namespace: (rt) => ["curated-skills", rt.context.orgId],
