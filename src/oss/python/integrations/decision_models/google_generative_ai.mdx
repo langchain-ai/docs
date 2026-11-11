@@ -6,7 +6,7 @@ description: "Integrate with the GoogleGenAIClassifier decision model using Lang
 
 The [Gemini Decisions API](https://aistudio.google.com/docs/decisions-api) reads text, structured JSON, and media, and returns typed answers and probabilities instead of generated text.
 
-`GoogleGenAIClassifier` exposes these decisions as a LangChain `Runnable`, so you can invoke, batch, or compose them with other runnables. It accepts strings, JSON objects and arrays, [LangChain message objects](/oss/langchain/messages), and standard media blocks, and records traces and token usage in LangSmith. Use it for focused decisions such as routing a request, flagging content for review, or rating severity, where application code acts on the probability or confidence.
+`GoogleGenAIClassifier` exposes these decisions as a LangChain `Runnable`, so you can invoke, batch, or compose them with other runnables. It accepts strings, JSON objects and arrays, [LangChain message objects](/oss/langchain/messages), and standard media blocks, and records traces and token usage in LangSmith. You can also use it with [agent middleware](#agent-middleware) to route models and gate tool calls. Use it for focused decisions such as routing a request, flagging content for review, or rating severity, where application code acts on the probability or confidence.
 
 <Note>
 `GoogleGenAIClassifier` is in beta and requires `langchain-google-genai>=4.5.0` and `google-genai>=3.2.0`. Its API may change without notice.
@@ -87,7 +87,7 @@ Each question is one of three types:
 | `Choice` | Which of these options? | `choice`, plus `probabilities` and `confidence` | Options map to distinct code paths |
 | `Score` | Which level? | `score`, plus `legend`, `probabilities`, and `confidence` | The answer is a spectrum you compare to a threshold |
 
-- **`Noul`**: Returns a probability from `0` to `1`. A value near `0.5` means uncertainty, not "medium", so use `Score` for a spectrum. Pass `criteria` with `true` and `false` descriptions when the instructions alone leave room for interpretation. `Noul` answers have no `confidence`, because the probability is the answer.
+- **`Noul`**: Returns a probability between `0.01` and `0.99`, so a threshold above `0.99` never matches. A value near `0.5` means uncertainty, not "medium", so use `Score` for a spectrum. Pass `criteria` with `true` and `false` descriptions when the instructions alone leave room for interpretation. `Noul` answers have no `confidence`, because the probability is the answer.
 - **`Choice`**: Maps each label to a description, or to `None` when the label needs no description. Include an `other` label when your options may not cover every input. `confidence` is the probability of the selected label.
 - **`Score`**: Takes two or more levels, ordered from lowest to highest and indexed from `0`. The returned `score` is the probability-weighted average of the level indices, so it may fall between levels, and `legend` maps each index to its description. `confidence` is the probability of the selected level.
 
@@ -166,6 +166,84 @@ response = classifier.invoke(
 - **`ValueError`**: Raised when no API key is available and no `client` is supplied, when a request includes a `Box` question, or when question instructions or criteria contain a media block.
 - **`ModelRefusalError`**: Raised when the API blocks the input. The message includes the block reason. Import it from `langchain_core.exceptions`.
 
+## Agent middleware
+
+LangChain includes two beta middleware that use a decision model at an agent's decision points. Pass a `GoogleGenAIClassifier` as their `classifier`. Both require `langchain>=1.5.0`:
+
+<CodeGroup>
+```bash uv
+uv add "langchain>=1.5.0" "langchain-google-genai>=4.5.0"
+```
+
+```bash pip
+pip install "langchain>=1.5.0" "langchain-google-genai>=4.5.0"
+```
+</CodeGroup>
+
+### Route models
+
+[`ModelRouterMiddleware`](/oss/langchain/middleware/built-in#model-router) picks one of your named models for each agent run, based on the latest human message:
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ModelChoice, ModelRouterMiddleware
+from langchain_google_genai import GoogleGenAIClassifier
+
+router = ModelRouterMiddleware(
+    choices={
+        "fast": ModelChoice(
+            model="google_genai:gemini-3.8-flash",
+            criteria="Simple, well-scoped tasks.",
+        ),
+        "powerful": ModelChoice(
+            model="google_genai:gemini-4-carbon",
+            criteria="Complex tasks that need deeper reasoning.",
+        ),
+    },
+    instructions="Choose the least costly model that can complete the task.",
+    classifier=GoogleGenAIClassifier(model="gemini-decision-1"),
+)
+
+agent = create_agent("google_genai:gemini-3.8-flash", middleware=[router])
+
+result = agent.invoke({"messages": [{"role": "user", "content": "What is 2 + 2?"}]})
+print(result["model_route"].choice)
+```
+
+### Gate tool calls
+
+[`AutoModeMiddleware`](/oss/langchain/middleware/built-in#auto-mode) checks each call to the tools you list, and blocks calls the classifier judges risky:
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import AutoModeMiddleware
+from langchain.tools import tool
+from langchain_google_genai import GoogleGenAIClassifier
+
+
+@tool
+def delete_file(path: str) -> str:
+    """Delete a file."""
+    return f"Deleted {path}."
+
+
+agent = create_agent(
+    "google_genai:gemini-3.8-flash",
+    tools=[delete_file],
+    middleware=[
+        AutoModeMiddleware(
+            tools=[delete_file],
+            classifier=GoogleGenAIClassifier(model="gemini-decision-1"),
+        )
+    ],
+)
+
+result = agent.invoke({"messages": [{"role": "user", "content": "Delete notes.txt."}]})
+print(result["messages"][-1].text)
+```
+
+The default instructions treat destructive actions as risky, even when the user asks for them. When the agent calls `delete_file`, the middleware returns an error `ToolMessage` instead of running the tool, and the agent reports that the call was blocked.
+
 ## Tracing
 
 `GoogleGenAIClassifier` runs are traced in [LangSmith](/langsmith/observability) with the `google_genai` provider and model name, so you can inspect decisions and token usage alongside the rest of your application.
@@ -175,5 +253,6 @@ response = classifier.invoke(
 - [Gemini Decisions API guide](https://aistudio.google.com/docs/decisions-api)
 - [Google provider overview](/oss/integrations/providers/google)
 - [ChatGoogleGenerativeAI](/oss/integrations/chat/google_generative_ai)
+- [Prebuilt middleware](/oss/langchain/middleware/built-in)
 - [OpenAI Decisions integration](/oss/integrations/decision_models/openai)
 - [LangChain Google GenAI API reference](https://reference.langchain.com/python/langchain-google-genai)
