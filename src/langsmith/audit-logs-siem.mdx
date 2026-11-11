@@ -1,0 +1,189 @@
+---
+title: Forward audit logs to a SIEM
+sidebarTitle: Forward to a SIEM
+description: Pull LangSmith audit log events on a schedule and send them to a SIEM, with a worked example for Splunk.
+---
+
+<Note>
+Audit logs are available on [**Enterprise** plans](/langsmith/pricing-plans).
+</Note>
+
+You can forward LangSmith [audit logs](/langsmith/audit-logs) to a security information and event management (SIEM) system. A scheduled script pulls events from the [audit logs API](/langsmith/audit-logs#query-audit-logs-via-api) and posts them to the SIEM's ingest endpoint. Your security team can then search LangSmith activity, such as agent access token requests, next to logs from your other systems.
+
+This page uses Splunk as the example. The same approach works with any SIEM that accepts JSON events over HTTP.
+
+## Prerequisites
+
+- An organization on an [**Enterprise** plan](/langsmith/pricing-plans). On a [self-hosted](/langsmith/self-hosted) instance, [enable audit logs](/langsmith/audit-logs#enable-audit-logs-for-self-hosted-deployments) first.
+- A [personal access token or service key](/langsmith/create-account-api-key) with the [**Organization Admin**](/langsmith/rbac#organization-admin) or [**Organization Operator**](/langsmith/rbac#organization-operator) role.
+- Your organization ID.
+- An HTTP endpoint and token for your SIEM.
+- Python 3.10 or later, to run the example script.
+
+## Pull events on a schedule
+
+LangSmith does not push audit logs to other systems. Instead, a script you run on a schedule pulls each new window of events. Events follow the [OCSF API Activity](https://schema.ocsf.io/1.7.0/classes/api_activity) schema, and the full LangSmith record is under `unmapped.original_audit_log`.
+
+When you write the script:
+
+- **Lag the window**: LangSmith writes audit events in batches, so an event can appear about a minute after the request. End each window 2 minutes before the current time.
+- **Keep windows back to back**: Use the same length for the schedule and the window. For example, run every 5 minutes over a 5-minute window.
+- **Follow the cursor**: Each response returns at most 100 events. Pass the returned `cursor` to get the next page, until a response has no cursor.
+- **Deduplicate on `metadata.uid`**: `start_time` and `end_time` are both inclusive, so an event on a window boundary can appear in two windows. `metadata.uid` is unique for each event.
+- **Retry failed windows**: A failed run skips its window. A scheduler with a dead-letter queue, such as [AWS Lambda with EventBridge Scheduler](https://docs.aws.amazon.com/lambda/latest/dg/with-eventbridge-scheduler.html), records which windows to retry.
+
+The [Splunk example](#forward-events-to-splunk) follows all of these except retries. To send events to another SIEM, replace its `send_to_splunk` function.
+
+## Find agent access token requests
+
+An agent access token is a short-lived token that identifies a deployed agent to other services. Each time LangSmith issues one, it records an event with the operation `mint_agent_access_token`:
+
+- The event belongs to the agent's organization and workspace. This includes [Fleet](/langsmith/fleet/index) agents, whose tokens LangSmith requests on your behalf.
+- A failed request does not record an event.
+- The token itself is never recorded.
+
+The token's details are under `unmapped.original_audit_log.enrichments.agent_access_token`. Each field uses the name of the matching claim in the token. To match an event to a token, use its `jti` or `sub`.
+
+| Field | Description |
+| --- | --- |
+| `sub` | The token's subject, in the form `ws:<workspace_id>:agent:<agent_uuid>:env:<environment>`. |
+| `ls_agent_id` | The agent's ID. |
+| `ls_agent_uuid` | The agent's UUID. |
+| `ls_env` | The agent environment, for example `PRODUCTION`. |
+| `ls_deployment_id` | The deployment that requested the token. |
+| `ls_proof` | How the deployment proved its identity: `deployment_key`, `pod_token`, or `sandbox_callback`. |
+| `ls_user_id` | The user the agent acts for. Present only when the run acts for a user. |
+| `ls_trigger` | What started the run, such as a cron job, as `kind` and `id`. Present only for triggered runs. |
+| `aud` | The audience: the service the token is for. |
+| `jti` | The token's unique ID. |
+| `exp` | When the token expires, in RFC 3339 format. |
+
+The event's actor depends on who requested the token:
+
+- **Your own deployment key**: `actor.user.credential_uid` is the key's ID.
+- **A sandbox acting for a user**: `ls_proof` is `sandbox_callback`, and `unmapped.original_audit_log.ls_user_id` is that user.
+- **LangSmith, such as for a Fleet agent**: Both fields are empty.
+
+`resources` lists the agent's UUID and the deployment ID. To find one agent's tokens through the [API](/langsmith/smith-api/audit-logs/get-audit-logs), pass the agent's UUID as `resource_ids`.
+
+Tokens for AWS, Azure, and Google Cloud record an event too. To match one to your cloud provider's logs, use `sub`, `aud`, and the time.
+
+## Forward events to Splunk
+
+This example sends events to the Splunk [HTTP Event Collector](https://help.splunk.com/en/splunk-enterprise/get-started/get-data-in/10.6/get-data-with-http-event-collector/set-up-and-use-http-event-collector-in-splunk-web) (HEC), then searches them for agent access token requests.
+
+### Create an HEC token
+
+To create a token in Splunk Enterprise:
+
+1. Go to **Settings > Data inputs > HTTP Event Collector**.
+2. Click **Global Settings**, set **All Tokens** to **Enabled**, and save.
+3. Click **New Token** and enter a name, such as `langsmith-audit-logs`.
+4. Choose the index for the events, such as `main`.
+5. Finish the wizard and copy the token value.
+
+On Splunk Cloud Platform, global settings cannot be edited. For details, see Splunk's guide to [setting up HEC in Splunk Web](https://help.splunk.com/en/splunk-enterprise/get-started/get-data-in/10.6/get-data-with-http-event-collector/set-up-and-use-http-event-collector-in-splunk-web).
+
+On Splunk Enterprise, the event endpoint is `https://<splunk-host>:8088/services/collector/event`, where `8088` is the default HEC port.
+
+### Run the forwarder
+
+Save the following script as `splunk_forwarder.py`. Each run reads one window of events and posts them to HEC in a single request.
+
+```python
+"""Forward LangSmith audit log events to the Splunk HTTP Event Collector."""
+import argparse
+import json
+import os
+import urllib.parse
+import urllib.request
+from datetime import datetime, timedelta, timezone
+
+LANGSMITH_URL = os.environ.get("LANGSMITH_API_URL", "https://api.smith.langchain.com")
+LANGSMITH_HEADERS = {
+    "X-API-Key": os.environ["LANGSMITH_API_KEY"],
+    "X-Organization-Id": os.environ["LANGSMITH_ORG_ID"],
+}
+HEC_URL = os.environ["SPLUNK_HEC_URL"]
+HEC_HEADERS = {"Authorization": "Splunk " + os.environ["SPLUNK_HEC_TOKEN"]}
+
+
+def audit_events(start, end):
+    cursor = None
+    while True:
+        query = {"start_time": start.isoformat(), "end_time": end.isoformat(), "limit": 100}
+        if cursor:
+            query["cursor"] = cursor
+        url = f"{LANGSMITH_URL}/api/v1/audit-logs?{urllib.parse.urlencode(query)}"
+        page = json.load(urllib.request.urlopen(urllib.request.Request(url, headers=LANGSMITH_HEADERS)))
+        yield from page["items"]
+        cursor = page.get("cursor")
+        if not cursor or not page["items"]:
+            return
+
+
+def send_to_splunk(events):
+    body = "".join(
+        json.dumps({"time": event["time"], "source": "langsmith:audit_logs", "sourcetype": "_json", "event": event})
+        for event in events
+    )
+    urllib.request.urlopen(urllib.request.Request(HEC_URL, data=body.encode(), headers=HEC_HEADERS))
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--minutes", type=int, default=5)
+args = parser.parse_args()
+
+# Events can take about a minute to appear, so read a window that ended 2 minutes ago.
+end = datetime.now(timezone.utc).replace(second=0, microsecond=0) - timedelta(minutes=2)
+start = end - timedelta(minutes=args.minutes)
+events = list(audit_events(start, end))
+if events:
+    send_to_splunk(events)
+print(f"sent {len(events)} events from {start:%H:%M} to {end:%H:%M} UTC")
+```
+
+Set four environment variables, then run the script:
+
+```bash
+export LANGSMITH_API_KEY=<api-key>
+export LANGSMITH_ORG_ID=<organization-id>
+export SPLUNK_HEC_URL=https://<splunk-host>:8088/services/collector/event
+export SPLUNK_HEC_TOKEN=<hec-token>
+python3 splunk_forwarder.py --minutes 5
+```
+
+`LANGSMITH_API_URL` defaults to the GCP US API URL. For another region, set it to that region's API URL from [Regions](/langsmith/cloud#regions). On a self-hosted instance, set it to your instance's base URL, without `/api/v1`.
+
+To run the script every 5 minutes, add a cron entry:
+
+```bash
+*/5 * * * * python3 /path/to/splunk_forwarder.py --minutes 5
+```
+
+Cron does not load your shell profile, so set the environment variables in the crontab or in a wrapper script.
+
+### Search for agent access token requests
+
+The token's field paths are long, so each search starts by shortening them to `token.*`:
+
+```text
+index=main source="langsmith:audit_logs" api.operation=mint_agent_access_token
+| rename unmapped.original_audit_log.enrichments.agent_access_token.* as token.*
+```
+
+Then add one of these:
+
+| To find | Add |
+| --- | --- |
+| Every token for one agent | `\| search token.ls_agent_id="<agent-id>" \| table _time token.ls_env token.ls_proof token.aud token.jti` |
+| Token requests by environment and proof | `\| stats count by token.ls_env token.ls_proof` |
+| One token | `\| search token.jti="<jti>"` |
+| Tokens an agent requested for one user | `\| search token.ls_user_id="<user-id>"` |
+| Cloud provider tokens | `\| search token.aud IN ("sts.amazonaws.com/langsmith-agents", "api://AzureADTokenExchange/langsmith-agents", "https://iam.googleapis.com/langsmith-agents") \| table _time token.sub token.aud token.exp` |
+
+## See also
+
+- [Audit logs](/langsmith/audit-logs)
+- [OCSF API Activity class](https://schema.ocsf.io/1.7.0/classes/api_activity)
+- [Set up and use HTTP Event Collector in Splunk Web](https://help.splunk.com/en/splunk-enterprise/get-started/get-data-in/10.6/get-data-with-http-event-collector/set-up-and-use-http-event-collector-in-splunk-web)
