@@ -58,8 +58,7 @@ console.log(`Sample output: ${JSON.stringify(sampleResults)}`);
 import { ChatOpenAI } from "@langchain/openai";
 
 const model = process.env.OPENAI_API_KEY
-  ? // GPT-6.1 Sol tool calling requires the Responses API.
-    new ChatOpenAI({ model: "gpt-6.1-sol", useResponsesApi: true })
+  ? new ChatOpenAI({ model: "gpt-6.1-sol" })
   : null;
 // :remove-end:
 

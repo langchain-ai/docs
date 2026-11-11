@@ -11,11 +11,7 @@ const configurableModel = createMiddleware({
   name: "ConfigurableModel",
   wrapModelCall: async (request, handler) => {
     const modelName = request.runtime.context.model;
-    // GPT-6.1 Sol tool calling requires the Responses API.
-    const model = await initChatModel(
-      modelName,
-      modelName.startsWith("openai:") ? { useResponsesApi: true } : undefined,
-    );
+    const model = await initChatModel(modelName);
     return handler({ ...request, model });
   },
 });

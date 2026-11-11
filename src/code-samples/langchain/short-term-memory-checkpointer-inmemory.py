@@ -13,17 +13,6 @@ agent = create_agent(
     tools=[get_user_info],
     checkpointer=InMemorySaver(),  # [!code highlight]
 )
-# :remove-start:
-# GPT-6.1 Sol tool calling requires the Responses API. Keep the published
-# snippet on a routable model string so CodeGroup tabs still expand.
-from langchain_openai import ChatOpenAI
-
-agent = create_agent(
-    model=ChatOpenAI(model="gpt-6.1-sol", use_responses_api=True),
-    tools=[get_user_info],
-    checkpointer=InMemorySaver(),
-)
-# :remove-end:
 
 thread_config = {"configurable": {"thread_id": "1"}}
 response = agent.invoke(
@@ -43,7 +32,7 @@ print(response)  # "You are Bob!"
 
 # :remove-start:
 if __name__ == "__main__":
-    # Responses API replies may use block lists; prefer `.text` like the TS sample.
+    # gpt-6 replies may use block lists; prefer `.text` like the TS sample.
     messages = agent.get_state(thread_config).values["messages"]
     text = messages[-1].text
     assert text.strip(), "expected non-empty assistant reply on second turn"
