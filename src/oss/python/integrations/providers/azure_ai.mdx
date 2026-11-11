@@ -458,13 +458,13 @@ The Microsoft Learn guide includes complete examples for both protocols, convers
 
 ### Durable LangGraph execution with Azure Durable Task Scheduler
 
-`langchain_azure_compute.graph` wraps a compiled LangGraph `StateGraph`, a LangChain `create_agent` workflow, or a Deep Agents `create_deep_agent` workflow in a deterministic [Azure Durable Task Scheduler (DTS)](https://learn.microsoft.com/azure/durable-task/scheduler/durable-task-scheduler) orchestration with `attach_durability(graph, name="...")`. Model calls, tools, and graph steps run in activities rather than in the replaying orchestrator.
+`langchain_azure_compute.graph` wraps a compiled LangGraph `StateGraph`, a LangChain `create_agent` workflow, or a Deep Agents `create_deep_agent` graph in a deterministic [Azure Durable Task Scheduler (DTS)](https://learn.microsoft.com/azure/durable-task/scheduler/durable-task-scheduler) orchestration with `attach_durability(graph, name="...")`. Model calls, tools, and graph steps run in activities rather than in the replaying orchestrator. `create_deep_agent` also requires the `deepagents` package.
 
 <Note>
-The durable execution integration is in public preview. Its API may change.
+The durable execution integration is in public preview. Its API may change. Requires `langchain-azure-compute` 0.2.0 or later.
 </Note>
 
-The adapter separates the execution control plane from the graph state plane. Keep checkpoints in a LangGraph saver such as `SqliteSaver`, `PostgresSaver`, `CosmosDBSaver`, or `FoundryCheckpointSaver`. Make persistent checkpoint storage accessible to every worker. With a persistent saver, step transitions pass checkpoint references, while durable tool/node inputs and outputs and final results still pass through DTS. Without a checkpointer, the adapter attaches an `InMemorySaver` and carries checkpoint bundles in DTS payloads.
+The adapter separates the execution control plane from the graph state plane. Keep checkpoints in a LangGraph saver such as `SqliteSaver`, `PostgresSaver`, or `CosmosDBSaver`. Make persistent checkpoint storage accessible to every worker. With a persistent saver, step transitions pass checkpoint references, while durable tool/node inputs and outputs and final results still pass through DTS. Without a checkpointer, the adapter attaches an `InMemorySaver` and carries checkpoint bundles in DTS payloads.
 
 - **Activity isolation**: Use `@durable_tool(retries=3)` to configure a tool's independent retry policy, and `@durable_node` to isolate a graph node as an activity.
 - **Worker crash failover**: Another worker registered with the same graph and task hub can resume execution from persisted progress.
@@ -483,7 +483,7 @@ uv add "langchain-azure-compute[durabletask]" langchain-azure-ai
 ```
 </CodeGroup>
 
-Set `AZURE_AI_PROJECT_ENDPOINT` and `AZURE_AI_MODEL_DEPLOYMENT_NAME` for your deployed model, and authenticate with Microsoft Entra ID (`az login` for local development). Your credential requires the Azure AI Developer role on the Foundry project.
+Set `AZURE_AI_PROJECT_ENDPOINT` and `AZURE_AI_MODEL_DEPLOYMENT_NAME` for your deployed model, and authenticate with Microsoft Entra ID (`az login` for local development). Your credential requires the Foundry User role on the Foundry project.
 
 For Azure DTS, set `DURABLE_TASK_SCHEDULER_CONNECTION_STRING`. Use managed identity in production and grant the identity the Durable Task Data Contributor role on the intended scheduler/task hub. For a running local DTS emulator, set `DTS_ENDPOINT=127.0.0.1:8080` instead. `sdk_options()` resolves these connection and authentication settings.
 
@@ -496,10 +496,10 @@ from azure.identity import DefaultAzureCredential
 from durabletask.azuremanaged.client import DurableTaskSchedulerClient
 from durabletask.azuremanaged.worker import DurableTaskSchedulerWorker
 from langchain.agents import create_agent
-from langchain_azure_ai.chat_models import AzureAIOpenAIApiChatModel
-from langchain_azure_compute.graph import attach_durability, durable_tool, sdk_options
 from langchain.messages import HumanMessage
 from langchain.tools import tool
+from langchain_azure_ai.chat_models import AzureAIOpenAIApiChatModel
+from langchain_azure_compute.graph import attach_durability, durable_tool, sdk_options
 
 
 @durable_tool(retries=3)
@@ -535,7 +535,7 @@ finally:
 ```
 
 <Warning>
-Activities execute at least once, not exactly once. A crash after an external side effect but before its completion acknowledgement can repeat that effect. Use durable idempotency keys at the external mutation boundary. DTS history contains activity inputs and outputs, and may contain checkpoints and final graph state; review its retention and purge settings independently of checkpoint storage.
+Activities execute at least once, not exactly once. A crash after an external side effect but before its completion acknowledgement can repeat that effect. Use a durable idempotency key at the external mutation boundary, such as `runtime.config["metadata"]["durable_call_id"]`. DTS history contains activity inputs and outputs, and may contain checkpoints and final graph state; review its retention and purge settings independently of checkpoint storage.
 </Warning>
 
 For checkpoint configuration, payload limits, human approvals, and production hosting, see the [durable execution package guide](https://github.com/langchain-ai/langchain-azure/tree/main/libs/azure-compute#durable-langgraph-execution-durable-task-scheduler).
