@@ -55,6 +55,7 @@ once to link the tree, and again in each new git worktree.
 | `verify-against-source` | Checking that a code sample, signature, default, or behavior claim is true: which repository owns each product, how to reach the private ones, checking that a PR documents what it claims, and naming what stayed unverified. |
 | `submit-integration` | Turning a structured integration issue submission into a listing. Invoked by CI. |
 | `update-integrations-prs` | Processing open integration PRs against the featuring policy. |
+| `update-example-models` | Rolling a provider example model ID across docs and the snippet generator. |
 
 Invoke a skill when the task matches it. Adding or changing tooling (a script,
 a workflow, a Makefile target, a PR check, a scheduled job, or a skill) also
