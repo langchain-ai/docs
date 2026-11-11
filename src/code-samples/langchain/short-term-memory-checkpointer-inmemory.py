@@ -43,10 +43,12 @@ print(response)  # "You are Bob!"
 
 # :remove-start:
 if __name__ == "__main__":
-    assert response.strip(), "expected non-empty assistant reply on second turn"
+    # Responses API replies may use block lists; prefer `.text` like the TS sample.
     messages = agent.get_state(thread_config).values["messages"]
+    text = messages[-1].text
+    assert text.strip(), "expected non-empty assistant reply on second turn"
     human_msgs = [m for m in messages if m.type == "human"]
     assert len(human_msgs) >= 2, "expected two human turns in thread history"
-    assert "bob" in response.lower(), "expected assistant to recall the name from the first turn"
+    assert "bob" in text.lower(), "expected assistant to recall the name from the first turn"
     print("✓ checkpointer persists conversation across turns on the same thread_id")
 # :remove-end:
