@@ -955,15 +955,18 @@ Callbacks are configured alongside rules under `proxy_config`:
 
 | Field | Description |
 |-------|-------------|
-| `match_hosts` | Hosts to intercept (same syntax as rules; supports globs like `*.github.com`). |
+| `match_hosts` | Required for credential callbacks. Hosts to intercept (same syntax as rules; supports globs like `*.github.com`). Omit it on an attribution callback. |
 | `url` | Your callback endpoint. Must be an `http://` or `https://` URL that resolves to a public address; private, loopback, Kubernetes-internal, and cloud-metadata targets are rejected. |
 | `request_headers` | Headers attached to the proxy → callback request, e.g., an HMAC or shared secret your endpoint uses to verify the request. Only `plaintext` and `opaque` types are permitted (no `workspace_secret`). |
 | `ttl_seconds` | Required. How long resolved headers are cached before re-invoking the callback. Must be between 60 and 3600. |
+| `attribution_headers` | Header names to resolve for every proxy-handled HTTP(S) request instead of credentials for matched hosts. See [Refresh attribution through a callback](#refresh-attribution-through-a-callback) for the separate rules and response contract. |
 | `full_request` | When `true`, every request to a matched host invokes the callback (nothing is cached) and the body includes a `request` snapshot: `method`, `url`, `scheme`, `host`, `path`, `query`, `headers`, and up to 1 MiB of the body as `body_base64` (`body_truncated` marks a cut). |
 
-**Static rules win.** If an enabled header-injection rule matches both the host and the path, the callback is skipped for that request. Within rules, first-match-wins; the same applies between callbacks if multiple match.
+**Static rules win.** For credential callbacks, if an enabled header-injection rule matches both the host and the path, the callback is skipped for that request. Within rules, first-match-wins; the same applies between credential callbacks if multiple match. Attribution callbacks are never skipped this way; they run alongside destination credentials.
 
 ### Callback contract
+
+This contract covers credential callbacks. Attribution callbacks receive the same request but must return exactly the selected headers and an `expires_at`; see [Refresh attribution through a callback](#refresh-attribution-through-a-callback).
 
 The proxy makes the following request whenever it needs to resolve credentials for a matched host on a cache miss:
 
