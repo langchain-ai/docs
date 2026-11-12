@@ -33,6 +33,16 @@ Every later step connects to the internal registry over HTTPS. Until the machine
 
 pip and uv each need their own CA setting, covered in [Configure pip](#configure-pip) and [Configure uv](#configure-uv).
 
+## Provide the Python interpreter
+
+The Agent Server image ships its own Python. The build machine needs Python 3.10 or later only to run pip, uv, and the LangGraph CLI. Install it from the OS repositories, for example on RHEL-family distributions:
+
+```bash
+sudo dnf install python3.12
+```
+
+On some distributions, `venv` ships as a separate OS package, such as `python3-venv` on Debian and Ubuntu. Install it too, because the uv installation uses it. If the OS repositories do not provide a supported Python version, see uv's [Installing Python](https://docs.astral.sh/uv/guides/install-python/) guide.
+
 ## Configure pip
 
 Set the index once in a pip configuration file. A long URL passed as `--index-url` on each command is easy to get wrong, and a missing space between two flags produces a misleading `404`.
@@ -54,9 +64,7 @@ If the index uses plain HTTP, add `trusted-host = <host>` with the index host na
 
 Install uv as a Python package from the internal index. The uv install script (`curl ... | sh`) does not work on a restricted network, because it downloads the uv binary from `releases.astral.sh` or GitHub.
 
-PyPI hosts uv as a wheel that contains the binary. On some distributions, `venv` ships as a separate OS package, such as `python3-venv` on Debian and Ubuntu.
-
-Install uv into its own virtual environment so it does not touch the system Python. Then link the binaries onto your `PATH`:
+PyPI hosts uv as a wheel that contains the binary. Install uv into its own virtual environment so it does not touch the system Python. Then link the binaries onto your `PATH`:
 
 ```bash
 python3 -m venv ~/.local/share/uv-bootstrap
@@ -84,23 +92,13 @@ export UV_PYTHON_DOWNLOADS=never
 
 - **`UV_DEFAULT_INDEX`**: Replaces pypi.org as the default index.
 - **`UV_SYSTEM_CERTS`**: Loads certificates from the OS trust store, which holds the internal CA. By default, uv trusts only its bundled roots.
-- **`UV_PYTHON_DOWNLOADS`**: Stops uv from downloading Python. [Provide the Python interpreter](#provide-the-python-interpreter) explains why.
+- **`UV_PYTHON_DOWNLOADS`**: Stops uv from downloading Python, so it uses the interpreter on `PATH`. Without it, uv tries to download a missing interpreter from GitHub and retries with no clear error.
 
 <Note>
 `UV_SYSTEM_CERTS` requires uv 0.11.0 or later. Earlier versions use `UV_NATIVE_TLS=true`, which later versions still accept with a deprecation warning.
 </Note>
 
 To trust only the internal CA, set `SSL_CERT_FILE=<CA_BUNDLE_PATH>` in place of `UV_SYSTEM_CERTS`. `SSL_CERT_FILE` replaces both uv's bundled roots and the OS trust store. For every setting, see uv's [environment variable reference](https://docs.astral.sh/uv/reference/environment/).
-
-## Provide the Python interpreter
-
-The Agent Server image ships its own Python. The build machine needs Python 3.10 or later only to run pip, uv, and the LangGraph CLI. Install it from the OS repositories, for example on RHEL-family distributions:
-
-```bash
-sudo dnf install python3.12
-```
-
-uv finds the interpreter on `PATH`. Keep `UV_PYTHON_DOWNLOADS=never`: without it, uv tries to download a missing interpreter from GitHub and retries with no clear error. If the OS repositories do not provide a supported version, see uv's [Installing Python](https://docs.astral.sh/uv/guides/install-python/) guide.
 
 ## Build the Agent Server image
 
@@ -209,6 +207,13 @@ To build the image:
     ```bash
     langgraph build -t my-agent
     ```
+
+<Note>
+`ARG` values apply only while the image builds, and the running container does not inherit them. For an agent that calls internal HTTPS services at runtime to trust the internal CA:
+
+- **JavaScript**: Change the `NODE_EXTRA_CA_CERTS` line from `ARG` to `ENV`.
+- **Python**: Change the `SSL_CERT_FILE` line from `ARG` to `ENV`. Clients built on `httpx` read it. If your agent uses `requests`, also add `"ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt"`, because `requests` ignores `SSL_CERT_FILE`.
+</Note>
 
 For every `langgraph.json` key, see the [LangGraph CLI configuration file](/langsmith/cli#configuration-file) reference.
 
