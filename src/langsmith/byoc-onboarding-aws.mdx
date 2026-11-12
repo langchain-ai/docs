@@ -26,7 +26,7 @@ Apply the [`langsmith-byoc-role` Terraform module](https://github.com/langchain-
 
 For BYOVPC, set `allow_vpc_creation_permissions = false` and supply your VPC ID in `vpc_ids`. See [Create the reduced-permission IAM role](/langsmith/byoc-byovpc-aws#create-the-reduced-permission-iam-role).
 
-To encrypt the data plane with your own KMS keys, also set `cmk_service_key_arns`. See [Customer-managed encryption keys](#customer-managed-encryption-keys).
+To encrypt the data plane with your own KMS keys, also set `cmk_service_key_arns`. See [Bring your own keys](/langsmith/byoc-byok-aws).
 
 <Note>
 LangChain recommends a fresh AWS account dedicated to LangSmith BYOC.
@@ -45,9 +45,9 @@ Under **Configuration**, the defaults work for most data planes. You can change 
 
 - **Network**: By default, LangSmith creates a VPC from a private RFC 1918 CIDR range from `/16` to `/18`, such as `10.20.0.0/16`. To use your own VPC, select **Use existing VPC** and supply the [VPC and subnet IDs](/langsmith/byoc-byovpc-aws#supply-the-vpc-and-subnet-ids). The load balancer is **Private** by default, reachable only from inside your VPC. Select **Internet-facing** to give your applications a public endpoint. With your own VPC, an internet-facing load balancer requires public subnet IDs.
 - **IAM roles**: By default, LangSmith creates the data plane IAM roles. To use roles you create, select **Use existing IAM roles** and follow [Bring your own IAM roles](/langsmith/byoc-byoiam-aws).
-- **Encryption keys**: By default, AWS-managed keys encrypt data at rest. To use your own KMS keys, choose one key for all services or a key per service. See [Customer-managed encryption keys](#customer-managed-encryption-keys).
+- **Encryption keys**: By default, AWS-managed keys encrypt data at rest. To use your own KMS keys, choose one key for all services or a key per service. See [Bring your own keys](/langsmith/byoc-byok-aws).
 - **Sandboxes**: Off by default. Turn them on to run [sandboxes](/langsmith/sandboxes), which Engine and some evaluators require.
-- **EKS API access**: By default, the LangSmith control plane reaches your EKS API over PrivateLink. If you turn PrivateLink off, the EKS API endpoint is public, restricted to the LangSmith control plane's NAT IPs, and still requires Kubernetes authentication. This setting does not change your load balancer access.
+- **EKS API access**: New data planes reach the EKS API over PrivateLink by default.
 - **Tags**: Up to 40 custom tags applied to the AWS resources LangSmith creates. Keys must be unique, and values can be empty. AWS and LangSmith system tags are reserved.
 </Step>
 
@@ -95,32 +95,6 @@ For more information, see [Migrate to BYOC](/langsmith/byoc-migration).
 </Step>
 
 </Steps>
-
-## Customer-managed encryption keys
-
-By default, AWS-managed keys encrypt the data plane at rest. You can instead use your own symmetric [AWS KMS keys](https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html#kms_keys), set when you create the data plane:
-
-| Service | What the key encrypts |
-|---------|-----------------------|
-| `s3` | The data plane's S3 buckets. |
-| `ebs` | Node volumes, and ClickHouse volumes on data planes that run ClickHouse. |
-| `eks` | Kubernetes secrets in the EKS cluster. |
-| `rds` | RDS storage, the RDS master user secrets, and Performance Insights data. |
-| `elasticache` | ElastiCache data at rest. |
-
-Use one key for every service, or a separate key per service. Every service is optional: a service without a key keeps AWS-managed encryption. Keys must be in the data plane account and region.
-
-Keys cannot be added to existing data planes. After creation, the `ebs`, `eks`, `rds`, and `elasticache` keys cannot change. To change the `s3` key, contact the LangChain team.
-
-To set up the keys:
-
-1. In the [`langsmith-byoc-role` Terraform module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/aws/langsmith-byoc-role#customer-managed-kms-keys), set `cmk_service_key_arns` to a key ARN for each service. With [BYOIAM](/langsmith/byoc-byoiam-aws), set it in the BYOIAM module too.
-1. Update the key policies as the [module README](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/aws/langsmith-byoc-role#customer-managed-kms-keys) describes.
-1. When you create the data plane, open **Encryption keys** under **Configuration** and enter the key ARNs. Through the API, set `customer_managed_keys.key_arn` for every service, or `customer_managed_keys.service_key_arns` per service.
-
-<Warning>
-If you disable or delete a key, every service that uses it stops working. Data encrypted with a deleted key cannot be recovered.
-</Warning>
 
 ## Next steps
 
