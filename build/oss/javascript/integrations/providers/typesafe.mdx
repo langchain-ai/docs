@@ -1,0 +1,309 @@
+---
+title: "TypeSafe integrations"
+description: "Integrate with TypeSafe using LangChain"
+---
+
+[Jev](https://docs.typesafe.ai/models) is a [System One model](https://docs.typesafe.ai/concepts/system-one) that reads natural language but returns typed answers and calibrated probabilities instead of generated text.
+
+`TypeSafeClassifier` implements the LangChain Decisions API through `BaseDecisionModel` from `@langchain/core/decisions`. It is a `Runnable`, so you can invoke, batch, or compose it with other runnables. It accepts strings, structured JSON, and [LangChain message objects](/oss/javascript/langchain/messages), and records traces and token usage in LangSmith. Use it for focused decisions such as routing a request, choosing a model, or checking whether a tool call is safe to run.
+
+Use TypeSafe decisions in LangChain middleware to control `createAgent` behavior at specific lifecycle points, including with custom middleware that classifies agent state. See [Agent middleware](#agent-middleware) for examples.
+
+## Setup
+
+<Note>
+The examples require `@langchain/typesafe` 0.1.0 or later and `@langchain/core` 1.4.0 or later. This release uses the shared decision types in `@langchain/core/decisions`.
+</Note>
+
+<CodeGroup>
+```bash npm
+npm install @langchain/typesafe @langchain/core
+```
+
+```bash yarn
+yarn add @langchain/typesafe @langchain/core
+```
+
+```bash pnpm
+pnpm add @langchain/typesafe @langchain/core
+```
+</CodeGroup>
+
+Keep your API key on the server. Do not expose it in browser code. Set `dangerouslyAllowBrowser: false` to reject browser use.
+
+Create an API key in the [TypeSafe console](https://console.typesafe.ai/settings/keys) and export it:
+
+```bash
+export TYPESAFE_API_KEY=...
+```
+
+<Note>
+Optional: Set `TYPESAFE_BASE_URL` to use a compatible gateway, test server, or private deployment. The default is `https://api.typesafe.ai`.
+
+```bash
+export TYPESAFE_BASE_URL=https://gateway.example.com
+```
+</Note>
+
+## Quickstart
+
+Create a `TypeSafeClassifier`, then pass the state and named questions together in each invocation. Questions that share state are evaluated independently and in parallel in one request:
+
+<Note>
+Earlier versions configured `questions` on `TypeSafeClassifier` and passed only the state to `invoke`. Pass both `state` and `questions` to `invoke` now. Every question requires `instructions`.
+</Note>
+
+```typescript
+import { TypeSafeClassifier } from "@langchain/typesafe";
+
+const classifier = new TypeSafeClassifier();
+
+const response = await classifier.invoke({
+  state:
+    "The deploy failed twice and customers are seeing 500s. Can someone look now?",
+  questions: {
+    urgent: {
+      type: "noul",
+      instructions: "Does this need attention right now?",
+    },
+    team: {
+      type: "choice",
+      instructions: "Which team should pick this up?",
+      criteria: {
+        infra: "Deploys, availability, and on-call incidents.",
+        billing: "Payments, invoices, and subscriptions.",
+      },
+    },
+    severity: {
+      type: "score",
+      instructions: "How severe is the impact?",
+      criteria: ["Cosmetic.", "Degraded for some users.", "Full outage."],
+    },
+  },
+});
+
+console.log(response.nouls.urgent.noul);
+console.log(response.choices.team.choice, response.choices.team.confidence);
+console.log(response.scores.severity.score);
+```
+
+Answers are keyed by the question IDs you supplied in `response.answers`, and grouped by type on `nouls`, `choices`, `scores`, and `boxes`. Answers are typed from the questions you pass: `response.choices.team.choice` is typed as `"infra" | "billing"`, and an unknown question ID is a type error. The response also carries the `model` that answered, optional `usage_metadata`, and the TypeSafe `requestId`.
+
+In version 0.1, token usage is `usage_metadata`, with `input_tokens`, `output_tokens`, and `total_tokens`. It replaces the earlier `usage` object. Check that it is defined before reading it:
+
+```typescript
+if (response.usage_metadata !== undefined) {
+  console.log(response.usage_metadata.input_tokens);
+  console.log(response.usage_metadata.output_tokens);
+  console.log(response.usage_metadata.total_tokens);
+}
+```
+
+The request `state` can be a string, a JSON object or array, or LangChain messages. Messages are converted to transcript text, including when nested inside a larger object.
+
+## Configure requests
+
+Constructor options control the model, authentication, and request behavior:
+
+- **`model`**: Sets the model or alias. Defaults to `jev-latest`.
+- **`apiKey`**: Overrides `TYPESAFE_API_KEY`.
+- **`baseUrl`**: Overrides `TYPESAFE_BASE_URL`.
+- **`timeout`**: Sets the per-request timeout in milliseconds. Defaults to `30000`.
+- **`maxRetries`**: Sets the maximum number of retries. Defaults to `2`; set it to `0` to disable retries.
+- **`fetch`**: Supplies a custom transport for proxies or tests.
+
+Pass request configuration, such as `signal`, `tags`, and `metadata`, as the second argument to `invoke`.
+
+## Handle errors
+
+The package exports `TypeSafeError`, `TypeSafeAPIError`, `TypeSafeAuthenticationError`, and `TypeSafeRateLimitError`. Use their `isInstance(error)` methods to identify failures. Avoid logging API error bodies indiscriminately: they can contain submitted state.
+
+TypeSafe receives the state you submit, including message content and tool-call arguments. Remove secrets or sensitive data before invoking the classifier.
+
+## Decision types
+
+Define questions as objects with a `type` of `"noul"`, `"choice"`, `"score"`, or `"box"`. Import the question and answer types, such as `Noul`, `Choice`, and `ChoiceAnswer`, from `@langchain/core/decisions`. The `@langchain/typesafe` type re-exports remain available for compatibility. Each question is one of four primitives:
+
+| Primitive | Asks | Returns | Reach for it when |
+|---|---|---|---|
+| [`noul`](https://docs.typesafe.ai/primitives/noul) | Is this true? | `noul`, the probability of yes | Your code branches on an `if` |
+| [`choice`](https://docs.typesafe.ai/primitives/choice) | Which of these options? | `choice`, plus `probabilities` and `confidence` | Options map to distinct code paths |
+| [`score`](https://docs.typesafe.ai/primitives/score) | Which level? | `score`, plus `legend`, `probabilities`, and `confidence` | The answer is a spectrum you compare to a threshold |
+| `box` | Where is it in an image? | `box`, with normalized edges, and optional `confidence` | The answer locates an object or region |
+
+A `noul` answer has no `confidence`, since the probability is the answer. Use `score` rather than `noul` for a spectrum: a `noul` of `0.5` means an even split between yes and no, not "medium."
+
+TypeSafe accepts PNG and JPEG images as LangChain image content blocks containing base64 data or base64 `data:` URLs. Images can appear in state, question instructions, or criteria. Remote image URLs are not downloaded. For `box` questions, read `response.boxes[questionId].box`; its `top`, `bottom`, `left`, and `right` edges range from `0` to `1`.
+
+## Agent middleware
+
+LangChain provides two decision-driven [middleware](/oss/javascript/langchain/middleware/overview) that accept `TypeSafeClassifier` through `classifier`.
+
+<Note>
+These middleware are in beta and require `langchain` 1.6.5 or later. The `@langchain/typesafe/middleware` exports are deprecated as of `@langchain/typesafe` 0.1.0, with removal planned for 0.2.0. Import from `langchain` and pass `classifier: new TypeSafeClassifier()` instead.
+</Note>
+
+The examples below use OpenAI models. Install LangChain and the OpenAI integration before using them:
+
+<CodeGroup>
+```bash npm
+npm install langchain @langchain/typesafe @langchain/openai
+```
+
+```bash yarn
+yarn add langchain @langchain/typesafe @langchain/openai
+```
+
+```bash pnpm
+pnpm add langchain @langchain/typesafe @langchain/openai
+```
+</CodeGroup>
+
+| Middleware | Hook | Decision |
+|---|---|---|
+| [`modelRouterMiddleware`](#model-routing) | `beforeAgent`, `wrapModelCall` | Which model handles the run |
+| [`autoModeMiddleware`](#tool-risk-gating) | `wrapToolCall` | Whether a tool call is too risky to run |
+
+### Model routing
+
+Classifies the latest human message across your named models and uses the selected one for every model call in the run. Each choice pairs a model with the criterion for picking it:
+
+```typescript
+import { createAgent, modelRouterMiddleware } from "langchain";
+import { TypeSafeClassifier } from "@langchain/typesafe";
+
+const router = modelRouterMiddleware({
+  classifier: new TypeSafeClassifier(),
+  choices: {
+    fast: {
+      model: "openai:gpt-5.6-terra",
+      criteria:
+        "Direct lookups, extraction, and localized changes with explicit targets.",
+    },
+    powerful: {
+      model: "openai:gpt-6-astra",
+      criteria:
+        "Architecture, novel root-cause reasoning, and high-stakes decisions.",
+    },
+  },
+  instructions: "Choose the least costly model that can complete the task safely.",
+});
+
+const agent = createAgent({
+  model: "openai:gpt-5.6-terra",
+  middleware: [router],
+});
+
+const result = await agent.invoke({
+  messages: [
+    { role: "user", content: "Prove that there are infinitely many prime numbers." },
+  ],
+});
+console.log(result.modelRoute?.choice);
+```
+
+### Tool-risk gating
+
+Asks for the probability that a tool call is risky or insufficiently authorized. Calls that are determined risky return an error `ToolMessage` instead of running the tool. Only the tools you list are classified. Pass their names or tool objects:
+
+```typescript
+import { autoModeMiddleware, createAgent, tool } from "langchain";
+import { TypeSafeClassifier } from "@langchain/typesafe";
+import * as z from "zod";
+
+const deleteAllBackups = tool(async () => "Backups deleted.", {
+  name: "delete_all_backups",
+  description: "Delete every backup. This action cannot be undone.",
+  schema: z.object({}),
+});
+
+const agent = createAgent({
+  model: "openai:gpt-6-astra",
+  tools: [deleteAllBackups],
+  middleware: [
+    autoModeMiddleware({
+      tools: [deleteAllBackups],
+      classifier: new TypeSafeClassifier(),
+    }),
+  ],
+});
+
+const result = await agent.invoke({
+  messages: [{ role: "user", content: "Delete all backups." }],
+});
+console.log(result.messages.at(-1)?.contentBlocks);
+```
+
+Override `instructions`, or pass `criteria: { true: ..., false: ... }`, to describe risk for your own tools.
+
+<Warning>
+Do not put secrets in tool arguments or conversation state unless sending them to TypeSafe is acceptable. This middleware refuses risky calls. It does not request approval. Pair it with [human-in-the-loop middleware](/oss/javascript/langchain/middleware/built-in) when you want a person to approve them.
+</Warning>
+
+### Custom middleware
+
+`TypeSafeClassifier` accepts LangChain message objects directly, so a custom middleware hook can classify an agent's conversation state without converting it first. This example classifies the conversation once at the start of each run and stores the complete `ChoiceAnswer` in agent state:
+
+```typescript
+import { createAgent, createMiddleware } from "langchain";
+import type { ChoiceAnswer } from "@langchain/core/decisions";
+import { TypeSafeClassifier } from "@langchain/typesafe";
+import * as z from "zod";
+
+const classifier = new TypeSafeClassifier();
+
+const triageMiddleware = createMiddleware({
+  name: "TriageMiddleware",
+  stateSchema: z.object({ triage: z.custom<ChoiceAnswer>().optional() }),
+  async beforeAgent(state) {
+    const response = await classifier.invoke({
+      state: state.messages,
+      questions: {
+        triage: {
+          type: "choice",
+          instructions: "Which team should handle this conversation?",
+          criteria: {
+            billing: "Payments, invoices, and subscriptions.",
+            infra: "Deploys, availability, and incidents.",
+            other: "Requests that belong to another team.",
+          },
+        },
+      },
+    });
+    return { triage: response.choices.triage };
+  },
+});
+
+const agent = createAgent({
+  model: "openai:gpt-5.6-terra",
+  middleware: [triageMiddleware],
+});
+
+const result = await agent.invoke({
+  messages: [{ role: "user", content: "Customers are seeing 500 errors." }],
+});
+console.log(result.triage?.choice, result.triage?.confidence);
+```
+
+Use any lifecycle hook that matches your decision point. For example, use `beforeModel` to reclassify after each tool result, or `wrapToolCall` to classify a proposed action. See [Custom middleware](/oss/javascript/langchain/middleware/custom) for all hooks and state patterns.
+
+## Tracing
+
+TypeSafe classifications are traced in [LangSmith](/langsmith/home), so you can inspect decisions and token usage alongside the rest of your agent.
+
+## See also
+
+- [TypeSafe documentation](https://docs.typesafe.ai/)
+- [TypeSafe confidence guidance](https://docs.typesafe.ai/confidence)
+- [`@langchain/typesafe` source](https://github.com/langchain-ai/langchainjs/tree/main/libs/providers/langchain-typesafe)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/javascript/integrations/providers/typesafe.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
