@@ -10,6 +10,70 @@ rss: true
 
 [Self-hosted LangSmith](/langsmith/self-hosted) is an add-on to the Enterprise plan designed for our largest, most security-conscious customers. For more details, refer to [Pricing](https://www.langchain.com/pricing). [Contact our sales team](https://www.langchain.com/contact-sales) if you want a license key to trial LangSmith in your environment.
 
+<Update label="2026-11-12" tags={["Preview"]} rss={{ title: "2026-11-12 - self-hosted" }}>
+## langsmith-0.18.0-rc.72
+
+**LangSmith version:** `0.18.26rc1`
+
+- JavaScript graph factories deployed on the Python Agent Server receive a second runtime argument with access and execution context, matching the JavaScript Agent Server. This prevents deployment failures for factories that rely on runtime data and leaves factories that accept only `config` unaffected.
+- The Coding Agent overview's work-type cost breakdown matches the LLM cost card for the selected time range, eliminating inflated cost figures.
+- Grouped metrics on the Coding Agent overview appear as one horizontal bar per group for the selected date range, rather than as time series. Grouped merge rate and cost per merged PR use the full range instead of averaging daily values, while ungrouped charts remain unchanged.
+- Agent Server images bundle Datadog init 1.11.4 to address vulnerable dependencies.
+- The JavaScript SDK compresses queued trace uploads with Zstandard when both the server and Node.js runtime support it, retaining existing compression behavior otherwise. Set `LANGSMITH_RUN_COMPRESSION_LEVEL` and `LANGSMITH_RUN_COMPRESSION_WINDOW_LOG` to tune compression, noting that larger windows increase server memory usage per upload.
+- Gateway traces omit provider error text when content capture is disabled or an export retries in metadata-only mode after a monthly quota rejection. Traces still record the error status without retaining sensitive provider response text.
+- Thread streams in `lifecycle` mode emit `interrupts` events so clients can see which interrupts another client answered. Streams resumed with `Last-Event-ID` also replay these events for runs created with `stream_resumable`.
+- Forking from a checkpoint with `run.start` starts a new run even when the thread has pending interrupts. This prevents message edits from being dropped or forks from being rejected as ambiguous interrupt responses.
+- The server automatically sets the Go soft memory limit to 90% of the container's memory limit. This triggers garbage collection earlier and reduces the risk of out-of-memory failures during slow model responses.
+- You can retrieve agent runtime details through `GET /v1/platform/agent-runtimes/{id}`, with a consistent response across runtime sources. Agent lookups support `include=runtime_bindings` to discover runtime IDs.
+- Feedback category lists scroll within the editor so **Add category** and **Save** remain reachable, including on short screens. Newly added category labels receive focus and scroll into view automatically.
+- Slack users receive a private **Confirm** or **Cancel** prompt before changes that require approval, including creating datasets and adding examples. Mentioning the bot again while approval is pending cancels the pending change before processing the new request.
+- Go API requests can look up project deployments without authorization failures. Self-hosted installations must upgrade to a release containing this fix before adopting v2 session `PATCH`.
+- Thread search and count endpoints accept `state_updated_after` (inclusive) and `state_updated_before` (exclusive) filters to find threads by when their state last changed. These filters ignore metadata-only and status-only changes and fall back to the thread's last update time for older threads without a state-update timestamp.
+- Servers wait for pending database migrations before starting, and concurrent index builds no longer fail because of a one-second lock timeout. If you use a startup probe timeout shorter than the new `STARTUP_TIMEOUT_SECONDS` default of 270 seconds, set `STARTUP_TIMEOUT_SECONDS` below that timeout.
+- Resuming a run's event stream replays stored events in batches, preventing long replays from stalling Redis for other clients. Replay includes events regardless of how their fields are ordered in storage.
+- Tools loaded mid-session, such as those added by Claude Code, are available to models whose providers do not support ordered tool additions instead of being silently ignored. These tools are declared up front, so their availability no longer follows the order of activation within the conversation.
+- A labeled **Chat** button in the page header replaces the floating launcher, keeping page content unobstructed. Clicking it opens the conversation and focuses the composer without submitting a suggested prompt.
+- The Coding Agent overview shows cost alongside thread counts and cost per thread alongside turns per thread, using a separate dollar axis. Cost per thread is omitted when filtering by model, and cost lines are omitted when splitting charts by a grouping.
+- CLI profiles can store API keys in the OS keychain using `profile create --keychain` or `LANGSMITH_SECRET_STORE=keychain`, falling back to file storage with a warning if the keychain is unavailable. The Go SDK supports keychain-backed profiles, while other SDKs report a clear error when reading them.
+- Sandbox browsers load only the highest version of each extension name, and loading extensions restarts Chrome when an existing extension is removed or superseded. These restarts preserve logins but close open tabs and drop connections, while adding extensions without replacing existing ones remains non-disruptive.
+- Custom code evaluator rules fail immediately and record an error when a batch contains run data that cannot be JSON-encoded, rather than retrying for about 25 minutes. The affected batch is still dropped.
+- The **Get started** checklist's **Add alert** action reopens the create-alert pane after you close it, rather than doing nothing on subsequent clicks.
+- Thread updates retry brief lock timeouts and reduce lock contention for threads with large state, making concurrent updates less likely to fail with HTTP 500 errors.
+- Thread listings with custom authentication are faster when metadata equality filters match indexed fields. Updating thread TTL settings also works correctly when an authentication filter is applied.
+- Organization and workspace **Members** tables provide an explicit **Edit** action beside **Delete**. Workspace **Members** also explains why Organization Admin access cannot be changed there, and organization member actions remain visible at laptop screen widths.
+- User-authenticated requests can send `X-LangSmith-Team-Tags: true` to tag runs with `ls_team:<team id>` for each of the sender's teams with workspace access, enabling usage grouping by team. Team attribution reflects membership when the run is sent, and client-supplied `ls_team:` tags are removed to prevent spoofing.
+- Pages account for global banners when sizing their content, preventing unnecessary scrolling and keeping the pinned **Next** button in annotation queues visible.
+- The project stats sidebar no longer shows **% Streaming**, which measures the share of completed traces that stream tokens rather than project health. The metric remains available through the API and dashboards.
+- Offline usage backfills for air-gapped installations emit Standard Units events alongside legacy events. Backfills also accept multiple CSV export parts in one run without overwriting per-customer output.
+- Run statistics requests that time out return HTTP 504 instead of HTTP 500, distinguishing timeouts from internal errors.
+- Annotation queues prompt before you leave, reload, or close the tab with unsaved custom view changes, helping prevent accidental loss of drafts. Moving between items in the same queue does not trigger a prompt.
+- The coding work-type breakdown groups investigative threads under **Investigation** instead of **Question Answering**. Automations that check something and report back are classified as investigations rather than off topic, even when no follow-up action is needed.
+- Code evaluators can read and create feedback using their credentials, while feedback permission checks remain enforced. Feedback API responses return the public schema with nullable defaults, omit create-only fields and caller-supplied source identities, and preserve large integers in source metadata.
+- The Python and TypeScript SDKs support managing Prompt Hub repositories, directories, and commits, including synchronous and asynchronous access in Python.
+- Prompt repository updates return the same response type as repository fetches in the Go and Java SDKs. The API's JSON response remains unchanged.
+- Issue detection splits trace retrieval requests into smaller batches after an HTTP 504 timeout instead of falling back to data the detectors cannot read. This prevents missing issue-detection results.
+- Repeated project writes with inherited dataset tags no longer fail because of duplicate tag assignments.
+- Self-hosted model credential resolution requires a nonempty per-run license JWT and no longer falls back to deployment gateway or tracing keys when the JWT is missing or empty. Customer-provided model routing remains unchanged.
+- You can create or upsert projects through `POST /api/v2/sessions`, which returns the stored project with HTTP 201 for creation or HTTP 200 for updates. Upserting an existing project requires both read and update access, including attribute-based permissions, while creating a new project requires only creation permission.
+- Press Escape while focused inside floating Chat to close it, while embedded Chat stays open. Nested pickers, message editing, and image previews handle Escape first, and Escape during IME composition preserves Chat and its draft.
+- The `/mcp` endpoint accepts web login bearer tokens with `X-Tenant-Id`, allowing tool calls to run with the signed-in user's workspace permissions. Logins that rely on session cookies remain unsupported.
+- Custom chart definitions migrate only when ClickHouse queries are disabled or `CUSTOM_CHART_SERIES_DEFINITIONS_BACKFILL_ENABLED=true`, preventing empty dashboards when switching back to ClickHouse. To opt in while ClickHouse queries remain enabled, set `CUSTOM_CHART_SERIES_DEFINITIONS_BACKFILL_ENABLED=true`.
+- A2A requests with `A2A-Version: 1.0` receive v1.0 JSON-RPC and SSE response formats, including wrapped stream events and `toolResults` envelopes. Requests without the header or using version 0.3 retain their existing format, while unsupported versions return error `-32009`.
+- You can play Trace Flight, a hidden arcade game on the chat page, with a seasonal leaderboard shared across your installation and a ghost of your best run to race against.
+- Dataset examples load automatically in batches of 50 as you scroll, replacing page controls. Wide example tables support horizontal scrolling, and column headers remain visible during vertical scrolling.
+- Project updates through `PATCH /api/v2/sessions/{session_id}` are transactional and enforce project-level access controls, dataset ownership, and trace-tier permissions. Updates preserve omitted fields and metadata numeric precision, support metadata merging, nullable-field clearing, and project-specific retention overrides, and prevent renaming projects linked to a deployment.
+- Sandbox proxies support opt-in static or callback-provided attribution headers on proxy-handled HTTP(S) requests, and callback host lists are optional in API responses and the Java SDK. Before configuring attribution, deploy compatible sandbox hosts throughout the deployment and ensure consumers handle missing callback host lists.
+- Run updates and completions preserve their computed status when error details or metadata are offloaded, preventing incorrect run status classification.
+- The Python SDK requires Python 3.11 or later. If you use Python 3.10, upgrade your interpreter before updating the SDK.
+- Deprecated API notices show the LangSmith release that removes each endpoint and the version your instance runs, rather than a Cloud removal date. Notices cover all detected deprecated endpoints, including those with distant removal dates, and link to migration guidance.
+- Size `redis.deployment.resources.limits.memory` for Redis's new 75% memory cap (3Gi with the default 4Gi limit) and `noeviction` policy, which rejects writes when Redis is full instead of evicting keys. Omitting the memory limit leaves Redis uncapped, and custom container arguments remain unchanged.
+
+**Download the Helm chart:** [`langsmith-0.18.0-rc.72.tgz`](https://github.com/langchain-ai/helm/releases/download/langsmith-0.18.0-rc.72/langsmith-0.18.0-rc.72.tgz)
+
+**Sandbox runtime chart, for Sandboxes in a separate cluster:** [`langsmith-sandbox-0.18.0-rc.7.tgz`](https://github.com/langchain-ai/helm/releases/download/langsmith-sandbox-0.18.0-rc.7/langsmith-sandbox-0.18.0-rc.7.tgz)
+{/* langsmith-release-image: 0.18.0-rc.72 0.18.26-cdf8c23a2991011f09e7e55aba68afb1a846b8ac */}
+</Update>
+
 <Update label="2026-11-11" tags={["Preview"]} rss={{ title: "2026-11-11 - self-hosted" }}>
 ## langsmith-0.18.0-rc.71
 
