@@ -125,19 +125,19 @@ Two language dropdowns (Python, TypeScript) with the same 10 tabs each. Most con
 | Tab | Source | Groups |
 |-----|--------|--------|
 | Overview | `src/build-overview.mdx` | Single page |
-| Managed Deep Agents | `src/langsmith/managed-deep-agents*.mdx` | Get started, Agent definition (Channels), Build and deploy |
+| Managed Agents | `src/langsmith/managed-deep-agents*.mdx`, `src/langsmith/build-an-agent.mdx` | Get started (Studio primary, then code), Agent capabilities (Channels), Build and deploy, Templates |
 | Deep Agents | `src/oss/deepagents/` | Get started, Deployment (Going to production), Execution environment, Context management, Delegation, Steering, Frontend (Patterns), Protocols |
 | LangChain | `src/oss/langchain/` | Get started, Core components, Middleware, Frontend (Patterns → Generative UI, Integrations), Advanced usage (Multi-agent), Agent development (Test), Production |
 | LangGraph | `src/oss/langgraph/` | Get started, Capabilities, Patterns, Build with the Graph API, Deployment, Frontend, Advanced (Build with the Functional API) |
 | OpenWiki | `src/oss/openwiki/` | Modes, Integrations, Search and link, Visualize, CLI reference, Customize, Providers, Automate updates, Changelog |
 | Integrations | `src/oss/python/integrations/` or `src/oss/javascript/integrations/` | Python: Popular Providers, Integrations by component. TypeScript: Popular Providers (OpenAI, Anthropic, Google, AWS, Microsoft), General integrations, RAG integrations |
-| Learn | `src/oss/` (various) | Tutorials (Managed Deep Agents, Deep Agents, LangChain, Multi-agent, LangGraph), Conceptual overviews, Additional resources. TypeScript adds LangChain Academy |
+| Learn | `src/oss/` (various) | Tutorials (Managed Agents, Deep Agents, LangChain, Multi-agent, LangGraph), Conceptual overviews, Additional resources. TypeScript adds LangChain Academy |
 | Reference | `src/oss/reference/` | Reference, Releases (Releases, Migration guides), Policies; short entry pages linking to reference.langchain.com |
 | Contribute | `src/oss/contributing/` | Contribute (Integrations) |
 
 Two Build tabs are not language-versioned in the usual way:
 
-- **Managed Deep Agents** lives in `src/langsmith/`, not `src/oss/`. Files named `managed-deep-agents*.mdx` emit only language-prefixed routes (`/langsmith/python/...` and `/langsmith/javascript/...`). The unversioned `/langsmith/managed-deep-agents*` URLs redirect to the Python routes via `docs.json`.
+- **Managed Agents** lives in `src/langsmith/`, not `src/oss/`. Files named `managed-deep-agents*.mdx` emit only language-prefixed routes (`/langsmith/python/...` and `/langsmith/javascript/...`). The unversioned `/langsmith/managed-deep-agents*` URLs redirect to the Python routes via `docs.json`. The Studio entry page (`build-an-agent.mdx`) is unversioned at `/langsmith/build-an-agent` and is listed in both language Get started groups. Present Studio as the primary build path unless a capability is code-only.
 - **OpenWiki** ships one set of pages at `/oss/openwiki/...` with no language split. Conditional fences resolve against the Python branch.
 
 #### Test
@@ -204,11 +204,11 @@ Six tabs, all files flat in `src/langsmith/`:
 | Menu item | Source | Groups |
 |-----------|--------|--------|
 | LLM Gateway | `src/langsmith/llm-gateway*.mdx` | Core capabilities, Administration and governance, Advanced |
-| No-code agents | `src/langsmith/build-an-agent.mdx` (Studio tab), `src/langsmith/fleet/` (Fleet tab) | Studio: single page. Fleet: Get started, Configure, Tools and automation, Advanced, Additional resources |
+| No-code agents | `src/langsmith/fleet/` (Fleet tab) | Fleet: Get started, Configure, Tools and automation, Advanced, Additional resources |
 | Engine | `src/langsmith/engine*.mdx` | No groups |
 | Deep Agents Code | `src/oss/deepagents/code/` | Configuration |
 
-"No-code agents" holds two tabs: Studio, for building agents in Studio, and Fleet. The Fleet source directory and URLs still use `fleet`. The Studio build page also appears in the Agent-based workspaces group through the `build-an-agent-link.mdx` stub, which points at `/langsmith/build-an-agent` with `url:` frontmatter.
+"No-code agents" holds Fleet only. Studio build docs live under Build → Managed Agents. The Fleet source directory and URLs still use `fleet`. The Studio build page also appears in the Agent-based workspaces group through the `build-an-agent-link.mdx` stub, which points at `/langsmith/build-an-agent` with `url:` frontmatter.
 
 "Deep Agents Code" ships one set of pages at `/oss/deepagents/code/...` with no language split, even though it sits under `src/oss/deepagents/`. Conditional fences resolve against the Python branch.
 
@@ -227,9 +227,9 @@ Because nav names and directories diverge, use this to go from a file to its pla
 | `src/oss/{python,javascript}/integrations/` | Build → Integrations |
 | `src/oss/reference/` | Build → Reference |
 | `src/oss/contributing/` | Build → Contribute |
-| `src/langsmith/managed-deep-agents*.mdx` | Build → Managed Deep Agents |
+| `src/langsmith/managed-deep-agents*.mdx` | Build → Managed Agents |
 | `src/langsmith/fleet/` | Products and setup → No-code agents → Fleet |
-| `src/langsmith/build-an-agent.mdx` | Products and setup → No-code agents → Studio |
+| `src/langsmith/build-an-agent.mdx` | Build → Managed Agents (Get started) |
 | `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx`, `create-an-agent.mdx`, `build-an-agent-link.mdx` (stub for `build-an-agent.mdx`), `deploy-to-agent-environment.mdx` | Products and setup → LangSmith setup → Overview → Agent-based workspaces |
 | `src/langsmith/*.mdx` (everything else) | Test, Deploy, Monitor, or LangSmith setup, depending on subject |
 
@@ -479,7 +479,7 @@ Capitalize a word when it refers to a **product or brand name**, or to a **named
 
 **Capitalize** product and brand names:
 
-- LangChain, LangGraph, LangSmith, Deep Agents, Fleet, Engine
+- LangChain, LangGraph, LangSmith, Deep Agents, Managed Agents, Fleet, Engine
 
 **Capitalize** named features of a product:
 
