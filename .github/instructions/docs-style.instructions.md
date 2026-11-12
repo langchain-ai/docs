@@ -104,7 +104,7 @@ Capitalize a word when it refers to a **product or brand name**, or to a **named
 
 **Capitalize** product and brand names:
 
-- LangChain, LangGraph, LangSmith, Deep Agents, Fleet, Engine
+- LangChain, LangGraph, LangSmith, Deep Agents, Managed Agents, Fleet, Engine
 
 **Capitalize** named features of a product:
 
