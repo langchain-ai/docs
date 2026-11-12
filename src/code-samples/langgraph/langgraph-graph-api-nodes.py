@@ -388,7 +388,7 @@ graph = builder.compile()
 # :snippet-end:
 
 # :remove-start:
-# `server_info` is None outside LangGraph Server, so the node skips the prints.
+# `server_info` is None outside Agent Server, so the node skips the prints.
 assert graph.invoke({"result": ""}) == {"result": "done"}
 print("✓ langgraph-graph-api-nodes-server-info-py validated")
 # :remove-end:
