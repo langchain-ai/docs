@@ -449,7 +449,7 @@ Each add-on is gated by a flag in `infra/terraform.tfvars`. Set the flag, then r
 The add-ons in this section require Helm chart version 0.16.0 or later.
 </Note>
 
-### LangSmith Deployment
+### Agent Server hosting {#langsmith-deployment}
 
 Adds `host-backend`, `listener`, and `operator`. Required before enabling the deprecated Agent Builder path or `enable_polly`. KEDA is installed by Terraform when `enable_langsmith_deployment = true` (the default).
 
@@ -493,7 +493,7 @@ kubectl get pods -n keda
 Fleet is the current form of the feature formerly called Agent Builder, deployed as a standalone service.
 </Note>
 
-You can enable Fleet with `enable_fleet`. Unlike the deprecated `enable_agent_builder` path, it does not require LangSmith Deployment. With external Postgres and Redis, Terraform provisions a dedicated `langsmith_fleet` database on Cloud SQL and creates the `langsmith-fleet-postgres` and `langsmith-fleet-redis` secrets that point at the existing Cloud SQL and Memorystore instances. Fleet reuses `langsmith_agent_builder_encryption_key`, so migrating from `enable_agent_builder` keeps the same key and data.
+You can enable Fleet with `enable_fleet`. Unlike the deprecated `enable_agent_builder` path, it does not require Agent Server hosting. With external Postgres and Redis, Terraform provisions a dedicated `langsmith_fleet` database on Cloud SQL and creates the `langsmith-fleet-postgres` and `langsmith-fleet-redis` secrets that point at the existing Cloud SQL and Memorystore instances. Fleet reuses `langsmith_agent_builder_encryption_key`, so migrating from `enable_agent_builder` keeps the same key and data.
 
 <Note>
 Fleet requires the Agent Builder or Fleet entitlement in your license.
@@ -528,7 +528,7 @@ Do not enable `enable_fleet` and `enable_agent_builder` together. The deploy scr
 On GCP, `enable_agent_builder` is deprecated in favor of [Fleet](#fleet) (`enable_fleet`). Use Fleet for new deployments. This section documents the older path for existing installs.
 </Note>
 
-Prerequisite: LangSmith Deployment healthy. Adds the Agent Builder UI and its tool and trigger servers. Helm chart 0.16 removed the bundled agent bootstrap Job, so this path no longer registers an agent runtime, and the deploy script warns when you enable it without Fleet.
+Prerequisite: Agent Server hosting is healthy. Adds the Agent Builder UI and its tool and trigger servers. Helm chart 0.16 removed the bundled agent bootstrap Job, so this path no longer registers an agent runtime, and the deploy script warns when you enable it without Fleet.
 
 ```hcl
 # infra/terraform.tfvars
@@ -563,7 +563,7 @@ make deploy
 
 With `clickhouse_source = "in-cluster"`, `init-values.sh` writes the Insights values file directly. With an external ClickHouse, it prompts for the connection details and creates the `langsmith-clickhouse` Kubernetes Secret.
 
-To run Insights or Polly against the Cloud SQL and Memorystore instances instead of in-cluster databases, also set `enable_standalone_insights = true` or `enable_standalone_polly = true`. Neither requires LangSmith Deployment. With external Postgres and Redis, run `make apply` first so Terraform creates the dedicated databases and secrets.
+To run Insights or Polly against the Cloud SQL and Memorystore instances instead of in-cluster databases, also set `enable_standalone_insights = true` or `enable_standalone_polly = true`. Neither requires Agent Server hosting. With external Postgres and Redis, run `make apply` first so Terraform creates the dedicated databases and secrets.
 
 Verify:
 
@@ -646,7 +646,7 @@ On chart 0.16, sandboxes mount JuiceFS through a JuiceFS CSI driver that the cha
 
 ### Expected pods by add-on
 
-**LangSmith Deployment adds:** `langsmith-host-backend`, `langsmith-listener`, `langsmith-operator`.
+**Agent Server hosting adds:** `langsmith-host-backend`, `langsmith-listener`, `langsmith-operator`.
 
 **Fleet adds:** `langsmith-standalone-fleet-api-server`, `langsmith-standalone-fleet-queue`, `langsmith-fleet-tool-server`, `langsmith-fleet-trigger-server`.
 
@@ -694,7 +694,7 @@ For the full list of changes, see [`MIGRATION-0.16-to-0.17.md`](https://github.c
 ## Key watchouts
 
 - `config.deployment.url` must include `https://`. Without it, operator-spawned agents stay stuck in `DEPLOYING`.
-- `config.deployment.enabled: true` is required for LangSmith Deployment. Setting only the URL without `enabled: true` causes the chart to silently skip `listener` and `operator`.
+- `config.deployment.enabled: true` is required for Agent Server hosting. Setting only the URL without `enabled: true` causes the chart to silently skip `listener` and `operator`.
 - Encryption keys must never change after first enable. Rotating `langsmith_insights_encryption_key` or `langsmith_polly_encryption_key` permanently breaks existing encrypted data.
 - Envoy Gateway IP changes on teardown. GCP releases the external IP when the Gateway is deleted. After a re-apply, a new IP is issued, so update your DNS A record.
 - `langsmith-ksa` annotation is not permanent. Terraform creates `langsmith-ksa` in the `k8s-bootstrap` module, outside the Helm release, so it does not survive namespace deletion. `deploy.sh` re-creates and re-annotates it idempotently. Re-run `make deploy` if operator pods lose GCS access after a cluster rebuild.
@@ -704,7 +704,7 @@ For the full list of changes, see [`MIGRATION-0.16-to-0.17.md`](https://github.c
 - Reference the [GCP variables](/langsmith/self-host-terraform-gcp-variables) and the [quick reference](/langsmith/self-host-terraform-gcp-quick-reference).
 - Review the [GCP architecture](/langsmith/self-host-terraform-gcp-architecture) for module structure, traffic flow, and Workload Identity.
 - When something breaks, check the [GCP troubleshooting guide](/langsmith/self-host-terraform-gcp-troubleshooting).
-- Enable agent deployment in the UI with [LangSmith Deployment](/langsmith/enable-self-hosted-deployment).
+- Enable agent deployment in the UI with [Agent Server hosting](/langsmith/enable-self-hosted-deployment).
 
 ---
 
