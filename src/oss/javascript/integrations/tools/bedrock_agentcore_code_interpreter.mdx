@@ -1,0 +1,274 @@
+---
+title: Amazon Bedrock AgentCore Code Interpreter integration
+description: Integrate with the Amazon Bedrock AgentCore Code Interpreter tool using LangChain JavaScript.
+integration:
+  name: CodeInterpreterToolkit
+  npm: '@langchain/aws'
+---
+
+[Amazon Bedrock AgentCore Code Interpreter](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/code-interpreter-tool.html) enables agents to execute code in secure, managed sandbox environments. Agents can run Python, JavaScript, and TypeScript code for calculations, data analysis, file manipulation, and visualizations.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | PY support | Downloads | Version |
+|:------|:--------|:------------:|:---:|:---:|:---:|
+| [`CodeInterpreterToolkit`](https://reference.langchain.com/javascript/langchain-aws) | [`@langchain/aws`](https://npmjs.com/@langchain/aws) | ❌ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/aws?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/aws?style=flat-square&label=%20&) |
+
+### Available tools
+
+The toolkit provides multiple tools for code execution and file management:
+
+| Tool | Description |
+|:-----|:------------|
+| `execute_code` | Run Python/JavaScript/TypeScript code with persistent state |
+| `execute_command` | Run shell commands in the environment |
+| `read_files` | Read content of files in the environment |
+| `write_files` | Create or update files |
+| `list_files` | List files in directories |
+| `delete_files` | Remove files from the environment |
+| `upload_file` | Upload files with semantic descriptions |
+| `install_packages` | Install Python packages |
+| `start_command_execution` | Start a long-running command asynchronously |
+| `get_task` | Check status of an async task by `task_id` |
+| `stop_task` | Stop a running async task by `task_id` |
+
+## Setup
+
+The integration lives in the `@langchain/aws` package:
+
+<CodeGroup>
+```bash npm
+npm install @langchain/aws @langchain/core
+```
+```bash yarn
+yarn add @langchain/aws @langchain/core
+```
+```bash pnpm
+pnpm add @langchain/aws @langchain/core
+```
+</CodeGroup>
+
+### Credentials
+
+You need AWS credentials configured with permissions for Bedrock AgentCore Code Interpreter. See the [Amazon Bedrock AgentCore documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/what-is-bedrock-agentcore.html) for required IAM permissions.
+
+By default, the toolkit uses the AWS SDK default credential and region resolution (environment variables, `~/.aws/config`, IAM roles). You can also pass `region` and `credentials` explicitly.
+
+It is also helpful (but not needed) to set up [LangSmith](/langsmith/observability) for best-in-class observability:
+
+```bash
+export LANGSMITH_TRACING="true"
+export LANGSMITH_API_KEY="your-api-key"
+```
+
+## Instantiation
+
+```typescript
+import { CodeInterpreterToolkit } from "@langchain/aws";
+
+const toolkit = new CodeInterpreterToolkit({ region: "us-west-2" });
+const tools = toolkit.getTools();
+```
+
+A code interpreter session is only started when a tool is first invoked.
+
+To use a custom code interpreter, for example one with VPC configuration, pass its ID as `codeInterpreterIdentifier`. Use `sessionTimeoutSeconds` to change the session time-to-live (defaults to 900 seconds):
+
+```typescript
+const toolkit = new CodeInterpreterToolkit({
+  region: "us-west-2",
+  codeInterpreterIdentifier: "my-interpreter-abc123",
+  sessionTimeoutSeconds: 1800,
+});
+```
+
+## Invocation
+
+### Direct tool usage
+
+Get specific tools and invoke them:
+
+```typescript
+const toolsByName = toolkit.getToolsByName();
+const config = { configurable: { thread_id: "session-123" } };
+
+const result = await toolsByName.execute_code.invoke(
+  {
+    code: `
+import numpy as np
+data = [1, 2, 3, 4, 5]
+print(f"Mean: {np.mean(data)}")
+print(f"Sum: {np.sum(data)}")
+`,
+    language: "python",
+  },
+  config
+);
+console.log(result);
+```
+
+### Use within an agent
+
+```typescript
+import { createAgent } from "langchain";
+import { ChatBedrockConverse, CodeInterpreterToolkit } from "@langchain/aws";
+
+// Create toolkit
+const toolkit = new CodeInterpreterToolkit({ region: "us-west-2" });
+
+// Initialize chat model
+const model = new ChatBedrockConverse({
+  model: "us.anthropic.claude-sonnet-4-6",
+  region: "us-west-2",
+});
+
+// Create agent with code interpreter tools
+const agent = createAgent({
+  model,
+  tools: toolkit.getTools(),
+});
+
+// Create config with thread_id for session isolation
+const config = { configurable: { thread_id: "session-123" } };
+
+// Run the agent
+const result = await agent.invoke(
+  { messages: [{ role: "user", content: "Calculate the factorial of 10" }] },
+  config
+);
+console.log(result.messages.at(-1)?.contentBlocks);
+
+// Clean up when done
+await toolkit.cleanup();
+```
+
+## Thread-based session isolation
+
+The toolkit supports multiple concurrent sessions via `thread_id`. Each thread maintains its own code interpreter session with isolated state. Subagents get their own session too:
+
+```typescript
+// Different threads have isolated sessions
+const configUser1 = { configurable: { thread_id: "user-1" } };
+const configUser2 = { configurable: { thread_id: "user-2" } };
+
+// Variables defined in user-1's session do not exist in user-2's session
+await agent.invoke(
+  { messages: [{ role: "user", content: "Set x = 100" }] },
+  configUser1
+);
+
+await agent.invoke(
+  { messages: [{ role: "user", content: "What is x?" }] }, // x is undefined here
+  configUser2
+);
+```
+
+<Warning>
+Tool calls without a `thread_id` all share a single `default` session. Always pass a `thread_id` when one toolkit serves several conversations or users, otherwise variables and files leak between them.
+</Warning>
+
+A session ends after `sessionTimeoutSeconds`. The next tool call on that thread starts a new session and tells the model that earlier variables and files are gone.
+
+## Working with files
+
+### Write and read files
+
+```typescript
+const toolsByName = toolkit.getToolsByName();
+const config = { configurable: { thread_id: "session-123" } };
+
+// Write a file
+await toolsByName.write_files.invoke(
+  { files: [{ path: "data.csv", text: "name,value\nAlice,100\nBob,200" }] },
+  config
+);
+
+// Read it back
+const content = await toolsByName.read_files.invoke(
+  { paths: ["data.csv"] },
+  config
+);
+console.log(content);
+
+// List files in current directory
+const files = await toolsByName.list_files.invoke(
+  { directory_path: "." },
+  config
+);
+console.log(files);
+```
+
+### Upload files with descriptions
+
+```typescript
+await toolsByName.upload_file.invoke(
+  {
+    path: "sales.csv",
+    content:
+      "date,revenue,product\n2024-01-01,1000,Widget\n2024-01-02,1500,Gadget",
+    description: "Sales data with columns: date, revenue, product_id",
+  },
+  config
+);
+```
+
+## Installing packages
+
+`install_packages` runs `pip install` in the sandbox, so the code interpreter needs network access to PyPI. The AWS managed interpreter (`aws.codeinterpreter.v1`) cannot reach PyPI. To install packages, [create a custom code interpreter](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/code-interpreter-network-modes.html) with the `PUBLIC` network mode and pass its ID as `codeInterpreterIdentifier`.
+
+```typescript
+await toolsByName.install_packages.invoke(
+  { packages: ["pandas", "matplotlib", "scikit-learn"], upgrade: false },
+  config
+);
+```
+
+## Async task management
+
+For long-running commands, you can start them asynchronously and check their status:
+
+```typescript
+const toolsByName = toolkit.getToolsByName();
+const config = { configurable: { thread_id: "session-123" } };
+
+// Start a long-running command asynchronously
+const started = await toolsByName.start_command_execution.invoke(
+  { command: "python long_running_script.py" },
+  config
+);
+console.log(started);
+// Successfully started a command execution task
+// Task ID: 1e214c9d-5d2c-4df7-8500-f306a1097212 (status: submitted)
+
+const taskId = "1e214c9d-5d2c-4df7-8500-f306a1097212";
+
+// Check task status
+const status = await toolsByName.get_task.invoke({ task_id: taskId }, config);
+console.log(status);
+// Task is working
+// Task status: working
+
+// Stop a running task if needed
+await toolsByName.stop_task.invoke({ task_id: taskId }, config);
+```
+
+## Session cleanup
+
+Always clean up sessions when done to release resources. If stopping a session fails, `cleanup` throws and keeps the session, so you can call it again:
+
+```typescript
+// Clean up all sessions
+await toolkit.cleanup();
+
+// Or clean up the sessions of a specific thread, including its subagents
+await toolkit.cleanup("session-123");
+```
+
+## API reference
+
+For detailed documentation of all features and configurations, see:
+
+- [`@langchain/aws` API reference](https://reference.langchain.com/javascript/langchain-aws)
+- [Amazon Bedrock AgentCore documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/what-is-bedrock-agentcore.html)
