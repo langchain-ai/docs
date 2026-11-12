@@ -157,6 +157,38 @@ To fix missing hosts or headers, ask a workspace admin to [configure allowed hos
 
 Failed evaluations show an error on the run's feedback and on the **Logs** tab of the [evaluator's detail view](/langsmith/evaluators#view-evaluator-details).
 
+## Use a service key for production
+
+For production evaluators that call the LangSmith API, save the code using a workspace-scoped [service key](/langsmith/administration-overview#service-keys). The evaluator then runs as a service account rather than a person, so its access does not depend on that person's account.
+
+### Set it up
+
+To save an evaluator with a service key:
+
+1. Ask an organization admin to [create a service key](/langsmith/create-account-api-key#create-a-pat-or-service-key) scoped to the evaluator's workspace. Give it only the permissions your evaluators need.
+1. Choose an expiration date that matches your key rotation policy.
+1. Write and test the evaluator in the LangSmith UI as usual.
+1. Save the evaluator's code again through the API, authenticated with the service key. Sending the current code unchanged is enough:
+
+```bash
+curl -X PATCH "https://api.smith.langchain.com/api/v1/platform/evaluators/$EVALUATOR_ID" \
+  -H "x-api-key: $LANGSMITH_SERVICE_KEY" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n --rawfile code evaluator.py '{code_evaluator: {code: $code}}')"
+```
+
+To create a new evaluator with the key instead, use `POST /api/v1/platform/evaluators`.
+
+### Keep it running
+
+| Event | What happens | What to do |
+|---|---|---|
+| Someone edits the code in the UI | The evaluator now acts as that person | Save the code again with the service key, or limit who can edit evaluators |
+| The service key is rotated | Deleting the old key stops the evaluator's LangSmith access | Save the code with the new key first, then delete the old key |
+| The service key expires | LangSmith calls fail with `403` errors | Rotate the key before it expires |
+| The service account or key is deleted | LangSmith calls fail with `403` errors | Save the code with another service key |
+| The service account's role changes | The evaluator's permissions change on its next call | Keep the role limited to what evaluators need |
+
 ## Write the evaluator function
 
 Advanced code evaluators accept the same function as default code evaluators. A `perform_eval(run, example)` function in Python or a `performEval` function in JavaScript works unchanged. For the full contract, see [Write your evaluator code](/langsmith/code-evaluator-ui#step-2-write-your-evaluator-code).
@@ -186,7 +218,7 @@ function evaluate(ctx) {
 
 Saving an advanced code evaluator starts a build that installs your packages and prepares the sandbox ahead of time, so each evaluation starts without installing them again. The **Building evaluator** banner shows while the build runs, which usually takes less than a minute. You cannot edit or delete the evaluator until the build finishes.
 
-When the build finishes, the evaluator status is **Ready** and **Test** becomes available. **Test** appears only after you attach the evaluator to a source with sample data: a dataset with at least one experiment or traces with at least one recent successful run. **Test** runs your evaluator the same way LangSmith runs it on your traces and experiments, using the last saved build, so save any edits before you test.
+When the build finishes, the evaluator status is **Ready** and **Test** becomes available. **Test** appears only after you attach the evaluator to a source with sample data: a dataset with at least one experiment or traces with at least one recent successful run. **Test** uses the last saved build, so save any edits before you test. Testing in the UI runs the evaluator as you, so a passing test does not confirm the service key has enough access. After saving with the service key, check for `403` errors when the evaluator runs on your data.
 
 <img
     className="block dark:hidden"
