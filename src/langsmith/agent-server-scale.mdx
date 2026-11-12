@@ -140,9 +140,15 @@ Autoscaling is disabled by default, but should be configured for bursty workload
 
 ### Size Redis memory for streaming
 
-From Agent Server v0.19.0rc1, Redis stores the streaming events of every run, so its memory grows with how much your runs stream. Redis keeps a thread's events until [`RESUMABLE_STREAM_TTL_SECONDS`](/langsmith/env-var-cloud#resumable_stream_ttl_seconds) after the thread's most recent event, `120` seconds by default.
+From Agent Server v0.19.0rc1, Redis stores the streaming events of every run, so its memory grows with how much your runs stream. Each new event on a thread trims the thread's events that are older than [`RESUMABLE_STREAM_TTL_SECONDS`](/langsmith/env-var-cloud#resumable_stream_ttl_seconds), `120` seconds by default. The remaining events expire `RESUMABLE_STREAM_TTL_SECONDS` after the thread's most recent event, so an event stays in Redis for at most twice the TTL.
 
-With the default TTL, size Redis memory to at least your peak streamed bytes per second, times 120 seconds plus your 95th-percentile run duration, times 1.35. Count at most 120 seconds of run duration. Leave extra room for clients that replay or read streams. For example, a 2 Gi Redis with `maxmemory` at 75% of its limit holds about 5 MB of streamed events per second when runs last 120 seconds or longer, and about 10 MB per second when runs are short.
+Redis needs at least the following memory for stored events:
+
+```
+stream_memory_bytes = peak_streamed_bytes_per_second * (RESUMABLE_STREAM_TTL_SECONDS + min(p95_run_duration_seconds, RESUMABLE_STREAM_TTL_SECONDS)) * 1.35
+```
+
+The factor of `1.35` covers the memory Redis uses on top of the event bytes. Keep `stream_memory_bytes` below `maxmemory`, and leave extra room for clients that replay or read streams. For example, with the default TTL, a 2 Gi Redis with `maxmemory` at 75% of its limit holds about 5 MB of streamed events per second when runs last 120 seconds or longer, and about 10 MB per second when runs are short.
 
 For a Redis instance that you run yourself, such as a self-hosted deployment or one set with [`REDIS_URI_CUSTOM`](/langsmith/env-var-cloud#redis_uri_custom), set `maxmemory` below the memory limit and `maxmemory-policy` to `noeviction`. When Redis reaches `maxmemory`, it refuses new writes until events expire. Without `maxmemory`, a full Redis runs out of memory and restarts empty, which loses queued runs and interrupts every open stream.
 
