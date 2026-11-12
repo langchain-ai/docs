@@ -26,9 +26,13 @@ EXCLUDE_SUBSTRINGS = (
     "../langgraph/local-server",
 )
 
+# Anchors on headings that come from imported snippets. The local mint check does
+# not index snippet headings, so it reports them broken. Each entry was verified
+# to exist on the published page.
 KNOWN_ANCHOR_RE = re.compile(
     r"(?<!\S)/langsmith/(?:smithdb-sdk-migration#(?:traces-query|runs-query|exceptions)"
-    r"|env-var-cloud#n_jobs_per_worker)$"
+    r"|smithdb-sdk-migration-feedback#annotation-queues-(?:add|read)-runs"
+    r"|env-var-cloud#(?:n_jobs_per_worker|redis_uri_custom|resumable_stream_ttl_seconds))$"
 )
 
 _FILE_SUFFIXES = (".mdx", ".md", ".jsx", ".tsx", ".html")
