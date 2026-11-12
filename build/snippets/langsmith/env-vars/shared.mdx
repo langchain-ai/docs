@@ -72,17 +72,19 @@ Enabling `DD_API_KEY` (and thus `ddtrace-run`) can override or interfere with ot
 
 ## `FF_OPTIMIZED_STREAMING`
 
-Set `FF_OPTIMIZED_STREAMING=true` on your deployment to use Redis Streams instead of Redis Pub/Sub for streaming run output.
+Controls how API servers read streaming run output from Redis. When enabled, they read it from Redis Streams. When disabled, they read it through Redis Pub/Sub.
 
 <Note>
-`FF_OPTIMIZED_STREAMING` requires Agent Server v0.7.93 or later.
+`FF_OPTIMIZED_STREAMING` requires Agent Server v0.7.93 or later. Storing every run's events and the `true` default first ship in the v0.19.0 release candidates, starting with v0.19.0rc1.
 </Note>
 
-When enabled, the server stores all streaming events in Redis Streams. `RESUMABLE_STREAM_TTL_SECONDS` still controls how long Redis retains the stream data and defaults to `120` seconds.
+From Agent Server v0.19.0rc1, the server stores the streaming events of every run in Redis Streams, whatever the value of `FF_OPTIMIZED_STREAMING`. A client can resume the stream of any run, not only of runs created with `stream_resumable=True`. [`RESUMABLE_STREAM_TTL_SECONDS`](#resumable_stream_ttl_seconds) sets how long Redis keeps the events. To size Redis memory for them, see [Size Redis memory for streaming](/langsmith/agent-server-scale#size-redis-memory-for-streaming).
 
-Non-resumable runs started before you enable the flag continue to stream through Redis Pub/Sub.
+Set `FF_OPTIMIZED_STREAMING=false` to keep reading through Redis Pub/Sub. Change the value in its own deploy, once the deployment runs v0.19.0rc1 or later. If one deploy both upgrades from an earlier version and changes the value, open streams can miss live events from the replicas still on the earlier version until clients reconnect. With Redis Cluster, if the variable is set to `true`, remove it in one deploy, then set it to `false` in the next. In cluster mode, a server where the variable is explicitly `true` sends no live Pub/Sub events, so readers on servers with the flag off miss its events until they reconnect.
 
-Accepts boolean values `true` and `false`. Defaults to `false`.
+In earlier versions, the server stores events only for resumable runs while the flag is disabled. Non-resumable runs started before you enable the flag continue to stream through Redis Pub/Sub.
+
+Accepts boolean values `true` and `false`. Defaults to `true` from Agent Server v0.19.0rc1, and to `false` in earlier versions.
 
 ## `FF_PROFILE_IMPORTS`
 
@@ -280,9 +282,17 @@ Specify `REDIS_URI_CUSTOM` to use a custom Redis instance. The value of `REDIS_U
 
 ## `REDIS_MAX_CONNECTIONS`
 
-The maximum size of the Redis connection pool (per replica) can be controlled using the `REDIS_MAX_CONNECTIONS` environment variable. By setting this variable, you can determine the upper bound on the number of simultaneous connections the server will establish with the Redis instance.
+The maximum size of the Redis connection pools (per replica) can be controlled using the `REDIS_MAX_CONNECTIONS` environment variable. It sizes both the Go core's pool and the Python server's pool. These pools do not hold every connection a replica opens to Redis. For example, with [`FF_OPTIMIZED_STREAMING`](#ff_optimized_streaming) enabled, stream reads use a separate pool sized by [`REDIS_STREAM_READ_MAX_CONNECTIONS`](#redis_stream_read_max_connections).
 
-For example, if a deployment is scaled up to 10 replicas and `REDIS_MAX_CONNECTIONS` is configured to `150`, then up to `1500` connections to Redis can be established.
+Defaults to `500` for the Go core and `2000` for the Python server.
+
+## `REDIS_STREAM_READ_MAX_CONNECTIONS`
+
+`REDIS_STREAM_READ_MAX_CONNECTIONS` sets the maximum size of the Redis connection pool that each replica uses to read streams. It applies only when [`FF_OPTIMIZED_STREAMING`](#ff_optimized_streaming) is enabled. Each open stream takes a connection from this pool while it waits for events. Available in Agent Server v0.19.0rc1 and later.
+
+This pool is separate from [`REDIS_MAX_CONNECTIONS`](#redis_max_connections). With `FF_OPTIMIZED_STREAMING` enabled, each replica can open up to `REDIS_STREAM_READ_MAX_CONNECTIONS` Redis connections on top of those pools.
+
+If a replica has more open streams than the pool has connections, streams wait for a free connection and their events arrive late. Raise the value when that happens, as long as the Redis `maxclients` limit has room for the extra connections from every replica.
 
 Defaults to `2000`.
 
@@ -292,10 +302,13 @@ Time-to-live in seconds for resumable stream data in Redis.
 
 When a run is created and the output is streamed, the stream can be configured to be resumable (e.g. `stream_resumable=True`). If a stream is resumable, output from the stream is temporarily stored in Redis. The TTL for this data can be configured by setting `RESUMABLE_STREAM_TTL_SECONDS`.
 
+From Agent Server v0.19.0rc1, the server stores the streaming output of every run, resumable or not. Each new event on a thread trims the thread's events that are older than `RESUMABLE_STREAM_TTL_SECONDS`, and the remaining events expire `RESUMABLE_STREAM_TTL_SECONDS` after the thread's most recent event.
+
 See the [Python](https://reference.langchain.com/python/langsmith/deployment/sdk/#langgraph_sdk.client.RunsClient.stream) and [JS/TS](https://reference.langchain.com/javascript/langchain-langgraph-sdk/client/RunsClient) SDKs for more details on how to implement resumable streams.
 
 Defaults to `120` seconds.
 
 <Note>
 Setting a very high value for `RESUMABLE_STREAM_TTL_SECONDS` can result in substantial Redis memory usage when there are many concurrent runs with large or frequent streaming output. Set this value to the minimum value to enable recovery during network interruptions and prefer checkpointing for long term durability and execution snapshotting.
+To size Redis memory for the stored events, see [Size Redis memory for streaming](/langsmith/agent-server-scale#size-redis-memory-for-streaming).
 </Note>
