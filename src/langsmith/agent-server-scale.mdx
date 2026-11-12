@@ -138,6 +138,14 @@ number_of_queue_workers = throughput_per_second * average_run_execution_time_sec
 
 Autoscaling is disabled by default, but should be configured for bursty workloads. Using the same calculations as the previous section, you can determine the maximum number of queue workers you should allow the autoscaler to scale to based on maximum expected throughput.
 
+### Size Redis memory for streaming
+
+From Agent Server v0.19.0rc1, Redis stores the streaming events of every run, so its memory grows with how much your runs stream. Redis keeps a thread's events until [`RESUMABLE_STREAM_TTL_SECONDS`](/langsmith/env-var-cloud#resumable_stream_ttl_seconds) after the thread's most recent event, `120` seconds by default.
+
+With the default TTL, size Redis memory to at least your peak streamed bytes per second, times 120 seconds plus your 95th-percentile run duration, times 1.35. Count at most 120 seconds of run duration. Leave extra room for clients that replay or read streams. For example, a 2 Gi Redis with `maxmemory` at 75% of its limit holds about 5 MB of streamed events per second when runs last 120 seconds or longer, and about 10 MB per second when runs are short.
+
+For a Redis instance that you run yourself, such as a self-hosted deployment or one set with [`REDIS_URI_CUSTOM`](/langsmith/env-var-cloud#redis_uri_custom), set `maxmemory` below the memory limit and `maxmemory-policy` to `noeviction`. When Redis reaches `maxmemory`, it refuses new writes until events expire. Without `maxmemory`, a full Redis runs out of memory and restarts empty, which loses queued runs and interrupts every open stream.
+
 ## Read load
 
 Read load is primarily driven by the following factors:
@@ -190,6 +198,8 @@ The following table provides an overview comparing different Agent Server config
 | **Postgres resources** | 2 CPU<br />8 Gi (default) | 4 CPU<br />16 Gi memory | 4 CPU<br />16 Gi | 4 CPU<br />16 Gi memory | 8 CPU<br />32 Gi memory |
 
 To size Redis for each deployment, set the `redis_cpu`, `redis_cpu_limit`, `redis_memory_mb`, and `redis_memory_limit_mb` fields of the [`resource_spec`](/langsmith/api-ref-control-plane#resource-spec). Redis memory accepts 512 to 16384 MB, so the minimum is 512 Mi. Redis CPU requires listener 0.13.22 or later, and Redis memory below 2048 requires listener 0.13.27 or later. See [Listener version requirements](/langsmith/self-hosted-platform-features#listener-version-requirements).
+
+From Agent Server v0.19.0rc1, Redis memory also depends on how much your runs stream. To size it, see [Size Redis memory for streaming](#size-redis-memory-for-streaming).
 
 Load levels in the examples are defined as:
 
