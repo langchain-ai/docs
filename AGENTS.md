@@ -244,7 +244,7 @@ Three OpenAPI-generated sections. Mintlify generates the endpoint pages at deplo
 
 `src/langsmith/langsmith-platform-openapi.json` is refreshed daily by `.github/workflows/refresh-langsmith-openapi.yml`, which runs `scripts/process_langsmith_openapi.py` and opens or appends to a standing `chore/refresh-langsmith-openapi` PR. Do not edit it by hand.
 
-`src/langsmith/agent-server-openapi.json` is updated by PRs from the `langgraph-api` repository, titled `Update Agent ServerOpenAPI spec for API version X.Y.Z`. Validate either spec with `make check-openapi`.
+`src/langsmith/agent-server-openapi.json` is updated by PRs that the `langgraph-api-sync-openapi.yml` workflow in the private `langchainplus` monorepo opens, titled `Update Agent ServerOpenAPI spec for API version X.Y.Z`. The workflow copies `langgraph-api/api/openapi.json` from that repository. The standalone `langgraph-api` repository is archived. Do not edit the spec by hand. To change it, change the source in `langchainplus`. Validate either spec with `make check-openapi`.
 
 ## Local development
 
