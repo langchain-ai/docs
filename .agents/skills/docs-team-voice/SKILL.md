@@ -7,9 +7,9 @@ description: Write or revise documentation prose so it reads like the rest of th
 
 `AGENTS.md` holds the rules a linter can check: no contractions, no first
 person, no future tense, sentence-case headings, Oxford commas, spacing around
-dashes. Vale enforces most of them and `make lint_prose` is the gate, though
-Vale does not scan inside JSX components such as `<Note>` and `<Tip>`, so a
-clean run there proves nothing. This skill covers what a linter cannot check:
+dashes. `make lint_prose` is the gate, but it fails only on error-level Vale
+rules. Contractions, first person, future tense, and filler pass it, so a clean
+run does not prove the page follows them. This skill covers what a linter cannot check:
 rhythm, density, and the shape of a sentence that carries information.
 
 The targets below are measured from this repository's own pages, not invented.

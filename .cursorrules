@@ -26,7 +26,7 @@ docs/
 │   ├── index.mdx               # Home page
 │   ├── style.css               # Custom CSS
 │   ├── langsmith/              # LangSmith product docs
-│   │   └── fleet/              #   Fleet (nav label: "No-code agents")
+│   │   └── fleet/              #   Fleet (nav: "No-code agents" > Fleet tab)
 │   ├── oss/                    # Open source docs (LangChain, LangGraph, Deep Agents, OpenWiki)
 │   ├── snippets/               # Reusable MDX snippets
 │   ├── images/                 # Documentation images

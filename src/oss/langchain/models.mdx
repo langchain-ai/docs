@@ -685,7 +685,7 @@ const getWeather = tool(
   },
 );
 
-const model = new ChatOpenAI({ model: "gpt-5.5" });
+const model = new ChatOpenAI({ model: "gpt-6.1-sol" });
 const modelWithTools = model.bindTools([getWeather]);  // [!code highlight]
 
 const response = await modelWithTools.invoke("What's the weather like in Boston?");
@@ -1150,6 +1150,7 @@ Models can be requested to provide their response in a format matching a given s
         - `'json_mode'`: A precursor to `'json_schema'` offered by some providers. Generates valid JSON, but the schema must be described in the prompt.
     - **Include raw**: Set `include_raw=True` to get both the parsed output and the raw AI message.
     - **Validation**: Pydantic models provide automatic validation. `TypedDict` and JSON Schema require manual validation.
+    - **Refusals**: If the model refuses, structured output raises `ModelRefusalError`. See [Handle a model refusal](#handle-a-model-refusal) and [Structured output](/oss/langchain/structured-output#model-refusal).
 
     See your [provider's integration page](/oss/integrations/providers/overview) for supported methods and configuration options.
 </Note>
@@ -1163,6 +1164,7 @@ Models can be requested to provide their response in a format matching a given s
     - **Include raw**: Use @[`includeRaw: true`][BaseChatModel.with_structured_output(include_raw)] to get both the parsed output and the raw @[`AIMessage`]
     - **Validation**: Zod and Standard Schema objects provide automatic validation, while JSON Schema requires manual validation
     - **Standard Schema**: Any schema library implementing the [Standard Schema](https://standardschema.dev/) spec is supported and validated at runtime
+    - **Refusals**: If the model refuses, structured output throws `ModelRefusalError`, unless you set `includeRaw: true`. See [Handle a model refusal](#handle-a-model-refusal) and [Structured output](/oss/langchain/structured-output#model-refusal).
 
     See your [provider's integration page](/oss/integrations/providers/overview) for supported methods and configuration options.
 </Note>
@@ -1281,6 +1283,74 @@ It can be useful to return the raw @[`AIMessage`] object alongside the parsed re
     ```
     :::
 </Accordion>
+
+:::python
+### Handle a model refusal
+
+Providers report a refusal, such as a safety-policy refusal, as a successful response rather than an error. A plain model call returns the message with a [`refusal` content block](/oss/langchain/messages#content-block-reference). `with_structured_output` raises @[`ModelRefusalError`] from `langchain_core.exceptions` instead of a parsing error. The error's `raw_message` holds the refused response.
+
+```python
+from langchain_core.exceptions import ModelRefusalError
+
+model_with_structure = model.with_structured_output(Movie)
+
+try:
+    response = model_with_structure.invoke("Provide details about the movie Inception")
+except ModelRefusalError as error:
+    print(error)  # Model refused to produce the requested output (category='cyber'): ...
+    refused = error.raw_message
+```
+
+With `include_raw=True`, `with_structured_output` returns the error as `parsing_error` instead of raising it:
+
+```python
+model_with_structure = model.with_structured_output(Movie, include_raw=True)
+response = model_with_structure.invoke("Provide details about the movie Inception")
+if isinstance(response["parsing_error"], ModelRefusalError):
+    refused = response["raw"]
+```
+
+LangChain detects refusals from OpenAI, Anthropic, and Gemini models. For agents, `response_format` in `create_agent` raises `ModelRefusalError` when you add [`ModelRefusalMiddleware`](/oss/langchain/middleware/built-in#model-refusal); see [Structured output](/oss/langchain/structured-output#model-refusal) and [Handle a refusal](/oss/langchain/middleware/built-in#handle-a-refusal).
+
+<Note>
+    Refusal handling requires `langchain-core>=1.7.5`, and `langchain-google-genai>=4.4.3` for Gemini. If you upgrade `langchain-core` to 1.7.5 or later, also upgrade to `langchain-openai>=1.7.4`. Earlier versions raise a generic `ValueError` instead of `OpenAIRefusalError` for Responses API structured output refusals.
+</Note>
+:::
+
+:::js
+### Handle a model refusal
+
+Providers report a refusal, such as a safety-policy refusal, as a successful response rather than an error. A plain model call returns the message with a [`refusal` content block](/oss/langchain/messages#content-block-reference). `withStructuredOutput` throws @[`ModelRefusalError`] from `@langchain/core/errors` instead of a parsing error. The error's `rawMessage` holds the refused response.
+
+```typescript
+import { ModelRefusalError } from "@langchain/core/errors";
+
+const modelWithStructure = model.withStructuredOutput(Movie);
+
+try {
+  await modelWithStructure.invoke("Provide details about the movie Inception");
+} catch (error) {
+  if (ModelRefusalError.isInstance(error)) {
+    console.log(error.message); // Model refused to produce the requested output (category='cyber'): ...
+    const refused = error.rawMessage;
+  }
+}
+```
+
+With `includeRaw: true`, `withStructuredOutput` does not throw. A refusal returns `parsed: null`, so check `raw` for the refusal block:
+
+```typescript
+const modelWithStructure = model.withStructuredOutput(Movie, { includeRaw: true });
+const response = await modelWithStructure.invoke("Provide details about the movie Inception");
+const refusal = response.raw.contentBlocks.find((block) => block.type === "refusal");
+```
+
+LangChain detects refusals from OpenAI, Anthropic, and Gemini (`@langchain/google`) models. For a blocked prompt, Gemini sends no message. In that case, `@langchain/google` throws an error instead of returning a refusal block, with or without `includeRaw`. `ModelRefusalError.isInstance` returns `true` for that error. For agents, `responseFormat` in `createAgent` throws `ModelRefusalError` when you add [`modelRefusalMiddleware`](/oss/langchain/middleware/built-in#model-refusal). See [Structured output](/oss/langchain/structured-output#model-refusal) and [Handle a refusal](/oss/langchain/middleware/built-in#handle-a-refusal).
+
+<Note>
+    Refusal handling requires `@langchain/core>=1.3.7`, `@langchain/openai>=1.8.3`, `@langchain/anthropic>=1.6.3`, and `@langchain/google>=0.2.14`.
+</Note>
+:::
 
 ---
 
@@ -1695,7 +1765,7 @@ To help manage rate limits, chat model integrations accept a `rate_limiter` para
     )
 
     model = init_chat_model(
-        model="gpt-5.5",
+        model="gpt-6.1-sol",
         model_provider="openai",
         rate_limiter=rate_limiter  # [!code highlight]
     )
@@ -1761,7 +1831,7 @@ You can configure a custom base URL for providers that implement the OpenAI Chat
     from langchain_openai import ChatOpenAI
 
     model = ChatOpenAI(
-        model="gpt-5.5",
+        model="gpt-6.1-sol",
         openai_proxy="http://proxy.example.com:8080"
     )
     ```
@@ -1781,7 +1851,7 @@ Certain models can be configured to return token-level log probabilities represe
 :::python
 ```python
 model = init_chat_model(
-    model="gpt-5.5",
+    model="gpt-6.1-sol",
     model_provider="openai"
 ).bind(logprobs=True)
 
@@ -1793,7 +1863,7 @@ print(response.response_metadata["logprobs"])
 :::js
 ```typescript
 const model = new ChatOpenAI({
-    model: "gpt-5.5",
+    model: "gpt-6.1-sol",
     logprobs: true,
 });
 
@@ -2120,7 +2190,7 @@ from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResp
 
 
 basic_model = ChatOpenAI(model="gpt-5.4-mini")
-advanced_model = ChatOpenAI(model="gpt-5.5")
+advanced_model = ChatOpenAI(model="gpt-6.1-sol")
 
 @wrap_model_call
 def dynamic_model_selection(request: ModelRequest, handler) -> ModelResponse:
@@ -2156,7 +2226,7 @@ import { ChatOpenAI } from "@langchain/openai";
 import { createAgent, createMiddleware } from "langchain";
 
 const basicModel = new ChatOpenAI({ model: "gpt-5.4-mini" });
-const advancedModel = new ChatOpenAI({ model: "gpt-5.5" });
+const advancedModel = new ChatOpenAI({ model: "gpt-6.1-sol" });
 
 const dynamicModelSelection = createMiddleware({
   name: "DynamicModelSelection",

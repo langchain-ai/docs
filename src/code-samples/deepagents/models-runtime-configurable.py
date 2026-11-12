@@ -35,6 +35,6 @@ agent = create_deep_agent(
 result = agent.invoke(
     {"messages": [{"role": "user", "content": "Hello!"}]},
     # KEEP MODEL
-    context=Context(model="openai:gpt-5.5"),
+    context=Context(model="openai:gpt-6.1-sol"),
 )
 # :snippet-end:

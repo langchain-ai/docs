@@ -125,7 +125,7 @@ from deepagents import FilesystemPermission, create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
 from langgraph.store.memory import InMemoryStore
 
-store = InMemoryStore()  # Use for local dev; omit for LangSmith Deployment
+store = InMemoryStore()  # Use for local dev; omit for LangSmith Agent Server
 
 # KEEP MODEL
 agent = create_deep_agent(
