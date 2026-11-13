@@ -70,6 +70,31 @@ Steering lets a user add to a run that is already in progress. When the same use
 Steering is in beta and requires `managed-deepagents` 0.10.2 or later.
 </Note>
 
+For example, a user asks the agent to compare vendors and then sends "Only include SOC 2 compliant vendors" while the agent searches. The search finishes, and the model reads the new message together with the results so far. The same run continues with the narrower request.
+
+#### How a message joins the run
+
+A message sent during a run first waits on the thread as a queued run. Before each model call, the agent checks the thread for queued runs it can take. For each one, in the order the messages were sent, the agent:
+
+1. Cancels the queued run with the reason `taken`, so the message does not also start its own run later.
+2. Adds the run's messages to the active run's conversation.
+
+Steering acts between steps. A tool call or model call that is already in progress finishes first.
+
+After the model writes a final answer, the agent checks the thread once more. If a message arrived during that last model call, the run returns to the model with the message instead of ending.
+
+#### Messages that run on their own
+
+A queued run joins the active run only when it contains nothing but user messages from the same user. The following queued runs wait and start after the active run ends:
+
+- A response to an interrupt, such as an approval.
+- A message from a different user.
+- A run that sets a webhook, forks from an earlier checkpoint, or sets input other than messages.
+
+Only the main agent takes messages. While a subagent runs, new messages wait until the main agent's next model call.
+
+If the agent cannot read or cancel the queued runs, the messages stay queued in order. The agent tries again at its next model call, and any message it does not take runs on its own after the active run ends.
+
 ## Declare channels in a project
 
 Put each channel in a separate module under `channels/`.
