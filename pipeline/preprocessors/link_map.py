@@ -479,6 +479,10 @@ LINK_MAPS: list[LinkMap] = [
             "StudioUser": "langgraph-sdk/auth/types/StudioUser",
             "MinimalUserDict": "langgraph-sdk/auth/types/MinimalUserDict",
             "HTTPException": "langgraph-sdk/auth/exceptions/HTTPException",
+            # Priority types
+            "Priority": "langgraph-sdk/priority/Priority",
+            "PriorityContext": "langgraph-sdk/priority/types/PriorityContext",
+            "PrioritySettings": "langgraph-sdk/priority/types/PrioritySettings",
             # Auth types - Threads
             "ThreadsCreate": "langgraph-sdk/auth/types/ThreadsCreate",
             "ThreadsRead": "langgraph-sdk/auth/types/ThreadsRead",
