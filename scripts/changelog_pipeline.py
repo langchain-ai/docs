@@ -51,6 +51,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from uuid import UUID
@@ -1789,21 +1790,22 @@ def cmd_mock(args: argparse.Namespace) -> None:
                     print(f"group {futures[fut]}: {exc}", file=sys.stderr)
 
     # Fix renamed products and MDX-unsafe text, then sort each entry. One that looks
-    # gated by a flag Datadog knows joins the held list and publishes when the flag rolls
-    # out. One that names something internal is rewritten and checked again. Anything
+    # gated by a known or already-held flag joins the held list and publishes when
+    # the flag rolls out. Internal names are rewritten and checked again. Anything
     # else uncertain is left out: no person reviews the list.
     publish, excluded, auto_held, to_fix = [], [], [], []
+    holdable_flags = (set(flags) | {flag for _, flag in held}) - {CONFLICTING_FLAGS}
     for g in written:
         for field in ("title", "entry"):
             if g.get(field):
                 g[field] = _mdx_escape(_apply_renames(g[field]))
         gates = _gating_flags(g, prs, results, held, flags)
-        known = [(flag, why) for flag, why in gates if flag in flags]
+        known = [(flag, why) for flag, why in gates if flag in holdable_flags]
         if known:
             auto_held.append((g, known))
             continue
         text = _text_reasons(g, flags)
-        # A flag missing from Datadog or a conflicting declaration cannot be checked.
+        # Conflicting or otherwise unrecognized gates cannot establish a hold.
         if unknown := [why for _, why in gates]:
             excluded.append((g, text + unknown))
         elif rollout := _rollout_reasons(g):
@@ -2038,7 +2040,14 @@ def _datadog_resources(path: str, headers: dict[str, str]):
     """Walk offset pages without forwarding credentials to pagination URLs."""
     offset, seen = 0, set()
     while True:
-        items = _datadog_get(f"{path}?limit=50&offset={offset}", headers)["data"]
+        # Flag edits must not reorder pages. Environments use a different paging API.
+        params = (
+            {"sort": "created_at", "page[limit]": 50, "page[offset]": offset}
+            if path == "/api/v2/feature-flags"
+            else {"limit": 50, "offset": offset}
+        )
+        query = urllib.parse.urlencode(params)
+        items = _datadog_get(f"{path}?{query}", headers)["data"]
         if not isinstance(items, list):
             message = "Invalid Datadog resource list"
             raise ValueError(message)
@@ -2069,8 +2078,10 @@ def datadog_flag_index() -> tuple[dict[str, dict], set[str]]:
     if not production:
         message = "No Datadog production environment found"
         raise ValueError(message)
+    # Finish pagination before the slower per-flag reads to reduce inventory drift.
+    items = list(_datadog_resources("/api/v2/feature-flags", headers))
     flags = {}
-    for item in _datadog_resources("/api/v2/feature-flags", headers):
+    for item in items:
         # List responses omit allocation details; never infer rollout from them.
         flag_id = str(UUID(item["id"]))
         flag = _datadog_get(f"/api/v2/feature-flags/{flag_id}", headers)["data"][

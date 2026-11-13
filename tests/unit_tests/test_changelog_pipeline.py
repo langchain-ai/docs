@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import argparse
 import datetime as dt
 import json
 import re
+from email.message import Message
 from io import BytesIO
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Never
@@ -740,12 +742,16 @@ def test_datadog_inventory_paginates_and_fetches_details(
         for i in range(51)
     ]
     detail_reads = []
+    listing_complete = False
 
     def get(path: str, headers: dict) -> dict:
+        nonlocal listing_complete
         assert headers == {"DD-API-KEY": "test-api", "DD-APPLICATION-KEY": "test-app"}
         url = urlsplit(path)
-        offset = int(parse_qs(url.query).get("offset", [0])[0])
+        query = parse_qs(url.query)
         if url.path.endswith("/environments"):
+            assert query["limit"] == ["50"]
+            offset = int(query["offset"][0])
             return {
                 "data": []
                 if offset
@@ -755,10 +761,15 @@ def test_datadog_inventory_paginates_and_fetches_details(
                 ]
             }
         if url.path == "/api/v2/feature-flags":
+            assert query["sort"] == ["created_at"]
+            assert query["page[limit]"] == ["50"]
+            offset = int(query["page[offset]"][0])
+            listing_complete = offset >= len(flags)
             return {
                 "data": flags[offset : offset + 50],
                 "links": {"next": "https://example.com/never-follow"},
             }
+        assert listing_complete
         index = UUID(url.path.rsplit("/", 1)[1]).int - 1
         detail_reads.append(index)
         return {"data": {"attributes": {"key": f"flag-{index}", **_datadog_flag()}}}
@@ -781,7 +792,7 @@ def test_inventory_failure_never_reuses_a_snapshot(
 
     def unavailable() -> Never:
         url = "https://api.datadoghq.com"
-        raise HTTPError(url, 403, "Forbidden", None, None)
+        raise HTTPError(url, 403, "Forbidden", Message(), None)
 
     monkeypatch.setattr(cp, "datadog_flag_index", unavailable)
     with pytest.raises(HTTPError):
@@ -846,7 +857,7 @@ def test_datadog_http_uses_site_and_rejects_redirects(
 def test_mock_preserves_new_missing_flags(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A declared flag absent from Datadog can release in a later week."""
+    """A declared missing flag and its related entry can release in a later week."""
     for directory in ("prs", "results"):
         (tmp_path / directory).mkdir()
     (tmp_path / "prs/1.json").write_text(
@@ -855,19 +866,56 @@ def test_mock_preserves_new_missing_flags(
                 "title": "feat: example",
                 "body": "Flag: example",
                 "merged_at": "2026-01-06",
+                "files": ["src/components/widgets/example/controls/button.py"],
+                "fragments": [],
             }
         )
     )
     (tmp_path / "results/1.json").write_text(
         json.dumps({"pass1": {"tier": "announce"}})
     )
+    (tmp_path / "prs/2.json").write_text(
+        json.dumps(
+            {
+                "title": "fix: example",
+                "body": "",
+                "merged_at": "2026-01-07",
+                "files": ["src/components/widgets/example/controls/button.py"],
+                "fragments": [],
+            }
+        )
+    )
+    (tmp_path / "results/2.json").write_text(
+        json.dumps(
+            {
+                "pass1": {"tier": "announce", "reason": "New controls", "evidence": []},
+            }
+        )
+    )
+    group = {
+        "label": "Example",
+        "layer": "change",
+        "product": "cloud",
+        "rank": 1,
+        "prs": [2],
+    }
     (tmp_path / "datadog-flags.json").write_text("{}")
-    monkeypatch.setattr(cp, "_claude", lambda *_: ({"groups": []}, {}))
+    monkeypatch.setattr(cp, "_claude", lambda *_: ({"groups": [group]}, {}))
+    monkeypatch.setattr(
+        cp,
+        "_write_group",
+        lambda *_: {
+            **group,
+            "title": "Example",
+            "entry": "Adds example controls.",
+            "meta": {"cost_usd": 0},
+        },
+    )
     monkeypatch.setattr(cp, "_docs_pages", dict)
     monkeypatch.setattr(cp, "_beta_features", list)
     monkeypatch.setattr(cp, "_latest_bullets", lambda *_, **__: [])
     cp.cmd_mock(
-        SimpleNamespace(
+        argparse.Namespace(
             out=str(tmp_path),
             results="results",
             since="2026-01-05",
@@ -878,9 +926,12 @@ def test_mock_preserves_new_missing_flags(
     )
     output = tmp_path / "mock-2026-01-05"
     held = json.loads((output / "held.json").read_text())
-    assert held["1"]["flag"] == "example"
+    assert {number: entry["flag"] for number, entry in held.items()} == {
+        "1": "example",
+        "2": "example",
+    }
     assert not (output / "mock.mdx").read_text().strip()
     released, kept, dropped = cp._release_held(held, {"example": {"rolled_out": True}})
-    assert list(released) == ["1"]
+    assert list(released) == ["1", "2"]
     assert not kept
     assert not dropped
