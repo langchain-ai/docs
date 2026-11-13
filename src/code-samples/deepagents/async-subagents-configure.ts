@@ -17,7 +17,7 @@ const asyncSubagents: AsyncSubAgent[] = [
 ];
 
 const agent = createDeepAgent({
-  model: "google:gemini-3.6-flash",
+  model: "google:gemini-4-hydrogen",
   subagents: [...asyncSubagents],
 });
 // :snippet-end:

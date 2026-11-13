@@ -11,14 +11,18 @@ const configurableModel = createMiddleware({
   name: "ConfigurableModel",
   wrapModelCall: async (request, handler) => {
     const modelName = request.runtime.context.model;
-    const model = await initChatModel(modelName);
+    // GPT-6 models need the Responses API for tool calling in @langchain/openai.
+    const model = await initChatModel(
+      modelName,
+      /(?:^|:)gpt-6/.test(modelName) ? { useResponsesApi: true } : undefined,
+    );
     return handler({ ...request, model });
   },
 });
 
 // KEEP MODEL
 const agent = await createDeepAgent({
-  model: "google:gemini-3.6-flash",
+  model: "google:gemini-4-hydrogen",
   middleware: [configurableModel],
   contextSchema,
 });
@@ -27,6 +31,6 @@ const agent = await createDeepAgent({
 const result = await agent.invoke(
   { messages: [{ role: "user", content: "Hello!" }] },
   // KEEP MODEL
-  { context: { model: "openai:gpt-5.5" } },
+  { context: { model: "openai:gpt-6.1-sol" } },
 );
 // :snippet-end:

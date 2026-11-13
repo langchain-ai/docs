@@ -22,7 +22,7 @@ model = None
 if os.environ.get("OPENAI_API_KEY"):
     from langchain.chat_models import init_chat_model
 
-    model = init_chat_model("openai:gpt-5.5")
+    model = init_chat_model("openai:gpt-6.1-sol")
 # :remove-end:
 
 # :snippet-start: langgraph-sql-agent-tools-py
