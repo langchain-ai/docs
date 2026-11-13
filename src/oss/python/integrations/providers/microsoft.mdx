@@ -21,6 +21,11 @@ Browse LangChain Python integrations for [Microsoft Foundry](https://learn.micro
 
 ### Chat models
 
+Choose an integration to call chat models:
+
+- **Microsoft Foundry (recommended)**: To call models in Microsoft Foundry, use `AzureAIOpenAIApiChatModel` from `langchain-azure-ai`. It handles project endpoint resolution and Microsoft Entra ID authentication through Azure credentials.
+- **Azure OpenAI**: Use `ChatOpenAI` from `langchain-openai` for direct v1 API calls or code shared between OpenAI and Azure. Use `AzureChatOpenAI` for traditional dated Azure OpenAI API versions.
+
 <Note>
     **Claude on Azure**
 
@@ -37,6 +42,27 @@ Browse LangChain Python integrations for [Microsoft Foundry](https://learn.micro
     </Card>
 </Columns>
 
+#### Call a model
+
+Call a model deployed in your Foundry project. Install `langchain-azure-ai` and set `AZURE_AI_PROJECT_ENDPOINT` and `AZURE_AI_MODEL_DEPLOYMENT_NAME`.
+
+Configure Microsoft Entra ID authentication for your environment. On Azure, use a managed identity. For local development, you can sign in with `az login`.
+
+```python
+import os
+
+from azure.identity import DefaultAzureCredential
+from langchain_azure_ai.chat_models import AzureAIOpenAIApiChatModel
+
+model = AzureAIOpenAIApiChatModel(
+    model=os.environ["AZURE_AI_MODEL_DEPLOYMENT_NAME"],
+    credential=DefaultAzureCredential(),
+)
+model.invoke("Tell me a joke and include some emojis.").pretty_print()
+```
+
+For setup and usage examples, see [Microsoft Foundry chat models](/oss/integrations/chat/azure_ai).
+
 ### LLMs
 
 <Columns cols={2}>
@@ -49,15 +75,51 @@ Browse LangChain Python integrations for [Microsoft Foundry](https://learn.micro
 
 ### Agents
 
+Use an existing Foundry agent as a node in your LangGraph workflow. To host a new LangGraph agent on Microsoft Foundry, see [Runtime](#runtime).
+
 <Columns cols={2}>
     <Card title="Microsoft Foundry Agent Service" href="https://github.com/langchain-ai/langchain-azure/blob/main/libs/azure-ai/README.md#microsoft-foundry-agent-service" cta="Get started" icon="robot" arrow>
         Use `langchain-azure-ai` to invoke Foundry Agent Service agents as nodes in a LangGraph workflow.
     </Card>
 </Columns>
 
+#### Use an existing Foundry agent
+
+Install `langchain-azure-ai` and set `AZURE_AI_PROJECT_ENDPOINT`. Configure Microsoft Entra ID authentication for your environment. Replace `my-echo-agent` with your agent name.
+
+```python
+from langchain_azure_ai.agents import (
+    AgentServiceAgentState,
+    AgentServiceFactory,
+)
+from langgraph.graph import END, START, StateGraph
+
+factory = AgentServiceFactory()
+agent_node = factory.get_agent_node(
+    name="my-echo-agent", version="latest"
+)
+
+workflow = StateGraph(AgentServiceAgentState)
+workflow.add_node("foundry_agent", agent_node)
+workflow.add_edge(START, "foundry_agent")
+workflow.add_edge("foundry_agent", END)
+
+graph = workflow.compile()
+result = graph.invoke({"messages": [("user", "Hello, world!")]})
+result["messages"][-1].pretty_print()
+```
+
+For more on using Foundry agents in LangGraph, see [Microsoft Foundry Agent Service](https://github.com/langchain-ai/langchain-azure/blob/main/libs/azure-ai/README.md#microsoft-foundry-agent-service).
+
 <a id="runtime" />
 
 ### Runtime
+
+[Microsoft Foundry hosted agents](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/hosted-agents) run your LangGraph code on managed infrastructure. Foundry manages compute, session lifecycles, and scaling. Its hosting libraries support background execution, failure recovery after process interruptions, stream replay, and steering to handle new user input.
+
+Expose your agent through OpenAI-compatible Responses endpoints or Invocations endpoints with custom JSON inputs and outputs. The LangGraph hosting adapters handle request conversion, response mapping, and streaming. Responses also provides managed conversation history.
+
+You can connect workflows to Foundry Memory, Foundry IQ, and Toolbox for long-term context, enterprise knowledge, and tools. Foundry offers Microsoft Entra identities, RBAC, private networking, and configurable guardrails to control access and protect your application. Tracing, Application Insights, and managed evaluation help investigate failures and assess agent behavior and output quality.
 
 <Columns cols={2}>
     <Card title="Microsoft Foundry hosted agents" href="/oss/integrations/providers/azure_ai#microsoft-foundry-hosted-agents" cta="Get started" icon="cloud" arrow>
@@ -67,6 +129,24 @@ Browse LangChain Python integrations for [Microsoft Foundry](https://learn.micro
         Add durable execution, retries, and crash recovery to LangGraph workflows.
     </Card>
 </Columns>
+
+#### Host a LangGraph agent
+
+Run an existing compiled LangGraph graph locally with `langchain-azure-ai[hosting]`. From your configured project directory, point `langgraph.json` at the exported graph and start the Responses endpoint:
+
+```bash
+pip install -U "langchain-azure-ai[hosting]"
+python -m langchain_azure_ai.agents.hosting.run --protocol responses
+```
+
+To deploy your agent to Foundry, initialize an Azure Developer CLI (`azd`) project. Configure `azure.yaml` to use the same hosting entry point, then provision resources and deploy:
+
+```bash
+azd auth login
+azd up
+```
+
+For project configuration and deployment steps, see [Microsoft Foundry hosted agents](/oss/integrations/providers/azure_ai#microsoft-foundry-hosted-agents).
 
 ### Tools
 
