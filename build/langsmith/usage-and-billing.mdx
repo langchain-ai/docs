@@ -1,0 +1,306 @@
+---
+title: Usage and billing
+sidebarTitle: Usage and billing
+description: Understand LangSmith trace data retention tiers, pricing, rate limits, and usage limits.
+---
+
+import MaxRunsPerTrace from '/snippets/python/langsmith/max-runs-per-trace.mdx';
+import RetentionDownstreamFeatures from '/snippets/python/langsmith/retention-downstream-features.mdx';
+
+This page describes how LangSmith retains, rate limits, and bills for traces. It covers retention tiers and periods for each hosting option, the rate limits that return HTTP 429 responses, and the usage limits you can set.
+
+<Note>
+To set up billing, update invoice details, or set a spend limit, see [Manage billing](/langsmith/billing).
+</Note>
+
+## Data retention
+
+LangSmith keeps each trace only for the retention period of its tier. When that period ends, LangSmith deletes the trace.
+
+### Why retention matters
+
+* **Privacy**: Many data privacy regulations, such as GDPR in Europe or CCPA in California, require organizations to delete personal data once it is no longer necessary for the purposes for which it was collected. Setting retention periods aids in compliance with such regulations.
+* **Cost**: Base traces cost less than extended traces. To control what you spend on tracing, see [Enforce spend limits](/langsmith/billing#enforce-spend-limits).
+
+### Retention periods
+
+Each trace belongs to one of two retention tiers: base or extended. The retention period of each tier depends on your [hosting option](/langsmith/platform-setup):
+
+| Hosting option | Base | Extended (default) | Extended durations Enterprise customers can choose |
+| -------------- | ---- | ------------------ | -------------------------------------------------- |
+| Cloud          | 14 days | 180 days | 30, 60, 90, 120, 150, or 180 days |
+| BYOC           | 14 days<br />(data plane default) | 400 days<br />(data plane default) | 30, 60, 90, 120, 150, 180, 240, 300, 365, or 400 days |
+| Self-hosted    | 14 days<br />(Helm chart default) | 400 days<br />(Helm chart default) | Configurable. See [Enable TTL and data retention](/langsmith/self-host-ttl). |
+
+On an AWS or Azure BYOC data plane, you can change both data plane defaults. See how to change data plane settings on [AWS](/langsmith/byoc-onboarding-aws#change-data-plane-settings) and [Azure](/langsmith/byoc-onboarding-azure#change-data-plane-settings). GCP data planes keep 14 and 400 days.
+
+To choose an extended duration for a workspace, see [Customize extended retention policy](/langsmith/data-purging-compliance#customize-extended-retention-policy). Cloud traces ingested before September 14, 2026 keep the retention they had when ingested.
+
+### What happens when retention ends
+
+After the retention period, traces are no longer accessible in the tracing project UI or through the API. All user data associated with the trace, such as inputs and outputs, is deleted from LangSmith systems shortly after. Some metadata associated with each trace may be retained indefinitely for analytics and billing purposes.
+
+### Where the retention tier is set
+
+A default retention tier belongs to a tracing project. A new project inherits the workspace's default tier, which you set in [Configure trace tier distribution](/langsmith/billing#configure-trace-tier-distribution). Changing the workspace default does not change existing projects unless you choose to apply it to all of them. An [auto-upgrade](#data-retention-auto-upgrades) can move an individual trace to extended retention regardless of its project's tier.
+
+In an [agent-based workspace](/langsmith/agent-registry), each of an agent's [environments](/langsmith/agent-environments) is its own tracing project, so you set the tier per environment. For example, one agent can keep production traces at extended retention and development traces at base. To change the tier for a whole agent, set it on each environment.
+
+<Tip>
+Plan your retention tiers before you start sending traces. Changing a project's tier applies to new traces only. Traces already ingested keep their tier. See [Change project-level default retention](/langsmith/billing#change-project-level-default-retention).
+</Tip>
+
+### Data retention auto-upgrades
+
+<Warning>
+Auto-upgrades increase your bill. Read this section to understand your estimated tracing costs.
+</Warning>
+
+Some actions upgrade a base tier trace to the extended tier, which increases both its retention period and its cost. You control which actions extend retention.
+
+Retention behavior by action:
+
+* **Feedback via API or SDK**: Feedback is added to any run on the trace (or any trace in the thread) through an API or SDK call that explicitly passes `extend_trace_retention=true` (`extendTraceRetention: true` in TypeScript). For more information, see [Attach user feedback](/langsmith/attach-user-feedback). The LangSmith UI sends feedback and notes without extending retention.
+* **Online evaluators**: An online evaluator scores the trace and its retention setting is enabled. Both trace-level and thread-level evaluators can opt out of this upgrade.
+* **Automation rules**: An [automation rule](/langsmith/rules#create-a-rule) with retention extension enabled matches any run within a trace. Matching a single run upgrades the entire trace, not just that run. A rule whose [item type](/langsmith/rules#set-the-item-type-to-runs-or-threads) is **Threads** upgrades every trace in the matched thread, not only the most recent one.
+* **Manual annotation queue adds** (no upgrade): Manually adding runs or threads to an [annotation queue](/langsmith/annotation-queues#assign-runs-and-threads-to-a-single-run-queue) does not upgrade retention by default.
+
+Retention extension is enabled by default for new online evaluators and automation rules. You can turn it off when you create or edit each evaluator or rule. An online evaluator can opt out only when the project's default retention is the base tier. See [Manage evaluator trace retention](/langsmith/evaluators#manage-evaluator-trace-retention).
+
+Turning retention extension off does not downgrade traces. Traces that an earlier action already upgraded keep their extended retention.
+
+#### Why LangSmith auto-upgrades traces
+
+The auto-upgrade model follows two principles:
+
+1. Traces that receive feedback through the API, are scored by an online evaluator, or match an automation rule are usually more valuable than other traces, so it is useful to keep them longer.
+1. Traces that nobody interacts with should cost an order of magnitude less. Only traces with meaningful interaction are charged at the higher extended rate.
+
+For questions about LangSmith pricing, contact support at [support.langchain.com](https://support.langchain.com).
+
+#### How retention affects downstream features
+
+<RetentionDownstreamFeatures />
+
+### Billing model
+
+Your LangSmith invoice shows two tracing metrics:
+
+* **LangSmith Traces (Base Charge)**: Every trace, regardless of tier.
+* **LangSmith Traces (Extended Data Retention Upgrades)**: Every extended retention trace.
+
+#### Why the invoice counts upgrades separately
+
+Counting base and extended traces directly would be simpler, but it does not handle upgrades. For example, a base tier trace recorded on June 30 and upgraded to extended on July 3 falls in the June billing period, while its upgrade falls in July. Measuring the two events separately bills each one in the right period.
+
+A trace created at extended retention records both metrics with the same timestamp.
+
+## Rate limits
+
+LangSmith has rate limits which are designed to ensure the stability of the service for all users.
+
+LangSmith responds with HTTP status code 429 when a rate limit or usage limit is exceeded, in the following circumstances:
+
+### Per-minute throughput limit at the load balancer
+
+This 429 is the result of exceeding a fixed number of API calls over a 1 minute window on a per service key or PAT basis. The window does not necessarily start at the start of a clock minute, and its start may shift with application deployment events.
+
+After the maximum number of calls is reached, LangSmith responds with 429 until 60 seconds have passed since the start of the window. Then the window starts again.
+
+The LangSmith application load balancer returns this 429. It applies to all LangSmith users, regardless of plan.
+
+| Method            | Endpoints     | Limit | Window   |
+| ----------------- | ------------- | ----- | -------- |
+| `DELETE`          | `/sessions*`  | 30    | 1 minute |
+| `POST` OR `PATCH` | `/runs*`      | 5000  | 1 minute |
+| `GET`             | `/runs/:id`   | 30    | 1 minute |
+| `POST`            | `/feedbacks*` | 5000  | 1 minute |
+| `*`               | `*`           | 2000  | 1 minute |
+
+<Note>
+The LangSmith SDK takes steps to minimize the likelihood of reaching these limits on run-related endpoints by batching up to 100 runs from a single session ID into a single API call.
+</Note>
+
+### Plan-level hourly trace event limit
+
+This 429 is the result of reaching your maximum hourly events ingested and is evaluated in a fixed window starting at the beginning of each clock hour in UTC and resets at the top of each new hour.
+
+An event in this context is the creation or update of a run. If a run is created and then subsequently updated in the same hourly window, that counts as 2 events against this limit.
+
+The LangSmith application returns this 429. The limit varies by plan: Startup/Plus and Enterprise plans have higher hourly limits than the Developer plan, which is designed for personal use.
+
+| Plan                             | Limit          | Window |
+| -------------------------------- | -------------- | ------ |
+| Developer (no payment on file)   | 50,000 events  | 1 hour |
+| Developer (with payment on file) | 250,000 events | 1 hour |
+| Startup/Plus                     | 500,000 events | 1 hour |
+| Enterprise                       | Custom         | Custom |
+
+### Plan-level hourly trace data ingest limit
+
+This 429 is the result of reaching the maximum amount of data ingested across your trace inputs, outputs, and metadata and is evaluated in a fixed window starting at the beginning of each clock hour in UTC and resets at the top of each new hour.
+
+Typically, inputs, outputs, and metadata are sent on both run creation and update events. If a run is created at 2.0MB and updated to 3.0MB in the same hourly window, that counts as 5.0MB of storage against this limit.
+
+The LangSmith application returns this 429. The limit varies by plan: Startup/Plus and Enterprise plans have higher hourly limits than the Developer plan, which is designed for personal use.
+
+| Plan                             | Limit  | Window |
+| -------------------------------- | ------ | ------ |
+| Developer (no payment on file)   | 500MB  | 1 hour |
+| Developer (with payment on file) | 2.5GB  | 1 hour |
+| Startup/Plus                     | 5.0GB  | 1 hour |
+| Enterprise                       | Custom | Custom |
+
+### Plan-level monthly unique traces limit
+
+This 429 is the result of reaching your maximum monthly traces ingested and is evaluated in a fixed window starting at the beginning of each calendar month in UTC and resets at the beginning of each new month.
+
+The LangSmith application returns this 429. It applies only to the Developer plan when there is no payment method on file.
+
+| Plan                           | Limit        | Window  |
+| ------------------------------ | ------------ | ------- |
+| Developer (no payment on file) | 5,000 traces | 1 month |
+
+### Self-configured monthly usage limits
+
+This 429 is the result of reaching your usage limit as configured by your organization admin and is evaluated in a fixed window starting at the beginning of each calendar month in UTC and resets at the beginning of each new month.
+
+The LangSmith application returns this 429. The limit depends on the usage limits your organization configures. See [Usage limits](#usage-limits).
+
+### Maximum runs per trace
+
+<MaxRunsPerTrace />
+
+### Run query endpoint
+
+LangSmith exposes two versions of the run query endpoint with different rate limit profiles.
+
+**v2 (recommended):** `POST /v2/runs/query` ([`list_runs`](https://reference.langchain.com/python/langsmith/client/Client/list_runs) in Python, [`listRuns`](https://reference.langchain.com/javascript/langsmith/client/Client/listRuns) in JavaScript) is backed by SmithDB and has a flat per-API-key limit with no time-window tiers:
+
+| **Limit** | **Window** |
+|---|---|
+| 300 requests | 10 seconds |
+
+API key requests that set `sem_filter` (semantic search) are also limited to 10 requests per minute per workspace.
+
+**v1:** `POST /runs/query` has per-tenant rate limits that vary based on query parameters:
+
+| **Query type** | **Limit** | **Window** |
+|---|---|---|
+| Short time window (≤ 7 days) | 10 requests | 10 seconds |
+| Large time window (> 7 days) | 3 requests | 10 seconds |
+| Full-text search, short time window (≤ 7 days) | 3 requests | 10 seconds |
+| Full-text search, large time window (> 7 days) | 1 request | 10 seconds |
+| Select `child_run_ids`, short time window (≤ 7 days) | 3 requests | 10 seconds |
+| Select `child_run_ids`, large time window (> 7 days) | 1 request | 10 seconds |
+
+The time window is determined by `end_time - start_time`. If `end_time` is not provided, LangSmith uses the current time. Queries without a `start_time` are treated as large time window queries.
+
+To avoid hitting v1 rate limits and reduce query time:
+
+- **Set `start_time`**: omitting it triggers the large time window tier (3 requests per 10 seconds instead of 10). Use a window of 7 days or less when possible.
+- **Use `select`**: by default all fields are returned. Specifying only the fields you need (e.g., `select=["inputs", "outputs"]`) substantially reduces response size and query time.
+- **Set `limit`**: cap the number of results if you don't need to paginate through everything.
+- **Avoid full-text search**: `filter='search("...")'` has the strictest rate limits; use structured filters (e.g., `eq()`, `has()`) when possible.
+- **Avoid selecting `child_run_ids`**: this also triggers a stricter rate limit tier.
+
+### Run stats endpoint
+
+The [`POST /runs/stats`](/langsmith/smith-api/run/stats-runs) endpoint has per-tenant rate limits that vary based on the query time window:
+
+| **Query type** | **Limit** | **Window** |
+|---|---|---|
+| Short time window (≤ 14 days) | 10 requests | 10 seconds |
+| Large time window (> 14 days and < 90 days) | 3 requests | 10 seconds |
+| Extra-large time window (≥ 90 days) or no `start_time` | 1 request | 10 seconds |
+
+The time window is determined by `end_time - start_time`. If `end_time` is not provided, LangSmith uses the current time. Queries without a `start_time` are subject to the strictest limit.
+
+In the GCP-hosted US region, API key requests to this endpoint are also limited to 1 request per 10 seconds per API key.
+
+To avoid hitting rate limits:
+
+- **Set `start_time`**: use a window of 14 days or less when possible.
+- **Avoid open-ended queries**: always provide a `start_time` to stay in the less-restrictive tier.
+
+### Workspace invite batch endpoint
+
+Workspace invite batch requests are rate limited per workspace to reduce bulk invitation abuse.
+
+The `POST /workspaces/current/members/batch` endpoint allows 2 requests per second per workspace. This limit applies to LangSmith Cloud only.
+
+### Handle 429 responses in your application
+
+Some 429 responses are temporary, so a later call may succeed. If your application calls the LangSmith API directly, implement retry logic with exponential backoff and jitter. The LangSmith SDK has this retry logic built in.
+
+<Note>
+If your application saturates the endpoints for long periods, retries may not help, because the backlog eventually exhausts all retries.
+
+In that case, contact [LangSmith support](https://support.langchain.com) with your application's throughput needs and sample code. Support can help you decide whether the fix is a bug fix, a change to your application code, or a different LangSmith plan.
+</Note>
+
+## Usage limits
+
+Usage limits cap the number of traces LangSmith ingests each calendar month. They limit trace counts, not spend. To set a monthly spend target and let LangSmith derive the limits from it, see [Set a workspace spend limit](/langsmith/billing#set-a-workspace-spend-limit). For spend limits on evaluator runs, see [Track and limit evaluator spend](/langsmith/evaluator-spend).
+
+You can set usage limits at three scopes:
+
+- **Workspace**: Two limits that match the two [billable metrics](#billing-model): an all traces limit and an extended data retention traces limit.
+- **Project**: A monthly trace limit for one tracing project.
+- **User**: A monthly trace limit for one workspace member.
+
+A trace must be within every usage limit that applies to it to be ingested.
+
+### Set workspace usage limits
+
+To update a workspace's usage limits, go to **Settings** > **Billing and Usage** > **Usage limits**.
+
+### Side effects of extended data retention traces limit
+
+The extended data retention traces limit has side effects. If the limit is already reached, LangSmith blocks actions that would create another extended-retention trace. For example, you can no longer:
+
+1. Run automation rules that extend trace retention.
+1. Run evaluators that extend trace retention.
+
+Actions that do not change trace retention do not count against the limit. When the limit is reached, you can still submit feedback in the LangSmith UI, add runs or threads to annotation queues, and run automation rules or evaluators with retention extension disabled.
+
+### Set project and user usage limits
+
+Project and user usage limits stop one tracing project or workspace member from consuming a disproportionate share of a workspace's traces. Setting them requires the same permission as workspace usage limits (`Update usage limits`).
+
+To add a project or user usage limit:
+
+1. Go to **Settings** > **Usage configuration**.
+1. Select the **Project & user limits** tab.
+1. Select **Add limit**.
+1. Set the following fields:
+    - **Scope**: **Project** to cap a single tracing project, or **User** to cap a single workspace member.
+    - **Workspace**: The workspace that contains the project or member.
+    - **Project** or **User**: The target to cap.
+    - **Monthly trace limit**: The maximum number of traces allowed per calendar month.
+
+In an [agent-based workspace](/langsmith/agent-registry), a project usage limit caps one [environment](/langsmith/agent-environments) of one agent rather than the agent as a whole. There is no agent scope, so capping an agent's total traces means adding one limit per environment.
+
+A user usage limit counts only traces attributed to that workspace member. Traces sent with an API key or service key that is not tied to a member do not count toward any user usage limit.
+
+### How usage limits are enforced
+
+- **Monthly reset**: Usage limits are evaluated per calendar month in UTC and reset at the start of each month.
+- **Ingestion stops at the limit**: Once a workspace, project, or user reaches a usage limit, LangSmith drops its new traces until the limit resets.
+- **Approximate enforcement**: A small number of traces may be processed above a limit before it takes effect.
+- **Caching**: Limit values are cached, so a new or changed limit can take a minute or two to apply.
+
+## Related content
+
+* Tutorial on how to [enforce spend limits](/langsmith/billing#enforce-spend-limits)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/usage-and-billing.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
