@@ -6,10 +6,10 @@ description: Configure keyless Vertex AI authentication for Playground, Chat, In
 
 GKE Workload Identity Federation lets these self-hosted LangSmith services call Vertex AI without long-lived service account keys:
 
-- Playground
-- Chat (`polly` in Helm)
-- Insights
-- Fleet
+- [Playground](/langsmith/prompt-engineering-concepts#playground)
+- [Chat](/langsmith/chat) (`polly` in Helm)
+- [Insights](/langsmith/insights)
+- [Fleet](/langsmith/fleet/index)
 
 Each workload uses its Kubernetes service account (KSA) to impersonate a Google service account (GSA) through Application Default Credentials (ADC).
 
@@ -48,7 +48,7 @@ To configure keyless authentication:
 
    Bind only these specific KSA subjects. If the workloads use different namespaces, run the command separately with each KSA's namespace.
 
-1. **Annotate every KSA.** Add the GSA annotation through your Helm values. The Chat, Insights, and Fleet API and queue identities are separate callers. Every API and queue identity needs an annotation and IAM binding:
+1. **Annotate every KSA.** Add the GSA annotation through your Helm values. Chat, Insights, and Fleet each run an API server and a queue under separate KSAs. Annotate both KSAs for each service, and bind each one in the previous step:
 
    ```yaml Helm
    # Playground
@@ -122,6 +122,22 @@ To configure keyless authentication:
            value: "true"
    ```
 
-   Set `FLEET_VERTEX_AI_ADC_ENABLED` on the Fleet API server, the Fleet queue, and the platform backend. When the setting is enabled, Fleet Vertex AI models without a stored key can only call Google Vertex AI endpoints over HTTPS, must use a plain location such as `us-central1` or `global`, and cannot set `client_args`.
+   Set `FLEET_VERTEX_AI_ADC_ENABLED` on the Fleet API server, the Fleet queue, and the platform backend. For the limits this places on Fleet models, see [Fleet model restrictions](#fleet-model-restrictions).
 
 1. **Use ADC instead of explicit credentials.** In each Vertex AI or Gemini provider configuration, leave **Service Account JSON** empty. Keep `GOOGLE_VERTEX_AI_WEB_CREDENTIALS` and `GOOGLE_APPLICATION_CREDENTIALS` unset. LangSmith uses explicit JSON credentials instead of ADC when both are present.
+
+## Fleet model restrictions
+
+With `FLEET_VERTEX_AI_ADC_ENABLED` set, every workspace on the installation calls Vertex AI with the same GSA. To keep that identity's access token from reaching other servers, a Fleet Vertex AI model without a stored key:
+
+- Can only call Google Vertex AI endpoints, over HTTPS.
+- Must use a plain location, such as `us-central1` or `global`.
+- Cannot set `client_args`.
+
+A model that uses a stored service account key has none of these restrictions.
+
+## See also
+
+- [Model providers](/langsmith/playground-model-providers#gemini-enterprise-agent-platform): select Vertex AI models in Playground.
+- [Enable Fleet on self-hosted LangSmith](/langsmith/enable-self-hosted-fleet): install Fleet, which the Fleet settings on this page require.
+- [Provider authentication](/langsmith/llm-gateway-provider-authentication#configure-gemini-enterprise-agent-platform): authenticate the LLM Gateway to Vertex AI, which still needs a service account key.
