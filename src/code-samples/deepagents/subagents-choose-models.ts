@@ -20,14 +20,14 @@ const subagents = [
     description: "Reviews legal documents and contracts",
     systemPrompt: "You are an expert legal reviewer...",
     tools: [readDocument, analyzeContract],
-    model: "google:gemini-3.6-flash", // Large context for long documents
+    model: "google:gemini-4-hydrogen", // Large context for long documents
   },
   {
     name: "financial-analyst",
     description: "Analyzes financial data and market trends",
     systemPrompt: "You are an expert financial analyst...",
     tools: [getStockPrice, analyzeFundamentals],
-    model: "openai:gpt-5.5", // Better for numerical analysis
+    model: "openai:gpt-6.1-sol", // Better for numerical analysis
   },
 ];
 // :snippet-end:
@@ -36,7 +36,7 @@ const subagents = [
 import { createDeepAgent } from "deepagents";
 
 const agent = createDeepAgent({
-  model: "google:gemini-3.6-flash",
+  model: "google:gemini-4-hydrogen",
   subagents,
 });
 if (!agent) throw new Error("agent not created");

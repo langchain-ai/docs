@@ -55,6 +55,7 @@ once to link the tree, and again in each new git worktree.
 | `verify-against-source` | Checking that a code sample, signature, default, or behavior claim is true: which repository owns each product, how to reach the private ones, checking that a PR documents what it claims, and naming what stayed unverified. |
 | `submit-integration` | Turning a structured integration issue submission into a listing. Invoked by CI. |
 | `update-integrations-prs` | Processing open integration PRs against the featuring policy. |
+| `update-example-models` | Rolling a provider example model ID across docs and the snippet generator. |
 
 Invoke a skill when the task matches it. Adding or changing tooling (a script,
 a workflow, a Makefile target, a PR check, a scheduled job, or a skill) also
@@ -244,7 +245,7 @@ Three OpenAPI-generated sections. Mintlify generates the endpoint pages at deplo
 
 `src/langsmith/langsmith-platform-openapi.json` is refreshed daily by `.github/workflows/refresh-langsmith-openapi.yml`, which runs `scripts/process_langsmith_openapi.py` and opens or appends to a standing `chore/refresh-langsmith-openapi` PR. Do not edit it by hand.
 
-`src/langsmith/agent-server-openapi.json` is updated by PRs from the `langgraph-api` repository, titled `Update Agent ServerOpenAPI spec for API version X.Y.Z`. Validate either spec with `make check-openapi`.
+`src/langsmith/agent-server-openapi.json` is updated by PRs that the `langgraph-api-sync-openapi.yml` workflow in the private `langchainplus` monorepo opens, titled `Update Agent ServerOpenAPI spec for API version X.Y.Z`. The workflow copies `langgraph-api/api/openapi.json` from that repository. The standalone `langgraph-api` repository is archived. Do not edit the spec by hand. To change it, change the source in `langchainplus`. Validate either spec with `make check-openapi`.
 
 ## Local development
 
@@ -608,7 +609,7 @@ Notes:
 
 ### Update the egress IP inventory
 
-The LangSmith and LangSmith Deployment egress IP tables on `/langsmith/cloud` and
+The LangSmith and LangSmith Agent Server egress IP tables on `/langsmith/cloud` and
 `/langsmith/cloud-platform-features` are generated from
 `src/langsmith/egress-ip-addresses.json` by `scripts/generate_egress_ip_tables.py`. The JSON is
 also published as-is at `/langsmith/egress-ip-addresses.json` for customers to poll.

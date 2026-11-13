@@ -23,7 +23,7 @@ const assistant = traceable(async function assistant(question: string) { // capt
     const context = await getContext(question);
     const response = await client.models.generateContent({
         // KEEP MODEL
-        model: "gemini-3.8-flash",
+        model: "gemini-4-hydrogen",
         contents: question,
         config: { systemInstruction: `Answer using the context below.\n\nContext: ${context}` },
     });

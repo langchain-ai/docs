@@ -85,7 +85,7 @@ research_subagent = {
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="google_genai:gemini-3.6-flash",
+    model="google_genai:gemini-4-hydrogen",
     skills=["/skills/main/"],  # Main agent and GP subagent get these
     subagents=[research_subagent],  # Researcher gets only its own skills
 )
@@ -125,7 +125,7 @@ from deepagents import FilesystemPermission, create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
 from langgraph.store.memory import InMemoryStore
 
-store = InMemoryStore()  # Use for local dev; omit for LangSmith Deployment
+store = InMemoryStore()  # Use for local dev; omit for LangSmith Agent Server
 
 # KEEP MODEL
 agent = create_deep_agent(
