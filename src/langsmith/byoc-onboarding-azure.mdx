@@ -19,7 +19,7 @@ You need the following:
 
 - **A LangSmith organization on Azure**: Use the LangSmith control plane on Azure at [azure.smith.langchain.com](https://azure.smith.langchain.com). Send your organization ID to the LangChain team to enable BYOC.
 - **An Azure subscription**: LangChain recommends a subscription dedicated to LangSmith BYOC, but it is not required.
-- **Azure permissions**: The person who applies Terraform needs the `Owner` role on the subscription, because the Terraform module creates custom roles and role assignments and registers resource providers. You also need a Microsoft Entra role that can create and update the service principal of a multi-tenant application in your tenant, such as `Cloud Application Administrator`.
+- **Azure permissions**: The person who applies Terraform needs `Contributor` and `User Access Administrator` on the subscription, or `Owner`, which includes both, because the Terraform module creates custom roles and role assignments and registers resource providers. Creating the LangSmith service principal, once per tenant, also needs a Microsoft Entra role such as `Cloud Application Administrator`. This can be a different person: an Entra admin runs `az ad sp create --id 5b0a74cb-9f37-4797-b557-c15d7be80d3b`, and the person who applies Terraform imports it before the first apply with `terraform import module.langsmith_byoc_access.azuread_service_principal.langsmith /servicePrincipals/<object-id>`.
 - **Terraform**: Terraform 1.11.0 or later.
 - **An organization admin in LangSmith**: Creating, changing, and deleting a data plane requires the organization admin role.
 - **vCPU quota**: The AKS system node pool uses three `Standard_D2s_v6` VMs. LangSmith checks at create time that the region has at least 6 free vCPUs in both the **Total Regional vCPUs** quota and the Dsv6 VM family quota. Application nodes use D, E, and F series VMs of version 5 or later, so also plan quota for those families. See [Node pools](/langsmith/byoc-architecture-azure#compute).
@@ -38,7 +38,7 @@ LangSmith uses the external ID to confirm that the role assignments in your subs
 <Step title="Grant LangSmith access with Terraform">
 Apply the [`langsmith-byoc-access` Terraform module](https://github.com/langchain-ai/terraform/blob/main/modules/byoc/azure/langsmith-byoc-access/main.tf) in your Azure subscription with the external ID you copied. You must use this module. For each data plane in its `data_planes` input, it creates:
 
-- **The LangSmith BYOC service principal**: The service principal of the LangSmith BYOC multi-tenant application, with application (client) ID `5b0a74cb-9f37-4797-b557-c15d7be80d3b`, in your Microsoft Entra tenant. It is created once per tenant, and the application requests no Microsoft Graph permissions.
+- **The LangSmith BYOC service principal**: The service principal of the LangSmith BYOC multi-tenant application, with application (client) ID `5b0a74cb-9f37-4797-b557-c15d7be80d3b`, in your Microsoft Entra tenant. It is created once per tenant, and the application requests no Microsoft Graph permissions. The LangSmith control plane runs outside your tenant and signs in as this service principal to create and update the data plane. The managed identities in the resource group are for the workloads that run inside the data plane.
 - **A dedicated resource group**, `langsmith-byoc-<key>`: LangSmith deploys the data plane into it. Do not put other workloads in it.
 - **A Key Vault in the resource group**: It uses Azure RBAC authorization and has public network access disabled. LangSmith writes the data plane's bootstrap secret to it, and the data plane reads it through a private endpoint.
 - **Two role assignments for the service principal on the resource group**: A `langsmith-byoc-<key>-<suffix>` custom role with the actions LangSmith needs, and `User Access Administrator`. Both roles can only be used in that resource group, and both assignments carry your external ID as their description.
@@ -66,6 +66,7 @@ provider "azurerm" {
   resource_providers_to_register = [
     "Microsoft.Cache",
     "Microsoft.Compute",
+    "Microsoft.ContainerRegistry",
     "Microsoft.ContainerService",
     "Microsoft.DBforPostgreSQL",
     "Microsoft.KeyVault",
@@ -100,7 +101,7 @@ output "langsmith_byoc_access" {
 }
 ```
 
-Replace the subscription ID and the region. The `data_planes` key (`prod` in the example) names the resource group: 1 to 63 lowercase letters, digits, and hyphens, starting with a letter and ending with a letter or digit, with no consecutive hyphens. Apply the configuration with your external ID, for example `terraform apply -var 'external_id=<external-id>'`.
+Save the configuration as `main.tf` in an empty folder, sign in with `az login`, and run `terraform init`. Replace the subscription ID and the region. The `data_planes` key (`prod` in the example) names the resource group: 1 to 63 lowercase letters, digits, and hyphens, starting with a letter and ending with a letter or digit, with no consecutive hyphens. Apply the configuration with your external ID, for example `terraform apply -var 'external_id=<external-id>'`.
 
 Then read the outputs for the next step:
 
