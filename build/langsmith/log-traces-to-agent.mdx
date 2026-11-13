@@ -1,0 +1,146 @@
+---
+title: Log traces to an agent
+sidebarTitle: Log traces to an agent
+description: Send traces to an agent and an environment with environment variables or code, and why that cannot be combined with sending traces to a project.
+---
+
+import TraceAgentDecoratorPy from '/snippets/python/code-samples/trace-agent-decorator-py.mdx';
+import TraceAgentContextPy from '/snippets/python/code-samples/trace-agent-context-py.mdx';
+import TraceAgentJs from '/snippets/python/code-samples/trace-agent-js.mdx';
+import TraceAgentGo from '/snippets/python/code-samples/trace-agent-go.mdx';
+import TraceAgentJava from '/snippets/python/code-samples/trace-agent-java.mdx';
+
+Logging traces to an agent names the [agent](/langsmith/agents) and the [environment](/langsmith/agent-environments) a trace belongs to. Your application sends both with every run, and LangSmith records them when the trace arrives. A trace goes either to an agent or to a [project](/langsmith/log-traces-to-project), never both. For how agents and projects relate, see [Trace containers](/langsmith/observability-concepts#trace-containers).
+
+<Note>
+Sending traces to an agent applies only to agent-based workspaces. It is supported in:
+
+- The Python SDK from `langsmith>=0.14.9`
+- The TypeScript SDK from `langsmith>=0.10.9`
+- The Go SDK from `github.com/langchain-ai/langsmith-go@v0.28.0`
+- The Java SDK from `com.langchain.smith:langsmith-java:0.1.0-beta.26`
+
+For tracing setup that does not send traces to an agent, see [Log traces to a specific project](/langsmith/log-traces-to-project).
+</Note>
+
+## Prerequisites
+
+- **An agent-based workspace.** [Agent-based workspaces](/langsmith/migrate-to-agent-based-workspaces) are available on [LangSmith Cloud](/langsmith/cloud). They are not available on [self-hosted](/langsmith/self-hosted) LangSmith. In an agent-based workspace, sending traces to an agent is already on, and you have no setting to change. To check which kind of workspace you have, look at the control at the top left. In an agent-based workspace, it names your workspace. In a project-based workspace, it shows the LangSmith logo, and sending traces to an agent is off.
+- **An API key** from that workspace. See [create an API key](/langsmith/create-account-api-key).
+- **The SDK.** Sending traces to an agent needs `langsmith>=0.14.9` in Python, `langsmith@>=0.10.9` in TypeScript, v0.28.0 or later of `github.com/langchain-ai/langsmith-go` in Go, or 0.1.0-beta.26 or later of `com.langchain.smith:langsmith-java` in Java:
+
+  <CodeGroup>
+
+  ```bash uv
+  uv add "langsmith>=0.14.9"
+  ```
+
+  ```bash pip
+  pip install -U "langsmith>=0.14.9"
+  ```
+
+  ```bash npm
+  npm install "langsmith@>=0.10.9"
+  ```
+
+  ```bash go
+  go get github.com/langchain-ai/langsmith-go@v0.28.0
+  ```
+
+  ```kotlin Java/Kotlin (Gradle)
+  implementation("com.langchain.smith:langsmith-java:0.1.0-beta.26")
+  ```
+
+  </CodeGroup>
+
+## Send traces to an agent
+
+Name the agent and the environment together, in code or as environment variables. An agent in code takes precedence over the variables. The SDK reads the variables only when nothing in code names a destination, and then it needs both.
+
+- **Agent ID**: The agent's identifier, which the browser address bar carries and the **ID** field on the agent's Overview copies. It is not the display name. A [display name is a separate, editable value](/langsmith/agents#identifiers-and-display-names) that does not have to match the identifier, so read the identifier from the agent rather than deriving it from what the agent is called. For the rules an identifier must follow, see [Identifier rules](/langsmith/create-an-agent#identifier-rules). If no agent in the workspace uses the identifier you send, LangSmith creates that agent the first time you send a trace to it, so you do not have to create it in advance. Creating an agent this way requires the [`projects:create` permission](/langsmith/organization-workspace-operations#projects). Without it, LangSmith rejects the run with a `403`. An archived agent still holds its identifier, so LangSmith rejects a run sent to it with a `409` instead of creating a new agent. Send that agent's traces to a different identifier. The [Overview](/langsmith/navigate-agents#read-the-agent-overview) of an agent created this way does not show deployment details.
+- **Environment**: The environment the run belongs to, and one of `local`, `development`, `staging`, or `production`. Environment names are not case-sensitive, and they map to the Local, Development, Staging, and Production labels in the UI. There is no default, because neither the agent nor the environment names a destination alone.
+
+### Using environment variables
+
+Set both variables:
+
+```bash
+export LANGSMITH_TRACING=true
+export LANGSMITH_API_KEY=<your-api-key>
+export LANGSMITH_AGENT_ID=checkout
+export LANGSMITH_AGENT_ENVIRONMENT=production
+```
+
+The first two are the usual tracing prerequisites rather than part of naming the agent. If only one of the two agent variables is set, the SDK logs a warning. Instead of picking an environment for you, it leaves untraced every call that names no destination in code, so nothing from those calls reaches LangSmith.
+
+### Using code
+
+Pass an agent address.
+
+<Tabs>
+  <Tab title="Python">
+    Pass `ls.agent_address("checkout", "production")` as the `address` argument of [`@traceable`](https://reference.langchain.com/python/langsmith/run_helpers/traceable), or of [`tracing_context`](https://reference.langchain.com/python/langsmith/run_helpers/tracing_context) for everything traced inside a block:
+
+    <TraceAgentDecoratorPy />
+
+    <TraceAgentContextPy />
+  </Tab>
+  <Tab title="TypeScript">
+    Pass `new AgentAddress("checkout", "production")` as `address` in the config of [`traceable`](https://reference.langchain.com/javascript/langsmith/traceable):
+
+    <TraceAgentJs />
+  </Tab>
+  <Tab title="Java">
+    Pass `new AgentAddress("checkout", "production")` as `address` in the `TraceConfig` or `RunTree` builder:
+
+    <TraceAgentJava />
+  </Tab>
+  <Tab title="Go">
+    Create the address with `langsmith.NewAgentAddress("checkout", "production")`, which returns an error for an invalid value, and set it as `Address` on a `RunCreate`. `WithTracingAddress` sets it for every run of a standalone tracing client:
+
+    <TraceAgentGo />
+  </Tab>
+</Tabs>
+
+### Using OpenTelemetry
+
+To send OTLP traces to an agent, set the `Langsmith-Agent-Id` and `Langsmith-Agent-Environment` headers instead of `Langsmith-Project`. With `langsmith>=0.14.9`, the Python SDK's OpenTelemetry exporter sets both headers from the agent variables when `OTEL_EXPORTER_OTLP_HEADERS` is unset. For the header rules and the errors LangSmith returns, see [Trace with OpenTelemetry](/langsmith/trace-with-opentelemetry#trace-a-non-langchain-application).
+
+## Send your first trace
+
+Run your application so it sends at least one trace. In LangSmith, select the agent in the top bar, go to **Tracing**, and set the environment control to the one you sent the trace to. The trace appears there.
+
+## Find an agent's project
+
+To query the traces of an agent, first [resolve the agent to its project ID](/langsmith/resolve-an-agent), then use the endpoints as before, passing that ID.
+
+## Send to an agent or a project, not both
+
+Sending traces to an agent and to a project do not combine. What happens depends on where each is set:
+
+- **An agent and a project together**: Not allowed. If you set the agent variables and also `LANGSMITH_PROJECT`, `LANGCHAIN_PROJECT`, or `LANGCHAIN_SESSION`, the trace has two destinations, and the SDK does not pick one. It logs a warning when the client starts, and it does not trace a call unless code names the destination. If you pass both `address` and `project_name` in one call, the SDK raises an error and sends nothing: `LangSmithUserError` from `@traceable` or `tracing_context()` in Python, or an `Error` from `traceable` in TypeScript. If a run that names both an agent and a project reaches LangSmith, LangSmith rejects it.
+- **A project named in code**: Overrides the agent variables. Passing `project_name` to `@traceable` or `tracing_context()` in Python, or in the `traceable` config in TypeScript, traces the run to that project and ignores the agent variables, without an error. This is what lets an [evaluation](/langsmith/evaluation) set its own project while the agent variables stay set for the rest of the process.
+
+## Troubleshooting
+
+On self-hosted LangSmith, where agent-based workspaces are not available, LangSmith rejects runs sent to an agent with a `403` and the message `agent addressing is not enabled for this workspace`. It rejects the whole request that carries them, so it records none of the runs in that request. See [Prerequisites](#prerequisites).
+
+## See also
+
+- [Agents](/langsmith/agents)
+- [Agent environments](/langsmith/agent-environments)
+- [Log traces to a specific project](/langsmith/log-traces-to-project)
+- [Find an agent's project](/langsmith/resolve-an-agent)
+- [Trace with OpenTelemetry](/langsmith/trace-with-opentelemetry)
+- [Observability concepts](/langsmith/observability-concepts)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/log-traces-to-agent.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

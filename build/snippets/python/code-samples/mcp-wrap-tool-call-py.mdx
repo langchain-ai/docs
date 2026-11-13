@@ -1,0 +1,29 @@
+```python
+from collections.abc import Callable
+
+from langchain.agents import create_agent
+from langchain.agents.middleware import wrap_tool_call
+from langchain.mcp import MCPAdapter
+from langchain.messages import ToolMessage
+from langchain.tools.tool_node import ToolCallRequest
+
+
+@wrap_tool_call
+def log_mcp_calls(
+    request: ToolCallRequest,
+    handler: Callable[[ToolCallRequest], ToolMessage],
+) -> ToolMessage:
+    """Intercept every tool call, MCP or otherwise, before and after it runs."""
+    # Inspect or rewrite the request here; MCP provenance is on the tool's
+    # metadata under `request.tool.metadata["mcp"]`.
+    print(f"calling {request.tool_call['name']}")
+    result = handler(request)
+    print(f"-> {request.tool_call['name']} done")
+    return result
+
+
+async def agent_with_interception(target):
+    async with MCPAdapter(target) as adapter:
+        tools = await adapter.list_tools()
+        return create_agent("claude-sonnet-5", tools, middleware=[log_mcp_calls])
+```
