@@ -77,7 +77,7 @@ from langchain.chat_models import init_chat_model
 # Switch providers by changing the string
 model = init_chat_model("openai:gpt-6.1-sol")
 model = init_chat_model("anthropic:claude-opus-4-8")
-model = init_chat_model("google_genai:gemini-3.6-flash")
+model = init_chat_model("google_genai:gemini-4-hydrogen")
 ```
 
 ### Define a tool
