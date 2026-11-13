@@ -1,0 +1,38 @@
+```kotlin After
+import com.langchain.smith.client.LangsmithClient
+import com.langchain.smith.client.okhttp.LangsmithOkHttpClient
+import com.langchain.smith.models.annotationqueues.AnnotationQueueAnnotationQueuesParams
+import com.langchain.smith.models.annotationqueues.items.ItemCreateParams
+import com.langchain.smith.models.runs.RunQueryV2Params
+import com.langchain.smith.models.runs.RunSelectField
+import com.langchain.smith.models.sessions.SessionListParams
+import java.time.OffsetDateTime
+
+val client: LangsmithClient = LangsmithOkHttpClient.fromEnv()
+
+var queueId = "<queue-id>"
+var projectId = "<project-id>"
+val runs = client.runs().queryV2(
+    RunQueryV2Params.builder()
+        .addProjectId(projectId)
+        .minStartTime(OffsetDateTime.now().minusDays(30))
+        .addSelect(RunSelectField.ID)
+        .addSelect(RunSelectField.PROJECT_ID)
+        .addSelect(RunSelectField.START_TIME)
+        .pageSize(5L)
+        .build()
+).items()
+
+val params = ItemCreateParams.builder().queueId(queueId)
+for (run in runs) {
+    params.addItem(
+        ItemCreateParams.Item.builder()
+            .itemType(ItemCreateParams.Item.ItemType.RUN)
+            .runId(run.id().get())
+            .projectId(run.projectId().get())
+            .startTime(run.startTime().get())
+            .build()
+    )
+}
+client.annotationQueues().items().create(params.build())
+```
