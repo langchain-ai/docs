@@ -1,7 +1,7 @@
 ---
 title: Sandbox auth proxy
 sidebarTitle: Auth proxy
-description: Inject credentials into outbound requests and control which destinations a sandbox can reach.
+description: Inject credentials or public attribution headers into outbound requests and control which destinations a sandbox can reach.
 ---
 
 The auth proxy lets sandbox code call external APIs (OpenAI, Anthropic, GitHub, etc.) without hardcoding credentials. When configured on a sandbox, an egress proxy running outside the sandbox automatically injects authentication headers into matching outbound requests using your workspace secrets or write-only credentials you provide in the proxy config.
@@ -30,7 +30,7 @@ The same `proxy_config` that injects credentials also controls which destination
 ### How egress works
 
 - **Access control applies to every outbound TCP connection**, HTTP or not.
-- **HTTPS to a host matched by a rule or callback is decrypted by the proxy** so it can inject headers; sandboxes trust the proxy's CA. HTTPS to unmatched hosts and every non-HTTP connection, including PostgreSQL, SSH, and Redis, passes through unchanged. Ports 80 and 443 are reserved for HTTP and TLS; a non-HTTP protocol on either port does not work.
+- **HTTPS to a host matched by a rule or callback is decrypted by the proxy** so it can inject headers; sandboxes trust the proxy's CA. An active [attribution rule](#add-public-attribution-headers) also triggers interception for every proxy-handled HTTPS destination. Without attribution, HTTPS to unmatched hosts passes through unchanged. Direct non-HTTP connections, including PostgreSQL, SSH, and Redis, pass through unchanged on their normal ports. Ports 80 and 443 are reserved for HTTP and TLS; a non-HTTP protocol on either port does not work.
 - **Use hostnames for direct connections by default.** Raw TCP to a public literal IP requires an explicitly matching IP or CIDR entry in `allow_list` and is unavailable in deny-list mode. HTTPS to a literal IP is dropped because the proxy needs a hostname in the TLS handshake. Cleartext HTTP on port 80 can use a literal IP.
 - **Only TCP leaves the sandbox.** UDP (including QUIC) and ICMP are dropped.
 
@@ -183,8 +183,8 @@ Add a `proxy_config` when creating a sandbox, or update an existing sandbox by p
 
 | Field | Description |
 |-------|-------------|
-| `rules` | Header-injection and provider-auth rules. Enabled header rules are matched first-match-wins in list order; `aws` and `gcp` rules match their providers' hosts regardless of position |
-| `callbacks` | Dynamic credential lookups; see [Callback credential example](#callback-credential-example) |
+| `rules` | Header-injection, provider-auth, relay, and attribution rules. Enabled header rules are matched first-match-wins in list order; `aws` and `gcp` rules match their providers' hosts regardless of position. Attribution adds public headers independently of ordinary rule matching |
+| `callbacks` | Dynamic credentials or selected attribution headers; see [Callback credential example](#callback-credential-example) and [callback attribution](#refresh-attribution-through-a-callback) |
 | `access_control` | `allow_list` or `deny_list`; see [Allow and deny lists](#allow-and-deny-lists) |
 | `description` | Optional, up to 1024 characters. What this configuration lets the sandbox reach, for handing to an agent |
 
@@ -193,13 +193,13 @@ Each rule specifies:
 | Field | Description |
 |-------|-------------|
 | `name` | Required. Identifier for the rule |
-| `type` | Omit for header injection; `aws` or `gcp` for provider auth; `relay` to send matching connections through a [relay](/langsmith/relays) |
-| `match_hosts` | Required for header rules; rejected on `aws` and `gcp` rules. Bare hostnames, or a leading `*.` wildcard in front of a registrable domain (`*.github.com`, not `*.com` or `*`). No scheme, path, or port. The wildcard does not match the apex domain |
+| `type` | Omit for header injection; `aws` or `gcp` for provider auth; `relay` to send matching connections through a [relay](/langsmith/relays); `attribution` for public metadata |
+| `match_hosts` | Required for header rules; rejected on `aws`, `gcp`, and attribution rules. Bare hostnames, or a leading `*.` wildcard in front of a registrable domain (`*.github.com`, not `*.com` or `*`). No scheme, path, or port. The wildcard does not match the apex domain |
 | `match_paths` | Paths to match (empty = all paths). Header rules only. Patterns are matched against the request path without the query string; see [Match rules by path or header](#match-rules-by-path-or-header) |
 | `match_headers` | Request headers that must all be present, each written `"name: value"` with a lowercase name and an exact value. Header rules only; see [Match rules by path or header](#match-rules-by-path-or-header) |
-| `headers` | Headers to inject, each with a `name`, `type`, and `value`. Header rules only |
+| `headers` | Headers to inject, each with a `name`, `type`, and `value`. Header and attribution rules only; attribution requires `plaintext` |
 | `aws` / `gcp` | Provider credentials; see [Authenticate AWS requests](#authenticate-aws-requests) and [Authenticate GCP requests](#authenticate-gcp-requests) |
-| `env_vars` | Environment variables to set in the sandbox while the rule is enabled |
+| `env_vars` | Environment variables to set in the sandbox while the rule is enabled. Not supported on attribution rules |
 | `enabled` | Defaults to `true` |
 | `description` | Optional, up to 1024 characters. What this rule lets the sandbox reach |
 
@@ -306,6 +306,143 @@ Every sandbox also has the common CA-bundle environment variables pointed at the
   "env_vars": {"GH_TOKEN": "proxy-injected"}
 }
 ```
+
+## Add public attribution headers
+
+An attribution rule adds public metadata, such as `X-Agent-ID` or `X-Cost-Center`, to every outbound HTTP(S) request the proxy handles. Use it when your egress gateway or a destination needs to identify which agent sent a request. Attribution runs alongside destination-specific credentials.
+
+<Note>
+Attribution requires API and sandbox-host versions that support the `attribution` rule type. For self-hosted or BYOC deployments, upgrade every sandbox host before enabling attribution through the API or UI. Older hosts reject active attribution rules and can reject the entire proxy configuration, including credentials and access controls. The API does not send disabled or empty attribution rules to hosts.
+</Note>
+
+<Warning>
+Every proxied destination, including third-party services, receives these values. The API returns them unchanged, although the configuration is encrypted at rest. Do not use tokens, personal data, or other sensitive values. The API does not reject token-shaped strings such as JWTs. Attribution labels are not an authenticated identity and do not enforce egress policy.
+</Warning>
+
+Add an attribution rule to `proxy_config.rules` when creating or updating a sandbox:
+
+```json
+{
+  "proxy_config": {
+    "rules": [
+      {
+        "name": "agent-attribution",
+        "type": "attribution",
+        "headers": [
+          {"name": "X-Agent-ID", "type": "plaintext", "value": "agent_123"}
+        ]
+      }
+    ]
+  }
+}
+```
+
+The rule defaults to `enabled: true`. Set `enabled: false` to retain the labels without injecting them. Removing the rule or setting `headers: []` also disables attribution.
+
+Attribution is additive, not a wildcard credential rule. Ordinary header rules still use first-match-wins matching. The proxy applies attribution after static and callback headers, replacing same-name headers without regard to case, and before provider signing.
+
+Updating `proxy_config` replaces the whole configuration. It does not append a rule. Preserve existing rules, `access_control`, `callbacks`, and other settings in the replacement.
+
+### Configure attribution with the SDK or UI
+
+The Python and TypeScript SDK helpers build the same attribution rule. These examples require a LangSmith SDK release that exports `attribution` from `langsmith.sandbox` or `langsmith/sandbox`, respectively.
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import attribution, proxy_config
+
+config = proxy_config(
+    rules=[attribution(headers={"X-Cost-Center": "engineering"})]
+)
+```
+
+```ts TypeScript
+import { attribution, proxyConfig } from "langsmith/sandbox";
+
+const config = proxyConfig({
+  rules: [attribution({ headers: { "X-Cost-Center": "engineering" } })],
+});
+```
+
+</CodeGroup>
+
+Pass `config` as `proxy_config` in Python or `proxyConfig` in TypeScript when creating or updating a sandbox. For the [CLI](/langsmith/sandbox-cli#proxy-configuration), save the inner `proxy_config` object to a file and pass `--proxy-config @proxy.json`.
+
+In the sandbox create or edit form, use **Add attribution header** under **Attribution Headers (optional)**. Enter a header name and public value. Clear the **Enable attribution rule** checkbox to keep the values without injecting them, or remove every row to delete the rule. You can edit attribution only on a ready sandbox.
+
+### Validate attribution settings
+
+Attribution rules have the following constraints, even when disabled:
+
+- **Rule count**: At most one attribution rule per configuration, including disabled rules.
+- **Header count**: Up to 16 headers.
+- **Header names**: Between 3 and 128 ASCII characters, starting with `X-`. Use only letters, digits, and hyphens. Names must be unique, ignoring case.
+- **Reserved names**: Authentication, routing, provider, and platform names are rejected, including `X-Api-Key`, `X-Forwarded-For`, `X-Amz-*`, and `X-LangSmith-*`. `X-Sandbox-ID` is allowed as a public label.
+- **Header values**: Literal `plaintext` values of at most 1024 bytes. Empty values are allowed. Values cannot contain line breaks, braces, or secret templates. Workspace-secret references and opaque values are not supported.
+- **Matching and credentials**: Do not set `match_hosts`, `match_paths`, `match_headers`, `env_vars`, or provider, relay, or rewrite settings on the attribution rule itself. Keep credential rules separate.
+
+An enabled attribution rule with nonempty headers cannot coexist with a nonempty `no_proxy` list or an enabled relay rule. Remove the conflict or disable attribution. Disabled attribution and empty header lists do not impose these conflicts.
+
+### Refresh attribution through a callback
+
+A callback with `attribution_headers` supplies selected headers for every proxy-handled HTTP(S) request. Use this mode for non-sensitive metadata that expires, rather than repeatedly updating literal configuration. It runs alongside destination credentials, not only when ordinary rules fail to match.
+
+<Note>
+Callback attribution requires compatible API, SDK, and sandbox-host versions. Upgrade hosts before enabling this mode. Older hosts reject the configuration, leaving the previous configuration active on a failed live update. Verify successful propagation before relying on attribution.
+</Note>
+
+To configure callback attribution, add a callback to `proxy_config.callbacks`:
+
+```json
+{
+  "proxy_config": {
+    "callbacks": [{
+      "url": "https://callback.example.com/attribution",
+      "ttl_seconds": 240,
+      "request_headers": [{"name": "Authorization", "type": "opaque", "value": "callback-verification-secret"}],
+      "attribution_headers": ["X-Agent-ID"]
+    }]
+  }
+}
+```
+
+The callback must omit `match_hosts` and `full_request`. Ordinary credential callbacks still require scoped host patterns; a bare `*` remains invalid. Configure at most one attribution callback, with at most 16 combined callback and active literal header names. Names must be unique, ignoring case. Callback attribution also conflicts with `no_proxy` and active relay rules. Remove the callback to disable it.
+
+Selected names follow the same restrictions as literal names. The API and proxy reject `X-LangSmith-Agent-Access-Token`, including case variants. Use destination-specific credential callbacks for authentication headers.
+
+The callback response must contain exactly the selected headers and their earliest absolute expiration:
+
+```json
+{
+  "headers": {"X-Agent-ID": "build-runner"},
+  "expires_at": "2026-11-10T12:05:00Z"
+}
+```
+
+The proxy enforces these response constraints:
+
+- **Values**: Nonempty, valid HTTP field values, up to 8192 bytes each.
+- **Response size**: At most 64 KiB, with no missing, extra, or case-duplicate header names.
+- **Expiration**: An RFC 3339 `expires_at` more than 30 seconds in the future.
+- **Caching**: Per sandbox, callback configuration, destination host, and port. Entries expire after `ttl_seconds` or 30 seconds before `expires_at`, whichever comes first.
+- **Failures**: Callback errors, invalid responses, and failed refreshes block the covered request. The proxy never reuses stale values or forwards the request without required attribution.
+
+Refresh happens on the next request after cache expiration, not in the background. Returned values stay in proxy memory rather than becoming API-readable literal configuration. The callback receives destination host and port plus signed sandbox identity, not request headers or body previews. Verify the callback request signature, audience, body, and sandbox identity before issuing values.
+
+<Warning>
+These headers travel inside the origin-bound HTTP request, not the outer `CONNECT` request. Covered destinations can echo these headers back to sandbox code. Name restrictions cannot detect secrets placed under an allowed metadata name. Do not return secrets in attribution headers. Attribution does not enforce gateway routing or strip headers before destinations.
+</Warning>
+
+Create or update attribution callbacks through the API or CLI JSON configuration. The UI preserves API-configured attribution callbacks when editing literal labels; it does not create or edit them.
+
+### Understand connection coverage
+
+Attribution covers transparent HTTP on port 80 and hostname-based HTTPS on port 443. It also covers HTTP and HTTPS through an explicit proxy, including HTTPS `CONNECT` requests on nonstandard ports.
+
+HTTPS interception requires the client to trust the proxy CA and the proxy host to trust the destination certificate. A private CA trusted only inside the sandbox does not establish host-side trust. Certificate-pinned clients can fail. Non-TLS protocols over explicit `CONNECT`, such as SSH or PostgreSQL, are unsupported while attribution is active. The proxy does not fall back to an untagged tunnel when interception fails.
+
+Attribution does not tag raw TCP, direct sandbox links, or traffic that bypasses HTTP(S) handling, such as transparent connections on other ports. HTTP proxy requests rewritten to a sandbox destination remain covered after authorization checks. Attribution does not expand the protocols or destinations permitted by your network policy. Reconnect existing opaque tunnels, or restart the sandbox, after enabling attribution.
 
 ## Authenticate AWS requests
 
@@ -816,15 +953,18 @@ Callbacks are configured alongside rules under `proxy_config`:
 
 | Field | Description |
 |-------|-------------|
-| `match_hosts` | Hosts to intercept (same syntax as rules; supports globs like `*.github.com`). |
+| `match_hosts` | Required for credential callbacks. Hosts to intercept (same syntax as rules; supports globs like `*.github.com`). Omit it on an attribution callback. |
 | `url` | Your callback endpoint. Must be an `http://` or `https://` URL that resolves to a public address; private, loopback, Kubernetes-internal, and cloud-metadata targets are rejected. |
 | `request_headers` | Headers attached to the proxy → callback request, e.g., an HMAC or shared secret your endpoint uses to verify the request. Only `plaintext` and `opaque` types are permitted (no `workspace_secret`). |
 | `ttl_seconds` | Required. How long resolved headers are cached before re-invoking the callback. Must be between 60 and 3600. |
+| `attribution_headers` | Header names to resolve for every proxy-handled HTTP(S) request instead of credentials for matched hosts. See [Refresh attribution through a callback](#refresh-attribution-through-a-callback) for the separate rules and response contract. |
 | `full_request` | When `true`, every request to a matched host invokes the callback (nothing is cached) and the body includes a `request` snapshot: `method`, `url`, `scheme`, `host`, `path`, `query`, `headers`, and up to 1 MiB of the body as `body_base64` (`body_truncated` marks a cut). |
 
-**Static rules win.** If an enabled header-injection rule matches both the host and the path, the callback is skipped for that request. Within rules, first-match-wins; the same applies between callbacks if multiple match.
+**Static rules win.** For credential callbacks, if an enabled header-injection rule matches both the host and the path, the callback is skipped for that request. Within rules, first-match-wins; the same applies between credential callbacks if multiple match. Attribution callbacks are never skipped this way; they run alongside destination credentials.
 
 ### Callback contract
+
+This contract covers credential callbacks. Attribution callbacks receive the same request but must return exactly the selected headers and an `expires_at`; see [Refresh attribution through a callback](#refresh-attribution-through-a-callback).
 
 The proxy makes the following request whenever it needs to resolve credentials for a matched host on a cache miss:
 
