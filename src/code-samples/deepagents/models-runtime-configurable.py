@@ -26,7 +26,7 @@ def configurable_model(
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="google_genai:gemini-3.6-flash",
+    model="google_genai:gemini-4-hydrogen",
     middleware=[configurable_model],
     context_schema=Context,
 )

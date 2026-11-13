@@ -8,7 +8,7 @@ import {
 import { InMemoryStore } from "@langchain/langgraph";
 
 const agent = await createDeepAgent({
-  model: "google:gemini-3.6-flash",
+  model: "google:gemini-4-hydrogen",
   store: new InMemoryStore(),
   backend: new CompositeBackend(new StateBackend(), {
     "/memories/": new StoreBackend({

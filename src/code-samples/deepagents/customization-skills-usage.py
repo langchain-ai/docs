@@ -58,7 +58,7 @@ backend.upload_files(
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="google_genai:gemini-3.6-flash",
+    model="google_genai:gemini-4-hydrogen",
     backend=backend,
     store=store,
     skills=["/skills/"],
@@ -96,7 +96,7 @@ backend.upload_files(
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="google_genai:gemini-3.6-flash",
+    model="google_genai:gemini-4-hydrogen",
     backend=backend,
     skills=["/skills/"],
     interrupt_on={
