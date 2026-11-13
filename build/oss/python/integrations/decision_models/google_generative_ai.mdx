@@ -1,0 +1,269 @@
+---
+title: "Google Gemini Decisions integration"
+sidebarTitle: "Google Gemini Decisions"
+description: "Integrate with the GoogleGenAIClassifier decision model using LangChain Python."
+---
+
+The [Gemini Decisions API](https://aistudio.google.com/docs/decisions-api) reads text, structured JSON, and media, and returns typed answers and probabilities instead of generated text.
+
+`GoogleGenAIClassifier` exposes these decisions as a LangChain `Runnable`, so you can invoke, batch, or compose them with other runnables. It accepts strings, JSON objects and arrays, [LangChain message objects](/oss/python/langchain/messages), and standard media blocks, and records traces and token usage in LangSmith. You can also use it with [agent middleware](#agent-middleware) to route models and gate tool calls. Use it for focused decisions such as routing a request, flagging content for review, or rating severity, where application code acts on the probability or confidence.
+
+<Note>
+`GoogleGenAIClassifier` is in beta and requires `langchain-google-genai>=4.5.0` and `google-genai>=3.2.0`. Its API may change without notice.
+</Note>
+
+## Setup
+
+<CodeGroup>
+```bash uv
+uv add langchain "langchain-google-genai>=4.5.0"
+```
+
+```bash pip
+pip install langchain "langchain-google-genai>=4.5.0"
+```
+</CodeGroup>
+
+Create an API key in [Google AI Studio](https://aistudio.google.com/apikey) and export it:
+
+```bash
+export GOOGLE_API_KEY=...
+```
+
+`GoogleGenAIClassifier` reads `GOOGLE_API_KEY`, then `GEMINI_API_KEY`. Requests always use the Gemini Developer API, not Gemini Enterprise Agent Platform.
+
+## Quickstart
+
+Create a `GoogleGenAIClassifier` with a decisions model, then pass the state and named questions together in each invocation. Questions that share state are answered in one request:
+
+```python
+from langchain_core.decisions import Choice, Noul, Score
+from langchain_google_genai import GoogleGenAIClassifier
+
+classifier = GoogleGenAIClassifier(model="gemini-decision-1")
+
+response = classifier.invoke(
+    {
+        "state": "The blue mug I ordered arrived cracked. Fix this today!",
+        "questions": {
+            "damaged": Noul(
+                instructions="Did the item arrive damaged?",
+                criteria={"true": "The item is broken, cracked, or dented."},
+            ),
+            "department": Choice(
+                instructions="Which team should handle this request?",
+                criteria={
+                    "billing": "Payment or refund questions.",
+                    "shipping": "Delivery problems or damaged items.",
+                    "other": None,
+                },
+            ),
+            "frustration": Score(
+                instructions="How frustrated does the customer appear?",
+                criteria=["Calm.", "Concerned but civil.", "Very angry."],
+            ),
+        },
+    }
+)
+
+print(response.nouls["damaged"].noul)
+print(response.choices["department"].choice, response.choices["department"].confidence)
+print(response.scores["frustration"].score)
+```
+
+Answers are keyed by the question names you supplied, and grouped by type on `nouls`, `choices`, and `scores`. All answers are also available on `answers`. The response carries the `model` that answered and token `usage`.
+
+The question and response types, such as `Noul` and `ClassifierResponse`, come from `langchain_core.decisions`.
+
+Every question requires `instructions`. Write the full question there, even when its name looks self-explanatory.
+
+## Question types
+
+Each question is one of three types:
+
+| Type | Asks | Returns | Reach for it when |
+|---|---|---|---|
+| `Noul` | Is this true? | `noul`, the probability of yes | Your code branches on an `if` |
+| `Choice` | Which of these options? | `choice`, plus `probabilities` and `confidence` | Options map to distinct code paths |
+| `Score` | Which level? | `score`, plus `legend`, `probabilities`, and `confidence` | The answer is a spectrum you compare to a threshold |
+
+- **`Noul`**: Returns a probability between `0.01` and `0.99`, so a threshold above `0.99` never matches. A value near `0.5` means uncertainty, not "medium", so use `Score` for a spectrum. Pass `criteria` with `true` and `false` descriptions when the instructions alone leave room for interpretation. `Noul` answers have no `confidence`, because the probability is the answer.
+- **`Choice`**: Maps each label to a description, or to `None` when the label needs no description. Include an `other` label when your options may not cover every input. `confidence` is the probability of the selected label.
+- **`Score`**: Takes two or more levels, ordered from lowest to highest and indexed from `0`. The returned `score` is the probability-weighted average of the level indices, so it may fall between levels, and `legend` maps each index to its description. `confidence` is the probability of the selected level.
+
+Descriptions and instructions can be text or structured JSON. JSON content is sent as JSON text. The Decisions API accepts only text in questions, so a media block in instructions or criteria raises `ValueError`.
+
+`langchain_core.decisions` also defines a `Box` question type for locating objects in images. The Gemini Decisions API does not support it, and `GoogleGenAIClassifier` raises `ValueError` for a request that includes one.
+
+## State
+
+The `state` can be a string, a JSON object or array, or LangChain messages at any depth inside an object or array:
+
+- **Strings**: Sent as-is.
+- **JSON objects and arrays**: Sent as JSON text.
+- **LangChain messages**: Converted to role and content objects, then sent as JSON text.
+- **Media blocks**: Standard `image`, `audio`, `video`, and `file` blocks with `base64` or `url` data are sent as native media, at the position where they appear in the JSON text. Blocks with other data sources raise `ValueError`.
+
+To classify a conversation, pass the messages inside the state:
+
+```python
+from langchain.messages import AIMessage, HumanMessage
+
+response = classifier.invoke(
+    {
+        "state": {
+            "conversation": [
+                HumanMessage("Where is my order?"),
+                AIMessage("It was delivered yesterday."),
+                HumanMessage("It arrived smashed to pieces."),
+            ]
+        },
+        "questions": {
+            "damaged": Noul(instructions="Did the item arrive damaged?"),
+        },
+    }
+)
+```
+
+To classify an image, include a standard media block anywhere in the state:
+
+```python
+import base64
+from pathlib import Path
+
+image_data = base64.b64encode(Path("delivery.jpg").read_bytes()).decode()
+
+response = classifier.invoke(
+    {
+        "state": {
+            "caption": "Photo of the delivered item.",
+            "photo": {
+                "type": "image",
+                "base64": image_data,
+                "mime_type": "image/jpeg",
+            },
+        },
+        "questions": {
+            "damaged": Noul(instructions="Did the item arrive damaged?"),
+        },
+    }
+)
+```
+
+## Configuration
+
+| Parameter | Description |
+|---|---|
+| `model` | Decisions model name, such as `gemini-decision-1`. Required. |
+| `api_key` | Google API key. Defaults to `GOOGLE_API_KEY`, then `GEMINI_API_KEY`. |
+| `base_url` | Base URL for API requests. Defaults to the `google-genai` SDK default. |
+| `timeout` | Request timeout in seconds. |
+| `max_retries` | Maximum number of request attempts, including the first. Set to `1` to disable retries. |
+| `client` | A `google.genai.Client` to use for requests. When set, `api_key`, `base_url`, `timeout`, and `max_retries` are ignored. |
+
+## Errors
+
+- **`ValueError`**: Raised when no API key is available and no `client` is supplied, when a request includes a `Box` question, or when question instructions or criteria contain a media block.
+- **`ModelRefusalError`**: Raised when the API blocks the input. The message includes the block reason. Import it from `langchain_core.exceptions`.
+
+## Agent middleware
+
+LangChain includes two beta middleware that use a decision model at an agent's decision points. Pass a `GoogleGenAIClassifier` as their `classifier`. Both require `langchain>=1.5.0`:
+
+<CodeGroup>
+```bash uv
+uv add "langchain>=1.5.0" "langchain-google-genai>=4.5.0"
+```
+
+```bash pip
+pip install "langchain>=1.5.0" "langchain-google-genai>=4.5.0"
+```
+</CodeGroup>
+
+### Route models
+
+[`ModelRouterMiddleware`](/oss/python/langchain/middleware/built-in#model-router) picks one of your named models for each agent run, based on the latest human message:
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ModelChoice, ModelRouterMiddleware
+from langchain_google_genai import GoogleGenAIClassifier
+
+router = ModelRouterMiddleware(
+    choices={
+        "fast": ModelChoice(
+            model="google_genai:gemini-3.8-flash",
+            criteria="Simple, well-scoped tasks.",
+        ),
+        "powerful": ModelChoice(
+            model="google_genai:gemini-4-carbon",
+            criteria="Complex tasks that need deeper reasoning.",
+        ),
+    },
+    instructions="Choose the least costly model that can complete the task.",
+    classifier=GoogleGenAIClassifier(model="gemini-decision-1"),
+)
+
+agent = create_agent("google_genai:gemini-3.8-flash", middleware=[router])
+
+result = agent.invoke({"messages": [{"role": "user", "content": "What is 2 + 2?"}]})
+print(result["model_route"].choice)
+```
+
+### Gate tool calls
+
+[`AutoModeMiddleware`](/oss/python/langchain/middleware/built-in#auto-mode) checks each call to the tools you list, and blocks calls the classifier judges risky:
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import AutoModeMiddleware
+from langchain.tools import tool
+from langchain_google_genai import GoogleGenAIClassifier
+
+
+@tool
+def delete_file(path: str) -> str:
+    """Delete a file."""
+    return f"Deleted {path}."
+
+
+agent = create_agent(
+    "google_genai:gemini-3.8-flash",
+    tools=[delete_file],
+    middleware=[
+        AutoModeMiddleware(
+            tools=[delete_file],
+            classifier=GoogleGenAIClassifier(model="gemini-decision-1"),
+        )
+    ],
+)
+
+result = agent.invoke({"messages": [{"role": "user", "content": "Delete notes.txt."}]})
+print(result["messages"][-1].text)
+```
+
+The default instructions treat destructive actions as risky, even when the user asks for them. When the agent calls `delete_file`, the middleware returns an error `ToolMessage` instead of running the tool, and the agent reports that the call was blocked.
+
+## Tracing
+
+`GoogleGenAIClassifier` runs are traced in [LangSmith](/langsmith/observability) with the `google_genai` provider and model name, so you can inspect decisions and token usage alongside the rest of your application.
+
+## See also
+
+- [Gemini Decisions API guide](https://aistudio.google.com/docs/decisions-api)
+- [Google provider overview](/oss/python/integrations/providers/google)
+- [ChatGoogleGenerativeAI](/oss/python/integrations/chat/google_generative_ai)
+- [Prebuilt middleware](/oss/python/langchain/middleware/built-in)
+- [OpenAI Decisions integration](/oss/python/integrations/decision_models/openai)
+- [LangChain Google GenAI API reference](https://reference.langchain.com/python/langchain-google-genai)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/decision_models/google_generative_ai.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
