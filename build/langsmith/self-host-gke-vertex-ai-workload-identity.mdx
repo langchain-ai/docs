@@ -1,0 +1,154 @@
+---
+title: Authenticate Vertex AI with GKE workload identity
+sidebarTitle: Vertex AI workload identity
+description: Configure keyless Vertex AI authentication for Playground, Chat, Insights, and Fleet on self-hosted LangSmith running on GKE.
+---
+
+GKE Workload Identity Federation lets these self-hosted LangSmith services call Vertex AI without long-lived service account keys:
+
+- [Playground](/langsmith/prompt-engineering-concepts#playground)
+- [Chat](/langsmith/chat) (`polly` in Helm)
+- [Insights](/langsmith/insights)
+- [Fleet](/langsmith/fleet/index)
+
+Each workload uses its Kubernetes service account (KSA) to impersonate a Google service account (GSA) through Application Default Credentials (ADC).
+
+<Note>
+Keyless authentication for Chat and Insights requires Helm chart version 0.17.0 or later and LangSmith application version 0.17.29 or later.
+</Note>
+
+To configure keyless authentication:
+
+1. **Enable GKE Workload Identity Federation.** Enable it on the cluster and the node pools that run LangSmith. See [Workload Identity Federation for GKE](https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity).
+1. **Grant the GSA Vertex AI access.** Create or select a GSA for these model calls. Grant it only `roles/aiplatform.user` in the project that hosts the models:
+
+   ```bash
+   gcloud projects add-iam-policy-binding "<vertex-project-id>" \
+     --member="serviceAccount:<gsa-name>@<gsa-project-id>.iam.gserviceaccount.com" \
+     --role="roles/aiplatform.user"
+   ```
+
+1. **Allow each KSA to impersonate the GSA.** Grant each calling KSA `roles/iam.workloadIdentityUser` on the GSA. Replace the seven KSA placeholders with the names rendered by your Helm release:
+
+   ```bash
+   for ksa in \
+     "<playground-ksa>" \
+     "<polly-api-ksa>" \
+     "<polly-queue-ksa>" \
+     "<insights-api-ksa>" \
+     "<insights-queue-ksa>" \
+     "<fleet-api-ksa>" \
+     "<fleet-queue-ksa>"; do
+     gcloud iam service-accounts add-iam-policy-binding \
+       "<gsa-name>@<gsa-project-id>.iam.gserviceaccount.com" \
+       --role="roles/iam.workloadIdentityUser" \
+       --member="serviceAccount:<cluster-project-id>.svc.id.goog[<namespace>/${ksa}]"
+   done
+   ```
+
+   Bind only these specific KSA subjects. If the workloads use different namespaces, run the command separately with each KSA's namespace.
+
+1. **Annotate every KSA.** Add the GSA annotation through your Helm values. Chat, Insights, and Fleet each run an API server and a queue under separate KSAs. Annotate both KSAs for each service, and bind each one in the previous step:
+
+   ```yaml Helm
+   # Playground
+   playground:
+     deployment:
+       extraEnv:
+         - name: GOOGLE_CLOUD_PROJECT
+           value: "<vertex-project-id>"
+     serviceAccount:
+       annotations:
+         iam.gke.io/gcp-service-account: "<gsa-name>@<gsa-project-id>.iam.gserviceaccount.com"
+
+   # Chat
+   polly:
+     apiServer:
+       serviceAccount:
+         annotations:
+           iam.gke.io/gcp-service-account: "<gsa-name>@<gsa-project-id>.iam.gserviceaccount.com"
+     queue:
+       serviceAccount:
+         annotations:
+           iam.gke.io/gcp-service-account: "<gsa-name>@<gsa-project-id>.iam.gserviceaccount.com"
+
+   # Insights
+   engineInsightsAgent:
+     apiServer:
+       serviceAccount:
+         annotations:
+           iam.gke.io/gcp-service-account: "<gsa-name>@<gsa-project-id>.iam.gserviceaccount.com"
+       deployment:
+         extraEnv:
+           - name: CLIO_VERTEX_AI_ADC_ENABLED
+             value: "true"
+           - name: GOOGLE_CLOUD_PROJECT
+             value: "<vertex-project-id>"
+     queue:
+       serviceAccount:
+         annotations:
+           iam.gke.io/gcp-service-account: "<gsa-name>@<gsa-project-id>.iam.gserviceaccount.com"
+       deployment:
+         extraEnv:
+           - name: CLIO_VERTEX_AI_ADC_ENABLED
+             value: "true"
+           - name: GOOGLE_CLOUD_PROJECT
+             value: "<vertex-project-id>"
+
+   # Fleet
+   fleet:
+     apiServer:
+       serviceAccount:
+         annotations:
+           iam.gke.io/gcp-service-account: "<gsa-name>@<gsa-project-id>.iam.gserviceaccount.com"
+       deployment:
+         extraEnv:
+           - name: FLEET_VERTEX_AI_ADC_ENABLED
+             value: "true"
+     queue:
+       serviceAccount:
+         annotations:
+           iam.gke.io/gcp-service-account: "<gsa-name>@<gsa-project-id>.iam.gserviceaccount.com"
+       deployment:
+         extraEnv:
+           - name: FLEET_VERTEX_AI_ADC_ENABLED
+             value: "true"
+
+   # Lets the Fleet model picker list Vertex AI models without a stored key
+   platformBackend:
+     deployment:
+       extraEnv:
+         - name: FLEET_VERTEX_AI_ADC_ENABLED
+           value: "true"
+   ```
+
+   Set `FLEET_VERTEX_AI_ADC_ENABLED` on the Fleet API server, the Fleet queue, and the platform backend. For the limits this places on Fleet models, see [Fleet model restrictions](#fleet-model-restrictions).
+
+1. **Use ADC instead of explicit credentials.** In each Vertex AI or Gemini provider configuration, leave **Service Account JSON** empty. Keep `GOOGLE_VERTEX_AI_WEB_CREDENTIALS` and `GOOGLE_APPLICATION_CREDENTIALS` unset. LangSmith uses explicit JSON credentials instead of ADC when both are present.
+
+## Fleet model restrictions
+
+With `FLEET_VERTEX_AI_ADC_ENABLED` set, every workspace on the installation calls Vertex AI with the same GSA. To keep that identity's access token from reaching other servers, a Fleet Vertex AI model without a stored key:
+
+- Can only call Google Vertex AI endpoints, over HTTPS.
+- Must use a plain location, such as `us-central1` or `global`.
+- Cannot set `client_args`.
+
+A model that uses a stored service account key has none of these restrictions.
+
+## See also
+
+- [Model providers](/langsmith/playground-model-providers#gemini-enterprise-agent-platform): select Vertex AI models in Playground.
+- [Enable Fleet on self-hosted LangSmith](/langsmith/enable-self-hosted-fleet): install Fleet, which the Fleet settings on this page require.
+- [Provider authentication](/langsmith/llm-gateway-provider-authentication#configure-gemini-enterprise-agent-platform): authenticate the LLM Gateway to Vertex AI, which still needs a service account key.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/self-host-gke-vertex-ai-workload-identity.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
