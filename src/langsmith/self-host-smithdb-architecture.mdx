@@ -1,10 +1,12 @@
 ---
 title: SmithDB architecture
 sidebarTitle: Architecture
-description: How SmithDB and LangSmith components depend on each other on self-hosted LangSmith, and how to find each component in your cluster.
+description: How SmithDB and LangSmith components depend on each other on self-hosted LangSmith.
 ---
 
-This page shows how SmithDB and LangSmith components depend on each other, and how to find each component in your cluster. For how runs, queries, feedback, and deletes move between the components, see [How data moves through SmithDB](/langsmith/self-host-smithdb-data-paths).
+SmithDB is the trace database of LangSmith. LangSmith services receive runs and feedback, and serve the UI and the API. They do not write to SmithDB directly. They put new data in a queue in Redis, and an ingest queue worker writes it to SmithDB. Reads go directly to SmithDB. SmithDB keeps all data in object storage and in its own PostgreSQL database, the metastore. Its pods hold only copies of data and work in progress. In the background, compaction merges small data files into larger files, writes feedback into the files, and removes expired and deleted data, so that queries stay fast.
+
+For how SmithDB writes, reads, changes, and compacts data, see [How SmithDB handles data](/langsmith/self-host-smithdb-data-paths).
 
 <img
   className="block dark:hidden"
@@ -18,27 +20,36 @@ This page shows how SmithDB and LangSmith components depend on each other, and h
   alt="LangSmith services and SmithDB services, the dependencies between them, and their storage."
 />
 
-## Components and pods
+## Components
 
-Use this table to find each component in your cluster. Run `kubectl get deploy,sts,jobs -n <namespace>` and compare the names.
+| Component | Description |
+|---|---|
+| Frontend | Serves the LangSmith UI. |
+| Backend | Serves most of the LangSmith API. |
+| Platform backend | Receives runs and feedback from clients and queues them for writing. Sends trace queries to SmithDB. |
+| Queue | Runs automation rules, including online evaluations. |
+| Ingest queue | Writes queued runs, feedback, and deletes to SmithDB. |
+| SmithDB cluster manager | Decides which SmithDB pod handles which requests, so that related requests go to the same pod. |
+| SmithDB query | Answers queries, and applies feedback and deletes. The optional pools keep heavy load away from UI and API reads. |
+| SmithDB ingestion | Stores new runs, and serves the newest runs to queries. |
+| SmithDB compaction scheduler | Plans compaction work, and runs garbage collection and retention. |
+| SmithDB compaction worker | Does the compaction work: merges and rewrites stored data. |
+| SmithDB metastore migration | Prepares the metastore during install and upgrade. |
+| SmithDB migration | Copies historical data from ClickHouse. Optional. |
+| SmithDB metastore | Keeps a record of each SmithDB data file, and stores new feedback. A dedicated [PostgreSQL database](/langsmith/self-host-smithdb-infrastructure#postgresql-metastore) that you provide. |
+| Object storage | Holds all SmithDB data files. A [bucket](/langsmith/self-host-smithdb-infrastructure#object-storage) that you provide. |
+| Redis, PostgreSQL, ClickHouse | LangSmith datastores. They run in the cluster only if you do not use external services. |
 
-| Component | Kubernetes object | Description |
+## Query pools
+
+By default, one SmithDB query pool, `query`, does all query work. For larger deployments, enable the [dedicated query services](/langsmith/self-host-smithdb-scale#dedicated-query-services). Each one takes one type of work away from the `query` pool, so that heavy load does not slow down UI and API reads.
+
+| Pool | Work | Requests from |
 |---|---|---|
-| Frontend | `langsmith-frontend` | Serves the LangSmith UI. |
-| Backend | `langsmith-backend` | Serves most of the LangSmith API. |
-| Platform backend | `langsmith-platform-backend` | Receives runs and feedback from clients and queues them for writing. Sends trace queries to SmithDB. |
-| Queue | `langsmith-queue` | Runs automation rules, including online evaluations. |
-| Ingest queue | `langsmith-ingest-queue` | Writes queued runs, feedback, and deletes to SmithDB. |
-| SmithDB cluster manager | `langsmith-smithdb-cluster-manager` | Decides which SmithDB pod handles which tenant and project, so that related requests go to the same pod. |
-| SmithDB query | `langsmith-smithdb-query`<br />`langsmith-smithdb-stats-query`<br />`langsmith-smithdb-run-rules`<br />`langsmith-smithdb-mutations` | Answers queries, and applies feedback and deletes. The optional pools keep heavy load away from UI and API reads. |
-| SmithDB ingestion | `langsmith-smithdb-ingestion` | Stores new runs, and serves the newest runs to queries. |
-| SmithDB compaction scheduler | `langsmith-smithdb-compaction` | Plans compaction work, and runs garbage collection and retention. |
-| SmithDB compaction worker | `langsmith-smithdb-compaction-worker` | Does the compaction work: merges and rewrites stored data. |
-| SmithDB metastore migration | `langsmith-smithdb-metastore-migration` | Prepares the metastore during install and upgrade. |
-| SmithDB migration | `langsmith-smithdb-migration` | Copies historical data from ClickHouse. Optional. |
-| Redis, PostgreSQL, ClickHouse | `langsmith-redis`<br />`langsmith-postgres`<br />`langsmith-clickhouse` | LangSmith datastores. They run in the cluster only if you do not use external services. |
-
-Names come from the chart templates: `<release>-<component>` for LangSmith and `<release>-smithdb-<component>` for SmithDB. Confirm them against your deployment.
+| `query` | Trace reads for the UI and the API, such as run lists and trace views. All work of the optional pools that are not enabled. | Platform backend |
+| `stats-query` | Run statistics, such as run counts, latency, and error rates in project and experiment views. Optional. | Platform backend |
+| `run-rules` | Finds the runs that automation rules and online evaluations apply to. The queue component runs the rules and evaluations itself. Optional. | Queue |
+| `mutations` | Applies feedback and deletes. Optional. | Ingest queue |
 
 ## Terms
 
@@ -52,14 +63,14 @@ Names come from the chart templates: `<release>-<component>` for LangSmith and `
 | Ack | The message from SmithDB to the worker that the data is durable. The worker removes the task from Redis only after the ack. |
 | Metastore | The PostgreSQL database of SmithDB. It keeps a record of each segment, and stores new feedback. |
 | Disk cache | The cache volume of a SmithDB pod, on a local SSD or a network disk. It holds copies of data only, never the only copy. |
-| Query pool | A group of SmithDB query pods for one type of request: query, stats-query, run-rules, or mutations. |
+| Query pool | A group of SmithDB query pods for one type of request. See [Query pools](#query-pools). |
 | Compaction | Background work that merges small segments into larger segments, writes feedback into files, and removes expired and deleted data. |
 | Slice | A range of the key space that the cluster manager gives to a SmithDB pod. For ingestion, the key is the tenant and the project. For queries, the key is the tenant. |
 
 ## See also
 
-- [How data moves through SmithDB](/langsmith/self-host-smithdb-data-paths)
+- [How SmithDB handles data](/langsmith/self-host-smithdb-data-paths)
 - [Enable SmithDB on self-hosted LangSmith](/langsmith/self-host-smithdb)
-- [SmithDB metrics reference](/langsmith/self-host-smithdb-metrics)
+- [Essential SmithDB metrics](/langsmith/self-host-smithdb-metrics)
 - [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale)
 - [Troubleshoot SmithDB](/langsmith/self-host-smithdb-troubleshooting)
