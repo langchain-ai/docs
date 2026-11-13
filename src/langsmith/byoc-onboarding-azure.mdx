@@ -19,7 +19,11 @@ You need the following:
 
 - **A LangSmith organization on Azure**: Use the LangSmith control plane on Azure at [azure.smith.langchain.com](https://azure.smith.langchain.com). Send your organization ID to the LangChain team to enable BYOC.
 - **An Azure subscription**: LangChain recommends a subscription dedicated to LangSmith BYOC, but it is not required.
-- **Azure permissions**: The person who applies Terraform needs the `Owner` role on the subscription, because the Terraform module creates custom roles and role assignments and registers resource providers. You also need a Microsoft Entra role that can create and update the service principal of a multi-tenant application in your tenant, such as `Cloud Application Administrator`.
+- **Azure permissions**: Setup needs two roles, which can belong to two different people:
+    - **A Microsoft Entra role** that can create the service principal of a multi-tenant application in your tenant, such as `Cloud Application Administrator` or `Application Administrator`. It is used once per tenant.
+    - **The `Owner` role on the subscription**, for the person who applies Terraform, because the Terraform module creates custom roles and role assignments and registers resource providers.
+
+    If one person holds both roles, they can apply Terraform directly. Otherwise, follow the **Create the service principal first** step below: the Entra admin creates the service principal and makes the subscription owner an owner of it. The subscription owner then needs no Entra role.
 - **Terraform**: Terraform 1.11.0 or later.
 - **An organization admin in LangSmith**: Creating, changing, and deleting a data plane requires the organization admin role.
 - **vCPU quota**: The AKS system node pool uses three `Standard_D2s_v6` VMs. LangSmith checks at create time that the region has at least 6 free vCPUs in both the **Total Regional vCPUs** quota and the Dsv6 VM family quota. Application nodes use D, E, and F series VMs of version 5 or later, so also plan quota for those families. See [Node pools](/langsmith/byoc-architecture-azure#compute).
@@ -35,10 +39,33 @@ LangChain assigns your organization an external ID. Navigate to **Settings > Dat
 LangSmith uses the external ID to confirm that the role assignments in your subscription belong to your organization.
 </Step>
 
+<Step title="Create the service principal first (optional)">
+Skip this step if the person who applies Terraform also has an Entra role that can create the service principal.
+
+Otherwise, an Entra admin with `Cloud Application Administrator` or `Application Administrator` creates the LangSmith BYOC service principal once for the tenant, then adds the person who applies Terraform as an owner of it. The Terraform module updates the service principal when it adopts it, and ownership allows that update:
+
+```bash
+az ad sp create --id 5b0a74cb-9f37-4797-b557-c15d7be80d3b
+SP_ID=$(az ad sp show --id 5b0a74cb-9f37-4797-b557-c15d7be80d3b --query id -o tsv)
+USER_ID=$(az ad user show --id <user-principal-name> --query id -o tsv)
+az rest --method POST \
+  --url "https://graph.microsoft.com/v1.0/servicePrincipals/$SP_ID/owners/\$ref" \
+  --body "{\"@odata.id\": \"https://graph.microsoft.com/v1.0/directoryObjects/$USER_ID\"}"
+```
+
+The service principal gets no Microsoft Graph permissions and no Azure roles. It has no access until the Terraform module assigns its roles on each data plane's resource group in the next step. The module finds the service principal by its application (client) ID, so you don't pass its ID to the module.
+
+If the first `terraform apply` fails at the service principal, for example with `403 Authorization_RequestDenied` because the owner was not added, fix the permission, then run the following before you apply again. Without it, the next apply replaces the service principal instead of adopting it.
+
+```bash
+terraform untaint 'module.<module-name>.azuread_service_principal.langsmith'
+```
+</Step>
+
 <Step title="Grant LangSmith access with Terraform">
 Apply the [`langsmith-byoc-access` Terraform module](https://github.com/langchain-ai/terraform/blob/main/modules/byoc/azure/langsmith-byoc-access/main.tf) in your Azure subscription with the external ID you copied. You must use this module. For each data plane in its `data_planes` input, it creates:
 
-- **The LangSmith BYOC service principal**: The service principal of the LangSmith BYOC multi-tenant application, with application (client) ID `5b0a74cb-9f37-4797-b557-c15d7be80d3b`, in your Microsoft Entra tenant. It is created once per tenant, and the application requests no Microsoft Graph permissions.
+- **The LangSmith BYOC service principal**: The service principal of the LangSmith BYOC multi-tenant application, with application (client) ID `5b0a74cb-9f37-4797-b557-c15d7be80d3b`, in your Microsoft Entra tenant. It is created once per tenant, and the application requests no Microsoft Graph permissions. If it already exists, for example because an Entra admin created it in the previous step, the module adopts it instead of creating it.
 - **A dedicated resource group**, `langsmith-byoc-<key>`: LangSmith deploys the data plane into it. Do not put other workloads in it.
 - **A Key Vault in the resource group**: It uses Azure RBAC authorization and has public network access disabled. LangSmith writes the data plane's bootstrap secret to it, and the data plane reads it through a private endpoint.
 - **Two role assignments for the service principal on the resource group**: A `langsmith-byoc-<key>-<suffix>` custom role with the actions LangSmith needs, and `User Access Administrator`. Both roles can only be used in that resource group, and both assignments carry your external ID as their description.
@@ -251,6 +278,8 @@ When you no longer need the retained data, delete the Blob storage accounts in t
 ## Remove LangSmith access
 
 To stop LangSmith from changing or deleting a data plane, remove the role assignments of the LangSmith service principal on its resource group and on its AKS cluster. Removing the Terraform module removes the service principal and all role assignments, so LangSmith loses access to every data plane in the tenant. The data plane resources stay in your subscription, and LangChain can no longer upgrade or repair them. Delete the data plane first if you want LangSmith to clean up its resources.
+
+Removing the module deletes the service principal only if the person who removes it holds the Entra role or is an owner of the service principal. For anyone else, the delete is skipped without an error and the service principal stays in the tenant. An Entra admin can then remove it with `az ad sp delete --id 5b0a74cb-9f37-4797-b557-c15d7be80d3b`.
 
 ## Next steps
 
