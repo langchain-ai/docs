@@ -1,0 +1,313 @@
+---
+title: "OpenAIClassifier integration"
+sidebarTitle: "OpenAIClassifier"
+description: "Integrate with the OpenAIClassifier decision model using LangChain Python."
+---
+
+`OpenAIClassifier` answers typed questions with the [OpenAI Decisions API](https://developers.openai.com/api/docs/guides/decisions) through LangChain's standard `BaseDecisionModel` interface. It shares its question and response types with other decision models, such as [`TypeSafeClassifier`](/oss/integrations/providers/typesafe), so you can swap providers without changing application code, and pass it to LangChain's decision-driven [agent middleware](#agent-middleware).
+
+`OpenAIClassifier` is a `Runnable`, so you can invoke, batch, or compose it with other runnables. It accepts strings, structured JSON, [LangChain message objects](/oss/langchain/messages), and images, and records traces and token usage in LangSmith.
+
+The standard interface covers less of the Decisions API than the native integration. To use the full OpenAI request and response format, including per-question refusals, use [`OpenAIDecisions`](/oss/integrations/decision_models/openai) instead. See [Differences from `OpenAIDecisions`](#differences-from-openaidecisions).
+
+<Note>
+`OpenAIClassifier` is in beta and requires `langchain-openai>=1.8.0`. Its API may change without notice.
+</Note>
+
+## Setup
+
+<CodeGroup>
+```bash uv
+uv add "langchain-openai>=1.8.0"
+```
+
+```bash pip
+pip install "langchain-openai>=1.8.0"
+```
+</CodeGroup>
+
+Create an API key in the [OpenAI dashboard](https://platform.openai.com/api-keys) and export it:
+
+```bash
+export OPENAI_API_KEY=...
+```
+
+<Note>
+Optional: Set `OPENAI_BASE_URL` to use a compatible gateway or test server. The default is the OpenAI API endpoint.
+
+```bash
+export OPENAI_BASE_URL=https://gateway.example.com/v1
+```
+
+To route requests through the [LangSmith LLM gateway](/langsmith/llm-gateway-decision-models#use-openai-decision-models), set `LANGSMITH_GATEWAY=true`. Gateway requests authenticate with `LANGSMITH_GATEWAY_API_KEY` or `LANGSMITH_API_KEY`:
+
+```bash
+export LANGSMITH_GATEWAY=true
+export LANGSMITH_API_KEY=...
+```
+</Note>
+
+## Quickstart
+
+Create an `OpenAIClassifier` with a decisions model, then pass the state and named questions together in each invocation. Questions that share state are answered in one request:
+
+```python
+from langchain_core.decisions import Choice, Noul, NoulCriteria, Score
+from langchain_openai.decisions import OpenAIClassifier
+
+classifier = OpenAIClassifier(model="gpt-6-luna")
+
+response = classifier.invoke(
+    {
+        "state": "The blue mug I ordered arrived cracked. Fix this today!",
+        "questions": {
+            "damaged": Noul(
+                instructions="Did the item arrive damaged?",
+                criteria=NoulCriteria(true="The item is broken, cracked, or dented."),
+            ),
+            "department": Choice(
+                instructions="Which team should handle this request?",
+                criteria={
+                    "billing": "Payment or refund questions.",
+                    "shipping": "Delivery problems or damaged items.",
+                    "other": None,
+                },
+            ),
+            "frustration": Score(
+                instructions="How frustrated does the customer appear?",
+                criteria=["Calm.", "Concerned but civil.", "Very angry."],
+            ),
+        },
+    }
+)
+
+print(response.nouls["damaged"].noul)
+print(response.choices["department"].choice, response.choices["department"].confidence)
+print(response.scores["frustration"].score)
+```
+
+Answers are keyed by the question names you supplied, and grouped by type on `nouls`, `choices`, and `scores`. All answers are also available on `answers`. The response carries the `model` that answered, the OpenAI `request_id`, and token `usage`.
+
+`usage` is a dictionary, or `None` when the API returns no usage. Check for `None` before reading it:
+
+```python
+if response.usage is not None:
+    print(response.usage["input_tokens"])
+    print(response.usage["output_tokens"])
+    print(response.usage["total_tokens"])
+```
+
+The question and response types, such as `Noul` and `ClassifierResponse`, come from `langchain_core.decisions`.
+
+## Question types
+
+Each question is one of three types:
+
+| Type | Asks | Returns | Reach for it when |
+|---|---|---|---|
+| `Noul` | Is this true? | `noul`, the probability of yes | Your code branches on an `if` |
+| `Choice` | Which of these options? | `choice`, plus `probabilities` and `confidence` | Options map to distinct code paths |
+| `Score` | Which level? | `score`, plus `legend`, `probabilities`, and `confidence` | The answer is a spectrum you compare to a threshold |
+
+- **`Noul`**: Sent to the API as a `predicate` question. A value near `0.5` means uncertainty, not "medium", so use `Score` for a spectrum. Predicates have no field for outcome descriptions, so `OpenAIClassifier` appends any `criteria` to the instructions as text. `Noul` answers have no `confidence`, because the probability is the answer.
+- **`Choice`**: Maps each label to a description, or to `None` when the label needs no description. A `Choice` needs at least two labels. Include an `other` label when your options may not cover every input. `confidence` is the probability of the selected label.
+- **`Score`**: Takes levels ordered from lowest to highest and indexed from `0`. The returned `score` is the probability-weighted average of the level indices, so it may fall between levels, and `legend` maps each index to the level you supplied. `confidence` is the probability of the selected level.
+
+Instructions can be text, structured JSON, or contain images. Criteria accept text or structured JSON only, and a media block in criteria raises `ValueError`.
+
+`langchain_core.decisions` also defines a `Box` question type for locating objects in images. The OpenAI Decisions API does not support it, and `OpenAIClassifier` raises `ValueError` for a request that includes one.
+
+## State
+
+The `state` can be a string, a JSON object or array, or LangChain messages:
+
+- **Strings**: Sent as-is.
+- **LangChain messages**: A message or list of messages at the root of the state is sent as native Decisions API input. Human, system, AI, and tool messages keep their roles, and tool calls and tool results are sent as function call items.
+- **JSON objects and arrays**: Sent as JSON in a single user message. Messages nested inside an object or array are converted to JSON.
+
+To classify an agent conversation, including its tool calls, pass the messages as the state:
+
+```python
+from langchain.messages import AIMessage, HumanMessage, ToolMessage
+
+response = classifier.invoke(
+    {
+        "state": [
+            HumanMessage("Where is my order?"),
+            AIMessage(
+                "",
+                tool_calls=[
+                    {"name": "track_order", "args": {"id": "A1"}, "id": "call_1"}
+                ],
+            ),
+            ToolMessage("Delivered yesterday.", tool_call_id="call_1"),
+            AIMessage("It was delivered yesterday."),
+            HumanMessage("It arrived smashed to pieces."),
+        ],
+        "questions": {
+            "damaged": Noul(instructions="Did the item arrive damaged?"),
+        },
+    }
+)
+```
+
+Messages accept text and image content. Images can be base64 data or public `http` or `https` URLs. File and audio content raise `ValueError`, and system messages accept text only. To classify an image, pass it in a message at the root of the state:
+
+```python
+import base64
+from pathlib import Path
+
+image_data = base64.b64encode(Path("delivery.jpg").read_bytes()).decode()
+
+response = classifier.invoke(
+    {
+        "state": [
+            HumanMessage(
+                content_blocks=[
+                    {"type": "text", "text": "Photo of the delivered item."},
+                    {"type": "image", "base64": image_data, "mime_type": "image/jpeg"},
+                ]
+            )
+        ],
+        "questions": {
+            "damaged": Noul(instructions="Did the item arrive damaged?"),
+        },
+    }
+)
+```
+
+<Warning>
+JSON state cannot carry media. `OpenAIClassifier` drops media blocks inside an object or array, including blocks in nested messages, and emits a `UserWarning`. Pass messages as the root state to include their images.
+</Warning>
+
+## Configuration
+
+| Parameter | Description |
+|---|---|
+| `model` | Decisions model name, such as `gpt-6-luna`. Required. |
+| `api_key` | OpenAI API key, or a sync or async callable that returns one. Defaults to `OPENAI_API_KEY`. When requests route through the LangSmith gateway, defaults to `LANGSMITH_GATEWAY_API_KEY`, then `LANGSMITH_API_KEY`. |
+| `base_url` | Base URL for API requests. Defaults to `OPENAI_API_BASE`, then the LangSmith gateway when `LANGSMITH_GATEWAY` is set, then `OPENAI_BASE_URL`. |
+| `organization` | OpenAI organization ID. Defaults to `OPENAI_ORG_ID`. |
+| `timeout` | Request timeout, as a float or an `httpx.Timeout`. |
+| `max_retries` | Maximum number of retries. Uses the OpenAI SDK default when unset. |
+| `default_headers` | Headers sent with every request. |
+| `default_query` | Query parameters sent with every request. |
+| `http_client` | An `httpx.Client` for `invoke` and `batch`. You manage its lifecycle. |
+| `http_async_client` | An `httpx.AsyncClient` for `ainvoke` and `abatch`. You manage its lifecycle. |
+
+An async callable `api_key` works only with `ainvoke` and `abatch`.
+
+## Errors
+
+- **`ValueError`**: Raised when no API key is available, and by `invoke` for a request the API does not support: a `Box` question, a `Choice` with fewer than two labels, media in criteria, file or audio content, non-text system message content, or a tool call without an ID.
+- **`TypeError`**: Raised by `invoke` when the state is `None`, a number, or a boolean.
+- **`ModelRefusalError`**: Raised when the API refuses any question in the request. The message names the refused questions, and answers to the other questions are discarded. Import it from `langchain_core.exceptions`.
+
+## Differences from `OpenAIDecisions`
+
+`OpenAIClassifier` adopts the shared `BaseDecisionModel` interface, which does not cover every Decisions API feature. Choose the integration that fits your application:
+
+| | `OpenAIClassifier` | [`OpenAIDecisions`](/oss/integrations/decision_models/openai) |
+|---|---|---|
+| Request format | `state` and `questions` | `input` and `questions` |
+| Question types | `Noul`, `Choice`, and `Score` from `langchain_core.decisions` | `Predicate`, `Choice`, and `Score` from `langchain_openai.decisions` |
+| Refused questions | Raise `ModelRefusalError` for the whole request | Return a `RefusalAnswer` on `refusals`, alongside the other answers |
+| Agent middleware | `ModelRouterMiddleware` and `AutoModeMiddleware` from `langchain.agents.middleware` | `OpenAIModelRouterMiddleware` and `OpenAIAutoModeMiddleware` from `langchain_openai.middleware` |
+| Other providers | Swap in any `BaseDecisionModel`, such as `TypeSafeClassifier` | OpenAI only |
+
+`OpenAIClassifier` also does not expose prompt caching options, cache breakpoints, or `safety_identifier`.
+
+## Agent middleware
+
+LangChain includes two beta middleware that use a decision model at an agent's decision points. Pass an `OpenAIClassifier` as their `classifier`. Both require `langchain>=1.5.0`:
+
+<CodeGroup>
+```bash uv
+uv add "langchain>=1.5.0" "langchain-openai>=1.8.0"
+```
+
+```bash pip
+pip install "langchain>=1.5.0" "langchain-openai>=1.8.0"
+```
+</CodeGroup>
+
+### Route models
+
+[`ModelRouterMiddleware`](/oss/langchain/middleware/built-in#model-router) picks one of your named models for each agent run, based on the latest human message:
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ModelChoice, ModelRouterMiddleware
+from langchain_openai.decisions import OpenAIClassifier
+
+router = ModelRouterMiddleware(
+    choices={
+        "fast": ModelChoice(
+            model="openai:gpt-6-luna",
+            criteria="Simple, well-scoped tasks.",
+        ),
+        "powerful": ModelChoice(
+            model="openai:gpt-6-sol",
+            criteria="Complex tasks that need deeper reasoning.",
+        ),
+    },
+    instructions="Choose the least costly model that can complete the task.",
+    classifier=OpenAIClassifier(model="gpt-6-luna"),
+)
+
+agent = create_agent("openai:gpt-6-luna", middleware=[router])
+
+result = agent.invoke({"messages": [{"role": "user", "content": "What is 2 + 2?"}]})
+print(result["model_route"].choice)
+```
+
+### Gate tool calls
+
+[`AutoModeMiddleware`](/oss/langchain/middleware/built-in#auto-mode) checks each call to the tools you list, and blocks calls the classifier judges risky:
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import AutoModeMiddleware
+from langchain.tools import tool
+from langchain_openai.decisions import OpenAIClassifier
+
+
+@tool
+def delete_file(path: str) -> str:
+    """Delete a file."""
+    return f"Deleted {path}."
+
+
+agent = create_agent(
+    "openai:gpt-6-sol",
+    tools=[delete_file],
+    middleware=[
+        AutoModeMiddleware(
+            tools=[delete_file],
+            classifier=OpenAIClassifier(model="gpt-6-luna"),
+        )
+    ],
+)
+
+result = agent.invoke({"messages": [{"role": "user", "content": "Delete notes.txt."}]})
+print(result["messages"][-1].text)
+```
+
+The default instructions treat destructive actions as risky, even when the user asks for them. When the agent calls `delete_file`, the middleware returns an error `ToolMessage` instead of running the tool, and the agent reports that the call was blocked.
+
+<Warning>
+Do not put secrets in tool arguments or conversation state unless sending them to OpenAI is acceptable. This middleware refuses risky calls. It does not request approval. Pair it with [human-in-the-loop middleware](/oss/langchain/middleware/built-in) when you want a person to approve them.
+</Warning>
+
+## Tracing
+
+`OpenAIClassifier` runs are traced in [LangSmith](/langsmith/observability) with the `openai` provider and model name, so you can inspect decisions and token usage alongside the rest of your application.
+
+## See also
+
+- [OpenAI Decisions guide](https://developers.openai.com/api/docs/guides/decisions)
+- [OpenAI Decisions integration](/oss/integrations/decision_models/openai)
+- [OpenAI provider overview](/oss/integrations/providers/openai)
+- [TypeSafe integrations](/oss/integrations/providers/typesafe)
+- [Prebuilt middleware](/oss/langchain/middleware/built-in)
+- [LangChain OpenAI API reference](https://reference.langchain.com/python/langchain-openai)
