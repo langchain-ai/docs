@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import argparse
 import datetime as dt
 import json
 import re
+from email.message import Message
+from io import BytesIO
 from types import SimpleNamespace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Never
+from urllib.error import HTTPError
+from urllib.parse import parse_qs, urlsplit
+from uuid import UUID
 
 import pytest
 from cryptography.fernet import Fernet
@@ -15,6 +21,7 @@ from scripts import changelog_pipeline as cp
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from urllib.request import Request
 
 
 def test_week_label_same_and_spanning_month() -> None:
@@ -208,7 +215,7 @@ def test_claude_api_raises_unless_the_turn_ended(
 
 
 def test_release_held_by_flag_state() -> None:
-    """Rolled-out flags release; pending flags stay; anything uncertain is dropped."""
+    """Pending or missing flags stay held; archived or conflicting flags drop."""
     held = {
         "1": {"flag": "shipped", "title": "a"},
         "2": {"flag": "cleaned_up", "title": "b"},
@@ -223,9 +230,9 @@ def test_release_held_by_flag_state() -> None:
     }
     released, kept, dropped = cp._release_held(held, flags)
     assert sorted(released) == ["1"]
-    assert sorted(kept) == ["3"]
-    assert sorted(dropped) == ["2", "4", "5"]
-    assert "not found in Eppo" in dropped["4"]
+    assert sorted(kept) == ["3", "4"]
+    assert sorted(dropped) == ["2", "5"]
+    assert "not found in Datadog" in kept["4"]
 
 
 def test_released_prs_are_marked_for_grouping_and_writing() -> None:
@@ -253,7 +260,7 @@ def test_released_prs_are_marked_for_grouping_and_writing() -> None:
     assert "<rollout>" not in cp._group_prompt(group, prs)
 
 
-def test_eppo_state_overrides_a_dropped_released_group() -> None:
+def test_datadog_state_overrides_a_dropped_released_group() -> None:
     """A released PR's group publishes unless an earlier entry announced it."""
     groups = [
         {"prs": [1], "layer": "drop", "announced_before": False},
@@ -264,7 +271,7 @@ def test_eppo_state_overrides_a_dropped_released_group() -> None:
     ]
     assert cp._keep_released(groups, frozenset({1, 2, 5, 6})) == 2
     assert [g["layer"] for g in groups] == [
-        "change",  # released, not announced: Eppo wins over the stale notes
+        "change",  # released, not announced: Datadog wins over the stale notes
         "drop",  # released, but last week's entry already announced it
         "drop",  # not released: the model's drop stands
         "change",  # one released PR is enough; a missing field means not announced
@@ -533,46 +540,398 @@ def test_held_list_folds_in_and_retires_the_plaintext_copy(
     assert cp._load_held(path) == {"9": {"flag": "old"}, "10": {"flag": "new"}}
 
 
-def _eppo_flag(*allocations: dict, active: bool = True, boolean: bool = True) -> dict:
-    """An Eppo flag with one production environment and the given allocations."""
+def _datadog_flag(**environment: object) -> dict:
     return {
-        "variation_type": "BOOLEAN" if boolean else "STRING",
-        "environments": [{"id": 1, "is_production": True, "active": active}],
-        "variations": [
-            {"id": 10, "variant_key": "true"},
-            {"id": 11, "variant_key": "false"},
+        "value_type": "BOOLEAN",
+        "variants": [{"id": "on", "value": "true"}, {"id": "off", "value": "false"}],
+        "feature_flag_environments": [
+            {
+                "environment_id": "prod",
+                "status": "ENABLED",
+                "default_variant_id": "on",
+                "allocations": None,
+                **environment,
+            }
         ],
-        "allocations": [{"environment_id": 1, **a} for a in allocations],
     }
 
 
-def _serve(variation_id: int, exposure: float = 1) -> dict:
+def _allocation(variant: str = "on", **fields: object) -> dict:
     return {
-        "percent_exposure": exposure,
-        "variation_weight": [{"variation_id": variation_id, "weight": 100}],
+        "order_position": 0,
+        "type": "FEATURE_GATE",
+        "targeting_rules": [],
+        "variant_weights": [{"variant_id": variant, "value": 100}],
+        **fields,
     }
 
 
 @pytest.mark.parametrize(
-    ("flag", "expected"),
+    ("environment", "expected"),
     [
-        (_eppo_flag(_serve(10)), True),
-        (_eppo_flag(_serve(10, exposure=100)), True),  # exposure as a percent
-        (_eppo_flag(_serve(11)), False),  # catch-all serves "false"
-        (_eppo_flag(_serve(10, exposure=0.5)), False),  # partial exposure
-        (_eppo_flag(_serve(10), active=False), False),  # production inactive
-        (_eppo_flag({"targeting_rules": [{}], **_serve(10)}), False),  # targeted only
-        (_eppo_flag({"targeting_rules": [{}], **_serve(11)}, _serve(10)), True),
-        (_eppo_flag(), False),  # no allocations
+        ({}, True),
+        ({"status": "DISABLED"}, False),
+        ({"status": "UNKNOWN"}, False),
+        ({"default_variant_id": "off"}, False),
+        ({"default_variant_id": "missing"}, False),
+        ({"override_variant_id": "off"}, False),
+        ({"default_variant_id": "off", "override_variant_id": "on"}, True),
+        ({"default_variant_id": "off", "allocations": [_allocation()]}, True),
+        ({"allocations": [_allocation("off")]}, False),
+        (
+            {
+                "allocations": [
+                    _allocation(
+                        targeting_rules=[
+                            {
+                                "conditions": [
+                                    {
+                                        "attribute": "tier",
+                                        "operator": "ONE_OF",
+                                        "value": ["preview"],
+                                    }
+                                ]
+                            }
+                        ]
+                    )
+                ]
+            },
+            True,
+        ),
+        (
+            {
+                "default_variant_id": "off",
+                "allocations": [
+                    _allocation(
+                        targeting_rules=[
+                            {
+                                "conditions": [
+                                    {
+                                        "attribute": "tier",
+                                        "operator": "ONE_OF",
+                                        "value": ["preview"],
+                                    }
+                                ]
+                            }
+                        ]
+                    )
+                ],
+            },
+            False,
+        ),
+        (
+            {
+                "allocations": [
+                    _allocation(
+                        "off",
+                        targeting_rules=[
+                            {
+                                "conditions": [
+                                    {
+                                        "attribute": "tier",
+                                        "operator": "ONE_OF",
+                                        "value": ["preview"],
+                                    }
+                                ]
+                            }
+                        ],
+                    )
+                ]
+            },
+            False,
+        ),
+        (
+            {
+                "allocations": [
+                    _allocation(
+                        variant_weights=[
+                            {"variant_id": "on", "value": 50},
+                            {"variant_id": "off", "value": 50},
+                        ]
+                    )
+                ]
+            },
+            False,
+        ),
+        (
+            {
+                "allocations": [
+                    _allocation(variant_weights=[{"variant_id": "on", "value": 50}])
+                ]
+            },
+            False,
+        ),
+        ({"allocations": [_allocation(variant_weights=[])]}, False),
+        ({"allocations": [_allocation(experiment_id="experiment")]}, False),
+        (
+            {
+                "allocations": [
+                    _allocation(
+                        exposure_schedule={"rollout_steps": [{"exposure_ratio": 1}]}
+                    )
+                ]
+            },
+            False,
+        ),
+        ({"allocations": [_allocation(status="draft")]}, False),
+        ({"allocations": [_allocation(type="UNKNOWN")]}, False),
+        ({"allocations": {}}, False),
+        ({"allocations": [_allocation(order_position=None)]}, False),
     ],
 )
-def test_is_fully_rolled_out(flag: dict, expected: bool) -> None:
-    """Only a production catch-all serving one "on" variant to everyone counts."""
-    assert cp.is_fully_rolled_out(flag) is expected
+def test_is_fully_rolled_out(environment: dict, expected: bool) -> None:
+    """Enabled is insufficient: every reachable audience must receive the on value."""
+    assert cp.is_fully_rolled_out(_datadog_flag(**environment), {"prod"}) is expected
 
 
-def test_eppo_get_refuses_other_hosts(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The Eppo client only ever requests the hardcoded HTTPS host."""
-    monkeypatch.setattr(cp, "EPPO_API_BASE", "https://example.com/api")
+def test_rollout_requires_complete_production_details() -> None:
+    """Every production environment must be present and rolled out."""
+    flag = _datadog_flag()
+    assert not cp.is_fully_rolled_out(flag, set())
+    assert not cp.is_fully_rolled_out(flag, {"prod", "other-prod"})
+    other = {**flag["feature_flag_environments"][0], "environment_id": "other-prod"}
+    flag["feature_flag_environments"].append(other)
+    assert cp.is_fully_rolled_out(flag, {"prod", "other-prod"})
+    other["default_variant_id"] = "off"
+    assert not cp.is_fully_rolled_out(flag, {"prod", "other-prod"})
+    flag["archived_at"] = "2026-01-01T00:00:00Z"
+    assert not cp.is_fully_rolled_out(flag, {"prod"})
+    del flag["archived_at"]
+    del flag["feature_flag_environments"][0]["allocations"]
+    assert not cp.is_fully_rolled_out(flag, {"prod"})
+
+
+def test_rollout_honors_rule_order_and_targeted_exceptions() -> None:
+    """A reachable exception blocks rollout; rules after a catch-all cannot."""
+    catchall = _allocation(order_position=1)
+    exception = _allocation(
+        "off",
+        order_position=0,
+        targeting_rules=[
+            {
+                "conditions": [
+                    {"attribute": "tier", "operator": "ONE_OF", "value": ["preview"]}
+                ]
+            }
+        ],
+    )
+    flag = _datadog_flag(default_variant_id="off", allocations=[catchall, exception])
+    assert not cp.is_fully_rolled_out(flag, {"prod"})
+    exception["order_position"] = 2
+    assert cp.is_fully_rolled_out(flag, {"prod"})
+
+
+def test_non_boolean_rollout_requires_one_known_variant() -> None:
+    """Uniform non-boolean values retain the existing release behavior."""
+    flag = _datadog_flag()
+    flag["value_type"] = "STRING"
+    flag["variants"] = [{"id": "on", "value": "general"}]
+    assert cp.is_fully_rolled_out(flag, {"prod"})
+    flag["variants"] = []
+    assert not cp.is_fully_rolled_out(flag, {"prod"})
+
+
+def test_datadog_inventory_paginates_and_fetches_details(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """List payloads omit allocations; rollout must use each detail response."""
+    monkeypatch.setenv("DD_API_KEY", "test-api")
+    monkeypatch.setenv("DD_APP_KEY", "test-app")
+    flags = [
+        {"id": str(UUID(int=i + 1)), "attributes": {"key": f"flag-{i}"}}
+        for i in range(51)
+    ]
+    detail_reads = []
+    listing_complete = False
+
+    def get(path: str, headers: dict) -> dict:
+        nonlocal listing_complete
+        assert headers == {"DD-API-KEY": "test-api", "DD-APPLICATION-KEY": "test-app"}
+        url = urlsplit(path)
+        query = parse_qs(url.query)
+        if url.path.endswith("/environments"):
+            assert query["limit"] == ["50"]
+            offset = int(query["offset"][0])
+            return {
+                "data": []
+                if offset
+                else [
+                    {"id": "prod", "attributes": {"is_production": True}},
+                    {"id": "dev", "attributes": {"is_production": False}},
+                ]
+            }
+        if url.path == "/api/v2/feature-flags":
+            assert query["sort"] == ["created_at"]
+            assert query["page[limit]"] == ["50"]
+            offset = int(query["page[offset]"][0])
+            listing_complete = offset >= len(flags)
+            return {
+                "data": flags[offset : offset + 50],
+                "links": {"next": "https://example.com/never-follow"},
+            }
+        assert listing_complete
+        index = UUID(url.path.rsplit("/", 1)[1]).int - 1
+        detail_reads.append(index)
+        return {"data": {"attributes": {"key": f"flag-{index}", **_datadog_flag()}}}
+
+    monkeypatch.setattr(cp, "_datadog_get", get)
+    index, production = cp.datadog_flag_index()
+    assert production == {"prod"}
+    assert set(index) == {f"flag-{i}" for i in range(51)}
+    assert detail_reads == list(range(51))
+    assert cp.is_fully_rolled_out(index["flag-50"], production)
+
+
+def test_inventory_failure_never_reuses_a_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An API error cannot publish from a previous Eppo or Datadog success."""
+    old = {"example": {"rolled_out": True}}
+    for provider in ("eppo", "datadog"):
+        (tmp_path / f"{provider}-flags.json").write_text(json.dumps(old))
+
+    def unavailable() -> Never:
+        url = "https://api.datadoghq.com"
+        raise HTTPError(url, 403, "Forbidden", Message(), None)
+
+    monkeypatch.setattr(cp, "datadog_flag_index", unavailable)
+    with pytest.raises(HTTPError):
+        cp._load_flags(tmp_path)
+    monkeypatch.setattr(
+        cp,
+        "datadog_flag_index",
+        lambda: ({"example": _datadog_flag(default_variant_id="off")}, {"prod"}),
+    )
+    flags = cp._load_flags(tmp_path)
+    assert flags["example"]["rolled_out"] is False
+    assert json.loads((tmp_path / "datadog-flags.json").read_text()) == flags
+
+
+def test_datadog_inventory_rejects_missing_production_and_duplicate_pages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing credentials/configuration or a looping API must stop the run."""
+    monkeypatch.setenv("DD_API_KEY", "test-api")
+    monkeypatch.setenv("DD_APP_KEY", "test-app")
+    monkeypatch.setattr(cp, "_datadog_get", lambda *_: {"data": []})
+    with pytest.raises(ValueError, match="No Datadog production"):
+        cp.datadog_flag_index()
+    monkeypatch.setattr(cp, "_datadog_get", lambda *_: {"data": [{"id": "same"}]})
+    with pytest.raises(ValueError, match="duplicate"):
+        list(cp._datadog_resources("/api/v2/feature-flags", {}))
+    monkeypatch.delenv("DD_APP_KEY")
+    with pytest.raises(SystemExit, match="DD_APP_KEY"):
+        cp.datadog_flag_index()
+
+
+def test_datadog_http_uses_site_and_rejects_redirects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Credentials go only to the selected, allowlisted Datadog site."""
+    monkeypatch.setenv("DD_SITE", "us5.datadoghq.com")
+
+    def opener(handler: cp._NoDatadogRedirect) -> SimpleNamespace:
+        # urllib calls this before issuing a redirected authenticated request.
+        with pytest.raises(ValueError, match="redirects"):
+            handler.redirect_request(
+                None, None, 302, "Found", {}, "https://example.com"
+            )
+
+        def request(req: Request, timeout: int) -> BytesIO:
+            assert req.full_url == "https://api.us5.datadoghq.com/api/v2/feature-flags"
+            assert req.get_header("Dd-api-key") == "test-api"
+            assert timeout == 15
+            return BytesIO(b'{"data": []}')
+
+        return SimpleNamespace(open=request)
+
+    monkeypatch.setattr(cp.urllib.request, "build_opener", opener)
+    assert cp._datadog_get("/api/v2/feature-flags", {"DD-API-KEY": "test-api"}) == {
+        "data": []
+    }
+    monkeypatch.setenv("DD_SITE", "datadoghq.com@example.com")
     with pytest.raises(ValueError, match="allowlist"):
-        cp._eppo_get("feature-flags", "token")
+        cp._datadog_get("/api/v2/feature-flags", {})
+
+
+def test_mock_preserves_new_missing_flags(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A declared missing flag and its related entry can release in a later week."""
+    for directory in ("prs", "results"):
+        (tmp_path / directory).mkdir()
+    (tmp_path / "prs/1.json").write_text(
+        json.dumps(
+            {
+                "title": "feat: example",
+                "body": "Flag: example",
+                "merged_at": "2026-01-06",
+                "files": ["src/components/widgets/example/controls/button.py"],
+                "fragments": [],
+            }
+        )
+    )
+    (tmp_path / "results/1.json").write_text(
+        json.dumps({"pass1": {"tier": "announce"}})
+    )
+    (tmp_path / "prs/2.json").write_text(
+        json.dumps(
+            {
+                "title": "fix: example",
+                "body": "",
+                "merged_at": "2026-01-07",
+                "files": ["src/components/widgets/example/controls/button.py"],
+                "fragments": [],
+            }
+        )
+    )
+    (tmp_path / "results/2.json").write_text(
+        json.dumps(
+            {
+                "pass1": {"tier": "announce", "reason": "New controls", "evidence": []},
+            }
+        )
+    )
+    group = {
+        "label": "Example",
+        "layer": "change",
+        "product": "cloud",
+        "rank": 1,
+        "prs": [2],
+    }
+    (tmp_path / "datadog-flags.json").write_text("{}")
+    monkeypatch.setattr(cp, "_claude", lambda *_: ({"groups": [group]}, {}))
+    monkeypatch.setattr(
+        cp,
+        "_write_group",
+        lambda *_: {
+            **group,
+            "title": "Example",
+            "entry": "Adds example controls.",
+            "meta": {"cost_usd": 0},
+        },
+    )
+    monkeypatch.setattr(cp, "_docs_pages", dict)
+    monkeypatch.setattr(cp, "_beta_features", list)
+    monkeypatch.setattr(cp, "_latest_bullets", lambda *_, **__: [])
+    cp.cmd_mock(
+        argparse.Namespace(
+            out=str(tmp_path),
+            results="results",
+            since="2026-01-05",
+            until="2026-01-12",
+            label=None,
+            workers=1,
+        )
+    )
+    output = tmp_path / "mock-2026-01-05"
+    held = json.loads((output / "held.json").read_text())
+    assert {number: entry["flag"] for number, entry in held.items()} == {
+        "1": "example",
+        "2": "example",
+    }
+    assert not (output / "mock.mdx").read_text().strip()
+    released, kept, dropped = cp._release_held(held, {"example": {"rolled_out": True}})
+    assert list(released) == ["1", "2"]
+    assert not kept
+    assert not dropped
