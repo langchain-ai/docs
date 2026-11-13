@@ -9,15 +9,46 @@ import OrgWorkspaceRole from '/snippets/langsmith/multi-workspace-org-roles.mdx'
 import PermissionReference from '/snippets/langsmith/permissions-reference.mdx';
 import RetentionDownstreamFeatures from '/snippets/langsmith/retention-downstream-features.mdx';
 
-This overview covers topics related to managing users, organizations, workspaces, agents, and applications within LangSmith.
+This overview covers topics related to managing users, organizations, workspaces, and agents within LangSmith.
 
 ## Resource hierarchy
 
-LangSmith organizes access and data in four levels. An [organization](#organizations) contains workspaces. Each [workspace](#workspaces) contains agents or applications. [Agents and applications](#agents-and-applications) group the [resources](#resources) you work with, such as tracing projects and datasets.
+LangSmith organizes access and data in four levels. An [organization](#organizations) contains workspaces. Each [workspace](#workspaces) contains agents. [Agents](#agents) organize your traces by environment and group the [resources](#resources) you work with, such as datasets and prompts.
+
+Self-hosted LangSmith groups resources by application instead of agent. For details, see [Self-hosted workspaces](#self-hosted-workspaces).
+
+The following diagram shows the relationship between organizations, workspaces, agents, environments, and resources:
+
+```mermaid actions={false}
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Inter, system-ui, sans-serif","lineColor":"#40668D","primaryColor":"#E5F4FF","primaryTextColor":"#030710","primaryBorderColor":"#006DDD","clusterBkg":"transparent"}}}%%
+flowchart TD
+    ORG("<div style='padding:2px 6px'><b>Organization</b></div>")
+    WSA("<div style='padding:2px 6px'><b>Workspace</b></div>")
+    WSB("<div style='padding:2px 6px'><b>Workspace</b></div>")
+    AG1("<div style='padding:2px 6px'>Agent</div>")
+    AG2("<div style='padding:2px 6px'>Agent</div>")
+    AG3("<div style='padding:2px 6px'>Agent</div>")
+    AG4("<div style='padding:2px 6px'>Agent</div>")
+    ENV("<div style='padding:2px 6px'><b>Environments</b><br/>Traces</div>")
+    RES("<div style='text-align:left;padding:2px 6px'><b>Resources</b><br/>&nbsp;•&nbsp; Datasets<br/>&nbsp;•&nbsp; Annotation queues<br/>&nbsp;•&nbsp; Prompts<br/>&nbsp;•&nbsp; Deployments</div>")
+
+    ORG ==> WSA & WSB
+    WSA ==> AG1 & AG2
+    WSB ==> AG3 & AG4
+    AG1 ==> ENV & RES
+
+    classDef neutral fill:#F2FAFF,stroke:#40668D,stroke-width:2px,color:#2F4B68,rx:10,ry:10
+    classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710,rx:10,ry:10
+    classDef output fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33,rx:10,ry:10
+
+    class ORG,WSA,WSB process
+    class AG1,AG2,AG3,AG4 neutral
+    class ENV,RES output
+```
 
 ### Organizations
 
-An organization is a logical grouping of users within LangSmith that defines shared settings applying across all of its workspaces. These settings govern organization-wide concerns rather than individual projects within a workspace. Common organization-level configurations include user management, single sign-on (SSO), OAuth provider configuration, custom role creation, billing, and usage tracking.
+An organization is a logical grouping of users within LangSmith that defines shared settings applying across all of its workspaces. These settings govern organization-wide concerns rather than the agents and resources within a workspace. Common organization-level configurations include user management, single sign-on (SSO), OAuth provider configuration, custom role creation, billing, and usage tracking.
 
 Typically, there is one organization per company. An organization can have multiple workspaces. For configuration details, see [Set up an organization](/langsmith/set-up-hierarchy#set-up-an-organization).
 
@@ -25,7 +56,7 @@ When you log in for the first time, a personal organization will be created for 
 
 | Feature             | Personal            | Shared                                                                                       |
 | ------------------- | ------------------- | -------------------------------------------------------------------------------------------- |
-| Maximum workspaces  | 1                   | Variable, depending on plan (see the [pricing page](https://www.langchain.com/pricing-langsmith)) |
+| Maximum workspaces  | 1                   | Variable, depending on plan (see the [pricing page](https://www.langchain.com/pricing)) |
 | Collaboration       | Cannot invite users | Can invite users                                                                             |
 | Billing: paid plans | Developer plan only | All other plans available                                                                    |
 
@@ -35,72 +66,41 @@ When you log in for the first time, a personal organization will be created for 
 Workspaces were formerly called Tenants. Some code and APIs may still reference the old name for a period of time during the transition.
 </Info>
 
-A workspace is a logical grouping of users and [resources](#resources) within an organization. Workspaces are commonly used to isolate business units, providing separation between projects and their associated resources.
+A workspace is a logical grouping of users, agents, and [resources](#resources) within an organization. Workspaces are commonly used to isolate business units, so each unit's agents and resources stay separate from other units'.
 
-A workspace separates trust boundaries for resources and access control. Users are granted permissions at the workspace level, which determine their access to resources in that workspace, including tracing projects, datasets, annotation queues, and prompts. To configure one, see [Set up a workspace](/langsmith/set-up-hierarchy#set-up-a-workspace). For details on permissions, see [Workspace roles](#workspace-roles).
+A workspace separates trust boundaries for resources and access control. Users are granted permissions at the workspace level, which determine their access to resources in that workspace, including datasets, annotation queues, and prompts. To configure one, see [Set up a workspace](/langsmith/set-up-hierarchy#set-up-a-workspace). For details on permissions, see [Workspace roles](#workspace-roles).
 
 <Tip>
-We recommend creating a separate workspace for each team within your organization. To organize resources even further, you can group them within a workspace by [agent or application](#agents-and-applications), depending on which information architecture your workspace uses.
+Create a separate workspace for each team within your organization. To organize resources even further, you can group them within a workspace by [agent](#agents).
 
 For guidance on different workspace organization models based on your team's isolation requirements, refer to [Workload isolation](/langsmith/workload-isolation).
 </Tip>
 
-### Agents and applications
+### Agents
 
-Agents and applications are logical groupings of resources within a workspace, one level below the workspace itself. The grouping keeps the UI organized by surfacing only the resources associated with the agent or application currently in context.
+An [agent](/langsmith/agent-registry#agent) is a logical grouping of resources within a workspace, one level below the workspace itself. The grouping keeps the UI organized by surfacing only the resources associated with the agent currently in context. An agent's traces divide further into [environments](/langsmith/agent-environments) drawn from a fixed set of four.
 
-What that grouping is called, and which control selects it, depends on which information architecture your workspace uses. The control at the top left tells you which one you are on:
+Select an agent from the agent switcher in the top bar, or select **All agents**. For more information, see [Navigate agents](/langsmith/navigate-agents).
 
-- **Agent-based workspaces** call it an [agent](/langsmith/agent-registry#agent), and an agent's traces divide further into [environments](/langsmith/agent-environments) drawn from a fixed set of four. Select one from the agent picker in the top bar, or select **All agents** to see every resource in the workspace. For more information, see [Navigate agents](/langsmith/navigate-agents).
-- **Project-based workspaces** call it an application, which can group any project within a team rather than an agent alone. Select one from the **Application** dropdown at the top of the sidebar in the [LangSmith UI](https://smith.langchain.com), or select **All applications** to see every resource in the workspace.
+LangSmith links traces to an agent through the agent's environments, and links datasets, prompts, annotation queues, and deployments to an agent with the reserved `Agent` [resource tag](#resource-tags) key.
 
-Both are built on top of [resource tags](/langsmith/administration-overview#resource-tags) and can be used to control resource access using [ABAC](/langsmith/organization-workspace-operations#access-policies).
-
-Any resource can be created without being tagged to either one. Those resources are visible when all agents or applications are in view.
+Tracing pages require you to select an agent. Datasets, prompts, annotation queues, and deployments can exist without an agent. Selecting **All agents** shows these unlinked resources along with every agent's resources. Selecting a specific agent shows only that agent's resources.
 
 ### Resources
 
-Resources are the concrete entities used to build, run, and observe applications and agents. Examples include [tracing projects](/langsmith/observability-concepts#tracing-projects), [prompts](/langsmith/prompt-context-hub), [datasets](/langsmith/manage-datasets), and [deployments](/langsmith/deployment). Resources are scoped to a specific agent or application.
+Resources are the concrete entities used to build, run, and observe agents. Examples include [prompts](/langsmith/prompt-context-hub), [datasets](/langsmith/manage-datasets), [annotation queues](/langsmith/annotation-queues), and [deployments](/langsmith/deployment). Resources can be scoped to a specific agent.
 
 ### Where settings live
-
-The following diagram shows the relationship between organizations, workspaces, agents or applications, and resources:
-
-```mermaid actions={false}
-%%{init: {"theme":"base","themeVariables":{"fontFamily":"Inter, system-ui, sans-serif","lineColor":"#40668D","primaryColor":"#E5F4FF","primaryTextColor":"#030710","primaryBorderColor":"#006DDD","clusterBkg":"transparent"}}}%%
-flowchart TD
-    ORG("<div style='padding:2px 6px'><b>Organization</b></div>")
-    WSA("<div style='padding:2px 6px'><b>Workspace</b></div>")
-    WSB("<div style='padding:2px 6px'><b>Workspace</b></div>")
-    AG1("<div style='padding:2px 6px'>Agent or<br/>application</div>")
-    AG2("<div style='padding:2px 6px'>Agent or<br/>application</div>")
-    AG3("<div style='padding:2px 6px'>Agent or<br/>application</div>")
-    AG4("<div style='padding:2px 6px'>Agent or<br/>application</div>")
-    RES("<div style='text-align:left;padding:2px 6px'><b>Resources</b><br/>&nbsp;•&nbsp; Tracing projects<br/>&nbsp;•&nbsp; Datasets<br/>&nbsp;•&nbsp; Annotation queues<br/>&nbsp;•&nbsp; Prompts<br/>&nbsp;•&nbsp; Deployments</div>")
-
-    ORG ==> WSA & WSB
-    WSA ==> AG1 & AG2
-    WSB ==> AG3 & AG4
-    AG1 ==> RES
-
-    classDef neutral fill:#F2FAFF,stroke:#40668D,stroke-width:2px,color:#2F4B68,rx:10,ry:10
-    classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710,rx:10,ry:10
-    classDef output fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33,rx:10,ry:10
-
-    class ORG,WSA,WSB process
-    class AG1,AG2,AG3,AG4 neutral
-    class RES output
-```
 
 See the table below for details on which features are available in which scope(s):
 
 | Resource/Setting                                                            | Scope            |
 | --------------------------------------------------------------------------- | ---------------- |
-| Trace Projects                                                              | Workspace or agent/application  |
-| Annotation Queues                                                           | Workspace or agent/application  |
-| Deployments                                                                 | Workspace or agent/application  |
-| Datasets & Experiments                                                      | Workspace or agent/application  |
-| Prompts                                                                     | Workspace or agent/application  |
+| Trace Projects                                                              | Workspace or agent              |
+| Annotation Queues                                                           | Workspace or agent              |
+| Deployments                                                                 | Workspace or agent              |
+| Datasets & Experiments                                                      | Workspace or agent              |
+| Prompts                                                                     | Workspace or agent              |
 | [Resource Tags](#resource-tags)                                             | Workspace                       |
 | API Keys                                                                    | Workspace                       |
 | Settings including Secrets, Feedback config, Models, Rules, and Shared URLs | Workspace                       |
@@ -126,6 +126,33 @@ Resource tags allow you to further segregate resources within a workspace for us
 LangSmith resource tags are very similar to tags in cloud services like [AWS](https://docs.aws.amazon.com/tag-editor/latest/userguide/tagging.html).
 
 Navigate to **Settings** in the [LangSmith UI](https://smith.langchain.com) to select the **Resource tags** page in the sidebar.
+
+### Separate environments
+
+An environment is a stage in your release process, such as development, staging, or production. Agents have environments built in, drawn from a fixed set of four. An [agent](/langsmith/agent-registry#agent) divides its traces across them, so no tagging convention is required. For more information, see [Agent environments](/langsmith/agent-environments).
+
+Self-hosted LangSmith separates environments with resource tags instead. For details, see [Self-hosted workspaces](#self-hosted-workspaces).
+
+In either case, avoid using separate workspaces for environment separation, because resources cannot be shared across workspaces, which prevents you from promoting resources such as prompts between environments.
+
+<Note>
+**Resource tags vs. commit tags for prompt management**
+
+While both types of tags can use environment terminology like `dev`, `staging`, and `prod`, they serve different purposes:
+
+- **Resource tags** (`Environment: prod`): Use these to *organize* resources across your workspace. Apply resource tags to tracing projects, datasets, and other resources (including prompts) to group them by environment.
+- [Commit tags](/langsmith/manage-prompts#commit-tags) (`prod` tag): Use these to manage which [prompt version](/langsmith/prompt-context-hub#prompts) your code references. Commit tags are labels that point to specific commits in a prompt's history. When your code pulls a prompt by tag name (e.g., `client.pull_prompt("prompt-name:prod")`), it retrieves whichever commit that tag currently points to. To promote a prompt from `staging` to `prod`, move the commit tag to point to the desired version.
+
+Resource tags organize **which resources** belong to an environment. Commit tags let you control **which version** of a prompt your code references without changing the code itself.
+</Note>
+
+### Self-hosted workspaces
+
+Self-hosted LangSmith uses project-based workspaces, which group resources by application rather than agent. An application can group any project within a team. Select one from the **Application** dropdown at the top of the sidebar, or select **All applications** to see every resource in the workspace.
+
+Project-based workspaces separate environments with [resource tags](#resource-tags): the default tag key `Environment`, with a different value per environment (for example, `dev`, `staging`, `prod`).
+
+To check which type of workspace you have, see [How agent-based workspaces differ](/langsmith/migrate-to-agent-based-workspaces#check-which-one-you-have).
 
 ## Users and roles
 
@@ -172,7 +199,7 @@ Avoid using PATs to authenticate requests from your application. Instead, use th
 
 #### Service keys
 
-Service keys are similar to PATs, but are used to authenticate requests to the LangSmith API on behalf of a service account. Only admins can create service keys. We recommend using service keys for applications or services that need to interact with the LangSmith API, such as LangGraph agents or other integrations.
+Service keys are similar to PATs, but are used to authenticate requests to the LangSmith API on behalf of a service account. Organization Admins can create any service key. Organization Operators and Organization Users can create workspace-scoped service keys in workspaces where their role grants `workspaces:manage-keys`, such as Workspace Admin. For the full breakdown, see [API keys operations](/langsmith/organization-workspace-operations#api-keys). We recommend using service keys for applications or services that need to interact with the LangSmith API, such as LangGraph agents or other integrations.
 
 Service keys may be scoped to a single workspace, multiple workspaces, or the entire organization. They can be used to authenticate requests to the LangSmith API for whichever workspace(s) it has access to.
 
@@ -267,26 +294,6 @@ On Enterprise plans, workspace roles define the permissions a user has within a 
 To give a group of users a role in several workspaces at once, use [teams](/langsmith/teams).
 </Tip>
 
-## Separate environments
-
-An environment is a stage in your release process, such as development, staging, or production. How to separate environments depends on which information architecture your workspace uses:
-
-- **Agent-based workspaces** have environments built in, drawn from a fixed set of four. An [agent](/langsmith/agent-registry#agent) divides its traces across them, and every trace lands in one environment of one agent, so no tagging convention is required. For more information, see [Agent environments](/langsmith/agent-environments).
-- **Project-based workspaces** use [resource tags](#resource-tags) to organize resources by environment, with the default tag key `Environment` and a different value per environment (for example, `dev`, `staging`, `prod`).
-
-In either case, avoid using separate workspaces for environment separation, because resources cannot be shared across workspaces, which prevents you from promoting resources such as prompts between environments.
-
-<Note>
-**Resource tags vs. commit tags for prompt management**
-
-While both types of tags can use environment terminology like `dev`, `staging`, and `prod`, they serve different purposes:
-
-- **Resource tags** (`Environment: prod`): Use these to *organize* resources across your workspace. Apply resource tags to tracing projects, datasets, and other resources (including prompts) to group them by environment.
-- [Commit tags](/langsmith/manage-prompts#commit-tags) (`prod` tag): Use these to manage which [prompt version](/langsmith/prompt-context-hub#prompts) your code references. Commit tags are labels that point to specific commits in a prompt's history. When your code pulls a prompt by tag name (e.g., `client.pull_prompt("prompt-name:prod")`), it retrieves whichever commit that tag currently points to. To promote a prompt from `staging` to `prod`, move the commit tag to point to the desired version.
-
-Resource tags organize **which resources** belong to an environment. Commit tags let you control **which version** of a prompt your code references without changing the code itself.
-</Note>
-
 ## Usage and billing
 
 ### Data retention
@@ -308,7 +315,7 @@ LangSmith has two tiers of traces based on Data Retention with the following cha
 
 |                      | Base             | Extended       |
 | -------------------- | ---------------- | -------------- |
-| **Price**            | [See pricing page](https://www.langchain.com/pricing-langsmith) | [See pricing page](https://www.langchain.com/pricing-langsmith) |
+| **Price**            | [See pricing page](https://www.langchain.com/pricing) | [See pricing page](https://www.langchain.com/pricing) |
 | **Retention Period** | 14 days          | 180 days       |
 
 <Warning>
@@ -458,7 +465,7 @@ This is thrown by our application and varies by organization based on their conf
 
 The [`POST /runs/query`](/langsmith/smith-api/run/query-runs) endpoint has additional per-tenant rate limits based on query parameters. See [Query traces using the SDK](/langsmith/export-traces#rate-limits) for details.
 
-#### Handling 429s responses in your application
+#### Handle 429 responses in your application
 
 Since some 429 responses are temporary and may succeed on a successive call, if you are directly calling the LangSmith API in your application we recommend implementing retry logic with exponential backoff and jitter.
 
@@ -497,7 +504,7 @@ The extended data retention traces limit has side effects. If the limit is alrea
 
 Each of these features may cause an auto upgrade, so we shut them off when the limit is reached.
 
-#### Updating usage limits
+#### Update usage limits
 
 Usage limits can be updated from the `Settings` page under `Usage and Billing`. Limit values are cached, so it may take a minute or two before the new limits apply.
 
@@ -526,6 +533,6 @@ Per-user limits count only traces attributed to a specific workspace member. Tra
 Limit values are cached, so it may take a minute or two before a new or changed limit applies.
 </Note>
 
-## Additional resources
+## See also
 
 * **[Release policy](/langsmith/release-versions)**: Learn about the self-hosted release channels, cadence, and version numbering.

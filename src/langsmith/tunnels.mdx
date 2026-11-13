@@ -4,13 +4,15 @@ sidebarTitle: Tunnels
 description: Reach services on your private network from LangSmith through an outbound-only connector, without exposing them to the public internet.
 ---
 
+import SaasRegionUrls from '/snippets/langsmith/saas-region-urls.mdx';
+
 <Note>
 Tunnels are in [alpha](/langsmith/release-stages). To request access for your organization, [contact our sales team](https://www.langchain.com/contact-sales).
 </Note>
 
 A tunnel lets LangSmith reach a service that runs on your private network, such as a model endpoint or an MCP server, without opening that service to the internet. You run a small connector inside your network. The connector opens an outbound connection to LangSmith, and LangSmith sends requests for your service over that connection. To send a sandbox's outbound connections through your network instead, use a [relay](/langsmith/relays).
 
-Tunnels are available on [LangSmith Cloud](/langsmith/cloud) in every region. They are not available for self-hosted or hybrid deployments.
+Tunnels are available on [LangSmith Cloud](/langsmith/cloud) in every region. They are not available for self-hosted or hybrid deployments, or in personal organizations.
 
 ## How tunnels work
 
@@ -18,7 +20,7 @@ Tunnels are available on [LangSmith Cloud](/langsmith/cloud) in every region. Th
 2. You run the connector inside your network and configure it with the tunnel's ID, an API key, and one or more **targets**. A target is a name mapped to a private address, for example `litellm` mapped to `http://litellm.internal:4000`.
 3. The connector connects outbound to LangSmith over HTTPS (port 443). Nothing connects in to your network, and the connector exposes no ports.
 4. Each HTTP target gets a **tunnel URL**. You use that URL in LangSmith wherever you would use the service's address.
-5. When a LangSmith feature calls a tunnel URL, LangSmith checks that the caller belongs to the tunnel's organization and sends the request to the connector, which forwards it to the target.
+5. When a request reaches a tunnel URL, LangSmith checks that the caller belongs to the tunnel's organization. LangSmith then sends the request to the connector, which forwards it to the target.
 
 ## Set up a tunnel
 
@@ -27,8 +29,6 @@ To create a tunnel, you need the [Organization Admin or Organization Operator](/
 <Steps>
   <Step title="Open Tunnels settings" icon="settings">
     In LangSmith, go to **Settings**, then select **Tunnels** under **Infrastructure**.
-
-    ![Tunnels settings page with no tunnels and a Create tunnel button](/langsmith/images/tunnels-empty.png)
   </Step>
   <Step title="Create the tunnel" icon="plus">
     Select **Create tunnel**. Enter a name and an optional description, then select **Create tunnel**.
@@ -46,12 +46,7 @@ To create a tunnel, you need the [Organization Admin or Organization Operator](/
   <Step title="Run the connector" icon="terminal">
     Run the connector inside your network. If your organization is not in the GCP US region, set the endpoint to your region's API URL:
 
-    | Region | Endpoint |
-    | --- | --- |
-    | GCP US | `https://api.smith.langchain.com` (default) |
-    | GCP EU | `https://eu.api.smith.langchain.com` |
-    | GCP APAC | `https://apac.api.smith.langchain.com` |
-    | AWS US | `https://aws.api.smith.langchain.com` |
+    <SaasRegionUrls azure={false} />
 
     <Tabs>
       <Tab title="Kubernetes (Helm)">
@@ -125,6 +120,7 @@ You can use a tunnel URL in place of a service address in:
 - [Model configurations](/langsmith/model-configurations) and [custom model endpoints](/langsmith/custom-endpoint), as the base URL. This covers the Playground, experiments, and online evaluators that use the model.
 - [LangSmith Fleet](/langsmith/fleet), as a model's base URL or an MCP server URL.
 - MCP servers that use OAuth, for the token endpoint. The authorization endpoint must stay reachable from the browser, so it cannot be a tunnel URL.
+- [Agent Servers](/langsmith/deploy-to-cloud) on LangSmith Cloud, from your agent's own code. See [Call a tunnel from an Agent Server](#call-a-tunnel-from-an-agent-server).
 
 Keep the following in mind:
 
@@ -132,6 +128,34 @@ Keep the following in mind:
 - Requests through a tunnel do not follow redirects.
 - A model reached through a tunnel needs its own API key in its configuration. LLM auth proxy credentials are not sent through a tunnel.
 - Your target must start responding within 30 seconds. A single request can stream for up to 1 hour, and request bodies can be up to 32 MiB.
+
+## Call a tunnel from an Agent Server
+
+An agent running on an Agent Server on LangSmith Cloud can call a tunnel URL from its own code. Any Agent Server in the tunnel's organization can call the tunnel, whatever its workspace. Send the Agent Server's LangSmith API key in the `X-Api-Key` header. You do not need to create a key: the control plane sets `LANGSMITH_API_KEY` on every Agent Server it creates. For more information, see [LangSmith integration](/langsmith/control-plane#langsmith-integration).
+
+```python
+import os
+
+import httpx
+
+TUNNEL_URL = "https://<handle>.tunnels.smith.langchain.com"
+
+response = httpx.get(
+    TUNNEL_URL,
+    headers={"X-Api-Key": os.environ["LANGSMITH_API_KEY"]},
+)
+```
+
+LangSmith checks the key, removes it, and forwards the request to your service. A request without the key returns `403` with `connection access denied`.
+
+An `Authorization` header passes through unchanged. If your service expects its own `X-Api-Key` or `Cookie` header instead, send it as `X-Tunnel-Origin-X-Api-Key` or `X-Tunnel-Origin-Cookie`. LangSmith renames it back before the request reaches your service:
+
+```python
+headers = {
+    "X-Api-Key": os.environ["LANGSMITH_API_KEY"],
+    "X-Tunnel-Origin-X-Api-Key": os.environ["MY_SERVICE_API_KEY"],
+}
+```
 
 ## Security
 
@@ -154,7 +178,7 @@ The connector makes an outbound WebSocket connection over TLS to your region's L
 
 LangSmith removes its own credentials and identity headers before a request reaches your service: `X-Service-Key`, `X-Api-Key`, `X-Tenant-Id`, `X-Organization-Id`, `X-User-Id`, `X-Data-Plane-Auth`, `Cookie`, and any header that starts with `X-Langsmith-` or `X-Langchain-`. `Authorization` passes through, so a service that authenticates with a bearer token works without changes.
 
-If your service authenticates with its own `X-Api-Key` or `Cookie` header, LangSmith features deliver the header you configure to your service. Headers named after LangSmith's identity headers, such as `X-Tenant-Id`, never reach your service.
+If your service authenticates with its own `X-Api-Key` or `Cookie` header, LangSmith features deliver the header you configure to your service. From your own code, send the header with the `X-Tunnel-Origin-` prefix, as described in [Call a tunnel from an Agent Server](#call-a-tunnel-from-an-agent-server). Headers named after LangSmith's identity headers, such as `X-Tenant-Id`, never reach your service.
 
 ### Encryption
 

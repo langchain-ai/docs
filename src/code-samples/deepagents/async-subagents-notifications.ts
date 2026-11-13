@@ -1,7 +1,11 @@
 // :remove-start:
-import { AIMessage, HumanMessage } from "@langchain/core/messages";
+import {
+  addNotificationMetadata,
+  AIMessage,
+  HumanMessage,
+} from "@langchain/core/messages";
 
-const event = {
+const taskEvent = {
   task_id: "thread-123",
   agent_name: "researcher",
   status: "success",
@@ -10,22 +14,25 @@ const event = {
 const state = {
   messages: [
     new HumanMessage("Research topic X"),
-    new AIMessage("Started task thread-123"),
-    new HumanMessage({
-      content: [{ type: "text", text: "[SYSTEM NOTIFICATION]" }],
-      additional_kwargs: { deepagents_notification: event },
-    }),
+    new AIMessage("I have started the research."),
+    addNotificationMetadata(
+      new HumanMessage({
+        content: [{ type: "text", text: "<task-notification>" }],
+      }),
+      { source: "async_subagent", data: taskEvent },
+    ),
   ],
 };
 const seen: string[] = [];
 // :remove-end:
 
 // :snippet-start: async-subagents-notifications-js
+import { getNotificationMetadata } from "@langchain/core/messages";
+
 for (const message of state.messages) {
-  const event = message.additional_kwargs.deepagents_notification as
-    | { agent_name: string; status: string }
-    | undefined;
-  if (event) {
+  const metadata = getNotificationMetadata(message);
+  if (metadata?.source === "async_subagent") {
+    const event = metadata.data as { agent_name: string; status: string };
     console.log(event.agent_name, event.status); // success, error, timeout, cancelled, or waiting
     // :remove-start:
     seen.push(event.status);

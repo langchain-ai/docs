@@ -26,7 +26,7 @@ def configurable_model(
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="google_genai:gemini-3.6-flash",
+    model="google_genai:gemini-4-hydrogen",
     middleware=[configurable_model],
     context_schema=Context,
 )
@@ -35,6 +35,6 @@ agent = create_deep_agent(
 result = agent.invoke(
     {"messages": [{"role": "user", "content": "Hello!"}]},
     # KEEP MODEL
-    context=Context(model="openai:gpt-5.5"),
+    context=Context(model="openai:gpt-6.1-sol"),
 )
 # :snippet-end:

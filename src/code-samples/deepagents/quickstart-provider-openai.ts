@@ -26,7 +26,7 @@ Use this to run an internet search for a given query. You can specify the max nu
 `;
 
 const agent = createDeepAgent({
-  model: "openai:gpt-5.5",
+  model: "openai:gpt-6.1-sol",
   tools: [internetSearch],
   systemPrompt: researchInstructions,
 });

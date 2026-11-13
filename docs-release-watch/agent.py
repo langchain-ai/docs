@@ -52,7 +52,9 @@ skip the feature (already documented) unless the docs statement is wrong.
 Return one JSON research report in the shape required by the release-research
 skill (product, head_tag, base_tag, features[], skipped[]). Every feature that
 needs docs must include evidence that will pass the write-tool GitHub
-verification gate. Do not invent symbols or paths.
+verification gate. Prefer symbol over quote. Quotes must be exact substrings
+from get_product_source_file, never paraphrases of issues or release notes.
+Do not invent symbols or paths.
 """
 
 agent = define_deep_agent(

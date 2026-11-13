@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "LangSmith Deployment",
+    "title": "LangSmith Agent Server",
     "version": "0.1.0"
   },
   "tags": [
@@ -1031,6 +1031,37 @@
             },
             "name": "subgraphs",
             "in": "query"
+          },
+          {
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "values",
+                      "next",
+                      "tasks",
+                      "checkpoint",
+                      "metadata",
+                      "created_at",
+                      "parent_checkpoint",
+                      "interrupts"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^values\\.[A-Za-z0-9_-]+$"
+                  }
+                ]
+              },
+              "title": "Select",
+              "description": "Specify which fields of the state to return. Use `values.<key>` to return only that key of the state values, for example `values.messages`. If not provided, all fields are returned."
+            },
+            "name": "select",
+            "in": "query"
           }
         ],
         "responses": {
@@ -1149,6 +1180,37 @@
               "description": "Whether to include subgraphs in the response."
             },
             "name": "subgraphs",
+            "in": "query"
+          },
+          {
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "values",
+                      "next",
+                      "tasks",
+                      "checkpoint",
+                      "metadata",
+                      "created_at",
+                      "parent_checkpoint",
+                      "interrupts"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^values\\.[A-Za-z0-9_-]+$"
+                  }
+                ]
+              },
+              "title": "Select",
+              "description": "Specify which fields of the state to return. Use `values.<key>` to return only that key of the state values, for example `values.messages`. If not provided, all fields are returned."
+            },
+            "name": "select",
             "in": "query"
           }
         ],
@@ -1650,7 +1712,7 @@
             "schema": {
               "type": "string",
               "title": "Last Event ID",
-              "description": "The ID of the last event received. Used to resume streaming from a specific point. Pass '-' to resume from the beginning."
+              "description": "The ID of the last event received. Used to resume streaming from a specific point. Pass '-' to resume from the beginning. A `gap` event is sent, first on a resume or mid-stream, when events the client should receive may be missing. Its `reason` is `expired` when they may have aged out of the stream's history; `unknown_id` when the ID is later than any event the thread streamed, and the stream starts over from the beginning; or `too_large` when an event was over the size limit, with that event's stream mode in `mode`. `expired` errs on the safe side: once the stream's history has expired, a resume gets it unless its ID is the thread's last streamed event, which is kept for an hour after that."
             },
             "name": "Last-Event-ID",
             "in": "header"
@@ -1673,7 +1735,7 @@
               ],
               "default": ["run_modes"],
               "title": "Stream Modes",
-              "description": "Stream modes to control which events are returned. 'lifecycle' returns only run start/end events, 'run_modes' returns all run events (default behavior), 'state_update' returns only state update events."
+              "description": "Stream modes to control which events are returned. 'lifecycle' returns only run start/end events and `interrupts` events (the interrupts a run answers), 'run_modes' returns all run events (default behavior), 'state_update' returns only state update events."
             },
             "name": "stream_modes",
             "in": "query"
@@ -2092,6 +2154,20 @@
             },
             "name": "thread_id",
             "in": "path"
+          },
+          {
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 32,
+              "title": "Namespace",
+              "description": "A conversation to stream: a `|`-joined namespace, empty for the main agent (the root graph) or a subagent's, such as `tools:<task_id>`. The stream keeps that conversation's events without those of the subagents it starts (subgraphs that the `tools` node runs), but with the `lifecycle` events of every subagent below it. Repeat it to stream several conversations. Events about the whole run, such as `metadata` and `error`, always pass. Events of the `events` and `messages` modes (not `messages-tuple`) carry no namespace, so they stream with the main agent's conversation. Subagent events exist only on runs created with `stream_subgraphs`, except `lifecycle` events, which come either way. If not provided, all of the run's events are returned."
+            },
+            "name": "namespace",
+            "in": "query"
           }
         ],
         "requestBody": {
@@ -2111,7 +2187,7 @@
               "text/event-stream": {
                 "schema": {
                   "type": "string",
-                  "description": "The server will send a stream of events in SSE format.\n\n**Example event**:\n\nid: 1\n\nevent: message\n\ndata: {}"
+                  "description": "The server will send a stream of events in SSE format. The last event is `end`, with data `{\"run_id\": ..., \"status\": ...}` giving the run's final status: `success` (also when the run stops at an interrupt), `error`, `timeout`, `interrupted` (the run was cancelled) or, for a stateless run, `rollback`. A run that was deleted, or rolled back on a thread, has no status left, so its stream ends with its `error` event instead. If a stream closes with neither, get the run to see how it ended.\n\n**Example event**:\n\nid: 1\n\nevent: message\n\ndata: {}"
                 }
               }
             },
@@ -2444,7 +2520,7 @@
       "get": {
         "tags": ["Thread Runs"],
         "summary": "Join Run Stream",
-        "description": "Join a run stream. This endpoint streams output in real-time from a run similar to the /threads/__THREAD_ID__/runs/stream endpoint. If the run has been created with `stream_resumable=true`, the stream can be resumed from the last seen event ID.",
+        "description": "Join a run stream. This endpoint streams output in real-time from a run similar to the /threads/__THREAD_ID__/runs/stream endpoint. The stream can be resumed from the last seen event ID, or from a checkpoint of the run with `checkpoint_id`. In the in-memory runtime (`langgraph dev`), only a run created with `stream_resumable=true` can be resumed. A `gap` event is sent, first on a resume or mid-stream, when events the client should receive may be missing. Its `reason` is `expired` when they may have aged out of the stream's history; `unknown_id` when the `Last-Event-ID` is later than any event the thread streamed, and the stream starts over from the run's first event; or `too_large` when an event was over the size limit, with that event's stream mode in `mode`. `expired` errs on the safe side: once the stream's history has expired, a resume gets it unless its ID is the thread's last streamed event, which is kept for an hour after that.",
         "operationId": "stream_run_http_threads__thread_id__runs__run_id__join_get",
         "parameters": [
           {
@@ -2476,10 +2552,21 @@
             "schema": {
               "type": "string",
               "title": "Last Event ID",
-              "description": "The ID of the last event received. Set to -1 if you want to stream all events. Requires `stream_resumable=true` to be set when creating the run."
+              "description": "The ID of the last event received. Set to -1 if you want to stream all events. In the in-memory runtime (`langgraph dev`), requires `stream_resumable=true` when creating the run."
             },
             "name": "Last-Event-ID",
             "in": "header"
+          },
+          {
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Checkpoint ID",
+              "description": "Resume after this checkpoint of the run, such as the one the thread's state was just loaded at: events up to the checkpoint are skipped. Used when `Last-Event-ID` is absent, `-` or `-1`; a real `Last-Event-ID` takes precedence. If the run's stream has no record of the checkpoint, the stream starts from the beginning of the run, as with -1. Send it with `Last-Event-ID: -1`, so a server that ignores it replays the whole run instead of streaming only new events. The in-memory runtime (`langgraph dev`) ignores it and replays the whole run, which needs `stream_resumable=true` when creating the run."
+            },
+            "name": "checkpoint_id",
+            "in": "query"
           },
           {
             "required": false,
@@ -2497,7 +2584,8 @@
                     "events",
                     "debug",
                     "custom",
-                    "tools"
+                    "tools",
+                    "lifecycle"
                   ]
                 },
                 {
@@ -2514,15 +2602,30 @@
                       "events",
                       "debug",
                       "custom",
-                      "tools"
+                      "tools",
+                      "lifecycle"
                     ]
                   }
                 }
               ],
               "title": "Stream Mode",
-              "description": "Stream modes to control which of the run's events are returned. Only modes the run was created with have events. If not provided, all of the run's events are returned."
+              "description": "Stream modes to control which of the run's events are returned. Only modes the run was created with have events. Events about the whole run, such as `metadata` (which starts each attempt of the run), `error` and `feedback`, always pass, except on the `langgraph dev` server, which passes only `error`. If not provided, all of the run's events are returned."
             },
             "name": "stream_mode",
+            "in": "query"
+          },
+          {
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 32,
+              "title": "Namespace",
+              "description": "A conversation to stream: a `|`-joined namespace, empty for the main agent (the root graph) or a subagent's, such as `tools:<task_id>`. The stream keeps that conversation's events without those of the subagents it starts (subgraphs that the `tools` node runs), but with the `lifecycle` events of every subagent below it. Repeat it to stream several conversations. Events about the whole run, such as `metadata` and `error`, always pass. Events of the `events` and `messages` modes (not `messages-tuple`) carry no namespace, so they stream with the main agent's conversation. Subagent events exist only on runs created with `stream_subgraphs`, except `lifecycle` events, which come either way. If not provided, all of the run's events are returned."
+            },
+            "name": "namespace",
             "in": "query"
           },
           {
@@ -2544,7 +2647,7 @@
               "text/event-stream": {
                 "schema": {
                   "type": "string",
-                  "description": "The server will send a stream of events in SSE format.\n\n**Example event**:\n\nid: 1\n\nevent: message\n\ndata: {}"
+                  "description": "The server will send a stream of events in SSE format. The last event is `end`, with data `{\"run_id\": ..., \"status\": ...}` giving the run's final status: `success` (also when the run stops at an interrupt), `error`, `timeout`, `interrupted` (the run was cancelled) or, for a stateless run, `rollback`. A run that was deleted, or rolled back on a thread, has no status left, so its stream ends with its `error` event instead. If a stream closes with neither, get the run to see how it ended.\n\n**Example event**:\n\nid: 1\n\nevent: message\n\ndata: {}"
                 }
               }
             }
@@ -2622,6 +2725,17 @@
               "default": "interrupt"
             },
             "name": "action",
+            "in": "query"
+          },
+          {
+            "description": "Use `taken` to mark run input absorbed for steering. Records a `cancel_reason` starting with `taken:`. Only supported with `action=interrupt`; cancellation behavior is unchanged. A 404 response means the run was not cancelled.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["taken"],
+              "title": "Reason"
+            },
+            "name": "reason",
             "in": "query"
           }
         ],
@@ -2808,6 +2922,22 @@
         "summary": "Create Run, Stream Output",
         "description": "Create a run and stream the output.",
         "operationId": "stream_run_stateless_runs_stream_post",
+        "parameters": [
+          {
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 32,
+              "title": "Namespace",
+              "description": "A conversation to stream: a `|`-joined namespace, empty for the main agent (the root graph) or a subagent's, such as `tools:<task_id>`. The stream keeps that conversation's events without those of the subagents it starts (subgraphs that the `tools` node runs), but with the `lifecycle` events of every subagent below it. Repeat it to stream several conversations. Events about the whole run, such as `metadata` and `error`, always pass. Events of the `events` and `messages` modes (not `messages-tuple`) carry no namespace, so they stream with the main agent's conversation. Subagent events exist only on runs created with `stream_subgraphs`, except `lifecycle` events, which come either way. If not provided, all of the run's events are returned."
+            },
+            "name": "namespace",
+            "in": "query"
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -2825,7 +2955,7 @@
               "text/event-stream": {
                 "schema": {
                   "type": "string",
-                  "description": "The server will send a stream of events in SSE format.\n\n**Example event**:\n\nid: 1\n\nevent: message\n\ndata: {}"
+                  "description": "The server will send a stream of events in SSE format. The last event is `end`, with data `{\"run_id\": ..., \"status\": ...}` giving the run's final status: `success` (also when the run stops at an interrupt), `error`, `timeout`, `interrupted` (the run was cancelled) or, for a stateless run, `rollback`. A run that was deleted, or rolled back on a thread, has no status left, so its stream ends with its `error` event instead. If a stream closes with neither, get the run to see how it ended.\n\n**Example event**:\n\nid: 1\n\nevent: message\n\ndata: {}"
                 }
               }
             },
@@ -4694,7 +4824,7 @@
           "stream_resumable": {
             "type": "boolean",
             "title": "Stream Resumable",
-            "description": "Whether to persist the stream chunks in order to resume the stream later.",
+            "description": "Whether to keep the run's stream events so a client can rejoin the run. Deployments keep every run's events for `RESUMABLE_STREAM_TTL_SECONDS` (2 minutes by default) regardless of this field. The in-memory runtime (`langgraph dev`) keeps them only when it is true.",
             "default": false
           },
           "durability": {
@@ -4874,7 +5004,7 @@
           "stream_resumable": {
             "type": "boolean",
             "title": "Stream Resumable",
-            "description": "Whether to persist the stream chunks in order to resume the stream later.",
+            "description": "Whether to keep the run's stream events so a client can rejoin the run. Deployments keep every run's events for `RESUMABLE_STREAM_TTL_SECONDS` (2 minutes by default) regardless of this field. The in-memory runtime (`langgraph dev`) keeps them only when it is true.",
             "default": false
           },
           "durability": {
@@ -5384,7 +5514,8 @@
                     "events",
                     "debug",
                     "custom",
-                    "tools"
+                    "tools",
+                    "lifecycle"
                   ]
                 },
                 "type": "array"
@@ -5401,12 +5532,13 @@
                   "events",
                   "debug",
                   "custom",
-                  "tools"
+                  "tools",
+                  "lifecycle"
                 ]
               }
             ],
             "title": "Stream Mode",
-            "description": "The stream mode(s) to use.",
+            "description": "The stream mode(s) to use. `lifecycle` sends `lifecycle|<namespace>` events when a subagent (a subgraph) starts and ends: `{\"event\": \"started\" | \"completed\" | \"failed\" | \"interrupted\", \"namespace\", \"tool_call_id\"?, \"error\"?}`, with the id of the tool call that started it, with or without `stream_subgraphs`. `tools` sends `on_tool_start`, `on_tool_event`, `on_tool_end` and `on_tool_error` events with `toolCallId` and `name` (from langgraph 1.2.19 and @langchain/langgraph 1.6.0; a tool error's text is never sent).",
             "default": ["values"]
           },
           "stream_subgraphs": {
@@ -5418,7 +5550,13 @@
           "stream_resumable": {
             "type": "boolean",
             "title": "Stream Resumable",
-            "description": "Whether to persist the stream chunks in order to resume the stream later.",
+            "description": "Whether to keep the run's stream events so a client can rejoin the run. Deployments keep every run's events for `RESUMABLE_STREAM_TTL_SECONDS` (2 minutes by default) regardless of this field. The in-memory runtime (`langgraph dev`) keeps them only when it is true.",
+            "default": false
+          },
+          "strict_resume": {
+            "type": "boolean",
+            "title": "Strict Resume",
+            "description": "Refuse a `command.resume` that names an interrupt that isn't pending, before the graph runs: the run ends with `UnknownInterruptError` and the thread keeps its state. Needs a langgraph version with strict resume; `/info` reports `strict_resume` when it is available.",
             "default": false
           },
           "feedback_keys": {
@@ -5584,7 +5722,8 @@
                     "events",
                     "debug",
                     "custom",
-                    "tools"
+                    "tools",
+                    "lifecycle"
                   ]
                 },
                 "type": "array"
@@ -5601,12 +5740,13 @@
                   "events",
                   "debug",
                   "custom",
-                  "tools"
+                  "tools",
+                  "lifecycle"
                 ]
               }
             ],
             "title": "Stream Mode",
-            "description": "The stream mode(s) to use.",
+            "description": "The stream mode(s) to use. `lifecycle` sends `lifecycle|<namespace>` events when a subagent (a subgraph) starts and ends: `{\"event\": \"started\" | \"completed\" | \"failed\" | \"interrupted\", \"namespace\", \"tool_call_id\"?, \"error\"?}`, with the id of the tool call that started it, with or without `stream_subgraphs`. `tools` sends `on_tool_start`, `on_tool_event`, `on_tool_end` and `on_tool_error` events with `toolCallId` and `name` (from langgraph 1.2.19 and @langchain/langgraph 1.6.0; a tool error's text is never sent).",
             "default": ["values"]
           },
           "feedback_keys": {
@@ -5626,7 +5766,7 @@
           "stream_resumable": {
             "type": "boolean",
             "title": "Stream Resumable",
-            "description": "Whether to persist the stream chunks in order to resume the stream later.",
+            "description": "Whether to keep the run's stream events so a client can rejoin the run. Deployments keep every run's events for `RESUMABLE_STREAM_TTL_SECONDS` (2 minutes by default) regardless of this field. The in-memory runtime (`langgraph dev`) keeps them only when it is true.",
             "default": false
           },
           "on_completion": {
@@ -5819,6 +5959,30 @@
             "title": "Exclude Metadata",
             "description": "Exclude threads whose metadata contains this object, or any object in this list. Uses the same matching as `metadata`; threads missing the keys are not excluded."
           },
+          "created_after": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created After",
+            "description": "Only include threads created at or after this time (ISO 8601). Timestamps without a timezone are treated as UTC."
+          },
+          "created_before": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created Before",
+            "description": "Only include threads created before this time (ISO 8601). Timestamps without a timezone are treated as UTC."
+          },
+          "state_updated_after": {
+            "type": "string",
+            "format": "date-time",
+            "title": "State Updated After",
+            "description": "Only include threads whose state last changed at or after this time (ISO 8601). Timestamps without a timezone are treated as UTC."
+          },
+          "state_updated_before": {
+            "type": "string",
+            "format": "date-time",
+            "title": "State Updated Before",
+            "description": "Only include threads whose state last changed before this time (ISO 8601). Timestamps without a timezone are treated as UTC."
+          },
           "values": {
             "type": "object",
             "title": "Values",
@@ -5922,6 +6086,30 @@
             ],
             "title": "Exclude Metadata",
             "description": "Exclude threads whose metadata contains this object, or any object in this list. Uses the same matching as `metadata`; threads missing the keys are not excluded."
+          },
+          "created_after": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created After",
+            "description": "Only include threads created at or after this time (ISO 8601). Timestamps without a timezone are treated as UTC."
+          },
+          "created_before": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created Before",
+            "description": "Only include threads created before this time (ISO 8601). Timestamps without a timezone are treated as UTC."
+          },
+          "state_updated_after": {
+            "type": "string",
+            "format": "date-time",
+            "title": "State Updated After",
+            "description": "Only include threads whose state last changed at or after this time (ISO 8601). Timestamps without a timezone are treated as UTC."
+          },
+          "state_updated_before": {
+            "type": "string",
+            "format": "date-time",
+            "title": "State Updated Before",
+            "description": "Only include threads whose state last changed before this time (ISO 8601). Timestamps without a timezone are treated as UTC."
           },
           "values": {
             "type": "object",
@@ -6182,6 +6370,32 @@
             "type": "boolean",
             "title": "Subgraphs",
             "description": "Include subgraph states."
+          },
+          "select": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "values",
+                    "next",
+                    "tasks",
+                    "checkpoint",
+                    "metadata",
+                    "created_at",
+                    "parent_checkpoint",
+                    "interrupts"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "pattern": "^values\\.[A-Za-z0-9_-]+$"
+                }
+              ]
+            },
+            "title": "Select",
+            "description": "Specify which fields of the state to return. Use `values.<key>` to return only that key of the state values, for example `values.messages`. If not provided, all fields are returned."
           }
         },
         "required": ["checkpoint"],
@@ -6934,7 +7148,7 @@
           "stream_resumable": {
             "type": "boolean",
             "title": "Stream Resumable",
-            "description": "Whether to persist the stream chunks in order to resume the stream later.",
+            "description": "Whether to keep the run's stream events so a client can rejoin the run. Deployments keep every run's events for `RESUMABLE_STREAM_TTL_SECONDS` (2 minutes by default) regardless of this field. The in-memory runtime (`langgraph dev`) keeps them only when it is true.",
             "default": false
           },
           "durability": {
