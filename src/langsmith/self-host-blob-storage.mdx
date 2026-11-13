@@ -375,6 +375,95 @@ Neon Object Storage does not run lifecycle rules. Make sure your [cleanup job](#
   </Tab>
 </Tabs>
 
+### Redaction rules prefix
+
+If you use redaction rules, LangSmith writes the unredacted large fields of runs in those projects to the `ttl_1d/` prefix until the runs are redacted, then deletes them. Add a lifecycle rule that expires the `ttl_1d/` prefix after 1 day, so that any object LangSmith could not delete does not stay in your bucket.
+
+<Warning>
+Without this rule, an unredacted object that LangSmith could not delete is never removed automatically.
+</Warning>
+
+Lifecycle rules work in whole days, so an object can remain for up to about two days. Add the rule to your LangSmith blob storage bucket, not to a [SmithDB](/langsmith/self-host-smithdb-infrastructure#object-storage) bucket.
+
+The prefix in these rules assumes the default key layout, `ttl_1d/...`. If you set `S3_SINGLE_REGION_BUCKET_NAME` and `FF_SINGLE_REGION_BUCKET_ENABLED_TENANTS`, LangSmith prepends the bucket name to every key, so use `<bucket-name>/ttl_1d/` as the prefix instead.
+
+<Tabs>
+  <Tab title="AWS">
+
+```hcl
+rule {
+  id      = "redaction-raw"
+  prefix  = "ttl_1d/"
+  enabled = true
+  expiration {
+    days = 1
+  }
+  noncurrent_version_expiration {
+    noncurrent_days = 1
+  }
+}
+```
+
+  </Tab>
+  <Tab title="GCP">
+
+If versioning is enabled on the bucket, deleting an object keeps it as a noncurrent version, so also add the second rule.
+
+```hcl
+lifecycle_rule {
+  condition {
+    age            = 1
+    matches_prefix = ["ttl_1d"]
+  }
+  action {
+    type = "Delete"
+  }
+}
+lifecycle_rule {
+  condition {
+    days_since_noncurrent_time = 1
+    matches_prefix             = ["ttl_1d"]
+  }
+  action {
+    type = "Delete"
+  }
+}
+```
+
+  </Tab>
+  <Tab title="Azure">
+
+```hcl
+rule {
+  name    = "redaction-raw"
+  enabled = true
+  type    = "Lifecycle"
+  filters {
+    prefix_match = ["my-container/ttl_1d"]
+    blob_types   = ["blockBlob"]
+  }
+  actions {
+    base_blob {
+      delete_after_days_since_creation_greater_than = 1
+    }
+    snapshot {
+      delete_after_days_since_creation_greater_than = 1
+    }
+    version {
+      delete_after_days_since_creation_greater_than = 1
+    }
+  }
+}
+```
+
+  </Tab>
+  <Tab title="Neon">
+
+Neon Object Storage does not run lifecycle rules. Make sure your [cleanup job](#neon-object-storage-lifecycle-rules) also deletes objects under `ttl_1d/` once they are older than 1 day.
+
+  </Tab>
+</Tabs>
+
 If you have customized the TTLs in your LangSmith configuration, you will need to adjust the TTLs in your blob storage configuration to match.
 
 <Tabs>
@@ -496,7 +585,7 @@ resource "azurerm_storage_management_policy" "example" {
 ### Neon Object Storage lifecycle rules
 
 <Warning>
-Neon Object Storage accepts and stores lifecycle configurations, but does not run expiration rules. Objects under the `ttl_s/`, `ttl_l/`, and `ttl_XXd/` prefixes are not deleted automatically, so blob data outlives the TTLs configured in LangSmith. For more information, see [Neon Object Storage troubleshooting](https://neon.com/docs/storage/troubleshooting).
+Neon Object Storage accepts and stores lifecycle configurations, but does not run expiration rules. Objects under the `ttl_s/`, `ttl_l/`, `ttl_XXd/`, and `ttl_1d/` prefixes are not deleted automatically, so blob data outlives the TTLs configured in LangSmith. For more information, see [Neon Object Storage troubleshooting](https://neon.com/docs/storage/troubleshooting).
 </Warning>
 
 To enforce TTLs, run a scheduled job (for example, a Kubernetes CronJob) that deletes objects older than each prefix's TTL.
