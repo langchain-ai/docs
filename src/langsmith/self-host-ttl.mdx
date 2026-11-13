@@ -23,7 +23,7 @@ LangSmith assigns the tier in the following order, highest precedence first:
 
 LangSmith then resolves the retention period for the assigned tier:
 
-- **`longlived`**: The workspace extended retention period (if set through the UI), otherwise the `longlived` value from the [Helm configuration](#requirements).
+- **`longlived`**: The project extended retention period (if set, see [Project-level extended retention for self-hosted](/langsmith/data-purging-compliance#project-level-extended-retention-for-self-hosted)), otherwise the workspace extended retention period (if set through the UI), otherwise the `longlived` value from the [Helm configuration](#requirements). A Base project set in the UI has no period of its own, so its upgraded traces use the workspace period.
 - **`shortlived`**: The `shortlived` value from the [Helm configuration](#requirements).
 
 The Helm chart defaults to 14 days for `shortlived` and 400 days for `longlived`.
@@ -34,6 +34,8 @@ Configure retention through Helm or environment variable settings:
 
 - **Enabled**: Enable or disable automatic data retention. When enabled, set your default organization and project TTL tiers through the UI (see [data retention guide](/langsmith/usage-and-billing#data-retention)).
 - **Retention periods**: Set system-wide retention periods for `shortlived` and `longlived` traces. Once set, manage retention at the project level or set an organization-wide default for new projects.
+- **Per-project extended retention**: Available from v0.18.0 and disabled by default. Set `config.ttl.perProjectRetention.enabled: true` to enable it. See [Project-level extended retention for self-hosted](/langsmith/data-purging-compliance#project-level-extended-retention-for-self-hosted).
+- **Extended retention periods** (optional): Set the periods, in days, that users can choose for extended retention. See [Choose the extended retention periods users can pick](#choose-the-extended-retention-periods-users-can-pick).
 
 ```yaml Helm
 config:
@@ -44,6 +46,40 @@ config:
       longlived: "34560000"
       shortlived: "1209600"
 ```
+
+## Choose the extended retention periods users can pick
+
+<Note>
+Configurable extended retention periods require LangSmith v0.18.0 or later.
+</Note>
+
+Set `config.ttl.longlivedAllowedDays` to the periods, in days, that users can choose for extended retention on workspaces and projects. Use it to offer periods that the default options do not include, for example 2 years:
+
+```yaml Helm
+config:
+  ttl:
+    enabled: true
+    ttl_period_seconds:
+      longlived: "34560000" # 400 days
+      shortlived: "1209600"
+    longlivedAllowedDays: [30, 90, 180, 365, 730]
+```
+
+With this configuration, users choose from 30, 90, 180, 365, 400, and 730 days:
+
+- **The list values**: 30, 90, 180, 365, and 730 days.
+- **The `longlived` period**: 400 days. LangSmith always offers it, also when it is not in the list.
+
+The `longlived` period is the default, not a limit. Workspaces and projects without a period of their own use it, and users can choose list values longer than it.
+
+Without `longlivedAllowedDays`, users choose from 30, 60, 90, 120, 150, 180, 240, 300, 365, and 400 days, up to your `longlived` period, plus the `longlived` period itself.
+
+The list must follow these rules, or the Helm chart and LangSmith refuse it:
+
+- At most 10 values.
+- Each value is at least 14 days.
+
+Each value needs its own blob storage lifecycle rule for its `ttl_<N>d/` prefix. Without that rule, blob data under the prefix is never deleted. See [Custom retention prefixes](/langsmith/self-host-blob-storage#custom-retention-prefixes).
 
 ## ClickHouse TTL cleanup job
 
