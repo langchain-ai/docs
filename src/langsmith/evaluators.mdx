@@ -243,7 +243,7 @@ To turn on tracing for an existing rule, get it with [list rules](/langsmith/smi
 
 When an online evaluator scores a trace, it attaches feedback to the trace. This can auto-upgrade the trace to [extended retention](/langsmith/usage-and-billing#data-retention-auto-upgrades), depending on the evaluator's retention setting. When you set up an online evaluator on a [tracing project](/langsmith/observability-concepts#tracing-projects), or on an agent environment, you can opt out of this upgrade so that scored traces stay at the base retention.
 
-This control is available only when the project's [default retention](/langsmith/billing#change-project-level-default-retention) is the [base tier](/langsmith/usage-and-billing#how-it-works). If the project defaults to extended retention ([set at the project or workspace level](/langsmith/data-purging-compliance#data-retention)), traces scored by the evaluator follow that default and the option is locked.
+This control is available only when the project's [default retention](/langsmith/billing#change-project-level-default-retention) is the [base tier](/langsmith/usage-and-billing#retention-periods). If the project defaults to extended retention ([set at the project or workspace level](/langsmith/data-purging-compliance#data-retention)), traces scored by the evaluator follow that default and the option is locked.
 
 To opt out of extending retention for scored traces:
 
