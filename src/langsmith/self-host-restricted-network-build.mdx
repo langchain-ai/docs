@@ -33,6 +33,16 @@ Every later step connects to the internal registry over HTTPS. Until the machine
 
 pip and uv each need their own CA setting, covered in [Configure pip](#configure-pip) and [Configure uv](#configure-uv).
 
+## Provide the Python interpreter
+
+The Agent Server image includes its own Python interpreter. The build machine needs Python 3.10 or later only to run pip, uv, and the LangGraph CLI. Install it from the OS repositories, for example on RHEL-family distributions:
+
+```bash
+sudo dnf install python3.12
+```
+
+On some distributions, `venv` ships as a separate OS package, such as `python3-venv` on Debian and Ubuntu. Install it too, because the uv installation uses it. If the OS repositories do not provide a supported Python version, see uv's [Installing Python](https://docs.astral.sh/uv/guides/install-python/) guide.
+
 ## Configure pip
 
 Set the index once in a pip configuration file. A long URL passed as `--index-url` on each command is easy to get wrong, and a missing space between two flags produces a misleading `404`.
@@ -54,9 +64,7 @@ If the index uses plain HTTP, add `trusted-host = <host>` with the index host na
 
 Install uv as a Python package from the internal index. The uv install script (`curl ... | sh`) does not work on a restricted network, because it downloads the uv binary from `releases.astral.sh` or GitHub.
 
-PyPI hosts uv as a wheel that contains the binary. On some distributions, `venv` ships as a separate OS package, such as `python3-venv` on Debian and Ubuntu.
-
-Install uv into its own virtual environment so it does not touch the system Python. Then link the binaries onto your `PATH`:
+PyPI hosts uv as a wheel that contains the binary. Install uv into its own virtual environment so it does not touch the system Python. Then link the binaries onto your `PATH`:
 
 ```bash
 python3 -m venv ~/.local/share/uv-bootstrap
@@ -84,23 +92,13 @@ export UV_PYTHON_DOWNLOADS=never
 
 - **`UV_DEFAULT_INDEX`**: Replaces pypi.org as the default index.
 - **`UV_SYSTEM_CERTS`**: Loads certificates from the OS trust store, which holds the internal CA. By default, uv trusts only its bundled roots.
-- **`UV_PYTHON_DOWNLOADS`**: Stops uv from downloading Python. [Provide the Python interpreter](#provide-the-python-interpreter) explains why.
+- **`UV_PYTHON_DOWNLOADS`**: Stops uv from downloading Python, so it uses the interpreter on `PATH`. Without it, uv tries to download a missing interpreter from GitHub, and on a restricted network the request fails after three retries.
 
 <Note>
 `UV_SYSTEM_CERTS` requires uv 0.11.0 or later. Earlier versions use `UV_NATIVE_TLS=true`, which later versions still accept with a deprecation warning.
 </Note>
 
 To trust only the internal CA, set `SSL_CERT_FILE=<CA_BUNDLE_PATH>` in place of `UV_SYSTEM_CERTS`. `SSL_CERT_FILE` replaces both uv's bundled roots and the OS trust store. For every setting, see uv's [environment variable reference](https://docs.astral.sh/uv/reference/environment/).
-
-## Provide the Python interpreter
-
-The Agent Server image ships its own Python. The build machine needs Python 3.10 or later only to run pip, uv, and the LangGraph CLI. Install it from the OS repositories, for example on RHEL-family distributions:
-
-```bash
-sudo dnf install python3.12
-```
-
-uv finds the interpreter on `PATH`. Keep `UV_PYTHON_DOWNLOADS=never`: without it, uv tries to download a missing interpreter from GitHub and retries with no clear error. If the OS repositories do not provide a supported version, see uv's [Installing Python](https://docs.astral.sh/uv/guides/install-python/) guide.
 
 ## Build the Agent Server image
 
@@ -158,7 +156,7 @@ To build the image:
     - **`base_image`**: The mirrored Agent Server image, without a tag. The CLI appends a tag built from `python_version`, plus `api_version` or `image_distro` when you set them. With the configuration above, the build pulls `<DOCKER_REGISTRY>/langchain/langgraph-api:3.12`, so that tag must exist in the registry.
     - **`dockerfile_lines`**: Lines the CLI inserts after `FROM`. The `COPY` and `RUN` lines append the internal CA to the image's system CA bundle, which keeps the public roots. The two `ARG` lines apply to every install step in the build, including installs from a `uv.lock` file. `SSL_CERT_FILE` points uv at the system bundle, which uv otherwise ignores, and `UV_DEFAULT_INDEX` points uv at the internal index. `ARG` values are visible in `docker history`, so do not put credentials in `<PYPI_INDEX_URL>`.
 
-    If the index uses a certificate from a public CA, leave out the `COPY`, `RUN`, and `SSL_CERT_FILE` lines.
+    If the index uses a certificate from a public CA, leave out the `COPY`, `RUN`, and `SSL_CERT_FILE` lines. If the agent calls internal HTTPS services at runtime, see [Trust the internal CA at runtime](#trust-the-internal-ca-at-runtime).
 
 1. Build the image:
 
@@ -209,6 +207,13 @@ To build the image:
     ```bash
     langgraph build -t my-agent
     ```
+
+### Trust the internal CA at runtime
+
+`ARG` values apply only while the image builds, and the running container does not inherit them. If your agent calls internal HTTPS services at runtime, declare the CA setting with `ENV` instead so the running agent trusts the internal CA:
+
+- **Python**: Change the `SSL_CERT_FILE` line from `ARG` to `ENV`. Clients built on `httpx` read it. If your agent uses `requests`, also add `"ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt"`, because `requests` ignores `SSL_CERT_FILE`.
+- **JavaScript**: Change the `NODE_EXTRA_CA_CERTS` line from `ARG` to `ENV`.
 
 For every `langgraph.json` key, see the [LangGraph CLI configuration file](/langsmith/cli#configuration-file) reference.
 
@@ -291,7 +296,7 @@ error: No interpreter found for Python 3.99 in managed installations or search p
 
 ```bash
 langgraph dockerfile Dockerfile
-grep -E '^(FROM|COPY|RUN cat|ARG)' Dockerfile
+grep -E '^(FROM|COPY|RUN cat|ARG|ENV (SSL_CERT_FILE|REQUESTS_CA_BUNDLE|NODE_EXTRA_CA_CERTS))' Dockerfile
 ```
 
 For a Python project:
@@ -313,7 +318,7 @@ ARG NODE_EXTRA_CA_CERTS=/etc/ssl/certs/internal-ca.pem
 ARG NPM_CONFIG_REGISTRY=<NPM_REGISTRY_URL>
 ```
 
-`FROM` must name the internal registry, and every line from `dockerfile_lines` must be present.
+`FROM` must name the internal registry, and every line from `dockerfile_lines` must be present. If you changed the CA lines to `ENV` for [runtime trust](#trust-the-internal-ca-at-runtime), they show `ENV` in place of `ARG`.
 
 ## Next steps
 
