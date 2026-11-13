@@ -1,0 +1,31 @@
+```ts TypeScript
+import Anthropic from "@anthropic-ai/sdk";
+import { wrapAnthropic } from "langsmith/wrappers/anthropic";
+import { traceable } from "langsmith/traceable";
+
+const client = wrapAnthropic(new Anthropic()); // log every Anthropic call automatically
+
+const getContext = traceable(
+    async function getContext(question: string): Promise<string> { // trace this as a tool span
+        // In a real app, this would query a knowledge base or vector store
+        return "LangSmith traces are stored for 14 days on the Developer plan.";
+    },
+    { run_type: "tool" }
+);
+
+const assistant = traceable(async function assistant(question: string) { // capture the full pipeline as a single trace
+    const context = await getContext(question);
+    const response = await client.messages.create({
+        model: "claude-sonnet-5-5",
+        max_tokens: 1024,
+        system: `Answer using the context below.\n\nContext: ${context}`,
+        messages: [{ role: "user", content: question }],
+    });
+    const block = response.content[0];
+    return block?.type === "text" ? block.text : null;
+});
+
+(async () => {
+    console.log(await assistant("How long are LangSmith traces stored?"));
+})();
+```
