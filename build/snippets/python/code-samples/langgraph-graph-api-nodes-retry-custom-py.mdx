@@ -1,0 +1,33 @@
+```python
+import sqlite3
+from langchain.chat_models import init_chat_model
+from langgraph.graph import END, MessagesState, StateGraph, START
+from langgraph.types import RetryPolicy
+from langchain.messages import AIMessage
+
+con = sqlite3.connect(":memory:")
+model = init_chat_model("claude-haiku-4-5-20251001")
+
+def query_database(state: MessagesState):
+    cursor = con.cursor()
+    cursor.execute("SELECT * FROM Artist LIMIT 10;")
+    query_result = str(cursor.fetchall())
+    return {"messages": [AIMessage(content=query_result)]}
+
+def call_model(state: MessagesState):
+    response = model.invoke(state["messages"])
+    return {"messages": [response]}
+
+# Define a new graph
+builder = StateGraph(MessagesState)
+builder.add_node(
+    "query_database",
+    query_database,
+    retry_policy=RetryPolicy(retry_on=sqlite3.OperationalError),
+)
+builder.add_node("model", call_model, retry_policy=RetryPolicy(max_attempts=5))
+builder.add_edge(START, "model")
+builder.add_edge("model", "query_database")
+builder.add_edge("query_database", END)
+graph = builder.compile()
+```
