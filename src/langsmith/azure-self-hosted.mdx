@@ -65,7 +65,7 @@ We recommend using Azure's managed services to provide a scalable, secure, and r
 
 | | Components | How it's installed |
 |---|---|---|
-| **LangSmith Helm release** | Frontend, backend, queue, platform backend, Playground, ACE, and optionally the LangSmith Deployment control/data plane | One `helm upgrade --install` from the [`langchain/langsmith`](https://github.com/langchain-ai/helm/tree/main/charts/langsmith) chart |
+| **LangSmith Helm release** | Frontend, backend, queue, platform backend, Playground, ACE, and optionally the LangSmith Agent Server control/data plane | One `helm upgrade --install` from the [`langchain/langsmith`](https://github.com/langchain-ai/helm/tree/main/charts/langsmith) chart |
 | **You provision** | AKS, PostgreSQL, Managed Redis, Blob Storage, Key Vault, ingress, and ClickHouse | Your IaC tooling (Terraform, ARM templates, or Azure portal) before installing LangSmith |
 
 <img
@@ -80,7 +80,7 @@ We recommend using Azure's managed services to provide a scalable, secure, and r
   alt="Architecture diagram showing Azure relations to LangSmith services"
 />
 
-**Installation order:** provision Azure infrastructure → provision or subscribe to ClickHouse → configure Entra ID and Workload Identity → run `helm upgrade --install`. LangSmith Deployment, Fleet, Insights, and Chat are enabled through the same Helm release, not as separate installs.
+**Installation order:** provision Azure infrastructure → provision or subscribe to ClickHouse → configure Entra ID and Workload Identity → run `helm upgrade --install`. Agent Server hosting, Fleet, Insights, and Chat are enabled through the same Helm release, not as separate installs.
 
 **Compliance surface:** one application review for the LangSmith chart and its container images, plus standard Azure service reviews for each managed resource. ClickHouse Cloud adds one third-party SaaS review.
 
@@ -103,7 +103,13 @@ Use [Azure CNI](https://learn.microsoft.com/en-us/azure/aks/configure-azure-cni)
 
 #### Ingress and load balancing
 
-Use Kubernetes Ingress resources and controllers to distribute HTTP/HTTPS traffic. Ingress controllers operate at layer 7 and can route traffic based on URL paths and handle TLS termination. They reduce the number of public IP addresses compared to layer-4 load balancers. Use the [application routing add-on](https://learn.microsoft.com/en-us/azure/aks/app-routing) for managed NGINX ingress controllers integrated with [Azure DNS](https://azure.microsoft.com/en-us/products/dns/) and [Key Vault](https://azure.microsoft.com/en-us/products/key-vault/) for SSL certificates.
+Use a layer-7 ingress, which routes HTTP/HTTPS traffic by URL path, terminates TLS, and needs fewer public IP addresses than layer-4 load balancers. LangSmith supports standard Ingress, Gateway API, and Istio Gateway routing. For the Helm values each option needs, see [Create an Ingress for installations](/langsmith/self-host-ingress).
+
+On AKS, Microsoft supports the managed NGINX ingress in the [application routing add-on](https://learn.microsoft.com/en-us/azure/aks/app-routing) with critical security patches only through November 2026. Microsoft recommends moving to its [Gateway API implementation](https://learn.microsoft.com/en-us/azure/aks/app-routing-gateway-api) or another supported implementation.
+
+Use Envoy Gateway, which the [LangSmith Azure Terraform module](/langsmith/self-host-terraform-azure-architecture#ingress-options) deploys by default. The module also handles DNS and certificates. For DNS, it assigns an Azure DNS label, or creates an Azure DNS zone and A record for a custom domain. For certificates, it installs cert-manager, which issues Let's Encrypt certificates over HTTP-01 or DNS-01. You can supply your own certificate as a Kubernetes secret instead, and renew it yourself. For which controllers support which certificate options, see the [ingress and TLS guide](https://github.com/langchain-ai/terraform/blob/main/modules/azure/INGRESS_CONTROLLERS.md) in the module repository.
+
+The Envoy Gateway path does not load certificates from Key Vault. If your organization requires Key Vault certificates, Microsoft's managed Gateway API is an option. It manages Azure DNS records and Key Vault TLS certificates, but works only with the `approuting-istio` or `istio` GatewayClass, which the Terraform module does not use. For more information, see [Configure Azure DNS and TLS](https://learn.microsoft.com/en-us/azure/aks/app-routing-gateway-api-dns-tls).
 
 #### Web Application Firewall (WAF)
 
@@ -218,4 +224,4 @@ Install [Container Insights](https://learn.microsoft.com/en-us/azure/azure-monit
 Ensure LangSmith services emit logs to stdout/stderr and forward them via [Fluent Bit](https://fluentbit.io/) or the Azure Monitor agent.
 
 ## Continuous integration
-- The preferred method to manage [LangSmith deployments](/langsmith/deployment) is to create a CI process that builds [Agent Server](/langsmith/agent-server) images and pushes them to [Azure Container Registry](https://azure.microsoft.com/en-us/products/container-registry). Create a test deployment for pull requests before deploying a new revision to staging or production upon PR merge.
+- The preferred method to manage [Agent Servers](/langsmith/deployment) is to create a CI process that builds [Agent Server](/langsmith/agent-server) images and pushes them to [Azure Container Registry](https://azure.microsoft.com/en-us/products/container-registry). Create a test deployment for pull requests before deploying a new revision to staging or production upon PR merge.
