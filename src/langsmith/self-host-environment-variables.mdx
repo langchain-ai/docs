@@ -118,6 +118,45 @@ commonEnv:
 Setting this flag to `false` suppresses per-batch success messages only. Errors are still logged.
 </Note>
 
+### Reduce S3 reads during ingestion
+
+By default, the ingest queue reads each run field stored in blob storage with its own ranged GET request. The S3 spool downloads an object once to local disk when a task reads several fields from it, then serves those reads from the file. This reduces the number of read requests to your blob storage, at the cost of a larger download per object and some local disk.
+
+<Note>
+The S3 spool requires LangSmith self-hosted v0.18 or later. It has no effect with Azure blob storage.
+</Note>
+
+The spool is off by default. To enable it, set these variables on the `ingestQueue` service:
+
+- **`INGEST_S3_SPOOL_ENABLE_ORG_IDS`**: A comma-separated list of organization IDs to enable.
+- **`INGEST_S3_SPOOL_ENABLE_ORGS_PERCENT`**: The percentage of organizations to enable, from 0 to 100. The share is stable for each organization, and raising the percentage only adds organizations. Organizations listed in `INGEST_S3_SPOOL_ENABLE_ORG_IDS` are enabled in addition. Most self-hosted installations have a single organization, so set `100` to enable it.
+
+```yaml
+ingestQueue:
+  deployment:
+    extraEnv:
+      - name: INGEST_S3_SPOOL_ENABLE_ORGS_PERCENT
+        value: "100"
+```
+
+The spool applies these limits. If a download fails or a limit is reached, the ingest queue reads the data with ranged GET requests as it does without the spool.
+
+- **`INGEST_S3_SPOOL_MIN_REFS`**: The number of distinct ranges a task must read from an object before the object is downloaded. Defaults to `2`.
+- **`INGEST_S3_SPOOL_MAX_MB`**: The most data one task downloads, in megabytes. Defaults to `256`.
+- **`SPOOL_LIMIT_GB`**: The most data spooled to disk per pod, in gigabytes. The upload spool shares this limit. Defaults to `10`.
+
+The spool writes to the pod's local disk, so set an `ephemeral-storage` limit on the `ingestQueue` pods above `SPOOL_LIMIT_GB`:
+
+```yaml
+ingestQueue:
+  deployment:
+    resources:
+      requests:
+        ephemeral-storage: 2Gi
+      limits:
+        ephemeral-storage: 20Gi
+```
+
 ## Related pages
 
 - [Configure LangSmith for scale](/langsmith/self-host-scale)
