@@ -41,7 +41,7 @@ const logToolCallsMiddleware = createMiddleware({
 });
 
 const agent = await createDeepAgent({
-  model: "google:gemini-3.6-flash",
+  model: "google:gemini-4-hydrogen",
   tools: [getWeather] as any,
   middleware: [logToolCallsMiddleware] as any,
 });

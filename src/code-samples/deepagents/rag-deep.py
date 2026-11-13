@@ -192,7 +192,7 @@ chunk_analyst_subagent = {
     "system_prompt": CHUNK_ANALYST_INSTRUCTIONS,
 }
 
-model = init_chat_model(model="google_genai:gemini-3.6-flash")
+model = init_chat_model(model="google_genai:gemini-4-hydrogen")
 
 agent = create_deep_agent(
     model=model,
