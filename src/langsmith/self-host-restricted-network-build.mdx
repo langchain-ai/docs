@@ -35,7 +35,7 @@ pip and uv each need their own CA setting, covered in [Configure pip](#configure
 
 ## Provide the Python interpreter
 
-The Agent Server image ships its own Python. The build machine needs Python 3.10 or later only to run pip, uv, and the LangGraph CLI. Install it from the OS repositories, for example on RHEL-family distributions:
+The Agent Server image includes its own Python interpreter. The build machine needs Python 3.10 or later only to run pip, uv, and the LangGraph CLI. Install it from the OS repositories, for example on RHEL-family distributions:
 
 ```bash
 sudo dnf install python3.12
@@ -156,7 +156,7 @@ To build the image:
     - **`base_image`**: The mirrored Agent Server image, without a tag. The CLI appends a tag built from `python_version`, plus `api_version` or `image_distro` when you set them. With the configuration above, the build pulls `<DOCKER_REGISTRY>/langchain/langgraph-api:3.12`, so that tag must exist in the registry.
     - **`dockerfile_lines`**: Lines the CLI inserts after `FROM`. The `COPY` and `RUN` lines append the internal CA to the image's system CA bundle, which keeps the public roots. The two `ARG` lines apply to every install step in the build, including installs from a `uv.lock` file. `SSL_CERT_FILE` points uv at the system bundle, which uv otherwise ignores, and `UV_DEFAULT_INDEX` points uv at the internal index. `ARG` values are visible in `docker history`, so do not put credentials in `<PYPI_INDEX_URL>`.
 
-    If the index uses a certificate from a public CA, leave out the `COPY`, `RUN`, and `SSL_CERT_FILE` lines.
+    If the index uses a certificate from a public CA, leave out the `COPY`, `RUN`, and `SSL_CERT_FILE` lines. If the agent calls internal HTTPS services at runtime, see [Trust the internal CA at runtime](#trust-the-internal-ca-at-runtime).
 
 1. Build the image:
 
@@ -208,12 +208,12 @@ To build the image:
     langgraph build -t my-agent
     ```
 
-<Note>
-`ARG` values apply only while the image builds, and the running container does not inherit them. For an agent that calls internal HTTPS services at runtime to trust the internal CA:
+### Trust the internal CA at runtime
 
-- **JavaScript**: Change the `NODE_EXTRA_CA_CERTS` line from `ARG` to `ENV`.
+`ARG` values apply only while the image builds, and the running container does not inherit them. If your agent calls internal HTTPS services at runtime, declare the CA setting with `ENV` instead so the running agent trusts the internal CA:
+
 - **Python**: Change the `SSL_CERT_FILE` line from `ARG` to `ENV`. Clients built on `httpx` read it. If your agent uses `requests`, also add `"ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt"`, because `requests` ignores `SSL_CERT_FILE`.
-</Note>
+- **JavaScript**: Change the `NODE_EXTRA_CA_CERTS` line from `ARG` to `ENV`.
 
 For every `langgraph.json` key, see the [LangGraph CLI configuration file](/langsmith/cli#configuration-file) reference.
 
@@ -296,7 +296,7 @@ error: No interpreter found for Python 3.99 in managed installations or search p
 
 ```bash
 langgraph dockerfile Dockerfile
-grep -E '^(FROM|COPY|RUN cat|ARG)' Dockerfile
+grep -E '^(FROM|COPY|RUN cat|ARG|ENV)' Dockerfile
 ```
 
 For a Python project:
@@ -318,7 +318,7 @@ ARG NODE_EXTRA_CA_CERTS=/etc/ssl/certs/internal-ca.pem
 ARG NPM_CONFIG_REGISTRY=<NPM_REGISTRY_URL>
 ```
 
-`FROM` must name the internal registry, and every line from `dockerfile_lines` must be present.
+`FROM` must name the internal registry, and every line from `dockerfile_lines` must be present. If you changed the CA lines to `ENV` for [runtime trust](#trust-the-internal-ca-at-runtime), they show `ENV` in place of `ARG`.
 
 ## Next steps
 
