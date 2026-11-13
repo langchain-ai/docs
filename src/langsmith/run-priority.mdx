@@ -12,7 +12,7 @@ Run priority is in beta and only available for Python graphs.
 
 ## Why use run priority
 
-An Agent Server deployment can serve many graphs, and all of their runs share one queue and one pool of worker slots. Without run priority, the queue is first come, first served: a burst of background runs makes an interactive chat wait behind them, so teams often split agents into separate deployments.
+An Agent Server deployment can serve many graphs, and all of their runs share one queue and one pool of worker slots. Without run priority, the queue is first come, first served: a burst of background runs makes an interactive chat wait behind them.
 
 With run priority, you set a priority for each thread in a Python function that runs on the server. When every worker slot is busy, the waiting run with the most urgent priority starts next. A run that already has a slot keeps it.
 
@@ -25,7 +25,7 @@ With run priority, you set a priority for each thread in a Python function that 
 
 ### Step 0. Configure dependencies to support run priority
 
-Run priority requires Agent Server 0.18.0 or later (`langgraph-api>=0.18.0`), the default for new builds, and `langgraph-sdk>=0.4.12`. If you build the image yourself, use `langgraph-cli>=0.4.38`. Earlier versions ignore the `priority` section without an error.
+Run priority requires Agent Server 0.18.0 or later (`langgraph-api>=0.18.0`) and `langgraph-sdk>=0.4.12`, the default for new builds. If you build the image yourself, use `langgraph-cli>=0.4.38`. Earlier versions ignore the `priority` section without an error.
 
 ### Step 1. Write a priority function
 
@@ -80,7 +80,7 @@ Add a `priority` section whose `path` points at the `Priority` instance:
 Rebuild and redeploy as you normally would for your [hosting environment](/langsmith/deployment#langsmith-deployment-environments).
 
 <Note>
-Deployments that LangSmith Cloud builds from your repository do not apply the `priority` section yet.
+On LangSmith Cloud, deployments in the GCP US region apply the `priority` section. Deployments in other Cloud regions do not apply it yet.
 </Note>
 
 ## Best practices
@@ -93,14 +93,11 @@ Deployments that LangSmith Cloud builds from your repository do not apply the `p
 
 ### How does run priority work?
 
-- **Order of waiting runs**: Priority is an integer from -5 to 5. -5 starts first, 5 starts last, and 0 is the default. When a worker slot frees up, the waiting run with the most urgent priority starts. Runs with the same priority start in the order they became due.
-- **Busy deployments only**: Priority matters only when every worker slot is busy. When a slot is free, a run starts right away, whatever its priority.
-- **Set once per thread**: Your priority function sets a thread's priority at the thread's first run. Every later run on the thread uses the same priority, and priority does not change how runs execute on a thread: a thread still runs one run at a time, oldest first, and no running run is stopped.
-- **Existing threads**: A thread that already exists receives a priority at its next run after you deploy the function.
-- **Changes to the function**: A thread's priority does not change. A new version of the function applies to threads that have not run yet.
-- **Scheduled runs**: A run scheduled for later competes at its priority from its due time.
-- **Long waits**: Under sustained load at more urgent priorities, runs at less urgent priorities can wait indefinitely, because priorities do not age.
-- **No function, no change**: Without a priority function, every run has priority 0 and runs start in the same order as before.
+Priority is an integer from -5 to 5: -5 starts first, 5 starts last, and 0 is the default. When a worker slot frees up, the waiting run with the most urgent priority starts, and runs with the same priority start in the order they became due. Priority matters only when every worker slot is busy. When a slot is free, a run starts right away, whatever its priority.
+
+Your priority function sets a thread's priority once, at the thread's first run, and every later run on the thread uses it. A thread that already exists receives a priority at its next run after you deploy the function, and a new version of the function applies only to threads that have not run yet. Priority does not change how runs execute on a thread: a thread still runs one run at a time, oldest first, and no running run is stopped.
+
+A run scheduled for later competes at its priority from its due time. Priorities do not age, so under sustained load at more urgent priorities, runs at less urgent priorities can wait indefinitely. Without a priority function, every run has priority 0 and runs start in the same order as before.
 
 ### What happens if the priority function fails?
 
