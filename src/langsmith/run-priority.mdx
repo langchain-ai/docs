@@ -1,24 +1,31 @@
 ---
 title: Prioritize runs
 sidebarTitle: Run priority
-description: Set a priority for each thread so that urgent runs start first when every worker slot on an Agent Server deployment is busy.
+description: Set a priority for each thread so that urgent runs start first.
 ---
 
-Run priority decides which waiting run starts next when every worker slot on a deployment is busy. You set each thread's priority in a Python function that runs on the server, so urgent work, such as interactive chat, starts ahead of background work, such as scheduled jobs.
+Run priority decides which waiting run starts first, so urgent work, such as interactive chat, starts ahead of background work, such as scheduled jobs.
 
 <Note>
-Run priority is in beta. It requires `langgraph-api>=0.18.0` and `langgraph-sdk>=0.4.12`, and the image must be built with `langgraph-cli>=0.4.38`. The priority function is Python only.
+Run priority is in beta and only available for Python graphs.
 </Note>
 
-## How run priority works
+## Why use run priority
 
-- **Priority**: An integer from -5 to 5. -5 starts first, 5 starts last, and 0 is the default.
-- **Set once per thread**: Your priority function sets a thread's priority at the thread's first run. Every later run on the thread uses the same priority, and priority does not change how runs execute on a thread: a thread still runs one run at a time, oldest first, and no running run is stopped.
-- **Order of waiting runs**: When a worker slot frees up, the waiting run with the most urgent priority starts. Runs with the same priority start in the order they became due.
-- **Busy deployments only**: Priority matters only when every worker slot is busy. When a slot is free, a run starts right away, whatever its priority.
-- **No function, no change**: Without a priority function, every run has priority 0 and runs start in the same order as before.
+An Agent Server deployment can serve many graphs, and all of their runs share one queue and one pool of worker slots. Without run priority, the queue is first come, first served: a burst of background runs makes an interactive chat wait behind them, so teams often split agents into separate deployments.
+
+With run priority, you set a priority for each thread in a Python function that runs on the server. When every worker slot is busy, the waiting run with the most urgent priority starts next. A run that already has a slot keeps it.
+
+<img
+  src="/langsmith/images/run-priority-waiting-line.png"
+  alt="The same waiting line under two rules, with every worker slot busy. With first come, first served, the chat run at priority -5 is at the back of the line and waits behind nine batch runs at priority 5. With run priority, the chat run moves to the front of the line and takes the next free slot."
+/>
 
 ## Configure run priority
+
+### Step 0. Configure dependencies to support run priority
+
+Run priority requires Agent Server 0.18.0 or later (`langgraph-api>=0.18.0`), the default for new builds, and `langgraph-sdk>=0.4.12`. If you build the image yourself, use `langgraph-cli>=0.4.38`. Earlier versions ignore the `priority` section without an error.
 
 ### Step 1. Write a priority function
 
@@ -50,15 +57,11 @@ The function receives a @[PriorityContext] with these fields:
 The function returns a @[PrioritySettings] dictionary, or `None` to use the defaults:
 
 - **`priority`**: An integer from -5 to 5. Defaults to 0.
-- **`fairness_group`**: A string of at most 256 characters. Defaults to `"default"`. The server stores it on the thread unencrypted, even with custom encryption, so use an opaque ID rather than personal data. It does not affect run order yet.
-
-Any other key causes the run to fail, except `fairness_weight`, which earlier SDK versions list and the server ignores with a warning.
-
-Keep the function async and fast. It runs on the API server before a thread's first run is created, so a blocking call, such as a synchronous HTTP request, stalls every request on that server.
+- **`fairness_group`**: A string of at most 256 characters. Defaults to `"default"`. The server stores it on the thread unencrypted, even with custom encryption, so use an opaque ID rather than personal data. This is a planned field to support fairness in the future, but does not currently affect run order.
 
 ### Step 2. Add the function to `langgraph.json`
 
-Add a `priority` section whose `path` points at the `Priority` instance, and set `api_version` to `0.18.0`:
+Add a `priority` section whose `path` points at the `Priority` instance:
 
 ```json
 {
@@ -66,56 +69,66 @@ Add a `priority` section whose `path` points at the `Priority` instance, and set
   "graphs": {
     "agent": "./agent.py:graph"
   },
-  "api_version": "0.18.0",
   "priority": {
     "path": "./priority.py:priority"
   }
 }
 ```
 
-Server versions earlier than 0.18.0 ignore the `priority` section. For all configuration keys, see the [configuration file reference](/langsmith/cli#configuration-file).
+### Step 3. Rebuild and redeploy
 
-### Step 3. Build and deploy the image
-
-Run priority applies to images that you build with `langgraph build`, such as images for self-hosted deployments:
-
-```bash
-langgraph build -t <registry>/<agent>:<tag>
-docker push <registry>/<agent>:<tag>
-```
-
-Then update your deployment to the new image. On self-hosted LangSmith, `langgraph deploy --push-to <registry>/<agent>` builds the image, pushes it, and updates the deployment in one step. For more information, see [Deploy with the control plane](/langsmith/deploy-with-control-plane).
+Rebuild and redeploy as you normally would for your [hosting environment](/langsmith/deployment#langsmith-deployment-environments).
 
 <Note>
 Deployments that LangSmith Cloud builds from your repository do not apply the `priority` section yet.
 </Note>
 
-## Verify that run priority is on
+## Best practices
+
+- **Leave room between priorities**: Start with a few spread-out values, such as -3 for interactive work, 0 for the default, and 3 for background jobs, so you can add priorities above and below as your needs change.
+- **Keep the function light**: The function must be async, and it runs on the API server before a thread's first run is created. Avoid slow calls, such as network requests. A blocking call, such as a synchronous HTTP request, stalls every request on that server.
+- **Base the priority on values that you control**: No API field sets a run's priority. If your function reads metadata that callers send, callers can influence the result, so prefer the authenticated user or assistant metadata that you control.
+
+## FAQ
+
+### How does run priority work?
+
+- **Order of waiting runs**: Priority is an integer from -5 to 5. -5 starts first, 5 starts last, and 0 is the default. When a worker slot frees up, the waiting run with the most urgent priority starts. Runs with the same priority start in the order they became due.
+- **Busy deployments only**: Priority matters only when every worker slot is busy. When a slot is free, a run starts right away, whatever its priority.
+- **Set once per thread**: Your priority function sets a thread's priority at the thread's first run. Every later run on the thread uses the same priority, and priority does not change how runs execute on a thread: a thread still runs one run at a time, oldest first, and no running run is stopped.
+- **Existing threads**: A thread that already exists receives a priority at its next run after you deploy the function.
+- **Changes to the function**: A thread's priority does not change. A new version of the function applies to threads that have not run yet.
+- **Scheduled runs**: A run scheduled for later competes at its priority from its due time.
+- **Long waits**: Under sustained load at more urgent priorities, runs at less urgent priorities can wait indefinitely, because priorities do not age.
+- **No function, no change**: Without a priority function, every run has priority 0 and runs start in the same order as before.
+
+### What happens if the priority function fails?
+
+If the function raises an exception or returns an invalid result, such as an unknown key or a priority outside -5 to 5, the server does not create the run and returns a 500 error. To refuse a run with your own status code, raise @[HTTPException]. In every case nothing is stored, so the thread's next run calls the function again.
+
+### How do I verify that run priority is on?
 
 - **Server logs**: At startup, the server logs `Loaded priority callback from path ...`. If the server cannot load the function, it does not start, so a wrong path shows up at deploy time rather than on every run.
 - **Threads**: After a thread's first run, reading the thread returns `run_priority` and `fairness_group`.
-- **Metrics**: Queue metrics carry a `priority` label from -5 to 5, for example `lg_api_num_startable_runs`. These series appear only while a priority function is configured.
 
-<Note>
 `langgraph dev` calls your priority function and stores the result, but starts runs in arrival order. To see runs start in priority order, test on a deployment.
-</Note>
 
-## Understand how priority behaves
+### How do I monitor run priority?
 
-- **Client requests**: No API field sets a run's priority. If your function reads metadata that callers send, callers can influence the result, so prefer the authenticated user or assistant metadata that you control.
-- **Existing threads**: A thread that already exists receives a priority at its next run after you deploy the function.
-- **Changes to the function**: A thread's priority does not change. A new version of the function applies to threads that have not run yet.
-- **Errors**: If the function raises an exception, the server does not create the run and returns a 500 error. To refuse a run with your own status code, raise @[HTTPException]. In both cases nothing is stored, so the thread's next run calls the function again.
-- **Long waits**: Under sustained load at more urgent priorities, runs at less urgent priorities can wait indefinitely, because priorities do not age. The per-priority wait metrics show how long runs wait.
-- **Scheduled runs**: A run scheduled for later competes at its priority from its due time.
+While a priority function is configured, the server reports these queue metrics with a `priority` label from -5 to 5:
 
-## Turn off run priority
+- `lg_api_num_startable_runs`: Runs that can start now: each thread's oldest due run, on threads with no running run.
+- `lg_api_startable_runs_wait_time_max` and `lg_api_startable_runs_wait_time_med`: The longest and the median wait of those runs since they became due, in seconds.
+- `lg_api_num_running_runs_by_priority`: Runs that are running.
 
-Remove the `priority` section from `langgraph.json`, rebuild the image, and redeploy. Every new run then has priority 0. Runs that were already waiting keep the priority they were created with. Threads keep their stored priority, which applies again if you add the function back.
+A rising wait time at a less urgent priority shows runs that wait behind sustained load at more urgent priorities.
+
+### How do I turn off run priority?
+
+Remove the `priority` section from `langgraph.json`, then rebuild and redeploy. Every new run then has priority 0. Runs that were already waiting keep the priority they were created with. Threads keep their stored priority, which applies again if you add the function back.
 
 ## See also
 
-- [Runs](/langsmith/runs)
-- [Cron jobs](/langsmith/cron-jobs)
-- [Custom authentication](/langsmith/custom-auth)
 - [Configuration file reference](/langsmith/cli#configuration-file)
+- @[`Priority` reference][Priority]
+- [Use threads](/langsmith/use-threads)
