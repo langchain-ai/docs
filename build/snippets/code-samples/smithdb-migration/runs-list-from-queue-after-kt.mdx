@@ -1,0 +1,40 @@
+```kotlin After
+import com.langchain.smith.client.LangsmithClient
+import com.langchain.smith.client.okhttp.LangsmithOkHttpClient
+import com.langchain.smith.models.annotationqueues.items.ItemListParams
+import com.langchain.smith.models.annotationqueues.items.ItemRetrieveCountParams
+import com.langchain.smith.models.runs.RunRetrieveV2Params
+import java.time.OffsetDateTime
+
+val client: LangsmithClient = LangsmithOkHttpClient.fromEnv()
+
+var queueId = "<queue-id>"
+val count = client.annotationQueues().items().retrieveCount(
+    queueId,
+    ItemRetrieveCountParams.builder().status("needs_my_review").build()
+).count().get()
+println(count)
+
+// Items carry the run's lookup keys, not its contents.
+val page = client.annotationQueues().items().list(
+    queueId,
+    ItemListParams.builder()
+        .status(ItemListParams.Status.NEEDS_MY_REVIEW)
+        .itemType(ItemListParams.ItemType.RUN)
+        .build()
+)
+for (item in page.autoPager()) {
+    val run = client.runs().retrieveV2(
+        item.runId().get(),
+        RunRetrieveV2Params.builder()
+            .projectId(item.projectId().get())
+            .startTime(OffsetDateTime.parse(item.startTime().get()))
+            .addSelect(RunRetrieveV2Params.Select.NAME)
+            .addSelect(RunRetrieveV2Params.Select.STATUS)
+            .addSelect(RunRetrieveV2Params.Select.INPUTS)
+            .addSelect(RunRetrieveV2Params.Select.OUTPUTS)
+            .build()
+    )
+    println("${run.name().orElse("")} ${run.status().map { it.toString() }.orElse("")}")
+}
+```
