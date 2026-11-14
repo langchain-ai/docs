@@ -111,6 +111,36 @@ vectorstore = AsyncCockroachDBVectorStore(
 results = await vectorstore.asimilarity_search("distributed database performance", k=5)
 ```
 
+#### Use relevance thresholds
+
+<Note>
+The vector-store APIs in this section and the following two sections are unreleased. They require the corresponding package changes; `langchain-cockroachdb==0.6.0` does not include them.
+</Note>
+
+`similarity_search_with_relevance_scores` and its async counterpart return bounded scores for threshold retrievers. These scores are similarity transformations, not probabilities:
+
+- **Cosine**: `1 - distance / 2`, bounded to the range from 0 to 1.
+- **L2**: `1 / (1 + distance)`.
+- **Inner product**: `1 / (1 + exp(distance))`, where distance is the negative dot product.
+
+Choose thresholds using examples from your application. Pass `relevance_score_fn` to the store constructor to supply a custom conversion. Hybrid relevance searches require this conversion because fusion scores are not vector distances. Raw `similarity_search_with_score` results remain unchanged.
+
+#### Remove source chunks
+
+`delete_by_filter` and `adelete_by_filter` remove documents that match a metadata predicate. The operation respects the store's namespace and rejects empty predicates. A broad predicate can still match every row in that namespace or table. The return value indicates success, including when no rows match; it is not a deleted-row count.
+
+To refresh a source, write replacement chunks with stable IDs before deleting older revisions. Serialize refreshes for each tenant and source. Readers can see both revisions during replacement, and concurrent writers can otherwise delete each other's chunks. A failed insertion leaves the old revision available; replay the same revision to complete partial writes.
+
+`delete` and `adelete` accept IDs and reject unsupported keyword arguments, including `filter`. Calling either method without IDs does nothing.
+
+#### Observe search execution
+
+`CSPANNQueryOptions(on_search=...)` accepts a synchronous callback that receives a `SearchDiagnostics` record after each successful vector search. Records include elapsed time, result count, and indexed-window counts when available. They contain no query text, embeddings, metadata, or tenant IDs.
+
+The `path` field distinguishes direct queries, filtered exact queries, filtered indexed windows, and exact fallback. It describes the library's execution path, not the database optimizer's plan. Elapsed time includes connection checkout and retries, but excludes embeddings, MMR selection, and hybrid fusion. For hybrid and MMR searches, the record describes the vector candidate search.
+
+Keep the callback fast and thread-safe because it runs on the engine's event loop. Callback exceptions do not fail retrieval.
+
 ### Chat Message History
 
 Store conversation history in CockroachDB for persistent, distributed chat applications.
