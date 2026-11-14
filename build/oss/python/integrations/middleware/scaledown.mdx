@@ -1,0 +1,302 @@
+---
+title: ScaleDown middleware integration
+description: Integrate with ScaleDown middleware using LangChain Python.
+integration:
+  name: ScaleDown middleware
+  pypi: langchain-scaledown
+  available: Conversation summarization, context and tool result compression, and structured extraction
+  source: "[`scaledown-team/langchain-scaledown`](https://github.com/scaledown-team/langchain-scaledown/tree/main/libs/scaledown)"
+---
+
+Middleware integrations for [ScaleDown](https://scaledown.ai) Constrained Decoding Models. ScaleDown Constrained Decoding Models are trained for one narrow task each, so they handle the high-volume steps around an agent, such as compacting history or reading a long tool result, faster and more cheaply than a second call to a general-purpose model. The agent keeps its own model for planning and generation. Learn more about [middleware](/oss/python/langchain/middleware/overview).
+
+All ScaleDown middleware fails open. If ScaleDown is unreachable, out of credits, or rejects a request, the agent runs as if the middleware were not there, and a warning is logged.
+
+| Middleware | Description |
+|------------|-------------|
+| [Summarization](#summarization) | Replace older messages with a summary once the context fills up |
+| [Context compression](#context-compression) | Compress a large system prompt relative to the user's question |
+| [Tool result compression](#tool-result-compression) | Let the model request only the relevant part of a tool's output |
+| [Extraction](#extraction) | Pull structured fields out of the user's messages into agent state |
+
+## Setup
+
+To use the ScaleDown middleware, create a ScaleDown account, get an API key from the [ScaleDown dashboard](https://scaledown.ai/dashboard), and install the `langchain-scaledown` package. New accounts include 50 million free tokens.
+
+### Credentials
+
+```python Set API key
+import getpass
+import os
+
+if "SCALEDOWN_API_KEY" not in os.environ:
+    os.environ["SCALEDOWN_API_KEY"] = getpass.getpass("Enter your ScaleDown API key: ")
+```
+
+Every middleware reads `SCALEDOWN_API_KEY`. To point at a different API host, set `SCALEDOWN_BASE_URL`. To share one connection across middleware, create a `ScaledownClient` and pass it as `client=` to each one.
+
+It is also helpful (but not required) to set up LangSmith for observability and <Tooltip tip="Log each step of a model's execution to debug and improve it">tracing</Tooltip>. To enable automated tracing, set your [LangSmith](/langsmith/observability) API key:
+
+```python Enable tracing
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+The ScaleDown middleware lives in the `langchain-scaledown` package:
+
+<CodeGroup>
+    ```bash pip
+    pip install -U langchain-scaledown
+    ```
+    ```bash uv
+    uv add langchain-scaledown
+    ```
+</CodeGroup>
+
+## Summarization
+
+Long-running agents run out of context. Summarizing older history with another call to a general-purpose model adds cost and latency every time the history fills up. `ScaledownSummarizer` writes the summary with ScaleDown instead, and plugs into the built-in [`SummarizationMiddleware`](/oss/python/langchain/middleware/built-in#summarization) through its `summarizer` argument. The built-in middleware still decides when to summarize and which recent messages to keep.
+
+The default summary has the same sections as the LangChain summary prompt: session intent, summary, artifacts, and next steps.
+
+<Note>
+    ScaleDown summarization caps output at 200 tokens, so `max_tokens` above that value is clamped by the API.
+</Note>
+
+```python Summarizer with SummarizationMiddleware
+from langchain.agents import create_agent
+from langchain.agents.middleware import SummarizationMiddleware
+from langchain_scaledown import ScaledownSummarizer
+
+agent = create_agent(
+    model="claude-sonnet-4-6",
+    tools=[read_file, write_file, run_tests],
+    middleware=[
+        SummarizationMiddleware(
+            model="claude-sonnet-4-6",  # Used for its context window and token counting
+            trigger=("fraction", 0.8),
+            keep=("fraction", 0.1),
+            trim_tokens_to_summarize=None,  # Send all older history to ScaleDown
+            summarizer=ScaledownSummarizer(),  # [!code highlight]
+        ),
+    ],
+)
+```
+
+`ScaledownSummarizationMiddleware` is a shortcut for the same setup, with one difference: if the ScaleDown call fails, it leaves the history as is and the model is called normally.
+
+```python ScaledownSummarizationMiddleware
+from langchain.agents import create_agent
+from langchain_scaledown import ScaledownSummarizationMiddleware
+
+agent = create_agent(
+    model="claude-sonnet-4-6",
+    tools=[read_file, write_file, run_tests],
+    middleware=[
+        ScaledownSummarizationMiddleware(  # [!code highlight]
+            "claude-sonnet-4-6",
+            trigger=("fraction", 0.8),
+            keep=("fraction", 0.1),
+        ),
+    ],
+)
+```
+
+The Deep Agents summarization middleware accepts the same `summarizer` argument. It also saves the evicted history to a file the agent can read back.
+
+<Accordion title="Configuration options">
+
+<ParamField body="instructions" type="string | None">
+    Rules appended to ScaleDown's base summarization instructions. Defaults to the session intent, summary, artifacts, and next steps sections. Pass `None` to use ScaleDown's default behavior only.
+</ParamField>
+
+<ParamField body="max_tokens" type="number" default="2048">
+    Maximum length of the generated summary. The API clamps this to its output limit.
+</ParamField>
+
+<ParamField body="client" type="ScaledownClient">
+    Preconfigured client. If omitted, one is created from `api_key`, `base_url`, or the environment variables.
+</ParamField>
+
+</Accordion>
+
+## Context compression
+
+`ScaledownCompressionMiddleware` compresses a large system prompt relative to the user's latest question before each model call. The system message is the context that gets compressed, and the last user message is the query that decides what to keep. The user message and the conversation history pass through unchanged.
+
+Use it for needle-in-a-haystack workloads, such as retrieval-augmented generation (RAG), where a big block of retrieved documents holds a few relevant facts. Do not use it for short prompts or creative generation, because compression can drop instructions, tone, or detail the model needs. With Deep Agents, the system message also holds the harness's own instructions, which compression would condense too.
+
+```python Context compression
+from langchain.agents import create_agent
+from langchain_scaledown import ScaledownCompressionMiddleware
+
+agent = create_agent(
+    model="claude-sonnet-4-6",
+    system_prompt=f"Answer using these documents:\n\n{retrieved_docs}",
+    middleware=[ScaledownCompressionMiddleware(min_context_chars=2000)],  # [!code highlight]
+)
+```
+
+The request passes through unchanged when the system message is shorter than `min_context_chars`, there is no user message, or the ScaleDown call fails.
+
+<Accordion title="Configuration options">
+
+<ParamField body="min_context_chars" type="number" default="2000">
+    Only compress contexts longer than this.
+</ParamField>
+
+<ParamField body="rate" type="string | number" default="auto">
+    Compression rate passed to ScaleDown.
+</ParamField>
+
+<ParamField body="context_extractor" type="Callable">
+    Function that takes the model request and returns a `(context, prompt)` tuple, or `None` to skip compression. The compressed context always replaces the system message. Defaults to the system message as context and the last user message as the prompt.
+</ParamField>
+
+</Accordion>
+
+## Tool result compression
+
+Ask a support agent about the refund policy for EU orders, and it can pull the store's entire policy page into context. Every later step pays for those tokens again. `ScaledownToolCompressionMiddleware` adds an optional `compression_query` parameter to your tools. When the model needs only part of a result, it fills in `compression_query`, for example `"refund policy for EU orders"`. The middleware removes the parameter before the tool runs, then compresses the output to the relevant parts before the model sees it.
+
+```python Tool result compression
+from langchain.agents import create_agent
+from langchain_scaledown import ScaledownToolCompressionMiddleware
+
+agent = create_agent(
+    model="claude-sonnet-4-6",
+    tools=[search_docs, fetch_url],
+    middleware=[ScaledownToolCompressionMiddleware(tools=["fetch_url"])],  # [!code highlight]
+)
+```
+
+Your tools do not change, so this works with any tool, including MCP tools. The compressed result starts with a note so the model can call the tool again without `compression_query` if it needs the full output:
+
+```text Compression note
+[Compressed by ScaleDown for "refund policy for EU orders": 18,402 -> 3,110 chars. Call this tool again without `compression_query` for the full output.]
+```
+
+The result passes through unchanged when the model omits `compression_query`, the output is shorter than `min_result_chars`, the result is an error or contains non-text content, or the ScaleDown call fails.
+
+<Accordion title="Configuration options">
+
+<ParamField body="tools" type="list">
+    Tools, or tool names, to add the parameter to. Defaults to every tool the agent has.
+</ParamField>
+
+<ParamField body="param_name" type="string" default="compression_query">
+    Name of the added parameter. Raises `ValueError` if a targeted tool already has a parameter with this name.
+</ParamField>
+
+<ParamField body="param_description" type="string">
+    Description of the added parameter, shown to the model.
+</ParamField>
+
+<ParamField body="min_result_chars" type="number" default="4000">
+    Only compress tool outputs longer than this.
+</ParamField>
+
+<ParamField body="rate" type="string | number" default="auto">
+    Compression rate passed to ScaleDown.
+</ParamField>
+
+</Accordion>
+
+## Extraction
+
+Agents often need a few facts from the user before they can act, such as an order number, the error they saw, or an email address. `ScaledownExtractionMiddleware` extracts them with ScaleDown instead of asking the agent's model on every turn. Once per run, before the first model call, it sends the user's messages and your schema to ScaleDown and stores the result in agent state under `scaledown_extraction`. Tools can read it during the run, and it is in the final output of `agent.invoke()`.
+
+Only the user's messages are used, never the agent's own replies, so every extracted value is something the user said. Describe each field in plain language:
+
+```python Extraction
+from langchain.agents import create_agent
+from langchain.tools import ToolRuntime, tool
+from langchain_scaledown import ScaledownExtractionMiddleware
+
+ticket = ScaledownExtractionMiddleware(
+    entities={
+        "order_id": "Order number the customer mentions",
+        "error_message": "Exact error message or code the customer saw",
+        "steps_tried": "What the customer says they already tried",
+        "customer_email": "Customer's email address",
+    },
+    context_chars=0,  # Skip evidence snippets to keep state small
+)
+
+
+@tool
+def file_ticket(runtime: ToolRuntime) -> str:
+    """File a support ticket with the details gathered so far."""
+    fields = runtime.state.get("scaledown_extraction", {}).get("fields", {})
+    return crm.create_ticket(**fields)  # Your ticketing system
+
+
+agent = create_agent(
+    model="claude-sonnet-4-6",
+    tools=[file_ticket],
+    middleware=[ticket],  # [!code highlight]
+)
+```
+
+The record has one entry per field. Fields that were not found are `None`:
+
+```python Extraction result
+result["scaledown_extraction"]["fields"]
+# {
+#   "order_id": "A-1042",
+#   "error_message": "ERR_PAYMENT_DECLINED",
+#   "steps_tried": "tried a different card",
+#   "customer_email": None,
+# }
+```
+
+With a [checkpointer](/oss/python/langgraph/persistence), extraction re-runs every turn over the whole conversation, so the record fills in as the user gives more detail. Extracted values are user text. If you set `inject_into_prompt=True` so the model can see the fields, that text is added to the system prompt, so only enable it for fields where that is acceptable.
+
+<Accordion title="Configuration options">
+
+<ParamField body="entities" type="dict" required>
+    Schema of fields to extract. Each key maps to a description string, an object with `description`, `threshold`, and `top_n`, or a nested schema.
+</ParamField>
+
+<ParamField body="instruction" type="string">
+    Global instruction applied to all fields.
+</ParamField>
+
+<ParamField body="threshold" type="number">
+    Global confidence threshold. Defaults to the API default.
+</ParamField>
+
+<ParamField body="top_n" type="number">
+    Maximum results per field. Defaults to all matches.
+</ParamField>
+
+<ParamField body="context_chars" type="number">
+    Characters of surrounding context returned per match. Set to `0` to keep agent state small.
+</ParamField>
+
+<ParamField body="text_builder" type="Callable">
+    Function that builds the text to extract from, given the conversation messages. Defaults to the text of the user's messages only.
+</ParamField>
+
+<ParamField body="inject_into_prompt" type="boolean" default="False">
+    Append the extracted fields to the system message on every model call.
+</ParamField>
+
+</Accordion>
+
+## API reference
+
+For the source and full parameter documentation of every ScaleDown class, see the [`langchain-scaledown` repository](https://github.com/scaledown-team/langchain-scaledown/tree/main/libs/scaledown).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/middleware/scaledown.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
