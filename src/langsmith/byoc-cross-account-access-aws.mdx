@@ -1,49 +1,59 @@
 ---
 title: Reach a private BYOC data plane from another AWS account
 sidebarTitle: Cross-account access
-description: Connect applications running in a different AWS account to a private LangSmith BYOC data plane using VPC peering or AWS PrivateLink.
+description: Connect applications running in a different AWS account to a private LangSmith BYOC data plane using AWS PrivateLink, VPC peering, or a transit gateway.
 icon: "arrow-left-right"
 ---
 
+A private BYOC data plane exposes its load balancer inside your data plane VPC. Applications in a different AWS account cannot reach it without an explicit cross-account network path. Two approaches work: **AWS PrivateLink** (recommended) and **VPC peering or transit gateway** (when CIDR ranges do not overlap).
+
 <Note>
-This page needs review from the LangChain infrastructure team (INF-2728) before it can be published. The patterns below apply to customer-owned VPCs (BYOVPC). Whether the same approach applies when LangChain creates the VPC is an open question.
+LangChain provisions a PrivateLink endpoint for the EKS control plane only. There is no LangChain-managed endpoint service for application traffic. You create and manage the endpoint service for your own use.
 </Note>
 
-A private BYOC data plane exposes its load balancer inside a single VPC. Applications in a different AWS account cannot reach it over the public internet—they need a network path that crosses account boundaries without leaving AWS.
+The steps below apply to a [customer-owned VPC (BYOVPC)](/langsmith/byoc-byovpc-aws). Whether the same approach holds when LangChain creates the VPC is pending confirmation from the LangChain infrastructure team.
 
-Two standard patterns achieve this:
+## AWS PrivateLink (recommended)
 
-- **VPC peering**: a direct connection between two VPCs, in the same or different accounts or regions.
-- **AWS PrivateLink**: an endpoint service that lets consumers in any account connect to a producer's load balancer without exposing it publicly.
+PrivateLink creates a private endpoint in each consumer VPC without routing between CIDR ranges, so it works even when IP ranges overlap.
 
-## Customer-owned VPC (BYOVPC)
+### In the data plane account
 
-When you supply your own VPC with [Bring your own VPC on AWS](/langsmith/byoc-byovpc-aws), you control the network and can establish cross-account connectivity.
+1. Identify the Network Load Balancer (NLB) for the data plane ingress. Find it in the AWS console or by describing load balancers with the tag `langsmith-data-plane=<data-plane-name>`.
+2. Create a **VPC endpoint service** backed by that NLB. Set acceptance mode to **auto** or **manual** depending on your security policy.
+3. Add each consumer AWS account as a **principal** allowed to create an interface endpoint for the service.
+4. Note the endpoint service name (for example, `com.amazonaws.vpce.us-east-1.vpce-svc-xxxxxxxxxxxxxxxxx`).
 
-### VPC peering
+<Warning>
+Do not modify the NLB itself. LangSmith reconciles the data plane on a regular cadence and reverts manual changes to managed resources. If the ingress mode or subnets change, LangChain coordinates any NLB updates with you.
+</Warning>
 
-Create a VPC peering connection between the data plane VPC and the client VPC:
+### In each consumer account
 
-1. In the data plane account, create a VPC peering connection request from the data plane VPC to the client VPC in the other account.
-2. In the client account, accept the peering request.
-3. Update the route tables in both VPCs to route traffic across the peering connection.
-4. Update any security groups or network ACLs that need to allow the peered CIDR ranges.
+1. Create a **VPC interface endpoint** for the endpoint service name from the previous step, in the VPC where your application runs.
+2. Create a **private Route 53 hosted zone** for the data plane hostname (for example, `<data-plane-name>.aws.smith.langchain.com`), associated with the consumer VPC.
+3. Add an alias or CNAME record in that hosted zone pointing the data plane hostname to the interface endpoint's DNS name.
 
-The LangSmith load balancer is reachable at the data plane's API URL once routing is in place. Find the URL under **Settings > Data Planes**.
+Routing the hostname through Route 53 ensures that the TLS certificate served by the data plane still matches the hostname and that certificate validation succeeds.
 
-### AWS PrivateLink
+Your applications then use the standard data plane API URL from **Settings > Data Planes** without any change. DNS resolves it to the interface endpoint in the consumer VPC.
 
-Create an endpoint service in front of the data plane load balancer and consume it from the client account:
+## VPC peering or transit gateway
 
-1. In the data plane account, create a Network Load Balancer that fronts the data plane's internal load balancer.
-2. Create an endpoint service backed by that Network Load Balancer.
-3. Grant the client account permission to create an interface endpoint for the service.
-4. In the client account, create a VPC interface endpoint for the service.
-5. Use the endpoint DNS name as the API endpoint in your application configuration.
+VPC peering and transit gateways work when CIDR ranges do not overlap between the data plane VPC and the consumer VPCs.
 
-## LangChain-managed VPC
+**VPC peering:**
 
-When LangChain creates the VPC for your data plane, the cross-account connectivity approach may differ. Contact the LangChain team to confirm whether VPC peering or PrivateLink is supported in that configuration and what permissions or coordination is required.
+1. In the data plane account, create a peering connection request from the data plane VPC to the consumer VPC.
+2. In the consumer account, accept the request.
+3. Add routes in both VPCs so traffic to each other's CIDR range traverses the peering connection.
+4. Update any network ACLs or security groups that need to allow the peered ranges.
+
+**Transit gateway:**
+
+Attach both VPCs to a shared transit gateway and configure route tables so each VPC can reach the other. This scales to many consumer VPCs without a full mesh of peering connections.
+
+With either approach, your applications reach the data plane at its API URL directly, with no Route 53 change required. DNS resolves the hostname to the private load balancer IP address within the data plane VPC, and routing carries the traffic across the peering or gateway connection.
 
 ## See also
 
