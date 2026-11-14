@@ -1,0 +1,74 @@
+---
+title: Reach a private BYOC data plane from another AWS account
+sidebarTitle: Cross-account access
+description: Connect applications running in a different AWS account to a private LangSmith BYOC data plane using AWS PrivateLink, VPC peering, or a transit gateway.
+icon: "arrow-left-right"
+---
+
+A private BYOC data plane exposes its load balancer inside your data plane VPC. Applications in a different AWS account cannot reach it without an explicit cross-account network path. Two approaches work: **AWS PrivateLink** (recommended) and **VPC peering or transit gateway** (when CIDR ranges do not overlap).
+
+<Note>
+LangChain provisions a PrivateLink endpoint that carries traffic between the LangChain control plane and your data plane in both directions. There is no LangChain-managed endpoint service for application traffic from your own AWS accounts. You create and manage that endpoint service yourself.
+</Note>
+
+The steps below apply to a [customer-owned VPC (BYOVPC)](/langsmith/byoc-byovpc-aws). Whether the same approach holds when LangChain creates the VPC is pending confirmation from the LangChain infrastructure team.
+
+## AWS PrivateLink (recommended)
+
+PrivateLink creates a private endpoint in each consumer VPC without routing between CIDR ranges, so it works even when IP ranges overlap.
+
+### In the data plane account
+
+1. Identify the Network Load Balancer (NLB) for the data plane ingress. Find it in the AWS EC2 console under **Load Balancers** in your data plane account and region.
+2. Create a **VPC endpoint service** backed by that NLB. Set acceptance mode to **auto** or **manual** depending on your security policy.
+3. Add each consumer AWS account as a **principal** allowed to create an interface endpoint for the service.
+4. Note the endpoint service name (for example, `com.amazonaws.vpce.us-east-1.vpce-svc-xxxxxxxxxxxxxxxxx`).
+
+<Warning>
+Do not modify the NLB itself. LangSmith reconciles the data plane on a regular cadence and reverts manual changes to managed resources. If the ingress mode or subnets change, LangChain coordinates any NLB updates with you.
+</Warning>
+
+### In each consumer account
+
+1. Create a **VPC interface endpoint** for the endpoint service name from the previous step, in the VPC where your application runs.
+2. Find the data plane hostname in the API URL shown under **Settings > Data Planes**.
+3. Create a **private Route 53 hosted zone** for that hostname, associated with the consumer VPC.
+4. Add an alias or CNAME record in that hosted zone pointing the hostname to the interface endpoint's DNS name.
+
+Routing the hostname through Route 53 ensures that the TLS certificate served by the data plane still matches the hostname and that certificate validation succeeds.
+
+Your applications use the standard data plane API URL without any change. DNS resolves it to the interface endpoint in the consumer VPC.
+
+## VPC peering or transit gateway
+
+VPC peering and transit gateways work when CIDR ranges do not overlap between the data plane VPC and the consumer VPCs.
+
+**VPC peering:**
+
+1. In the data plane account, create a peering connection request from the data plane VPC to the consumer VPC.
+2. In the consumer account, accept the request.
+3. Add routes in both VPCs so traffic to each other's CIDR range traverses the peering connection.
+4. Update any network ACLs or security groups that need to allow the peered ranges.
+
+**Transit gateway:**
+
+Attach both VPCs to a shared transit gateway and configure route tables so each VPC can reach the other. This scales to many consumer VPCs without a full mesh of peering connections.
+
+With either approach, routing carries traffic across the peering or gateway connection, but DNS does not follow automatically. The data plane hostname only resolves inside the data plane VPC. Each consumer VPC needs the same private Route 53 hosted zone setup as the PrivateLink steps: create a private hosted zone for the hostname, associate it with the consumer VPC, and add an alias or CNAME record pointing to the data plane's load balancer DNS name.
+
+## See also
+
+- [Bring your own VPC on AWS](/langsmith/byoc-byovpc-aws)
+- [BYOC architecture on AWS](/langsmith/byoc-architecture-aws)
+- [BYOC onboarding on AWS](/langsmith/byoc-onboarding-aws)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/byoc-cross-account-access-aws.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
