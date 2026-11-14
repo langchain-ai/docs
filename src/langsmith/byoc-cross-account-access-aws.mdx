@@ -8,7 +8,7 @@ icon: "arrow-left-right"
 A private BYOC data plane exposes its load balancer inside your data plane VPC. Applications in a different AWS account cannot reach it without an explicit cross-account network path. Two approaches work: **AWS PrivateLink** (recommended) and **VPC peering or transit gateway** (when CIDR ranges do not overlap).
 
 <Note>
-LangChain provisions a PrivateLink endpoint for the EKS control plane only. There is no LangChain-managed endpoint service for application traffic. You create and manage the endpoint service for your own use.
+LangChain provisions a PrivateLink endpoint that carries traffic between the LangChain control plane and your data plane in both directions. There is no LangChain-managed endpoint service for application traffic from your own AWS accounts. You create and manage that endpoint service yourself.
 </Note>
 
 The steps below apply to a [customer-owned VPC (BYOVPC)](/langsmith/byoc-byovpc-aws). Whether the same approach holds when LangChain creates the VPC is pending confirmation from the LangChain infrastructure team.
@@ -19,7 +19,7 @@ PrivateLink creates a private endpoint in each consumer VPC without routing betw
 
 ### In the data plane account
 
-1. Identify the Network Load Balancer (NLB) for the data plane ingress. Find it in the AWS console or by describing load balancers with the tag `langsmith-data-plane=<data-plane-name>`.
+1. Identify the Network Load Balancer (NLB) for the data plane ingress. Find it in the AWS EC2 console under **Load Balancers** in your data plane account and region.
 2. Create a **VPC endpoint service** backed by that NLB. Set acceptance mode to **auto** or **manual** depending on your security policy.
 3. Add each consumer AWS account as a **principal** allowed to create an interface endpoint for the service.
 4. Note the endpoint service name (for example, `com.amazonaws.vpce.us-east-1.vpce-svc-xxxxxxxxxxxxxxxxx`).
@@ -31,12 +31,13 @@ Do not modify the NLB itself. LangSmith reconciles the data plane on a regular c
 ### In each consumer account
 
 1. Create a **VPC interface endpoint** for the endpoint service name from the previous step, in the VPC where your application runs.
-2. Create a **private Route 53 hosted zone** for the data plane hostname (for example, `<data-plane-name>.aws.smith.langchain.com`), associated with the consumer VPC.
-3. Add an alias or CNAME record in that hosted zone pointing the data plane hostname to the interface endpoint's DNS name.
+2. Find the data plane hostname in the API URL shown under **Settings > Data Planes**.
+3. Create a **private Route 53 hosted zone** for that hostname, associated with the consumer VPC.
+4. Add an alias or CNAME record in that hosted zone pointing the hostname to the interface endpoint's DNS name.
 
 Routing the hostname through Route 53 ensures that the TLS certificate served by the data plane still matches the hostname and that certificate validation succeeds.
 
-Your applications then use the standard data plane API URL from **Settings > Data Planes** without any change. DNS resolves it to the interface endpoint in the consumer VPC.
+Your applications use the standard data plane API URL without any change. DNS resolves it to the interface endpoint in the consumer VPC.
 
 ## VPC peering or transit gateway
 
@@ -53,10 +54,10 @@ VPC peering and transit gateways work when CIDR ranges do not overlap between th
 
 Attach both VPCs to a shared transit gateway and configure route tables so each VPC can reach the other. This scales to many consumer VPCs without a full mesh of peering connections.
 
-With either approach, your applications reach the data plane at its API URL directly, with no Route 53 change required. DNS resolves the hostname to the private load balancer IP address within the data plane VPC, and routing carries the traffic across the peering or gateway connection.
+With either approach, routing carries traffic across the peering or gateway connection, but DNS does not follow automatically. The data plane hostname only resolves inside the data plane VPC. Each consumer VPC needs the same private Route 53 hosted zone setup as the PrivateLink steps: create a private hosted zone for the hostname, associate it with the consumer VPC, and add an alias or CNAME record pointing to the data plane's load balancer DNS name.
 
 ## See also
 
 - [Bring your own VPC on AWS](/langsmith/byoc-byovpc-aws)
 - [BYOC architecture on AWS](/langsmith/byoc-architecture-aws)
-- [Set up private connectivity](/langsmith/byoc-onboarding-aws#set-up-private-connectivity)
+- [BYOC onboarding on AWS](/langsmith/byoc-onboarding-aws)
