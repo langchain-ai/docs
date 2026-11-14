@@ -1,0 +1,88 @@
+---
+title: What changes in LangSmith v0.18
+sidebarTitle: Agent migration in v0.18
+description: How self-hosted LangSmith v0.18 moves existing tracing projects to agents and environments, the migration timeline, and what changes in each workspace.
+---
+
+Self-hosted LangSmith v0.18 organizes every workspace by [agent](/langsmith/agent-registry#agent) instead of by tracing project. Each agent divides its traces across [environments](/langsmith/agent-environments) drawn from a fixed set of four: **Production**, **Staging**, **Development**, and **Local**. Agents and environments record which agent produced each trace and where it ran, so alerts, dashboards, and evaluators can target one environment without you filtering for it. When you upgrade an existing installation, LangSmith migrates your tracing projects to agents automatically.
+
+This page is for administrators of a self-hosted installation. For the upgrade itself, see [Upgrade an installation](/langsmith/self-host-upgrades). New installations on v0.18 or later start with agents, so there is nothing to migrate.
+
+## Before you upgrade
+
+<Warning>
+The migration cannot be undone. Once it has run, do not downgrade to a LangSmith version from before the migration. If you downgrade, tracing projects that the older version creates may never be migrated to agents.
+</Warning>
+
+- **Upgrade one minor version at a time**: Upgrade to the latest 0.17 chart before you upgrade to 0.18.
+- **Installations without authentication**: LangSmith does not migrate an installation that sets `authType: none`. Its workspace keeps the tracing-project experience after the upgrade. To move it to agents, configure [basic auth](/langsmith/self-host-basic-auth) or [SSO](/langsmith/self-host-sso), and LangSmith then runs the migration.
+
+## How the migration runs
+
+The Helm chart value `config.agentMigration.enabled` controls the migration and defaults to `true`. It needs no extra infrastructure or permissions. The time it takes depends on how many workspaces and tracing projects the installation has.
+
+1. About 10 minutes after the upgraded services start, the migration begins on its own. Restarts do not reset this delay.
+1. LangSmith migrates each workspace separately. A workspace switches to agents as soon as its own migration finishes, without waiting for the rest of the installation.
+1. While the migration is active, LangSmith checks migrated workspaces for tracing projects created after their migration and migrates those too.
+1. After 24 hours with no new tracing projects to migrate, the migration stops. Later upgrades do not run it again.
+
+Tracing keeps working throughout the migration. Until its workspace migrates, a user sees the tracing-project experience.
+
+To pause the migration, set the value to `false`:
+
+```yaml
+config:
+  agentMigration:
+    enabled: false
+```
+
+Apply the change with `helm upgrade`, which restarts the LangSmith pods that read the setting. To resume, set the value back to `true`. The migration continues from where it stopped. Pausing does not end the migration: it stops for good only after it runs again for 24 hours with no new tracing projects to migrate.
+
+## Check whether a workspace has migrated
+
+A migrated workspace shows the [agent switcher](/langsmith/navigate-agents) in the top bar, and the control at the top left becomes a workspace switcher that names your workspace. A workspace that has not migrated yet still shows the tracing-project experience.
+
+## How tracing projects map to agents
+
+LangSmith does not re-ingest, move, or rename your traces. Each tracing project keeps its ID, name, and history:
+
+- **One agent per tracing project**: Each tracing project becomes its own agent, with a **Production** environment. That environment is the original tracing project. The migration does not create **Staging**, **Development**, or **Local** environments.
+- **No merging by name**: Tracing projects named `checkout`, `checkout-prod`, and `checkout-staging` become three separate agents, not one agent with three environments.
+- **Agent identifier**: LangSmith derives the identifier from the project name, converted to lowercase letters, digits, and hyphens. When a [deployment](/langsmith/deployment) owns the tracing project, the identifier and display name come from the deployment's name instead. If the identifier is already taken, LangSmith adds a hyphen and eight digits, for example `checkout-12345678`. To find an agent's final identifier, open it in [Agent Registry](/langsmith/agent-registry).
+- **Projects that stay as they are**: LangSmith does not convert experiments, projects that LangSmith creates for its own features, or tracing projects that belong to preview deployments to agents.
+
+A new environment that you add later gets a tracing project named after the agent identifier, a hyphen, and the environment. For example, an agent whose identifier is `checkout` has its staging traces in `checkout-staging`. A tracing project created after the migration, for example by code that sends traces to a new project name, becomes a new agent with a **Production** environment.
+
+## What changes in each workspace
+
+Your traces, datasets, prompts, and experiments stay the same records. Code that sends traces to an existing tracing project by name keeps working, because that project is now the agent's **Production** environment. See [Configure integrations that require a project name](/langsmith/create-an-agent#use-an-environment-project).
+
+After a workspace migrates, these parts of LangSmith are scoped to an agent and environment instead of a tracing project:
+
+- **Traces**: Grouped under an agent and one of its environments instead of under a tracing project you named.
+- **Prebuilt dashboards**: Generated for every agent environment rather than for a named project. See [Dashboards](/langsmith/dashboards).
+- **Alerts**: Apply to one environment of an agent. See [Alerts](/langsmith/alerts).
+- **Evaluators**: Attach to an environment. See [Manage evaluators](/langsmith/evaluators).
+- **Datasets**: Attach to one or more agents rather than to a project, and to no environment, so one dataset can serve several agents. See [Create and manage datasets in the UI](/langsmith/manage-datasets-in-application).
+- **Navigation**: Gains an agent switcher in the top bar, which moves between the agent list and a single agent's Overview. See [Navigate agents](/langsmith/navigate-agents).
+- **The top-left control**: Becomes a workspace switcher that names your workspace and opens a list of the workspaces in your organization.
+
+## See also
+
+- [Agent Registry](/langsmith/agent-registry)
+- [Agent environments](/langsmith/agent-environments)
+- [Navigate agents](/langsmith/navigate-agents)
+- [Create an agent](/langsmith/create-an-agent)
+- [Self-hosted changelog](/langsmith/self-hosted-changelog)
+- [Administration overview](/langsmith/administration-overview#agents)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/self-host-agent-migration.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
