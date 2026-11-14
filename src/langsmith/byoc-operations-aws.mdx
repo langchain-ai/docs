@@ -63,10 +63,41 @@ LangSmith services emit logs, metrics, and traces the same way they do on self-h
 The LangChain team has no standing access to your data, and can only manage the infrastructure of your data plane. When troubleshooting requires access to data, there are two paths:
 
 - **You run the query**: You run the query yourself, and validate and sanitize the output before sharing it with LangChain.
-- **Break-glass access**: You allowlist a specific engineer to perform the operation. You can revoke that access at any time.
+- **Break-glass access**: You grant a specific LangChain engineer temporary access to perform the operation. You can revoke that access at any time.
+
+### Break-glass access
+
+Break-glass access uses the `LangSmithBYOCBreakGlass` IAM role that the [`langsmith-byoc-role` Terraform module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/aws/langsmith-byoc-role) creates in your account. The role's trust policy defaults to `Effect: Deny`. When a LangChain engineer requires access, they provide their AWS IAM Identity Center user ID and their LangChain email address to you.
+
+To grant access, set the following inputs in your `langsmith-byoc-role` module and apply:
+
+```hcl
+allow_break_glass_access = true
+
+break_glass_identitystore_user_ids = [
+  "<langchain-identity-store-user-id>",
+]
+
+break_glass_source_identities = [
+  "<langchain-engineer-email>",
+]
+```
+
+The Identity Store user ID ensures that only the specified engineer's credentials can assume the role. The source identity email improves readability in CloudTrail audit records.
+
+The `LangSmithBYOCBreakGlass` role carries only `eks:DescribeCluster` permission at the IAM layer. Kubernetes-level access — the ability to run commands inside the cluster — is controlled separately through EKS access entries in each cluster and region. LangChain creates and removes those entries as part of the break-glass workflow. All commands run during the session are logged in EKS audit logs, which are sent to CloudWatch in your account.
+
+To revoke access, set `allow_break_glass_access = false`, remove the Identity Store user IDs and source identities, and apply:
+
+```hcl
+allow_break_glass_access = false
+
+break_glass_identitystore_user_ids = []
+break_glass_source_identities      = []
+```
 
 <Note>
-If break-glass access is needed, the LangChain team reaches out with instructions.
+If break-glass access is needed, the LangChain team reaches out with the engineer's Identity Store user ID and email address. You retain full control and can revoke at any time.
 </Note>
 
 ## Auditing
