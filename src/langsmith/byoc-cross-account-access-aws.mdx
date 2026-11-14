@@ -1,0 +1,52 @@
+---
+title: Reach a private BYOC data plane from another AWS account
+sidebarTitle: Cross-account access
+description: Connect applications running in a different AWS account to a private LangSmith BYOC data plane using VPC peering or AWS PrivateLink.
+icon: "arrow-left-right"
+---
+
+<Note>
+This page needs review from the LangChain infrastructure team (INF-2728) before it can be published. The patterns below apply to customer-owned VPCs (BYOVPC). Whether the same approach applies when LangChain creates the VPC is an open question.
+</Note>
+
+A private BYOC data plane exposes its load balancer inside a single VPC. Applications in a different AWS account cannot reach it over the public internet—they need a network path that crosses account boundaries without leaving AWS.
+
+Two standard patterns achieve this:
+
+- **VPC peering**: a direct connection between two VPCs, in the same or different accounts or regions.
+- **AWS PrivateLink**: an endpoint service that lets consumers in any account connect to a producer's load balancer without exposing it publicly.
+
+## Customer-owned VPC (BYOVPC)
+
+When you supply your own VPC with [Bring your own VPC on AWS](/langsmith/byoc-byovpc-aws), you control the network and can establish cross-account connectivity.
+
+### VPC peering
+
+Create a VPC peering connection between the data plane VPC and the client VPC:
+
+1. In the data plane account, create a VPC peering connection request from the data plane VPC to the client VPC in the other account.
+2. In the client account, accept the peering request.
+3. Update the route tables in both VPCs to route traffic across the peering connection.
+4. Update any security groups or network ACLs that need to allow the peered CIDR ranges.
+
+The LangSmith load balancer is reachable at the data plane's API URL once routing is in place. Find the URL under **Settings > Data Planes**.
+
+### AWS PrivateLink
+
+Create an endpoint service in front of the data plane load balancer and consume it from the client account:
+
+1. In the data plane account, create a Network Load Balancer that fronts the data plane's internal load balancer.
+2. Create an endpoint service backed by that Network Load Balancer.
+3. Grant the client account permission to create an interface endpoint for the service.
+4. In the client account, create a VPC interface endpoint for the service.
+5. Use the endpoint DNS name as the API endpoint in your application configuration.
+
+## LangChain-managed VPC
+
+When LangChain creates the VPC for your data plane, the cross-account connectivity approach may differ. Contact the LangChain team to confirm whether VPC peering or PrivateLink is supported in that configuration and what permissions or coordination is required.
+
+## See also
+
+- [Bring your own VPC on AWS](/langsmith/byoc-byovpc-aws)
+- [BYOC architecture on AWS](/langsmith/byoc-architecture-aws)
+- [Set up private connectivity](/langsmith/byoc-onboarding-aws#set-up-private-connectivity)
