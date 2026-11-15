@@ -2039,12 +2039,13 @@ def _datadog_get(path: str, headers: dict[str, str]) -> dict:
 def _datadog_resources(path: str, headers: dict[str, str]):
     """Walk offset pages without forwarding credentials to pagination URLs."""
     offset, seen = 0, set()
+    page_size = 50
     while True:
         # Flag edits must not reorder pages. Environments use a different paging API.
         params = (
-            {"sort": "created_at", "page[limit]": 50, "page[offset]": offset}
+            {"sort": "created_at", "page[limit]": page_size, "page[offset]": offset}
             if path == "/api/v2/feature-flags"
-            else {"limit": 50, "offset": offset}
+            else {"limit": page_size, "offset": offset}
         )
         query = urllib.parse.urlencode(params)
         items = _datadog_get(f"{path}?{query}", headers)["data"]
@@ -2059,6 +2060,9 @@ def _datadog_resources(path: str, headers: dict[str, str]):
                 raise ValueError(message)
             seen.add(item["id"])
             yield item
+        # The environments API can repeat its last page for offsets past the end.
+        if len(items) < page_size:
+            return
         offset += len(items)
 
 

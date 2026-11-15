@@ -731,15 +731,17 @@ def test_non_boolean_rollout_requires_one_known_variant() -> None:
     assert not cp.is_fully_rolled_out(flag, {"prod"})
 
 
+@pytest.mark.parametrize("flag_count", [4, 50, 51, 100])
 def test_datadog_inventory_paginates_and_fetches_details(
     monkeypatch: pytest.MonkeyPatch,
+    flag_count: int,
 ) -> None:
     """List payloads omit allocations; rollout must use each detail response."""
     monkeypatch.setenv("DD_API_KEY", "test-api")
     monkeypatch.setenv("DD_APP_KEY", "test-app")
     flags = [
         {"id": str(UUID(int=i + 1)), "attributes": {"key": f"flag-{i}"}}
-        for i in range(51)
+        for i in range(flag_count)
     ]
     detail_reads = []
     listing_complete = False
@@ -751,11 +753,9 @@ def test_datadog_inventory_paginates_and_fetches_details(
         query = parse_qs(url.query)
         if url.path.endswith("/environments"):
             assert query["limit"] == ["50"]
-            offset = int(query["offset"][0])
+            # Environment reads beyond the end can repeat the final short page.
             return {
-                "data": []
-                if offset
-                else [
+                "data": [
                     {"id": "prod", "attributes": {"is_production": True}},
                     {"id": "dev", "attributes": {"is_production": False}},
                 ]
@@ -764,9 +764,10 @@ def test_datadog_inventory_paginates_and_fetches_details(
             assert query["sort"] == ["created_at"]
             assert query["page[limit]"] == ["50"]
             offset = int(query["page[offset]"][0])
-            listing_complete = offset >= len(flags)
+            page = flags[offset : offset + 50]
+            listing_complete = offset + len(page) >= len(flags)
             return {
-                "data": flags[offset : offset + 50],
+                "data": page,
                 "links": {"next": "https://example.com/never-follow"},
             }
         assert listing_complete
@@ -777,9 +778,9 @@ def test_datadog_inventory_paginates_and_fetches_details(
     monkeypatch.setattr(cp, "_datadog_get", get)
     index, production = cp.datadog_flag_index()
     assert production == {"prod"}
-    assert set(index) == {f"flag-{i}" for i in range(51)}
-    assert detail_reads == list(range(51))
-    assert cp.is_fully_rolled_out(index["flag-50"], production)
+    assert set(index) == {f"flag-{i}" for i in range(flag_count)}
+    assert detail_reads == list(range(flag_count))
+    assert cp.is_fully_rolled_out(index[f"flag-{flag_count - 1}"], production)
 
 
 def test_inventory_failure_never_reuses_a_snapshot(
@@ -816,9 +817,10 @@ def test_datadog_inventory_rejects_missing_production_and_duplicate_pages(
     monkeypatch.setattr(cp, "_datadog_get", lambda *_: {"data": []})
     with pytest.raises(ValueError, match="No Datadog production"):
         cp.datadog_flag_index()
-    monkeypatch.setattr(cp, "_datadog_get", lambda *_: {"data": [{"id": "same"}]})
-    with pytest.raises(ValueError, match="duplicate"):
-        list(cp._datadog_resources("/api/v2/feature-flags", {}))
+    for page in ([{"id": "same"}] * 2, [{"id": str(i)} for i in range(50)]):
+        monkeypatch.setattr(cp, "_datadog_get", lambda *_, page=page: {"data": page})
+        with pytest.raises(ValueError, match="duplicate"):
+            list(cp._datadog_resources("/api/v2/feature-flags", {}))
     monkeypatch.delenv("DD_APP_KEY")
     with pytest.raises(SystemExit, match="DD_APP_KEY"):
         cp.datadog_flag_index()
