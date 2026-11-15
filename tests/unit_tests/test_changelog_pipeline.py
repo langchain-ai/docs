@@ -476,6 +476,137 @@ def test_preflight_model_stops_on_a_rejected_key(
         cp._preflight_model()
 
 
+def test_hourly_github_rate_limit_stops_without_short_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An exhausted hourly budget must not sleep and retry for every PR."""
+    monkeypatch.setattr(
+        cp.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=1, stdout="", stderr="gh: API rate limit exceeded (HTTP 403)"
+        ),
+    )
+
+    def unexpected_sleep(_seconds: float) -> Never:
+        pytest.fail("Hourly quota exhaustion must stop immediately")
+
+    monkeypatch.setattr(cp.time, "sleep", unexpected_sleep)
+    with pytest.raises(RuntimeError, match="API rate limit exceeded"):
+        cp._run(["gh", "api", "rate_limit"], timeout=1)
+
+
+def test_secondary_github_rate_limit_can_recover(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A temporary secondary limit still allows a successful retry."""
+    replies = iter(
+        [
+            SimpleNamespace(
+                returncode=1,
+                stdout="",
+                stderr="You have exceeded a secondary rate limit",
+            ),
+            SimpleNamespace(returncode=0, stdout="[]", stderr=""),
+        ]
+    )
+    monkeypatch.setattr(cp.subprocess, "run", lambda *_args, **_kwargs: next(replies))
+    monkeypatch.setattr(cp.time, "sleep", lambda _seconds: None)
+    assert cp._run(["gh", "api", "example"], timeout=1) == "[]"
+
+
+@pytest.mark.parametrize("remaining", [0, 3])
+def test_collection_rejects_insufficient_github_quota(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, remaining: int
+) -> None:
+    """Stop before PR fetches when even their minimum request budget is unavailable."""
+    monkeypatch.setattr(
+        cp,
+        "_gh_api",
+        lambda _path: {
+            "resources": {"core": {"limit": 5000, "remaining": remaining, "reset": 0}}
+        },
+    )
+    monkeypatch.setattr(cp, "_list_feat_fix", lambda *_args: [101, 102])
+
+    def unexpected_fetch(*_args: object) -> Never:
+        pytest.fail("PRs must not be fetched with insufficient quota")
+
+    monkeypatch.setattr(cp, "_collect_one", unexpected_fetch)
+    with pytest.raises(SystemExit, match="1970-01-01T00:00:00\\+00:00"):
+        cp.cmd_collect(
+            argparse.Namespace(
+                out=str(tmp_path), since="2026-11-09", until="2026-11-16", workers=1
+            )
+        )
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_collection_budget_accounts_for_cached_prs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cached: bool
+) -> None:
+    """A complete collection succeeds with enough quota for its uncached PRs."""
+    prs = tmp_path / "prs"
+    prs.mkdir()
+    if cached:
+        (prs / "101.json").write_text("{}")
+    monkeypatch.setattr(
+        cp,
+        "_gh_api",
+        lambda _path: {
+            "resources": {
+                "core": {"limit": 5000, "remaining": 2 if cached else 4, "reset": 0}
+            }
+        },
+    )
+    monkeypatch.setattr(cp, "_list_feat_fix", lambda *_args: [101, 102])
+    monkeypatch.setattr(
+        cp,
+        "_collect_one",
+        lambda number, path: (path / f"{number}.json").write_text("{}"),
+    )
+    cp.cmd_collect(
+        argparse.Namespace(
+            out=str(tmp_path), since="2026-11-09", until="2026-11-16", workers=1
+        )
+    )
+    assert sorted(path.name for path in prs.iterdir()) == ["101.json", "102.json"]
+
+
+def test_weekly_refuses_partial_pr_collection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed PR read cannot become a successful but incomplete weekly changelog."""
+    monkeypatch.setattr(cp, "_preflight_model", lambda: None)
+    monkeypatch.setattr(
+        cp,
+        "_gh_api",
+        lambda _path: {
+            "resources": {"core": {"limit": 5000, "remaining": 5000, "reset": 0}}
+        },
+    )
+    monkeypatch.setattr(cp, "_list_feat_fix", lambda *_args: [101, 102])
+
+    def collect(number: int, path: Path) -> None:
+        if number == 102:
+            message = "GitHub request failed"
+            raise RuntimeError(message)
+        (path / f"{number}.json").write_text("{}")
+
+    def unexpected_classification(*_args: object) -> Never:
+        pytest.fail("An incomplete collection must not reach classification")
+
+    monkeypatch.setattr(cp, "_collect_one", collect)
+    monkeypatch.setattr(cp, "cmd_classify", unexpected_classification)
+    with pytest.raises(RuntimeError, match="refusing to generate a partial changelog"):
+        cp.cmd_weekly(
+            argparse.Namespace(
+                out=str(tmp_path), since="2026-11-09", until="2026-11-16", write=False
+            )
+        )
+    assert not list(tmp_path.glob("mock-*"))
+
+
 def test_fix_text_publishes_clean_rewrites_only(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -294,6 +294,8 @@ def _run(
         if (
             result.returncode == 0
             or "rate limit" not in result.stderr.lower()
+            # Exhausted hourly quota cannot recover on the short search/API backoff.
+            or "api rate limit exceeded" in result.stderr.lower()
             or attempt == RATE_LIMIT_RETRIES
         ):
             break
@@ -460,15 +462,40 @@ def cmd_collect(args: argparse.Namespace) -> None:
     out = _out_dir(args.out)
     prs_dir = _child(out, "prs")
     prs_dir.mkdir(exist_ok=True)
+    quota = _gh_api("rate_limit")["resources"]["core"]
+    reset_at = dt.datetime.fromtimestamp(quota["reset"], dt.UTC).isoformat()
+    print(
+        f"GitHub API quota: {quota['remaining']}/{quota['limit']} remaining; "
+        f"resets at {reset_at}",
+        file=sys.stderr,
+    )
+    if not quota["remaining"]:
+        message = f"GitHub API quota exhausted; retry after {reset_at}"
+        raise SystemExit(message)
     numbers = _list_feat_fix(_validate_date(args.since), _validate_date(args.until))
     print(f"{len(numbers)} merged feat/fix PRs", file=sys.stderr)
+    # Each uncached PR needs its metadata and at least one page of changed files.
+    minimum_requests = 2 * sum(
+        not _child(prs_dir, f"{number}.json").exists() for number in numbers
+    )
+    if minimum_requests > quota["remaining"]:
+        message = (
+            f"PR collection needs at least {minimum_requests} GitHub API requests; "
+            f"only {quota['remaining']} remain. Retry after {reset_at}"
+        )
+        raise SystemExit(message)
     with cf.ThreadPoolExecutor(max_workers=args.workers) as pool:
         futures = {pool.submit(_collect_one, n, prs_dir): n for n in numbers}
         for i, fut in enumerate(cf.as_completed(futures), 1):
             try:
                 fut.result()
-            except Exception as exc:  # noqa: BLE001 - report and keep going
-                print(f"#{futures[fut]}: {exc}", file=sys.stderr)
+            except Exception as exc:
+                for pending in futures:
+                    pending.cancel()
+                message = (
+                    "PR collection incomplete; refusing to generate a partial changelog"
+                )
+                raise RuntimeError(message) from exc
             if i % 50 == 0:
                 print(f"  {i}/{len(numbers)}", file=sys.stderr)
 
