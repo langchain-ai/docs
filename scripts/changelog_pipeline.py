@@ -45,14 +45,18 @@ import concurrent.futures as cf
 import datetime as dt
 import difflib
 import json
+import math
 import os
 import re
 import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
+from email.utils import parsedate_to_datetime
+from http import HTTPStatus
 from pathlib import Path
 from uuid import UUID
 
@@ -68,6 +72,7 @@ GH_TIMEOUT_SECONDS = 90
 CLAUDE_TIMEOUT_SECONDS = 600
 RATE_LIMIT_RETRIES = 5
 RATE_LIMIT_WAIT_SECONDS = 65
+DATADOG_MAX_WAIT_SECONDS = 300
 DIFF_CHAR_BUDGET = 30_000  # about 8k tokens
 BODY_CHAR_BUDGET = 6_000
 
@@ -2057,10 +2062,50 @@ def _datadog_get(path: str, headers: dict[str, str]) -> dict:
         message = "Datadog URL failed allowlist check"
         raise ValueError(message)
     request = urllib.request.Request(f"https://api.{site}{path}", headers=headers)
-    with urllib.request.build_opener(_NoDatadogRedirect()).open(
-        request, timeout=15
-    ) as response:
-        return json.load(response)
+    opener = urllib.request.build_opener(_NoDatadogRedirect())
+    for attempt in range(RATE_LIMIT_RETRIES + 1):
+        try:
+            with opener.open(request, timeout=15) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as exc:
+            if (
+                exc.code != HTTPStatus.TOO_MANY_REQUESTS
+                or attempt == RATE_LIMIT_RETRIES
+            ):
+                raise
+            delay = _datadog_retry_delay(exc)
+            if delay > DATADOG_MAX_WAIT_SECONDS:
+                raise
+            exc.close()
+            print(
+                f"Datadog rate limit: retry {attempt + 1}/{RATE_LIMIT_RETRIES} "
+                f"in {delay:g}s",
+                file=sys.stderr,
+            )
+            time.sleep(delay)
+    message = "Datadog retry loop exhausted without a response"
+    raise AssertionError(message)
+
+
+def _datadog_retry_delay(error: urllib.error.HTTPError) -> float:
+    """Honor server retry hints; Datadog reset values are seconds remaining."""
+    for name in ("Retry-After", "X-RateLimit-Reset"):
+        value = error.headers.get(name)
+        if value is None:
+            continue
+        try:
+            delay = float(value)
+        except ValueError:
+            if name != "Retry-After":
+                continue
+            try:
+                delay = parsedate_to_datetime(value).timestamp() - time.time()
+            except (TypeError, ValueError, OverflowError):
+                continue
+        if math.isfinite(delay):
+            # The reset header rounds to whole seconds; cross the boundary.
+            return max(1, delay + 1)
+    return RATE_LIMIT_WAIT_SECONDS
 
 
 def _datadog_resources(path: str, headers: dict[str, str]):

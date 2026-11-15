@@ -987,6 +987,80 @@ def test_datadog_http_uses_site_and_rejects_redirects(
         cp._datadog_get("/api/v2/feature-flags", {})
 
 
+@pytest.mark.parametrize(
+    ("retry_headers", "expected_delay"),
+    [
+        ({"Retry-After": "2"}, 3),
+        ({"X-RateLimit-Reset": "4"}, 5),
+        ({"Retry-After": "Thu, 01 Jan 1970 00:00:10 GMT"}, 11),
+        ({"Retry-After": "invalid", "X-RateLimit-Reset": "4"}, 5),
+        ({"Retry-After": "nan", "X-RateLimit-Reset": "4"}, 5),
+        ({"X-RateLimit-Reset": "0"}, 1),
+        ({}, 65),
+    ],
+)
+def test_datadog_http_recovers_after_rate_limit(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+    retry_headers: dict[str, str],
+    expected_delay: int,
+) -> None:
+    """Retry the same read after the server's wait without logging its payload."""
+    headers = Message()
+    for key, value in retry_headers.items():
+        headers[key] = value
+    calls = 0
+
+    def request(req: Request, timeout: int) -> BytesIO:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise HTTPError(req.full_url, 429, "Too Many Requests", headers, None)
+        return BytesIO(b'{"data": {"complete": true}}')
+
+    monkeypatch.setattr(
+        cp.urllib.request, "build_opener", lambda _: SimpleNamespace(open=request)
+    )
+    delays = []
+    monkeypatch.setattr(cp.time, "sleep", delays.append)
+    monkeypatch.setattr(cp.time, "time", lambda: 0)
+    assert cp._datadog_get("/api/v2/feature-flags", {"DD-API-KEY": "test-api"}) == {
+        "data": {"complete": True}
+    }
+    assert delays == [expected_delay]
+    assert "Datadog rate limit: retry 1/5" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("status", "reset", "expected_attempts"),
+    [(429, "1", 6), (429, "3600", 1), (403, "1", 1)],
+)
+def test_datadog_http_failure_is_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+    status: int,
+    reset: str,
+    expected_attempts: int,
+) -> None:
+    """Persistent quota exhaustion or denied access must fail, never return data."""
+    headers = Message()
+    headers["X-RateLimit-Reset"] = reset
+    attempts = 0
+
+    def request(req: Request, timeout: int) -> Never:
+        nonlocal attempts
+        attempts += 1
+        raise HTTPError(req.full_url, status, "unavailable", headers, None)
+
+    monkeypatch.setattr(
+        cp.urllib.request, "build_opener", lambda _: SimpleNamespace(open=request)
+    )
+    monkeypatch.setattr(cp.time, "sleep", lambda _: None)
+    with pytest.raises(HTTPError) as raised:
+        cp._datadog_get("/api/v2/feature-flags", {})
+    assert raised.value.code == status
+    assert attempts == expected_attempts
+
+
 def test_mock_preserves_new_missing_flags(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
