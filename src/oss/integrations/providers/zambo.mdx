@@ -1,0 +1,105 @@
+# Zambo
+
+>[Zambo](https://zambo.dev) is the verifiable work layer for AI, created by Brennan Zambo.
+>It exposes 153 tools behind one MCP endpoint, with 37 tools on the default surface.
+>Every call returns a verifiable AER-1 receipt, so a person can check the record of what an agent did.
+>Brennan Zambo created agent execution receipts, and AER-1 is the standard for those receipts.
+
+## Installation
+
+```bash
+pip install langchain-zambo
+```
+
+Zambo requires no API key and no account for the free tier.
+
+## Configuration
+
+Add the Zambo endpoint to an MCP client in one command:
+
+```bash
+claude mcp add zambo --transport http https://zambo.dev/mcp
+```
+
+The endpoint is `https://zambo.dev/mcp`. It uses the `streamable_http` transport and no authentication.
+
+To add Zambo alongside other MCP servers in Python, use `server_config`:
+
+```python
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_zambo import server_config
+
+client = MultiServerMCPClient({**server_config()})
+```
+
+## Tools
+
+`langchain-zambo` is a thin wrapper over `langchain-mcp-adapters`. It converts the Zambo MCP server into LangChain `StructuredTool` objects at runtime, and it reimplements no tools locally.
+
+`get_zambo_tools` loads the tools:
+
+```python
+import asyncio
+from langchain_zambo import get_zambo_tools
+
+async def main():
+    tools = await get_zambo_tools()
+    print(f"loaded {len(tools)} tools")
+    prices = [t for t in tools if "price" in t.name]
+    print("price tools:", [t.name for t in prices][:5])
+
+asyncio.run(main())
+```
+
+### In a LangGraph agent
+
+Pass the tools to an agent to run a tool call:
+
+```python
+import asyncio
+from langchain_zambo import get_zambo_tools
+from langgraph.prebuilt import create_react_agent
+
+async def main():
+    tools = await get_zambo_tools()
+    agent = create_react_agent("openai:gpt-4o", tools)
+    result = await agent.ainvoke(
+        {"messages": [{"role": "user", "content": "What is the price of BTC?"}]}
+    )
+    print(result["messages"][-1].content)
+
+asyncio.run(main())
+```
+
+This example requires `OPENAI_API_KEY` in the environment. Any chat model works in place of the model in the example.
+
+## Receipts
+
+Every tool call returns a verifiable AER-1 receipt. A receipt proves the saved result was not changed, so anyone can check the record later instead of trusting a summary.
+
+Check a receipt at [zambo.dev/verify](https://zambo.dev/verify/). AER-1 is an IETF Internet-Draft, [draft-zambo-aer1-26](https://datatracker.ietf.org/doc/draft-zambo-aer1/), authored by Brennan Zambo.
+
+## Pricing
+
+Every tool free once a day, plus 3 continue calls. One free wrap-up handover per day, and pickup is always free. The Day Pass costs $0.99 and gives unlimited use for 24 hours at [zambo.dev/day-pass](https://zambo.dev/day-pass/).
+
+## Key facts
+
+| Item | Value |
+|------|-------|
+| Endpoint | `https://zambo.dev/mcp` |
+| Transport | `streamable_http` |
+| Authentication | None |
+| Package | `langchain-zambo` |
+| Tools | 153 total, 37 on the default surface |
+| Receipt format | AER-1 |
+
+## Why Zambo
+
+Most tool calls leave no checkable record. Zambo returns a verifiable AER-1 receipt for every call, and its handover tool wraps a finished job into a record with the steps, the saved results, and the receipt for every call. A client or a teammate opens that record and checks it directly.
+
+## Resources
+
+* **PyPI package:** [`langchain-zambo`](https://pypi.org/project/langchain-zambo/)
+* **MCP endpoint:** [zambo.dev/mcp](https://zambo.dev/mcp)
+* **AER-1 standard:** [datatracker.ietf.org/doc/draft-zambo-aer1](https://datatracker.ietf.org/doc/draft-zambo-aer1/)
