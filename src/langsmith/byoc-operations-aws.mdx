@@ -10,7 +10,7 @@ LangChain operates your data plane after provisioning, including upgrades, scali
 Operations fall into three groups:
 
 - **[LangChain-managed operations](#langchain-managed-operations)**: Scaling, upgrades, and maintenance that LangChain performs for you.
-- **[Customer-managed operations](#customer-managed-operations)**: Observability, cross-account access, and auditing that you configure in your own AWS account.
+- **[Customer-managed operations](#customer-managed-operations)**: Data plane settings, observability, cross-account access, and auditing that you configure yourself.
 - **[Break-glass access](#break-glass-access)**: Temporary access that you grant to a LangChain engineer when troubleshooting requires it.
 
 ## LangChain-managed operations
@@ -49,18 +49,52 @@ Background services such as Istio and KEDA are upgraded on a regular cadence. Da
 
 ### Kubernetes cluster upgrades
 
-The EKS cluster that hosts your data plane requires periodic upgrades to maintain security, compatibility, and access to new features. LangChain performs these upgrades proactively, ahead of AWS end-of-support dates, and coordinates the window with you.
+The EKS cluster that hosts your data plane requires periodic upgrades to maintain security, compatibility, and access to new features. LangChain performs these upgrades proactively, ahead of AWS end-of-support dates, in the data plane's [maintenance window](#maintenance-window).
 
 Cluster upgrades fall into two types:
 
 - **Control plane upgrades**: Cover the Kubernetes API server and the components AWS manages alongside it. These are transparent to your workloads and do not restart pods.
 - **Node group upgrades**: Roll nodes one by one with make-before-break semantics. New nodes are provisioned on the updated version, pods move onto them, and the old nodes are terminated once migration completes. Pod disruption budgets apply to the drain, so each service stays available, though you might see brief connection resets as individual pods restart. No data is lost.
 
-### Maintenance windows
-
-Any maintenance or upgrade that could cause downtime, such as a restart of RDS or ElastiCache, happens in a scheduled maintenance window that LangChain coordinates with you in advance.
-
 ## Customer-managed operations
+
+### Data plane settings
+
+To edit a data plane's settings:
+
+1. Navigate to **Settings > Data Planes**.
+2. Find your data plane and select **Settings**.
+3. Open the tab for the setting you want to change, then save.
+
+You can also change these settings using the [data plane API](https://api.smith.langchain.com/redoc#tag/data_planes/paths/~1orgs~1current~1data-planes~1{id}/patch).
+
+#### Maintenance window
+
+The maintenance window is when LangChain runs operations on your data plane, such as EKS version upgrades and RDS database upgrades. Any maintenance that could cause downtime, such as a restart of RDS or ElastiCache, happens in this window.
+
+- The window lasts 2 hours, once a week. All times are in UTC.
+- Choose the day and the start time on the **Maintenance** tab.
+- The default is Sunday, 07:00–09:00 UTC (`sun:07:00-sun:09:00`).
+
+#### TTL retention
+
+TTL retention controls how long LangSmith keeps trace data. Configure it on the **TTL retention** tab.
+
+- **Enable TTL retention**: On by default.
+- **Short-lived TTL (days)**: How long short-lived traces are kept. The default is 14 days.
+- **Long-lived TTL (days)**: How long long-lived traces are kept. The default is 400 days. It must be greater than or equal to the short-lived TTL.
+
+#### Ingress allowlist
+
+On the **Ingress** tab, you can restrict which source IP ranges the load balancer accepts. Add up to 50 IPv4 CIDR ranges. The load balancer then accepts traffic on port 443 only from those ranges.
+
+- **Empty list**: The load balancer allows all sources.
+- **Private load balancer**: The data plane VPC CIDR is always allowed.
+
+<Warning>
+- An API update replaces the whole list. Include every range you want to keep, or the load balancer stops accepting traffic from the ranges you leave out.
+- Do not edit the Network Load Balancer security group directly in AWS. LangSmith reconciles the data plane on a regular cadence and reverts any manual changes to managed resources.
+</Warning>
 
 ### Observability
 
@@ -74,22 +108,20 @@ A private BYOC data plane exposes its load balancer inside your data plane VPC. 
 
 Any private network path between the consumer network and the data plane VPC works. LangChain does not require a specific method. Common options include:
 
-- **AWS PrivateLink**: Creates an interface endpoint in each consumer VPC without routing between CIDR ranges, so it works even when IP ranges overlap.
-- **VPC peering**: Routes traffic directly between two VPCs. Requires non-overlapping CIDR ranges.
-- **Transit gateway**: Routes traffic between many VPCs through a shared hub, without a full mesh of peering connections. Requires non-overlapping CIDR ranges.
-- **VPN**: Connects networks outside the data plane VPC, such as an on-premises network, over an encrypted tunnel. Requires non-overlapping CIDR ranges.
+- AWS PrivateLink
+- VPC peering
+- Transit gateway
+- VPN
 
 <Note>
 LangChain provisions [two PrivateLink connections](/langsmith/byoc-architecture-aws#connectivity) that carry traffic between the LangChain control plane and your data plane. There is no LangChain-managed endpoint service or network path for application traffic from your own networks. You create and manage that path yourself.
 </Note>
 
-The steps below apply whether LangChain creates the VPC or you supply your own. You can add your own resources, such as a VPC endpoint service, in either case. To manage the VPC itself (its subnets, routing, gateways, and endpoints), use [Bring your own VPC on AWS](/langsmith/byoc-byovpc-aws) instead.
+The steps below apply whether LangChain creates the VPC or you supply your own. To manage the VPC itself (its subnets, routing, gateways, and endpoints), use [Bring your own VPC on AWS](/langsmith/byoc-byovpc-aws) instead.
 
 #### Allow consumer source ranges
 
-If you [restrict the load balancer's source IP ranges](/langsmith/byoc-onboarding-aws#create-the-data-plane), add the CIDR range of each consumer network to that list. A private load balancer always allows the data plane VPC CIDR, but not consumer ranges. Without them, the load balancer drops consumer traffic.
-
-This applies to every option, including PrivateLink. The load balancer evaluates PrivateLink traffic against the private IP address of the client, not the address of the interface endpoint.
+If you [restrict the load balancer's source IP ranges](#ingress-allowlist), add the CIDR range of each consumer network to that list. A private load balancer always allows the data plane VPC CIDR, but not consumer ranges. Without them, the load balancer drops consumer traffic.
 
 #### Connect with AWS PrivateLink
 
@@ -111,13 +143,9 @@ To connect each consumer account:
 3. Create a **private Route 53 hosted zone** for that hostname, associated with the consumer VPC.
 4. Add an alias or CNAME record in that hosted zone pointing the hostname to the interface endpoint's DNS name.
 
-Routing the hostname through Route 53 ensures that the TLS certificate served by the data plane still matches the hostname and that certificate validation succeeds.
-
 Your applications use the standard data plane API URL without any change. DNS resolves it to the interface endpoint in the consumer VPC.
 
 #### Connect with VPC peering, a transit gateway, or a VPN
-
-Peering, transit gateways, and VPNs route traffic between networks. Set up the route, then configure DNS for each consumer network.
 
 To peer a consumer VPC with the data plane VPC:
 
@@ -163,7 +191,7 @@ The role carries only `eks:DescribeCluster` permission at the IAM layer. Kuberne
 | ----- | ------------------------- | --- |
 | Read-only | `AmazonEKSAdminViewPolicy` | Inspect cluster state without making changes |
 | Cluster management | `langsmith-cluster-management` Kubernetes group | Manage LangSmith workloads during an incident |
-| Full cluster admin | `AmazonEKSClusterAdminPolicy` | Last resort for critical incidents |
+| Full cluster admin | `AmazonEKSClusterAdminPolicy` | Last resort for critical incidents or data access |
 
 When a LangChain engineer requires access, they send you:
 
