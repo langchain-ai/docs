@@ -1,16 +1,17 @@
 ---
 type: authoring workflow
-title: Versioned Content Change Workflow
+title: Versioned Content Workflow
 description: Shows how a documentation change moves from the correct source directory through navigation, language-specific or unversioned routes, redirects, generated artifacts, and validation without breaking prefixed routes.
 tags: [versioning, documentation, redirects, navigation, validation]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-11-09T08:07:38.321Z
 sources:
+  - id: openwiki-source-75c7744a0e664440f0552945
+    resource: repo://.github/workflows/check-onboarding-models.yml
   - id: openwiki-source-2ff9d7e39bfac05172340de7
     resource: repo://.github/workflows/check-removed-pages-redirects.yml
   - id: openwiki-source-21617d8a6b2b570989a7c900
     resource: repo://.github/workflows/check-version-claims.yml
+  - id: openwiki-source-5153f86e64d6ee0b305f72b3
+    resource: repo://.github/workflows/refresh-langsmith-openapi.yml
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
   - id: openwiki-source-012f2c78e3b1446dfc35803f
@@ -23,6 +24,12 @@ sources:
     resource: repo://pipeline/preprocessors/markdown_preprocessor.py
   - id: openwiki-source-0a0a6c8d7a88288e6b6b9b5b
     resource: repo://scripts/check_cross_refs.py
+  - id: openwiki-source-819e9af046c9d9b8116a3da7
+    resource: repo://scripts/check_onboarding_models.py
+  - id: openwiki-source-b44190969c9eb39de1c69815
+    resource: repo://scripts/data/onboarding_models.yaml
+  - id: openwiki-source-697851c98229599f97376bfb
+    resource: repo://scripts/process_langsmith_openapi.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
   - id: openwiki-source-932afc9f195d1192160413ee
@@ -33,10 +40,13 @@ sources:
     resource: repo://tests/unit_tests/test_builder.py
   - id: openwiki-source-f260e53bc2ed7f10cc38d28f
     resource: repo://tests/unit_tests/test_conditional_fences.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-09T08:07:38.321Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-16T08:15:17.266Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-11-16T08:15:17.266Z
 ---
 
-# Versioned Content Change Workflow
+# Versioned Content Workflow
 
 A versioned-content change has four contracts: authored source, generated routes, navigation, and redirects. Edit files under `src/`, not `build/`; `src/docs.json` controls reader-facing placement and also affects which language variants the OSS builder emits. Navigation does not create source files, and redirects do not create page artifacts.
 
@@ -202,6 +212,18 @@ make check-mdx
 
 Package-version claims have a separate pull-request check. When changed `src/**/*.mdx` files mention package versions, `.github/workflows/check-version-claims.yml` runs `scripts/check_version_claims.py` for the changed files. It fails when a named version was never published; old floors are reported as notes and do not block. Do not treat a route prefix such as `/oss/python/` as a package-version claim.
 
+## 7. Keep externally synchronized content at its ownership boundary
+
+Not every documentation dependency is a local page or a generated route. The LangSmith onboarding snippets live in the external `langchain-ai/langchainplus` repository. `scripts/data/onboarding_models.yaml` records the external repository, `main` ref, paths, provider preferred models, current IDs, and intentional ignores; it is policy for checking the dependency, not a copy of the snippets. `scripts/check_onboarding_models.py` reads those paths, reports IDs outside the current allowlist, never edits the external files, and exits `0` when current, `1` for findings, or `2` when the registry or source cannot be read.
+
+Run the checker when changing onboarding model policy or investigating drift:
+
+```bash
+uv run python scripts/check_onboarding_models.py
+```
+
+The scheduled workflow uses read-only access, writes a report and standing issue, and directs fixes to `langchainplus`; it does not refresh a local MDX page. This is different from the LangSmith REST OpenAPI asset: that specification is externally fetched, filtered into the committed `src/langsmith/langsmith-platform-openapi.json` by a daily workflow, and published only after its refresh pull request is reviewed. For either external boundary, change the owner or processor policy, regenerate through the owning workflow, and validate the resulting local artifact rather than editing a deployment-generated surface.
+
 ## Completion checklist
 
 - [ ] Classify source ownership and list every required public route.
@@ -213,6 +235,7 @@ Package-version claims have a separate pull-request check. When changed `src/**/
 - [ ] Update `src/docs.json` navigation and redirects independently; verify every redirect destination is emitted.
 - [ ] Regenerate snippets or other generated artifacts from their owning sources.
 - [ ] Run `make build`, inspect `build/`, and run the relevant link, anchor, MDX, and version-claim checks.
+- [ ] For external content, check the owning repository or refresh workflow; do not patch a local copy or deployment-generated artifact.
 
 ## See also
 
