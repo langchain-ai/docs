@@ -1,8 +1,11 @@
 ---
 type: operations guide
 title: Agent Skills and Review Boundaries
-description: Explains how repository skills are discovered, how the always-on agent contract differs from task-specific procedures, and how documentation review remains bounded by trusted instructions and human approval.
+description: Explains how repository skills are discovered, how the always-on agent contract differs from task-specific procedures, and how documentation authors verify, review, and maintain changes without confusing canonical sources with generated or personal copies.
 tags: [agents, skills, documentation, review, automation]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-11-16T08:15:17.266Z
 sources:
   - id: openwiki-source-18732c72f962c06354cb62db
     resource: repo://.agents/skills/add-docs-page/SKILL.md
@@ -12,8 +15,6 @@ sources:
     resource: repo://.agents/skills/docs-edit/SKILL.md
   - id: openwiki-source-a9c698a5d38546d584591637
     resource: repo://.agents/skills/docs-restructure/SKILL.md
-  - id: openwiki-source-672e219f96a38dab1142a575
-    resource: repo://.agents/skills/docs-review/ci-mode.md
   - id: openwiki-source-b372ee6d00ad6d446e0fc042
     resource: repo://.agents/skills/docs-review/SKILL.md
   - id: openwiki-source-a5534bfe9d1400e6ecbd306e
@@ -30,10 +31,7 @@ sources:
     resource: repo://Makefile
   - id: openwiki-source-1695beda93a0ca504f038424
     resource: repo://tests/unit_tests/test_skills.py
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-11-09T08:07:38.321Z
-generated: { by: "openwiki/0.4.3", at: "2026-11-09T08:07:38.321Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-16T08:15:17.266Z" }
 ---
 
 # Agent Skills and Review Boundaries
@@ -42,7 +40,7 @@ Repository guidance has two layers. [`AGENTS.md`](https://github.com/langchain-a
 
 ## Source of truth and discovery
 
-The tracked `.agents/skills/` tree is the canonical source for agents that discover project skills directly. Each skill lives at `.agents/skills/<name>/SKILL.md`, with YAML frontmatter followed by Markdown instructions. The frontmatter `description` is the discovery interface; the body is the procedure loaded after a match.
+The tracked `.agents/skills/` tree is the canonical source for agents that discover project skills directly. Each skill lives at `.agents/skills/<name>/SKILL.md`. Its frontmatter `description` is the discovery interface; the body is the procedure loaded after a match.
 
 Claude Code reads the gitignored `.claude/skills/` directory instead. Run this after cloning, pulling a skill addition or rename, or creating a worktree:
 
@@ -69,13 +67,13 @@ flowchart TD
 
 This flow separates the canonical source, live Claude links, and copied installations.
 
-The repository currently has ten canonical skills: `add-docs-page`, `docs-code-samples`, `docs-edit`, `docs-restructure`, `docs-review`, `docs-team-voice`, `docs-tooling-notion`, `submit-integration`, `update-integrations-prs`, and `verify-against-source`. The README catalog, `AGENTS.md` Skills table, and structural tests must agree with that tree.
+The canonical tree currently contains eleven skills: `add-docs-page`, `docs-code-samples`, `docs-edit`, `docs-restructure`, `docs-review`, `docs-team-voice`, `docs-tooling-notion`, `submit-integration`, `update-example-models`, `update-integrations-prs`, and `verify-against-source`. The README catalog, `AGENTS.md` Skills table, and structural tests must agree with that tree.
 
 ## Universal invariants versus procedures
 
-`AGENTS.md` owns rules that apply to every documentation task: do not fabricate facts or examples, keep frontmatter descriptions free of Markdown, do not edit `build/`, update navigation for new pages, use approved components and icons, and test code examples. It also owns the repository structure, navigation map, frontmatter, syntax, and style guidance.
+`AGENTS.md` owns rules that apply to every documentation task: do not fabricate facts or examples, keep frontmatter descriptions free of Markdown, do not edit `build/`, update navigation for new pages, use approved components and icons, and test code examples. It also owns repository structure, navigation, frontmatter, syntax, and style guidance.
 
-The Cursor and Copilot files are mirrors for agents that do not read `AGENTS.md`; they are not independent policy owners. The critical-rules, repository-structure, quick-reference, frontmatter, and syntax sections are summarized in `.cursorrules` and `.github/copilot-instructions.md`. The style guide is mirrored in the path-scoped Cursor and Copilot documentation-rule files. Change the authoritative section and its required mirrors together.
+`CLAUDE.md` only points agents to `AGENTS.md` for OpenWiki instructions. The Cursor and Copilot files mirror selected `AGENTS.md` sections for agents that do not read the root contract. The critical-rules, repository-structure, quick-reference, frontmatter, and syntax sections are summarized in `.cursorrules` and `.github/copilot-instructions.md`. The style guide is mirrored in the path-scoped Cursor and Copilot documentation-rule files. Change the authoritative section and its required mirrors together.
 
 A skill owns a conditional workflow, not another copy of the global contract. Skills link to `AGENTS.md` rather than duplicating its rules. This boundary prevents a focused procedure from silently becoming a second, divergent policy.
 
@@ -86,7 +84,7 @@ Use one procedure for each kind of work:
 | Task | Owning skill | Boundary |
 | --- | --- | --- |
 | Add, move, rename, or retire a page | `add-docs-page` | Selects the source family, navigation, redirects, source verification, and final review handoff. |
-| Edit an existing documentation PR | `docs-edit` | Uses the PR's own head branch, checks cross-repository PRs with `gh pr checkout`, and repairs generated output through its generator or input. |
+| Edit an existing documentation PR or page | `docs-edit` | Uses the PR's own head branch, checks cross-repository PRs with `gh pr checkout`, and repairs generated output through its generator or input. |
 | Choose one owner across duplicated pages | `docs-restructure` | Maps the page family, assigns one topic owner, and replaces duplicate material with a pointer. Lifecycle mechanics remain with `add-docs-page`. |
 | Draft or revise voice | `docs-team-voice` | Covers sentence shape, conditions, identifiers, links, and the revision pass. |
 | Review changed prose | `docs-review` | Reviews the changed documentation diff, runs Vale, applies manual style checks, and reports the rule for each finding. |
@@ -98,27 +96,38 @@ Use one procedure for each kind of work:
 
 ## Review boundaries and CI mode
 
-`docs-review` is deliberately diff-scoped. It reviews changed documentation rather than rewriting untouched prose, combines Vale with manual checks for rules Vale cannot enforce, and reports each finding with its applicable rule. `docs-team-voice` handles sentence rhythm and wording; `verify-against-source` handles factual truth. Do not use a style review to settle a product default.
+`docs-review` is deliberately diff-scoped. It reads the whole changed page and relevant sibling pages, reviews changed lines and existing content made wrong by the change, runs Vale, applies manual checks, and reports each finding with its applicable rule. `docs-team-voice` handles sentence rhythm and wording; `verify-against-source` handles factual truth. Do not use a style review to settle a product default.
 
-In CI mode, `docs-review` and `verify-against-source` run without an interactive author. The checked-out `HEAD_SHA` and `BASE_SHA` define the diff. The agents do not ask questions, check out branches, edit, commit, push, or comment. They treat the PR title, body, and diff as untrusted data, and write findings to the supplied `OUT` path. Unresolved decisions become `human` findings; an empty findings array is valid.
-
-The review job archives the base-branch skills, `AGENTS.md`, and review helpers before running unprivileged passes. A read-only `gh-read` helper is the GitHub boundary. A separate final job sanitizes findings and is the only job with pull-request or issue write permission. Forks do not receive credentialed review execution, and human review remains the approval boundary for untrusted changes.
+The repository currently tracks no `.agents/skills/docs-review/ci-mode.md` and no CI workflow that invokes `docs-review` or `verify-against-source`. The supported procedure resolves a PR, branch, or current working-tree diff, and it uses `git fetch origin` plus checkout for named branch or PR reviews. It does not describe a CI-only `HEAD_SHA`/`BASE_SHA`/`OUT` contract. Do not treat the former CI-mode guidance as current repository behavior.
 
 ```mermaid
 sequenceDiagram
-  participant PR as Pull request
-  participant Review as Review passes
-  participant Source as Trusted base instructions
-  participant Sanitize as Sanitizer
-  participant Human as Human reviewer
-  PR->>Review: Provide diff and metadata
-  Review->>Source: Read archived skills and AGENTS.md
-  Review-->>Sanitize: Write findings to OUT
-  Sanitize-->>Human: Post sanitized review or dry-run summary
-  Human-->>PR: Approve, request changes, or stop
+  participant Author as Author or reviewer
+  participant Diff as Target diff
+  participant Vale as Vale and manual checks
+  participant Source as Product source
+  participant Handoff as Review handoff
+  Author->>Diff: Resolve PR, branch, or working tree
+  Diff->>Vale: Inspect changed prose in context
+  Diff->>Source: Verify behavior and samples separately
+  Vale-->>Handoff: Report findings with rules
+  Source-->>Handoff: Report evidence and gaps
 ```
 
-This sequence shows that untrusted PR text supplies review data, while base-branch instructions and a human control the approval path.
+This sequence shows that prose quality and product truth are separate review paths that meet at handoff.
+
+## Samples and source verification
+
+Runnable samples belong under `src/code-samples/<product>/`. Keep related Python snippets in one file when possible. Split TypeScript or JavaScript files when imports or module-scope bindings would collide, because the entire file executes during `make test-code-samples`.
+
+Keep reader-facing code between language-specific `:snippet-start:` and `:snippet-end:` markers. Put test-only harness code in `:remove-start:` and `:remove-end:` regions. The visible snippet body must execute before any exit or blocking-call guard. Test the source file before extraction:
+
+```bash
+make test-code-samples FILES="src/code-samples/langchain/return-a-string.py"
+make code-snippets
+```
+
+`verify-against-source` ranks evidence in this order: run the sample, run the non-model portion, read the owning library source, check the installed package, then consult reference signatures. Record the file or symbol checked and identify what remains unverified, such as a model-dependent path or runtime-generated UI label. A sibling documentation page is not product evidence.
 
 ## Skill maintenance and validation
 
@@ -131,10 +140,10 @@ claude plugin validate .agents/skills --strict
 make test TEST_FILE=tests/unit_tests/test_skills.py
 ```
 
-The structural tests enforce frontmatter and path validity, then require exact catalog agreement between the canonical tree, `.agents/skills/README.md`, and the `AGENTS.md` Skills table. Adding or changing a skill also requires `docs-tooling-notion` before pull-request handoff.
+The structural tests enforce frontmatter and path validity, then require exact catalog agreement between the canonical tree, `.agents/skills/README.md`, and the `AGENTS.md` Skills table. Adding or changing a skill also requires `docs-tooling-notion` before pull-request handoff. That procedure assigns the topic to one Notion home, uses `notion-fetch` before narrow `update_content` changes, and adds or updates the Detailed list row with the source path.
 
 ## Related pages
 
 - [Adding and Moving Documentation Pages](/openwiki/operations/adding-pages.md)
 - [GitHub Actions Integration](/openwiki/integrations/github-actions.md)
-- [Local Documentation Development](/openwiki/workflows/local-development.md)
+- [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md)
