@@ -1,11 +1,11 @@
 ---
-type: documentation dependency workflow
-title: LangSmith Agent Documentation Surfaces
-description: Maps the repository-owned documentation contract for LangSmith agents, environments, trace routing, Managed Deep Agents, onboarding models, and runnable samples. Identifies source ownership, external dependencies, generated boundaries, and focused validation paths.
+type: documentation workflow
+title: LangSmith Agent Documentation Workflow
+description: A repository-grounded workflow for documenting LangSmith agents, environment-aware trace routing, OpenTelemetry observability, Managed Deep Agents, runnable samples, and onboarding model freshness. It identifies source ownership, control flow, lifecycle boundaries, and focused validation.
 tags: [langsmith, agents, documentation, observability, managed-deep-agents, code-samples]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-11-09T08:07:38.321Z
+    at: 2026-11-16T08:15:17.266Z
 sources:
   - id: openwiki-source-75c7744a0e664440f0552945
     resource: repo://.github/workflows/check-onboarding-models.yml
@@ -45,7 +45,7 @@ sources:
     resource: repo://tests/unit_tests/test_check_onboarding_models.py
   - id: openwiki-source-71e085db64c5296fd9b80141
     resource: repo://tests/unit_tests/test_otel_endpoints.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-09T08:07:38.321Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-16T08:15:17.266Z" }
 ---
 
 ## Scope and ownership
@@ -64,7 +64,7 @@ flowchart TD
   ModelCheck --> Issue["Scheduled or manual GitHub issue update"]
 ```
 
-This diagram shows the documented dependency flow: product-owned pages and sample sources are inputs to the documentation surface, while onboarding snippets remain an external read-only integration monitored by this repository.
+This diagram shows the documentation dependency flow: product-owned pages and sample sources feed the rendered documentation, while onboarding snippets remain a read-only external integration monitored by this repository.
 
 Edit the source that owns the behavior, then inspect its consumers:
 
@@ -92,7 +92,7 @@ For OTLP, routing is carried by both `Langsmith-Agent-Id` and `Langsmith-Agent-E
 
 Endpoint shape is a separate concern. `OTEL_EXPORTER_OTLP_ENDPOINT` is a base URL to which OTLP/HTTP appends `/v1/traces`; `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and a collector `traces_endpoint` are used exactly as supplied. Do not put `/v1/traces` in the generic base variable, or the exporter produces a duplicate path and a `404`. The focused endpoint test checks both forms and scans documentation for the invalid generic pattern.
 
-## Runnable language samples
+## Runtime and sample lifecycle
 
 The trace-routing samples are source files, not independent documentation implementations. Python demonstrates `ls.agent_address(...)` in a decorator and `tracing_context`; TypeScript uses `new AgentAddress(...)` in `traceable` configuration; Java uses `new AgentAddress(...)` in a `TraceConfig` builder. Their `:remove:` blocks keep executable assertions or validation outside the rendered snippet while the visible region remains a runnable example.
 
@@ -107,7 +107,7 @@ make test-code-samples FILES="src/code-samples/langsmith/TraceAgentExample.java"
 make code-snippets
 ```
 
-Review the MDX page that imports the regenerated fragment, but keep the runnable source as the edit location. The broader sample lifecycle also owns marker extraction, language suffixes, execution selection, and optional public trace publication; those concerns are documented in [Runnable Code Samples and Snippet Generation](/openwiki/workflows/code-sample-lifecycle.md).
+Review the MDX page that imports the regenerated fragment, but keep the runnable source as the edit location. The broader sample lifecycle owns marker extraction, language suffixes, execution selection, and optional public trace publication; those concerns belong to the code-sample lifecycle workflow.
 
 ## Managed Deep Agents: local versus hosted
 
@@ -146,12 +146,7 @@ The focused tests cover provider-prefix detection, dated snapshots, false-positi
 
 ## Related pages
 
-- [Documentation Route and Language Versioning](/openwiki/concepts/versioning.md)
 - [Reference Documentation Boundaries](/openwiki/integrations/reference-docs.md)
-- [Runnable Code Samples and Snippet Generation](/openwiki/workflows/code-sample-lifecycle.md)
-<!-- openwiki: broken internal link [/langsmith/agent-registry] file "/langsmith/agent-registry" does not exist. Fix the href or restore the target, then delete this comment. -->
-- [Agent Registry](/langsmith/agent-registry)
-<!-- openwiki: broken internal link [/langsmith/log-traces-to-agent] file "/langsmith/log-traces-to-agent" does not exist. Fix the href or restore the target, then delete this comment. -->
-- [Log traces to an agent](/langsmith/log-traces-to-agent)
-<!-- openwiki: broken internal link [/langsmith/managed-deep-agents-deploy] file "/langsmith/managed-deep-agents-deploy" does not exist. Fix the href or restore the target, then delete this comment. -->
-- [Deploy a Managed Deep Agent](/langsmith/managed-deep-agents-deploy)
+- [Agent Skills and Operations](/openwiki/operations/agent-skills.md)
+- [Release Watch Workflow](/openwiki/workflows/release-watch.md)
+- [Versioned Content Workflow](/openwiki/workflows/versioned-content.md)
