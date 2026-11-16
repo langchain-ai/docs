@@ -1,23 +1,27 @@
 ---
 title: Per-deployment autoscaling overrides
-sidebarTitle: LGP autoscaling overrides
+sidebarTitle: Agent Server autoscaling overrides
 description: Opt-in control plane flag and per-deployment CPU targets, CPU scaling toggles, optional CPU limits, and HPA behavior for self-hosted Agent Server hosting.
 ---
 
-Self-hosted installs with [Agent Server hosting](/langsmith/enable-self-hosted-agent-server) can let workspace users tune **per-deployment** autoscaling for the LangGraph **API server** and **queue** from the deployment container spec UI (or API). When customization is off, the langgraph-operator defaults apply unchanged.
+Self-hosted installs with [Agent Server hosting](/langsmith/enable-self-hosted-agent-server) can let workspace users tune **per-deployment** autoscaling for the Agent Server **API server** and **queue** from the deployment container spec UI (or API). When customization is off, the langgraph-operator defaults apply unchanged.
 
 <Note>
 This feature is **opt-in**, **self-hosted only**, and separate from **`uncappedResourcesEnabled`**, which only raises CPU/memory size caps on the resource form—not autoscaling behavior.
 </Note>
 
+<Tip>
+With overrides **off**, the operator still uses its built-in CPU target (50% of the CPU limit by default). See [Data plane autoscaling](/langsmith/data-plane#autoscaling). When overrides are **on**, the fields below replace those defaults.
+</Tip>
+
 ## Requirements
 
 | Component | Minimum |
 |-----------|---------|
-| Helm chart `langsmith` | **`0.18.0-rc.43`** or newer |
-| Chart `langgraph-dataplane` (split data plane) | **`0.2.27`** or newer |
-| Operator image | **`0.1.64`** (default in the charts above) |
-| Application images | Ship with chart `appVersion` (e.g. `0.18.14rc1`) |
+| Helm chart `langsmith` | **`0.18.0-rc.43`** or later |
+| Chart `langgraph-dataplane` (split data plane) | **`0.2.27`** or later |
+| Operator image | **`0.1.64`** or later (default in the charts above) |
+| Application images | Ship with chart `appVersion` (for example, `0.18.14rc1`) |
 
 Older self-hosted tracks (for example **`v17-stable`**) do not include this stack unless you upgrade to this chart line.
 
@@ -46,26 +50,34 @@ This sets `ENABLE_LGP_SCALING_OVERRIDES=true` on host-backend, platform-backend,
 
 <Steps>
   <Step title="Upgrade charts with the flag off">
-    Upgrade to a chart that ships operator **0.1.64**, updated LGP CRDs, and application images. Keep **`scalingOverridesEnabled: false`**.
+    Upgrade to a chart that ships operator **0.1.64** or later, updated LangGraph CRDs, and application images. Keep **`scalingOverridesEnabled: false`**.
   </Step>
   <Step title="Wait for rollouts">
     Wait for CRD, operator, host-backend, and frontend rollouts to finish.
   </Step>
   <Step title="Enable overrides">
-    Set **`scalingOverridesEnabled: true`** and upgrade again (or set it in the same upgrade after components are ready).
+    Set **`scalingOverridesEnabled: true`** and upgrade again.
   </Step>
 </Steps>
 
-If the CRD or operator lags the API, new fields may be stripped from the LGP custom resource or ignored until versions align.
+If the CRD or operator lags the API, new fields may be stripped from the LangGraph custom resource or ignored until versions align.
 
 ### Disable the feature
 
-Set `scalingOverridesEnabled: false` again. The UI hides the controls and the API rejects new override payloads. Deployments that already store overrides in their resource spec may keep those values until a new revision clears them (for example by turning off **Customize autoscaling** on save).
+Set `scalingOverridesEnabled: false` again. The UI hides the controls and the API rejects any request that sets a **non-null** override field.
+
+Deployments that already store overrides in their resource spec **keep those values** (and the operator may keep applying them) until you deploy a revision whose `resource_spec` clears them:
+
+- While the flag is still **on**: turn off **Customize autoscaling** in the UI before save, or send the same all-`null` override bundle through the API.
+- After the flag is **off**: use the [control plane API](/langsmith/api-ref-control-plane) to `PATCH` the deployment with a full `resource_spec` that sets every scaling override field to `null` (other fields such as `cpu`, `memory_mb`, and scale bounds must still be included on the object the API expects).
+
+You cannot clear overrides through the UI once the flag is off.
 
 ### Split control plane / data plane
 
-- Upgrade **both** `langsmith` (control plane) and `langgraph-dataplane` (≥ `0.2.27`) so the operator CRD and image match.
-- **Only the control plane** needs `scalingOverridesEnabled: true` for the UI and API gate.
+- Upgrade **both** `langsmith` (control plane) and `langgraph-dataplane` (**0.2.27** or later) so the operator CRD and image match.
+- **Only the control plane** needs `scalingOverridesEnabled: true` for the UI and API gate. The data-plane listener has no such flag.
+- The data-plane **listener** applies stored `resource_spec` when it creates the LangGraph custom resource. Keep the listener on the same application release line as the control plane. If the listener is older, it may drop or reject override fields—see [Listener version requirements](/langsmith/self-hosted-platform-features#listener-version-requirements).
 
 ## Use the UI
 
@@ -95,9 +107,9 @@ Validation highlights:
 
 ## API semantics
 
-- Any request that sets **one** scaling override field must set **all eight** (with the conditional rules above), or the API returns **400** with missing or invalid fields listed.
-- With the feature **off**, any override field returns **400** (`Scaling overrides (...) are not enabled on this control plane`).
-- Turning **Customize autoscaling** off on a new revision clears override fields from the payload so the operator receives defaults again.
+- Any request that sets **one** scaling override field to a non-null value must set **all eight** (with the conditional rules above), or the API returns **400** with missing or invalid fields listed.
+- With the feature **off**, any **non-null** override field returns **400** (`Scaling overrides (...) are not enabled on this control plane`).
+- Turning **Customize autoscaling** off on a new revision (flag on) clears override fields from the payload so the operator receives defaults again.
 
 ## Cluster and Terraform caveats
 
@@ -116,19 +128,22 @@ Plan namespace quota, limit ranges, and network policy before advising users to 
 | Symptom | Likely cause |
 |---------|----------------|
 | No autoscaling controls in UI | `scalingOverridesEnabled` false, not self-hosted, or data-plane `/info`; wait for `/info` to load before opening the revision modal. |
-| 400 on save | Feature off, incomplete override set, or invalid combination (e.g. target set while CPU scaling off). |
-| Overrides saved but no effect | Operator older than `0.1.64`, stale CRD, or flag was off on listener vs control plane (upgrade skew). |
+| 400 on save | Feature off, incomplete override set, or invalid combination (for example, target set while CPU scaling off). |
+| Overrides saved but no effect | Operator older than **0.1.64**, stale CRD, or control plane vs data-plane listener on mismatched application versions. |
 | Revision never finishes after “no CPU limit” | Admission denied by quota—check cluster events for the deployment pods. |
 | Queue scaling odd / ScaledObject not Ready | KEDA connectivity to Postgres; network policy. |
 
 ## Verify
 
 ```bash
-# Feature env on control plane pods
-kubectl exec -n <ns> deploy/<release>-host-backend -- printenv ENABLE_LGP_SCALING_OVERRIDES
+# Find the host-backend Deployment (name is usually <helm-release>-langsmith-host-backend)
+kubectl get deploy -n <ns> | grep host-backend
 
-# UI gate
-curl -sS -H "Authorization: Bearer $TOKEN" https://<host>/api/v1/info | jq '.instance_flags.lgp_scaling_overrides_enabled'
+# Feature env on control plane
+kubectl exec -n <ns> deploy/<helm-release>-langsmith-host-backend -- printenv ENABLE_LGP_SCALING_OVERRIDES
+
+# Flag the UI reads (/api/v1/info is unauthenticated unless your install sets FF_INFO_ENDPOINT_AUTH_REQUIRED)
+curl -sS https://<host>/api/v1/info | jq '.instance_flags.lgp_scaling_overrides_enabled'
 ```
 
 ## Related
