@@ -1,0 +1,33 @@
+```python
+import time
+
+from typing_extensions import TypedDict
+
+from langgraph.cache.memory import InMemoryCache
+from langgraph.graph import END, START, StateGraph
+from langgraph.types import CachePolicy
+
+
+class State(TypedDict):
+    x: int
+    result: int
+
+
+def expensive_node(state: State) -> dict[str, int]:
+    # Expensive computation
+    time.sleep(2)
+    return {"result": state["x"] * 2}
+
+
+builder = StateGraph(State)
+builder.add_node("expensive_node", expensive_node, cache_policy=CachePolicy(ttl=3))
+builder.add_edge(START, "expensive_node")
+builder.add_edge("expensive_node", END)
+
+graph = builder.compile(cache=InMemoryCache())
+
+print(graph.invoke({"x": 5}, stream_mode="updates"))  # [!code highlight]
+# [{'expensive_node': {'result': 10}}]
+print(graph.invoke({"x": 5}, stream_mode="updates"))  # [!code highlight]
+# [{'expensive_node': {'result': 10}, '__metadata__': {'cached': True}}]
+```
