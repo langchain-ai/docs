@@ -19,7 +19,7 @@ You need the following:
 
 - **A LangSmith organization on Azure**: Use the LangSmith control plane on Azure at [azure.smith.langchain.com](https://azure.smith.langchain.com). Send your organization ID to the LangChain team to enable BYOC.
 - **An Azure subscription**: LangChain recommends a subscription dedicated to LangSmith BYOC, but it is not required.
-- **Azure permissions**: The person who applies Terraform needs permission to create resource groups, Key Vaults, custom roles, and role assignments, and to register resource providers in the subscription. Creating the LangSmith service principal, once per tenant, needs permission to create service principals in Microsoft Entra. This can be a different person: someone with that permission runs `az ad sp create --id 5b0a74cb-9f37-4797-b557-c15d7be80d3b`, and the person who applies Terraform imports it before the first apply with `terraform import module.langsmith_byoc_access.azuread_service_principal.langsmith /servicePrincipals/<object-id>`.
+- **Azure permissions**: The person who applies Terraform needs permission to create resource groups, Key Vaults, custom roles, and role assignments, and to register resource providers in the subscription. Creating the LangSmith service principal, once per tenant, needs permission to create service principals in Microsoft Entra. This can be a different person: someone with that permission runs `az ad sp create --id 5b0a74cb-9f37-4797-b557-c15d7be80d3b`, and the person who applies Terraform sets `create_service_principal = false` in the module before the first apply. Terraform then only reads the service principal and needs no Entra permission.
 - **Terraform**: Terraform 1.11.0 or later.
 - **An organization admin in LangSmith**: Creating, changing, and deleting a data plane requires the organization admin role.
 - **vCPU quota**: The AKS system node pool uses three `Standard_D2s_v6` VMs. LangSmith checks at create time that the region has at least 6 free vCPUs in both the **Total Regional vCPUs** quota and the Dsv6 VM family quota. Application nodes use D, E, and F series VMs of version 5 or later, so also plan quota for those families. See [Node pools](/langsmith/byoc-architecture-azure#compute).
@@ -88,6 +88,9 @@ module "langsmith_byoc_access" {
 
   langsmith_app_client_id = "5b0a74cb-9f37-4797-b557-c15d7be80d3b"
   external_id             = var.external_id
+
+  # Set to false if an Entra admin already ran `az ad sp create`.
+  # create_service_principal = false
 
   data_planes = {
     prod = {
@@ -251,7 +254,7 @@ When you no longer need the retained data, delete the Blob storage accounts in t
 
 ## Remove LangSmith access
 
-To stop LangSmith from changing or deleting a data plane, remove the role assignments of the LangSmith service principal on its resource group and on its AKS cluster. Removing the Terraform module removes the service principal and all role assignments, so LangSmith loses access to every data plane in the tenant. The data plane resources stay in your subscription, and LangChain can no longer upgrade or repair them. Delete the data plane first if you want LangSmith to clean up its resources.
+To stop LangSmith from changing or deleting a data plane, remove the role assignments of the LangSmith service principal on its resource group and on its AKS cluster. Removing the Terraform module removes all role assignments, and the service principal if `create_service_principal` is `true`, so LangSmith loses access to every data plane in the tenant. The data plane resources stay in your subscription, and LangChain can no longer upgrade or repair them. Delete the data plane first if you want LangSmith to clean up its resources.
 
 ## Next steps
 
