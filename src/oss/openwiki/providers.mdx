@@ -83,7 +83,7 @@ Leave it unset to preserve the provider default. Invalid provider, model, or eff
 | `openai` | `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.6-sol` | `none`, `low`, `medium`, `high`, `xhigh`, `max` | Responses API `reasoning.effort` |
 | `openai-chatgpt` | `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.6-sol` | `none`, `low`, `medium`, `high`, `xhigh`, `max` | Responses API `reasoning.effort` |
 | `nvidia` | `nvidia/nemotron-3-super-120b-a12b` | `none`, `low`, `high` | Chat Completions `reasoning_effort` |
-| `gemini` | `gemini-3.6-flash` | `low`, `medium`, `high` | Gemini thinking level |
+| `gemini` | `gemini-4-hydrogen` | `low`, `medium`, `high`, `xhigh` | Gemini thinking level |
 | `openai-compatible` | Any model ID, when enabled | `none`, `low`, `medium`, `high`, `xhigh`, `max` | Responses API `reasoning.effort` or Chat Completions `reasoning_effort` |
 
 All other provider and model combinations, including OpenRouter, do not offer reasoning effort selection.

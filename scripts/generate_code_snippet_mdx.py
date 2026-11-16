@@ -66,7 +66,7 @@ DEEPAGENTS_TS_MODEL_KWARG_RE = re.compile(r'\bmodel\s*(?::|=)\s*"([^"]+)"')
 # JS uses @langchain/google, whose provider key is "google"; Python has no
 # equivalent key and stays on "google_genai" (langchain-google-genai).
 DEEPAGENTS_QUICKSTART_PY_MODEL_TABS: list[tuple[str, str]] = [
-    ("Google", "google_genai:gemini-3.6-flash"),
+    ("Google", "google_genai:gemini-4-hydrogen"),
     ("OpenAI", "openai:gpt-6.1-sol"),
     ("Anthropic", "anthropic:claude-sonnet-5"),
     ("OpenRouter", "openrouter:z-ai/glm-5.2"),
@@ -76,7 +76,7 @@ DEEPAGENTS_QUICKSTART_PY_MODEL_TABS: list[tuple[str, str]] = [
 ]
 
 DEEPAGENTS_QUICKSTART_TS_MODEL_TABS: list[tuple[str, str]] = [
-    ("Google", "google:gemini-3.6-flash"),
+    ("Google", "google:gemini-4-hydrogen"),
     ("OpenAI", "openai:gpt-6.1-sol"),
     ("Anthropic", "anthropic:claude-sonnet-5"),
     ("OpenRouter", "openrouter:z-ai/glm-5.2"),

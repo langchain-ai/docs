@@ -25,7 +25,7 @@ const graph = new StateGraph(State)
 // :snippet-end:
 
 // :remove-start:
-// `serverInfo` is undefined outside LangGraph Server, so the node skips the logs.
+// `serverInfo` is undefined outside Agent Server, so the node skips the logs.
 const result = await graph.invoke({ result: "" });
 if (result.result !== "done") throw new Error(`Unexpected result: ${result.result}`);
 console.log("✓ langgraph-graph-api-nodes-server-info-js validated");
