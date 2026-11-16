@@ -1,11 +1,11 @@
 ---
 type: maintenance workflow
-title: Egress IP Inventory Generation
-description: Explain the canonical LangSmith egress-address inventory, deterministic generation and stale-output checks, and the public documentation surfaces that publish it for human and machine consumers.
+title: Egress IP Inventory
+description: Maintain the canonical LangSmith egress-address inventory, validate and render its regional views, and publish the same data for firewall automation. Use this workflow to update addresses safely, detect generated-output drift, and verify the public JSON artifact.
 tags: [langsmith, egress-ip, allowlist, generated-content, documentation]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-11-09T08:07:38.321Z
+    at: 2026-11-16T08:15:17.266Z
 sources:
   - id: openwiki-source-4d9cccca7700db7220ec055e
     resource: repo://.github/workflows/_test.yml
@@ -27,37 +27,37 @@ sources:
     resource: repo://src/langsmith/cloud.mdx
   - id: openwiki-source-30a490be0964e690a58135e7
     resource: repo://tests/unit_tests/test_egress_ip_inventory.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-09T08:07:38.321Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-16T08:15:17.266Z" }
 ---
 
 ## Ownership and published surfaces
 
-`src/langsmith/egress-ip-addresses.json` is the single source of truth for public egress addresses for two distinct services:
+`src/langsmith/egress-ip-addresses.json` is the source of truth for public egress addresses for two services:
 
-- `langsmith` is the public LangSmith SaaS egress list displayed in `src/langsmith/cloud.mdx`.
-- `langsmith-deployment` is the separate deployed-agent egress list displayed in `src/langsmith/cloud-platform-features.mdx`.
+- `langsmith` is the LangSmith SaaS list rendered in `src/langsmith/cloud.mdx`.
+- `langsmith-deployment` is the separate LangSmith Agent Server list rendered in `src/langsmith/cloud-platform-features.mdx`.
 
-The JSON is also the automation interface. The Cloud page tells consumers to filter its `addresses` array by `service`, `cloud`, and `region`, allowlist every matching `cidr`, and compare `version` when polling for changes. The lists are egress lists, not the unrelated ingress addresses in the Cloud page.
+The same JSON is published as-is at `/langsmith/egress-ip-addresses.json` for automation. Do not treat either Markdown table or `build/` as authoritative: the tables are committed generated views, and the build output is disposable.
 
-Do not treat either rendered Markdown table or `build/` as a source. The tables are committed generated views, while the build recreates an unversioned public artifact at `/langsmith/egress-ip-addresses.json`.
+The Cloud documentation distinguishes egress from ingress. SaaS internet-bound traffic leaves through a NAT gateway, while Agent Server deployments use the separate list; a listed address may be allocated for present or future use.
 
 ```mermaid
 flowchart TD
-  Inventory["egress-ip-addresses.json"] --> Validate["Validate schema and public IPv4 addresses"]
+  Inventory["egress-ip-addresses.json"] --> Validate["Validate schema and global IPv4 /32 values"]
   Validate --> Hash["Hash canonical addresses"]
-  Hash --> Version["Update version"]
+  Hash --> Version["Rewrite version when stale"]
   Version --> Render["Render service tables"]
-  Render --> Cloud["cloud.mdx generated block"]
-  Render --> Features["cloud-platform-features.mdx generated block"]
+  Render --> SaaS["cloud.mdx generated block"]
+  Render --> Deployment["cloud-platform-features.mdx generated block"]
   Inventory --> Build["DocumentationBuilder"]
-  Build --> Public["build langsmith JSON artifact"]
+  Build --> Public["build/langsmith/egress-ip-addresses.json"]
 ```
 
-*This flow shows how one inventory feeds the generated human-readable tables and the machine-readable LangSmith artifact.*
+*This flow shows the inventory's validation, deterministic versioning, generated documentation views, and byte-preserving build publication.*
 
-## Inventory contract
+## Inventory contract and regional data
 
-The generator accepts only this top-level shape:
+The generator accepts this top-level shape:
 
 ```json
 {
@@ -74,33 +74,35 @@ The generator accepts only this top-level shape:
 }
 ```
 
-The example is structural only; use only real service-owned addresses in the inventory. Validation requires **exactly** the three top-level keys and a nonempty string `version` plus a nonempty `addresses` array. Each address object must contain exactly `service`, `cloud`, `region`, and `cidr`:
+The example is structural only; use service-owned addresses in the inventory. Validation requires exactly `schema_version`, `version`, and `addresses`; schema version must be `1`, `version` must be a nonempty string, and `addresses` must be nonempty. Every record must contain exactly `service`, `cloud`, `region`, and `cidr`.
 
-| Field | Allowed values / invariant | Why it matters |
+| Field | Allowed values / invariant | Effect |
 | --- | --- | --- |
-| `service` | `langsmith` or `langsmith-deployment` | Selects one of the two owning pages and prevents an unrenderable service category. |
-| `cloud` | `gcp` or `aws` | Controls the rendered cloud/region column. |
-| `region` | `us`, `eu`, or `apac` | Identifies the customer-facing region used for filtering. |
-| `cidr` | Canonical, globally routable IPv4 `/32` | Prevents private, IPv6, range, and noncanonical data from becoming an allowlist instruction. |
+| `service` | `langsmith` or `langsmith-deployment` | Selects the owning documentation table. |
+| `cloud` | `gcp`, `aws`, or `azure` | Selects the cloud column. Azure is currently represented in the SaaS inventory; the deployment table currently has GCP and AWS entries. |
+| `region` | `us`, `eu`, or `apac` | Selects the customer-facing data region used by consumers. |
+| `cidr` | Canonical, globally routable IPv4 `/32` | Makes each value a single public address suitable for an allowlist. |
 
-A tuple of all four fields must be unique. Validation parses each CIDR with strict IPv4 network rules, requires prefix length 32 and canonical string rendering, and rejects addresses that are not global. It also rejects unknown field values and additional or missing keys before it renders Markdown.
+The loader parses CIDRs with strict IPv4 network rules, requires prefix length 32 and canonical string rendering, rejects private/non-global, IPv6, range, missing-mask, unknown-value, and extra-field inputs, and rejects duplicate `(service, cloud, region, cidr)` records before Markdown generation. A service with no records is also a rendering error.
+
+Consumers should fetch the JSON, filter `addresses` by `service`, `cloud`, and `region`, allowlist every matching `cidr`, and poll `version` for changes. This includes allocated reserve addresses: publish a reserve before it carries traffic, and do not remove an address until it has stopped carrying traffic and has been released.
 
 ## Generation and drift detection
 
-Run the generator from the repository root after changing the JSON:
+Run these commands from the repository root after changing the JSON:
 
 ```bash
 uv run python scripts/generate_egress_ip_tables.py
 uv run python scripts/generate_egress_ip_tables.py --check
 ```
 
-Normal mode loads and validates the inventory, computes `version`, and rewrites only stale durable generated content: the `version` field and the table blocks in both owner pages. Check mode makes no writes. It fails if either the stored hash or a table differs from expected output, naming stale paths and directing the maintainer to run the normal command.
+Normal mode loads and validates the inventory, computes the expected version, and rewrites the inventory version and generated blocks when stale. Check mode writes nothing; if the stored version or either table differs, it fails with the stale path(s) and tells the maintainer to run the normal command.
 
-The version is deterministic rather than a manually managed release number: it is `sha256:` followed by the SHA-256 digest of `addresses` serialized as sorted-key, compact JSON. Consequently, an address-content change must change the version; formatting outside that canonical address representation does not define the version.
+The version is deterministic: `sha256:` followed by the SHA-256 digest of `addresses` serialized as sorted-key, compact JSON. Address-content changes therefore change the version; presentation formatting outside that canonical representation does not.
 
-For each service, rendering iterates clouds in GCP then AWS order and regions in US, EU, APAC order. It emits a column only when that service has entries for the cloud/region, strips `/32` in the human table, and vertically aligns uneven address lists with blank cells. A service without any inventory entries is an error.
+Rendering iterates clouds in GCP, AWS, then Azure order and regions in US, EU, then APAC order. It emits only populated cloud/region columns for that service, removes `/32` from displayed values, and uses blank cells to align uneven columns. It raises an error when a service has no populated columns.
 
-Each target must contain exactly one literal pair of these markers:
+Each owner page must contain exactly one literal marker pair:
 
 ```mdx
 {/* BEGIN GENERATED EGRESS IP ADDRESSES */}
@@ -108,37 +110,33 @@ Each target must contain exactly one literal pair of these markers:
 {/* END GENERATED EGRESS IP ADDRESSES */}
 ```
 
-The generator replaces the material strictly between them. Missing, duplicated, or edited marker structure is a generation error; do not add a second generated block to a target. Do not hand-edit the hash or table cells, because the next check or regeneration will expose or overwrite that drift.
+The generator replaces only the material between those markers. Missing, duplicated, or malformed marker structure is an error. Never hand-edit table cells or the `version` field; regeneration is the repair path.
 
 ## Safe update lifecycle
 
-1. **Change the inventory, not a table.** Add, amend, or remove an address with the service, cloud, and customer region that consumers use to filter it.
-2. **Respect egress rollout ordering.** Publish new reserve addresses before they carry traffic. An already-published address can be attached without an inventory change; remove an address only after it no longer carries traffic and has been released.
-3. **Regenerate and review all three source changes.** Normal generation may update the JSON's hash and both pages even when the operational change affects one service. Commit the inventory and both generated pages together.
-4. **Run the no-write gate.** Use `--check` after regeneration; it proves that schema-valid input, version, and generated tables converge.
-5. **Verify the public build boundary when relevant.** A full documentation build copies supported non-Markdown files from unversioned LangSmith source content, including this JSON, to `build/langsmith/egress-ip-addresses.json` without transforming its bytes. Never patch that disposable output.
+1. Change `src/langsmith/egress-ip-addresses.json`, including the correct service, cloud, and customer region—not a rendered table.
+2. Publish new reserve addresses before using them. An already-published address can be attached without an inventory change; remove an address only after traffic has stopped and the address is released.
+3. Run normal generation and review the JSON plus both generated owner pages. Commit all three together.
+4. Run `--check` as the no-write convergence gate.
+5. When validating the documentation build, inspect the public artifact, never patch its disposable output.
 
-Consumers should allowlist every matching CIDR, including allocated reserve addresses that may be used later, and should review additions and removals before changing firewall rules. This is why an apparently unused published entry is not necessarily removable.
-
-## Public documentation checks
-
-The repository's test workflow runs `make test`, which executes the unit-test suite. The focused egress tests cover the generator's no-write check path and the build publication boundary. Separately, the pull-request workflow `check-external-doc-links.yml` runs `scripts/check-legacy-doc-links.sh` when Markdown or MDX documentation changes; it scans source docs for links to retired documentation sites. That link-hygiene check does not replace the egress generator's hash and table drift check.
+`DocumentationBuilder.build_all()` builds LangSmith as unversioned content. Its supported-extension copy path preserves JSON bytes, so a full build produces exactly one `build/langsmith/egress-ip-addresses.json` whose bytes match the source inventory. The public path is therefore a publication boundary, not a second data store.
 
 ## Tests and failure triage
 
-The focused suite is `tests/unit_tests/test_egress_ip_inventory.py`. It proves four distinct boundaries:
+The focused suite is `tests/unit_tests/test_egress_ip_inventory.py`:
 
-- a copied repository fixture is clean in `--check` mode; mutating an address makes the version stale, normal generation converges it, and manual table edits are detected;
-- private CIDRs, ranges, missing masks, IPv6, invalid service/cloud/region values, and extra address fields fail validation;
-- duplicate scoped address records fail validation; and
-- a full `DocumentationBuilder` build publishes exactly one JSON artifact at `build/langsmith/egress-ip-addresses.json` with byte-for-byte source equality.
+- it starts from a clean copied fixture, detects an address-induced version mismatch, verifies normal regeneration converges, and detects manual table drift;
+- it rejects private, non-/32, missing-mask, IPv6, invalid service/cloud/region, and extra-field records;
+- it rejects duplicate scoped records; and
+- it verifies that a full `DocumentationBuilder` build publishes exactly one byte-for-byte JSON artifact.
 
-Run the focused test during development with:
+Run it directly with:
 
 ```bash
 uv run pytest tests/unit_tests/test_egress_ip_inventory.py -vv
 ```
 
-`make test` runs the unit-test suite used by CI, and its egress tests exercise the same check path. For a table/hash failure, do not repair the output manually: correct the canonical JSON or its permitted metadata, run the generator without `--check`, and commit the resulting files. For marker or schema errors, restore the one-block page contract or valid JSON shape first; regeneration cannot choose a safe replacement boundary or infer missing metadata.
+The repository test workflow runs `make test`, which executes the unit-test suite and includes the egress check. For a hash or table failure, correct the canonical JSON or permitted metadata and regenerate; do not repair generated output manually. For a marker or schema failure, restore the one-block page contract or valid JSON shape first. The separate pull-request external-documentation workflow runs `scripts/check-legacy-doc-links.sh` for Markdown or MDX changes; that retired-link scan is independent of egress hash and table drift detection.
 
-For broader repository conventions, see [Testing Overview](/openwiki/testing/test-overview.md) and [LangSmith agent documentation workflow](/openwiki/workflows/langsmith-agent-documentation.md).
+For broader repository conventions, see [Testing Overview](/openwiki/testing/test-overview.md) and [Source map](/openwiki/architecture/source-map.md).

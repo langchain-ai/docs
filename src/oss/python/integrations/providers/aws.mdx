@@ -402,6 +402,10 @@ from langchain_experimental.comprehend_moderation import AmazonComprehendModerat
 >[Amazon Bedrock AgentCore Runtime](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agents-tools-runtime.html) provides
 > managed, serverless execution for LangGraph agents with built-in observability, automatic scaling, and seamless integration with other AgentCore services.
 
+Deployment uses two packages that install separately: the `bedrock-agentcore` Python SDK, which wraps a compiled graph in a runtime entrypoint, and the AgentCore CLI, which packages the project and deploys it.
+
+Install the SDK:
+
 <CodeGroup>
     ```bash pip
     pip install bedrock-agentcore
@@ -412,25 +416,82 @@ from langchain_experimental.comprehend_moderation import AmazonComprehendModerat
     ```
 </CodeGroup>
 
+Wrap your compiled graph in an entrypoint:
+
 ```python
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 
 app = BedrockAgentCoreApp()
 
+
 @app.entrypoint
 def agent_invocation(payload, context):
-    result = graph.invoke({"messages": [{"role": "user", "content": payload["prompt"]}]})
+    prompt = payload["prompt"]
+    if not isinstance(prompt, str):
+        raise ValueError("prompt must be a string")
+
+    # graph is your compiled LangGraph application
+    result = graph.invoke({"messages": [{"role": "user", "content": prompt}]})
     return {"result": result["messages"][-1].content}
 
-app.run()
+
+if __name__ == "__main__":
+    app.run()
 ```
 
-Deploy using the AgentCore CLI:
+Install the AgentCore CLI, which ships as an npm package:
 
 ```bash
-# Configure your agent
-agentcore configure
+npm install -g @aws/agentcore
+```
+
+<Note>
+    The AgentCore CLI requires Node.js 20.12 or later, and its Python projects require [uv](https://docs.astral.sh/uv/). If a Python `agentcore` command is already on your `PATH`, it shadows the npm one, because both use the same command name. Uninstall the Python command, then open a new terminal.
+</Note>
+
+Create a project from the LangChain template, then deploy and invoke the agent:
+
+```bash
+# Create a project
+agentcore create --name MyAgent --template agent-python-langchain
+cd MyAgent
+
+# Run the agent locally
+agentcore dev
 
 # Deploy to AgentCore Runtime
-agentcore launch -e your_agent.py
+agentcore deploy
+
+# Invoke the deployed agent
+agentcore invoke --runtime agent --payload '{"prompt": "Hello"}'
 ```
+
+The `agent-python-langchain` template scaffolds a graph built with @[create_agent] in `app/agent/`, along with a `pyproject.toml` and a CDK project under `agentcore/`.
+
+To deploy an entrypoint you wrote yourself, add an empty Python runtime to the project:
+
+```bash
+agentcore add runtime --name MyAgent --language python
+```
+
+Put your entrypoint in `app/MyAgent/main.py` with a `pyproject.toml` next to it, then run `agentcore deploy`. The CLI reads your code and updates `agentcore/agentcore.json` on each `dev`, `build`, and `deploy`.
+
+For more information, see [Get started with the AgentCore CLI](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-get-started-cli.html).
+
+The `agent-python-langchain` template already declares the dependencies that traces require. For your own entrypoint, `pyproject.toml` must declare the AWS Distro for OpenTelemetry (ADOT), because AgentCore Runtime starts the entrypoint under `opentelemetry-instrument`. Add the LangChain instrumentor as well to render traces in [CloudWatch generative AI observability](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/observability-configure.html):
+
+```toml
+[project]
+dependencies = [
+    "aws-opentelemetry-distro>=0.18.0",
+    "opentelemetry-instrumentation-langchain>=0.55.0",
+]
+```
+
+ADOT discovers the instrumentor at startup, so the agent needs no instrumentation code. Deployments that the CLI manages run the entrypoint under `opentelemetry-instrument` already. To reproduce that locally, run:
+
+```bash
+opentelemetry-instrument python main.py
+```
+
+For more information, see [Set up LangGraph telemetry for AgentCore](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/supported-frameworks-langgraph.html).
