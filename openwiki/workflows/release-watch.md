@@ -5,7 +5,7 @@ description: Managed Deep Agent workflow that researches eligible product releas
 tags: [documentation, releases, managed-deep-agents, automation, linear, github]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-11-03T08:13:57.434Z
+    at: 2026-11-16T08:15:17.266Z
 sources:
   - id: openwiki-source-192dd6007b37a6bb76dc7586
     resource: repo://.github/workflows/sync-linear-issue-from-pr.yml
@@ -27,6 +27,8 @@ sources:
     resource: repo://docs-release-watch/skills/release-research/SKILL.md
   - id: openwiki-source-995bd0bfbf33ddbc4b1edfb0
     resource: repo://docs-release-watch/skills/ship-docs-update/SKILL.md
+  - id: openwiki-source-ded8a20999ec9d794fa86ab9
+    resource: repo://docs-release-watch/tests/test_evidence.py
   - id: openwiki-source-e156e784c871fd69445c469b
     resource: repo://docs-release-watch/tools/docs_edit.py
   - id: openwiki-source-c7d8544c9a3ccf7d999db067
@@ -43,7 +45,7 @@ sources:
     resource: repo://docs-release-watch/tools/source.py
   - id: openwiki-source-eab62bc712c4650a5ee3e7d3
     resource: repo://scripts/sync_linear_issue_from_pr.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-03T08:13:57.434Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-16T08:15:17.266Z" }
 ---
 
 # Documentation Release Watch
@@ -54,7 +56,7 @@ The workflow separates read-only release research from write-capable shipping. T
 
 ## Coverage and eligibility
 
-The product registry is the release-watch boundary: it assigns an upstream repository, documentation paths and exclusions, tag filter, source-diff prefixes, language scope, product skill, and product-specific tracking memory to each product.
+The product registry is the release-watch boundary. It assigns each product an upstream repository, documentation paths and exclusions, release-tag filter, source-diff prefixes, language scope, product skill, and product-specific tracking memory.
 
 | Product key | Upstream repository and tag filter | Documentation boundary | Language scope |
 | --- | --- | --- | --- |
@@ -65,11 +67,11 @@ The product registry is the release-watch boundary: it assigns an upstream repos
 
 The product key, rather than a repository name or release notes, determines scope. This matters for the multi-package Deep Agents release feeds. Product skills identify user-facing APIs, commands, configuration, integrations, and behavioral changes as documentation candidates; internal refactors, dependency-only changes, and behavior-neutral fixes are normally skipped.
 
-`get_eligible_release` fetches up to 100 GitHub releases, excludes drafts and prereleases, filters by the product tag prefix, and selects the newest release published 7–30 days before the current UTC time. It returns the preceding eligible release when present. The bounded window prevents old-history backfills; if no candidate is eligible, there is no handoff.
+`get_eligible_release` fetches up to 100 GitHub releases, excludes drafts and prereleases, filters by the registered tag prefix, and selects the newest release published 7–30 days before the current UTC time. It returns the preceding eligible release when present. The bounded window prevents old-history backfills; if no candidate is eligible, there is no handoff.
 
 ## Evidence-first two-phase workflow
 
-The main agent uses the shipping model and has both read and write tools. Its `release-research` subagent uses the read-tool set only; it cannot create Linear issues or PRs. Instructions require a research report before either write tool is called.
+The main agent uses the shipping model and has both read and write tools. Its `release-research` subagent uses the read-tool set only: product listing, release selection and notes/diffs, tagged source reads, docs reads, and coverage checks. It cannot create Linear issues or PRs. The agent description and operating instructions require the subagent report before either write tool is called.
 
 ```mermaid
 flowchart TD
@@ -90,11 +92,11 @@ flowchart TD
   SyncGate -->|"no"| Skip["No lifecycle update"]
 ```
 
-*Read-only research establishes whether a handoff is justified; a separate label-gated GitHub Action can synchronize the linked issue after PR creation.*
+*This flow shows the research gate, guarded handoff, recovery boundary, and separate PR-to-Linear synchronization path.*
 
-Research loads the matching product skill, compares the eligible tag with the previous same-prefix tag where possible, filters changed files to the registered source prefixes, and confirms a candidate in tagged source. It checks concrete current documentation paths before setting `needs_docs: true`. Release notes and durable memory are leads, not source evidence; a claim not supported by the diff and tagged source is skipped.
+Research loads the matching product skill, compares the eligible tag with the previous same-prefix tag where possible, filters changed files to the registered source prefixes, and confirms a candidate in tagged source. It calls `check_docs_coverage` with candidate symbols and concrete docs paths before setting `needs_docs: true`; current docs are read when coverage is missing or wording may be wrong. Release notes and durable memory are leads, not source evidence. A claim not supported by the diff and tagged source is skipped.
 
-If the report has no qualifying feature, the agent reports the outcome and creates neither issue nor PR. For each qualifying feature, phase 2 reads the docs repository `AGENTS.md` and every target file in the same run. A new page also needs the applicable `src/docs.json` navigation change. Shipping may use only a `needs_docs` feature from that report.
+If the report has no qualifying feature, the agent reports the outcome and creates neither issue nor PR. For each qualifying feature, phase 2 reads the docs repository `AGENTS.md` and every target file in the same run. Product skills also govern navigation and language-fence choices, such as changing `src/docs.json` for a new page and avoiding the other language fence. Shipping may use only a `needs_docs` feature from that report.
 
 ## One-feature handoff and write safeguards
 
@@ -103,9 +105,9 @@ The shipping skill requires one feature, one focused branch, one Linear issue, a
 
 ### Evidence and Linear issues
 
-Both `create_linear_issue` and `create_draft_docs_pr` require non-empty `evidence_json`: an upstream owner/repository, release tag, and source paths with a symbol or quote. They verify every citation against the tagged upstream file and add a **Source evidence** section if the supplied body lacks one.
+Both `create_linear_issue` and `create_draft_docs_pr` require non-empty `evidence_json`: an upstream owner/repository, release tag, and source paths with a symbol or quote. They verify every citation against the tagged upstream file and add a **Source evidence** section if the supplied body lacks one. Symbols are preferred; quotes must be exact contiguous source substrings.
 
-A Linear issue is resolved in the requested team and assigned to the authenticated Linear viewer unless `LINEAR_ASSIGNEE_ID` names an active override. Its description receives product metadata, optional release metadata, and source attribution. HTTP, GraphQL, team, assignee, and creation failures are surfaced rather than silently treated as success.
+A Linear issue is created in the resolved team and assigned to the authenticated Linear viewer unless `LINEAR_ASSIGNEE_ID` names an active override. Its description receives product metadata, optional release metadata, and source attribution. HTTP, GraphQL, team, assignee, and creation failures are surfaced rather than silently treated as success.
 
 ### Edit preparation and draft creation
 
@@ -117,6 +119,8 @@ After source verification and preparation of all edits, the tool creates blobs, 
 
 <!-- openwiki: broken internal link [linear-url] file "linear-url" does not exist. Fix the href or restore the target, then delete this comment. -->
 `tools/docs_edit.py` provides a 35% existing-page line-churn limit and language-fence validation helpers. The PR creation operation imports only the stale-edit rebase helper and exposes neither `product` nor language scope; it does not call those validators. Thus surgical-edit and Python/JavaScript fence rules are important instructions and skill guidance, but are not hard PR-tool gates in the implementation. The tool likewise documents the `Closes [DOC-N](linear-url)` convention but does not parse or require it, so a successful tool call alone does not guarantee later lifecycle synchronization.
+
+This is an intentional change boundary: the current `agent.py` wiring gives the research subagent read tools and the main agent write tools, but does not make prompt-level product or language-scope guidance an implementation guarantee. If those safeguards must be hard guarantees, the validators and a product/language-scope parameter must be connected to `create_draft_docs_pr` and covered by operation-level tests.
 
 ### Failure recovery
 
@@ -161,4 +165,4 @@ For local work, run `uv sync` and `uv run mda dev`; schedules do not fire in dev
 
 `docs-release-watch/tests/test_evidence.py` covers evidence shape and rendering, no-op and base-content rules, stale-edit rebasing, source-prefix filtering, line-churn calculation, wrong-fence rejection, and ship-failure-section replacement. It does not call the remote release, Linear, or end-to-end PR-creation operations.
 
-When changing this workflow, preserve the 7–30-day selection boundary, read-only evidence phase, tagged-source confirmation, one-feature operating invariant, draft-only delivery, failure annotation, and label-plus-`Closes DOC-N` synchronization contract. If line churn, language scope, or Linear linkage must become hard guarantees, enforce them in `create_draft_docs_pr` and test through that operation rather than relying only on prompts and skills. See also [GitHub Actions and CI Automation](/openwiki/integrations/github-actions.md), [agent skills](/openwiki/operations/agent-skills.md), [test overview](/openwiki/testing/test-overview.md), and [changelog publication](/openwiki/workflows/changelog-publication.md).
+When changing this workflow, preserve the 7–30-day selection boundary, read-only evidence phase, tagged-source confirmation, one-feature operating invariant, draft-only delivery, failure annotation, and label-plus-`Closes DOC-N` synchronization contract. If line churn, language scope, or Linear linkage must become hard guarantees, enforce them in `create_draft_docs_pr` and test through that operation rather than relying only on prompts and skills. See also [GitHub Actions and CI Automation](/openwiki/integrations/github-actions.md), [agent skills](/openwiki/operations/agent-skills.md), [test overview](/openwiki/testing/test-overview.md), and [LangSmith agent documentation](/openwiki/workflows/langsmith-agent-documentation.md).

@@ -5,7 +5,7 @@ description: Explains how this repository links to externally hosted SDK referen
 tags: [api-reference, openapi, cross-references, mintlify, langsmith, package-metadata]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-11-09T08:07:38.321Z
+    at: 2026-11-16T08:15:17.266Z
 sources:
   - id: openwiki-source-759309714d08144a07e1b2e0
     resource: repo://.github/ISSUE_TEMPLATE/04-reference-docs.yml
@@ -25,8 +25,6 @@ sources:
     resource: repo://pipeline/preprocessors/handle_auto_links.py
   - id: openwiki-source-dca59d03b9433eea9242c2e4
     resource: repo://pipeline/preprocessors/link_map.py
-  - id: openwiki-source-06a4c757b1153b7de4f47a0e
-    resource: repo://pipeline/preprocessors/markdown_preprocessor.py
   - id: openwiki-source-0539c4d1a36abb10d1ed2fa9
     resource: repo://pipeline/tools/partner_pkg_table.py
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
@@ -49,7 +47,7 @@ sources:
     resource: repo://tests/unit_tests/test_check_cross_refs.py
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-09T08:07:38.321Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-16T08:15:17.266Z" }
 ---
 
 # Reference Documentation Integration
@@ -114,7 +112,7 @@ The generated provider overview is refreshed by `uv run python pipeline/tools/pa
 
 | Section | Input and lifecycle | Safe change path | Generated route directory |
 | --- | --- | --- | --- |
-| Agent Server API | Committed `src/langsmith/agent-server-openapi.json`; updated through specification-update PRs from `langgraph-api`. | Obtain or review the upstream Agent Server specification update. | `langsmith/agent-server-api` |
+| Agent Server API | Committed `src/langsmith/agent-server-openapi.json`; copied by the private `langchainplus` monorepo's `langgraph-api-sync-openapi.yml` workflow into specification-update PRs. The standalone `langgraph-api` repository is archived. | Change the source in `langchainplus`, then review the generated PR; do not edit the JSON by hand. | `langsmith/agent-server-api` |
 | Control Plane API | `https://api.host.langchain.com/openapi.json`, fetched by Mintlify at deployment; no local specification file exists. | Correct the service-owned source; do not commit a local copy. | Mintlify default, `/api-reference/` |
 | LangSmith REST API | Committed `src/langsmith/langsmith-platform-openapi.json`, produced by scheduled automation. | Fix upstream content or processor policy, regenerate, and review the refresh PR. Never patch the JSON manually. | `langsmith/smith-api` |
 
@@ -141,7 +139,7 @@ The overviews provide product context and examples; the declarations produce the
 
 ### Validate the committed Agent Server input
 
-Agent Server changes are independent of the LangSmith REST refresh. The committed specification is updated by `langgraph-api` PRs titled `Update Agent ServerOpenAPI spec for API version X.Y.Z`.
+Agent Server changes are independent of the LangSmith REST refresh. The committed specification is updated by PRs opened by the private `langchainplus` monorepo's `langgraph-api-sync-openapi.yml` workflow, titled `Update Agent ServerOpenAPI spec for API version X.Y.Z`. That workflow copies `langgraph-api/api/openapi.json`; the standalone `langgraph-api` repository is archived. Do not edit the spec by hand.
 
 ```bash
 make check-openapi
@@ -173,7 +171,7 @@ The filter deliberately removes known local-build false positives:
 - entire standalone `snippets/` report sections, because snippet links resolve only when imported; and
 - selected legacy relative paths.
 
-With `--check-anchors`, it additionally removes only the named SmithDB migration anchors `traces-query`, `runs-query`, and `exceptions`, plus `/langsmith/env-var-cloud#n_jobs_per_worker`. Other broken links and anchors remain failures. Therefore a passing local command does not prove the excluded deployment-time routes or named anchors work; inspect the generated endpoint surface in a hosted preview or deployment rather than creating local endpoint files.
+With `--check-anchors`, it additionally removes only the named imported-heading false positives: the SmithDB migration anchors `traces-query`, `runs-query`, and `exceptions`, the feedback anchors `annotation-queues-add-runs` and `annotation-queues-read-runs`, and the environment-variable anchors `n_jobs_per_worker`, `redis_uri_custom`, and `resumable_stream_ttl_seconds` on `/langsmith/env-var-cloud`. Other broken links and anchors remain failures. Therefore a passing local command does not prove the excluded deployment-time routes or named anchors work; inspect the generated endpoint surface in a hosted preview or deployment rather than creating local endpoint files.
 
 Focused tests cover cross-reference scope selection, shared-file validation, custom-title and backtick forms, multiple references, and the code-block, escaped-marker, and code-sample exclusions. Filter tests confirm that genuine failures and non-exempt anchors remain after filtering.
 

@@ -1,11 +1,11 @@
 ---
 type: operations reference
-title: Developer CLI and Make Targets
-description: Practical local entrypoints for installing dependencies, developing and building the documentation site, validating generated output, linting, testing, and maintaining runnable samples. Choose commands by their source, generated-site, or remote-service boundary.
+title: CLI Tools and Make Targets
+description: Command map for the Python documentation CLI, Mintlify development and validation, Make targets, and runnable code-sample generation and testing. Use it to select the correct source, generated-site, sample, or remote-service boundary.
 tags: [cli, make, documentation, code-samples, operations]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-11-09T08:07:38.321Z
+    at: 2026-11-16T08:15:17.266Z
 sources:
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
@@ -47,7 +47,7 @@ sources:
     resource: repo://src/code-samples/package-lock.json
   - id: openwiki-source-e0401fc6d5f2a13d30455bd9
     resource: repo://src/code-samples/package.json
-generated: { by: "openwiki/0.4.3", at: "2026-11-09T08:07:38.321Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-16T08:15:17.266Z" }
 ---
 
 # Developer CLI and Make Targets
@@ -163,9 +163,9 @@ flowchart TD
 
 The generator appends a trace card only for a manifest entry. For eligible Python and TypeScript generic agent model values, it can render configured Deep Agents provider tabs. `KEEP MODEL`, provider-specific calls, and embedding model IDs prevent a value from becoming a tab target.
 
-`make test-code-samples` installs the separate `src/code-samples/package.json` dependencies and invokes the runner. The runner discovers or accepts `FILES` for `.py`, `.ts`, `.java`, `.kt`, `.go`, and `.sh` files; it preserves the caller environment for credentials and services. Python uses the root uv project, TypeScript runs `npx tsx` from `src/code-samples/`, Go resolves that directory’s `go.mod`, shell uses Bash, and Java/Kotlin use JBang with Java 21.
+`make test-code-samples` installs the separate `src/code-samples/package.json` dependency set (tracked by its committed npm lockfile, version 3) and invokes the runner. The runner discovers or accepts `FILES` for `.py`, `.ts`, `.java`, `.kt`, `.go`, and `.sh` files; it preserves the caller environment for credentials and services. Python uses the root uv project, TypeScript runs `npx tsx` from `src/code-samples/`, Go resolves that directory’s `go.mod`, shell uses Bash, and Java/Kotlin use JBang with Java 21.
 
-Set `CODE_SAMPLE_PATHS` to directories below `src/code-samples/` to constrain either discovery or explicit `FILES`; invalid out-of-tree prefixes are ignored with a warning and an empty selection succeeds. The default is four workers, overrideable by `CODE_SAMPLE_JOBS`; configured groups sharing a LangSmith dataset or experiment fixture are serialized. Normal failures, missing tools, and timeouts fail. Detected LangSmith rate limits retry up to five times with configurable backoff; override attempts and delay with `CODE_SAMPLE_RATE_LIMIT_ATTEMPTS` and `CODE_SAMPLE_RATE_LIMIT_DELAY_SECONDS`. A sample still rate-limited afterward is skipped rather than failed.
+Set `CODE_SAMPLE_PATHS` to directories below `src/code-samples/` to constrain either discovery or explicit `FILES`; invalid out-of-tree prefixes are ignored with a warning and an empty selection succeeds. The default is four workers, overrideable by `CODE_SAMPLE_JOBS`; each sample has a 1,200-second timeout by default, overrideable with `CODE_SAMPLE_TIMEOUT_SECONDS`. Configured groups sharing a LangSmith dataset or experiment fixture are serialized. Normal failures, missing tools, and timeouts fail. Detected LangSmith rate limits retry up to five times with configurable backoff; override attempts and delay with `CODE_SAMPLE_RATE_LIMIT_ATTEMPTS` and `CODE_SAMPLE_RATE_LIMIT_DELAY_SECONDS`. A sample still rate-limited afterward is skipped rather than failed.
 
 `make update-code-sample-traces` enables `CODE_SAMPLE_TRACING=1`, defaults `LANGSMITH_PROJECT` to `docs-code-samples`, runs selected samples, then regenerates snippet MDX. It requires `LANGSMITH_API_KEY` to publish links. Only successful samples collect traces; collection is lock-serialized and claims run IDs so parallel samples cannot reuse them. A trace must be a root run stamped with that single snippet’s `LANGSMITH_DOCS_SNIPPET` metadata. No marker or unsafe ID yields no link; multi-snippet sources are recorded as skipped and old single-snippet entries removed. If no matching stamped root is found after a successful single-snippet run, its old entry is removed. Trace lookup/sharing errors warn without failing the sample suite.
 
