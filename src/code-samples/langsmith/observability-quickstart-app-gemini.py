@@ -18,7 +18,7 @@ def assistant(question: str) -> str:
     context = get_context(question)
     response = client.models.generate_content(
         # KEEP MODEL
-        model="gemini-3.8-flash",
+        model="gemini-4-hydrogen",
         contents=question,
         config={"system_instruction": f"Answer using the context below.\n\nContext: {context}"},
     )
