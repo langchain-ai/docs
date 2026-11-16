@@ -5,21 +5,26 @@ description: Connect applications running in a different AWS account to a privat
 icon: "arrow-left-right"
 ---
 
-A private BYOC data plane exposes its load balancer inside your data plane VPC. Applications in a different AWS account cannot reach it without an explicit cross-account network path. Two approaches work: **AWS PrivateLink** (recommended) and **VPC peering or transit gateway** (when CIDR ranges do not overlap).
+A private BYOC data plane exposes its load balancer inside your data plane VPC. Applications in a different AWS account cannot reach it without an explicit cross-account network path.
+
+Two approaches work:
+
+- **AWS PrivateLink** (recommended)
+- **VPC peering or transit gateway** (when CIDR ranges do not overlap)
 
 <Note>
-LangChain provisions a PrivateLink endpoint that carries traffic between the LangChain control plane and your data plane in both directions. There is no LangChain-managed endpoint service for application traffic from your own AWS accounts. You create and manage that endpoint service yourself.
+LangChain provisions [two PrivateLink connections](/langsmith/byoc-architecture-aws#connectivity) that carry traffic between the LangChain control plane and your data plane. There is no LangChain-managed endpoint service for application traffic from your own AWS accounts. You create and manage that endpoint service yourself.
 </Note>
 
-The steps below apply whether LangChain creates the VPC or you supply your own. You can add your own resources, such as the VPC endpoint service, in either case. To manage the VPC itself—its subnets, routing, gateways, and endpoints—use [Bring your own VPC on AWS](/langsmith/byoc-byovpc-aws) instead.
+The steps below apply whether LangChain creates the VPC or you supply your own. You can add your own resources, such as the VPC endpoint service, in either case. To manage the VPC itself (its subnets, routing, gateways, and endpoints), use [Bring your own VPC on AWS](/langsmith/byoc-byovpc-aws) instead.
 
 ## AWS PrivateLink (recommended)
 
-PrivateLink creates a private endpoint in each consumer VPC without routing between CIDR ranges, so it works even when IP ranges overlap.
+PrivateLink creates a private endpoint in each consumer VPC without routing between CIDR ranges. Therefore, it works even when IP ranges overlap.
 
 ### In the data plane account
 
-1. Identify the Network Load Balancer (NLB) for the data plane ingress. Find it in the AWS EC2 console under **Load Balancers** in your data plane account and region.
+1. Identify the Network Load Balancer (NLB) for the data plane ingress. Find it in the AWS EC2 console under **Load Balancers** in your data plane account and region. Its name ends in `-sm-istio`.
 2. Create a **VPC endpoint service** backed by that NLB. Set acceptance mode to **auto** or **manual** depending on your security policy.
 3. Add each consumer AWS account as a **principal** allowed to create an interface endpoint for the service.
 4. Note the endpoint service name (for example, `com.amazonaws.vpce.us-east-1.vpce-svc-xxxxxxxxxxxxxxxxx`).
@@ -41,20 +46,34 @@ Your applications use the standard data plane API URL without any change. DNS re
 
 ## VPC peering or transit gateway
 
-VPC peering and transit gateways work when CIDR ranges do not overlap between the data plane VPC and the consumer VPCs.
+VPC peering and transit gateways work when CIDR ranges do not overlap between the data plane VPC and the consumer VPCs. Choose one to route traffic, then configure DNS in each consumer VPC.
 
-**VPC peering:**
+### Connect with VPC peering
+
+To peer a consumer VPC with the data plane VPC:
 
 1. In the data plane account, create a peering connection request from the data plane VPC to the consumer VPC.
 2. In the consumer account, accept the request.
 3. Add routes in both VPCs so traffic to each other's CIDR range traverses the peering connection.
 4. Update any network ACLs or security groups that need to allow the peered ranges.
 
-**Transit gateway:**
+### Connect with a transit gateway
 
 Attach both VPCs to a shared transit gateway and configure route tables so each VPC can reach the other. This scales to many consumer VPCs without a full mesh of peering connections.
 
-With either approach, routing carries traffic across the peering or gateway connection, but DNS does not follow automatically. The data plane hostname only resolves inside the data plane VPC. Each consumer VPC needs the same private Route 53 hosted zone setup as the PrivateLink steps: create a private hosted zone for the hostname, associate it with the consumer VPC, and add an alias or CNAME record pointing to the data plane's load balancer DNS name.
+### Configure DNS in each consumer VPC
+
+Peering and transit gateways route traffic, but they do not carry DNS. The data plane hostname resolves only inside the data plane VPC.
+
+In each consumer VPC:
+
+1. Create a private Route 53 hosted zone for the data plane hostname.
+2. Associate the hosted zone with the consumer VPC.
+3. Add an alias or CNAME record that points the hostname to the data plane load balancer's DNS name.
+
+### Allow consumer CIDR ranges
+
+If you [restrict the load balancer's source IP ranges](/langsmith/byoc-onboarding-aws#create-the-data-plane), add each consumer VPC's CIDR range to that list. A private load balancer always allows the data plane VPC CIDR, but not peered or transit gateway ranges. Without them, the load balancer drops consumer traffic.
 
 ## See also
 
