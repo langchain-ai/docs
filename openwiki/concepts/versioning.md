@@ -1,11 +1,8 @@
 ---
 type: documentation route model
-title: Content Versioning and Navigation Model
+title: Versioning and Navigation
 description: Explains how source ownership, docs.json navigation, and the documentation builder map authored files to public language routes. Covers lifecycle menus, redirects, unversioned exceptions, preprocessing, and safe verification.
 tags: [documentation, routing, versioning, navigation, redirects]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-11-09T08:07:38.321Z
 sources:
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
@@ -28,6 +25,9 @@ sources:
   - id: openwiki-source-f260e53bc2ed7f10cc38d28f
     resource: repo://tests/unit_tests/test_conditional_fences.py
 generated: { by: "openwiki/0.4.3", at: "2026-11-09T08:07:38.321Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-11-16T08:15:17.266Z
 ---
 
 # Content Versioning and Navigation Model

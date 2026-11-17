@@ -160,12 +160,42 @@ def check_pages_exist(docs: dict, src_dir: Path) -> list[str]:
     return missing
 
 
+# Prefer the langchain-ai remote when present. Many clones use origin for a
+# personal fork whose main lags upstream, which makes removed-page checks fail
+# on unrelated nav churn.
+_DEFAULT_BASE_REFS = ("upstream/main", "origin/main")
+
+
 def _print_usage() -> None:
     print(
         "Usage: check_removed_pages_redirects.py <base_docs.json> <head_docs.json>\n"
-        "       check_removed_pages_redirects.py --base-ref <ref> <head_docs.json>",
+        "       check_removed_pages_redirects.py --base-ref <ref|auto> <head_docs.json>",
         file=sys.stderr,
     )
+
+
+def _git_ref_exists(ref: str) -> bool:
+    result = subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", ref],
+        capture_output=True,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def resolve_base_ref(requested: str) -> str | None:
+    """Resolve a git base ref for comparing docs.json.
+
+    ``auto`` (and the pre-commit default) prefers ``upstream/main`` over
+    ``origin/main`` so a stale fork main does not falsely report removals.
+    Any other value is returned as-is for ``git show``.
+    """
+    if requested != "auto":
+        return requested
+    for ref in _DEFAULT_BASE_REFS:
+        if _git_ref_exists(ref):
+            return ref
+    return None
 
 
 def _load_base_docs_from_ref(base_ref: str, head_path: Path) -> dict | None:
@@ -196,7 +226,18 @@ def main() -> int:
         return 2
 
     if len(args) == 3 and args[0] == "--base-ref":
-        base_ref = args[1]
+        resolved = resolve_base_ref(args[1])
+        if resolved is None:
+            print(
+                f"Error: could not resolve base ref {args[1]!r}. "
+                "Fetch upstream/main (preferred) or origin/main, "
+                "or pass an explicit ref.",
+                file=sys.stderr,
+            )
+            return 2
+        if resolved != args[1]:
+            print(f"Using base ref {resolved} (resolved from {args[1]!r})")
+        base_ref = resolved
         head_path = Path(args[2])
     elif len(args) == 2:
         base_path = Path(args[0])

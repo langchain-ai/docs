@@ -5,7 +5,7 @@ description: Documents how the live or local LangSmith OpenAPI specification is 
 tags: [langsmith, openapi, automation, github-actions, mintlify, security]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-11-09T08:07:38.321Z
+    at: 2026-11-16T08:15:17.266Z
 sources:
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
@@ -21,18 +21,20 @@ sources:
     resource: repo://scripts/process_langsmith_openapi.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
+  - id: openwiki-source-442324215d9c8d8250c31dd9
+    resource: repo://src/langsmith/api-ref-control-plane.mdx
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
   - id: openwiki-source-a705099c7a4f6266d1ac4bb2
     resource: repo://tests/unit_tests/test_process_langsmith_openapi.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-09T08:07:38.321Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-16T08:15:17.266Z" }
 ---
 
 # LangSmith OpenAPI Refresh
 
-The LangSmith REST API reference is published from the generated, committed `src/langsmith/langsmith-platform-openapi.json`. It is not an authored MDX endpoint tree: `src/docs.json` supplies that file to Mintlify's `langsmith/smith-api` directory, and Mintlify generates endpoint routes at deployment. Do not edit the generated specification or deployment-generated endpoint pages by hand.
+The LangSmith REST API reference is published from the generated, committed `src/langsmith/langsmith-platform-openapi.json`. It is not an authored MDX endpoint tree: `src/docs.json` supplies that file to Mintlify's `langsmith/smith-api` directory, and Mintlify generates endpoint routes at deployment. Do not edit the generated specification or deployment-generated endpoint pages by hand; both are non-authoring surfaces.
 
-This workflow owns only the LangSmith REST platform artifact. The Agent Server OpenAPI input is configured separately as `src/langsmith/agent-server-openapi.json` under `langsmith/agent-server-api`. The Control Plane API is also separate: its `src/docs.json` entry points directly to `https://api.host.langchain.com/openapi.json`. Refreshing the platform artifact does not update either API.
+This workflow owns only the LangSmith REST platform artifact. The Agent Server OpenAPI input is configured separately as `src/langsmith/agent-server-openapi.json` under `langsmith/agent-server-api`. The Control Plane API is also separate: its `src/docs.json` entry points directly to `https://api.host.langchain.com/openapi.json`, with the authored `src/langsmith/api-ref-control-plane.mdx` serving as its overview. Refreshing the platform artifact does not update either API. The Agent Server and Control Plane specifications are likewise externally owned or deployment-fetched inputs, not files to patch as part of this workflow.
 
 ## End-to-end flow
 
@@ -66,9 +68,9 @@ This flow is specifically for the platform asset. Host validation happens before
 | Public REST-reference policy | `scripts/process_langsmith_openapi.py` | Change explicit hiding, titles, grouping, or ordering, then regenerate. |
 | Generated platform input | `src/langsmith/langsmith-platform-openapi.json` | Review and merge the refresh PR; never patch the JSON manually. |
 | Refresh and GitHub write authority | `.github/workflows/refresh-langsmith-openapi.yml` | Preserve its narrow staging and standing-PR behavior. |
-| Agent Server input | `src/langsmith/agent-server-openapi.json` | Use the separate Agent Server specification-update process. |
+| Agent Server input | `src/langsmith/agent-server-openapi.json` | Use the separate Agent Server specification-update process; do not edit the fetched/generated JSON by hand. |
 | Control Plane input | `https://api.host.langchain.com/openapi.json` | Correct the service-owned source; do not commit a platform copy. |
-| Rendered endpoint pages | Mintlify deployment configured by `src/docs.json` | Inspect a deployed preview or production site. |
+| Rendered endpoint pages | Mintlify deployment configured by `src/docs.json` | Inspect a deployed preview or production site; do not author generated routes locally. |
 
 The processor is the public-documentation policy boundary between service-owned input and the public REST reference. Its default network source is `https://api.smith.langchain.com/openapi.json`. `fetch_spec()` parses the URL and rejects a hostname outside the `api.smith.langchain.com` allowlist before requesting it. Remote requests use an SSL context, request JSON through the `Accept` header, and time out after 30 seconds. `--input` resolves and reads a local UTF-8 JSON file instead, which is the controlled path for reproducing a candidate or developing policy.
 
@@ -118,7 +120,7 @@ This keeps one outstanding refresh PR rather than a daily queue. The workflow cr
 
 A disallowed fetch host raises `ValueError`; network, TLS, timeout, or JSON-decoding failures prevent a candidate from being produced. The workflow's `set -euo pipefail` makes later branch, checkout, commit, push, or PR-command failures stop the write step. A no-diff refresh is a successful no-op.
 
-Local checks do not prove that LangSmith REST endpoint pages were rendered. `make check-openapi` runs `mint openapi-check` only on `langsmith/agent-server-openapi.json`. The broken-link filter excludes `/langsmith/smith-api` reports because those routes exist at deployment but not in the local build. Use a processor run and generated-diff review for transformation changes, then inspect a Mintlify preview or production site for the rendered REST surface.
+Local checks do not prove that LangSmith REST endpoint pages were rendered. `make check-openapi` runs `mint openapi-check` only on `langsmith/agent-server-openapi.json`. The broken-link filter excludes `/langsmith/smith-api`, `/langsmith/agent-server-api/`, and `/api-reference/` reports because those routes exist at deployment but not in the local build. Use a processor run and generated-diff review for transformation changes, then inspect a Mintlify preview or production site for the rendered REST surface.
 
 The reusable documentation link workflow is read-only, uses Node 22 and a cached pinned Mint CLI, and runs `make broken-links-with-anchors`, `make check-mdx`, and `make check-openapi`. It checks generated-tree links, MDX syntax/components, and the Agent Server input; it does not validate the platform artifact or render deployment-generated REST routes.
 
@@ -126,7 +128,7 @@ The reusable documentation link workflow is read-only, uses Node 22 and a cached
 
 The processor test `tests/unit_tests/test_process_langsmith_openapi.py` exercises the path-specific hiding invariant: `/v2/sql/query` is hidden whether or not it has tags, while `/v2/sql/query/stats` and `/v2/runs/query` remain visible. It therefore guards against broadening the exact-path rule into an unsafe prefix rule, but does not test network fetches, CLI writes, or GitHub automation.
 
-The focused link-filter tests cover snippet and OpenAPI false positives while preserving ordinary broken-link reports. In particular, the implementation separately filters the Agent Server route prefix and the LangSmith REST `smith-api` prefix. These tests do not render endpoint pages or exercise the platform processor, network fetch, PR lifecycle, or deployment-generated routes.
+The focused link-filter tests cover snippet and OpenAPI false positives while preserving ordinary broken-link reports. In particular, the implementation separately filters the Agent Server route prefix and the LangSmith REST `smith-api` prefix, while the source also excludes the Control Plane `/api-reference/` prefix. These tests do not render endpoint pages or exercise the platform processor, network fetch, PR lifecycle, or deployment-generated routes.
 
 ```bash
 make test TEST_FILE=tests/unit_tests/test_process_langsmith_openapi.py
@@ -144,6 +146,7 @@ make test TEST_FILE=tests/unit_tests/test_filter_mint_broken_links.py
 
 ## Related pages
 
-- [Mintlify Integration](/openwiki/integrations/mintlify.md)
-- [Reference Documentation Boundaries](/openwiki/integrations/reference-docs.md)
+- [Build System](/openwiki/architecture/build-system.md)
+- [GitHub Actions](/openwiki/integrations/github-actions.md)
+- [Reference Documentation](/openwiki/integrations/reference-docs.md)
 - [Testing Overview](/openwiki/testing/test-overview.md)

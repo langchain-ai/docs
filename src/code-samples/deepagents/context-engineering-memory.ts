@@ -2,7 +2,7 @@
 import { createDeepAgent } from "deepagents";
 
 const agent = await createDeepAgent({
-  model: "google:gemini-3.6-flash",
+  model: "google:gemini-4-hydrogen",
   memory: ["/project/AGENTS.md", "~/.deepagents/preferences.md"],
 });
 // :snippet-end:
