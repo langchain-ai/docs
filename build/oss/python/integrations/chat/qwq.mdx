@@ -1,0 +1,223 @@
+---
+title: ChatQwQ integration
+description: Integrate with the ChatQwQ chat model using LangChain Python.
+integration:
+  name: ChatQwQ
+  pypi: langchain-qwq
+  stream: true
+  tool_calling: true
+  structured_output: true
+  multimodal: true
+---
+
+`ChatQwQ` connects Qwen thinking models to LangChain's [chat model interface](/oss/python/langchain/models). The `langchain-qwq` package also provides [`ChatQwen`](/oss/python/integrations/chat/qwen), which exposes thinking controls as constructor arguments.
+
+<Warning>
+Alibaba retired `qwq-plus` in the Beijing and Singapore regions on October 10, 2026. See the [model retirement notice](https://www.alibabacloud.com/en/notice/model_studionotice_on_the_decommissioning_of_certain_historical_mainline_models_731).
+
+`ChatQwQ` still defaults to `qwq-plus`. Set `model` explicitly and enable thinking as shown below. The package name and imports remain unchanged.
+</Warning>
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | Downloads | Version |
+| :--- | :--- |  :---: | :---: | :---: |
+| [`ChatQwQ`](https://pypi.org/project/langchain-qwq/) | [`langchain-qwq`](https://pypi.org/project/langchain-qwq/) | beta | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-qwq?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-qwq?style=flat-square&label=%20) |
+
+### Model features
+
+The following features apply to the Qwen Plus text model used in this guide. Model capabilities and availability vary by endpoint and region.
+
+| [Tool calling](/oss/python/langchain/tools) | [Structured output](/oss/python/langchain/structured-output) | [Image input](/oss/python/langchain/messages#multimodal) | Audio input | Video input | [Token-level streaming](/oss/python/langchain/streaming#llm-tokens) | Native async | [Token usage](/oss/python/langchain/models#token-usage) | [Logprobs](/oss/python/langchain/models#log-probabilities) |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ |
+
+## Setup
+
+Use an Alibaba Cloud Model Studio account with access to the selected model. The examples require Python 3.10 or later.
+
+### Credentials
+
+Generate an API key on [Alibaba's API key page](https://account.alibabacloud.com/login/login.htm?oauth_callback=https%3A%2F%2Fbailian.console.alibabacloud.com%2F%3FapiKey%3D1&lang=en#/api-key), then set `DASHSCOPE_API_KEY`:
+
+```python
+import getpass
+import os
+
+if not os.getenv("DASHSCOPE_API_KEY"):
+    os.environ["DASHSCOPE_API_KEY"] = getpass.getpass("Enter your DashScope API key: ")
+```
+
+The default base URL is `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`. Set `DASHSCOPE_API_BASE` or pass `base_url` to use the endpoint for your region. The API key and model must be available at that endpoint.
+
+### Installation
+
+Install the `langchain-qwq` package:
+
+```bash
+pip install -qU "langchain-qwq>=0.4.0"
+```
+
+## Instantiation
+
+Select a supported Qwen model and enable thinking through `extra_body`:
+
+```python
+from langchain_qwq import ChatQwQ
+
+llm = ChatQwQ(
+    model="qwen-plus-2025-12-01",
+    extra_body={"enable_thinking": True},
+    max_tokens=3_000,
+    timeout=None,
+    max_retries=2,
+)
+```
+
+Alternatively, use `ChatQwen` with its `enable_thinking` argument:
+
+```python
+from langchain_qwq import ChatQwen
+
+qwen = ChatQwen(model="qwen-plus-2025-12-01", enable_thinking=True)
+response = qwen.invoke("What is 17 multiplied by 19?")
+print(response.content_blocks)
+```
+
+For supported models and thinking controls, see Alibaba's [thinking-mode documentation](https://www.alibabacloud.com/help/en/model-studio/deep-thinking).
+
+## Invocation
+
+The following examples use the `llm` instance of `ChatQwQ`:
+
+```python
+messages = [
+    (
+        "system",
+        "You are a helpful assistant that translates English to French. "
+        "Translate the user sentence.",
+    ),
+    ("human", "I love programming."),
+]
+ai_msg = llm.invoke(messages)
+print(ai_msg.content_blocks)
+```
+
+When the provider returns reasoning, `additional_kwargs` also contains its `reasoning_content` field:
+
+```python
+print(ai_msg.additional_kwargs.get("reasoning_content", ""))
+```
+
+`content_blocks` provides LangChain's normalized view of text and reasoning. Accessing this property does not require `output_version="v1"`, which this integration does not support.
+
+## Stream responses
+
+Streaming returns message chunks as the model generates its response:
+
+```python
+for chunk in llm.stream("What is 17 multiplied by 19?"):
+    print(chunk.content_blocks)
+```
+
+For asynchronous invocation, use `ainvoke`:
+
+```python
+import asyncio
+
+from langchain_qwq import ChatQwQ
+
+
+async def main() -> None:
+    model = ChatQwQ(
+        model="qwen-plus-2025-12-01",
+        extra_body={"enable_thinking": True},
+    )
+    response = await model.ainvoke("What is 17 multiplied by 19?")
+    print(response.content_blocks)
+
+
+asyncio.run(main())
+```
+
+In a notebook with an active event loop, use `await main()` instead of `asyncio.run(main())`.
+
+## Tool calling
+
+Tool calling lets the model request a function and supply its arguments. `bind_tools` sends tool definitions to the model; it does not execute the tools.
+
+### Use with `bind_tools`
+
+```python
+from langchain.tools import tool
+from langchain_qwq import ChatQwQ
+
+
+@tool
+def multiply(first_int: int, second_int: int) -> int:
+    """Multiply two integers together."""
+    return first_int * second_int
+
+
+llm = ChatQwQ(
+    model="qwen-plus-2025-12-01",
+    extra_body={"enable_thinking": True},
+)
+llm_with_tools = llm.bind_tools([multiply])
+msg = llm_with_tools.invoke("Use multiply to calculate 5 times forty two.")
+print(msg.tool_calls)
+```
+
+<Note>
+Complete tool-argument buffering requires `langchain-qwq>=0.4.0`.
+</Note>
+
+`ChatQwQ` buffers tool arguments until the provider finishes the generation or ends the stream cleanly. It preserves valid JSON and attempts to repair malformed JSON only after assembling the complete arguments. Text and reasoning continue streaming immediately. Errors and canceled streams do not emit unfinished tool calls. This behavior applies to synchronous and asynchronous streams, including callbacks.
+
+## Structured output
+
+`ChatQwQ` uses function calling to return a structured result. A Pydantic schema validates the parsed result:
+
+```python
+from langchain_qwq import ChatQwQ
+from pydantic import BaseModel
+
+
+class Person(BaseModel):
+    name: str
+    age: int
+
+
+model = ChatQwQ(
+    model="qwen-plus-2025-12-01",
+    extra_body={"enable_thinking": True},
+)
+structured = model.with_structured_output(Person, method="function_calling")
+person = structured.invoke("Extract the person: Alice is 30 years old.")
+print(person)
+```
+
+Passing `method="json_mode"` or `method="json_schema"` to `ChatQwQ` also selects function calling. These values do not enable native JSON mode on this wrapper.
+
+## Vision support
+
+The text model in this guide does not accept image or video inputs. For vision tasks, select a compatible model and endpoint through `ChatQwen`. Check the provider's supported input formats before sending [multimodal messages](/oss/python/langchain/messages#multimodal).
+
+## See also
+
+- [Package documentation](https://pypi.org/project/langchain-qwq/)
+- [ChatQwen integration](/oss/python/integrations/chat/qwen)
+- [Chat models](/oss/python/langchain/models)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/chat/qwq.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
