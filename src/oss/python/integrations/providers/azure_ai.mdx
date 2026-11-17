@@ -3,10 +3,11 @@ title: "Azure AI integrations"
 description: "Integrate with Azure AI using LangChain Python."
 ---
 
-This page covers Azure AI package selection, Foundry setup, memory, vector stores, backends, and hosted agents for [Microsoft Azure](https://azure.microsoft.com/). For a card-based index of Microsoft integrations, see [Microsoft integrations](/oss/integrations/providers/microsoft).
+This page covers Azure AI package selection, Foundry setup, memory, vector stores, backends, hosted agents, and durable execution for [Microsoft Azure](https://azure.microsoft.com/). For a card-based index of Microsoft integrations, see [Microsoft integrations](/oss/integrations/providers/microsoft).
 
 Integration packages for Azure AI, Dynamic Sessions, SQL Server are maintained in
 the [langchain-azure](https://github.com/langchain-ai/langchain-azure) repository.
+The same repository maintains the Azure Durable Task Scheduler extension.
 
 A Foundry resource includes Azure OpenAI capabilities and adds a broader model catalog, agent service, and evaluation capabilities. If you use an Azure OpenAI resource, [upgrade it to a Foundry resource](https://learn.microsoft.com/en-us/azure/foundry/how-to/upgrade-azure-openai) to keep your existing API endpoint, state, and security configurations while gaining access to Foundry capabilities.
 
@@ -23,6 +24,7 @@ Use the following table to pick a starting point:
 | New application centered on a Foundry project                                                          | `langchain-azure-ai` |
 | Foundry Agent Service, hosted LangGraph, Toolbox, Content Safety, Azure tools, or Application Insights | `langchain-azure-ai` |
 | Embeddings configured from a Foundry project endpoint                                                  | `langchain-azure-ai` |
+| Durable LangGraph and LangChain agent execution on Azure Durable Task Scheduler (DTS)                   | `langchain-azure-compute[durabletask]` |
 | Direct Azure OpenAI v1 chat call                                                                       | `langchain-openai`   |
 | Same code must switch between OpenAI and Azure                                                         | `langchain-openai`   |
 | Existing @[`AzureChatOpenAI`] application                                                              | `langchain-openai`   |
@@ -73,7 +75,7 @@ from langchain_azure_ai.chat_models import AzureAIOpenAIApiChatModel
 from azure.identity import DefaultAzureCredential
 
 llm = AzureAIOpenAIApiChatModel(
-    model="gpt-5.5",
+    model="gpt-6.1-sol",
     credential=DefaultAzureCredential(),
 )
 
@@ -360,6 +362,20 @@ See a [usage example](https://learn.microsoft.com/azure/azure-sql/database/ai-ar
 from langchain_sqlserver import SQLServer_VectorStore
 ```
 
+### Azure AI Search
+
+> [Azure AI Search](https://learn.microsoft.com/azure/search/search-what-is-azure-search) is a cloud search
+> service for vector, keyword, and hybrid retrieval.
+
+The `AzureSearch` vector store and the `AzureAISearchRetriever` retriever ship in `langchain-azure-ai`.
+
+```python
+from langchain_azure_ai.retrievers import AzureAISearchRetriever
+from langchain_azure_ai.vectorstores import AzureSearch
+```
+
+See the [vector store guide](/oss/integrations/vectorstores/azuresearch) and the [retriever guide](/oss/integrations/retrievers/azure_ai_search).
+
 ## Runtime
 
 ### Microsoft Foundry hosted agents
@@ -454,9 +470,94 @@ To deploy either approach, use `azd ai agent init` to initialize a hosted-agent 
 
 The Microsoft Learn guide includes complete examples for both protocols, conversation state, human-in-the-loop flows, testing, deployment, and troubleshooting.
 
+### Durable LangGraph execution with Azure Durable Task Scheduler
+
+`langchain_azure_compute.graph` wraps a compiled LangGraph `StateGraph`, a LangChain `create_agent` workflow, or a Deep Agents `create_deep_agent` graph in a deterministic [Azure Durable Task Scheduler (DTS)](https://learn.microsoft.com/azure/durable-task/scheduler/durable-task-scheduler) orchestration with `attach_durability(graph, name="...")`. Model calls, tools, and graph steps run in activities rather than in the replaying orchestrator. `create_deep_agent` also requires the `deepagents` package.
+
+<Note>
+The durable execution integration is in public preview. Its API may change. Requires `langchain-azure-compute` 0.2.0 or later.
+</Note>
+
+The adapter separates the execution control plane from the graph state plane. Keep checkpoints in a LangGraph saver such as `SqliteSaver`, `PostgresSaver`, or `CosmosDBSaver`. Make persistent checkpoint storage accessible to every worker. With a persistent saver, step transitions pass checkpoint references, while durable tool/node inputs and outputs and final results still pass through DTS. Without a checkpointer, the adapter attaches an `InMemorySaver` and carries checkpoint bundles in DTS payloads.
+
+- **Activity isolation**: Use `@durable_tool(retries=3)` to configure a tool's independent retry policy, and `@durable_node` to isolate a graph node as an activity.
+- **Worker crash failover**: Another worker registered with the same graph and task hub can resume execution from persisted progress.
+- **Human-in-the-loop waits**: LangGraph `interrupt()` pauses execution using DTS external events without holding worker threads or consuming compute for the wait. Read the interrupt with `run.wait_pending()` and continue it with `run.resume(pending, value)`.
+- **Azure Functions HTTP routes**: `LangGraphFunctionApp` exposes start, status, and respond routes on Azure Functions Python v2. HTTP control routes do not replace a graph worker. Run dedicated `DurableTaskSchedulerWorker` replicas against the same scheduler and hub; embedded workers are not supported on Consumption or Flex plans. Function apps also require verified caller identity and per-instance ownership checks. See the [Azure Functions human-in-the-loop sample](https://github.com/langchain-ai/langchain-azure/tree/main/samples/langgraph-durabletask/10_azure_functions_hitl).
+
+Install the durable execution extra alongside the Foundry model integration:
+
+<CodeGroup>
+```bash pip
+pip install -U "langchain-azure-compute[durabletask]" langchain-azure-ai
+```
+
+```bash uv
+uv add "langchain-azure-compute[durabletask]" langchain-azure-ai
+```
+</CodeGroup>
+
+Set `AZURE_AI_PROJECT_ENDPOINT` and `AZURE_AI_MODEL_DEPLOYMENT_NAME` for your deployed model, and authenticate with Microsoft Entra ID (`az login` for local development). Your credential requires the Foundry User role on the Foundry project.
+
+For Azure DTS, set `DURABLE_TASK_SCHEDULER_CONNECTION_STRING`. Use managed identity in production and grant the identity the Durable Task Data Contributor role on the intended scheduler/task hub. For a running local DTS emulator, set `DTS_ENDPOINT=127.0.0.1:8080` instead. `sdk_options()` resolves these connection and authentication settings.
+
+This example runs a read-only tool as an isolated activity with up to three attempts:
+
+```python
+import os
+
+from azure.identity import DefaultAzureCredential
+from durabletask.azuremanaged.client import DurableTaskSchedulerClient
+from durabletask.azuremanaged.worker import DurableTaskSchedulerWorker
+from langchain.agents import create_agent
+from langchain.messages import HumanMessage
+from langchain.tools import tool
+from langchain_azure_ai.chat_models import AzureAIOpenAIApiChatModel
+from langchain_azure_compute.graph import attach_durability, durable_tool, sdk_options
+
+
+@durable_tool(retries=3)
+@tool
+def get_order_status(order_id: str) -> str:
+    """Look up an order's status (replace with your order service)."""
+    return f"Order {order_id} has shipped."
+
+
+model = AzureAIOpenAIApiChatModel(
+    project_endpoint=os.environ["AZURE_AI_PROJECT_ENDPOINT"],
+    credential=DefaultAzureCredential(),
+    model=os.environ["AZURE_AI_MODEL_DEPLOYMENT_NAME"],
+    use_responses_api=True,
+)
+agent = create_agent(model=model, tools=[get_order_status])
+reg = attach_durability(agent, name="support_agent")
+
+opts = sdk_options()
+worker = DurableTaskSchedulerWorker(**opts)
+sdk = DurableTaskSchedulerClient(**opts)
+try:
+    reg.register(worker)
+    worker.start()
+    run = reg.client(sdk).start(
+        {"messages": [HumanMessage(content="What is the status of order 42?")]}
+    )
+    result = run.wait_result(timeout=60)
+    print(result["messages"][-1].content_blocks)
+finally:
+    worker.stop()
+    sdk.close()
+```
+
+<Warning>
+Activities execute at least once, not exactly once. A crash after an external side effect but before its completion acknowledgement can repeat that effect. Use a durable idempotency key at the external mutation boundary, such as `runtime.config["metadata"]["durable_call_id"]`. DTS history contains activity inputs and outputs, and may contain checkpoints and final graph state; review its retention and purge settings independently of checkpoint storage.
+</Warning>
+
+For checkpoint configuration, payload limits, human approvals, and production hosting, see the [durable execution package guide](https://github.com/langchain-ai/langchain-azure/tree/main/libs/azure-compute#durable-langgraph-execution-durable-task-scheduler).
+
 ## Samples and tutorials
 
 - [microsoft-foundry/foundry-samples LangGraph hosted agent samples](https://github.com/microsoft-foundry/foundry-samples/tree/main/samples/python/hosted-agents/langgraph): Run LangGraph agents locally or deploy them to Microsoft Foundry with Responses, Invocations, and A2A samples.
+- [Durable Task Scheduler (DTS) LangGraph samples](https://github.com/langchain-ai/langchain-azure/tree/main/samples/langgraph-durabletask): Run durable graphs and agents with per-tool retries, human approvals, checkpoint storage, and Azure Functions HTTP hosting.
 - [Azure-Samples/langchain-azure-openai-starter](https://github.com/Azure-Samples/langchain-azure-openai-starter): Start with a production-ready LangChain and Azure OpenAI app template that lets you deploy directly to Azure with a single `azd` command.
 - [microsoft/langchain-for-beginners](https://github.com/microsoft/langchain-for-beginners): A hands-on course introducing LangChain with Azure OpenAI.
 - [Azure-Samples/langchain-agent-python](https://github.com/Azure-Samples/langchain-agent-python): Build and deploy LangChain agents on Azure.

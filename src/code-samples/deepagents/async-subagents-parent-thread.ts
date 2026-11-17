@@ -17,7 +17,7 @@ function researcher(config: LangGraphRunnableConfig) {
   }
   // :remove-end:
   return createDeepAgent({
-    model: "google:gemini-3.6-flash",
+    model: "google:gemini-4-hydrogen",
     systemPrompt: "You research topics thoroughly.",
   });
 }

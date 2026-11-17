@@ -50,6 +50,7 @@ the tree changes. Re-run the command after pulling, or symlink instead.
 | `verify-against-source` | Checking that a code sample, signature, default, or behavior claim is true: which repository owns each product, running the half of a sample that needs no API key, checking that a PR documents what it claims, and naming what stayed unverified. |
 | `submit-integration` | Turning a structured integration issue submission into a listing, applying the hosted-guide eligibility policy. Invoked by `.github/workflows/integration-submission.yml`. |
 | `update-integrations-prs` | Processing open integration PRs against the featuring policy: rebase, convert to external YAML, feature, or check package downloads. |
+| `update-example-models` | Rolling a provider example model ID across docs: verify the GA ID, update samples and generator tabs, regenerate snippets, refresh allowlists, leave migration/changelog history alone. |
 
 The last three moved here from `.deepagents/skills/`. Deep Agents Code reads
 `.agents/skills/` as a project skill directory, at higher precedence than

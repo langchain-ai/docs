@@ -272,6 +272,8 @@ with CockroachDBSaver.from_conn_string(DB_URI) as checkpointer:
     # checkpointer.disable_ttl()
 ```
 
+From v0.6.0, an active thread keeps the values it still uses, even when they are older than the interval, and a thread expires as a whole once it has been idle for the interval. When the setting changes, `enable_ttl()` pauses TTL, waits about 15 seconds, and brings existing threads up to date before it resumes TTL, so run it once after upgrading, from a single process. Later calls with the same setting return at once.
+
 Async variant: `await checkpointer.aenable_ttl(ttl_interval="7 days", cron="@hourly")`
 
 <Note>
@@ -361,6 +363,86 @@ deleted = store.delete_namespace(("user", "alice"))
 
 On `AsyncCockroachDBStore`, use `await store.adelete_namespace(...)`.
 
+#### Keep memories true (v0.6.0+)
+
+Semantic search ranks memories by similarity to a query, not by whether they are still true. `reconcile` writes a memory and settles the memories it may conflict with under a policy you choose, in one serializable transaction. The store makes no LLM calls.
+
+<Tip>
+On a store upgraded from v0.5, run `setup()` once before you use the methods in this section. It applies migration 2, which adds the columns they need, and until it runs they raise `ValueError`. Wait until every writer runs v0.6.0 before you turn history on.
+</Tip>
+
+A slot names the fact a memory states. With `slot="topic"`, the candidates include the memory under the same key and every live memory in the namespace whose `topic` field holds the same value. `first_of(skip_duplicates(), supersede_same_slot())` skips a repeat and confirms the memory it repeats, and otherwise lets a newer fact in the same slot supersede the old one. `reconcile` has no default policy.
+
+With `DB_URI` as above, these tools save a fact under a topic that the model names, and list what the user used to say about it:
+
+```python
+from dataclasses import dataclass
+
+from langchain.agents import create_agent
+from langchain.tools import ToolRuntime, tool
+from langchain_cockroachdb import CockroachDBStore
+from langchain_cockroachdb.store import first_of, skip_duplicates, supersede_same_slot
+
+POLICY = first_of(skip_duplicates(), supersede_same_slot())
+
+
+@dataclass
+class Context:
+    user_id: str
+
+
+@tool
+def remember(text: str, topic: str, runtime: ToolRuntime[Context, dict]) -> str:
+    """Save a fact about the user. topic names what it is about, such as "seat"."""
+    assert isinstance(runtime.store, CockroachDBStore)
+    namespace = ("user", runtime.context.user_id, "memories")
+    result = runtime.store.reconcile(
+        namespace,
+        None,  # the store generates the key
+        {"topic": topic, "text": text},
+        slot="topic",
+        policy=POLICY,
+        provenance={"source": "chat"},
+    )
+    if result.new != "written":
+        return f"Already known: {text}"
+    replaced = f", replacing {len(result.superseded)}" if result.superseded else ""
+    return f"Saved: {text}{replaced}"
+
+
+@tool
+def past_memories(topic: str, runtime: ToolRuntime[Context, dict]) -> str:
+    """List what the user used to say about a topic, newest first."""
+    assert isinstance(runtime.store, CockroachDBStore)
+    namespace = ("user", runtime.context.user_id, "memories")
+    lines = [
+        f"{version.ended_at:%Y-%m-%d}: {version.value['text']} ({version.reason})"
+        for version in runtime.store.history(namespace, limit=100)
+        if version.value.get("topic") == topic
+    ]
+    return "\n".join(lines) or f"No earlier memories about {topic}."
+
+
+with CockroachDBStore.from_conn_string(DB_URI, history=True) as store:
+    store.setup()
+    agent = create_agent(
+        "claude-sonnet-4-6",
+        tools=[remember, past_memories],
+        context_schema=Context,
+        store=store,
+    )
+```
+
+With `history=True`, every write that overwrites, supersedes, or deletes a memory keeps the version it ends, with its provenance, when its fact was true, and why it ended. Plain `put` and `delete` keep history too. `history(namespace, key)` lists one memory's old versions, newest first, and `history(namespace)` lists those of every memory in the namespace, which gives a timeline even for memories saved under generated keys.
+
+`confirm(namespace, key)` marks a memory as confirmed: it counts the confirmation and renews the memory's expiry. With `refresh_on_read` set to `False` in the store's `ttl`, expiry follows confirmations rather than reads.
+
+`record(namespace, key)` reads a memory with its version and provenance. `put_if(namespace, key, value, expected=record)` and `delete_if(namespace, key, expected=record)` apply only if the memory is still the one `record` returned, so two writers cannot lose an update. A conflict comes back in the result instead of as an exception: `applied` is `False`, and `current` holds the live memory to merge with.
+
+On a store with history, `delete` is a soft delete: the version it ends stays in history. `purge(namespace, key)` forgets one key: the memory, its vectors, and its history. A memory that `reconcile` superseded keeps its own key in history, so purge that key as well, or use `delete_namespace` to forget everything under a namespace, history included.
+
+On `AsyncCockroachDBStore`, each of these methods has an async form with an `a` prefix, such as `await store.areconcile(...)`.
+
 ### Multi-tenancy
 
 Isolate vector data by tenant using an opt-in namespace column. When enabled, all CRUD and search operations are scoped to the specified namespace.
@@ -369,6 +451,7 @@ CockroachDB's C-SPANN indexes support prefix columns, so namespace filtering use
 
 ```python
 from langchain_cockroachdb import AsyncCockroachDBVectorStore, CockroachDBEngine
+from langchain_cockroachdb.indexes import CSPANNIndex
 from langchain_openai import OpenAIEmbeddings
 
 engine = CockroachDBEngine.from_connection_string(CONNECTION_STRING)
@@ -388,10 +471,20 @@ vectorstore = AsyncCockroachDBVectorStore(
     namespace="tenant_a",
 )
 
+# Index the vectors with the namespace as the prefix column, before writes start
+await vectorstore.aapply_vector_index(CSPANNIndex(), prefix_columns=["namespace"])
+
 # All operations are scoped to tenant_a
-ids = await vectorstore.aadd_texts(["Tenant A document"])
+ids = await vectorstore.aadd_texts(
+    ["Tenant A document"], metadatas=[{"category": "news"}]
+)
 results = await vectorstore.asimilarity_search("query", k=5)
+results = await vectorstore.asimilarity_search(
+    "query", k=5, filter={"category": "news"}
+)
 ```
+
+From v0.6.0, a search with a metadata `filter` also uses the C-SPANN index: the store applies the filter to the nearest rows from the index and runs an exact search only when too few rows pass. The namespace must be the index's only prefix column, as in the example, and results that come from the index are approximate, like any index search.
 
 Document ids must be unique across namespaces. Ids the library generates always are, and adding a document whose id already belongs to another namespace raises `ValueError` without writing anything.
 

@@ -114,7 +114,7 @@ Two additional things a restructure breaks that a single-page edit does not:
 make lint_prose FILES="<changed files>"
 make build
 make broken-links-with-anchors
-python3 scripts/check_removed_pages_redirects.py --base-ref origin/main src/docs.json
+python3 scripts/check_removed_pages_redirects.py --base-ref auto src/docs.json
 ```
 
 Read `broken-links-with-anchors` by skipping to the `⎿` lines; those are the

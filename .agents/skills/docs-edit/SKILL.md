@@ -157,7 +157,7 @@ over RSS:
 | `src/langsmith/changelog.mdx` and `src/snippets/langsmith/fleet-changelog.mdx` | the `changelog-weekly.yml` workflow (`scripts/changelog_pipeline.py weekly`), from merged langchainplus PRs |
 | `src/langsmith/self-hosted-changelog.mdx` | the helm changelog bot |
 | `src/langsmith/langsmith-platform-openapi.json` | `.github/workflows/refresh-langsmith-openapi.yml` |
-| `src/langsmith/agent-server-openapi.json` | PRs from the `langgraph-api` repository |
+| `src/langsmith/agent-server-openapi.json` | PRs from the `langgraph-api-sync-openapi.yml` workflow in `langchainplus` |
 | `src/snippets/deepagents-eval-category-matrix.mdx` | `scripts/refresh_deepagents_category_matrix.py` |
 | `src/snippets/langsmith/mda-oauth-catalog.mdx` | `scripts/refresh_mda_oauth_catalog.py` |
 | `build/` | `make build` |

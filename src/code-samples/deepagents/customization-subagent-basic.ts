@@ -44,13 +44,13 @@ const researchSubagent: SubAgent = {
   description: "Used to research more in depth questions",
   systemPrompt: "You are a great researcher",
   tools: [internetSearch],
-  model: "openai:gpt-5.5", // Optional override, defaults to main agent model
+  model: "openai:gpt-6.1-sol", // Optional override, defaults to main agent model
 };
 const subagents = [researchSubagent];
 
 // KEEP MODEL
 const agent = createDeepAgent({
-  model: "google:gemini-3.6-flash",
+  model: "google:gemini-4-hydrogen",
   subagents,
 });
 // :snippet-end:
