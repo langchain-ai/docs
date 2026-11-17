@@ -1,0 +1,163 @@
+---
+title: MXCSandbox integration
+description: Integrate with the MXCSandbox sandbox backend using LangChain Python.
+integration:
+  name: MXCSandbox
+  pypi: langchain-mxc
+---
+
+[Microsoft Execution Containers (MXC)](https://github.com/microsoft/mxc) run a command inside a sandbox that the operating system enforces, with a policy for which folders the command can read and write and whether it can use the network. `MXCSandbox` is a [Deep Agents](/oss/deepagents/overview) backend that runs the agent's shell commands through MXC on the machine where the agent runs.
+
+<Note>
+    `langchain-mxc` is in preview.
+</Note>
+
+Unlike remote sandbox providers, MXC does not create a separate machine. The agent works directly in a project folder on your computer, and each command it runs is confined by MXC to that folder.
+
+## Requirements
+
+| OS | Minimum version | Enforcement |
+| :-- | :-- | :-- |
+| Windows 11 | 24H2, build 26100.9278 or newer | Process container |
+| macOS | 15 or newer (Apple silicon) | Seatbelt |
+| Linux | bubblewrap 0.5 or newer with unprivileged user namespaces. `allow_network=True` also needs `slirp4netns`, `iproute2`, and `iptables`. | bubblewrap |
+
+MXC is installed separately from the Python package. It ships in the `@microsoft/mxc-sdk` npm package, which requires Node.js 24 or newer to install.
+
+## Installation
+
+Install the integration:
+
+<CodeGroup>
+```bash pip
+pip install langchain-mxc
+```
+
+```bash uv
+uv add langchain-mxc
+```
+</CodeGroup>
+
+Install MXC in your project folder, or globally with `-g`:
+
+```bash
+npm install @microsoft/mxc-sdk
+```
+
+`MXCSandbox` finds the MXC executor in `node_modules` automatically. To use an executor in another location, pass `executor_path` or set the `MXC_EXECUTOR_PATH` environment variable.
+
+## Create a sandbox backend
+
+Point the backend at the project folder the agent should work in.
+
+```python
+from langchain_mxc import MXCSandbox
+
+backend = MXCSandbox(root_dir="./my-project")
+
+result = backend.execute("echo hello")
+print(result.output)
+```
+
+## Use with Deep Agents
+
+```python
+from langchain_anthropic import ChatAnthropic
+
+from deepagents import create_deep_agent
+from langchain_mxc import MXCSandbox
+
+backend = MXCSandbox(root_dir="./my-project")
+
+agent = create_deep_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-6"),
+    system_prompt="You are a coding assistant with sandbox access.",
+    backend=backend,
+)
+
+result = agent.invoke(
+    {
+        "messages": [
+            {"role": "user", "content": "Run the test suite and fix any failing tests"}
+        ]
+    }
+)
+```
+
+## Default policy
+
+Every command the agent runs through the `execute` tool gets this policy:
+
+| Area | Default |
+| :-- | :-- |
+| Read and write | `root_dir` and a temporary scratch folder |
+| Read only | The system toolchain, plus the folders that hold `python`, `git`, and `node` |
+| Blocked | Everything else, including credential folders such as `~/.ssh` and `~/.aws` |
+| Network | Off |
+| Windows, clipboard, and input injection | Off |
+| Environment variables | A minimal set. The host environment, including API keys, is not passed in. |
+| Timeout | 120 seconds per command |
+
+When a command is blocked, the agent sees the command's own error followed by a line that names what the policy blocked, so it can tell the user instead of retrying.
+
+## Configure the policy
+
+Change the policy with constructor arguments:
+
+```python
+from langchain_mxc import MXCSandbox
+
+backend = MXCSandbox(
+    root_dir="./my-project",
+    read_only_paths=["~/datasets"],  # extra folders commands can read
+    read_write_paths=["~/build-cache"],  # extra folders commands can write
+    allow_network=True,  # outbound connections; inbound stays blocked
+    env={"PYTHONUNBUFFERED": "1"},  # added to the minimal environment
+    timeout=300,  # seconds per command
+)
+```
+
+| Argument | Default | Description |
+| :-- | :-- | :-- |
+| `root_dir` | Required | Project folder. Commands start here and can read and write it. |
+| `read_only_paths` | `()` | Extra folders commands can read. |
+| `read_write_paths` | `()` | Extra folders commands can read and write. |
+| `allow_network` | `False` | Allow outbound network connections. |
+| `allow_ui` | `False` | Let commands create windows. |
+| `clipboard` | `"none"` | Clipboard access: `"none"`, `"read"`, `"write"`, or `"all"`. |
+| `allow_input_injection` | `False` | Let commands send synthetic keyboard and mouse input. |
+| `env` | `None` | Environment variables added to the minimal sandbox environment. |
+| `timeout` | `120` | Seconds before a command is stopped. |
+| `max_output_bytes` | `100_000` | Command output is truncated beyond this size. |
+| `executor_path` | `None` | Path to the MXC executor. Found automatically when not set. |
+
+Credential folders stay blocked even when a parent folder is granted. For example, `read_only_paths=["~"]` does not expose `~/.ssh`. To allow one, name that folder directly.
+
+The window, clipboard, and input settings are enforced on Windows and macOS. Linux ignores them.
+
+## Windows
+
+On Windows, most developer tools load the window system when they start, even if they never open a window. With `allow_ui=False`, the default, `git`, `node`, PowerShell, and `pytest` cannot start. Coding agents on Windows usually need:
+
+```python
+backend = MXCSandbox(root_dir="./my-project", allow_ui=True)
+```
+
+Clipboard access and input injection stay off unless you set them separately.
+
+The sandbox also denies `del`, `erase`, and PowerShell's `Remove-Item`, even inside `root_dir`. Python's `os.remove`, `git rm`, and `rmdir /s /q` work. When `del` is denied, the agent is told which alternatives to use.
+
+## Security model
+
+- **Shell commands are enforced by the operating system.** Each command runs in its own MXC sandbox, which is removed when the command exits.
+- **File tools are checked by Deep Agents, not by the operating system.** `ls`, `read_file`, `write_file`, `edit_file`, `glob`, and `grep` run in the agent's own process and are limited to `root_dir` by path checks.
+- **The backend fails closed.** If MXC is not installed, cannot start a sandbox, or rejects the policy, `execute` returns an error and the command does not run. Commands never run without the sandbox.
+- **With `allow_network=True`, commands can reach any host**, including hosts on your local network. MXC has no per-host allow list.
+
+On Linux, bubblewrap cannot start inside a default Docker container. Run the agent on the host, or in a container that permits user namespaces.
+
+## Cleanup
+
+There is nothing to stop or delete. Files the agent creates stay in `root_dir`, and the temporary scratch folder is removed when the backend is released.
+
+See also: [Sandboxes](/oss/deepagents/sandboxes).
