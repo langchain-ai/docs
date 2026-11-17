@@ -7,7 +7,15 @@ icon: "tool"
 
 LangChain operates your Azure data plane after provisioning, including upgrades, scaling, monitoring, and security patching. You do not need to size or tune each service. For BYOC on AWS, see [BYOC operations](/langsmith/byoc-operations-aws).
 
-## Autoscaling
+Operations fall into three groups:
+
+- **[LangChain-managed operations](#langchain-managed-operations)**: Scaling, upgrades, and maintenance that LangChain performs for you.
+- **[Customer-managed operations](#customer-managed-operations)**: Data plane settings, observability, and auditing that you configure yourself.
+- **[Troubleshooting](#troubleshooting)**: How LangChain gets access to your data when troubleshooting requires it.
+
+## LangChain-managed operations
+
+### Autoscaling
 
 LangChain scales your data plane as load changes:
 
@@ -18,11 +26,11 @@ LangChain scales your data plane as load changes:
 
 SmithDB uses dedicated node pools for compute and local NVMe cache storage. For storage configuration and retention, see [Data stores](/langsmith/byoc-architecture-azure#data-stores) and [Data protection](/langsmith/byoc-architecture-azure#data-protection).
 
-## High availability
+### High availability
 
 Data planes use zone-redundant PostgreSQL standby servers in regions that support them. Azure Managed Redis has a replica for high availability. Blob storage uses zone-redundant storage (ZRS) in regions with availability zones and locally redundant storage (LRS) elsewhere.
 
-## Instance sizes
+### Instance sizes
 
 Data planes start with the following database and system node sizes. To request different sizes, contact the LangChain team.
 
@@ -47,43 +55,64 @@ LangSmith services start with these resource requests and autoscaling bounds:
 | ACE backend | 1 | 10 | 1 | 2 GiB |
 | Presidio | 1 | 10 | 250m | 2 GiB |
 
-## LangSmith upgrades
+### LangSmith upgrades
 
 LangChain manages LangSmith version upgrades. Services use horizontal pod autoscaling and pod disruption budgets to limit the impact of replacing pods. Availability during an update depends on the service's replica count and available cluster capacity.
 
-## Supporting service upgrades
+### Supporting service upgrades
 
 LangChain manages supporting services such as Istio and KEDA alongside the LangSmith workloads. Azure data planes store traces in SmithDB and do not run ClickHouse.
 
-## Kubernetes cluster upgrades
+### Kubernetes cluster upgrades
 
 AKS applies Kubernetes patch versions and node image updates automatically, within the data plane's maintenance window. The system node pool uses a surge node during upgrades so pods can move onto new capacity.
 
-## Maintenance windows
+## Customer-managed operations
+
+### Data plane settings
+
+You can change the following settings of an Azure data plane while it is `provisioning` or `active`, with the [Update data plane settings](/langsmith/smith-api/data_planes/update-data-plane-settings) API:
+
+| Setting | Field | Azure |
+|---------|-------|-------|
+| Maintenance window | `maintenance_window` | A weekly UTC window of exactly 4 hours that starts on the hour, in the form `ddd:HH:00-ddd:HH:00`. The default is `sun:07:00-sun:11:00`. AKS upgrades and PostgreSQL maintenance happen in this window. |
+| Trace payload retention | `ttl` | Supported. By default, `short_days` is 14 and `long_days` is 400. |
+| Network firewall | `firewall` | Not available on Azure. |
+| Fleet OIDC | `fleet_oidc` | Not available on Azure. |
+
+#### Maintenance window
 
 Azure data planes have a weekly, four-hour maintenance window in UTC. The default is Sunday, 07:00–11:00 UTC (`sun:07:00-sun:11:00`). AKS upgrades and PostgreSQL maintenance use this window.
 
-To change the window, use the API described in [Change data plane settings](/langsmith/byoc-onboarding-azure#change-data-plane-settings). The maintenance-window settings form in the LangSmith UI supports AWS only.
+The settings form in the LangSmith UI supports AWS maintenance windows only. To change the maintenance window of an Azure data plane, use the [Update data plane settings](/langsmith/smith-api/data_planes/update-data-plane-settings) API:
 
-## Observability
+```bash
+curl -X PATCH 'https://azure.api.smith.langchain.com/orgs/current/data-planes/<data-plane-id>' \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: <api-key>' \
+  -H 'X-Organization-Id: <organization-id>' \
+  -d '{"maintenance_window": "sun:07:00-sun:11:00"}'
+```
+
+### Observability
 
 The data plane reads PostgreSQL and Redis metrics from Azure Monitor and reports health metrics to LangChain. You can configure LangSmith service logs, metrics, and traces as on self-hosted deployments. See [Export LangSmith telemetry to your observability backend](/langsmith/export-backend).
 
 You can deploy your own observability and security monitoring agents, as long as they do not interfere with LangSmith workloads.
 
-## Troubleshooting
-
-LangChain manages the resources in your data plane through delegated Microsoft Entra roles. Those management roles do not grant data roles on Blob storage, PostgreSQL, or Redis. For the full permission model, see [Access and permissions](/langsmith/byoc-architecture-azure#access-and-permissions).
-
-When troubleshooting requires data, you can run the query yourself, then validate and sanitize the output before sharing it with LangChain. If an engineer needs temporary access, the LangChain team coordinates the access with you.
-
-## Auditing
+### Auditing
 
 - **LangSmith audit logs**: Data plane operations are recorded in the data plane, and control plane actions are recorded in the control plane. See [Audit logs](/langsmith/audit-logs).
 - **Azure Activity Log**: Records LangSmith calls to Azure Resource Manager in your subscription.
 - **Resource and network logs**: LangSmith does not configure Azure diagnostic settings or VNet flow logs. AKS control plane and audit logs, Key Vault audit logs, PostgreSQL logs, and network flow logs are not collected by default. Configure diagnostic settings and flow logs to collect them.
 
 You are responsible for reviewing those logs and configuring alerts.
+
+## Troubleshooting
+
+LangChain manages the resources in your data plane through delegated Microsoft Entra roles. Those management roles do not grant data roles on Blob storage, PostgreSQL, or Redis. For the full permission model, see [Access and permissions](/langsmith/byoc-architecture-azure#access-and-permissions).
+
+When troubleshooting requires data, you can run the query yourself, then validate and sanitize the output before sharing it with LangChain. If an engineer needs temporary access, the LangChain team coordinates the access with you.
 
 ## See also
 
