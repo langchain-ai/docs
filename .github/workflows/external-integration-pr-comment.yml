@@ -6,6 +6,10 @@
 # or pages with at least 50,000 monthly downloads skip comment and close; labeling still
 # applies.
 #
+# If a langchain-ai org member reopens the PR, skip comment and close on that
+# reopen and on later synchronize runs (maintainer override). Labeling still
+# applies.
+#
 # NOTE: Uses `pull_request_target` so it can label, comment, and close PRs
 # from forks. The script only reads changed files and PR head content from the
 # GitHub API and checks org membership — no untrusted code is executed.
@@ -21,6 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      issues: read
       pull-requests: write
 
     if: ${{ !github.event.pull_request.draft }}
@@ -116,6 +121,44 @@ jobs:
               return;
             }
 
+            async function isActiveOrgMember(username) {
+              if (!username) return false;
+              try {
+                const membership = await github.rest.orgs.getMembershipForUser({
+                  org: 'langchain-ai',
+                  username,
+                });
+                return membership.data.state === 'active';
+              } catch (error) {
+                if (error.status === 404) return false;
+                console.error(`Error checking membership for ${username}:`, error);
+                return false;
+              }
+            }
+
+            // Maintainer reopen is an explicit keep-open override. Honor it on
+            // the reopen event and on later synchronize runs so pushes do not
+            // re-close the PR.
+            async function wasLastReopenedByMaintainer() {
+              if (context.payload.action === 'reopened') {
+                return isActiveOrgMember(context.payload.sender?.login);
+              }
+
+              const timeline = await github.paginate(
+                github.rest.issues.listEventsForTimeline,
+                {
+                  owner,
+                  repo,
+                  issue_number: pr.number,
+                  per_page: 100,
+                }
+              );
+              const reopenEvents = timeline.filter((event) => event.event === 'reopened');
+              if (reopenEvents.length === 0) return false;
+              const lastReopen = reopenEvents[reopenEvents.length - 1];
+              return isActiveOrgMember(lastReopen.actor?.login);
+            }
+
             const hasIntegrationLabel = pr.labels.some(
               (label) => label.name === 'integration'
             );
@@ -130,6 +173,14 @@ jobs:
                 labels: ['integration'],
               });
               console.log(`Added integration label to PR #${pr.number}`);
+            }
+
+            if (await wasLastReopenedByMaintainer()) {
+              console.log(
+                `PR #${pr.number} was reopened by a langchain-ai member; ` +
+                'skipping comment and close'
+              );
+              return;
             }
 
             async function fileIsEligible(filename) {
