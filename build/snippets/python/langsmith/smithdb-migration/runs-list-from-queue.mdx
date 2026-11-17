@@ -1,0 +1,161 @@
+import SmithdbRunsListFromQueueBeforePy from '/snippets/code-samples/smithdb-migration/runs-list-from-queue-before-py.mdx';
+import SmithdbRunsListFromQueueAfterPy from '/snippets/code-samples/smithdb-migration/runs-list-from-queue-after-py.mdx';
+import SmithdbRunsListFromQueueBeforeJs from '/snippets/code-samples/smithdb-migration/runs-list-from-queue-before-js.mdx';
+import SmithdbRunsListFromQueueAfterJs from '/snippets/code-samples/smithdb-migration/runs-list-from-queue-after-js.mdx';
+import SmithdbRunsListFromQueueBeforeKt from '/snippets/code-samples/smithdb-migration/runs-list-from-queue-before-kt.mdx';
+import SmithdbRunsListFromQueueAfterKt from '/snippets/code-samples/smithdb-migration/runs-list-from-queue-after-kt.mdx';
+import SmithdbRunsListFromQueueBeforeGo from '/snippets/code-samples/smithdb-migration/runs-list-from-queue-before-go.mdx';
+import SmithdbRunsListFromQueueAfterGo from '/snippets/code-samples/smithdb-migration/runs-list-from-queue-after-go.mdx';
+import SmithdbRunsListFromQueueBeforeSh from '/snippets/code-samples/smithdb-migration/runs-list-from-queue-before-sh.mdx';
+import SmithdbRunsListFromQueueAfterSh from '/snippets/code-samples/smithdb-migration/runs-list-from-queue-after-sh.mdx';
+
+## Annotation queues: read runs
+
+List and count the runs in an annotation queue. The legacy `GET /api/v1/annotation-queues/{queue_id}/runs`, `GET /api/v1/annotation-queues/{queue_id}/run/{index}`, and `GET /api/v1/annotation-queues/{queue_id}/size` endpoints are deprecated, as are `total_size` and `total_archived`. Use the annotation queue items API instead: list or count the items in one review status, then fetch each run with the lookup keys on its item.
+
+<Note>
+In Python and TypeScript, the items API is on the new client resources (`client.annotation_queues.items` / `client.annotationQueues.items`). The [Exceptions](/langsmith/smithdb-sdk-migration#exceptions) table applies to them. On self-hosted, listing items needs LangSmith v0.16.17 or later. `retrieve_placement` needs v0.16.20 or later. The count endpoint needs v0.17.1 or later. No 0.16 release includes it.
+</Note>
+
+### Main changes
+
+#### Method name
+
+<Tabs>
+  <Tab title="Python">
+    | Before | After |
+    |--------|-------|
+    | `client.list_runs_from_annotation_queue()` | `client.annotation_queues.items.list()` (async iterator) |
+    | `client.get_run_from_annotation_queue()` | `client.annotation_queues.items.list()` |
+    | None | `client.annotation_queues.items.retrieve_count()` (async) |
+  </Tab>
+  <Tab title="TypeScript">
+    | Before | After |
+    |--------|-------|
+    | `client.listRunsFromAnnotationQueue()` | `client.annotationQueues.items.list()` |
+    | `client.getRunFromAnnotationQueue()` | `client.annotationQueues.items.list()` |
+    | `client.getSizeFromAnnotationQueue()` | `client.annotationQueues.items.retrieveCount()` |
+  </Tab>
+  <Tab title="Java">
+    | Before | After |
+    |--------|-------|
+    | `client.annotationQueues().runs().list()` | `client.annotationQueues().items().list()` |
+    | `client.annotationQueues().retrieveRun()` | `client.annotationQueues().items().list()` |
+    | `client.annotationQueues().retrieveSize()`, `retrieveTotalSize()`, `retrieveTotalArchived()` | `client.annotationQueues().items().retrieveCount()` |
+  </Tab>
+  <Tab title="Go">
+    | Before | After |
+    |--------|-------|
+    | `client.AnnotationQueues.Runs.List()` | `client.AnnotationQueues.Items.List()` or `ListAutoPaging()` |
+    | `client.AnnotationQueues.GetRun()` | `client.AnnotationQueues.Items.List()` |
+    | `client.AnnotationQueues.GetSize()`, `GetTotalSize()`, `GetTotalArchived()` | `client.AnnotationQueues.Items.GetCount()` |
+  </Tab>
+  <Tab title="cURL">
+    | Before | After |
+    |--------|-------|
+    | `GET /api/v1/annotation-queues/{queue_id}/runs` | `GET /api/v1/platform/annotation-queues/{queue_id}/items` |
+    | `GET /api/v1/annotation-queues/{queue_id}/run/{index}` | `GET /api/v1/platform/annotation-queues/{queue_id}/items` |
+    | `GET /api/v1/annotation-queues/{queue_id}/size`, `/total_size`, `/total_archived` | `GET /api/v1/platform/annotation-queues/{queue_id}/items/count` |
+  </Tab>
+</Tabs>
+
+There is no lookup by index. To read the run at a position, page through the list with `page_size` and the cursor from the previous page. To find an item's position, use `retrieve_placement`. The method is `retrievePlacement` in TypeScript and Java, `GetPlacement` in Go, and `GET /api/v1/platform/annotation-queues/{queue_id}/items/{item_id}/placement` in cURL. It returns the item's review status (`section`), zero-based `position`, and a `cursor` for listing from that point. The cursor counts runs and threads together and ignores start-time bounds. Pass it only to a list request without `item_type`, `min_start_time`, or `max_start_time`.
+
+#### Review status
+
+The items API requires a `status`. The legacy endpoints defaulted to `needs_my_review` when you omitted it.
+
+| Before | After | Contains |
+|---|---|---|
+| `needs_my_review` (or omitted) | `needs_my_review` | Items you have not reviewed yet |
+| `needs_others_review` | `needs_others_review` | Items you reviewed that still need other reviewers |
+| `completed` | `archived` | Items that met the queue's review requirements |
+
+The legacy `archived=true` flag on the list endpoint also maps to `archived`. The items API does not accept `completed`.
+
+`needs_my_review` and `needs_others_review` are relative to the caller. A personal access token returns its owner's split. A service key returns the split for its service account, not for any human reviewer. Together they cover every item still in the queue.
+
+For counts, the legacy totals map to:
+
+| Before | `status` on the count endpoint |
+|---|---|
+| `size` | `needs_my_review` or `needs_others_review` |
+| `total_size` | `all` |
+| `total_archived` | `archived` (`start_time` and `end_time` still filter on when the item was archived) |
+
+#### Item type
+
+The items API returns runs and threads. Pass `item_type` as `RUN` to list only runs, as the legacy endpoints did. The count endpoint has no `item_type` filter, so counts include thread items.
+
+#### Response
+
+Each item holds the run's lookup keys (`run_id`, `project_id`, `start_time`) and queue metadata (`id`, `added_at`, `last_reviewed_time`, `reserved_by`, `completed_by`), not the run itself. To read a run's name, inputs, or outputs, pass those keys to the [run retrieve method](/langsmith/smithdb-sdk-migration-runs#runs-retrieve). The list returns an opaque `next_cursor` for pagination. The SDKs iterate across pages for you.
+
+The count endpoint returns `{"count": <n>}` instead of `{"size": <n>}`.
+
+### Examples
+
+#### List and count runs waiting for review
+
+<Tabs>
+  <Tab title="Python">
+    The legacy Python client had no size method, so the count is new.
+
+    <Tabs sync={false}>
+      <Tab title="Before">
+        <SmithdbRunsListFromQueueBeforePy />
+      </Tab>
+      <Tab title="After">
+        <SmithdbRunsListFromQueueAfterPy />
+      </Tab>
+    </Tabs>
+  </Tab>
+  <Tab title="TypeScript">
+    `items.list()` returns an async iterable that fetches further pages as you loop.
+
+    <Tabs sync={false}>
+      <Tab title="Before">
+        <SmithdbRunsListFromQueueBeforeJs />
+      </Tab>
+      <Tab title="After">
+        <SmithdbRunsListFromQueueAfterJs />
+      </Tab>
+    </Tabs>
+  </Tab>
+  <Tab title="Java">
+    `autoPager()` fetches further pages as you loop.
+
+    <Tabs sync={false}>
+      <Tab title="Before">
+        <SmithdbRunsListFromQueueBeforeKt />
+      </Tab>
+      <Tab title="After">
+        <SmithdbRunsListFromQueueAfterKt />
+      </Tab>
+    </Tabs>
+  </Tab>
+  <Tab title="Go">
+    `ListAutoPaging()` fetches further pages as you loop. Item start times are RFC3339 strings, so parse them before passing them to `GetV2`.
+
+    <Tabs sync={false}>
+      <Tab title="Before">
+        <SmithdbRunsListFromQueueBeforeGo />
+      </Tab>
+      <Tab title="After">
+        <SmithdbRunsListFromQueueAfterGo />
+      </Tab>
+    </Tabs>
+  </Tab>
+  <Tab title="cURL">
+    `GET /runs` returns an array of full runs. `GET /items` returns `{"items": [...], "next_cursor": ...}`, and each run is a separate `GET /api/v2/runs/{run_id}` call.
+
+    <Tabs sync={false}>
+      <Tab title="Before">
+        <SmithdbRunsListFromQueueBeforeSh />
+      </Tab>
+      <Tab title="After">
+        <SmithdbRunsListFromQueueAfterSh />
+      </Tab>
+    </Tabs>
+  </Tab>
+</Tabs>
