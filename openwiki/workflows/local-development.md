@@ -1,10 +1,11 @@
 ---
-type: "Reference"
-title: "Local Documentation Development Workflow"
-openwiki_generated: true
+type: Workflow guide
+title: Local Documentation Development
+description: Set up the supported local toolchain, edit source documentation, build and preview the generated Mintlify site, run code samples, and choose focused validation before handoff.
+tags: [local development, documentation, build pipeline, code samples, validation]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-11-09T08:07:38.321Z
+    at: 2026-11-16T08:15:17.266Z
 sources:
   - id: openwiki-source-b372ee6d00ad6d446e0fc042
     resource: repo://.agents/skills/docs-review/SKILL.md
@@ -38,11 +39,10 @@ sources:
     resource: repo://README.md
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-09T08:07:38.321Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-16T08:15:17.266Z" }
 ---
 
-
-# Local Documentation Development Workflow
+# Local Documentation Development
 
 The local workflow turns authored files under `src/` into a disposable Mintlify site under `build/`. Edit source, navigation, snippets, and assets in `src/`; never patch generated files in `build/`.
 
@@ -188,7 +188,11 @@ make test-code-samples FILES="src/code-samples/langchain/return-a-string.py"
 CODE_SAMPLE_PATHS="src/code-samples/langsmith" make test-code-samples
 ```
 
-The runner defaults to four jobs and serializes configured fixture-sharing groups. Rate-limited calls retry up to five times by default with a 30-second linear delay per attempt, capped at 120 seconds; both settings are configurable through environment variables. A sample still rate-limited after retries is reported as skipped, not passed.
+The runner invokes Python with `uv run python`, TypeScript with `npx tsx`, Go with `go run`, shell with `bash`, and Java or Kotlin through JBang on Java 21. Each sample inherits the local environment, so samples that call providers or services need their own credentials and service configuration. A sample run times out after 1,200 seconds by default; `CODE_SAMPLE_TIMEOUT_SECONDS` overrides that limit.
+
+The runner defaults to four jobs and serializes configured fixture-sharing groups as ordered chains while unrelated samples run concurrently. Rate-limited calls retry up to five times by default with a 30-second linear delay per attempt, capped at 120 seconds; both settings are configurable through environment variables. A sample still rate-limited after retries is reported as skipped, not passed, and does not make the runner exit nonzero; ordinary sample failures do.
+
+Set `CODE_SAMPLE_TRACING=1` only when refreshing trace links. The runner enables LangSmith tracing, uses `LANGSMITH_PROJECT` (defaulting to the script's default project), and the `update-code-sample-traces` target regenerates snippet MDX after updating `src/code-samples/trace-links.json`. Trace collection is serialized and a trace-collection failure warns without turning an already-passing sample into a sample failure.
 
 A local preview needs only the local toolchain and generated site. Running a selected sample locally requires its provider credentials, language runtimes, and services. Credentialed CI separately supplies provider and LangSmith secrets, PostgreSQL, and additional Java and Go setup. Fork pull requests skip those runs because GitHub does not expose repository secrets to them.
 
@@ -202,7 +206,8 @@ For pull requests, code-sample CI fetches the base branch from `origin`, derives
 
 ## Related pages
 
-- [GitHub Actions integration](/openwiki/integrations/github-actions.md)
-- [Adding pages](/openwiki/operations/adding-pages.md)
+- [Build system](/openwiki/architecture/build-system.md)
+- [Mintlify integration](/openwiki/integrations/mintlify.md)
 - [CLI tools](/openwiki/operations/cli-tools.md)
 - [Testing overview](/openwiki/testing/test-overview.md)
+- [Code-sample lifecycle](/openwiki/workflows/code-sample-lifecycle.md)
