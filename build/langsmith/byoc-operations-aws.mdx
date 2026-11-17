@@ -7,14 +7,22 @@ icon: "tool"
 
 LangChain operates your data plane after provisioning, including upgrades, scaling, monitoring, and security patching. Most maintenance is non-disruptive and requires no action from you.
 
-## Autoscaling
+Operations fall into three groups:
+
+- **[LangChain-managed operations](#langchain-managed-operations)**: Scaling, upgrades, and maintenance that LangChain performs for you.
+- **[Customer-managed operations](#customer-managed-operations)**: Data plane settings, observability, and auditing that you configure yourself.
+- **[Troubleshooting](#troubleshooting)**: How LangChain gets access to your data when troubleshooting requires it.
+
+## LangChain-managed operations
+
+### Autoscaling
 
 LangChain scales your data plane as load changes, so you do not need to size or tune it:
 
 - **Stateless LangSmith services**: Scaled horizontally by a horizontal pod autoscaler, with Karpenter provisioning and removing node capacity as pod demand changes.
 - **Databases**: LangChain sizes and scales RDS and ElastiCache.
 
-## High availability
+### High availability
 
 Data planes are provisioned for high availability by default. The deployment spans multiple availability zones in your region, and RDS and ElastiCache run Multi-AZ with automatic failover.
 
@@ -22,11 +30,11 @@ Data planes are provisioned for high availability by default. The deployment spa
 To run a data plane without high availability, contact the LangChain team.
 </Note>
 
-## Instance sizes
+### Instance sizes
 
 Data planes are provisioned with default instance sizes for the databases and node groups. To run a data plane on smaller instances, contact the LangChain team.
 
-## LangSmith upgrades
+### LangSmith upgrades
 
 LangChain upgrades the LangSmith version in your data plane daily. Upgrades are rolling, replica-by-replica, so there is no whole-service downtime.
 
@@ -35,11 +43,11 @@ Two mechanisms keep upgrades free of downtime:
 - **Horizontal pod autoscaling**: LangSmith services run multiple replicas, sized by a horizontal pod autoscaler, so pods are replaced a few at a time while the remaining replicas continue serving traffic.
 - **Pod disruption budgets**: A pod disruption budget caps how many replicas of a service can be unavailable at once, so neither a rolling update nor a node drain takes a service below the capacity it needs to stay available.
 
-## Supporting service upgrades
+### Supporting service upgrades
 
 Background services such as Istio and KEDA are upgraded on a regular cadence. Data planes that still run ClickHouse also receive ClickHouse operator upgrades. These upgrades are non-intrusive, and no service interruption is expected.
 
-## Kubernetes cluster upgrades
+### Kubernetes cluster upgrades
 
 The EKS cluster that hosts your data plane requires periodic upgrades to maintain security, compatibility, and access to new features. LangChain performs these upgrades proactively, ahead of AWS end-of-support dates, and coordinates the window with you.
 
@@ -48,15 +56,35 @@ Cluster upgrades fall into two types:
 - **Control plane upgrades**: Cover the Kubernetes API server and the components AWS manages alongside it. These are transparent to your workloads and do not restart pods.
 - **Node group upgrades**: Roll nodes one by one with make-before-break semantics. New nodes are provisioned on the updated version, pods move onto them, and the old nodes are terminated once migration completes. Pod disruption budgets apply to the drain, so each service stays available, though you might see brief connection resets as individual pods restart. No data is lost.
 
-## Maintenance windows
+### Maintenance windows
 
 Any maintenance or upgrade that could cause downtime, such as a restart of RDS or ElastiCache, happens in a scheduled maintenance window that LangChain coordinates with you in advance.
 
-## Observability
+## Customer-managed operations
+
+### Data plane settings
+
+To change a data plane's settings, go to **Settings** > **Data Planes** and select **Settings** on the data plane. You can also use the [Update data plane settings](/langsmith/smith-api/data_planes/update-data-plane-settings) endpoint.
+
+#### TTL retention
+
+A data plane's TTL settings set the default retention periods for its traces. By default, base traces last 14 days and extended traces last 400 days. These values are defaults, not limits. A workspace that chooses one of the [extended durations](/langsmith/usage-and-billing#retention-periods) keeps that duration, even when it is longer than the data plane's long-lived TTL. The blob bucket has an S3 lifecycle rule for each retention period, so trace payloads are deleted on the same schedule as their traces.
+
+To change the retention defaults, set **Short-lived TTL (days)** for base traces and **Long-lived TTL (days)** for extended traces, then save. Each value must be a whole number greater than 0, and the short-lived value cannot exceed the long-lived value. Through the API, send `ttl.short_days` and `ttl.long_days`.
+
+### Observability
 
 You can deploy observability tooling into the cluster, such as a Datadog agent or an OpenTelemetry collector, and your own security monitoring agents, as long as they do not interfere with LangSmith workloads.
 
 LangSmith services emit logs, metrics, and traces the same way they do on self-hosted, so the same configuration applies. See [Export LangSmith telemetry to your observability backend](/langsmith/export-backend).
+
+### Auditing
+
+- **LangSmith audit logs**: Operations on data plane resources are recorded in the data plane and accessible at your data plane endpoint. Control plane actions, such as creating a user, are audited in the control plane. For how to access both, see [Audit logs](/langsmith/audit-logs).
+- **EKS audit logs**: Sent to CloudWatch in your account, so you can monitor the commands that were run.
+- **VPC flow logs**: Recorded in an S3 bucket in your account. With [BYOVPC](/langsmith/byoc-byovpc-aws), you configure VPC flow logs yourself.
+
+Setting up alerts on those logs is your responsibility.
 
 ## Troubleshooting
 
@@ -68,14 +96,6 @@ The LangChain team has no standing access to your data, and can only manage the 
 <Note>
 If break-glass access is needed, the LangChain team reaches out with instructions.
 </Note>
-
-## Auditing
-
-- **LangSmith audit logs**: Operations on data plane resources are recorded in the data plane and accessible at your data plane endpoint. Control plane actions, such as creating a user, are audited in the control plane. For how to access both, see [Audit logs](/langsmith/audit-logs).
-- **EKS audit logs**: Sent to CloudWatch in your account, so you can monitor the commands that were run.
-- **VPC flow logs**: Recorded in an S3 bucket in your account. With [BYOVPC](/langsmith/byoc-byovpc-aws), you configure VPC flow logs yourself.
-
-Setting up alerts on those logs is your responsibility.
 
 ## See also
 
