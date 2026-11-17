@@ -1,0 +1,17 @@
+```bash
+QUEUE_ID="<queue-id>"
+
+COUNT=$(curl -s "https://api.smith.langchain.com/api/v1/platform/annotation-queues/$QUEUE_ID/items/count?status=needs_my_review" \
+  -H "x-api-key: $LANGSMITH_API_KEY")
+
+# Items carry the run's lookup keys, not its contents. Pass next_cursor back as
+# ?cursor= to fetch the next page.
+ITEMS=$(curl -s "https://api.smith.langchain.com/api/v1/platform/annotation-queues/$QUEUE_ID/items?status=needs_my_review&item_type=RUN" \
+  -H "x-api-key: $LANGSMITH_API_KEY")
+
+while read -r RUN_ID PROJECT_ID START_TIME; do
+  RUN=$(curl -s "https://api.smith.langchain.com/api/v2/runs/$RUN_ID?project_id=$PROJECT_ID&start_time=$START_TIME&selects=NAME&selects=STATUS&selects=INPUTS&selects=OUTPUTS" \
+    -H "x-api-key: $LANGSMITH_API_KEY")
+  echo "$RUN" | jq -r '"\(.name) \(.status)"'
+done < <(echo "$ITEMS" | jq -r '.items[] | "\(.run_id) \(.project_id) \(.start_time)"')
+```
