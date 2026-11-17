@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import argparse
 import datetime as dt
 import json
 import re
+from email.message import Message
+from io import BytesIO
 from types import SimpleNamespace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Never
+from urllib.error import HTTPError
+from urllib.parse import parse_qs, urlsplit
+from uuid import UUID
 
 import pytest
 from cryptography.fernet import Fernet
@@ -15,6 +21,7 @@ from scripts import changelog_pipeline as cp
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from urllib.request import Request
 
 
 def test_week_label_same_and_spanning_month() -> None:
@@ -208,7 +215,7 @@ def test_claude_api_raises_unless_the_turn_ended(
 
 
 def test_release_held_by_flag_state() -> None:
-    """Rolled-out flags release; pending flags stay; anything uncertain is dropped."""
+    """Pending or missing flags stay held; archived or conflicting flags drop."""
     held = {
         "1": {"flag": "shipped", "title": "a"},
         "2": {"flag": "cleaned_up", "title": "b"},
@@ -223,9 +230,9 @@ def test_release_held_by_flag_state() -> None:
     }
     released, kept, dropped = cp._release_held(held, flags)
     assert sorted(released) == ["1"]
-    assert sorted(kept) == ["3"]
-    assert sorted(dropped) == ["2", "4", "5"]
-    assert "not found in Eppo" in dropped["4"]
+    assert sorted(kept) == ["3", "4"]
+    assert sorted(dropped) == ["2", "5"]
+    assert "not found in Datadog" in kept["4"]
 
 
 def test_released_prs_are_marked_for_grouping_and_writing() -> None:
@@ -253,7 +260,7 @@ def test_released_prs_are_marked_for_grouping_and_writing() -> None:
     assert "<rollout>" not in cp._group_prompt(group, prs)
 
 
-def test_eppo_state_overrides_a_dropped_released_group() -> None:
+def test_datadog_state_overrides_a_dropped_released_group() -> None:
     """A released PR's group publishes unless an earlier entry announced it."""
     groups = [
         {"prs": [1], "layer": "drop", "announced_before": False},
@@ -264,7 +271,7 @@ def test_eppo_state_overrides_a_dropped_released_group() -> None:
     ]
     assert cp._keep_released(groups, frozenset({1, 2, 5, 6})) == 2
     assert [g["layer"] for g in groups] == [
-        "change",  # released, not announced: Eppo wins over the stale notes
+        "change",  # released, not announced: Datadog wins over the stale notes
         "drop",  # released, but last week's entry already announced it
         "drop",  # not released: the model's drop stands
         "change",  # one released PR is enough; a missing field means not announced
@@ -469,6 +476,137 @@ def test_preflight_model_stops_on_a_rejected_key(
         cp._preflight_model()
 
 
+def test_hourly_github_rate_limit_stops_without_short_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An exhausted hourly budget must not sleep and retry for every PR."""
+    monkeypatch.setattr(
+        cp.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=1, stdout="", stderr="gh: API rate limit exceeded (HTTP 403)"
+        ),
+    )
+
+    def unexpected_sleep(_seconds: float) -> Never:
+        pytest.fail("Hourly quota exhaustion must stop immediately")
+
+    monkeypatch.setattr(cp.time, "sleep", unexpected_sleep)
+    with pytest.raises(RuntimeError, match="API rate limit exceeded"):
+        cp._run(["gh", "api", "rate_limit"], timeout=1)
+
+
+def test_secondary_github_rate_limit_can_recover(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A temporary secondary limit still allows a successful retry."""
+    replies = iter(
+        [
+            SimpleNamespace(
+                returncode=1,
+                stdout="",
+                stderr="You have exceeded a secondary rate limit",
+            ),
+            SimpleNamespace(returncode=0, stdout="[]", stderr=""),
+        ]
+    )
+    monkeypatch.setattr(cp.subprocess, "run", lambda *_args, **_kwargs: next(replies))
+    monkeypatch.setattr(cp.time, "sleep", lambda _seconds: None)
+    assert cp._run(["gh", "api", "example"], timeout=1) == "[]"
+
+
+@pytest.mark.parametrize("remaining", [0, 3])
+def test_collection_rejects_insufficient_github_quota(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, remaining: int
+) -> None:
+    """Stop before PR fetches when even their minimum request budget is unavailable."""
+    monkeypatch.setattr(
+        cp,
+        "_gh_api",
+        lambda _path: {
+            "resources": {"core": {"limit": 5000, "remaining": remaining, "reset": 0}}
+        },
+    )
+    monkeypatch.setattr(cp, "_list_feat_fix", lambda *_args: [101, 102])
+
+    def unexpected_fetch(*_args: object) -> Never:
+        pytest.fail("PRs must not be fetched with insufficient quota")
+
+    monkeypatch.setattr(cp, "_collect_one", unexpected_fetch)
+    with pytest.raises(SystemExit, match="1970-01-01T00:00:00\\+00:00"):
+        cp.cmd_collect(
+            argparse.Namespace(
+                out=str(tmp_path), since="2026-11-09", until="2026-11-16", workers=1
+            )
+        )
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_collection_budget_accounts_for_cached_prs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cached: bool
+) -> None:
+    """A complete collection succeeds with enough quota for its uncached PRs."""
+    prs = tmp_path / "prs"
+    prs.mkdir()
+    if cached:
+        (prs / "101.json").write_text("{}")
+    monkeypatch.setattr(
+        cp,
+        "_gh_api",
+        lambda _path: {
+            "resources": {
+                "core": {"limit": 5000, "remaining": 2 if cached else 4, "reset": 0}
+            }
+        },
+    )
+    monkeypatch.setattr(cp, "_list_feat_fix", lambda *_args: [101, 102])
+    monkeypatch.setattr(
+        cp,
+        "_collect_one",
+        lambda number, path: (path / f"{number}.json").write_text("{}"),
+    )
+    cp.cmd_collect(
+        argparse.Namespace(
+            out=str(tmp_path), since="2026-11-09", until="2026-11-16", workers=1
+        )
+    )
+    assert sorted(path.name for path in prs.iterdir()) == ["101.json", "102.json"]
+
+
+def test_weekly_refuses_partial_pr_collection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed PR read cannot become a successful but incomplete weekly changelog."""
+    monkeypatch.setattr(cp, "_preflight_model", lambda: None)
+    monkeypatch.setattr(
+        cp,
+        "_gh_api",
+        lambda _path: {
+            "resources": {"core": {"limit": 5000, "remaining": 5000, "reset": 0}}
+        },
+    )
+    monkeypatch.setattr(cp, "_list_feat_fix", lambda *_args: [101, 102])
+
+    def collect(number: int, path: Path) -> None:
+        if number == 102:
+            message = "GitHub request failed"
+            raise RuntimeError(message)
+        (path / f"{number}.json").write_text("{}")
+
+    def unexpected_classification(*_args: object) -> Never:
+        pytest.fail("An incomplete collection must not reach classification")
+
+    monkeypatch.setattr(cp, "_collect_one", collect)
+    monkeypatch.setattr(cp, "cmd_classify", unexpected_classification)
+    with pytest.raises(RuntimeError, match="refusing to generate a partial changelog"):
+        cp.cmd_weekly(
+            argparse.Namespace(
+                out=str(tmp_path), since="2026-11-09", until="2026-11-16", write=False
+            )
+        )
+    assert not list(tmp_path.glob("mock-*"))
+
+
 def test_fix_text_publishes_clean_rewrites_only(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -533,46 +671,474 @@ def test_held_list_folds_in_and_retires_the_plaintext_copy(
     assert cp._load_held(path) == {"9": {"flag": "old"}, "10": {"flag": "new"}}
 
 
-def _eppo_flag(*allocations: dict, active: bool = True, boolean: bool = True) -> dict:
-    """An Eppo flag with one production environment and the given allocations."""
+def _datadog_flag(**environment: object) -> dict:
     return {
-        "variation_type": "BOOLEAN" if boolean else "STRING",
-        "environments": [{"id": 1, "is_production": True, "active": active}],
-        "variations": [
-            {"id": 10, "variant_key": "true"},
-            {"id": 11, "variant_key": "false"},
+        "value_type": "BOOLEAN",
+        "variants": [{"id": "on", "value": "true"}, {"id": "off", "value": "false"}],
+        "feature_flag_environments": [
+            {
+                "environment_id": "prod",
+                "status": "ENABLED",
+                "default_variant_id": "on",
+                "allocations": None,
+                **environment,
+            }
         ],
-        "allocations": [{"environment_id": 1, **a} for a in allocations],
     }
 
 
-def _serve(variation_id: int, exposure: float = 1) -> dict:
+def _allocation(variant: str = "on", **fields: object) -> dict:
     return {
-        "percent_exposure": exposure,
-        "variation_weight": [{"variation_id": variation_id, "weight": 100}],
+        "order_position": 0,
+        "type": "FEATURE_GATE",
+        "targeting_rules": [],
+        "variant_weights": [{"variant_id": variant, "value": 100}],
+        **fields,
     }
 
 
 @pytest.mark.parametrize(
-    ("flag", "expected"),
+    ("environment", "expected"),
     [
-        (_eppo_flag(_serve(10)), True),
-        (_eppo_flag(_serve(10, exposure=100)), True),  # exposure as a percent
-        (_eppo_flag(_serve(11)), False),  # catch-all serves "false"
-        (_eppo_flag(_serve(10, exposure=0.5)), False),  # partial exposure
-        (_eppo_flag(_serve(10), active=False), False),  # production inactive
-        (_eppo_flag({"targeting_rules": [{}], **_serve(10)}), False),  # targeted only
-        (_eppo_flag({"targeting_rules": [{}], **_serve(11)}, _serve(10)), True),
-        (_eppo_flag(), False),  # no allocations
+        ({}, True),
+        ({"status": "DISABLED"}, False),
+        ({"status": "UNKNOWN"}, False),
+        ({"default_variant_id": "off"}, False),
+        ({"default_variant_id": "missing"}, False),
+        ({"override_variant_id": "off"}, False),
+        ({"default_variant_id": "off", "override_variant_id": "on"}, True),
+        ({"default_variant_id": "off", "allocations": [_allocation()]}, True),
+        ({"allocations": [_allocation("off")]}, False),
+        (
+            {
+                "allocations": [
+                    _allocation(
+                        targeting_rules=[
+                            {
+                                "conditions": [
+                                    {
+                                        "attribute": "tier",
+                                        "operator": "ONE_OF",
+                                        "value": ["preview"],
+                                    }
+                                ]
+                            }
+                        ]
+                    )
+                ]
+            },
+            True,
+        ),
+        (
+            {
+                "default_variant_id": "off",
+                "allocations": [
+                    _allocation(
+                        targeting_rules=[
+                            {
+                                "conditions": [
+                                    {
+                                        "attribute": "tier",
+                                        "operator": "ONE_OF",
+                                        "value": ["preview"],
+                                    }
+                                ]
+                            }
+                        ]
+                    )
+                ],
+            },
+            False,
+        ),
+        (
+            {
+                "allocations": [
+                    _allocation(
+                        "off",
+                        targeting_rules=[
+                            {
+                                "conditions": [
+                                    {
+                                        "attribute": "tier",
+                                        "operator": "ONE_OF",
+                                        "value": ["preview"],
+                                    }
+                                ]
+                            }
+                        ],
+                    )
+                ]
+            },
+            False,
+        ),
+        (
+            {
+                "allocations": [
+                    _allocation(
+                        variant_weights=[
+                            {"variant_id": "on", "value": 50},
+                            {"variant_id": "off", "value": 50},
+                        ]
+                    )
+                ]
+            },
+            False,
+        ),
+        (
+            {
+                "allocations": [
+                    _allocation(variant_weights=[{"variant_id": "on", "value": 50}])
+                ]
+            },
+            False,
+        ),
+        ({"allocations": [_allocation(variant_weights=[])]}, False),
+        ({"allocations": [_allocation(experiment_id="experiment")]}, False),
+        (
+            {
+                "allocations": [
+                    _allocation(
+                        exposure_schedule={"rollout_steps": [{"exposure_ratio": 1}]}
+                    )
+                ]
+            },
+            False,
+        ),
+        ({"allocations": [_allocation(status="draft")]}, False),
+        ({"allocations": [_allocation(type="UNKNOWN")]}, False),
+        ({"allocations": {}}, False),
+        ({"allocations": [_allocation(order_position=None)]}, False),
     ],
 )
-def test_is_fully_rolled_out(flag: dict, expected: bool) -> None:
-    """Only a production catch-all serving one "on" variant to everyone counts."""
-    assert cp.is_fully_rolled_out(flag) is expected
+def test_is_fully_rolled_out(environment: dict, expected: bool) -> None:
+    """Enabled is insufficient: every reachable audience must receive the on value."""
+    assert cp.is_fully_rolled_out(_datadog_flag(**environment), {"prod"}) is expected
 
 
-def test_eppo_get_refuses_other_hosts(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The Eppo client only ever requests the hardcoded HTTPS host."""
-    monkeypatch.setattr(cp, "EPPO_API_BASE", "https://example.com/api")
+def test_rollout_requires_complete_production_details() -> None:
+    """Every production environment must be present and rolled out."""
+    flag = _datadog_flag()
+    assert not cp.is_fully_rolled_out(flag, set())
+    assert not cp.is_fully_rolled_out(flag, {"prod", "other-prod"})
+    other = {**flag["feature_flag_environments"][0], "environment_id": "other-prod"}
+    flag["feature_flag_environments"].append(other)
+    assert cp.is_fully_rolled_out(flag, {"prod", "other-prod"})
+    other["default_variant_id"] = "off"
+    assert not cp.is_fully_rolled_out(flag, {"prod", "other-prod"})
+    flag["archived_at"] = "2026-01-01T00:00:00Z"
+    assert not cp.is_fully_rolled_out(flag, {"prod"})
+    del flag["archived_at"]
+    del flag["feature_flag_environments"][0]["allocations"]
+    assert not cp.is_fully_rolled_out(flag, {"prod"})
+
+
+def test_rollout_honors_rule_order_and_targeted_exceptions() -> None:
+    """A reachable exception blocks rollout; rules after a catch-all cannot."""
+    catchall = _allocation(order_position=1)
+    exception = _allocation(
+        "off",
+        order_position=0,
+        targeting_rules=[
+            {
+                "conditions": [
+                    {"attribute": "tier", "operator": "ONE_OF", "value": ["preview"]}
+                ]
+            }
+        ],
+    )
+    flag = _datadog_flag(default_variant_id="off", allocations=[catchall, exception])
+    assert not cp.is_fully_rolled_out(flag, {"prod"})
+    exception["order_position"] = 2
+    assert cp.is_fully_rolled_out(flag, {"prod"})
+
+
+def test_non_boolean_rollout_requires_one_known_variant() -> None:
+    """Uniform non-boolean values retain the existing release behavior."""
+    flag = _datadog_flag()
+    flag["value_type"] = "STRING"
+    flag["variants"] = [{"id": "on", "value": "general"}]
+    assert cp.is_fully_rolled_out(flag, {"prod"})
+    flag["variants"] = []
+    assert not cp.is_fully_rolled_out(flag, {"prod"})
+
+
+@pytest.mark.parametrize("flag_count", [4, 50, 51, 100])
+def test_datadog_inventory_paginates_and_fetches_details(
+    monkeypatch: pytest.MonkeyPatch,
+    flag_count: int,
+) -> None:
+    """List payloads omit allocations; rollout must use each detail response."""
+    monkeypatch.setenv("DD_API_KEY", "test-api")
+    monkeypatch.setenv("DD_APP_KEY", "test-app")
+    flags = [
+        {"id": str(UUID(int=i + 1)), "attributes": {"key": f"flag-{i}"}}
+        for i in range(flag_count)
+    ]
+    detail_reads = []
+    listing_complete = False
+
+    def get(path: str, headers: dict) -> dict:
+        nonlocal listing_complete
+        assert headers == {"DD-API-KEY": "test-api", "DD-APPLICATION-KEY": "test-app"}
+        url = urlsplit(path)
+        query = parse_qs(url.query)
+        if url.path.endswith("/environments"):
+            assert query["limit"] == ["50"]
+            # Environment reads beyond the end can repeat the final short page.
+            return {
+                "data": [
+                    {"id": "prod", "attributes": {"is_production": True}},
+                    {"id": "dev", "attributes": {"is_production": False}},
+                ]
+            }
+        if url.path == "/api/v2/feature-flags":
+            assert query["sort"] == ["created_at"]
+            assert query["page[limit]"] == ["50"]
+            offset = int(query["page[offset]"][0])
+            page = flags[offset : offset + 50]
+            listing_complete = offset + len(page) >= len(flags)
+            return {
+                "data": page,
+                "links": {"next": "https://example.com/never-follow"},
+            }
+        assert listing_complete
+        index = UUID(url.path.rsplit("/", 1)[1]).int - 1
+        detail_reads.append(index)
+        return {"data": {"attributes": {"key": f"flag-{index}", **_datadog_flag()}}}
+
+    monkeypatch.setattr(cp, "_datadog_get", get)
+    index, production = cp.datadog_flag_index()
+    assert production == {"prod"}
+    assert set(index) == {f"flag-{i}" for i in range(flag_count)}
+    assert detail_reads == list(range(flag_count))
+    assert cp.is_fully_rolled_out(index[f"flag-{flag_count - 1}"], production)
+
+
+def test_inventory_failure_never_reuses_a_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An API error cannot publish from a previous Eppo or Datadog success."""
+    old = {"example": {"rolled_out": True}}
+    for provider in ("eppo", "datadog"):
+        (tmp_path / f"{provider}-flags.json").write_text(json.dumps(old))
+
+    def unavailable() -> Never:
+        url = "https://api.datadoghq.com"
+        raise HTTPError(url, 403, "Forbidden", Message(), None)
+
+    monkeypatch.setattr(cp, "datadog_flag_index", unavailable)
+    with pytest.raises(HTTPError):
+        cp._load_flags(tmp_path)
+    monkeypatch.setattr(
+        cp,
+        "datadog_flag_index",
+        lambda: ({"example": _datadog_flag(default_variant_id="off")}, {"prod"}),
+    )
+    flags = cp._load_flags(tmp_path)
+    assert flags["example"]["rolled_out"] is False
+    assert json.loads((tmp_path / "datadog-flags.json").read_text()) == flags
+
+
+def test_datadog_inventory_rejects_missing_production_and_duplicate_pages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing credentials/configuration or a looping API must stop the run."""
+    monkeypatch.setenv("DD_API_KEY", "test-api")
+    monkeypatch.setenv("DD_APP_KEY", "test-app")
+    monkeypatch.setattr(cp, "_datadog_get", lambda *_: {"data": []})
+    with pytest.raises(ValueError, match="No Datadog production"):
+        cp.datadog_flag_index()
+    for page in ([{"id": "same"}] * 2, [{"id": str(i)} for i in range(50)]):
+        monkeypatch.setattr(cp, "_datadog_get", lambda *_, page=page: {"data": page})
+        with pytest.raises(ValueError, match="duplicate"):
+            list(cp._datadog_resources("/api/v2/feature-flags", {}))
+    monkeypatch.delenv("DD_APP_KEY")
+    with pytest.raises(SystemExit, match="DD_APP_KEY"):
+        cp.datadog_flag_index()
+
+
+def test_datadog_http_uses_site_and_rejects_redirects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Credentials go only to the selected, allowlisted Datadog site."""
+    monkeypatch.setenv("DD_SITE", "us5.datadoghq.com")
+
+    def opener(handler: cp._NoDatadogRedirect) -> SimpleNamespace:
+        # urllib calls this before issuing a redirected authenticated request.
+        with pytest.raises(ValueError, match="redirects"):
+            handler.redirect_request(
+                None, None, 302, "Found", {}, "https://example.com"
+            )
+
+        def request(req: Request, timeout: int) -> BytesIO:
+            assert req.full_url == "https://api.us5.datadoghq.com/api/v2/feature-flags"
+            assert req.get_header("Dd-api-key") == "test-api"
+            assert timeout == 15
+            return BytesIO(b'{"data": []}')
+
+        return SimpleNamespace(open=request)
+
+    monkeypatch.setattr(cp.urllib.request, "build_opener", opener)
+    assert cp._datadog_get("/api/v2/feature-flags", {"DD-API-KEY": "test-api"}) == {
+        "data": []
+    }
+    monkeypatch.setenv("DD_SITE", "datadoghq.com@example.com")
     with pytest.raises(ValueError, match="allowlist"):
-        cp._eppo_get("feature-flags", "token")
+        cp._datadog_get("/api/v2/feature-flags", {})
+
+
+@pytest.mark.parametrize(
+    ("retry_headers", "expected_delay"),
+    [
+        ({"Retry-After": "2"}, 3),
+        ({"X-RateLimit-Reset": "4"}, 5),
+        ({"Retry-After": "Thu, 01 Jan 1970 00:00:10 GMT"}, 11),
+        ({"Retry-After": "invalid", "X-RateLimit-Reset": "4"}, 5),
+        ({"Retry-After": "nan", "X-RateLimit-Reset": "4"}, 5),
+        ({"X-RateLimit-Reset": "0"}, 1),
+        ({}, 65),
+    ],
+)
+def test_datadog_http_recovers_after_rate_limit(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+    retry_headers: dict[str, str],
+    expected_delay: int,
+) -> None:
+    """Retry the same read after the server's wait without logging its payload."""
+    headers = Message()
+    for key, value in retry_headers.items():
+        headers[key] = value
+    calls = 0
+
+    def request(req: Request, timeout: int) -> BytesIO:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise HTTPError(req.full_url, 429, "Too Many Requests", headers, None)
+        return BytesIO(b'{"data": {"complete": true}}')
+
+    monkeypatch.setattr(
+        cp.urllib.request, "build_opener", lambda _: SimpleNamespace(open=request)
+    )
+    delays = []
+    monkeypatch.setattr(cp.time, "sleep", delays.append)
+    monkeypatch.setattr(cp.time, "time", lambda: 0)
+    assert cp._datadog_get("/api/v2/feature-flags", {"DD-API-KEY": "test-api"}) == {
+        "data": {"complete": True}
+    }
+    assert delays == [expected_delay]
+    assert "Datadog rate limit: retry 1/5" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("status", "reset", "expected_attempts"),
+    [(429, "1", 6), (429, "3600", 1), (403, "1", 1)],
+)
+def test_datadog_http_failure_is_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+    status: int,
+    reset: str,
+    expected_attempts: int,
+) -> None:
+    """Persistent quota exhaustion or denied access must fail, never return data."""
+    headers = Message()
+    headers["X-RateLimit-Reset"] = reset
+    attempts = 0
+
+    def request(req: Request, timeout: int) -> Never:
+        nonlocal attempts
+        attempts += 1
+        raise HTTPError(req.full_url, status, "unavailable", headers, None)
+
+    monkeypatch.setattr(
+        cp.urllib.request, "build_opener", lambda _: SimpleNamespace(open=request)
+    )
+    monkeypatch.setattr(cp.time, "sleep", lambda _: None)
+    with pytest.raises(HTTPError) as raised:
+        cp._datadog_get("/api/v2/feature-flags", {})
+    assert raised.value.code == status
+    assert attempts == expected_attempts
+
+
+def test_mock_preserves_new_missing_flags(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A declared missing flag and its related entry can release in a later week."""
+    for directory in ("prs", "results"):
+        (tmp_path / directory).mkdir()
+    (tmp_path / "prs/1.json").write_text(
+        json.dumps(
+            {
+                "title": "feat: example",
+                "body": "Flag: example",
+                "merged_at": "2026-01-06",
+                "files": ["src/components/widgets/example/controls/button.py"],
+                "fragments": [],
+            }
+        )
+    )
+    (tmp_path / "results/1.json").write_text(
+        json.dumps({"pass1": {"tier": "announce"}})
+    )
+    (tmp_path / "prs/2.json").write_text(
+        json.dumps(
+            {
+                "title": "fix: example",
+                "body": "",
+                "merged_at": "2026-01-07",
+                "files": ["src/components/widgets/example/controls/button.py"],
+                "fragments": [],
+            }
+        )
+    )
+    (tmp_path / "results/2.json").write_text(
+        json.dumps(
+            {
+                "pass1": {"tier": "announce", "reason": "New controls", "evidence": []},
+            }
+        )
+    )
+    group = {
+        "label": "Example",
+        "layer": "change",
+        "product": "cloud",
+        "rank": 1,
+        "prs": [2],
+    }
+    (tmp_path / "datadog-flags.json").write_text("{}")
+    monkeypatch.setattr(cp, "_claude", lambda *_: ({"groups": [group]}, {}))
+    monkeypatch.setattr(
+        cp,
+        "_write_group",
+        lambda *_: {
+            **group,
+            "title": "Example",
+            "entry": "Adds example controls.",
+            "meta": {"cost_usd": 0},
+        },
+    )
+    monkeypatch.setattr(cp, "_docs_pages", dict)
+    monkeypatch.setattr(cp, "_beta_features", list)
+    monkeypatch.setattr(cp, "_latest_bullets", lambda *_, **__: [])
+    cp.cmd_mock(
+        argparse.Namespace(
+            out=str(tmp_path),
+            results="results",
+            since="2026-01-05",
+            until="2026-01-12",
+            label=None,
+            workers=1,
+        )
+    )
+    output = tmp_path / "mock-2026-01-05"
+    held = json.loads((output / "held.json").read_text())
+    assert {number: entry["flag"] for number, entry in held.items()} == {
+        "1": "example",
+        "2": "example",
+    }
+    assert not (output / "mock.mdx").read_text().strip()
+    released, kept, dropped = cp._release_held(held, {"example": {"rolled_out": True}})
+    assert list(released) == ["1", "2"]
+    assert not kept
+    assert not dropped
