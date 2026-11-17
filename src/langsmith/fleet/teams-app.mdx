@@ -11,14 +11,14 @@ With LangSmith Fleet, you can connect your agents to Microsoft Teams by register
 - Access Teams channels and messages through Microsoft Graph API tools.
 
 <Note>
-In channel conversations, the bot only responds when explicitly mentioned. In direct messages and group chats, the bot responds to all messages.
+In channels and group chats, the bot only responds when explicitly **@mentioned**. In direct messages, the bot responds without a mention.
 </Note>
 
 ## Prerequisites
 
 - An existing agent in Fleet (see [Quickstart](/langsmith/fleet/quickstart) to create one)
 - An [Azure account](https://portal.azure.com) with permission to create resources
-- Admin access to a Microsoft Teams workspace, or permission to install apps
+- Permission to upload and install custom apps in your Microsoft Teams organization. Your Teams administrator may need to enable [custom app uploading](https://learn.microsoft.com/en-us/microsoftteams/platform/concepts/deploy-and-publish/apps-upload).
 
 ## Create an Azure Bot
 
@@ -32,6 +32,8 @@ Before registering in Fleet, you need to create an Azure Bot resource and obtain
        - **Bot handle**: A unique identifier for your bot.
        - **Subscription**: Select your Azure subscription.
        - **Resource group**: Create a new one or select an existing one.
+       - **Pricing tier**: The free tier supports Teams, which is a standard channel. A paid tier is not required for Teams messaging. See [Azure AI Bot Service pricing](https://azure.microsoft.com/en-us/pricing/details/bot-services/).
+       - **Data residency**: Choose a location that meets your organization's requirements. Review [Azure Bot regionalization](https://learn.microsoft.com/en-us/azure/bot-service/bot-builder-concept-regionalization). A regional Azure Bot resource alone does not guarantee end-to-end residency across Teams, Fleet, and other connected services.
        - **Type of App**: Select **Single Tenant**.
        - **Creation type**: Select **Create new Microsoft App ID**.
     1. Click **Review + create**, then **Create**.
@@ -45,80 +47,110 @@ Before registering in Fleet, you need to create an Azure Bot resource and obtain
     After the resource is created:
 
     1. Navigate to your bot resource and click **Configuration** in the left sidebar.
-    1. Copy the **Microsoft App ID** and the **App Tenant ID**. You will need both later.
+    1. Copy the **Microsoft App ID** and the **App Tenant ID** for the Fleet setup wizard.
     1. Click **Manage Password** next to the App ID.
     1. Click **New client secret**, add a description, and click **Add**.
-    1. Copy the **Value** of the new secret immediately — it is only shown once.
+    1. Copy the **Value** of the new secret, not the secret ID.
 
     <Warning>
     Copy the client secret value immediately after creation. You cannot retrieve it later. If you lose it, you must create a new one.
     </Warning>
   </Step>
-
-  <Step title="Configure the messaging endpoint">
-    You will set the messaging endpoint after registering the bot in Fleet. Skip this field for now—you will return to this step later.
-  </Step>
 </Steps>
 
 ## Register the bot in Fleet
 
+The setup wizard provides the webhook URL before you enter credentials. To configure Azure and save the bot in Fleet:
+
 <Steps>
   <Step title="Open the integrations page">
     1. Navigate to **Fleet** in the [LangSmith UI](https://smith.langchain.com).
-    1. Go to the **Integrations** page.
-    1. Click **Add Teams App**.
-  </Step>
-
-  <Step title="Enter your credentials">
-    Fill in the following fields:
-
-    - **App Name**: A display name for the bot in Fleet.
-    - **Azure App ID**: The Microsoft App ID from the Azure Bot resource.
-    - **Azure App Password**: The client secret value you copied earlier.
-    - **Azure Tenant ID**: The App Tenant ID from the Azure Bot resource. Required for Single Tenant bots. Leave it empty only for an existing Multi Tenant bot.
-
-    Click **Create** to register the bot.
-  </Step>
-
-  <Step title="Copy the webhook URL">
-    After registration, Fleet displays a **webhook URL**. Copy this URL—you need it to complete the Azure Bot configuration.
+    1. Go to the **Integrations** page and find the Teams bots section, or open **Slack & Teams**.
+    1. Click **Add Teams Bot** or **Add Teams bot**.
   </Step>
 
   <Step title="Set the messaging endpoint in Azure">
-    1. Return to your Azure Bot resource in the [Azure Portal](https://portal.azure.com).
-    1. Go to **Configuration**.
-    1. Paste the webhook URL from Fleet into the **Messaging endpoint** field.
+    1. Copy the LangSmith webhook URL from the first screen of the Fleet wizard.
+    1. In your Azure Bot resource, go to **Configuration**.
+    1. Paste the URL into **Messaging endpoint** and click **Apply**.
+
+    Fleet uses the HTTP messaging endpoint. You do not need to enable **Streaming Endpoint** for this setup.
+  </Step>
+
+  <Step title="Enable the Microsoft Teams channel">
+    1. In the same Azure Bot resource, go to **Channels**.
+    1. Select **Microsoft Teams** and agree to the terms of service.
+    1. On the **Messaging** tab, select the cloud environment for your Teams organization.
     1. Click **Apply**.
+    1. Confirm **Microsoft Teams** appears in the connected channels list and check its connection status.
+
+    <Warning>
+    Complete this step for every new Azure Bot, including a replacement for a deleted bot. Uploading an app package in Teams does not enable the Azure Bot's Teams channel.
+    </Warning>
+
+    For more information, see [Connect a bot to Microsoft Teams](https://learn.microsoft.com/en-us/azure/bot-service/channel-connect-teams).
+  </Step>
+
+  <Step title="Enter your credentials">
+    Return to Fleet, click **Continue to Credentials**, and fill in the following fields:
+
+    - **Bot display name**: A display name for the bot.
+    - **Azure App ID (Client ID)**: The Microsoft App ID from the Azure Bot resource.
+    - **Azure Tenant ID**: The App Tenant ID from the Azure Bot resource, not your Fleet workspace ID. Required for Single Tenant bots. Leave it empty only for an existing Multi Tenant bot.
+    - **Client Secret (App Password)**: The client secret value you copied earlier.
+
+    Click **Continue**.
+  </Step>
+
+  <Step title="Download the package and finish setup">
+    1. Click **Download Teams App Package** and keep the ZIP file for installation.
+    1. Click **Continue**, select your agent, and click **Finish**.
+    1. Confirm Fleet displays **Teams bot configured successfully**.
+
+    <Warning>
+    Downloading the ZIP or clicking **Continue** does not save the bot registration. Click **Finish** before testing or installing the bot in Teams.
+    </Warning>
+
+    To save without linking an agent, click **Finish Without Agent**. [Link an agent](#link-the-bot-to-an-agent) before testing replies. If you start from an agent's **Channels** drawer, click **Save & Connect** instead.
   </Step>
 </Steps>
 
 ## Add the bot to Teams
 
+When available, test the bot connection before installing the generated app package. Use the same bot, Teams account, and organization for both steps:
+
 <Steps>
-  <Step title="Open the Teams channel">
-    1. In the Azure Portal, go to your bot resource.
-    1. Click **Channels** in the left sidebar.
-    1. Select **Microsoft Teams** and click **Apply**.
-    1. Agree to the terms of service.
+  <Step title="Test the connection from Azure">
+    1. In your Azure Bot resource, go to **Channels** > **Microsoft Teams**.
+    1. Use **Open in Teams**, or select **Get bot embed code** and open the Teams HTTPS test link.
+    1. Send a test message and confirm the linked agent replies.
+
+    Opening a chat, sending a message, and receiving an agent reply are separate checkpoints. If any checkpoint fails, use the [installation troubleshooting](#resolve-installation-errors) before changing the app package.
+
+    <Note>
+    The direct link is for diagnosis, not production distribution. It may require a Teams app setup policy that permits custom app uploads, and the embed code is not available in every cloud. If you cannot use the direct link, proceed to app package installation. A successful personal-chat reply does not verify team or group-chat installation.
+    </Note>
   </Step>
 
-  <Step title="Install the bot in Teams">
-    1. In Teams, click **Apps** in the left sidebar.
-    1. Click **Manage your apps** then **Upload an app**.
-    1. Upload a [Teams app manifest](https://learn.microsoft.com/en-us/microsoftteams/platform/resources/schema/manifest-schema) that references your Azure App ID, or use the **Open in Teams** link from the Azure Bot Channels page.
-    1. Add the bot to the desired team or chat.
+  <Step title="Install the app package in Teams">
+    1. In Teams, go to **Apps** > **Manage your apps** > **Upload an app**.
+    1. Select **Upload a custom app** and choose the ZIP downloaded from Fleet.
+    1. Follow your organization's approval process if required, then add the app to the desired team or chat.
+    1. Send a message and confirm the agent replies. In channels and group chats, **@mention** the bot.
+
+    If you recreate the Azure Bot with a new App ID, download a new package from the wizard configured for that bot. Do not reuse a package for the deleted bot.
   </Step>
 </Steps>
 
 ## Link the bot to an agent
 
-You can link a Teams bot to an agent from the integrations page or from the agent sidebar.
+If you selected an agent during setup, the bot is already linked. Otherwise, link it from the integrations page or the agent sidebar:
 
 ### Link from the integrations page
 
-1. Navigate to the **Teams Apps** section on the **Integrations** page in Fleet.
-1. Select the bot you want to link.
-1. From the dropdown menu, choose the agent you want to link to.
+1. On the **Integrations** page in Fleet, find the Teams bots section or open **Slack & Teams**.
+1. Open the bot you want to link.
+1. From the dropdown menu, choose the agent and click **Attach**.
 
 ### Link from the agent sidebar
 
@@ -129,7 +161,9 @@ You can link a Teams bot to an agent from the integrations page or from the agen
 
 ## Add Teams tools
 
-Tools let your agent take actions in Teams. To respond to messages and interact with Teams, add the relevant tools.
+Tools let your agent take actions in Teams. Microsoft Graph tools can act as a signed-in user, but that does not verify the bot connection. To send messages as the bot, complete the Azure Bot and Teams setup above.
+
+To add Teams tools:
 
 <Tip>
 You can also ask your agent to add these tools itself. In the agent chat, try: "Add the Teams tools so you can respond to messages."
@@ -152,7 +186,7 @@ The `teams_bot_send_proactive_message` tool uses Bot Framework credentials and d
 
 Your agent needs to know how to handle incoming Teams messages. Update its instructions by prompting it directly in the agent chat:
 
-```
+```text
 Update your instructions to handle the Teams Trigger and Teams Tools
 for bidirectional communication
 ```
@@ -161,24 +195,58 @@ Adjust the instructions based on your use case—for example, you might want the
 
 ## Troubleshooting
 
+### Resolve installation errors
+
+Teams can report `InvalidUserId` with "Incorrect bot configuration/registration, please check the bot settings." This message alone does not identify the cause.
+
+Before recreating the bot or changing settings, check the following:
+
+- **Azure channel**: Confirm Microsoft Teams is enabled on the current Azure Bot. Check the selected cloud environment and connection status.
+- **Bot identity**: Confirm the Microsoft App ID, App Tenant ID, and Single Tenant app type belong to the current bot. Use the same App ID and tenant in Fleet.
+- **App package**: In the uploaded ZIP's `manifest.json`, confirm `bots[].botId` matches the Azure Bot's Microsoft App ID. The manifest's top-level `id` identifies the Teams app and can differ from the bot ID.
+- **Teams organization**: Confirm you are installing in the intended organization and its policies allow the custom app.
+- **Fleet setup**: Confirm you completed **Finish** or **Save & Connect** and linked an agent before testing replies.
+
+When the [direct connection test](#add-the-bot-to-teams) is available, repeat it with the same bot, account, and organization. Use the result to narrow the investigation:
+
+| Result | Next check |
+| --- | --- |
+| The direct test fails before a chat opens | Recheck the Azure Bot registration, Teams channel, tenant, and organizational policies before focusing on the ZIP. |
+| A chat opens, but a message fails or the agent does not reply | Check the Fleet registration, agent link, messaging endpoint, and credentials. Opening a chat alone does not verify message delivery. |
+| The agent replies in personal chat, but package installation fails | Check the uploaded package and custom-app policies. Test team and group-chat installation separately. |
+
+If the error persists, collect the following for support:
+
+- The exact failure time and time zone, the step reached, and an error screenshot.
+- The failed request URL, HTTP status, error response, and request or correlation IDs, if available.
+- The Azure Bot's App ID, App Tenant ID, app type, and Teams channel status and cloud environment.
+- The exact app ZIP used for the failed installation.
+
+<Warning>
+Do not share client secrets, access tokens, cookies, authorization headers, or unredacted network captures. Redact credentials before sharing screenshots or request details.
+</Warning>
+
 ### Agent does not respond
 
 - Check the thread in Fleet for any approvals that need human input.
-- In channel conversations, make sure you **@mention** the bot. Channel messages without a mention are ignored.
+- In channels and group chats, **@mention** the bot. Messages without a mention are ignored.
 - Check the **Feed** tab for errors.
 - Verify the messaging endpoint in the Azure Bot resource matches the webhook URL from Fleet.
-- Ensure the bot registration is not paused in Fleet.
+- Confirm you completed the Fleet wizard and linked the bot to the intended agent.
+- Ensure the agent's channels are not [paused](/langsmith/fleet/channels#pause-and-resume-channels) in Fleet.
 
 ### Invalid credentials error during registration
 
-- Verify that the **Azure App ID** and **App Password** (client secret) are correct.
-- Make sure the client secret has not expired. Create a new secret in Azure if needed.
-- For a Single Tenant bot, check that the **Azure Tenant ID** in Fleet matches the App Tenant ID in Azure.
+Saving the bot in Fleet stores the credentials; it does not test authentication with Azure. If messages fail:
+
+- Verify that **Azure App ID (Client ID)** and **Client Secret (App Password)** match the Azure Bot registration.
+- Make sure the client secret value, not its ID, is saved and has not expired. Create a new secret in Azure if needed.
+- For a Single Tenant bot, check that **Azure Tenant ID** in Fleet matches the App Tenant ID in Azure.
 
 ### Bot works in direct messages but not in channels
 
-- The bot must be explicitly **@mentioned** in channel conversations.
-- Make sure the bot has been added to the team and has permission to read messages in the channel.
+- Explicitly **@mention** the bot in channel and group-chat conversations.
+- Confirm you installed the app in the target team or group chat. A direct-link personal-chat test does not install it there.
 
 ## Next steps
 
