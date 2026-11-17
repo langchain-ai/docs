@@ -90,7 +90,7 @@ const retrieve = tool(
 // :remove-start:
 import { ChatOpenAI } from "@langchain/openai";
 
-const model = new ChatOpenAI({ model: "gpt-4o-mini" });
+const model = new ChatOpenAI({ model: "gpt-5.4-mini" });
 // :remove-end:
 
 // :snippet-start: rag-create-agent-js

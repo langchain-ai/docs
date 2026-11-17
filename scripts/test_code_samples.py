@@ -23,9 +23,10 @@ Set ``CODE_SAMPLE_JOBS`` to run samples concurrently (default: 4). Trace-link
 collection stays serialized under a lock so parallel samples do not clobber the
 shared manifest or claim each other's runs.
 
-Samples that share a LangSmith dataset or experiment fixture are placed in a
-serial group (see ``SERIAL_GROUPS``): they never run concurrently with others
-in the same group, but still overlap with unrelated samples.
+Samples that share a LangSmith dataset, experiment, or hub-prompt fixture are
+placed in a serial group (see ``SERIAL_GROUPS``): each group runs as one
+ordered chain on a single worker (lexical path order), and still overlaps with
+unrelated samples.
 
 Rate-limit tuning (optional env overrides):
 
@@ -41,7 +42,6 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -73,8 +73,9 @@ TRACE_RATE_LIMIT_MAX_ATTEMPTS = RATE_LIMIT_MAX_ATTEMPTS
 
 DEFAULT_JOBS = 4
 
-# Relative-path prefixes. Matching samples share a lock so they do not race on
-# the same LangSmith dataset or experiment fixture under CODE_SAMPLE_JOBS > 1.
+# Relative-path prefixes. Matching samples run as one ordered chain so they do
+# not race on the same LangSmith dataset, experiment, or hub prompt under
+# CODE_SAMPLE_JOBS > 1. Chain order follows collect_files_to_test (sorted).
 SERIAL_GROUPS: dict[str, tuple[str, ...]] = {
     "evaluate-rag": ("src/code-samples/langsmith/evaluate-rag-",),
     "experiment-runs-query": (
@@ -99,6 +100,30 @@ def serial_group_for(rel_path: Path) -> str | None:
         if any(path.startswith(prefix) for prefix in prefixes):
             return group
     return None
+
+
+def partition_by_serial_group(
+    files_to_test: list[tuple[Path, str]], repo_root: Path
+) -> tuple[list[tuple[Path, str]], list[list[tuple[Path, str]]]]:
+    """Split samples into unconstrained files and ordered serial chains.
+
+    Each SERIAL_GROUPS membership becomes one chain, preserving the order of
+    ``files_to_test`` (already sorted). Chains run on a single worker so
+    numbered siblings (create before test before iterate) stay ordered under
+    ``CODE_SAMPLE_JOBS > 1``.
+    """
+    chains_map: dict[str, list[tuple[Path, str]]] = {
+        name: [] for name in SERIAL_GROUPS
+    }
+    free: list[tuple[Path, str]] = []
+    for file_path, lang in files_to_test:
+        group = serial_group_for(file_path.relative_to(repo_root))
+        if group is None:
+            free.append((file_path, lang))
+        else:
+            chains_map[group].append((file_path, lang))
+    chains = [chain for chain in chains_map.values() if chain]
+    return free, chains
 
 
 def worker_count() -> int:
@@ -449,7 +474,6 @@ def run_sample_with_retries(
     repo_root: Path,
     code_samples_dir: Path,
     print_lock: threading.Lock,
-    group_locks: dict[str, threading.Lock],
 ) -> SampleOutcome:
     """Run one sample with rate-limit retries and return a structured outcome."""
     rel_path = file_path.relative_to(repo_root)
@@ -457,26 +481,23 @@ def run_sample_with_retries(
     stdout = ""
     stderr = ""
     started_at = datetime.now(timezone.utc)
-    group = serial_group_for(rel_path)
-    group_lock = group_locks[group] if group is not None else nullcontext()
 
-    with group_lock:
-        for attempt in range(1, RATE_LIMIT_MAX_ATTEMPTS + 1):
-            started_at = datetime.now(timezone.utc)
-            success, stdout, stderr = run_sample(
-                file_path, lang, repo_root, code_samples_dir
-            )
-            if success or not is_rate_limited(stdout, stderr, lang=lang):
-                break
-            if attempt < RATE_LIMIT_MAX_ATTEMPTS:
-                delay = rate_limit_sleep_seconds(attempt)
-                with print_lock:
-                    print(
-                        f"  ... {rel_path} hit a 429, retrying "
-                        f"({attempt}/{RATE_LIMIT_MAX_ATTEMPTS}) "
-                        f"after {delay}s"
-                    )
-                time.sleep(delay)
+    for attempt in range(1, RATE_LIMIT_MAX_ATTEMPTS + 1):
+        started_at = datetime.now(timezone.utc)
+        success, stdout, stderr = run_sample(
+            file_path, lang, repo_root, code_samples_dir
+        )
+        if success or not is_rate_limited(stdout, stderr, lang=lang):
+            break
+        if attempt < RATE_LIMIT_MAX_ATTEMPTS:
+            delay = rate_limit_sleep_seconds(attempt)
+            with print_lock:
+                print(
+                    f"  ... {rel_path} hit a 429, retrying "
+                    f"({attempt}/{RATE_LIMIT_MAX_ATTEMPTS}) "
+                    f"after {delay}s"
+                )
+            time.sleep(delay)
 
     return SampleOutcome(
         rel_path=rel_path,
@@ -538,8 +559,10 @@ def main() -> int:
     trace_failures: list[Path] = []
     print_lock = threading.Lock()
     trace_lock = threading.Lock()
-    group_locks = {name: threading.Lock() for name in SERIAL_GROUPS}
     claimed_run_ids: set[str] = set()
+    free_files, serial_chains = partition_by_serial_group(
+        files_to_test, repo_root
+    )
 
     def collect_trace_with_retries(outcome: SampleOutcome) -> dict | None:
         """Collect a public trace link, retrying LangSmith 429 responses."""
@@ -613,34 +636,40 @@ def main() -> int:
             with print_lock:
                 print_failure(outcome.rel_path, outcome.stdout, outcome.stderr)
 
+    def run_one(file_path: Path, lang: str) -> SampleOutcome:
+        return run_sample_with_retries(
+            file_path,
+            lang,
+            repo_root,
+            code_samples_dir,
+            print_lock,
+        )
+
+    def run_chain(
+        chain: list[tuple[Path, str]],
+    ) -> list[SampleOutcome]:
+        return [run_one(file_path, lang) for file_path, lang in chain]
+
     if jobs == 1:
+        # Sorted collect order already keeps serial siblings correctly sequenced.
         for file_path, lang in files_to_test:
-            handle_outcome(
-                run_sample_with_retries(
-                    file_path,
-                    lang,
-                    repo_root,
-                    code_samples_dir,
-                    print_lock,
-                    group_locks,
-                )
-            )
+            handle_outcome(run_one(file_path, lang))
     else:
         with ThreadPoolExecutor(max_workers=jobs) as executor:
             futures = [
-                executor.submit(
-                    run_sample_with_retries,
-                    file_path,
-                    lang,
-                    repo_root,
-                    code_samples_dir,
-                    print_lock,
-                    group_locks,
-                )
-                for file_path, lang in files_to_test
+                executor.submit(run_one, file_path, lang)
+                for file_path, lang in free_files
             ]
+            futures.extend(
+                executor.submit(run_chain, chain) for chain in serial_chains
+            )
             for future in as_completed(futures):
-                handle_outcome(future.result())
+                result = future.result()
+                if isinstance(result, list):
+                    for outcome in result:
+                        handle_outcome(outcome)
+                else:
+                    handle_outcome(result)
 
     # Summary
     print("-" * 40)

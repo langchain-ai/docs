@@ -13,7 +13,7 @@ Fleet turns any agent into a Slack teammate your team can tag in a channel or me
     Connect Slack once, then add a Slack app to any agent in one click.
   </Card>
   <Card title="Self-hosted" icon="server" href="#set-up-slack-on-self-hosted">
-    Configure a Slack OAuth provider, then create a custom Slack app per agent.
+    Configure a Slack OAuth provider, then create a custom Slack app per agent or connect the shared Slack app.
   </Card>
 </CardGroup>
 
@@ -96,7 +96,20 @@ If your Slack workspace requires an admin to approve each app, Fleet saves the n
 
 ## Set up Slack on Self-hosted
 
-Self-hosted deployments do not use the Fleet Slack manager. Instead, configure a Slack OAuth provider once for the instance, then create a custom Slack app for each agent from a manifest that Fleet generates.
+Self-hosted deployments do not use the Fleet Slack manager. Instead, configure a Slack OAuth provider once for the instance. Then either create a custom Slack app for each agent from a manifest that Fleet generates, or [connect the shared Slack app](#connect-the-shared-slack-app) to a channel.
+
+### Allow inbound Slack requests
+
+On BYOC and self-hosted deployments, the generated Slack app requires inbound HTTPS access to the data plane. Slack sends events and button interactions to the event subscription and interactivity URLs in the app manifest. Outbound access to the Slack Web API alone is not sufficient.
+
+Before creating the Slack app, configure one of these options:
+
+- **Public endpoint**: Make the data plane's Slack webhook endpoints publicly reachable over HTTPS. Contact support if you wish to change your data plane to have a public load balancer.
+- **Proxy service**: Keep the data plane private and forward Slack requests into the cluster through a reverse proxy with a public HTTPS endpoint. Alternatively, use a Socket Mode proxy that maintains an outbound WebSocket connection to Slack and forwards events to the trigger server. Contact support for help with the private-cluster proxy setup.
+
+Preserve the request body and Slack signature headers when reverse proxying requests. The generated app disables Socket Mode by default; using a Socket Mode proxy requires additional app and proxy configuration.
+
+This requirement applies to agents invoked from Slack. It does not apply to outbound-only Slack tools or Engine and alert notifications.
 
 ### Step 1. Set up the Slack OAuth provider
 
@@ -238,6 +251,36 @@ After your admin approves the app:
 Each agent can have only one Slack app, and each Slack app can be linked to only one agent.
 </Note>
 
+### Connect the shared Slack app
+
+<Note>
+The shared Slack app requires Helm chart version 0.17.54 or later (LangSmith 0.17.77).
+</Note>
+
+The shared Slack app is the Slack app you registered for the OAuth provider in [Step 1](#step-1-set-up-the-slack-oauth-provider). Every agent on the instance can use it, so users connect a channel without creating a Slack app of their own. Every message in the connected channel runs the agent.
+
+The shared app requires `fleet.oauth.slackSigningSecret` in your Helm values, set to the signing secret of that Slack app.
+
+To connect an agent to a channel through the shared app:
+
+1. Select your agent and open its configuration sidebar.
+1. In the **Channels** drawer, add **Slack channel (shared app)**.
+1. Authorize Slack and choose the channel.
+
+Fleet adds the Slack tools to the agent. The agent replies through each user's own Slack connection, so each user sees a one-time **Connect Slack** prompt before the agent can reply to them.
+
+### Turn off custom Slack apps
+
+To keep users on the shared Slack app, turn off custom Slack app creation for the whole instance. Add the following to `commonEnv` in your Helm values and redeploy:
+
+```yaml
+commonEnv:
+  - name: FF_CUSTOM_SLACK_APPS_DISABLED
+    value: "true"
+```
+
+The setting applies to every workspace and every user, including admins. Fleet hides the custom Slack app options and rejects requests that create one. Existing custom Slack apps keep working.
+
 ## Use your agent in Slack
 
 Once the app is installed, invite the agent to a channel, tag it to start a run, and respond to approval requests without leaving Slack.
@@ -292,6 +335,7 @@ Set each tool to **Auto** to run it without approval, or **Ask** to require appr
 
 If your agent is not responding, try the following:
 
+- On BYOC or self-hosted deployments, verify that Slack can reach both manifest request URLs through your public endpoint or reverse proxy. A private-only endpoint cannot receive Slack events.
 - Check the thread in the Fleet UI for errors.
 - Verify the agent was invited to the channel.
 - Confirm the Slack channel is not paused in the **Channels** drawer.

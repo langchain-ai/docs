@@ -80,7 +80,7 @@ def retrieve_context(query: str):
 # :remove-start:
 from langchain_openai import ChatOpenAI
 
-model = ChatOpenAI(model="gpt-4o-mini")
+model = ChatOpenAI(model="gpt-5.4-mini")
 # :remove-end:
 
 # :snippet-start: rag-create-agent-py

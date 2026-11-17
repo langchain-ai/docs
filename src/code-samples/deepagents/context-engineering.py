@@ -4,7 +4,7 @@
 from deepagents import create_deep_agent
 
 agent = create_deep_agent(
-    model="google_genai:gemini-3.6-flash",
+    model="google_genai:gemini-4-hydrogen",
     system_prompt=(
         "You are a research assistant specializing in scientific literature. "
         "Always cite sources. Use subagents for parallel research on different topics."
@@ -18,7 +18,7 @@ assert agent is not None
 
 # :snippet-start: context-engineering-memory-py
 agent = create_deep_agent(
-    model="google_genai:gemini-3.6-flash",
+    model="google_genai:gemini-4-hydrogen",
     memory=["/project/AGENTS.md", "~/.deepagents/preferences.md"],
 )
 # :snippet-end:
@@ -29,7 +29,7 @@ assert agent is not None
 
 # :snippet-start: context-engineering-skills-py
 agent = create_deep_agent(
-    model="google_genai:gemini-3.6-flash",
+    model="google_genai:gemini-4-hydrogen",
     skills=["/skills/"],
 )
 # :snippet-end:
@@ -90,7 +90,7 @@ def fetch_user_data(query: str, runtime: ToolRuntime[Context]) -> str:
 
 
 agent = create_deep_agent(
-    model="google_genai:gemini-3.6-flash",
+    model="google_genai:gemini-4-hydrogen",
     tools=[fetch_user_data],
     context_schema=Context,
 )
@@ -162,7 +162,7 @@ from deepagents.middleware.summarization import create_summarization_tool_middle
 
 backend = StateBackend  # if using default backend
 
-model = "google_genai:gemini-3.6-flash"
+model = "google_genai:gemini-4-hydrogen"
 agent = create_deep_agent(
     model=model,
     middleware=[  # [!code highlight]
@@ -196,7 +196,7 @@ research_subagent = {
 from langchain.messages import AIMessage
 
 _research_agent = create_deep_agent(
-    model="openai:gpt-5.5",
+    model="openai:gpt-6.1-sol",
     system_prompt=(
         "You are a coordinator. For every request, call task() with "
         "subagent_type set to researcher."
@@ -231,7 +231,7 @@ from langgraph.store.memory import InMemoryStore
 store = InMemoryStore()
 
 agent = create_deep_agent(
-    model="google_genai:gemini-3.6-flash",
+    model="google_genai:gemini-4-hydrogen",
     store=store,
     backend=CompositeBackend(
         default=StateBackend(),
@@ -249,7 +249,7 @@ from langchain.messages import AIMessage
 
 _test_store = InMemoryStore()
 _test_agent = create_deep_agent(
-    model="openai:gpt-5.5",
+    model="openai:gpt-6.1-sol",
     store=_test_store,
     backend=CompositeBackend(
         default=StateBackend(),

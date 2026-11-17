@@ -1,6 +1,6 @@
 ---
 title: BYOC FAQ
-sidebarTitle: FAQ (AWS)
+sidebarTitle: FAQ
 description: Answers to common questions about LangSmith BYOC, covering data residency, access, setup, the data plane model, and ongoing operations.
 icon: "messages"
 ---
@@ -9,6 +9,16 @@ icon: "messages"
 
 <Accordion title="Which clouds and regions can I deploy to?">
 BYOC is generally available (GA) on AWS with a US control plane. BYOC on GCP and Azure is available in [beta](/langsmith/release-stages). See [Regions and cloud providers](/langsmith/byoc#regions-and-cloud-providers) for the supported AWS regions and GCP and Azure region availability.
+</Accordion>
+
+<Accordion title="Does BYOC support government cloud regions or FIPS-compliant images?">
+No. BYOC does not support government cloud regions, such as AWS GovCloud (US), and does not provide FIPS-compliant container images.
+</Accordion>
+
+<Accordion title="Can a control plane on one cloud manage a data plane on another cloud?">
+No. Cross-cloud deployments are not supported. A data plane must run on the same cloud provider as its control plane. For example, the AWS control plane cannot manage a data plane on GCP.
+
+Each cloud provider has its own LangSmith instance, with separate users and organizations. To deploy data planes on more than one cloud provider, create a LangSmith organization on each provider's instance. See [Regions and cloud providers](/langsmith/byoc#regions-and-cloud-providers) for the instance URLs.
 </Accordion>
 
 <Accordion title="Do I need a dedicated AWS account?">
@@ -130,7 +140,11 @@ There is no standing data access. If an incident requires access to your data, L
 </Accordion>
 
 <Accordion title="Does LangSmith support customer-managed encryption keys?">
-Yes. Customer-managed encryption keys (CMK) are supported for AWS BYOC deployments on request. Contact the LangChain team to coordinate setup. By default, data is encrypted at rest with cloud provider-managed keys.
+Yes, on AWS. When you create a data plane, you can encrypt its S3 buckets, EBS volumes, EKS secrets, RDS databases, and ElastiCache with your own AWS KMS keys. See [Bring your own keys](/langsmith/byoc-byok-aws). By default, data is encrypted at rest with cloud provider-managed keys.
+</Accordion>
+
+<Accordion title="How long does BYOC keep traces?">
+BYOC is not subject to the extended retention maximum that applies to LangSmith Cloud. By default, base traces last 14 days and extended traces last 400 days. You can change both defaults in the data plane settings. Enterprise customers can also shorten the extended period per workspace. See [Data retention](/langsmith/usage-and-billing#retention-periods) and [Customize extended retention policy](/langsmith/data-purging-compliance#customize-extended-retention-policy).
 </Accordion>
 
 <Accordion title="How do I revoke LangChain's access?">
@@ -171,7 +185,7 @@ See [Connectivity](/langsmith/byoc-architecture-aws#connectivity).
 </Accordion>
 
 <Accordion title="Can I restrict outbound network traffic from the data plane?">
-Yes. 
+Yes.
 
 For a LangChain-managed VPC, BYOC supports a network firewall that controls egress from the data plane. Contact the LangChain team to enable it.
 
@@ -222,21 +236,27 @@ For the full division across platform and infrastructure, data and security, and
 </Accordion>
 
 <Accordion title="Who upgrades LangSmith, and how often?">
-LangChain upgrades the LangSmith version in your data plane once a week. Upgrades are rolling, so there is no whole-service downtime. Supporting services such as Istio and KEDA are upgraded on a regular cadence, and LangChain manages all EKS cluster upgrades.
+LangChain upgrades the LangSmith version in your data plane daily. Upgrades are rolling, so there is no whole-service downtime. Supporting services such as Istio and KEDA are upgraded on a regular cadence, and LangChain manages all EKS cluster upgrades.
 
 Support for release channels is coming soon. See [Operations](/langsmith/byoc-operations-aws).
 </Accordion>
 
 <Accordion title="What about Kubernetes upgrades?">
-LangChain owns and performs EKS upgrades proactively, ahead of AWS end-of-support dates, and coordinates the window with you.
+On AWS, LangChain owns and performs EKS upgrades proactively, ahead of AWS end-of-support dates, in the data plane's [maintenance window](/langsmith/byoc-operations-aws#maintenance-window). Control plane upgrades are transparent. Node group upgrades roll nodes one by one with make-before-break semantics, so you might see brief connection resets as pods restart, but no data loss. See [Kubernetes cluster upgrades on AWS](/langsmith/byoc-operations-aws#kubernetes-cluster-upgrades).
 
-Control plane upgrades are transparent. Node group upgrades roll nodes one by one with make-before-break semantics, so you might see brief connection resets as pods restart, but no data loss. See [Kubernetes cluster upgrades](/langsmith/byoc-operations-aws#kubernetes-cluster-upgrades).
+On Azure, AKS applies Kubernetes patch versions and node image updates automatically in the maintenance window. See [Kubernetes cluster upgrades on Azure](/langsmith/byoc-operations-azure#kubernetes-cluster-upgrades).
+
+On GCP, the GKE cluster runs on the `REGULAR` release channel, and nodes upgrade automatically. See [GKE and compute](/langsmith/byoc-architecture-gcp#gke-and-compute).
 </Accordion>
 
 <Accordion title="Do upgrades cause downtime?">
-No. Services run multiple replicas sized by a horizontal pod autoscaler, and pod disruption budgets cap how many replicas can be unavailable at once, so neither a rolling update nor a node drain takes a service below the capacity it needs.
+No. Services run multiple replicas sized by a horizontal pod autoscaler, and pod disruption budgets cap how many replicas can be unavailable at once. Therefore, neither a rolling update nor a node drain takes a service below the capacity it needs.
 
-Maintenance that could cause downtime, such as a restart of RDS or ElastiCache, happens in a scheduled maintenance window that LangChain coordinates with you in advance.
+Maintenance that could cause downtime, such as a database restart, happens in the data plane's weekly maintenance window:
+
+- **AWS**: Set the window in the LangSmith UI or the API. See [Maintenance window](/langsmith/byoc-operations-aws#maintenance-window).
+- **Azure**: Set the window through the API. See [Maintenance window on Azure](/langsmith/byoc-operations-azure#maintenance-window).
+- **GCP**: Set the window through the API. See [Change data plane settings](/langsmith/byoc-onboarding-gcp#change-data-plane-settings).
 </Accordion>
 
 <Accordion title="Who monitors the data plane?">

@@ -19,9 +19,9 @@ You need the following:
 
 - **BYOC enabled on your organization**: Create an organization in LangSmith at [smith.langchain.com](https://smith.langchain.com), or reuse an existing one, and send its organization ID to the LangChain team to enable BYOC.
 - **An organization admin**: Creating a data plane requires the organization admin role, and an API key for that user.
-- **A GCP project for the data planes**: Use a project that holds only LangSmith resources, because the provisioner's access covers the whole project. For details, see [What LangChain can and cannot access](/langsmith/byoc-architecture-gcp#what-langchain-can-and-cannot-access).
-- **Permissions in that project**: Permission to create service accounts, grant project IAM roles, and enable APIs.
-- **Terraform**: Terraform 1.11.0 or later, with the Google provider `~> 6.0`.
+- **A GCP project for the data planes**: Use a project that holds only LangSmith resources. Most of the provisioner's permissions apply only to resources whose names start with `langsmith-`, but some cover the whole project. If the project also holds other resources, set `byo_iam = true` in [Step 2](#step-2-run-the-terraform-module). The project must not already have a `managed_by` tag key, and must hold only one copy of the Terraform module. For details, see [What LangChain can and cannot access](/langsmith/byoc-architecture-gcp#what-langchain-can-and-cannot-access).
+- **Permissions in that project**: Permission to create service accounts, grant project IAM roles, enable APIs, and create tags. The tags need Tag Administrator (`roles/resourcemanager.tagAdmin`) on the project.
+- **Terraform**: Terraform 1.11.0 or later, with Google provider 6.0 or later, before 9.0.
 - **A GCP region**: BYOC on GCP can run in any GCP region. If the region you need is not enabled yet, contact the LangChain team to add it.
 - **Resource location policies**: If your GCP organization restricts resource locations, allow the data plane region and `us-central1`. The data plane creates its Private Service Connect endpoint to LangSmith in `us-central1`.
 
@@ -30,12 +30,11 @@ You need the following:
 ```mermaid
 flowchart LR
   A["1. Get the<br>external ID"] --> B["2. Run the<br>Terraform module"]
-  B --> C["3. Send your project<br>number to LangChain"]
-  C --> D["4. Create the<br>data plane"]
-  D --> E["5. Wait until<br>active"]
+  B --> C["3. Create the<br>data plane"]
+  C --> D["4. Wait until<br>active"]
 
   classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
-  class A,B,C,D,E process
+  class A,B,C,D process
 ```
 
 ### Step 1. Get the external ID
@@ -48,7 +47,8 @@ Apply the [`langsmith-byoc-service-account` Terraform module](https://github.com
 
 - Enables the APIs that data planes use. Set `enable_apis = false` if you manage the project's APIs elsewhere.
 - Creates the provisioner service account `langsmith-byoc-provisioner`, with its description set to your external ID.
-- Grants it custom roles with only the permissions that provisioning and teardown use.
+- Grants it custom roles with only the permissions that provisioning and teardown use. Most of them apply only to resources whose names start with `langsmith-`.
+- Creates the tag `managed_by: langsmith` in the project, and grants the LangSmith control plane service account `roles/container.admin` only on GKE clusters with that tag. LangSmith tags the data plane GKE clusters and Cloud SQL instances it creates, and the Postgres setup account's Cloud SQL permissions apply only to tagged instances.
 - Lets the LangSmith control plane service account, `byoc-crossplane@langchain-prod.iam.gserviceaccount.com`, impersonate it through the Service Account Token Creator role. The module trusts no other LangSmith identity.
 
 ```hcl
@@ -57,7 +57,7 @@ provider "google" {
 }
 
 module "langsmith_byoc_service_account" {
-  source = "github.com/langchain-ai/terraform//modules/byoc/gcp/langsmith-byoc-service-account?ref=v0.17.60"
+  source = "github.com/langchain-ai/terraform//modules/byoc/gcp/langsmith-byoc-service-account?ref=v0.17.80"
 
   project_id                 = "<project-id>"
   crossplane_service_account = "byoc-crossplane@langchain-prod.iam.gserviceaccount.com"
@@ -69,23 +69,13 @@ output "provisioner_service_account" {
 }
 ```
 
-Use release v0.17.58 or later of the module. Earlier releases lack a permission that the first data plane in a project needs to create its Private Service Connect endpoint.
+LangSmith requires release v0.17.80 or later of the module. If you applied an earlier release, re-apply the module at v0.17.80 or later.
 
-To create the data plane service accounts and their project roles yourself, set `byo_iam = true` before you create data planes in the project. The provisioner then cannot create service accounts or change the project IAM policy. Create the data plane with `byoiam_enabled` set to `true`. For more information, see [Bring your own IAM](/langsmith/byoc-architecture-gcp#bring-your-own-iam).
+To create the data plane service accounts and their project roles yourself, set `byo_iam = true` before you create data planes in the project. The provisioner then cannot create service accounts or change the project IAM policy. Set it if the project holds resources that are not LangSmith's. Create the data plane with `byoiam_enabled` set to `true`. For more information, see [Bring your own IAM](/langsmith/byoc-architecture-gcp#bring-your-own-iam).
 
-### Step 3. Send your project number to LangChain
+### Step 3. Create the data plane
 
-LangChain must allow your project to connect to LangSmith over Private Service Connect. Until it does, provisioning cannot finish.
-
-Get your project number:
-
-```bash
-gcloud projects describe <project-id> --format='value(projectNumber)'
-```
-
-Send it to the LangChain team, and wait for confirmation before you create the data plane.
-
-### Step 4. Create the data plane
+LangSmith automatically adds your project to the Private Service Connect accept list during provisioning. You do not need to send your project number to LangChain or wait for manual approval before creating the data plane.
 
 Create the data plane with the LangSmith API, using an organization admin's API key:
 
@@ -119,7 +109,7 @@ The request takes the following fields:
 
 The API returns `202` with the data plane's `id`, `api_url`, and `status`. Before it accepts the request, LangSmith checks that it can impersonate the provisioner, and that the provisioner is in the project and carries your external ID. If a check fails, the response names the problem. See [Troubleshoot create errors](#troubleshoot-create-errors).
 
-### Step 5. Wait until active
+### Step 4. Wait until active
 
 LangSmith provisions the infrastructure in your project. The data plane status moves from `requested` to `provisioning` to `active`. Track it in **Settings > Data Planes**, or with `GET /orgs/current/data-planes/<id>`.
 
@@ -127,7 +117,7 @@ LangSmith provisions the infrastructure in your project. The data plane status m
 Provisioning can take up to 3 hours. After 3 hours, the status changes to `provisioning_failed`. If that happens, contact the LangChain team.
 </Note>
 
-After the data plane is active, a workspace named `dp-<data_plane_name>` is available in it, and you can create more workspaces as you would on AWS. See the **Create workspaces** step in [BYOC onboarding](/langsmith/byoc-onboarding-aws).
+After the data plane is active, a workspace named `dp-<data_plane_name>` is available in it, and you can create more workspaces. See the **Create workspaces** step in [BYOC onboarding](/langsmith/byoc-onboarding-aws).
 
 ## Use your data plane
 
@@ -192,9 +182,19 @@ Do not destroy the Terraform module before you delete the data plane in LangSmit
 
 To delete a data plane:
 
-1. Delete the data plane with `DELETE /orgs/current/data-planes/<id>`. You can delete it while it is `active`, `provisioning`, or `provisioning_failed`. LangSmith deletes the resources it created in the project, and all data in them.
+1. Delete the data plane with `DELETE /orgs/current/data-planes/<id>`. You can delete it while it is `active`, `provisioning`, or `provisioning_failed`. LangSmith deletes the resources it created in the project, except the data: the Cloud Storage bucket stays with its objects, and the Cloud SQL backups outlive the instance. See [What teardown keeps](#what-teardown-keeps).
 1. Wait until the data plane is gone from **Settings > Data Planes**.
 1. If no other data planes use the project, run `terraform destroy`.
+
+### What teardown keeps
+
+Teardown keeps the data plane's data in your project:
+
+- **Cloud Storage bucket**: The bucket and its objects stay. Its labels include the data plane ID.
+- **Final Cloud SQL backup**: Cloud SQL takes a final backup when it deletes the instance, and keeps it for 365 days.
+- **Automated Cloud SQL backups**: The instance's automated backups stay, and expire one a day.
+
+LangSmith does not delete them later, and neither does `terraform destroy`. Delete them yourself when you no longer need them.
 
 ## Get help
 
