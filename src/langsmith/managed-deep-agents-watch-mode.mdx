@@ -130,9 +130,51 @@ For example, if someone says a timeout fix is rolling out and the result should 
 
 A same-thread check-in can use messages delivered to that agent conversation. A schedule does not fetch Slack history, including messages that were not delivered to the agent. Add a suitable Slack history tool or another source of current information if the check-in needs to verify what happened.
 
+## Filter messages before starting runs
+
+The example above starts a run for every eligible channel message. To reduce runs, use an `on_event` handler to select messages before the agent runs. For example, replace the channel declaration with this version to triage new top-level messages but skip ordinary thread replies:
+
+```python
+from managed_deepagents import channels
+
+
+def on_channel_message(event, thread):
+    if event.message_ts != event.thread_ts:
+        return None
+    return f"[channel_id={event.channel_id} thread_ts={event.thread_ts}]\n\n{event.text}"
+
+
+channel = channels.slack(
+    trigger_mode="all",
+    reply="none",
+    reactions=False,
+    status=False,
+    on_event={"message": on_channel_message},
+)
+```
+
+Place this declaration in `channels/slack.py` instead of the original. A handler returns a prompt to start a run or `None` to skip it. The `message` handler covers channel messages that do not mention the agent. Mentions and direct messages have separate event kinds and still start runs when no handler is provided for them. The handler runs before the agent and does not have the managed tool runtime. The handler API is experimental.
+
+This filter is deterministic. The agent still decides from context whether to reply or schedule a check-in for each accepted message. Skipped replies are not delivered to the agent conversation. For a check-in to see them, add a Slack history tool that reads the thread, including pagination, and give it the required Slack access. The handler includes the channel ID and thread timestamp in the run prompt. Include them in the check-in prompt so the history tool can find the thread. Add corresponding handlers for mentions and direct messages if those runs need the identifiers too. Treat retrieved messages as data, not instructions.
+
+## Track a thread across check-ins
+
+For ongoing tracking, extend the one-time check-in pattern to triage, re-read, and decide whether to check again or stop:
+
+1. Triage the accepted message and schedule a check only when a follow-up could help.
+2. At the check-in, read the latest Slack thread. Let the agent decide whether to reply, schedule another check, or stop. Replace the sample instruction that prohibits another check-in with your tracking policy.
+3. Add tools to list and delete agent-owned schedules. Store the Slack channel and thread identifiers in schedule metadata so the tools can find pending checks for a thread.
+4. Handle stop requests by deleting pending checks and recording the stop state. Check that state in later runs before posting or scheduling again. Enforce limits and authorization in code.
+
+The filtered example skips ordinary thread replies, including stop requests in those replies. Have participants mention the agent to stop tracking, or change the filter to accept those requests. A check may already be running when its schedule is deleted, so account for in-flight runs when enforcing the stop state.
+
+The sample above creates one check-in and does not implement these controls. A list/delete/create sequence can replace a pending check, but is not atomic. Use application-level concurrency controls if duplicate checks must be prevented. For a complete application using this pattern, see [Gandalf's Slack agent](https://github.com/casparb/agents/tree/d70036d9b52c491c8e180c404de420a74c1fddcd/gandalf).
+
 ## Deploy and test
 
 [Deploy the agent](/langsmith/managed-deep-agents-deploy) and add it to a Slack channel where the participants expect it to watch. Send a message that merits no action, one that may warrant a later check-in, and a direct mention. Inspect the runs and tool calls in LangSmith. Confirm that silent runs post nothing, that scheduled runs call `reply_in_slack` only when appropriate, and that direct requests receive replies.
+
+If you use the filter, confirm that an ordinary thread reply starts no run and that a mention starts one. If you add tracking controls, test cancellation and overlapping check-ins, including a stop request during a running check.
 
 The sample does not deduplicate check-ins or provide a way to cancel them. Before using it in an active channel, expose schedule management tools or add application logic to prevent duplicates and honor cancellation requests. Enforce any limits on repeated check-ins in code, rather than relying on instructions alone. For the `list` and `delete` operations, see [Manage schedules](/langsmith/managed-deep-agents-schedules#manage-schedules).
 
