@@ -29,6 +29,16 @@ agent = create_deep_agent(
 )
 # :snippet-end:
 
+# :snippet-start: interpreters-enable-fs-py
+from deepagents import create_deep_agent
+from langchain_quickjs import CodeInterpreterMiddleware
+
+agent = create_deep_agent(
+    model="anthropic:claude-sonnet-4-6",
+    middleware=[CodeInterpreterMiddleware(fs=True)],
+)
+# :snippet-end:
+
 # :snippet-start: interpreters-persistence-default-py
 from deepagents import create_deep_agent
 from langchain_quickjs import CodeInterpreterMiddleware
@@ -86,6 +96,7 @@ assert agent is not None
 assert CodeInterpreterMiddleware().tools
 assert CodeInterpreterMiddleware(ptc=["web_search"]).tools
 assert CodeInterpreterMiddleware(mode="thread").tools
+assert CodeInterpreterMiddleware(fs=True).tools
 persistence_agent = create_deep_agent(
     model="anthropic:claude-sonnet-4-6",
     checkpointer=MemorySaver(),
