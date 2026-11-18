@@ -106,13 +106,13 @@ docs/
 
 ## Navigation map
 
-Navigation is defined in `src/docs.json`. The site has 2 products, each a `menu` of items rather than a flat tab list. When adding pages, find the correct product → menu item → tab → group below, then update the matching section in `docs.json`.
+Navigation is defined in `src/docs.json`. The site has 3 products, each a `menu` of items rather than a flat tab list. When adding pages, find the correct product → menu item → tab → group below, then update the matching section in `docs.json`.
 
-Product and menu names in `docs.json` do not match source directory names. Lifecycle stages mix LangSmith and OSS content: the Build menu draws from both `src/oss/` and `src/langsmith/`, and Test, Deploy, and Monitor all draw from `src/langsmith/`. Locate pages by directory, not by product name.
+Product and menu names in `docs.json` do not match source directory names. Menu items mix LangSmith and OSS content: the Build menu draws from both `src/oss/` and `src/langsmith/`, and Test, Deploy, and Monitor all draw from `src/langsmith/`. Locate pages by directory, not by product name.
 
-### AGENT DEVELOPMENT LIFECYCLE
+### AGENTS RUNTIME
 
-Five menu items: Home, Build, Test, Deploy, Monitor.
+Five menu items: Home, Build, Deploy, No-code agents, Deep Agents Code.
 
 #### Home
 
@@ -140,19 +140,6 @@ Two Build tabs are not language-versioned in the usual way:
 - **Managed Deep Agents** lives in `src/langsmith/`, not `src/oss/`. Files named `managed-deep-agents*.mdx` emit only language-prefixed routes (`/langsmith/python/...` and `/langsmith/javascript/...`). The unversioned `/langsmith/managed-deep-agents*` URLs redirect to the Python routes via `docs.json`.
 - **OpenWiki** ships one set of pages at `/oss/openwiki/...` with no language split. Conditional fences resolve against the Python branch.
 
-#### Test
-
-Six tabs, all files flat in `src/langsmith/`:
-
-| Tab | Groups |
-|-----|--------|
-| Get started | No groups |
-| Datasets & Experiments | Datasets (Create a dataset), Run an evaluation, Evaluation techniques (Define evaluation target, Scoring methods, Experiment configuration, Multimodal evaluations), Analyze experiment results, Tutorials, Common data types |
-| Evaluators | Evaluator types (UI, SDK), Frameworks & integrations, Improve evaluators |
-| Annotation Queues | Feedback |
-| Test from Playground | No groups |
-| Test from Studio | No groups |
-
 #### Deploy
 
 Six tabs, all files flat in `src/langsmith/`:
@@ -168,6 +155,34 @@ Six tabs, all files flat in `src/langsmith/`:
 
 The Get started tab's Reference group holds two OpenAPI-generated sections. See [Reference docs](#reference-docs) below.
 
+#### No-code agents and Deep Agents Code
+
+| Menu item | Source | Groups |
+|-----------|--------|--------|
+| No-code agents | `src/langsmith/build-an-agent.mdx` (Studio tab), `src/langsmith/fleet/` (Fleet tab) | Studio: single page. Fleet: Get started, Configure, Tools and automation, Advanced, Additional resources |
+| Deep Agents Code | `src/oss/deepagents/code/` | Configuration |
+
+"No-code agents" holds two tabs: Studio, for building agents in Studio, and Fleet. The Fleet source directory and URLs still use `fleet`. The Studio build page also appears in the Agent-based workspaces group through the `build-an-agent-link.mdx` stub, which points at `/langsmith/build-an-agent` with `url:` frontmatter.
+
+"Deep Agents Code" ships one set of pages at `/oss/deepagents/code/...` with no language split, even though it sits under `src/oss/deepagents/`. Conditional fences resolve against the Python branch.
+
+### AGENT IMPROVEMENT
+
+Three menu items: Test, Monitor, Engine.
+
+#### Test
+
+Six tabs, all files flat in `src/langsmith/`:
+
+| Tab | Groups |
+|-----|--------|
+| Get started | No groups |
+| Datasets & Experiments | Datasets (Create a dataset), Run an evaluation, Evaluation techniques (Define evaluation target, Scoring methods, Experiment configuration, Multimodal evaluations), Analyze experiment results, Tutorials, Common data types |
+| Evaluators | Evaluator types (UI, SDK), Frameworks & integrations, Improve evaluators |
+| Annotation Queues | Feedback |
+| Test from Playground | No groups |
+| Test from Studio | No groups |
+
 #### Monitor
 
 Five tabs, all files flat in `src/langsmith/`:
@@ -182,9 +197,13 @@ Five tabs, all files flat in `src/langsmith/`:
 
 The Reference tab's LangSmith REST API group is OpenAPI-generated. See [Reference docs](#reference-docs) below.
 
-### PRODUCTS AND SETUP
+#### Engine
 
-Five menu items. LangSmith setup and No-code agents have tabs. The rest are flat group lists.
+Flat group list from `src/langsmith/engine*.mdx`. No tab groups.
+
+### AGENT GOVERNANCE
+
+Two menu items: LangSmith setup, LLM Gateway.
 
 #### LangSmith setup
 
@@ -199,18 +218,9 @@ Six tabs, all files flat in `src/langsmith/`:
 | Self-hosted | Get started by cloud provider, Deploy with Terraform (AWS, GCP, Azure), Install an instance (Additional features → Enable Sandboxes), Configure an instance, Connect external services, Platform auth & access control, SmithDB, Manage an instance, Self-hosted observability, Hybrid, Scripts, Reference |
 | Govern | Organization (Workspace setup), Users & access control, Tools, Auditing, Data & compliance, Additional resources (FAQ) |
 
-#### Other menu items
+#### LLM Gateway
 
-| Menu item | Source | Groups |
-|-----------|--------|--------|
-| LLM Gateway | `src/langsmith/llm-gateway*.mdx` | Core capabilities, Administration and governance, Advanced |
-| No-code agents | `src/langsmith/build-an-agent.mdx` (Studio tab), `src/langsmith/fleet/` (Fleet tab) | Studio: single page. Fleet: Get started, Configure, Tools and automation, Advanced, Additional resources |
-| Engine | `src/langsmith/engine*.mdx` | No groups |
-| Deep Agents Code | `src/oss/deepagents/code/` | Configuration |
-
-"No-code agents" holds two tabs: Studio, for building agents in Studio, and Fleet. The Fleet source directory and URLs still use `fleet`. The Studio build page also appears in the Agent-based workspaces group through the `build-an-agent-link.mdx` stub, which points at `/langsmith/build-an-agent` with `url:` frontmatter.
-
-"Deep Agents Code" ships one set of pages at `/oss/deepagents/code/...` with no language split, even though it sits under `src/oss/deepagents/`. Conditional fences resolve against the Python branch.
+Flat group list from `src/langsmith/llm-gateway*.mdx`: Core capabilities, Administration and governance, Advanced.
 
 ### Source directory summary
 
@@ -218,9 +228,9 @@ Because nav names and directories diverge, use this to go from a file to its pla
 
 | Source | Appears under |
 |--------|---------------|
-| `src/index.mdx` | Lifecycle → Home |
+| `src/index.mdx` | Agents Runtime → Home |
 | `src/oss/deepagents/` (except `code/`) | Build → Deep Agents |
-| `src/oss/deepagents/code/` | Products and setup → Deep Agents Code |
+| `src/oss/deepagents/code/` | Agents Runtime → Deep Agents Code |
 | `src/oss/langchain/` | Build → LangChain |
 | `src/oss/langgraph/` | Build → LangGraph |
 | `src/oss/openwiki/` | Build → OpenWiki |
@@ -228,9 +238,9 @@ Because nav names and directories diverge, use this to go from a file to its pla
 | `src/oss/reference/` | Build → Reference |
 | `src/oss/contributing/` | Build → Contribute |
 | `src/langsmith/managed-deep-agents*.mdx` | Build → Managed Deep Agents |
-| `src/langsmith/fleet/` | Products and setup → No-code agents → Fleet |
-| `src/langsmith/build-an-agent.mdx` | Products and setup → No-code agents → Studio |
-| `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx`, `create-an-agent.mdx`, `build-an-agent-link.mdx` (stub for `build-an-agent.mdx`), `deploy-to-agent-environment.mdx` | Products and setup → LangSmith setup → Overview → Agent-based workspaces |
+| `src/langsmith/fleet/` | Agents Runtime → No-code agents → Fleet |
+| `src/langsmith/build-an-agent.mdx` | Agents Runtime → No-code agents → Studio |
+| `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx`, `create-an-agent.mdx`, `build-an-agent-link.mdx` (stub for `build-an-agent.mdx`), `deploy-to-agent-environment.mdx` | Agent Governance → LangSmith setup → Overview → Agent-based workspaces |
 | `src/langsmith/*.mdx` (everything else) | Test, Deploy, Monitor, or LangSmith setup, depending on subject |
 
 ### Reference docs
@@ -510,7 +520,7 @@ Reserve "the platform" for LangSmith. LangChain is the open agent engineering ec
 **Add a new LangSmith doc:**
 
 1. Create `src/langsmith/<name>.mdx` with frontmatter
-2. Decide which lifecycle stage the page belongs to, then find the matching menu item in `src/docs.json`: `navigation.products[0].menu` holds Home, Build, Test, Deploy, and Monitor; `navigation.products[1].menu` holds LangSmith setup, LLM Gateway, No-code agents, Engine, and Deep Agents Code
+2. Decide which product the page belongs to, then find the matching menu item in `src/docs.json`: `navigation.products[0]` is AGENTS RUNTIME (Home, Build, Deploy, No-code agents, Deep Agents Code); `products[1]` is AGENT IMPROVEMENT (Test, Monitor, Engine); `products[2]` is AGENT GOVERNANCE (LangSmith setup, LLM Gateway)
 3. Add the page path (e.g., `"langsmith/<name>"`) to the correct group's `pages` array
 
 **Add a new integration page (Python):**
