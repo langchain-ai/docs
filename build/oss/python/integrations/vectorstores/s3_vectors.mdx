@@ -1,0 +1,211 @@
+---
+title: Amazon S3 Vectors integration
+description: Integrate with the Amazon S3 Vectors vector store using LangChain Python.
+integration:
+  name: AmazonS3Vectors
+  pypi: langchain-aws
+  delete_by_id: true
+  filtering: true
+  search_by_vector: true
+  search_with_score: true
+  async_api: false
+  passes_standard_tests: false
+  multi_tenancy: false
+  ids_in_add_documents: true
+---
+
+>[Amazon S3 Vectors](https://aws.amazon.com/s3/features/vectors/) is cloud object storage with native support for storing and querying vectors. It is built for large vector datasets that do not need the high-throughput, low-latency profile of an in-memory vector database, and it requires no infrastructure to provision.
+
+This page covers how to use the `AmazonS3Vectors` vector store from the `langchain-aws` package.
+
+## Setup
+
+### Installation
+
+<CodeGroup>
+    ```bash pip
+    pip install -U langchain-aws
+    ```
+    ```bash uv
+    uv add langchain-aws
+    ```
+</CodeGroup>
+
+<Note>
+`AmazonS3Vectors` requires `langchain-aws>=0.2.31`.
+</Note>
+
+### Create a vector bucket
+
+You must create an S3 vector bucket before using this store. The vector index is created for you on first write unless you pass `create_index_if_not_exist=False`.
+
+```bash
+aws s3vectors create-vector-bucket --vector-bucket-name my-vector-bucket
+```
+
+This requires the `s3vectors:CreateVectorBucket` permission. For more detail, see [Getting started with S3 Vectors](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-vectors-getting-started.html).
+
+### Credentials
+
+The store uses the standard AWS credential chain. You can also pass `region_name`, `credentials_profile_name`, or an existing boto3 `client`.
+
+## Initialization
+
+```python
+from langchain_aws import BedrockEmbeddings
+from langchain_aws.vectorstores import AmazonS3Vectors
+
+embeddings = BedrockEmbeddings(model_id="amazon.titan-embed-text-v2:0")
+
+vector_store = AmazonS3Vectors(
+    vector_bucket_name="my-vector-bucket",
+    index_name="my-index",
+    embedding=embeddings,
+)
+```
+
+Index names must be 3 to 63 characters long, start and end with a letter or number, and contain only lowercase letters, numbers, hyphens and dots.
+
+## Manage vector store
+
+### Add items
+
+```python
+from langchain_core.documents import Document
+
+vector_store.add_documents(
+    [
+        Document("Star Wars", id="key1", metadata={"genre": "scifi"}),
+        Document("Jurassic Park", id="key2", metadata={"genre": "scifi"}),
+        Document("Finding Nemo", id="key3", metadata={"genre": "family"}),
+    ]
+)
+```
+
+You can also build the store and add texts in one call:
+
+```python
+vector_store = AmazonS3Vectors.from_texts(
+    ["hello", "developer", "wife"],
+    vector_bucket_name="my-vector-bucket",
+    index_name="my-index",
+    embedding=embeddings,
+)
+```
+
+### Delete items
+
+```python
+vector_store.delete(ids=["key1", "key2"])
+```
+
+<Warning>
+Calling `delete()` without `ids` deletes the entire vector index and everything in it. Always pass `ids` unless you intend to drop the index.
+</Warning>
+
+### Get items by ID
+
+```python
+docs = vector_store.get_by_ids(["key1", "key3"])
+```
+
+<Note>
+If any requested ID is missing, `get_by_ids` raises `ValueError` and returns nothing, rather than returning the subset it found.
+</Note>
+
+## Query
+
+### Similarity search
+
+```python
+results = vector_store.similarity_search("adventures in space", k=2)
+
+for doc in results:
+    print(doc.page_content)
+```
+
+### Similarity search with score
+
+The score returned is a distance, so lower values indicate a closer match.
+
+```python
+results = vector_store.similarity_search_with_score("adventures in space", k=2)
+
+for doc, score in results:
+    print(score, doc.page_content)
+```
+
+### Metadata filtering
+
+Filters use the S3 Vectors filter syntax:
+
+```python
+vector_store.similarity_search_with_score(
+    "adventures in space",
+    filter={"genre": {"$eq": "family"}},
+)
+```
+
+See [Metadata filtering](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-vectors-metadata-filtering.html) for the supported operators.
+
+### Search by vector
+
+```python
+results = vector_store.similarity_search_by_vector(embeddings.embed_query("space"), k=2)
+```
+
+## Configuration
+
+### Distance metric
+
+`distance_metric` accepts `cosine` (the default) or `euclidean`. It is fixed when the index is created, so changing it afterwards has no effect on an existing index.
+
+```python
+vector_store = AmazonS3Vectors(
+    vector_bucket_name="my-vector-bucket",
+    index_name="my-index",
+    embedding=embeddings,
+    distance_metric="euclidean",
+)
+```
+
+### Non-filterable metadata
+
+Metadata keys listed in `non_filterable_metadata_keys` are stored and returned with the document, but cannot be used in filters. Filtering on one raises a `ValidationException`. This is set when the index is created.
+
+```python
+vector_store = AmazonS3Vectors(
+    vector_bucket_name="my-vector-bucket",
+    index_name="my-index",
+    embedding=embeddings,
+    non_filterable_metadata_keys=["raw_source"],
+)
+```
+
+### Page content storage
+
+By default the document text is stored in metadata under the `_page_content` key. Set `page_content_metadata_key` to change that key, or to `None` to embed the text without storing it, in which case retrieved documents have an empty `page_content`.
+
+Metadata is subject to the S3 Vectors [limitations and restrictions](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-vectors-limitations.html), including a 40 KB total metadata limit per vector.
+
+## Use as a retriever
+
+```python
+retriever = vector_store.as_retriever(search_kwargs={"k": 2})
+retriever.invoke("adventures in space")
+```
+
+## API reference
+
+For detailed documentation of all features and configuration options, see the [`AmazonS3Vectors` API reference](https://reference.langchain.com/python/langchain-aws/vectorstores/s3_vectors/base/AmazonS3Vectors).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/vectorstores/s3_vectors.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

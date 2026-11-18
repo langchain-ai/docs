@@ -1,0 +1,42 @@
+```python
+import operator
+from typing import Annotated, Literal
+
+from typing_extensions import TypedDict
+
+from langgraph.graph import END, START, StateGraph
+from langgraph.managed.is_last_step import RemainingSteps
+
+
+class State(TypedDict):
+    messages: Annotated[list, operator.add]
+    remaining_steps: RemainingSteps
+
+
+def reasoning_node(state: State) -> dict:
+    remaining = state["remaining_steps"]
+    if remaining <= 2:
+        return {"messages": ["Approaching limit, wrapping up..."]}
+    return {"messages": ["thinking..."]}
+
+
+def route_decision(state: State) -> Literal["reasoning_node", "fallback_node"]:
+    if state["remaining_steps"] <= 2:
+        return "fallback_node"
+    return "reasoning_node"
+
+
+def fallback_node(state: State) -> dict:
+    return {"messages": ["Reached complexity limit, providing best effort answer"]}
+
+
+builder = StateGraph(State)
+builder.add_node("reasoning_node", reasoning_node)
+builder.add_node("fallback_node", fallback_node)
+builder.add_edge(START, "reasoning_node")
+builder.add_conditional_edges("reasoning_node", route_decision)
+builder.add_edge("fallback_node", END)
+graph = builder.compile()
+
+result = graph.invoke({"messages": []}, {"recursion_limit": 10})
+```
