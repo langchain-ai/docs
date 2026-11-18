@@ -29,7 +29,7 @@ To set up a data plane, follow [BYOC onboarding on GCP](/langsmith/byoc-onboardi
 
 LangSmith creates the following in your GCP project:
 
-- **Network**: A VPC with a GKE subnet, Cloud NAT with a static egress IP address, and private services access.
+- **Network**: A VPC with a GKE subnet, Cloud NAT with a static egress IP address, private services access, and the routes and private DNS zones that keep Google API traffic on [Private Google Access](#private-google-access).
 - **GKE**: A regional, private GKE Standard cluster with Workload Identity and shielded nodes.
 - **Cloud SQL for PostgreSQL**: One instance for LangSmith and one for the SmithDB metastore. Private IP only, high availability, TLS, and IAM database login, so no database password exists.
 - **Memorystore for Redis Cluster**: TLS and IAM auth, reached through Private Service Connect.
@@ -64,12 +64,54 @@ All subnets come from the `vpc_cidr` you choose, a range from `/16` to `/18`. Al
 
 | Range | Size | Use |
 |-------|------|-----|
-| GKE subnet | First `/20` | GKE nodes. Pods use the secondary range `192.168.0.0/18`, and services use `192.168.64.0/18`. |
+| GKE subnet | First `/20` | GKE nodes. |
 | Endpoints subnet | `/24` | Private Service Connect endpoints for Memorystore. |
 | Control plane endpoint subnet | `/24` | The Private Service Connect endpoint to the LangSmith control plane, in `us-central1`. |
 | Private services access | `/20` | Peered to Google services for the Cloud SQL private IP. |
+| GKE pods | `/18` | The GKE subnet's secondary range: the first `/18` after the private services access range. |
+
+A `/18` VPC has no room for the pod range, so its pods use `192.168.0.0/18`, and the VPC must not overlap that range. Use a `/17` or `/16` to keep every range inside your VPC.
+
+GKE services take no range from the VPC. GKE assigns them its Google-managed range, `34.118.224.0/20`, which stays inside the cluster and is not exported over VPC peering. Older data planes keep `192.168.0.0/18` for pods and `192.168.64.0/18` for services.
 
 The VPC is one regional VPC with custom subnets. Cloud NAT uses one static external IP address, so you can allowlist the data plane, and logs errors only.
+
+### MTU
+
+The VPC uses the GCP default MTU, 1460 bytes. If you connect the VPC to a network with a smaller MTU, such as a hub VPC or an interconnect at 1440 bytes, set `mtu_bytes` when you create the data plane. LangSmith accepts 1300 to 8896.
+
+### Private Google Access
+
+The data plane reaches Google APIs over `private.googleapis.com`, so that traffic stays on Google's network and does not depend on the VPC's default route. LangSmith creates the following in the data plane VPC:
+
+- **Routes**: `199.36.153.8/30` (`private.googleapis.com`) and `34.126.0.0/18` (direct connectivity for some Google APIs), both with the default internet gateway as next hop. Their names start with `langsmith-`.
+- **Private DNS zones**: `googleapis.com`, `pkg.dev`, and `gcr.io` resolve to `private.googleapis.com`. A `rep.googleapis.com` zone keeps regional endpoints, such as `aiplatform.us-central1.rep.googleapis.com`, on their public addresses. The zones are visible only in the data plane VPC.
+
+The routes are more specific than a default route, including one imported from a peered network. Secret Manager, Cloud Storage, Workload Identity, Cloud Logging, and image pulls from Artifact Registry therefore do not go through that network. VPC peering does not exchange routes whose next hop is the default internet gateway, so peered networks do not learn these routes, and their DNS is unchanged.
+
+### Images
+
+LangSmith and its add-ons (cert-manager, trust-manager, External Secrets, Istio, and KEDA) pull their images from LangChain's Artifact Registry repository, `us-docker.pkg.dev/langchain-artifacts/langsmith-byoc`, over Private Google Access, not from Docker Hub, Quay, or GitHub Container Registry.
+
+### Outbound traffic
+
+The following traffic needs no internet access:
+
+- **Control plane**: Private Service Connect.
+- **Google APIs and images**: Private Google Access.
+- **Cloud SQL and Memorystore**: Private IP and Private Service Connect.
+
+All other egress leaves through the VPC's default route: Cloud NAT, or your network if you import a default route from it. If your network filters that traffic, allow the following destinations:
+
+| Feature | Destinations |
+|---------|--------------|
+| Model providers | The LLM providers your workspaces use, for example `api.openai.com` and `api.anthropic.com`, Azure OpenAI (`<resource>.openai.azure.com`), Amazon Bedrock (`bedrock-runtime.<region>.amazonaws.com`), or a custom base URL. Vertex AI and Gemini need only their regional `aiplatform.<region>.rep.googleapis.com` endpoints. |
+| Certificates | `acme-v02.api.letsencrypt.org` on TCP 443, and DNS to `1.1.1.1` and `8.8.8.8` on TCP and UDP 53 for the DNS-01 propagation check. |
+| Deployment builds from GitHub | `github.com`, `api.github.com`, `codeload.github.com`, `pypi.org`, `files.pythonhosted.org`, `registry.npmjs.org`, and any package index or git host the project uses. |
+| Agent and sandbox code | The tools, APIs, and package indexes that the code calls. |
+| Webhooks, alerts, MCP servers, and integrations | The URLs you configure, for example `events.pagerduty.com` or `slack.com`. |
+
+If your network inspects TLS, exclude these destinations from inspection. Workloads in the data plane do not trust your inspection CA.
 
 ## Storage
 
@@ -135,7 +177,7 @@ The [`langsmith-byoc-service-account` Terraform module](https://github.com/langc
 | `langsmith-byoc-provisioner` service account | The service account LangSmith provisions as. Its description is your external ID. |
 | Token Creator on the provisioner | Lets `byoc-crossplane@langchain-prod.iam.gserviceaccount.com` impersonate the provisioner. No other LangChain identity is trusted. |
 | `langsmithByocProvisioner` custom role | The permissions to create, update, and delete data plane resources that a name condition cannot limit, bound on the project. |
-| `langsmithByocNamed<Kind>` custom roles | One role per resource kind: Cloud SQL instances, GKE clusters, networks, subnets, Cloud Routers, addresses, forwarding rules, Memorystore for Redis clusters, service connection policies, Cloud Storage, and Secret Manager. Each is bound with an IAM condition on the resource name, so the provisioner can create, change, and delete only resources whose names start with `langsmith-`, and secrets whose IDs start with `ls-`. |
+| `langsmithByocNamed<Kind>` custom roles | One role per resource kind: Cloud SQL instances, GKE clusters, networks, subnets, routes, Cloud Routers, network firewall policies, addresses, forwarding rules, Memorystore for Redis clusters, service connection policies, Cloud Storage, and Secret Manager. Each is bound with an IAM condition on the resource name, so the provisioner can create, change, and delete only resources whose names start with `langsmith-`, and secrets whose IDs start with `ls-`. |
 | `managed_by: langsmith` tag | A project tag. The provisioner can bind it only to GKE clusters and Cloud SQL instances whose names start with `langsmith-`. |
 | `roles/container.admin` for the control plane | Granted to `byoc-crossplane@langchain-prod.iam.gserviceaccount.com` with the condition that the cluster has the `managed_by: langsmith` tag. It covers the GKE API and the Kubernetes API. |
 | `langsmithByocClusterConnect` custom role | `container.clusters.connect` for the control plane service account, limited to clusters whose names start with `langsmith-`. The DNS-based endpoint checks it without the cluster's tags. Connecting gives no access inside a cluster. |
