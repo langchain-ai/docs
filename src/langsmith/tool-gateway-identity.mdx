@@ -18,9 +18,9 @@ This page covers the caller side: what to send on each request. To connect the a
 |------------|-------------|------------------------------|-------------------|
 | [Personal access token](#call-as-yourself) | You call tools from Claude Code, Cursor, or a script | Your own | Management API and MCP calls |
 | LangSmith session | You use Tool Gateway in the LangSmith UI | Your own | Management API and MCP calls |
-| [Service key and the user's identity provider token](#send-the-users-token-with-a-service-key) | A multi-user backend acts for its signed-in users | The end user's | Listing servers and MCP calls |
+| [Service key and the user's identity provider token](#send-a-user-token-with-a-service-key) | A multi-user backend acts for its signed-in users | The end user's | Listing servers and MCP calls |
 | [Service key and `X-LangSmith-Identity`](#name-the-user-from-your-backend) | A backend names its users itself | The named user's | Listing servers and MCP calls |
-| [Identity provider token only](#send-only-the-users-token) | A user or app calls with your company's identity and no LangSmith key | The end user's | MCP calls only |
+| [Identity provider token only](#send-only-a-user-token) | A user or app calls with your company's identity and no LangSmith key | The end user's | MCP calls only |
 | [API key bound to an agent environment](#call-as-an-agent) | A deployed agent calls tools as itself | The agent's | Listing servers and MCP calls |
 | [Service key and `X-LangSmith-Profile`](#call-with-a-profile) | An agent, job, or deployment runs with no one signed in | The profile's | Listing servers and MCP calls |
 
@@ -41,7 +41,7 @@ A personal access token always acts as its owner. Tool Gateway ignores `X-LangSm
 
 ## Call as your end users
 
-If your product calls tools for many end users, each call can run as that user, with the accounts the user connected. Pick one of three patterns. Two of them use access tokens from your company's identity provider, such as Okta or Microsoft Entra ID, and require a workspace admin to [link the identity provider](#link-your-identity-provider) first.
+If your product calls tools for many end users, each call can run as that user, with the accounts the user connected. Pick one of three patterns. Two of them use access tokens from your company's identity provider, such as Okta or Microsoft Entra ID. Those two require a workspace admin to [link the identity provider](#link-your-identity-provider) first.
 
 A service key that acts for end users needs the `workspaces:credentials:use` or `agent-auth-credentials:use` permission. The Workspace Admin role and [deployment runtime keys](/langsmith/agent-environments) carry one of them. A key without either permission gets `403`.
 
@@ -65,9 +65,9 @@ To link an identity provider:
 
 To remove the link, open the same dialog and unlink the provider. Tokens from the provider stop working on the next call.
 
-### Send the user's token with a service key
+### Send a user token with a service key
 
-This pattern is recommended for a backend that serves many users. Keep one service key on your backend, never in a browser, and send each end user's access token alongside it. Tool Gateway verifies the token against the linked identity provider, and the call runs as the user the token names.
+Use this pattern for a backend that serves many users. Keep one service key on your backend, never in a browser, and send each end user's access token alongside it. Tool Gateway verifies the token against the linked identity provider, and the call runs as the user the token names.
 
 ```bash
 curl -sS -X POST "$LANGSMITH_ENDPOINT/v1/managed-tools/kits/<kit-id>/mcp" \
@@ -109,7 +109,7 @@ The value is `provider:user-id`, such as `gtm:user-123`, or a user's principal I
 Tool Gateway trusts the `X-LangSmith-Identity` value as sent. Any caller that holds the service key can act as any user. Send the header only from a backend you control, and never expose the service key to a browser or an end user.
 </Warning>
 
-### Send only the user's token
+### Send only a user token
 
 A user or app can call a tool kit or a server with only the user's access token, and no LangSmith key. Send the token as the request's only credential:
 
@@ -124,7 +124,7 @@ This pattern has limits:
 - A call to a built-in server's endpoint must also send `X-Tenant-Id`, so Tool Gateway knows which workspace's identity provider to check.
 
 <Warning>
-A caller authenticated only by an identity provider token can reach any server or tool kit in the workspace, limited to the tools each kit includes. Control access through which users and apps your identity provider issues tokens to, and use [policies](/langsmith/tool-gateway-policies) to restrict what those callers can invoke.
+A caller authenticated only by an identity provider token can reach any server or tool kit in the workspace. Through a kit, it reaches only the tools that kit includes. Control access through which users and apps your identity provider issues tokens to, and use [policies](/langsmith/tool-gateway-policies) to restrict what those callers can invoke.
 </Warning>
 
 ## Call as an agent
@@ -146,7 +146,7 @@ If a request with an agent key also sends `X-LangSmith-Profile` or names an end 
 
 ## Call with a profile
 
-A [profile](/langsmith/tool-gateway-connect-accounts#connect-an-account-for-a-profile) is a named set of credentials that a workspace admin connects once. Use a profile for an agent, scheduled job, or deployment that runs with no one signed in, such as a nightly reporting agent or a coding agent that works from a shared GitHub account.
+A [profile](/langsmith/tool-gateway-connect-accounts#connect-an-account-for-a-profile) is a named set of credentials that a workspace admin connects once. Use a profile for an agent, scheduled job, or deployment that runs with no one signed in. Examples include a nightly reporting agent and a coding agent that works from a shared GitHub account.
 
 Add the profile's ID in the `X-LangSmith-Profile` header:
 
