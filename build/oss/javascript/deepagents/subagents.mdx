@@ -133,7 +133,7 @@ Define subagents as dictionaries matching the [`SubAgent`](https://reference.lan
 |-------|------|-------------|
 | `name` | `string` | Required. Unique identifier for the subagent. The main agent uses this name when calling the `task()` tool. The subagent name becomes metadata for `AIMessage`s and for streaming, which helps to differentiate between agents. |
 | `description` | `string` | Required. Description of what this subagent does. Be specific and action-oriented. The main agent uses this to decide when to delegate. |
-| `systemPrompt` | `string` | Required for `mode: "isolated"` (the default). Instructions for the subagent. Custom isolated subagents must define their own. Include tool usage guidance and output format requirements.<br></br>Does not inherit from main agent. For `mode: "fork"`, omit this field unless you need a fork-only addendum. See [Forked subagents](#forked-subagents). |
+| `systemPrompt` | `string` | Required for `mode: "isolated"` (the default). Instructions for the subagent. Custom isolated subagents must define their own. Include tool usage guidance and output format requirements.<br></br>Does not inherit from main agent. For `mode: "fork"`, optional fork-only instructions, delivered with the task message. See [Forked subagents](#forked-subagents). |
 | `mode` | `"isolated"` \| `"fork"` | Optional. Context mode. Defaults to `"isolated"`, where the subagent only sees the delegated task. Set to `"fork"` to inherit the parent's conversation and system prompt instead. See [Forked subagents](#forked-subagents). |
 | `tools` | `StructuredTool[]` | Optional. Tools the subagent can use. Keep this minimal and include only what's needed.<br></br>Inherits from main agent by default. When specified, overrides the inherited tools entirely. |
 | `model` | `LanguageModelLike \| string` | Optional. Overrides the main agent's model. Omit to use the main agent's model.<br></br>Inherits from main agent by default. You can pass either a model identifier string like `'openai:gpt-6.1-sol'` (using the `'provider:model'` format) or a LangChain chat model object (`await initChatModel("gpt-6.1-sol")` or `new ChatOpenAI({ model: "gpt-6.1-sol" })`). |
@@ -222,7 +222,7 @@ Set `mode: "fork"` on a [`SubAgent`](https://reference.langchain.com/javascript/
 
 The fork inherits the parent's skills; setting `skills` is not supported.
 
-Leave `systemPrompt` unset to use the parent's prompt. If set, its instructions are appended to the parent's prompt, shortening the shared prefix available for prompt caching across providers. Consequently, setting a fork-specific system prompt is not recommended unless the fork needs additional instructions.
+The fork keeps the parent's system prompt unchanged. If you set `systemPrompt`, its instructions are added to the fork's task message, after the inherited conversation, so the fork can still reuse the parent's prompt cache.
 
 By default, the fork inherits all tools passed to the parent. Set `tools` to replace those tools, not add to them. For example, a list containing one tool replaces the inherited list with that one tool. Filesystem and other middleware-provided tools are added separately.
 
@@ -231,7 +231,7 @@ By default, the fork inherits all tools passed to the parent. Set `tools` to rep
 
 ### How it works
 
-A fork receives the parent's effective conversation history plus the delegated task description. Deep Agents removes the trailing delegation call and appends the task description with a continuation preamble. If the parent has compacted its history, the fork receives that compacted context, not every original message.
+A fork receives the parent's effective conversation history plus the delegated task description. Deep Agents removes the trailing delegation call and appends the task description with a continuation preamble. If the fork sets its own system prompt, those instructions go in the same message, between the preamble and the task description. If the parent has compacted its history, the fork receives that compacted context, not every original message.
 
 Here, forking means inheriting context for delegated work, not copying a persisted thread's checkpoint history. The subagent receives state prepared for its invocation, with parent-only fields excluded. When it finishes, its answer returns as a normal tool result, and the parent continues.
 
