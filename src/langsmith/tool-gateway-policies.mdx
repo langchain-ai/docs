@@ -19,10 +19,6 @@ Viewing policies requires the `organization:read` permission. Creating, changing
 
 For the roles, see [Role-based access control](/langsmith/rbac).
 
-{/* TODO(DOC-1970): Permissions are from smith-go/agent-policy-engine/authz.go (managerFromAuth: organization:access-control:manage or workspaces:manage on the current tenant) and registerPolicyRoutes in smith-go/managedtools/httpapi/routes.go (read: organization:read; writes: RequireCatalogUser). The frontend matches (smith-frontend/src/Pages/Tools/policies/usePolicyAccess.ts). Confirm the role names map to those permissions on rbac.mdx.
-
-Availability: S4 slide 8 and S5 say policies are "on request" through the account team. Source has no policy-specific gate: the /v1/agent-policies routes skip RequireEnabled, and ToolsTabs.tsx shows the Policies tab to anyone with organization:read. Ask the PM whether policies are still turned on by request. If they are, add an availability note above the permissions paragraph. */}
-
 ## How policies work
 
 Each policy has one of two effects:
@@ -43,8 +39,6 @@ Tool Gateway applies these rules on each call:
 Policies check calls, not tool lists. A blocked tool still appears in the tools that a kit lists.
 
 When an agent calls with an API key bound to its [agent environment](/langsmith/agent-environments), Tool Gateway checks the policies for the key and the policies for the agent. A block from either one blocks the call. Policies can only restrict a call, so a policy on the agent never lifts a block on the key.
-
-{/* TODO(DOC-1970): Effects, default allow, and block-wins are from smith-go/agent-policy-engine/types.go, engine.go (EvaluateSubjects: forbid set first, approval set only for allowed calls), and policies.cedar (permit all). Multi-subject evaluation is enforcePolicy in smith-go/managedtools/policy_decision_point.go: it adds an AgentIdentity subject for agent-bound callers and a FleetAgent subject for Fleet calls, and stops at the first deny. "Takes effect on the next call" is from the Replace and Update godoc in handler.go. "Every endpoint" and "search mode call_tool" are from S2 section 6 and section 5; confirm search mode by test. "Blocked tools still appear in tool lists" is from S2 only; the policy check runs in enforcePolicy only when the request is a tools/call, which supports it, but confirm by test. */}
 
 ## Create a policy
 
@@ -98,8 +92,6 @@ This example requires approval before anyone creates a Linear issue with the `sa
   </Tab>
 </Tabs>
 
-{/* TODO(DOC-1970): UI labels are from smith-frontend/src/Pages/Tools/policies/ (PoliciesPanel.tsx, PolicyPane.tsx, EffectField.tsx "When a call matches", AppliesToField.tsx "Applies to" and "Except", policyForm.ts EFFECTS, APPLIES_TO, workspaceOptions, actionOptions). The UI defaults the effect to Block and pre-fills a generated name. API fields and the required description are from types.go (PolicyRequest) and validation.go (validateText). The example tool name save_issue matches the quickstart; the assessment still lists "create_issue or save_issue" as open. Walk through the UI steps before publishing. */}
-
 ### Choose who a policy applies to
 
 Each entry in `scope.principals` and `scope.except_principals` is an object with a `type` and an `id`. Use `"*"` as the `id` to match every caller of that type.
@@ -117,15 +109,6 @@ Each entry in `scope.principals` and `scope.except_principals` is an object with
 Use `"*"` as the `id` for **Users**, **Service keys**, and **Agents** to match all callers of that type. The UI shows these as **All users**, **All service keys**, and **All agents**. User groups and roles must name one ID.
 
 **User groups** appears in the UI when your organization uses user groups. **Except** accepts the same callers, except **Everyone**.
-
-{/* TODO(DOC-1970): Types and ID rules are from validation.go (principalTypes, uuidPrincipalIDs, groupTypes, validateGroup) and types.go. Matching rules are from policy_decision_point.go: policyCaller maps a user's own key or session to User, a workspace API key to ServiceKey, and an OIDC caller to type "Principal"; callerGroups adds Role and Team membership for User callers only.
-
-S2 and changelog line 153 say FleetAgent, Role, and Team are API-only, but the UI now offers User groups (Team), behind useUserGroupsEnabled in usePolicyChoices.ts. Confirm with the SME.
-
-Open questions before publishing:
-- A backend that sends X-LangSmith-Identity with a service key is evaluated as ServiceKey, not as the named User (policyCaller checks isWorkspaceAPIKey before User). Confirm, then say so: a User policy would not match those calls.
-- A caller that sends an identity provider token is type "Principal" (UI label "Signed-in client"). Validation accepts it, but the UI cannot create it and no source says what its ID is. Decide whether to document it. identity.mdx tells readers to use policies to restrict OIDC-only callers, which depends on this.
-- "Service" (UI label "LangSmith service") is accepted but left out here as internal. */}
 
 ### Choose which tools a policy applies to
 
@@ -145,15 +128,11 @@ A policy names a server you added by its ID, not by the server name that prefixe
 
 A policy can name a tool on any server, including a server that no kit includes yet. The policy applies as soon as a caller can reach that tool.
 
-{/* TODO(DOC-1970): Action format is from policyAction in smith-go/managedtools/policy_decision_point.go (server.ID + "_" + upstream tool name, or gateways.BuiltinServerName(key) for built-ins) and serverToolPrefix in smith-frontend/src/Pages/Tools/policies/policyForm.ts. This settles the assessment's open question: actions use the server ID, not the kit's MCP name. The "_*" suffix rule is actionGroupSuffix in cedar.go and validateActions in validation.go. "Applies as soon as a caller can reach that tool" is inferred from the evaluation model; confirm by test. */}
-
 ### Policy names and limits
 
 - **Name**: 1 to 63 lowercase letters, digits, or hyphens. It must start with a letter, end with a letter or digit, and be unique in the organization. A duplicate name returns `409`.
 - **Callers and tools**: Up to 100 entries each in `principals`, `except_principals`, and `actions`.
 - **Policies**: Up to 1,000 policies that apply to every workspace, plus up to 100 policies limited to each workspace. Creating a policy past either limit returns `422`.
-
-{/* TODO(DOC-1970): Limits are from validation.go (policyNamePattern, maxPolicyScopeEntries) and policies.go (maxPoliciesPerOrganization = 1000, maxPoliciesPerWorkspace = 100). validation.go also rejects "conditions" ("not supported yet"); left out. */}
 
 ## What callers see
 
@@ -163,8 +142,6 @@ A policy can name a tool on any server, including a server that no kit includes 
 The caller approves the call, not a separate reviewer. Approval confirms each call before it runs, but it does not route calls to an admin. An agent that runs with no one present cannot approve calls. To stop such an agent from calling a tool, use a block policy.
 
 For the responses and how callers handle them, see [Approve a tool call](/langsmith/tool-gateway-call-tools#approve-a-tool-call).
-
-{/* TODO(DOC-1970): Mirrors the caller side on tool-gateway-call-tools.mdx, from tool_approval.go and errors.go (errPolicyDenied, errApprovalUnsupported). The "caller approves, not a separate reviewer" sentence is the one Jacob and Aimee agreed in the S2 thread. "An agent with no one present cannot approve" is inferred; confirm what an unattended agent's client receives. Keep both pages in step. */}
 
 ## Turn off, edit, or delete a policy
 
@@ -204,8 +181,6 @@ A policy that is off stays saved but does not apply to any call.
 To find a policy's ID, list policies with `GET /v1/agent-policies`. The response holds up to 20 policies in `items`. Set `page_size` to return up to 100, and pass the response's `next_cursor` as `cursor` to get the next page.
 
 Creating, changing, and deleting policies are recorded in the organization's audit log. See [Traces and audit log](/langsmith/tool-gateway-traces).
-
-{/* TODO(DOC-1970): PATCH, PUT, DELETE, and List behavior are from handler.go godoc and types.go (PolicyUpdate, ListPoliciesResponse). The UI row actions have aria-labels "Edit <name>" and "Delete <name>" with icon buttons, so there is no visible label to bold; check the UI and adjust the wording. Audit operations (create_agent_policy, update_agent_policy, delete_agent_policy) are from routes.go registerPolicyRoutes. handler.go also exposes POST /v1/agent-policies/evaluation (AuthZEN request) for testing a decision; left out because it needs internal subject IDs. Ask the SME whether to document it. */}
 
 ## See also
 

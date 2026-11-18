@@ -28,8 +28,6 @@ A service key can list servers and call tools, but it cannot create servers or t
 
 Each call acts as one identity. A request that names more than one, such as `X-LangSmith-Profile` together with `X-LangSmith-Identity` or an end user's token, is rejected with `400`.
 
-{/* TODO(DOC-1970): Rows 1-3 and 5-7 follow S5's "Which credential to use" table (2026-11-05). The agent-key row is added from S2 section 5 and smith-go/managedtools/agent_key.go, because S5 predates agent identities. "Service keys cannot create servers or kits" is RequireCatalogUser in identity.go (errCatalogUserRequired). Conflict rule: errProfileIdentityConflict and errIdentityConflict in errors.go, both 400. */}
-
 ## Call as yourself
 
 To call tools with your own connected accounts, send your personal access token in `X-Api-Key`. No other header is needed. This is how the [quickstart](/langsmith/tool-gateway-quickstart) and [MCP clients](/langsmith/tool-gateway-clients) call Tool Gateway.
@@ -49,8 +47,6 @@ A service key that acts for end users needs the `workspaces:credentials:use` or 
 
 The first time a user calls a server they have not connected, the call returns a sign-in link instead of running. Pass the link to the user, then retry the call after they connect. See [When the caller is a user](/langsmith/tool-gateway-call-tools#when-the-caller-is-a-user).
 
-{/* TODO(DOC-1970): Permission check is canSelectPrincipal in identity.go; errPrincipalManageRequired (403) names both permissions. Workspace Admin from S5; deployment runtime keys carry agent-auth-credentials:use per changelog.mdx line 783. Confirm the agent-environments link is the right place to send readers for runtime keys, or link a deployment page instead. The 428 / URL elicitation flow for a user named by X-LangSmith-Identity is untested. */}
-
 ### Link your identity provider
 
 Linking an identity provider lets Tool Gateway accept access tokens that the provider issues, and match each token to the user it names. A workspace links one identity provider.
@@ -69,15 +65,13 @@ To link an identity provider:
 
 To remove the link, open the same dialog and unlink the provider. Tokens from the provider stop working on the next call.
 
-{/* TODO(DOC-1970): UI labels are from smith-frontend/src/Pages/Tools/OIDCConnectionSection.tsx. Permission and user-key requirement are from registerOIDCConnectionRoutes in smith-go/managedtools/httpapi/routes.go (RequireCatalogUser plus workspaces:integrations:manage). The API is PUT /v1/managed-tools/oidc-connection with {"identity_provider_id": "<id>"}, but it needs the ID of an existing Agent Auth OIDC integration, and no doc covers creating one. Add an API tab once that path is documented. Confirm "one provider per workspace" and the unlink behavior in the UI. */}
-
 ### Send the user's token with a service key
 
 This pattern is recommended for a backend that serves many users. Keep one service key on your backend, never in a browser, and send each end user's access token alongside it. Tool Gateway verifies the token against the linked identity provider, and the call runs as the user the token names.
 
 ```bash
 curl -sS -X POST "$LANGSMITH_ENDPOINT/v1/managed-tools/kits/<kit-id>/mcp" \
-  -H "X-Api-Key: $LANGSMITH_API_KEY" \
+  -H "X-Api-Key: <service-key>" \
   -H "X-Tenant-Id: $LANGSMITH_WORKSPACE_ID" \
   -H "Authorization: Bearer <user-access-token>" \
   -H "Content-Type: application/json" \
@@ -99,8 +93,6 @@ curl -sS -X POST "$LANGSMITH_ENDPOINT/v1/managed-tools/kits/<kit-id>/mcp" \
 
 Send exactly one `Authorization` header. A token that the linked provider did not issue, or that has expired, returns `401`. Do not send `X-LangSmith-Identity` on the same request.
 
-{/* TODO(DOC-1970): Behavior from runtimeIdentity and principalAuthorizations in identity.go: Authorization is read only when X-Api-Key is present and the key is a workspace key; more than one value is errPrincipalAuthorizationInvalid (401); combining with X-LangSmith-Identity is errIdentityConflict (400). S2 marks this flow "need to test". Run it end to end before publishing. */}
-
 ### Name the user from your backend
 
 If your backend already knows who the user is, send a service key and name the user in the `X-LangSmith-Identity` header. Use this pattern when your users do not sign in through an identity provider that you can link.
@@ -116,8 +108,6 @@ The value is `provider:user-id`, such as `gtm:user-123`, or a user's principal I
 <Warning>
 Tool Gateway trusts the `X-LangSmith-Identity` value as sent. Any caller that holds the service key can act as any user. Send the header only from a backend you control, and never expose the service key to a browser or an end user.
 </Warning>
-
-{/* TODO(DOC-1970): Value formats are from parseIdentityHeader and oauthCaller in identity.go (principal UUID or provider:subject; errIdentityInvalid 400 otherwise). "gtm:user-123" is S5's example. A workspace key with neither the header nor a token gets errPrincipalRequired (403). Confirm with the SME that "principal ID from Agent Auth" is something customers can look up, or drop that form. */}
 
 ### Send only the user's token
 
@@ -137,8 +127,6 @@ This pattern has limits:
 A caller authenticated only by an identity provider token can reach any server or tool kit in the workspace, limited to the tools each kit includes. Control access through which users and apps your identity provider issues tokens to, and use [policies](/langsmith/tool-gateway-policies) to restrict what those callers can invoke.
 </Warning>
 
-{/* TODO(DOC-1970): From oidc_middleware.go: the OIDC path applies only when X-Api-Key is absent, there is one Bearer token, and its iss matches the linked issuer; the caller gets only mcp-servers:invoke. OIDCGatewayCaller parses kit_id as a UUID, so "me" falls through to normal auth (me kit unsupported, matching S2). builtinWorkspace requires X-Tenant-Id (errBuiltinOIDCWorkspaceRequired). S2 marks this flow "need to test", and the assessment asks whether a bare token on the me kit returns 401. Capture the actual status. Can a policy target an OIDC caller? Check which principal type policies see for these calls before keeping the "use policies" advice. */}
-
 ## Call as an agent
 
 A deployed agent can call tools as itself, with credentials an admin connected for its [agent environment](/langsmith/agent-environments). Send an API key bound to that agent environment. Tool Gateway recognizes the key and uses the agent's credentials, with no extra header.
@@ -155,8 +143,6 @@ Because each agent environment holds its own credentials, an agent's development
 An agent cannot connect its own accounts, because no one is present to sign in. A call to a server the agent has not connected returns `409`, and a workspace admin must connect it.
 
 If a request with an agent key also sends `X-LangSmith-Profile` or names an end user, that identity is used instead of the agent's.
-
-{/* TODO(DOC-1970): From agent_key.go (SelectAgentIdentity): the agent owner is selected only when the key is bound to an agent environment, canSelectPrincipal passes, and no other owner is named. What does an agent-bound key WITHOUT credential permission do? It looks like it falls back to a workspace-key caller and gets 403 (errPrincipalRequired). Confirm, and say so if true. S2 says to get a key from the agent overview's settings icon by creating "an admin key for your environment"; agent-environments.mdx does not cover keys yet. Add the procedure there (or find the right page) and link it instead of explaining it here. Agent access tokens (agent_access_token.go) are behind the lmt-agent-access-token-identity flag; leave them out unless the SME says they ship in the beta. S5 (2026-11-05) said the Agent option was still in development; confirm it ships. */}
 
 ## Call with a profile
 
@@ -176,8 +162,6 @@ Using a profile requires the `workspaces:credentials:use` or `agent-auth-credent
 
 A profile works only with workspace tool kits and workspace servers, not personal ones. A call to a server the profile has not connected returns `409`, and a workspace admin must connect it.
 
-{/* TODO(DOC-1970): Header, permission, and errors from profile_selection.go (errProfileSelectionForbidden 403, errProfileHeaderInvalid 400, errProfileIdentityConflict 400) and errors.go (errProfileCredentialRequired 409). "Workspace kits and servers only" is from S5 only; confirm in source (personal.go) or by test. Listing servers with a profile also accepts workspaces:credentials:read-metadata (SelectProfileForMetadata); left out as a detail. Confirm the "Copy profile header" label matches connect-accounts.mdx. */}
-
 ## Fix identity errors
 
 The errors in this table come from how a request names its identity. For other errors, see [Errors](/langsmith/tool-gateway-call-tools#errors).
@@ -190,8 +174,6 @@ The errors in this table come from how a request names its identity. For other e
 | `403` | A service key sent no user identity, or the key lacks `workspaces:credentials:use` or `agent-auth-credentials:use`. | Name the user, or use a key with one of those permissions. |
 | `404` | The profile does not exist in this workspace. | Check the ID with `GET /v1/managed-tools/profiles`. |
 | `409` | The agent or the profile has no credential for a server the call needs. | Ask a workspace admin to [connect it](/langsmith/tool-gateway-connect-accounts). |
-
-{/* TODO(DOC-1970): Statuses from errors.go (errIdentityConflict, errProfileIdentityConflict, errIdentityInvalid, errPrincipalInvalid, errProfileHeaderInvalid, errPrincipalAuthorizationInvalid, errPrincipalRequired, errPrincipalManageRequired, errProfileSelectionForbidden). The 404 for an unknown profile is assumed from profiles.Require; confirm its status. Mirror any change in the Errors table on tool-gateway-call-tools.mdx. */}
 
 ## See also
 
