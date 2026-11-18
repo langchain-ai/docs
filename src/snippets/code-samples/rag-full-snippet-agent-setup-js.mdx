@@ -41,7 +41,7 @@ async function buildRagAgent() {
   // Index chunks
   await vectorStore.addDocuments(allSplits);
 
-  const model = new ChatOpenAI({ model: "gpt-4o-mini" });
+  const model = new ChatOpenAI({ model: "gpt-5.4-mini" });
 
   // Construct a tool for retrieving context
   const retrieveSchema = z.object({ query: z.string() });

@@ -5,11 +5,11 @@ description: How a LangSmith BYOC deployment is structured across the LangChain 
 icon: "sitemap"
 ---
 
+BYOC on AWS runs the LangSmith data plane in your AWS account, while LangChain runs the control plane in its own cloud in `us-east-2`. Your trace data stays in your account. This page describes the components of each plane, how they communicate, and what LangChain provisions in your account. For other clouds, see [BYOC architecture on GCP](/langsmith/byoc-architecture-gcp) and [BYOC architecture on Azure](/langsmith/byoc-architecture-azure).
+
+To set up a data plane, follow [BYOC onboarding on AWS](/langsmith/byoc-onboarding-aws).
+
 ## Control plane and data plane model
-
-A BYOC deployment is split across two planes. This page describes the components of each plane, how they communicate, and what LangChain provisions in your account.
-
-This page covers BYOC on AWS. For BYOC on GCP, see [BYOC architecture on GCP](/langsmith/byoc-architecture-gcp) or [BYOC architecture on Azure](/langsmith/byoc-architecture-azure).
 
 The **control plane** runs in LangChain's cloud and handles authentication, organization configuration, and billing. It provisions, monitors, and orchestrates your deployment, but does not hold any sensitive application data.
 
@@ -36,12 +36,25 @@ LangChain provisions the following in your account:
 - **Storage**: S3 buckets for the blob store holding trace data, the SmithDB object store, and VPC flow logs.
 - **EKS**: A private EKS cluster with managed add-ons.
 - **Compute**: A system node group for platform workloads, and application node groups through Karpenter.
-- **In-cluster resources**: The LangSmith Helm chart, Istio, KEDA, and other in-cluster resources.
+- **In-cluster resources**: The LangSmith Helm chart and the [supporting components](#supporting-in-cluster-components) it depends on.
 - **IAM roles**: The roles and permissions required for Kubernetes resources.
 
 <Note>
 Data planes created on or after October 21, 2026 store and query traces in [SmithDB](/langsmith/self-host-smithdb) only. ClickHouse is deprecated, and support ends in LangSmith v0.19. Data planes created with ClickHouse keep it, along with its S3 backups, until they migrate to SmithDB.
 </Note>
+
+## Supporting in-cluster components
+
+Besides the LangSmith Helm chart, LangChain installs and upgrades the following open source components in the EKS cluster. Each runs as its own Helm release:
+
+- **Istio**: The `istio/base`, `istiod`, and `istio/gateway` releases. The Istio ingress gateway receives all data plane traffic and routes it to the LangSmith services.
+- **AWS Load Balancer Controller**: Creates the network load balancer in front of the Istio ingress gateway. Its name ends in `-sm-istio`.
+- **External Secrets Operator**: Syncs the data plane secrets from AWS Secrets Manager into Kubernetes secrets through a ClusterSecretStore.
+- **Karpenter**: Provisions and removes the application worker nodes as pod demand changes.
+- **cert-manager**: Issues and renews in-cluster TLS certificates. Other components depend on its custom resources and webhooks.
+- **KEDA**: Autoscales the LangSmith services.
+
+Each component that calls AWS APIs uses its own IAM role. With [BYOIAM](/langsmith/byoc-byoiam-aws), you create these roles yourself. For the upgrade cadence of these components, see [Operations](/langsmith/byoc-operations-aws).
 
 ## Cross-account IAM permissions
 

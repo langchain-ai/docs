@@ -1,11 +1,11 @@
 ---
 type: architecture
-title: Documentation Build System
-description: How the documentation pipeline rebuilds Mintlify-ready output from authored src content, selects language-aware routes, transforms Markdown, and supports local development.
-tags: [build-system, documentation-pipeline, mintlify, preprocessing, content-routing]
+title: Build and Preprocessing Architecture
+description: How the pipeline CLI converts authored Markdown, MDX, and notebooks, preprocesses links and conditionals, and materializes language-aware Mintlify output. Covers full builds, incremental development, migration boundaries, validation, failures, and safe extension points.
+tags: [build-system, documentation-pipeline, mintlify, preprocessing, content-routing, migration]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-11-03T08:13:57.434Z
+    at: 2026-11-09T08:07:38.321Z
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
@@ -25,6 +25,10 @@ sources:
     resource: repo://pipeline/preprocessors/markdown_preprocessor.py
   - id: openwiki-source-3ae8d89866d72418f1bdab6b
     resource: repo://pipeline/preprocessors/utm_links.py
+  - id: openwiki-source-0267a6f0fe0840056f8e4f6b
+    resource: repo://pipeline/tools/docusaurus_parser.py
+  - id: openwiki-source-ed508be0f6ddc9b5fd44fffd
+    resource: repo://pipeline/tools/notebook/convert.py
   - id: openwiki-source-05ccef8d4cf1698187f20464
     resource: repo://pyproject.toml
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
@@ -35,20 +39,26 @@ sources:
     resource: repo://tests/unit_tests/test_builder.py
   - id: openwiki-source-16b92823fdcb07d686f2e27f
     resource: repo://tests/unit_tests/test_watcher.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-03T08:13:57.434Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-09T08:07:38.321Z" }
 ---
 
-# Documentation Build System
+# Build and Preprocessing Architecture
 
-`DocumentationBuilder` is the boundary between authored `src/` content and `build/`, the generated tree consumed by Mintlify. `build/` is disposable: a full build deletes it before recreating it. Edit `src/`, not `build/`.
+The repository has two related but separate workflows:
 
-## Entrypoints and full reconstruction
+- **Build and development** read authored `src/` content and produce the disposable `build/` tree consumed by Mintlify. Contributors edit `src/`, not `build/`.
+- **Migration and maintenance tools** change or preview source documents. `migrate` and `migrate-docusaurus` are conversion tools, while `mv` moves a document and updates links; none is the dev server or the normal `pipeline build` path.
 
-`make build` installs npm dependencies and invokes `uv run pipeline build`. The `docs` console script exposes the same CLI; its `build` subcommand accepts `--watch`, although the build handler itself always runs one full build. The handler verifies that `src/` exists, constructs `DocumentationBuilder(src, build)`, and calls `build_all()`; a missing source returns exit code 1.
+`pipeline/__main__.py` delegates to `pipeline.cli.main()`. The CLI dispatches `build`, `dev`, `mv`, `migrate`, and `migrate-docusaurus`.
+
+## Build entrypoints and control flow
+
+`make build` installs npm dependencies and runs `PYTHONPATH=$(CURDIR) uv run pipeline build`. The build handler verifies that `src/` exists, constructs `DocumentationBuilder(src, build)`, and calls `build_all()`. The parser exposes `--watch` for `build`, but `build_command` ignores that argument and performs one full build.
 
 ```mermaid
 flowchart TD
-    Source["Authored src tree"] --> Clear["Clear and recreate build"]
+    Source["Authored src tree"] --> Full["pipeline build / make build"]
+    Full --> Clear["Clear and recreate build"]
     Clear --> Py["Build OSS Python output"]
     Py --> Js["Build OSS JavaScript output"]
     Js --> Unversioned["Build unversioned OSS and LangSmith"]
@@ -56,75 +66,81 @@ flowchart TD
     Managed --> Shared["Copy shared files and render snippets"]
     Shared --> Overlay["Overlay npm components"]
     Overlay --> Mint["Mintlify consumes build"]
-    Source --> Watch["Watcher receives file event"]
-    Watch --> Incremental["Incremental build_file"]
-    Incremental --> Touch["Touch expected output for reload"]
+    Source --> Dev["pipeline dev / make dev"]
+    Dev --> Initial["Optional initial full build"]
+    Initial --> Watch["FileWatcher observes src"]
+    Watch --> Incremental["Batch build_file"]
+    Incremental --> Touch["Touch predicted output"]
     Touch --> Mint
 ```
 
-This flowchart distinguishes authoritative full reconstruction (the top path) from the narrower watch path (the bottom path).
-
-A full build proceeds in the order shown: two ordinary OSS passes, unversioned Deep Agents Code and OpenWiki, ordinary LangSmith, Managed Deep Agents variants, shared-file copying, and the npm component overlay. The overlay runs last and can replace source-tree copies. The builder does not generate `llms` artifacts.
+This flow distinguishes the authoritative full reconstruction from the narrower watch path. A full build clears `build/`, builds Python and JavaScript OSS content, builds unversioned OSS products and LangSmith, builds Managed Deep Agents variants, copies shared files, and overlays npm snippets. It does not generate `llms` artifacts.
 
 ## Route families and language selection
 
-The source location selects a routing family, but ordinary shared OSS Markdown is not blindly duplicated. The builder recursively reads `navigation` from `src/docs.json`, collecting routes below `oss/python/` and `oss/javascript/`; the result is cached until the configuration modification time changes. A shared `.md` or `.mdx` page listed only in one language navigation is emitted only for that language. A page listed in both, in neither, or a non-Markdown asset is emitted for both. A navigation entry for `dir` can stand for `dir/index`, unless a language-specific `src/oss/python/dir.mdx` or `src/oss/javascript/dir.mdx` owns that route. If `docs.json` is missing or invalid, the safe fallback is both languages.
+The builder reads `navigation` recursively from `src/docs.json` and caches the language route sets until the configuration modification time changes. Shared OSS Markdown listed only in one language navigation is emitted only for that language; a page listed in both or neither is emitted for both. Non-Markdown files are emitted for both. A `dir` navigation entry can stand for `dir/index`, unless a language-specific source owns that route. Missing or invalid `docs.json` falls back safely to both languages.
 
 | Source family | Output and render target |
 | --- | --- |
-| Ordinary shared `src/oss/` content | `build/oss/python/...` and/or `build/oss/javascript/...`, selected from navigation; Python and JavaScript rendering respectively. |
-| `src/oss/python/` or `src/oss/javascript/` content | Only the matching full-build language pass; the language source segment is removed from the output route. |
-| `src/oss/deepagents/code/` | One unprefixed `build/oss/deepagents/code/...` tree, rendered with the Python target. |
-| `src/oss/openwiki/` | One unprefixed `build/oss/openwiki/...` tree, rendered with the Python target. |
-| Ordinary `src/langsmith/` | One `build/langsmith/...` tree, rendered with the Python target. |
-| Direct `src/langsmith/managed-deep-agents*.mdx` | `build/langsmith/python/...` and `build/langsmith/javascript/...`; no unversioned page is emitted. |
+| Ordinary shared `src/oss/` content | `build/oss/python/...` and/or `build/oss/javascript/...`, selected from navigation. |
+| `src/oss/python/` or `src/oss/javascript/` | Only the matching pass, with the language source segment removed from the route. |
+| `src/oss/deepagents/code/` | One unprefixed `build/oss/deepagents/code/...` tree, rendered with Python conditions. |
+| `src/oss/openwiki/` | One unprefixed `build/oss/openwiki/...` tree, rendered with Python conditions. |
+| Ordinary `src/langsmith/` | One `build/langsmith/...` tree, rendered with Python conditions. |
+| Direct `src/langsmith/managed-deep-agents*.mdx` | `build/langsmith/python/...` and `build/langsmith/javascript/...`; no unversioned page. |
 | Root and shared inputs | Source-relative output under `build/`, built or copied once. |
 
-Deep Agents Code and OpenWiki are deliberate OSS exceptions: they retain unprefixed routes and their `:::python` branch. Managed Deep Agents is the LangSmith exception. Direct Markdown/MDX files whose names begin `managed-deep-agents` get both language routes during incremental processing; full reconstruction enumerates the `.mdx` form. `docs.json` supplies redirects from unversioned Managed Deep Agents URLs to the Python routes. The renderer also changes unprefixed Managed Deep Agents links to the current language route.
+Deep Agents Code and OpenWiki retain unprefixed routes and are skipped by OSS language-link rewriting. Managed Deep Agents is the LangSmith exception: its pages receive language-prefixed routes, and `src/docs.json` redirects unversioned Managed Deep Agents URLs to Python routes.
 
-For language-targeted output, absolute `/oss/...` links are rewritten as `/oss/python/...` or `/oss/javascript/...`. Already-prefixed links, image paths, and Deep Agents Code and OpenWiki routes are exempt, because those destinations are not language-duplicated.
+For language-targeted output, `/oss/path` becomes `/oss/python/path` or `/oss/javascript/path`. Already-prefixed links, image paths, and language-agnostic products are exempt. Versioned imports such as `from '/snippets/component.mdx'` are redirected to `/snippets/python/component.mdx` or `/snippets/javascript/component.mdx`.
 
-## Markdown transformation and failure boundary
+## Supported files, Markdown, and preprocessing
 
-Markdown and MDX are transformed only for output. Processing order is: standard preprocessing, language-specific snippet-import rewriting when there is a language target, OSS-link rewriting, Managed Deep Agents-link rewriting, then the contributor footer. `.md` inputs become `.mdx` output.
+The builder accepts Markdown/MDX, JSON/YAML, common media and text/HTML files, CSS/JS, JSX/TSX, and common fonts. `TEMPLATE.mdx` and unsupported extensions are skipped. `docs.yml` is converted to JSON; other supported non-Markdown files are copied with `copy2`. Markdown is processed for output and `.md` becomes `.mdx`.
 
-Standard preprocessing resolves `@[LinkName]` references using scope-specific `SCOPE_LINK_MAPS`, adds UTM parameters to selected LangSmith CTA links, then evaluates conditionals. `:::python` content is retained for Python and removed for JavaScript; `:::js` behaves conversely. Unsupported conditional labels remain intact, and escaped `\:::` is unescaped to literal text. A missing autolink is logged rather than making the build fail. The UTM pass preserves existing query parameters, leaves functional LangSmith paths alone, and skips fenced code.
+Markdown processing runs in this order: standard preprocessing; language-specific snippet imports; OSS links; Managed Deep Agents links; contributor footer. Standard preprocessing resolves `@[LinkName]` through scope-specific `SCOPE_LINK_MAPS`, adds UTM parameters to selected `smith.langchain.com` CTA paths, and evaluates conditionals. Missing autolinks are logged without failing the build. UTM rewriting preserves existing queries, leaves functional paths unchanged, and skips fenced code.
 
-Conditional fences are a build failure boundary: before rendering, preprocessing rejects nested, stray, or unclosed `:::` fences with `ValueError`. That prevents malformed language blocks from silently leaking content into another render target; the builder logs and re-raises Markdown processing failures.
+`:::python` is retained for Python and removed for JavaScript; `:::js` behaves conversely. Unsupported labels remain intact, and escaped `\:::` is preserved as literal text. Conditional syntax is validated before rendering: nested, stray, or unclosed fences raise `ValueError`. The builder logs and re-raises Markdown-processing errors; the build therefore does not silently recover from malformed conditional structure.
 
-The output-only contributor footer is omitted for the root `index.mdx` and any path containing `snippets`. Other Markdown includes calls to connect the documentation, edit the source on GitHub, or file an issue.
+The contributor callout is output-only: Markdown files get GitHub edit and issue links except the root `index.mdx` and anything beneath `snippets`.
 
-## Shared files and snippets
+## Shared files and generated snippets
 
-`is_shared_file()` identifies `docs.json`; selected root pages; every path under `snippets`, `images`, `.well-known`, or `fonts`; and `.js` and `.css` files. Full builds collect these from the whole source tree once. Supported types include Markdown, JSON and YAML, common image/video formats, CSS/JS, JSX/TSX, text/HTML, and common web fonts. `TEMPLATE.mdx` and unsupported extensions are skipped; `docs.yml` is converted to JSON and other supported non-Markdown files are copied with `copy2`.
+`is_shared_file()` identifies `docs.json`, selected root pages, paths under `snippets`, `images`, `.well-known`, or `fonts`, and all `.js` and `.css` files. Full builds collect these once. Markdown snippets are emitted three ways: a source-relative copy with Python-resolved links, a Python copy under `build/snippets/python/`, and a JavaScript copy under `build/snippets/javascript/`. JSX/TSX components remain shared.
 
-Markdown snippets have a special contract. Each is written at its source-relative path with Python-resolved links, and also beneath `build/snippets/python/` and `build/snippets/javascript/` with the corresponding conditions and links. A language-targeted MDX page importing `from '/snippets/foo.mdx'` is rewritten to import the corresponding language-specific Markdown copy. JSX and TSX snippet components remain shared.
+After source snippets are processed, npm components from `@langchain/docs-sandbox` are copied into `build/snippets/` and the build root, overwriting source-tree versions so the latest published components win. Missing package directories or mapped files are warnings.
 
-Finally, the builder copies `PatternEmbed.jsx` and `ExampleEmbed.jsx` from `node_modules/@langchain/docs-sandbox/dist` into `build/snippets/`, and `ChatLangChainEmbed.js` to the build root. Available package files overwrite copies previously obtained from `src`; missing package directories or mapped files are warnings.
+Whole-tree collection rejects symlinks and accepts regular files only when their resolved paths remain under the requested source root. This prevents source-tree escapes into generated artifacts.
 
-## Development is incremental, not reconstruction
+## Development lifecycle and incremental limits
 
-`make dev` installs npm dependencies and starts `pipeline dev`. Unless `--skip-build` is supplied, it performs the full build first, constructs `FileWatcher(src, build)`, and launches `mint dev --port 3000` with `build/` as its working directory. The watcher observes `src/`; Mint reads the generated `build/` tree. Development returns failure if initial construction fails, `mint` cannot be started, the Mint process exits nonzero, or the watcher stops unexpectedly. Shutdown stops the watcher and terminates Mint, escalating to kill after five seconds.
+`make dev` installs npm dependencies and starts `pipeline dev`. Unless `--skip-build` is supplied, dev performs a full build, creates `FileWatcher(src, build)`, and starts `mint dev --port 3000` with `build/` as its working directory. Initial-build failure, missing `mint`, a nonzero Mint exit, or an unexpected watcher stop returns failure; shutdown terminates Mint and escalates to kill after five seconds.
 
-The watcher queues supported created and modified files, rejects editor backups and temporary files, debounces events for 0.2 seconds, and builds a batch in worker threads (up to four). Afterwards it touches predicted output files so Mintlify detects the change. Incremental output is intentionally weaker than a full build:
+The watcher queues supported create/modify events, ignores editor backup and temporary files, debounces for 0.2 seconds, builds batches in worker threads (up to four), and touches predicted output files for hot reload. Incremental output is weaker than reconstruction:
 
-- Deletion removes only the source-relative output path, not every language or special route. A deleted versioned or Managed Deep Agents source can therefore leave generated variants until the next full build.
-- `build_file()` does not rerun whole-tree shared-file collection or the npm overlay. Use a full build after cross-file, navigation, package, or deletion changes.
-- Managed Deep Agents pages rebuild into both routes, but the watcher treats LangSmith as unversioned for touching and does not touch those routes. Perform a full build if hot reload misses such an edit.
+- Deletion removes only the source-relative build path, not all language or special routes. Deleted versioned or Managed Deep Agents sources can leave variants until a full build.
+- `build_file()` does not rerun shared-file collection or the npm overlay. Use a full build after navigation, package, cross-file, or deletion changes.
+- Managed Deep Agents rebuilds both routes, but watcher touch logic treats LangSmith as unversioned and does not touch those emitted routes; use a full build if hot reload misses the edit.
 
-## Validation, safety, and change tests
+## Migration and notebook conversion
 
-Validation operates on generated output. `make broken-links` builds first, then runs `mint broken-links --check-redirects` from `build/`, filters known deployment-time OpenAPI and standalone-snippet reports, and fails if remaining broken-link lines exist. `make broken-links-with-anchors` also checks anchors. Deployment-time OpenAPI endpoint pages are intentionally absent from local output. `make export` runs Mint export from `build/` after verifying CLI support and rejecting Node major versions 25 or newer; `make htmltest` unpacks the export and checks external links only.
+`pipeline migrate PATH` converts MkDocs-oriented `.ipynb`, `.md`, and `.markdown`; `pipeline migrate-docusaurus PATH` additionally accepts `.mdx`. A directory is searched recursively. `--output` writes a parallel destination, `--dry-run` prints converted Markdown, and without `--output` the tool updates Markdown in place. Notebook input is converted to Markdown first and, on a successful in-place conversion, the original `.ipynb` is deleted.
 
-Whole-tree collection rejects symlinks—even symlinks to regular files—and only accepts regular files resolving beneath the requested source root. This prevents source-tree links from carrying host content into artifacts.
+Notebook conversion uses `nbformat` and `nbconvert`. It hides cells beginning with `# hide-cell`, normalizes notebook links, fixes image paths, marks code cells for execution, rewrites supported cell magics, removes `noqa` comments, escapes embedded fences, filters empty text output, and inlines supported attachments as data URLs. Unsupported cell-magic lines raise `NotImplementedError`; they are caught by the migration worker as unexpected per-file errors.
 
-The focused builder tests cover navigation-aware selection, language-routing exceptions, link and snippet rewriting, Managed Deep Agents output, and symlink rejection. Watcher tests cover filtering editor backup and temporary names. When changing routing or generated output, update these observable-output tests and run a full build as well as the focused suite.
+MkDocs input goes through `to_mint`; Docusaurus input goes through the Docusaurus parser, which converts admonitions, tabs, code blocks, imports, links, assets, and frontmatter. Both paths remove suffixes from links before writing. A `ParseError` is logged as a concise per-file parse error and marks that file failed; the migration loop continues with other files and reports aggregate failures. Other exceptions are logged with a traceback and likewise fail only that file. There is no undocumented recovery or partial rewrite of a failed file. In-place cleanup occurs only after successful processing.
+
+The migration parsers are safe extension points for source-format conversion; the build-time extension boundary is the preprocessor chain and builder routing logic. Changes to routing, preprocessing, or generated output should be expressed through focused observable-output tests rather than edits to `build/`.
+
+## Validation and focused tests
+
+`make broken-links` builds first, runs `mint broken-links --check-redirects` from `build/`, filters deployment-time OpenAPI and standalone-snippet reports, and fails if filtered output still contains broken-link lines. The anchor target also checks anchors. OpenAPI endpoint pages are intentionally absent locally because Mintlify generates them at deployment. `make export` validates Mint export support and rejects Node major versions 25 or newer; `make htmltest` unpacks the export and checks external links only.
+
+Focused builder tests cover navigation-aware selection, routing exceptions, snippet routing, symlink rejection, and Managed Deep Agents output. Watcher tests cover editor backup and temporary-file filtering. These tests are the right safety net for route or incremental-build changes; run them together with a full build.
 
 ## Related pages
 
 - [Source map](/openwiki/architecture/source-map.md)
-- [Preprocessing](/openwiki/concepts/preprocessing.md)
-- [Versioning](/openwiki/concepts/versioning.md)
 - [Mintlify integration](/openwiki/integrations/mintlify.md)
-- [Builder tests](/openwiki/testing/builder-tests.md)
-- [Local development](/openwiki/workflows/local-development.md)
+- [CLI tools](/openwiki/operations/cli-tools.md)
+- [Testing overview](/openwiki/testing/test-overview.md)

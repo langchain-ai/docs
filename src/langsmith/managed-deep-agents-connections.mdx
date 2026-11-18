@@ -6,6 +6,7 @@ description: Store API keys and OAuth grants so Managed Deep Agents can authenti
 
 import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
 import MdaOauthCatalog from '/snippets/langsmith/mda-oauth-catalog.mdx';
+import MdaConnectionsUserTool from '/snippets/langsmith/mda-connections-user-tool.mdx';
 
 A connection links a managed deep agent to an external service such as GitHub, Notion, or Tavily. The credential lives in your LangSmith workspace. Use `connections.get(...)` in an authored tool or MCP server definition to resolve it at runtime.
 
@@ -52,6 +53,20 @@ Every `connections.get(...)` call names who owns the credential it resolves:
 | `agent` | One credential that belongs to the deployment. Every caller uses it. | Every caller needs the same capability: web search with Tavily, a shared knowledge base, or posting to one team channel. |
 | `user` | The calling person's own credential. Each person authorizes their own account. | The agent acts as the person who asked: searching Notion pages only they can see, filing an issue under their name, or sending email as them. |
 
+Two callers of the same agent share an agent-owned credential and hold separate user-owned ones:
+
+<img
+    className="block dark:hidden"
+    src="/langsmith/images/mda-connections-owners-light.png"
+    alt="Agent-owned on the left, where the runs of two callers both resolve one shared team Tavily key. User-owned on the right, where each run resolves that caller's own Notion token."
+/>
+
+<img
+    className="hidden dark:block"
+    src="/langsmith/images/mda-connections-owners-dark.png"
+    alt="Agent-owned on the left, where the runs of two callers both resolve one shared team Tavily key. User-owned on the right, where each run resolves that caller's own Notion token."
+/>
+
 :::python
 ```python
 tavily_key = await connections.get("organization-tavily", {"type": "agent"})
@@ -68,7 +83,7 @@ const notionToken = await connections.get("engineering-notion", { type: "user" }
 
 `connections.get(...)` resolves to the credential value as a string.
 
-A connection is a container, and it belongs to the workspace rather than to an owner. The credentials inside it have owners. There is no `--owner` flag: the [create mode](#choose-a-create-mode) you use sets the owner.
+A connection groups credentials under one slug. It belongs to the workspace rather than to an owner. Each credential it holds has its own owner. There is no `--owner` flag: the [create mode](#choose-a-create-mode) you use sets the owner.
 
 `connections.get(...)` selects an owner. It does not create one. Asking for an owner with no credential of its own fails the run for `agent`, and raises a [`credential_authorization_required` interrupt](#handle-the-authorization-interrupt) for `user`. A credential stored under the same slug for a different owner does not satisfy the lookup.
 
@@ -101,6 +116,20 @@ Ownership decides what the agent does with a credential. The create mode decides
 | **Opaque secret** | The service uses a fixed API key or other static secret. | `--secret-from-env`, `--secret-from-file`, stdin, or an interactive prompt | The agent |
 | **General OAuth** | You register your own OAuth app (BYOT), such as with GitHub or Google. | `--oauth <service>` from the catalog, or `--authorize-url` and `--token-url` for a custom provider | Each caller, or the agent with [`--authorize`](#authorize-an-agent-owned-oauth-account) or [client credentials](#create-a-client-credentials-connection) |
 | **MCP OAuth** | An MCP server advertises OAuth and registers a client automatically. | `--mcp <url>`, or the slug alone when the project already declares that user-owned MCP server | Each caller, or the agent with [`--authorize`](#authorize-an-agent-owned-oauth-account) |
+
+The following decision tree picks the create mode a service needs and shows which owner that mode supports:
+
+<img
+    className="block dark:hidden"
+    src="/langsmith/images/mda-connections-create-mode-light.png"
+    alt="Decision tree for the create mode. A fixed API key gives a shared opaque secret. An agent that acts as each caller gives MCP OAuth for an OAuth MCP server, or general OAuth otherwise, both per caller. An agent that does not gives client credentials when the provider issues app credentials, or OAuth with --authorize, both shared."
+/>
+
+<img
+    className="hidden dark:block"
+    src="/langsmith/images/mda-connections-create-mode-dark.png"
+    alt="Decision tree for the create mode. A fixed API key gives a shared opaque secret. An agent that acts as each caller gives MCP OAuth for an OAuth MCP server, or general OAuth otherwise, both per caller. An agent that does not gives client credentials when the provider issues app credentials, or OAuth with --authorize, both shared."
+/>
 
 For example:
 :::python
@@ -569,57 +598,7 @@ Give the dedicated account the narrowest `--scope` values the agent needs. Set `
 
 This tool resolves the authenticated caller's GitHub connection and calls the GitHub REST API:
 
-:::python
-```python tools/get_github_user.py
-import httpx
-from langchain.tools import tool
-from managed_deepagents import connections
-
-
-@tool
-async def get_github_user() -> str:
-    """Get the authenticated caller's GitHub login."""
-    # Replace `frontend-github` with the name of your connection.
-    access_token = await connections.get("frontend-github", {"type": "user"})
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.get(
-            "https://api.github.com/user",
-            headers={"Authorization": f"Bearer {access_token}"},
-        )
-        response.raise_for_status()
-        return response.json()["login"]
-```
-:::
-
-:::js
-```ts tools/get-github-user.ts
-import { tool } from "langchain";
-import { connections } from "managed-deepagents";
-import { z } from "zod";
-
-export const getGitHubUser = tool(
-  async () => {
-    // Replace `frontend-github` with the name of your connection.
-    const accessToken = await connections.get("frontend-github", { type: "user" });
-    const response = await fetch("https://api.github.com/user", {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
-    if (!response.ok) {
-      throw new Error(`GitHub request failed with status ${response.status}`);
-    }
-    const user = (await response.json()) as { login: string };
-    return user.login;
-  },
-  {
-    name: "get_github_user",
-    description: "Get the authenticated caller's GitHub login.",
-    schema: z.object({}),
-  },
-);
-```
-:::
+<MdaConnectionsUserTool />
 
 ## Create an MCP OAuth connection
 
@@ -726,6 +705,20 @@ If the server cannot register a client automatically, the CLI says so and points
 ## Handle the authorization interrupt
 
 Managed Deep Agents runs the OAuth round-trip for you. A project needs no callback route, no token store, no refresh logic, and no consent screen. The run pauses, the caller grants access, and the run resumes with that person's credential.
+
+A caller who already connected the service goes straight to the tool call. A caller without a grant takes the authorization round-trip first, then reaches the same tool call:
+
+<img
+    className="block dark:hidden"
+    src="/langsmith/images/mda-connections-interrupt-light.png"
+    alt="A caller sends a message and the run checks whether that caller connected Notion. A connected caller goes straight to a tool that gets the caller's token. An unconnected caller pauses the run, which sends a connect link; the caller signs in to Notion, the run resumes, and the tool gets the same token."
+/>
+
+<img
+    className="hidden dark:block"
+    src="/langsmith/images/mda-connections-interrupt-dark.png"
+    alt="A caller sends a message and the run checks whether that caller connected Notion. A connected caller goes straight to a tool that gets the caller's token. An unconnected caller pauses the run, which sends a connect link; the caller signs in to Notion, the run resumes, and the tool gets the same token."
+/>
 
 Before the first model turn, Managed Deep Agents checks every user-owned connection the run needs. If the caller is missing one or more grants, the credential gate raises a single LangGraph interrupt. Slack and LangSmith Studio handle that interrupt for the caller. A custom frontend reads the same payload from the LangChain frontend SDK and resumes after the caller connects.
 

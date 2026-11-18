@@ -61,11 +61,22 @@ Return JSON (as your final message text) with this shape:
 }
 ```
 
+### Evidence rules
+
+Write tools re-fetch each `path` at `source_tag` and require the citation to appear in that file. Prefer `symbol` over `quote`.
+
+- **`symbol`**: an identifier that appears in the file (function, class, interface, field, env key, constant). Dotted forms like `WikiReadRequest.includeProvenance` are fine when each segment appears.
+- **`quote`**: only when no stable identifier exists. Copy an exact contiguous substring from `get_product_source_file` output (a real comment or code line). Do not paraphrase.
+- **`path`**: the file you actually read at the tag, not a related file.
+
+Never put issue bodies, release-note summaries, or your own explanation text into `quote`. That fails verification.
+
 Set `needs_docs` to false (or put the item under `skipped`) when source shows no user-facing change, when `check_docs_coverage` shows the symbols are already present and correct, or when docs already cover it.
 
 ## Do not
 
 - Open Linear issues or draft PRs
 - Invent symbols that are not in `get_product_source_file` or the diff
+- Cite paraphrases, GitHub issue text, or release notes as `quote`
 - Recommend docs for pure refactors, dependency bumps, or internal-only changes
 - Bundle unrelated capabilities into one feature entry

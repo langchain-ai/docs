@@ -16,7 +16,7 @@ For the full deployment walkthrough, see the [Azure deployment guide](/langsmith
 | App secrets | LangSmith app secrets written to Key Vault. Never overwrites an existing secret | `make seed-secrets` |
 | Cluster credentials | Kubeconfig + Kubernetes Secrets from Key Vault | `make kubeconfig && make k8s-secrets` |
 | LangSmith | LangSmith Helm release via shell scripts | `make init-values && make deploy` |
-| LangSmith Deployment add-on | host-backend, listener, operator. Bump `default_node_pool_min_count` to 5 first | `make apply && make init-values && make deploy` |
+| Agent Server hosting add-on | host-backend, listener, operator. Bump `default_node_pool_min_count` to 5 first | `make apply && make init-values && make deploy` |
 | Fleet add-on | Fleet tool server and trigger server, plus a dedicated `langsmith_fleet` Postgres database. Requires `enable_deployments` and `postgres_source = "external"` | `make apply && make init-values && make deploy` |
 | Agent Builder add-on | Legacy path that Fleet replaces: tool server and trigger server | `make init-values && make deploy` |
 | Insights + Polly add-on | Insights analytics, Polly eval agent | `make init-values && make deploy` |
@@ -96,7 +96,7 @@ Add-ons are controlled by flags in `infra/terraform.tfvars`. Set the flags, then
 ```hcl
 # infra/terraform.tfvars
 sizing_profile       = "production"   # minimum | dev | production | production-large
-enable_deployments   = true           # LangSmith Deployment add-on (listener + operator + host-backend)
+enable_deployments   = true           # Agent Server hosting add-on (listener + operator + host-backend)
 enable_fleet         = true           # Fleet add-on (requires enable_deployments and postgres_source = "external")
 enable_agent_builder = false          # legacy Agent Builder (requires enable_deployments); cannot be combined with enable_fleet
 enable_insights      = true           # Insights analytics add-on
@@ -107,7 +107,7 @@ enable_sso_oidc      = false          # OIDC SSO; enable only after logging in a
 ```
 
 <Warning>
-The LangSmith Deployment add-on requires `default_node_pool_min_count = 5` first. Operator-spawned pods need node headroom; without it, agent pods stay in `Pending` indefinitely.
+The Agent Server hosting add-on requires `default_node_pool_min_count = 5` first. Operator-spawned pods need node headroom; without it, agent pods stay in `Pending` indefinitely.
 </Warning>
 
 ## Sizing profiles
@@ -159,7 +159,7 @@ helm status langsmith -n langsmith
 helm history langsmith -n langsmith
 helm get values langsmith -n langsmith
 
-# LangSmith Deployment
+# Agent Server hosting
 kubectl get lgp -n langsmith
 kubectl get crd | grep langchain
 ```
@@ -223,7 +223,7 @@ make tf ARGS="state list"
 - `make apply` runs three targeted stages (Azure infrastructure, Kubernetes bootstrap, then everything else), and each stage prompts for confirmation. `ARGS="-auto-approve"` skips all three prompts.
 - Uninstall Helm before `terraform destroy`. The Azure Load Balancer holds a subnet reference; leaving it blocks VNet deletion. Run `make uninstall` first.
 - `config.deployment.url` must include `https://`. Without it, operator-spawned agents stay stuck in `DEPLOYING`.
-- `config.deployment.enabled: true` is required for the LangSmith Deployment add-on. Setting only the URL without `enabled: true` silently skips `listener` and `operator`.
+- `config.deployment.enabled: true` is required for the Agent Server hosting add-on. Setting only the URL without `enabled: true` silently skips `listener` and `operator`.
 - Encryption keys must never change after first enable. Rotating `insights_encryption_key` or `polly_encryption_key` permanently breaks existing encrypted data.
 - Roll the frontend after first Polly enable. The `langsmith-polly-config` ConfigMap appears after Polly registers; frontend pods started earlier do not pick it up.
 - `letsencrypt` (HTTP-01) only works with `nginx`, `istio` (self-managed), and `envoy-gateway`. For `istio-addon` or `agic`, use `dns01` with a custom domain, `existing` with your own certificate, or `none` for HTTP-only.
@@ -235,7 +235,7 @@ make tf ARGS="state list"
 ## Teardown
 
 ```bash
-make uninstall   # removes Helm release + LangSmith Deployment resources; prompts to delete namespace
+make uninstall   # removes Helm release + Agent Server hosting resources; prompts to delete namespace
 helm uninstall ingress-nginx -n ingress-nginx --wait   # only with ingress_controller = "nginx"
 make destroy     # destroys all Azure infrastructure via terraform destroy
 make clean       # removes local secrets, config, helm values, and tfstate files

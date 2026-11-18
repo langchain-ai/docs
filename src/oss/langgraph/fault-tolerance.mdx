@@ -283,7 +283,7 @@ attempt 1:  node starts -> call payment API -> payment succeeds -> process crash
 attempt 2:  node starts -> call payment API -> payment succeeds again
 ```
 
-[Checkpoints](/oss/langgraph/checkpointers) are written at [super-step](/oss/langgraph/graph-api#super-steps) boundaries, not mid-function. Graph writes from a failed attempt are discarded. Side effects during the node (payments, emails, external writes) are outside that boundary. Application code must make those effects idempotent.
+[Checkpoints](/oss/langgraph/checkpointers) are written at [super-step](/oss/langgraph/graph-api#graphs) boundaries, not mid-function. Graph writes from a failed attempt are discarded. Side effects during the node (payments, emails, external writes) are outside that boundary. Application code must make those effects idempotent.
 
 The same re-execution model applies after an [interrupt](/oss/langgraph/interrupts) or a crash resume. See [Re-execution and idempotency](/oss/langgraph/graph-api#re-execution-and-idempotency). To checkpoint work inside a node so resume can skip completed units, wrap each unit in a [task](/oss/langgraph/graph-api#using-tasks-in-nodes).
 
@@ -296,7 +296,7 @@ attempt 1:  node starts -> generate key K1 -> charge succeeds -> process dies be
 attempt 2:  node starts -> state has no key -> generate key K2 -> charge runs again
 ```
 
-`K1` was never checkpointed. Derive the key from state that is already durable:
+The node never returned, so `K1` was never checkpointed. A retry starts from the last committed state and generates a different key. **Derive the key from state that is already durable**, or persist it in a separate step that completes before the side effect:
 
 :::python
 ```python
@@ -1241,61 +1241,6 @@ Not all defaults apply to all node types. Error-handler nodes (those registered 
 
 Defaults set on a parent graph are **not** inherited by subgraphs. Each graph maintains its own defaults.
 
-:::
-
-## Functional API
-
-:::python
-The same `timeout=` and `retry_policy=` parameters are available on `@task` and `@entrypoint` in the functional API:
-
-```python
-from langgraph.func import entrypoint, task
-from langgraph.types import RetryPolicy, TimeoutPolicy
-
-@task(
-    timeout=TimeoutPolicy(idle_timeout=30),
-    retry_policy=RetryPolicy(max_attempts=3),
-)
-async def call_api(url: str) -> str:
-    response = await fetch(url)
-    return response.text
-
-@entrypoint(timeout=60)
-async def my_workflow(inputs: dict) -> str:
-    result = await call_api("https://api.example.com/data")
-    return result
-```
-
-The behavior is identical to `add_node`: `NodeTimeoutError` is raised on timeout, buffered writes are cleared, and the retry policy decides whether to retry.
-:::
-
-:::js
-The `timeout` option is available on `task` and `entrypoint`; `task` also accepts a `retry` option (not `retryPolicy`):
-
-```typescript
-import { entrypoint, task } from "@langchain/langgraph";
-
-const callApi = task(
-  {
-    name: "callApi",
-    timeout: { idleTimeout: 30_000 },
-    retry: { maxAttempts: 3 },
-  },
-  async (url: string) => {
-    const response = await fetch(url);
-    return response.text();
-  }
-);
-
-const myWorkflow = entrypoint(
-  { name: "myWorkflow", timeout: 60_000 },
-  async (inputs: { url: string }) => {
-    return await callApi(inputs.url);
-  }
-);
-```
-
-The behavior matches `addNode`: `NodeTimeoutError` is raised on timeout, buffered writes are cleared, and the retry policy decides whether to retry. Error handlers are not available on `task` / `entrypoint` in the JavaScript/TypeScript SDK—use `StateGraph.addNode(..., { errorHandler })` instead.
 :::
 
 ## Graceful shutdown

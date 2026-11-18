@@ -136,35 +136,3 @@ make lint_prose FILES="<changed files>"
 
 For a full review against the style guide, with the rule each finding breaks,
 use the `docs-review` skill.
-
-## CI mode
-
-In CI mode, this skill reviews a PR's prose for voice and writes findings
-instead of editing. Read
-[ci-mode.md](../docs-review/ci-mode.md) first: its rules and findings format
-apply, with `"skill": "docs-team-voice"`.
-
-Apply the revision pass above to lines the diff added or changed, and report
-only these:
-
-- **A sentence that carries two ideas.** The tell is a join with "so",
-  "which", "and" between two clauses, or a semicolon, usually past 20 words.
-  Write the split as the replacement. A long sentence that holds one idea,
-  such as an exact value, a condition, or a list, is fine.
-- **A sentence a reader has to parse twice**: a construction such as "so ...
-  that", a stacked clause, or an abstraction where a concrete example from the
-  same page would say it plainer. Write the plainer sentence.
-- **Hedges and filler**, as listed in the revision pass.
-- **A default or condition buried in a subordinate clause** where a bare fact
-  would state it.
-- **A vague identifier** where the diff itself names the exact one elsewhere.
-- **Passive voice where the actor is known.**
-
-Every finding is `minor` and `suggest`. Never `auto`, because rewording can
-change meaning, and never `human`. Keep each replacement to the sentence it
-fixes, and keep every fact, condition, and exact value in it.
-
-Report at most five findings per file, choosing the ones a reader would notice
-most. Skip a sentence that is already clear, even if a rule could be stretched
-to reach it. Leave rules, links, structure, and facts to `docs-review` and
-`verify-against-source`, which run alongside this pass.

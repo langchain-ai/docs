@@ -167,6 +167,23 @@ def test_claim_appears_in_source() -> None:
     assert not claim_appears_in_source(content, symbol="InventedMiddleware")
     assert not claim_appears_in_source(content, quote="does not exist")
 
+    # Qualified TypeScript members are cited as Interface.field, but the file
+    # only contains the parts separately.
+    ts = (
+        "export interface WikiReadRequest {\n"
+        "  includeProvenance?: boolean;\n"
+        "}\n"
+    )
+    assert claim_appears_in_source(
+        ts, symbol="WikiReadRequest.includeProvenance"
+    )
+    assert not claim_appears_in_source(
+        ts, symbol="WikiReadRequest.missingField"
+    )
+    assert not claim_appears_in_source(
+        ts, symbol="MissingType.includeProvenance"
+    )
+
 
 def test_summarize_compare_files_filters_prefixes() -> None:
     files = [

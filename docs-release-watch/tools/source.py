@@ -67,6 +67,22 @@ async def fetch_repo_file(
     return _normalize_newlines(response.text)
 
 
+def _symbol_appears_in_source(content: str, symbol: str) -> bool:
+    """Return True when a symbol citation appears in the file text.
+
+    Accepts a bare identifier (``includeProvenance``) or a dotted qualified
+    name (``WikiReadRequest.includeProvenance``). Qualified names do not appear
+    as one contiguous string in TypeScript/Python source, so each non-empty
+    segment must appear independently.
+    """
+    if symbol in content:
+        return True
+    segments = [part for part in symbol.split(".") if part]
+    if len(segments) < 2:
+        return False
+    return all(part in content for part in segments)
+
+
 def claim_appears_in_source(
     content: str,
     *,
@@ -74,7 +90,7 @@ def claim_appears_in_source(
     quote: str | None = None,
 ) -> bool:
     """Return True when the cited symbol or quote appears in the file text."""
-    if symbol and symbol in content:
+    if symbol and _symbol_appears_in_source(content, symbol):
         return True
     if quote and quote in content:
         return True
@@ -108,10 +124,20 @@ async def verify_evidence_in_source(
             )
         if not claim_appears_in_source(content, symbol=symbol, quote=quote):
             detail = symbol or quote or ""
+            hint = (
+                "Investigate the tagged source and cite a symbol or quote that "
+                "actually appears in the file."
+            )
+            if quote and not symbol:
+                hint += (
+                    " Prefer `symbol` (an identifier that appears in the file). "
+                    "If you use `quote`, it must be an exact contiguous "
+                    "substring copied from get_product_source_file output; "
+                    "paraphrases of issues, release notes, or diffs are rejected."
+                )
             raise ValueError(
                 f"evidence_json.items[{index}]: `{detail}` was not found in "
-                f"`{repo}@{tag}:{path}`. Investigate the tagged source and cite "
-                "a symbol or quote that actually appears in the file."
+                f"`{repo}@{tag}:{path}`. {hint}"
             )
         checked.append(
             {

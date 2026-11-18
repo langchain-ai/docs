@@ -1,13 +1,23 @@
 ---
 title: Add schedules to Managed Deep Agents
 sidebarTitle: Schedules
-description: Declare managed cron schedules for Managed Deep Agents deployments, or create them at runtime.
+description: Run Managed Deep Agents on a schedule so agents act without a user message, with static declarations or runtime tools.
 ---
 
 import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
 import ManagedDeepAgentsTestAndDeploy from '/snippets/langsmith/managed-deep-agents-test-and-deploy.mdx';
 
-Managed Deep Agents can run agents on a cron schedule. When you deploy the project, `mda deploy` provisions each schedule as a LangSmith cron after the deployment is live.
+Schedules make a Managed Deep Agents agent proactive: it can run without a user message. Declare fixed schedules in `schedules/`, or let the agent create recurring and one-time schedules at runtime through tools you expose.
+
+When you deploy the project, `mda deploy` provisions each declaration in `schedules/` as a LangSmith cron after the deployment is live.
+
+Common patterns:
+
+- **Memory refresh**: A daily or nightly cron reviews [durable memory](/langsmith/managed-deep-agents-memory) and stores condensed learnings. Use a [persistent thread](#choose-thread-behavior) when runs should share history.
+- **Proactive digests**: A fixed schedule prompts the agent to surface deadlines, open threads, or progress toward a goal. See [Add a schedule](#add-a-schedule).
+- **Smart triage**: A frequent cron checks a stream such as Slack or email and notifies only when something matters. Pair with [channels](/langsmith/managed-deep-agents-channels) and [Slack delivery](#deliver-results-to-slack).
+- **Follow-ups and reminders**: Runtime tools create one-time or recurring schedules when a user asks. See [Create schedules at runtime](#create-schedules-at-runtime).
+- **Orchestration check-ins**: A one-time schedule wakes the agent after a background job or subagent finishes. See [Create a one-time schedule](#create-a-one-time-schedule).
 
 <ManagedDeepAgentsPublicBetaNote />
 
@@ -112,19 +122,19 @@ export const schedule = defineSchedule({
 
 Schedules use ephemeral threads by default. Managed Deep Agents creates a fresh thread for each run and asks LangSmith to delete that temporary thread after the run completes.
 
-Use a persistent thread only when scheduled runs should accumulate durable thread state across invocations.
+Use a persistent thread when scheduled runs should share one thread history. When you omit `id`, `mda deploy` creates a thread for the schedule, keyed on the agent and schedule names. Renaming the schedule file starts a new thread. To use a specific thread, set `id` to a UUID. `mda deploy` creates the thread if it does not exist, and refuses a thread that another caller owns.
 
-A persistent thread ID must be the UUID of a thread that already exists on the deployment. Managed Deep Agents passes the value straight to the Agent Server, which rejects any ID that is not a UUID.
+<Note>
+:::python
+Omitting `id` requires `managed-deepagents>=0.10.2`. Earlier versions require the UUID of an existing thread.
+:::
 
-### Create the persistent thread
-
-Create the thread before you deploy the schedule. Open the deployment in [LangSmith Studio](/langsmith/studio), create a new thread, and copy its thread ID. `mda deploy` prints the deployment URL, and LangSmith lists it on the deployment page.
-
-Neither Managed Deep Agents nor the `mda` CLI creates the thread, so this is a one-time manual step for each persistent schedule.
+:::js
+Omitting `id` requires `managed-deepagents` version 0.10.2 or later. Earlier versions require the UUID of an existing thread.
+:::
+</Note>
 
 ### Declare the persistent schedule
-
-Use that thread ID in the schedule declaration.
 
 <Note>
 The following example requires [durable memory](/langsmith/managed-deep-agents-memory).
@@ -137,7 +147,7 @@ from managed_deepagents import define_schedule
 schedule = define_schedule(
     cron="0 3 * * *",
     prompt="Review the current project memory and list follow-up tasks.",
-    thread={"mode": "persistent", "id": "<thread-uuid>"},
+    thread={"mode": "persistent"},
 )
 ```
 :::
@@ -149,7 +159,7 @@ import { defineSchedule } from "managed-deepagents";
 export const schedule = defineSchedule({
   cron: "0 3 * * *",
   prompt: "Review the current project memory and list follow-up tasks.",
-  thread: { mode: "persistent", id: "<thread-uuid>" },
+  thread: { mode: "persistent" },
 });
 ```
 :::
@@ -504,7 +514,7 @@ Schedule limits require `managed-deepagents>=0.9.3`.
 - `cron must be a standard 5-field expression`: Use five cron fields, not seconds-based cron syntax.
 - `schedule is not static`: Replace computed values with literals or top-level literal constants.
 - `failed to create cron for schedule`: Open the deployment URL in LangSmith and confirm the deployed Agent Server is healthy.
-- `Invalid thread ID: must be a UUID (HTTP 422)`: A persistent schedule declares a thread ID that is not a UUID. Replace it with the UUID of an existing thread. See [Choose thread behavior](#choose-thread-behavior).
+- `schedule '<name>' persistent thread id must be a UUID`: A persistent schedule declares a thread ID that is not a UUID. Earlier versions report `Invalid thread ID: must be a UUID (HTTP 422)` from the Agent Server. Replace it with a UUID, or omit `id`. See [Choose thread behavior](#choose-thread-behavior).
 - `Schedule limit reached`: The owner has reached the runtime schedule limit. Delete a schedule, or raise the limit. See [Schedule limits](#schedule-limits).
 
 :::python
@@ -520,6 +530,9 @@ Schedule limits require `managed-deepagents>=0.9.3`.
 <CardGroup cols={2}>
   <Card title="Deploy an agent" icon="upload" href="/langsmith/managed-deep-agents-deploy">
     Deploy and reconcile schedule changes.
+  </Card>
+  <Card title="Paid media agent template" icon="chart-bar" href="/langsmith/managed-deep-agents-paid-media-agent">
+    A full project with weekly and monthly report schedules.
   </Card>
   <Card title="CLI reference" icon="terminal" href="/langsmith/managed-deep-agents-cli">
     Look up `mda deploy` flags and troubleshooting.
