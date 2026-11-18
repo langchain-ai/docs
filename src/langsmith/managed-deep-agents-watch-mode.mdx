@@ -10,13 +10,29 @@ Watch mode is a pattern for a [Slack-connected agent](/langsmith/managed-deep-ag
 
 <ManagedDeepAgentsPublicBetaNote />
 
+:::python
 <Note>
 This Python example requires `managed-deepagents>=0.10.4` and the matching `mda` CLI.
 </Note>
+:::
+
+:::js
+<Note>
+This TypeScript example requires `managed-deepagents` version 0.10.4 or later and the matching `mda` CLI.
+</Note>
+:::
 
 ## How it works
 
-Set `trigger_mode="all"` to let messages in channels the agent belongs to start runs. Direct messages also start runs. Each eligible message starts a managed run, even if the agent decides to stay silent. Model calls and tool use can incur costs.
+:::python
+Set `trigger_mode="all"` to let messages in channels the agent belongs to start runs.
+:::
+
+:::js
+Set `triggerMode: "all"` to let messages in channels the agent belongs to start runs.
+:::
+
+Direct messages also start runs. Each eligible message starts a managed run, even if the agent decides to stay silent. Model calls and tool use can incur costs.
 
 By default, Managed Deep Agents posts the agent's answer to the originating Slack thread. If the answer is exactly `[quiet]`, it posts nothing. Each Slack thread maps to a separate agent conversation, not a shared channel-wide history.
 
@@ -24,8 +40,9 @@ The decision to reply is made by the model, not a guaranteed filter. Test the in
 
 ## Configure the Slack channel
 
-Start with a Python project that has a [Slack channel](/langsmith/managed-deep-agents-channels-slack#add-a-slack-channel). Edit its channel declaration:
+Start with a project that has a [Slack channel](/langsmith/managed-deep-agents-channels-slack#add-a-slack-channel). Edit its channel declaration:
 
+:::python
 ```python channels/slack.py
 from managed_deepagents import channels
 
@@ -41,6 +58,25 @@ channel = channels.slack(
 - **`status=False`**: Do not show a working status or Stop button. Errors and approval requests can still appear.
 
 Keep the default `reply="auto"`. Setting `reply="none"` disables automatic replies, including answers to direct messages and mentions.
+:::
+
+:::js
+```ts channels/slack.ts
+import { channels } from "managed-deepagents";
+
+export const channel = channels.slack({
+  triggerMode: "all",
+  reactions: false,
+  status: false,
+});
+```
+
+- **`triggerMode: "all"`**: Accept channel messages without requiring a mention. The bot must be in the Slack channels you want to watch.
+- **`reactions: false`**: Do not add the default reaction when a run starts.
+- **`status: false`**: Do not show a working status or Stop button. Errors and approval requests can still appear.
+
+Keep the default `reply: "auto"`. Setting `reply: "none"` disables automatic replies, including answers to direct messages and mentions.
+:::
 
 ## Tell the agent when to reply
 
@@ -65,8 +101,19 @@ To stop watching, change the Slack channel configuration and redeploy. If you ad
 
 ## Add scheduled check-ins
 
-The basic pattern does not schedule follow-ups. To let the agent create a one-time check-in, add a [custom tool](/langsmith/managed-deep-agents-tools) that creates a [runtime schedule](/langsmith/managed-deep-agents-schedules#create-schedules-at-runtime) in the current conversation:
+The basic pattern does not schedule follow-ups. To let the agent create a one-time check-in, add a [custom tool](/langsmith/managed-deep-agents-tools) that creates a [runtime schedule](/langsmith/managed-deep-agents-schedules#create-schedules-at-runtime) in the current conversation.
 
+:::js
+With `managed-deepagents` 0.10.4, use an npm-managed project for this example. pnpm can resolve incompatible LangChain versions. Install the tool's dependencies in the project root:
+
+```bash
+npm install langchain zod
+```
+:::
+
+Add the tool:
+
+:::python
 ```python tools/watch.py
 from datetime import datetime, timedelta, timezone
 
@@ -92,9 +139,50 @@ async def schedule_check_in(
     )
     return f"Scheduled check-in {item['id']}."
 ```
+:::
 
-Register the tool in `agent.py`. Keep any model and other configuration your project already uses:
+:::js
+```ts tools/watch.ts
+import { tool } from "langchain";
+import type { ManagedDeepAgentRuntime } from "managed-deepagents";
+import { z } from "zod";
 
+export const scheduleCheckIn = tool(
+  async ({ prompt, minutes }, runtime) => {
+    const managedRuntime = runtime as typeof runtime &
+      Pick<ManagedDeepAgentRuntime, "thread" | "schedules">;
+    const origin = managedRuntime.thread?.origin;
+    if (!origin || origin.channel.provider !== "slack") {
+      return "A Slack conversation is required to schedule a check-in.";
+    }
+    if (minutes < 2 || minutes > 1440) {
+      return "Choose a delay between 2 and 1440 minutes.";
+    }
+    const item = await managedRuntime.schedules!.create({
+      owner: { type: "agent" },
+      at: new Date(Date.now() + minutes * 60_000),
+      newThread: false,
+      prompt,
+    });
+    return `Scheduled check-in ${item.id}.`;
+  },
+  {
+    name: "schedule_check_in",
+    description: "Schedule one check-in in the current conversation, 2 to 1440 minutes from now.",
+    schema: z.object({
+      prompt: z.string(),
+      minutes: z.number().int(),
+    }),
+  },
+);
+```
+
+The assertion exposes the managed runtime's `thread` and `schedules` fields to the tool. The runtime provides `schedules` to managed tools, but its TypeScript type is optional, so the example uses `managedRuntime.schedules!`.
+:::
+
+Register the tool in the agent entry. Keep any model and other configuration your project already uses:
+
+:::python
 ```python agent.py
 from managed_deepagents import define_deep_agent
 
@@ -105,6 +193,20 @@ agent = define_deep_agent(
     tools=[schedule_check_in],
 )
 ```
+:::
+
+:::js
+```ts agent.ts
+import { defineDeepAgent } from "managed-deepagents";
+
+import { scheduleCheckIn } from "./tools/watch";
+
+export const agent = defineDeepAgent({
+  name: "watch-agent",
+  tools: [scheduleCheckIn],
+});
+```
+:::
 
 Add these instructions to the policy above:
 
@@ -129,9 +231,10 @@ Test a message that may warrant a check-in. Confirm the schedule is created in t
 
 ## Filter messages before starting runs
 
-The basic pattern starts a run for every eligible channel message. To reduce runs, use an `on_event` handler to select messages before the agent runs. For example, replace the channel declaration with this version to triage new top-level messages but skip ordinary thread replies:
+The basic pattern starts a run for every eligible channel message. To reduce runs, use an event handler to select messages before the agent runs. For example, replace the channel declaration with this version to triage new top-level messages but skip ordinary thread replies:
 
-```python
+:::python
+```python channels/slack.py
 from managed_deepagents import channels
 
 
@@ -149,7 +252,30 @@ channel = channels.slack(
 )
 ```
 
-Place this declaration in `channels/slack.py` instead of the original. A handler returns a prompt to start a run or `None` to skip it. The `message` handler covers channel messages that do not mention the agent. Mentions and direct messages have separate event kinds and still start runs when no handler is provided for them. The handler runs before the agent and does not have the managed tool runtime. The handler API is experimental.
+Place this declaration in `channels/slack.py` instead of the original. A handler returns a prompt to start a run or `None` to skip it.
+:::
+
+:::js
+```ts channels/slack.ts
+import { channels } from "managed-deepagents";
+
+export const channel = channels.slack({
+  triggerMode: "all",
+  reactions: false,
+  status: false,
+  onEvent: {
+    message: (event) => {
+      if (event.messageTs !== event.threadTs) return null;
+      return `[channel_id=${event.channelId} thread_ts=${event.threadTs}]\n\n${event.text}`;
+    },
+  },
+});
+```
+
+Place this declaration in `channels/slack.ts` instead of the original. A handler returns a prompt to start a run or `null` to skip it.
+:::
+
+The `message` handler covers channel messages that do not mention the agent. Mentions and direct messages have separate event kinds and still start runs when no handler is provided for them. The handler runs before the agent and does not have the managed tool runtime. The handler API is experimental.
 
 This filter is deterministic. The agent still decides from context whether to reply or schedule a check-in for each accepted message. Skipped replies are not delivered to the agent conversation. For a check-in to see them, add a Slack history tool that reads the thread, including pagination, and give it the required Slack access. The handler includes the channel ID and thread timestamp in the run prompt. Include them in the check-in prompt so the history tool can find the thread. Add corresponding handlers for mentions and direct messages if those runs need the identifiers too. Treat retrieved messages as data, not instructions.
 
