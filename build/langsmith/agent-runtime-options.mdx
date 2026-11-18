@@ -1,0 +1,106 @@
+---
+title: Compare agent runtime options
+sidebarTitle: Compare runtime options
+description: Compare Managed Deep Agents with authoring an Agent Server application, then choose Cloud, BYOC, self-hosted, or standalone hosting.
+mode: "wide"
+---
+
+[Managed Deep Agents](/langsmith/python/managed-deep-agents-overview) (MDA) runs on [LangSmith Agent Server](/langsmith/agent-server). It adds a managed [Deep Agents](/oss/python/deepagents/overview) harness and integrations around that runtime, rather than replacing it. This lets you choose how much of the application stack to assemble independently of where it runs.
+
+Make two decisions:
+
+1. **Application approach**: Use MDA's managed harness and integrations, or author an Agent Server application with the framework and server customizations you need.
+2. **Hosting model**: Choose who operates Agent Server, its databases, and deployment management. Cloud and BYOC are LangChain-operated options. Self-hosted and standalone options put operations in your hands.
+
+<Note>
+MDA is in public beta on Cloud and BYOC. BYOC requires Managed Deep Agents CLI and SDK v0.10 or later. For cloud-provider availability and requirements, see [BYOC](/langsmith/byoc).
+</Note>
+
+## Choose your application approach
+
+MDA supplies the Deep Agents harness and manages its integration with persistence, identity, and other services. Authoring an Agent Server application gives you control over those integration choices and the server's extension points. It does not require operating the infrastructure yourself: you can deploy either approach on managed hosting.
+
+| Area | Managed Deep Agents | Agent Server application you author |
+| --- | --- | --- |
+| Agent logic | Declare models, instructions, tools, skills, subagents, and [agent middleware](/langsmith/python/managed-deep-agents-middleware). MDA compiles and runs the Deep Agents harness. | Use Deep Agents, LangGraph, LangChain, or [adapt another framework](/langsmith/deploy-other-frameworks). You define the graph or agent factory that Agent Server loads. |
+| Checkpointing and state | MDA manages checkpointing. The MDA agent definition does not expose a custom checkpointer. | Agent Server supplies persistence by default. Configure a different backend when needed; [fully custom checkpointers](/langsmith/custom-checkpointer) are in alpha. |
+| Long-term memory | Enable optional [durable memory](/langsmith/python/managed-deep-agents-memory) backed by Context Hub, with managed agent and user layers. | Implement memory behavior using Agent Server's built-in [cross-thread store](/langsmith/agent-server#persistence), [Context Hub](/langsmith/use-the-context-hub), or an external service. |
+| Deep Agents filesystem | MDA manages the default backend and reserved mounts. Add [custom backends](/langsmith/python/managed-deep-agents-agent-definition#mount-your-own-backends) at other path prefixes. | If you use Deep Agents, choose its [filesystem backends](/oss/python/deepagents/backends), path routing, and storage behavior. |
+| Identity and access | Configure [managed identity](/langsmith/python/managed-deep-agents-identity) with API keys, JWTs, or backend-asserted users. MDA manages user-scoped access rather than accepting custom authentication handlers. | Use platform API-key authentication or [custom authentication and authorization](/langsmith/auth). For standalone hosting, you must configure authentication yourself. |
+| Tool credentials and OAuth | Use [connections](/langsmith/python/managed-deep-agents-connections) for supported authorization flows and [deployment secrets](/langsmith/python/managed-deep-agents-deploy#secrets-and-environment-files) for static credentials. | Use [workspace or deployment secrets](/langsmith/env-var-cloud) where available, or integrate your credential and OAuth system. |
+| MCP tools | Declare remote [MCP connectors](/langsmith/python/managed-deep-agents-mcp-connectors) over HTTP or SSE and connect them to managed credentials. Stdio servers are not supported. | Integrate MCP clients and credential resolution with your agent. |
+| Code-execution sandbox | Declare a [LangSmith sandbox](/langsmith/python/managed-deep-agents-sandboxes); MDA connects it to the agent. | Connect [LangSmith Sandboxes](/langsmith/sandboxes) or another supported backend to your agent. |
+| Messaging channels | Configure built-in [Slack support](/langsmith/python/managed-deep-agents-channels-slack) or [custom HTTP channels](/langsmith/python/managed-deep-agents-channels-http). | Build or connect a channel integration that invokes the Agent Server API. |
+| Scheduled runs | Declare [schedules](/langsmith/python/managed-deep-agents-schedules) backed by Agent Server crons, or let agent tools create schedules through the scheduling API. | Use the native [cron APIs](/langsmith/cron-jobs) or an external scheduler. |
+| HTTP server customization | Use agent middleware and custom HTTP channel callbacks. MDA generates the HTTP application; it does not expose arbitrary server routes or HTTP middleware. | Add [custom HTTP routes](/langsmith/custom-routes) in Python or TypeScript. Python applications also support [HTTP middleware](/langsmith/custom-middleware). |
+
+<Note>
+Custom filesystem backends in MDA require SDK v0.10.3 or later. They extend file tools at non-reserved paths, not sandbox shell commands. They do not replace MDA's default backend or reserved mounts.
+</Note>
+
+Both approaches use the Agent Server API for [threads](/langsmith/use-threads), [runs](/langsmith/runs), and [streaming](/langsmith/streaming). Both support human approval and resume. Clients can use the Python or JavaScript SDK and React's [`useStream`](/oss/python/langchain/frontend/overview) hook. Both can also [expose agents through MCP](/langsmith/server-mcp). You do not need MDA to use these runtime capabilities.
+
+Agent Server also manages the lifecycle of the checkpointer and store in applications you author. Do not attach your own instances in graph code; use the server's [persistence configuration](/langsmith/agent-server#persistence).
+
+A code-execution sandbox is a separate service from Agent Server. Running Agent Server does not automatically provision an isolated shell for agent-written code. For self-hosted infrastructure, account for sandbox provisioning and operations separately.
+
+## Choose your hosting model
+
+The hosting model determines where the runtime runs and who operates it. It does not select your agent framework. For MDA, choose Cloud or BYOC. The self-hosted and standalone guides cover Agent Server applications you author.
+
+Cloud requires a [Plus or Enterprise plan](https://www.langchain.com/pricing). BYOC and self-hosted hosting with a deployment control plane require Enterprise. Standalone hosting requires the license and connectivity described in the [standalone deployment guide](/langsmith/deploy-standalone-server).
+
+| Area | [Cloud](/langsmith/deploy-to-cloud-overview) | [BYOC](/langsmith/byoc) | [Self-hosted with control plane](/langsmith/deploy-with-control-plane) | [Standalone](/langsmith/deploy-standalone-server) |
+| --- | --- | --- | --- | --- |
+| Runtime location | LangChain's cloud. | Your cloud account or subscription. | Your infrastructure, alongside self-hosted LangSmith. | Your infrastructure. |
+| Agent Server, PostgreSQL, and Redis operations | LangChain operates them. | LangChain operates managed services through delegated access to your cloud. | You operate them. | You operate them. |
+| Deployment management | LangChain operates the deployment control plane, UI, and revision management. | LangChain operates the Agent Server deployment control plane inside your data-plane cluster. | You operate the deployment control plane and listener. Use the UI to manage images and revisions. | No LangSmith deployment control plane. Use your own deployment tooling. |
+| Builds and releases | Managed builds from GitHub or the LangGraph CLI; MDA uses its CLI. | Build and deployment options depend on your data-plane configuration. See [MDA deployment](/langsmith/python/managed-deep-agents-deploy) for its BYOC workflow. | You build images and push them to your registry, then deploy with the control plane. | You own image builds, CI/CD, and releases. |
+| Runtime scaling and upgrades | LangChain operates managed infrastructure. | LangChain scales and upgrades BYOC-managed components. | You manage infrastructure capacity, upgrades, and scaling configuration. | You configure scaling, worker draining, and upgrades. |
+| Service monitoring and recovery | LangChain operates managed-service monitoring and recovery. | LangChain monitors managed components, responds to service incidents, and operates their backups. | You own monitoring, incident response, backups, and recovery. | You own monitoring, incident response, backups, and recovery. |
+
+### Distinguish the control planes
+
+The Agent Server [deployment control plane](/langsmith/control-plane) manages deployments, revisions, and runtime infrastructure. It is distinct from the LangSmith organization control plane that manages accounts, authentication, and billing metadata.
+
+In BYOC, the organization control plane remains in LangChain's cloud. The Agent Server deployment control plane and runtime run in your data-plane cluster. You own the cloud account, quotas, internal connectivity, and access policies; LangChain operates the BYOC-managed services. See the [BYOC shared responsibility model](/langsmith/byoc-shared-responsibility) for the detailed boundaries.
+
+### Separate standalone hosting from tracing
+
+A standalone Agent Server uses the same runtime, without LangSmith deployment management. It retains runtime APIs, persistence, crons, streaming, and server customization. You supply PostgreSQL and Redis, including when you use a different checkpoint backend.
+
+You can send traces to LangSmith Cloud or self-hosted LangSmith and use evaluation there. That connection does not make LangSmith responsible for runtime deployments, scaling, or recovery. The [Hybrid setup guide](/langsmith/hybrid) describes this combination of a self-hosted standalone runtime and LangSmith integration.
+
+<Warning>
+Standalone Agent Server has no default authentication. Configure [authentication and access controls](/langsmith/auth#self-hosted) before exposing it to users. Do not deploy it on scale-to-zero serverless infrastructure; follow the [standalone hosting requirements](/langsmith/deploy-standalone-server#supported-compute-platforms).
+</Warning>
+
+## Choose a starting point
+
+Choose the application approach and operating model together:
+
+- **Managed Deep Agents on Cloud**: Use the managed Deep Agents harness and integrations without operating runtime infrastructure. Start with the [MDA quickstart](/langsmith/python/managed-deep-agents-quickstart).
+- **Managed Deep Agents on BYOC**: Use the same application approach with LangChain-operated services in your cloud. Follow the [BYOC deployment steps](/langsmith/python/managed-deep-agents-deploy#select-a-byoc-data-plane).
+- **Your own Agent Server application on Cloud or BYOC**: Keep control over the graph, integrations, authentication hooks, and HTTP server extensions while LangChain operates managed infrastructure. Start with the [deployment quickstart](/langsmith/deployment-quickstart).
+- **Self-hosted with a control plane**: Operate LangSmith and Agent Server hosting yourself while retaining deployment UI and revision management. Follow [Deploy with a control plane](/langsmith/deploy-with-control-plane).
+- **Standalone Agent Server**: Operate the runtime and backing services with your own release and infrastructure tooling. Follow [Deploy a standalone server](/langsmith/deploy-standalone-server).
+
+In every model, you remain responsible for application behavior, model and tool selection, credentials, access policies, and evaluation. Managed hosting does not replace application-level safety controls.
+
+## See also
+
+- [Move from Deep Agents to MDA](/langsmith/python/managed-deep-agents-migrate)
+- [Agent Server runtime architecture](/langsmith/agent-server#runtime-architecture)
+- [LangSmith platform hosting choices](/langsmith/platform-setup)
+- [LangSmith shared responsibility model](/langsmith/shared-responsibility-model)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/agent-runtime-options.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
