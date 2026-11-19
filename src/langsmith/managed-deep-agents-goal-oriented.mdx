@@ -1,12 +1,12 @@
 ---
 title: Work toward a goal over time
 sidebarTitle: Goals
-description: Give an agent a goal and let it schedule its own progress checks until the goal is met.
+description: Let an agent decide when work needs follow-up and schedule its own progress checks until the work is done.
 ---
 
 import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
 
-Some goals take hours or days: a pull request gets merged, CI on `main` turns green, a release ships. A goal-oriented agent sets its own schedule to check progress, moves the goal forward when it can, and stops checking once the goal is met.
+Some work cannot finish in one turn: a pull request waits on review, a deploy is still rolling out, a release has not shipped yet. A goal-oriented agent finishes what it can right away. When the rest depends on something that has not happened yet, it sets its own schedule to check back, moves the work forward when it can, and stops checking once the goal is met.
 
 <ManagedDeepAgentsPublicBetaNote />
 
@@ -44,7 +44,7 @@ OWNER = {"type": "agent"}
 
 @tool
 async def check_progress(goal: str, cron: str, runtime: ManagedDeepAgentRuntime) -> str:
-    """Check progress on a goal in this thread on a cron schedule, until you stop it."""
+    """Check back on unfinished work in this thread on a cron schedule, until you stop it."""
     item = await runtime.schedules.create(
         owner=OWNER,
         cron=cron,
@@ -83,7 +83,7 @@ export const checkProgress = tool(
   },
   {
     name: "check_progress",
-    description: "Check progress on a goal in this thread on a cron schedule, until you stop it.",
+    description: "Check back on unfinished work in this thread on a cron schedule, until you stop it.",
     schema: z.object({ goal: z.string(), cron: z.string() }),
   },
 );
@@ -127,26 +127,27 @@ export const agent = defineDeepAgent({ name: "goal-agent", tools: [checkProgress
 
 ## Write the instructions
 
-The instructions are what turn the tools into a loop. Add to `instructions.md`:
+The instructions decide when the agent uses the tools. Nobody has to ask for a follow-up: the agent schedules one whenever a request cannot finish now. Add to `instructions.md`:
 
 ```markdown instructions.md
-## Goals
+## Follow through
 
-When someone gives you a goal, decide how to tell when it is met and how often
-to check, then call check_progress with the goal and a cron expression. Then
-stop and wait for the next check instead of working on the goal right away.
+Try to finish every request in this turn. If you cannot, because the work
+depends on something that has not happened yet, such as a review, a deploy,
+or a release, decide how you will know it is done and how often to check.
+Then call check_progress and end your turn instead of waiting.
 
 Each time you check progress, look at the current state with your tools.
-Never assume. If you can move the goal forward, do it. Otherwise, say who
-needs to act. When the goal is met or cannot be met, report it and call
+Never assume. If you can move the work forward, do it. Otherwise, say who
+needs to act. When the work is done or cannot be done, report it and call
 stop_checking.
 ```
 
-Each check runs in the same thread, so it sees the goal, earlier progress, and the schedule ID that `check_progress` returned, which `stop_checking` needs. If the goal came from Slack, each check replies in that Slack thread.
+Each check runs in the same thread, so it sees the original request, earlier progress, and the schedule ID that `check_progress` returned, which `stop_checking` needs. If the request came from Slack, each check replies in that Slack thread.
 
 ## Try it
 
-The quickstart agent has web search, so it can watch for public events. [Deploy the agent](/langsmith/managed-deep-agents-deploy) and send: "Goal: tell me when LangChain publishes its next release." The agent schedules a check, searches each time it runs, and stops checking once the release appears.
+The quickstart agent has web search, so it can watch for public events. [Deploy the agent](/langsmith/managed-deep-agents-deploy) and ask: "Tell me when LangChain publishes its next release." The agent searches first. If the release is not out yet, it schedules a check, searches again each time it runs, and stops checking once the release appears. Ask something it can answer right away, and it answers without scheduling anything.
 
 ## Extend the pattern
 
