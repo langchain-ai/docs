@@ -1,0 +1,109 @@
+---
+title: DatabricksSandbox integration
+description: Integrate with the DatabricksSandbox sandbox backend using LangChain Python.
+integration:
+  name: DatabricksSandbox
+  pypi: databricks-langchain
+---
+
+[Databricks](https://www.databricks.com/) sandboxes are managed, isolated compute environments on the Databricks platform. `DatabricksSandbox` runs [Deep Agents](https://github.com/langchain-ai/deepagents) shell and filesystem tools inside a Databricks sandbox over the [`databricks-sdk`](https://pypi.org/project/databricks-sdk/). See the [Databricks docs](https://docs.databricks.com/) for workspace setup and authentication.
+
+<Note>
+The `DatabricksSandbox` backend requires `databricks-langchain>=0.22.0`.
+</Note>
+
+## Installation
+
+<CodeGroup>
+```bash pip
+pip install 'databricks-langchain[deepagents]>=0.22.0'
+```
+
+```bash uv
+uv add 'databricks-langchain[deepagents]>=0.22.0'
+```
+</CodeGroup>
+
+## Create a sandbox backend
+
+`DatabricksSandbox` binds to a sandbox that is already running. Provision (or reuse) a sandbox with the Databricks SDK, wait for it to reach `RUNNING`, then wrap it as a [deepagents backend](/oss/python/deepagents/backends). The sandbox lifecycle (create, start, delete) stays in your application code, not the agent.
+
+```python
+import time
+
+from databricks.sdk import WorkspaceClient
+from databricks.sdk.service.sandbox import (
+    ComputeSpec,
+    Sandbox,
+    SandboxSpec,
+    SandboxState,
+)
+from google.protobuf.duration_pb2 import Duration
+
+from databricks_langchain import DatabricksSandbox
+
+client = WorkspaceClient()
+
+sandbox_id = "my-agent-sandbox"
+name = f"sandboxes/{sandbox_id}"
+
+client.sandbox.create_sandbox(
+    Sandbox(
+        spec=SandboxSpec(
+            compute=ComputeSpec(inactivity_timeout=Duration(seconds=900))
+        )
+    ),
+    sandbox_id=sandbox_id,
+)
+
+# Wait until the sandbox is RUNNING before running commands.
+while client.sandbox.get_sandbox(name).status.state != SandboxState.SANDBOX_STATE_RUNNING:
+    time.sleep(3)
+
+backend = DatabricksSandbox(client, name)
+
+result = backend.execute("echo hello")
+print(result.output)
+```
+
+## Use with Deep Agents
+
+```python
+from deepagents import create_deep_agent
+from langchain_anthropic import ChatAnthropic
+
+# `backend` from the previous step, bound to a RUNNING Databricks sandbox.
+agent = create_deep_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-6"),
+    system_prompt="You are a coding assistant with sandbox access.",
+    backend=backend,
+)
+
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Write and run a Python script"}]}
+)
+```
+
+You can use any LangChain chat model, including [`ChatDatabricks`](/oss/python/integrations/chat/databricks) backed by Databricks Model Serving.
+
+## Cleanup
+
+You are responsible for managing the sandbox lifecycle.
+Sandboxes consume resources until deleted, so delete the sandbox when you are done.
+
+```python
+client.sandbox.delete_sandbox(name)
+```
+
+See also: [Sandboxes](/oss/python/deepagents/sandboxes).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/sandboxes/databricks.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
