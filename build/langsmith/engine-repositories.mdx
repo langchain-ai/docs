@@ -14,7 +14,7 @@ For GitHub:
 - **Self-hosted LangSmith**: An operator first completes [GitHub configuration for self-hosted](/langsmith/engine-self-hosted-github) for your GitHub instance. Then, workspace users follow the same repository connection steps below.
 - **BYOC**: An Organization Admin first registers a GitHub App and saves it in the LangSmith UI. See [Configure the App on BYOC](/langsmith/engine-self-hosted-github#configure-the-app-on-byoc). Then, workspace users follow the same repository connection steps below.
 
-For GitLab, a workspace admin connects a GitLab account's access token in workspace settings. GitLab is available only on LangSmith Cloud. Start with [Connect GitLab](#connect-gitlab).
+For GitLab, a workspace admin connects a GitLab account's access token in workspace settings. GitLab is available on LangSmith Cloud, self-hosted LangSmith, and BYOC, with the same connection steps on each. Start with [Connect GitLab](#connect-gitlab).
 
 ## GitHub
 
@@ -107,7 +107,7 @@ Engine does not fetch Git LFS file contents or initialize Git submodules.
 Engine connects to GitLab with one access token per workspace. The token belongs to a GitLab account, usually a service account, and that account's group and project memberships decide which projects Engine can read, push fix branches to, and open merge requests in. Unlike GitHub, GitLab has no app to install: you prepare the account in GitLab, then save its token in LangSmith.
 
 <Note>
-GitLab is available only on [LangSmith Cloud](/langsmith/cloud). It is not yet available on [self-hosted LangSmith](/langsmith/self-hosted) or [BYOC](/langsmith/byoc).
+GitLab is available on [LangSmith Cloud](/langsmith/cloud), [self-hosted LangSmith](/langsmith/self-hosted), and [BYOC](/langsmith/byoc). On self-hosted LangSmith, GitLab requires LangSmith Helm chart version 0.18.0-rc.45 or later.
 </Note>
 
 ### Connect GitLab
@@ -118,7 +118,19 @@ Your GitLab instance must meet these requirements:
 
 - **Version**: GitLab.com, or a self-managed instance running GitLab 16.10 or later. LangSmith renews the token with GitLab's token self-rotation API, which earlier versions do not have.
 - **URL**: HTTPS on port 443, with no path. GitLab installed under a relative URL root, such as `https://example.com/gitlab`, is not supported.
-- **Network access**: LangSmith reaches GitLab over the internet, and refuses GitLab URLs that resolve to private IP addresses. The instance must also be able to deliver webhooks to LangSmith.
+- **Network access**: LangSmith reaches GitLab over the internet, and refuses GitLab URLs that resolve to private IP addresses. The instance must also be able to deliver webhooks to LangSmith. On BYOC, these requests leave from your data plane, and webhooks go to your data plane's LangSmith URL. On self-hosted LangSmith, see [Self-hosted network access](#self-hosted-network-access).
+
+#### Self-hosted network access
+
+On self-hosted LangSmith, an operator allows these HTTPS connections:
+
+| Source | Destination | Purpose |
+| --- | --- | --- |
+| LangSmith services and Engine workers | GitLab instance | Token rotation, project information, branch and diff operations, and merge request creation and status. |
+| Sandbox hosts | GitLab instance | Clone projects and push fix branches. |
+| GitLab instance | LangSmith hostname | Deliver merge request webhooks. |
+
+A self-managed GitLab instance refuses webhooks to private IP addresses unless a GitLab administrator allows requests to the local network. If your GitLab hostname resolves to private IP addresses, also set the environment variables listed in [GHES on a private network](/langsmith/engine-self-hosted-github#ghes-on-a-private-network). They apply to any private Git host, not only GitHub.
 
 #### Prepare a service account
 
