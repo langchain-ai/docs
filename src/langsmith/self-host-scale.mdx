@@ -144,16 +144,14 @@ When scaling up the write path (trace ingestion), monitor the services and resou
 
 ### Partition the ingestion queue
 
-By default, all traces wait in one Redis queue named `ingestion`. On a Redis Cluster, one queue lives on one shard, so that shard can limit ingestion throughput while the rest of the cluster sits idle. Splitting the queue into partitions spreads the work across shards. Partitioning does not spread load on a standalone Redis instance.
+By default, all traces wait in one Redis queue named `ingestion`. On a Redis Cluster, that queue lives on a single shard, which can limit ingestion throughput. Partitioning splits the queue across shards. It does not spread load on a standalone Redis instance.
 
 Two environment variables control partitioning. Both default to `1`:
 
-| Variable | Used by | Effect |
-| --- | --- | --- |
-| `GO_INGESTION_QUEUE_PARTITIONS` | Services that enqueue traces | The number of partitions that new traces are spread across, chosen at random. |
-| `GO_INGESTION_WORKER_PARTITIONS` | Ingest queue workers | The number of partitions that workers consume from. |
+- `GO_INGESTION_QUEUE_PARTITIONS`: the number of partitions that services spread new traces across.
+- `GO_INGESTION_WORKER_PARTITIONS`: the number of partitions that ingest queue workers read from.
 
-Set both under `commonEnv` in your `values.yaml`:
+Set both under `commonEnv`:
 
 ```yaml
 commonEnv:
@@ -163,14 +161,14 @@ commonEnv:
     value: "4"
 ```
 
-With one partition, traces use the `ingestion` queue. With more than one, traces use queues named `ingestion-<suffix>`. In LangSmith v0.18.0 and later, the suffixes are fixed so that partitions land on evenly spread shards: `0` to `3` for the first four partitions, then suffixes such as `fur-4` and `qg-5`. You can run up to 250 partitions. LangSmith fails to start if you configure more. Workers also keep consuming the base `ingestion` queue, so tasks queued before you partitioned still drain.
+With one partition, traces use the `ingestion` queue. With more, in LangSmith v0.18.0 and later, they use `ingestion-0` to `ingestion-3`, then `ingestion-fur-4`, `ingestion-qg-5`, and so on, up to 250 partitions. Workers also keep reading `ingestion`, so tasks queued before you partitioned still drain.
 
-Change the two variables in order. A task written to a partition that no worker reads is never processed.
+Change the variables in order, because tasks in a partition that no worker reads are never processed:
 
 - **To add partitions:** raise `GO_INGESTION_WORKER_PARTITIONS` and deploy, then raise `GO_INGESTION_QUEUE_PARTITIONS` to the same value and deploy.
-- **To remove partitions:** lower `GO_INGESTION_QUEUE_PARTITIONS` and deploy, wait until the partitions you are removing have no pending, active, retry, or scheduled tasks, then lower `GO_INGESTION_WORKER_PARTITIONS`.
+- **To remove partitions:** lower `GO_INGESTION_QUEUE_PARTITIONS` and deploy. Wait until the removed partitions have no pending, active, retry, or scheduled tasks, then lower `GO_INGESTION_WORKER_PARTITIONS`.
 
-To check partitioning, look at the `asynq worker queue configuration` log line that a queue worker writes at startup, which lists the queues it consumes. The `langsmith_asynq_ingestion_partition_pending` gauge reports pending tasks per partition, labeled with the queue name.
+To check partitioning, read the `asynq worker queue configuration` log line that a queue worker writes at startup. It lists the queues the worker reads.
 
 ## Trace querying (read path)
 
