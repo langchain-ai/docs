@@ -8,7 +8,7 @@ description: Run self-hosted LangSmith installation on FIPS 140 compliant contai
   FIPS and airgapped LangSmith deployments require a conversation with your LangChain account executive before rollout. Reach out to scope licensing, supported configurations, and upgrade paths before you change your installation.
 </Note>
 
-As of v15, every LangChain-authored LangSmith image has a `-fips` counterpart that runs in FIPS 140 mode. Use these images when your self-hosted deployment needs FIPS compliance, for example in federal agencies, defense contractors, and regulated industries.
+As of v15, every LangChain-authored LangSmith image has a `-fips` counterpart that runs in FIPS 140 mode. As of v18, the SmithDB image also has a `-fips` counterpart. Use these images when your self-hosted deployment needs FIPS compliance, for example in federal agencies, defense contractors, and regulated industries.
 
 ## How the images are built
 
@@ -22,6 +22,7 @@ Every LangChain-authored image has a `-fips` counterpart published at the same t
 | `langchain/langsmith-backend` | `langchain/langsmith-backend-fips` |
 | `langchain/langsmith-frontend` | `langchain/langsmith-frontend-fips` |
 | `langchain/langgraph-operator` | `langchain/langgraph-operator-fips` |
+| `langchain/smithdb` | `langchain/smithdb-fips` |
 
 <Note>
   **Fewer images from LangSmith 0.16.21 (chart `0.16.0-rc.17`) onward.** The platform backend, playground, host backend, and the Fleet tool and trigger servers now all run from the single `langsmith-backend` image, so `langsmith-go-backend-fips`, `langsmith-playground-fips`, `hosted-langserve-backend-fips`, `agent-builder-tool-server-fips`, and `agent-builder-trigger-server-fips` are no longer needed. The corresponding `values.yaml` keys: `platformBackendImage`, `playgroundImage`, `hostBackendImage`, `fleetToolServerImage`, and `fleetTriggerServerImage`, have been removed from the chart; any values you still set for them are ignored.
@@ -37,35 +38,43 @@ PostgreSQL, Redis, and ClickHouse are not published as FIPS variants by LangChai
 
 We consider this acceptable for regulated environments: FIPS governs the platform's cryptographic operations on sensitive data, and ACE performs none. It injects no secrets into user code, persists no data and performs no data-at-rest cryptography, and its execution subprocesses have no network access. ACE is an in-cluster HTTP service called by the LangSmith backend; when TLS is terminated upstream by a FIPS-validated mesh or ingress, ACE performs no in-scope cryptographic operations.
 
+### SmithDB FIPS boundary note
+
+`langchain/smithdb-fips` does not use the OpenSSL FIPS provider. It relies on the `aws-lc-fips-sys` cryptographic module, through the `rustls` `aws-lc-rs` crypto provider, for all security-critical encryption and hashing. Because the image does not ship `openssl-fips-test`, verify it with the `check-fips` script described in [Verify FIPS mode](#verify-fips-mode).
+
 ## Use FIPS images
 
-Update `values.yaml` in your LangSmith Helm installation to point each LangChain image repository at its `-fips` counterpart, keeping your existing tag. Replace `0.16.21` with the [LangSmith version](/langsmith/self-hosted-changelog) you want to deploy:
+Update `values.yaml` in your LangSmith Helm installation to point each LangChain image repository at its `-fips` counterpart, keeping your existing tag. Replace `0.18.30` with the [LangSmith version](/langsmith/self-hosted-changelog) you want to deploy:
 
 ```yaml
 images:
   aceBackendImage:
     repository: "langchain/langsmith-ace-backend-fips"
     pullPolicy: IfNotPresent
-    tag: "0.16.21"
+    tag: "0.18.30"
   backendImage:
     repository: "langchain/langsmith-backend-fips"
     pullPolicy: IfNotPresent
-    tag: "0.16.21"
+    tag: "0.18.30"
   frontendImage:
     repository: "langchain/langsmith-frontend-fips"
     pullPolicy: IfNotPresent
-    tag: "0.16.21"
+    tag: "0.18.30"
   operatorImage:
     repository: "langchain/langgraph-operator-fips"
     pullPolicy: IfNotPresent
-    tag: "0.16.21"
+    tag: "0.18.30"
+  smithdbImage: # Only when SmithDB is enabled
+    repository: "langchain/smithdb-fips"
+    pullPolicy: IfNotPresent
+    tag: "0.18.30"
 ```
 
 Apply the change and upgrade following the [Upgrading LangSmith](/langsmith/self-host-upgrades) guide.
 
 ## Verify FIPS mode
 
-Chainguard ships the `openssl-fips-test` tool inside every FIPS image. Running it against a pod prints the FIPS self-tests, the active FIPS provider version, and a link to the applicable CMVP certificate.
+Chainguard ships the `openssl-fips-test` tool inside every Chainguard-based FIPS image, which is every `-fips` image except `smithdb-fips`. Running it against a pod prints the FIPS self-tests, the active FIPS provider version, and a link to the applicable CMVP certificate.
 
 Check a running pod:
 
@@ -95,10 +104,24 @@ Locate applicable CMVP certificate(s) at: CMVP #4985
 You can also verify an image outside Kubernetes:
 
 ```bash
-docker run --rm --entrypoint openssl-fips-test langchain/langsmith-backend-fips:0.16.21
+docker run --rm --entrypoint openssl-fips-test langchain/langsmith-backend-fips:0.18.30
 ```
 
 For more detail on interpreting the output, see [Chainguard's FIPS verification guide](https://edu.chainguard.dev/chainguard/fips/verify-fips/).
+
+### Verify the SmithDB image
+
+The SmithDB FIPS image ships a `check-fips` script that prints the crypto provider the container starts with:
+
+```bash
+docker run --rm langchain/smithdb-fips:0.18.30 check-fips
+```
+
+Expected output:
+
+```text
+FIPS mode: rustls crypto provider aws-lc-rs on AWS-LC FIPS 3.1.0
+```
 
 ## Mirror for airgapped deployments
 
