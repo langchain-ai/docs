@@ -1,7 +1,7 @@
 ---
 title: BYOC operations
 sidebarTitle: Operations
-description: How LangChain upgrades, patches, and maintains a LangSmith BYOC data plane, and when maintenance requires a scheduled window.
+description: How LangChain operates a LangSmith BYOC data plane, which operations you manage in your own AWS account, and how break-glass access works.
 icon: "tool"
 ---
 
@@ -10,10 +10,12 @@ LangChain operates your data plane after provisioning, including upgrades, scali
 Operations fall into three groups:
 
 - **[LangChain-managed operations](#langchain-managed-operations)**: Scaling, upgrades, and maintenance that LangChain performs for you.
-- **[Customer-managed operations](#customer-managed-operations)**: Data plane settings, observability, and auditing that you configure yourself.
-- **[Troubleshooting](#troubleshooting)**: How LangChain gets access to your data when troubleshooting requires it.
+- **[Customer-managed operations](#customer-managed-operations)**: Data plane settings, observability, cross-account access, and auditing that you configure yourself.
+- **[Break-glass access](#break-glass-access)**: Temporary access that you grant to a LangChain engineer when troubleshooting requires it.
 
 ## LangChain-managed operations
+
+LangChain performs the following operations on every data plane, with no action required from you. To change some defaults, such as high availability or instance sizes, contact the LangChain team.
 
 ### Autoscaling
 
@@ -49,34 +51,128 @@ Background services such as Istio and KEDA are upgraded on a regular cadence. Da
 
 ### Kubernetes cluster upgrades
 
-The EKS cluster that hosts your data plane requires periodic upgrades to maintain security, compatibility, and access to new features. LangChain performs these upgrades proactively, ahead of AWS end-of-support dates, and coordinates the window with you.
+The EKS cluster that hosts your data plane requires periodic upgrades to maintain security, compatibility, and access to new features. LangChain performs these upgrades proactively, ahead of AWS end-of-support dates, in the data plane's [maintenance window](#maintenance-window).
 
 Cluster upgrades fall into two types:
 
 - **Control plane upgrades**: Cover the Kubernetes API server and the components AWS manages alongside it. These are transparent to your workloads and do not restart pods.
 - **Node group upgrades**: Roll nodes one by one with make-before-break semantics. New nodes are provisioned on the updated version, pods move onto them, and the old nodes are terminated once migration completes. Pod disruption budgets apply to the drain, so each service stays available, though you might see brief connection resets as individual pods restart. No data is lost.
 
-### Maintenance windows
-
-Any maintenance or upgrade that could cause downtime, such as a restart of RDS or ElastiCache, happens in a scheduled maintenance window that LangChain coordinates with you in advance.
-
 ## Customer-managed operations
+
+You configure the following operations yourself, through the LangSmith UI and API or in your own AWS account.
 
 ### Data plane settings
 
-To change a data plane's settings, go to **Settings** > **Data Planes** and select **Settings** on the data plane. You can also use the [Update data plane settings](/langsmith/smith-api/data_planes/update-data-plane-settings) endpoint.
+To edit a data plane's settings:
+
+1. Navigate to **Settings > Data Planes**.
+2. Find your data plane and select **Settings**.
+3. Open the tab for the setting you want to change, then save.
+
+You can also use the [Update data plane settings](/langsmith/smith-api/data_planes/update-data-plane-settings) endpoint.
+
+#### Maintenance window
+
+The maintenance window is when LangChain runs operations on your data plane, such as EKS version upgrades and RDS database upgrades. Any maintenance that could cause downtime, such as a restart of RDS or ElastiCache, happens in this window.
+
+- The window lasts 2 hours, once a week. All times are in UTC.
+- Choose the day and the start time on the **Maintenance** tab.
+- The default is Sunday, 07:00–09:00 UTC (`sun:07:00-sun:09:00`).
 
 #### TTL retention
 
-A data plane's TTL settings set the default retention periods for its traces. By default, base traces last 14 days and extended traces last 400 days. These values are defaults, not limits. A workspace that chooses one of the [extended durations](/langsmith/usage-and-billing#retention-periods) keeps that duration, even when it is longer than the data plane's long-lived TTL. The blob bucket has an S3 lifecycle rule for each retention period, so trace payloads are deleted on the same schedule as their traces.
+A data plane's TTL settings set the default retention periods for its traces. These values are defaults, not limits. A workspace that chooses one of the [extended durations](/langsmith/usage-and-billing#retention-periods) keeps that duration, even when it is longer than the data plane's long-lived TTL. The blob bucket has an S3 lifecycle rule for each retention period, so trace payloads are deleted on the same schedule as their traces.
 
-To change the retention defaults, set **Short-lived TTL (days)** for base traces and **Long-lived TTL (days)** for extended traces, then save. Each value must be a whole number greater than 0, and the short-lived value cannot exceed the long-lived value. Through the API, send `ttl.short_days` and `ttl.long_days`.
+Configure TTL retention on the **TTL retention** tab:
+
+- **Enable TTL retention**: On by default.
+- **Short-lived TTL (days)**: The default retention period for base traces. The default is 14 days.
+- **Long-lived TTL (days)**: The default retention period for extended traces. The default is 400 days. It must be greater than or equal to the short-lived TTL.
+
+Each value must be a whole number greater than 0. Through the API, send `ttl.short_days` and `ttl.long_days`.
+
+#### Ingress allowlist
+
+On the **Ingress** tab, you can restrict which source IP ranges the load balancer accepts. Add up to 50 IPv4 CIDR ranges. The load balancer then accepts traffic on port 443 only from those ranges.
+
+- **Empty list**: The load balancer allows all sources.
+- **Private load balancer**: The data plane VPC CIDR is always allowed.
+
+<Warning>
+- An API update replaces the whole list. Include every range you want to keep, or the load balancer stops accepting traffic from the ranges you leave out.
+- Do not edit the Network Load Balancer security group directly in AWS. LangSmith reconciles the data plane on a regular cadence and reverts any manual changes to managed resources.
+</Warning>
 
 ### Observability
 
 You can deploy observability tooling into the cluster, such as a Datadog agent or an OpenTelemetry collector, and your own security monitoring agents, as long as they do not interfere with LangSmith workloads.
 
 LangSmith services emit logs, metrics, and traces the same way they do on self-hosted, so the same configuration applies. See [Export LangSmith telemetry to your observability backend](/langsmith/export-backend).
+
+### Cross-account access
+
+A private BYOC data plane exposes its load balancer inside your data plane VPC. Applications in a different AWS account cannot reach it without an explicit cross-account network path.
+
+Any private network path between the consumer network and the data plane VPC works. LangChain does not require a specific method. Common options include:
+
+- AWS PrivateLink
+- VPC peering
+- Transit gateway
+- VPN
+
+<Note>
+LangChain provisions [two PrivateLink connections](/langsmith/byoc-architecture-aws#connectivity) that carry traffic between the LangChain control plane and your data plane. There is no LangChain-managed endpoint service or network path for application traffic from your own networks. You create and manage that path yourself.
+</Note>
+
+The steps below apply whether LangChain creates the VPC or you supply your own. To manage the VPC itself (its subnets, routing, gateways, and endpoints), use [Bring your own VPC on AWS](/langsmith/byoc-byovpc-aws) instead.
+
+#### Allow consumer source ranges
+
+If you [restrict the load balancer's source IP ranges](#ingress-allowlist), add the CIDR range of each consumer network to that list. A private load balancer always allows the data plane VPC CIDR, but not consumer ranges. Without them, the load balancer drops consumer traffic.
+
+#### Connect with AWS PrivateLink
+
+To create the endpoint service in the data plane account:
+
+1. Identify the Network Load Balancer (NLB) for the data plane ingress. Find it in the AWS EC2 console under **Load Balancers** in your data plane account and region. Its name ends in `-sm-istio`.
+2. Create a **VPC endpoint service** backed by that NLB. Set acceptance mode to **auto** or **manual** depending on your security policy.
+3. Add each consumer AWS account as a **principal** allowed to create an interface endpoint for the service.
+4. Note the endpoint service name (for example, `com.amazonaws.vpce.us-east-1.vpce-svc-xxxxxxxxxxxxxxxxx`).
+
+<Warning>
+Do not modify the NLB itself. LangSmith reconciles the data plane on a regular cadence and reverts manual changes to managed resources. If the ingress mode or subnets change, LangChain coordinates any NLB updates with you.
+</Warning>
+
+To connect each consumer account:
+
+1. Create a **VPC interface endpoint** for the endpoint service name from the previous step, in the VPC where your application runs.
+2. Find the data plane hostname in the API URL shown under **Settings > Data Planes**.
+3. Create a **private Route 53 hosted zone** for that hostname, associated with the consumer VPC.
+4. Add an alias or CNAME record in that hosted zone pointing the hostname to the interface endpoint's DNS name.
+
+Your applications use the standard data plane API URL without any change. DNS resolves it to the interface endpoint in the consumer VPC.
+
+#### Connect with VPC peering, a transit gateway, or a VPN
+
+To peer a consumer VPC with the data plane VPC:
+
+1. In the data plane account, create a peering connection request from the data plane VPC to the consumer VPC.
+2. In the consumer account, accept the request.
+3. Add routes in both VPCs so traffic to each other's CIDR range traverses the peering connection.
+4. Update any network ACLs or security groups that need to allow the peered ranges.
+
+To use a transit gateway, attach both VPCs to a shared transit gateway and configure route tables so each VPC can reach the other.
+
+To use a VPN, attach the VPN to the data plane VPC, or to a transit gateway attached to it, and add routes so the consumer network can reach the data plane VPC CIDR range.
+
+These options route traffic, but they do not carry DNS. The data plane hostname resolves only inside the data plane VPC. To configure DNS in each consumer VPC:
+
+1. Create a private Route 53 hosted zone for the data plane hostname.
+2. Associate the hosted zone with the consumer VPC.
+3. Add an alias or CNAME record that points the hostname to the data plane load balancer's DNS name.
+
+For a consumer network outside AWS, forward DNS queries for the data plane hostname to a Route 53 Resolver inbound endpoint in the data plane VPC.
 
 ### Auditing
 
@@ -86,18 +182,138 @@ LangSmith services emit logs, metrics, and traces the same way they do on self-h
 
 Setting up alerts on those logs is your responsibility.
 
-## Troubleshooting
+## Break-glass access
 
 The LangChain team has no standing access to your data, and can only manage the infrastructure of your data plane. When troubleshooting requires access to data, there are two paths:
 
-- **You run the query**: You run the query yourself, and validate and sanitize the output before sharing it with LangChain.
-- **Break-glass access**: You allowlist a specific engineer to perform the operation. You can revoke that access at any time.
+- **You run the query**: You run the query yourself. Then validate and sanitize the output before sharing it with LangChain.
+- **Break-glass access**: You grant a specific LangChain engineer temporary access to perform the operation. You can revoke that access at any time.
 
-<Note>
-If break-glass access is needed, the LangChain team reaches out with instructions.
-</Note>
+### Grant access
+
+Break-glass access uses the `LangSmithBYOCBreakGlass` IAM role that the [`langsmith-byoc-role` Terraform module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/aws/langsmith-byoc-role) creates in your account. The role's trust policy defaults to `Effect: Deny`.
+
+The role carries only `eks:DescribeCluster` permission at the IAM layer. Kubernetes-level access is controlled separately through EKS access entries that you create for the break-glass role in each target cluster and region. Three access levels are available:
+
+| Level | EKS access policy or group | Use |
+| ----- | ------------------------- | --- |
+| Read-only | `AmazonEKSAdminViewPolicy` | Inspect cluster state without making changes |
+| Cluster management | `langsmith-cluster-management` Kubernetes group | Manage LangSmith workloads during an incident |
+| Full cluster admin | `AmazonEKSClusterAdminPolicy` | Last resort for critical incidents or data access |
+
+When a LangChain engineer requires access, they send you:
+
+- Their AWS IAM Identity Center user ID.
+- Their LangChain email address.
+- The requested access level.
+- The target cluster name and AWS region.
+
+To grant access:
+
+1. Set the following inputs in your `langsmith-byoc-role` module and apply:
+
+    ```hcl
+    allow_break_glass_access = true
+
+    break_glass_identitystore_user_ids = [
+      "<langchain-identity-store-user-id>",
+    ]
+
+    break_glass_source_identities = [
+      "<langchain-engineer-email>",
+    ]
+    ```
+
+    The Identity Store user ID ensures that only the specified engineer's credentials can assume the role. The source identity email improves readability in CloudTrail audit records.
+
+1. Share the module's `break_glass_role_arn` output with the LangChain engineer.
+
+1. Set the values for the target cluster:
+
+    ```bash
+    export ROLE_ARN="arn:aws:iam::<customer-account-id>:role/LangSmithBYOCBreakGlass"
+    export CLUSTER="<deployment>-smith-eks"
+    export REGION="<cluster-region>"
+    ```
+
+1. Create the EKS access entry for the requested access level. Create only one access entry per principal per cluster.
+
+    <CodeGroup>
+
+    ```bash Read-only
+    aws eks create-access-entry \
+      --region "$REGION" \
+      --cluster-name "$CLUSTER" \
+      --principal-arn "$ROLE_ARN" \
+      --type STANDARD
+
+    aws eks associate-access-policy \
+      --region "$REGION" \
+      --cluster-name "$CLUSTER" \
+      --principal-arn "$ROLE_ARN" \
+      --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSAdminViewPolicy \
+      --access-scope type=cluster
+    ```
+
+    ```bash Cluster management
+    aws eks create-access-entry \
+      --region "$REGION" \
+      --cluster-name "$CLUSTER" \
+      --principal-arn "$ROLE_ARN" \
+      --type STANDARD \
+      --kubernetes-groups langsmith-cluster-management
+    ```
+
+    ```bash Full cluster admin
+    aws eks create-access-entry \
+      --region "$REGION" \
+      --cluster-name "$CLUSTER" \
+      --principal-arn "$ROLE_ARN" \
+      --type STANDARD
+
+    aws eks associate-access-policy \
+      --region "$REGION" \
+      --cluster-name "$CLUSTER" \
+      --principal-arn "$ROLE_ARN" \
+      --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
+      --access-scope type=cluster
+    ```
+
+    </CodeGroup>
+
+Grant the lowest level that fits the problem. Activity appears in CloudTrail and in the EKS audit log in CloudWatch in your account.
+
+### Revoke access
+
+Revoke access as soon as the engineer no longer needs it. Follow the steps in order: disabling trust first prevents the engineer from starting a new session after you revoke the active ones.
+
+To revoke access:
+
+1. Set `allow_break_glass_access = false`, remove the Identity Store user IDs and source identities, and apply:
+
+    ```hcl
+    allow_break_glass_access = false
+
+    break_glass_identitystore_user_ids = []
+    break_glass_source_identities      = []
+    ```
+
+    This blocks new `sts:AssumeRole` calls into the `LangSmithBYOCBreakGlass` role.
+
+1. Delete the EKS access entry in each cluster where you created it:
+
+    ```bash
+    aws eks delete-access-entry \
+      --region "$REGION" \
+      --cluster-name "$CLUSTER" \
+      --principal-arn "$ROLE_ARN"
+    ```
+
+1. In the IAM console, go to **Roles** > **LangSmithBYOCBreakGlass** > **Revoke sessions**, then select **Revoke active sessions**. Existing sessions stay valid until they expire, so revoking them closes access immediately.
 
 ## See also
 
 - [BYOC architecture](/langsmith/byoc-architecture-aws)
+- [BYOC onboarding on AWS](/langsmith/byoc-onboarding-aws)
+- [Bring your own VPC on AWS](/langsmith/byoc-byovpc-aws)
 - [Using BYOC](/langsmith/byoc-usage)
