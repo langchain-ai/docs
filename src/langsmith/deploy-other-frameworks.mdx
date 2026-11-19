@@ -3,12 +3,12 @@ title: Deploy other frameworks
 sidebarTitle: Claude SDK, Strands, & more
 description: Deploy agents built with Claude Agent SDK, Strands, CrewAI, AutoGen, and other frameworks to LangSmith Agent Server.
 ---
-This guide is the how-to for deploying agents built outside LangGraph (Claude Agent SDK, Strands, CrewAI, AutoGen, and similar) to [LangSmith Agent Server](/langsmith/deployment), including tracing for [LangSmith Observability](/langsmith/observability). It walks through wrapping those agents with the [Functional API](/oss/langgraph/functional-api) so Agent Server can run them. For Functional API concepts (entrypoints, tasks, checkpointing, and resume rules), see the [Functional API overview](/oss/langgraph/functional-api).
+This guide is the how-to for deploying agents built outside LangGraph (Claude Agent SDK, Strands, CrewAI, AutoGen, and similar) to [LangSmith Agent Server](/langsmith/agent-server), including tracing for [LangSmith Observability](/langsmith/observability). It walks through wrapping those agents with the [Functional API](/oss/langgraph/functional-api) so Agent Server can run them. For Functional API concepts (entrypoints, tasks, checkpointing, and resume rules), see the [Functional API overview](/oss/langgraph/functional-api).
 
 LangSmith Agent Server runs any framework. For agents not built on Deep Agents, LangChain, or LangGraph, deploy using either the [`deployments-wrap-sdk`](https://pypi.org/project/deployments-wrap-sdk/) package (Google ADK) or the LangGraph Functional API (Claude Agent SDK, Strands, CrewAI, AutoGen, and other libraries).
 
 <Tip>
-For new builds, consider [Managed Deep Agents](/langsmith/managed-deep-agents-overview): a managed open-source harness for agents that plan, use tools, delegate to subagents, and work over long horizons. Alternatively, for maximum flexibility while using the same Deep Agents harness, use the [Deep Agents SDK](/oss/deepagents/overview#self-host-with-the-sdk) and host agents yourself, or run a custom [Agent Server](/langsmith/deployment).
+For new builds, consider [Managed Deep Agents](/langsmith/managed-deep-agents-overview): a managed open-source harness for agents that plan, use tools, delegate to subagents, and work over long horizons. Alternatively, for maximum flexibility while using the same Deep Agents harness, use the [Deep Agents SDK](/oss/deepagents/overview#self-host-with-the-sdk) and host agents yourself, or run a custom [Agent Server](/langsmith/agent-server).
 </Tip>
 
 ## Supported frameworks
@@ -606,6 +606,8 @@ AWS_REGION=your-aws-region
 AWS_PROFILE=your-aws-profile
 ```
 
+In `OTEL_EXPORTER_OTLP_HEADERS`, replace `<environment-tracer-session-name>` in the `Langsmith-Project` header with the agent environment's [`tracer_session_name`](/langsmith/create-an-agent#use-an-environment-project).
+
 </Tab>
 <Tab title="CrewAI">
 
@@ -689,11 +691,20 @@ Use the framework-specific `.env` template in [Project layout](#project-layout).
 
 Set your LangSmith API key and framework provider credentials in that file. For Claude Agent SDK and Strands Agents, also set `LANGSMITH_TRACING=true`. For CrewAI and AutoGen, tracing is enabled in `agent.py` through `OtelSpanProcessor()` and the framework instrumentors, so set `LANGSMITH_API_KEY` only.
 
-LangSmith sets `LANGSMITH_PROJECT` on every deployment to the [agent environment](/langsmith/agent-environments) the deployment reports into, so traces land there without you setting it. Strands Agents sends traces through the OTLP exporter instead, so set `Langsmith-Project` in `OTEL_EXPORTER_OTLP_HEADERS` to that environment's `tracer_session_name`. To look it up, see [Configure integrations that require a project name](/langsmith/create-an-agent#use-an-environment-project).
+LangSmith traces every deployment to the [agent environment it is bound to](/langsmith/deploy-to-agent-environment), so you do not set a tracing destination yourself. Strands Agents sends traces through the OTLP exporter instead, so set `Langsmith-Project` in `OTEL_EXPORTER_OTLP_HEADERS` to that environment's `tracer_session_name`. To look it up, see [Configure integrations that require a project name](/langsmith/create-an-agent#use-an-environment-project).
 
 [Traces](/langsmith/observability) show agent invocations, tool calls, and LLM interactions in the [LangSmith UI](https://smith.langchain.com). For framework-specific tracing options, see the links in [Configure tracing](#configure-tracing).
 
 ## Run locally
+
+`langgraph dev` loads the same `.env` file, but local runs are not bound to an agent environment the way a deployment is. Export [agent addressing](/langsmith/log-traces-to-agent) in your shell so local traces go to the agent's Local environment. Do not add `LANGSMITH_AGENT_ID` and `LANGSMITH_AGENT_ENVIRONMENT` to `.env`. `langgraph deploy` uploads that file, and the agent variables [conflict with](/langsmith/log-traces-to-agent#remove-conflicting-destination-settings) the agent environment LangSmith already sets on the deployment:
+
+```bash
+export LANGSMITH_AGENT_ID=<your-agent-id>
+export LANGSMITH_AGENT_ENVIRONMENT=local
+```
+
+Without the agent variables, local traces for Claude Agent SDK, CrewAI, and AutoGen do not reach the agent. Strands Agents sends traces through the OTLP headers in `.env`, so local traces follow that `Langsmith-Project` value. For local Strands testing, set `Langsmith-Project` to the Local environment's [`tracer_session_name`](/langsmith/create-an-agent#use-an-environment-project).
 
 Start the local Agent Server with the [LangGraph CLI](/langsmith/cli):
 
