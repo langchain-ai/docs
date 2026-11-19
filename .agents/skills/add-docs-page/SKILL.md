@@ -57,10 +57,10 @@ not confirm in the pull request body and in your reply to the requester.
 ## Step 3. Add the navigation entry
 
 Navigation lives in `src/docs.json` under `navigation.products`. There are three
-products: `products[0]` is AGENTS RUNTIME (Build, Deploy, No-code agents),
-`products[1]` is AGENT IMPROVEMENT (Test, Monitor, Engine), and `products[2]` is
-AGENT GOVERNANCE (LangSmith setup, LLM Gateway). The site home (`index`) and
-Deep Agents Code are not menu items; the logo links to `/`.
+products: `products[0]` is AGENT RUNTIME (No-code agents, Build, Deploy), `products[1]` is
+AGENT IMPROVEMENT (Test, Monitor, Engine), and `products[2]` is AGENT GOVERNANCE
+(LangSmith setup, LLM Gateway). The site home (`index`) and Deep Agents Code are
+not menu items; the logo links to `/`.
 
 Each menu item is addressed by its `item` key, then nests one of two ways:
 

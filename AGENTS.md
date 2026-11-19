@@ -110,9 +110,9 @@ Navigation is defined in `src/docs.json`. The site has 3 products, each a `menu`
 
 Product and menu names in `docs.json` do not match source directory names. Menu items mix LangSmith and OSS content: the Build menu draws from both `src/oss/` and `src/langsmith/`, and Test, Deploy, and Monitor all draw from `src/langsmith/`. Locate pages by directory, not by product name.
 
-### AGENTS RUNTIME
+### AGENT RUNTIME
 
-Three menu items: Build, Deploy, No-code agents.
+Three menu items: No-code agents, Build, Deploy.
 
 The site home page (`src/index.mdx`) is not a menu item. The logo links to `/`. Deep Agents Code (`src/oss/deepagents/code/`) is also not a menu item; those pages remain at `/oss/deepagents/code/...`.
 
@@ -235,8 +235,8 @@ Because nav names and directories diverge, use this to go from a file to its pla
 | `src/oss/reference/` | Build → Reference |
 | `src/oss/contributing/` | Build → Contribute |
 | `src/langsmith/managed-deep-agents*.mdx` | Build → Managed Deep Agents |
-| `src/langsmith/fleet/` | Agents Runtime → No-code agents → Fleet |
-| `src/langsmith/build-an-agent.mdx` | Agents Runtime → No-code agents → Studio |
+| `src/langsmith/fleet/` | Agent Runtime → No-code agents → Fleet |
+| `src/langsmith/build-an-agent.mdx` | Agent Runtime → No-code agents → Studio |
 | `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx`, `create-an-agent.mdx`, `build-an-agent-link.mdx` (stub for `build-an-agent.mdx`), `deploy-to-agent-environment.mdx` | Agent Governance → LangSmith setup → Overview → Agent-based workspaces |
 | `src/langsmith/*.mdx` (everything else) | Test, Deploy, Monitor, or LangSmith setup, depending on subject |
 
@@ -517,7 +517,7 @@ Reserve "the platform" for LangSmith. LangChain is the open agent engineering ec
 **Add a new LangSmith doc:**
 
 1. Create `src/langsmith/<name>.mdx` with frontmatter
-2. Decide which product the page belongs to, then find the matching menu item in `src/docs.json`: `navigation.products[0]` is AGENTS RUNTIME (Build, Deploy, No-code agents); `products[1]` is AGENT IMPROVEMENT (Test, Monitor, Engine); `products[2]` is AGENT GOVERNANCE (LangSmith setup, LLM Gateway)
+2. Decide which product the page belongs to, then find the matching menu item in `src/docs.json`: `navigation.products[0]` is AGENT RUNTIME (No-code agents, Build, Deploy); `products[1]` is AGENT IMPROVEMENT (Test, Monitor, Engine); `products[2]` is AGENT GOVERNANCE (LangSmith setup, LLM Gateway)
 3. Add the page path (e.g., `"langsmith/<name>"`) to the correct group's `pages` array
 
 **Add a new integration page (Python):**
