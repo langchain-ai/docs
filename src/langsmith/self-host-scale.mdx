@@ -144,7 +144,11 @@ When scaling up the write path (trace ingestion), monitor the services and resou
 
 ### Partition the ingestion queue
 
-By default, all traces wait in one Redis queue named `ingestion`. On a Redis Cluster, that queue lives on a single shard, which can limit ingestion throughput. Partitioning splits the queue across shards. It does not spread load on a standalone Redis instance.
+By default, all traces wait in one Redis queue named `ingestion`. On a Redis Cluster, that queue lives on a single shard, which can limit ingestion throughput. Partitioning splits the queue across shards.
+
+<Note>
+Partitioning brings no benefit on a single-shard Redis deployment. It is a load-spreading measure that is only effective with a Redis Cluster.
+</Note>
 
 Two environment variables control partitioning. Both default to `1`:
 
@@ -161,7 +165,9 @@ commonEnv:
     value: "4"
 ```
 
-With one partition, traces use the `ingestion` queue. With more, in LangSmith v0.18.0 and later, they use `ingestion-0` to `ingestion-3`, then `ingestion-fur-4`, `ingestion-qg-5`, and so on, up to 250 partitions. Workers also keep reading `ingestion`, so tasks queued before you partitioned still drain.
+With one partition, traces use the `ingestion` queue. With more, in LangSmith v0.18.0 and later, they use `ingestion-0` to `ingestion-3`, then `ingestion-fur-4`, `ingestion-qg-5`, and so on. Workers also keep reading `ingestion`, so tasks queued before you partitioned still drain.
+
+LangSmith supports up to 250 partitions, but you are unlikely to need that many. A load test with 12 partitions sustained 200,000 runs per second. As a starting point, move to 4 partitions when ingestion approaches 10,000 runs per second and your Redis Cluster already has more than 4 shards.
 
 Change the variables in order, because tasks in a partition that no worker reads are never processed:
 
