@@ -172,42 +172,6 @@ Change the two variables in order. A task written to a partition that no worker 
 
 To check partitioning, look at the `asynq worker queue configuration` log line that a queue worker writes at startup, which lists the queues it consumes. The `langsmith_asynq_ingestion_partition_pending` gauge reports pending tasks per partition, labeled with the queue name.
 
-### Upgrade from v0.17 with more than 4 partitions
-
-In v0.17, partitions are named `ingestion-0`, `ingestion-1`, and so on. In v0.18.0 and later, partitions 0 to 3 keep those names, but partition 4 and above get new names such as `ingestion-fur-4` and `ingestion-qg-5`. Workers on v0.18.0 do not read the old `ingestion-4` and higher queues, and there is no migration. Tasks left in those queues stay unprocessed after the upgrade, so the runs they hold do not appear until you drain the queues.
-
-This applies when you run more than 4 partitions on v0.17 and do not set `GO_INGESTION_PARTITIONS_SLOT_SPREAD`. To upgrade without leaving tasks behind, reduce to 4 partitions and drain the old queues first:
-
-<Steps>
-  <Step title="Stop writing to the old partitions">
-    On v0.17, set `GO_INGESTION_QUEUE_PARTITIONS` to `4` under `commonEnv`. Leave `GO_INGESTION_WORKER_PARTITIONS` at its current value so workers keep reading the old partitions. Deploy, and wait for the rollout to finish so that no pod still enqueues to the old partitions.
-  </Step>
-
-  <Step title="Wait for the old queues to drain">
-    For each partition from `ingestion-4` up to your highest partition, check that no tasks remain. Add your connection options to `redis-cli`, and `-c` on Redis Cluster:
-
-    ```bash
-    for q in ingestion-4 ingestion-5; do
-      echo "$q pending=$(redis-cli LLEN "asynq:{$q}:pending") active=$(redis-cli LLEN "asynq:{$q}:active") retry=$(redis-cli ZCARD "asynq:{$q}:retry") scheduled=$(redis-cli ZCARD "asynq:{$q}:scheduled")"
-    done
-    ```
-
-    Continue when all four counts are `0` for every old partition. New traffic no longer reaches these queues, so they drain while workers are running.
-  </Step>
-
-  <Step title="Stop reading the old partitions">
-    Set `GO_INGESTION_WORKER_PARTITIONS` to `4` and deploy.
-  </Step>
-
-  <Step title="Upgrade to v0.18.0 or later">
-    Upgrade with both variables at `4`. After the rollout, the `asynq worker queue configuration` log line lists `ingestion` and `ingestion-0` through `ingestion-3`.
-  </Step>
-
-  <Step title="Add partitions again (optional)">
-    To run more than 4 partitions again, follow the order in [Partition the ingestion queue](#partition-the-ingestion-queue): raise `GO_INGESTION_WORKER_PARTITIONS` first, then `GO_INGESTION_QUEUE_PARTITIONS`. Partitions 4 and above use the new names.
-  </Step>
-</Steps>
-
 ## Trace querying (read path)
 
 Common usage that puts load on the read path:
