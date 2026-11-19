@@ -1,0 +1,198 @@
+---
+title: Connect accounts to Tool Gateway
+sidebarTitle: Connect accounts
+description: Store the credentials Tool Gateway uses to call MCP servers, for yourself, for an agent, for a profile, or for the whole workspace.
+---
+
+import ToolGatewayBetaNote from '/snippets/langsmith/tool-gateway-beta-note.mdx';
+
+<ToolGatewayBetaNote />
+
+Connecting an account stores the credential that [Tool Gateway](/langsmith/tool-gateway) attaches when it calls an MCP server. The credential is an OAuth token, or an API key for a server that expects one in a header.
+
+Each credential belongs to one owner. Therefore, the same server can run as a different account for each user, agent, or profile that calls it. For how Tool Gateway picks the owner on each call, see [Credential owners](/langsmith/tool-gateway-how-it-works#credential-owners).
+
+Connect an account after the server is added. A public server needs no credential, so it has nothing to connect. To add a server, see [Add MCP servers](/langsmith/tool-gateway-servers).
+
+| Owner | Who connects it | Where |
+|-------|-----------------|-------|
+| [You](#connect-your-own-account) | Any user who can call the server | **Connected as** > **You** |
+| [An agent](#connect-an-account-for-an-agent) | A workspace admin | **Connected as** > **Agent** |
+| [A profile](#connect-an-account-for-a-profile) | A workspace admin | **Connected as** > **Profile** |
+| [The workspace](#connect-one-api-key-for-the-workspace) | A workspace admin | When adding the server, or the API |
+
+The **Connected as** selector is on **Tools** > **MCP servers**, in the **Workspace** view.
+
+The API examples on this page use the environment variables from the [quickstart](/langsmith/tool-gateway-quickstart#before-you-begin). Managing another owner's credentials requires a user credential, such as a personal access token, not a service key.
+
+## Connect your own account
+
+Connect your own account to call a server as yourself, for example from an MCP client that uses your API key. Each user connects separately, and no one else can use your credential.
+
+<Tabs>
+  <Tab title="UI">
+    1. Go to **Tools** > **MCP servers**.
+    1. On the server's row, click **Connect**.
+    1. Complete the step for the server's credential type:
+        - **OAuth**: In the tab that opens, approve access with the service. A LangSmith page confirms that authentication succeeded.
+        - **API key**: Enter your key, then click **Save and connect**.
+
+    The server's status changes to **Connected**.
+  </Tab>
+  <Tab title="API">
+    For an OAuth server, start the connection and print the sign-in link:
+
+    ```bash
+    curl -sS -X POST "$LANGSMITH_ENDPOINT/v1/managed-tools/kits/me/connections/<server-id>" \
+      -H "X-Api-Key: $LANGSMITH_API_KEY" \
+      -H "X-Tenant-Id: $LANGSMITH_WORKSPACE_ID" \
+      | jq -r '.verification_url'
+    ```
+
+    Open the link and approve access. The request returns `204` with no link if you are already connected, or if the server needs no credential.
+
+    For a server that expects an API key, store your key directly. The keys of `fields` are the header names the server declares. Each value is the complete header value, including any prefix such as `Bearer `:
+
+    ```bash
+    curl -sS -X PUT "$LANGSMITH_ENDPOINT/v1/managed-tools/servers/<server-id>/credential" \
+      -H "X-Api-Key: $LANGSMITH_API_KEY" \
+      -H "X-Tenant-Id: $LANGSMITH_WORKSPACE_ID" \
+      -H "Content-Type: application/json" \
+      -d '{"fields": {"X-Api-Key": "<your-service-api-key>"}}'
+    ```
+
+    Sending the request again replaces the stored key. Tool Gateway never returns stored values.
+  </Tab>
+</Tabs>
+
+You can also connect when you first need to. A tool call on a server you have not connected returns a sign-in link. See [Call tools](/langsmith/tool-gateway-call-tools).
+
+## Connect an account for an agent
+
+An agent's credential lets the agent call a server as itself, on calls made with an API key bound to the agent's environment. Each [agent environment](/langsmith/agent-environments) holds its own credentials, so an agent's development and production environments can use different accounts.
+
+Connecting for an agent requires the `workspaces:credentials:manage` permission, plus `projects:update` on the tracing project of the agent environment.
+
+<Tabs>
+  <Tab title="UI">
+    1. Go to **Tools** > **MCP servers**, and set **Connected as** to **Agent**.
+    1. Choose the agent, then choose the environment.
+    1. On the server's row, click **Connect**, and complete the sign-in or enter the API key for the agent.
+  </Tab>
+  <Tab title="API">
+    Find the agent environment ID with `GET /api/v1/agents/<agent-id>`, or copy it from the UI with **Copy agent environment ID**. Then start a credential session for the agent:
+
+    ```bash
+    curl -sS -X POST "$LANGSMITH_ENDPOINT/v1/managed-tools/servers/<server-id>/credential-sessions?credential_owner_type=agent_identity&credential_owner_id=<agent-environment-id>" \
+      -H "X-Api-Key: $LANGSMITH_API_KEY" \
+      -H "X-Tenant-Id: $LANGSMITH_WORKSPACE_ID"
+    ```
+
+    Open the `verification_url` from the response and sign in with the account the agent should use, or enter its API key. The link is single-use and expires after 10 minutes. For an OAuth server that uses client credentials, the response has `"status": "completed"` and no link, because Tool Gateway connects it during the request.
+
+    For a server that expects an API key, you can store the agent's key directly instead, with `PUT /v1/managed-tools/servers/<server-id>/credential` and the same query parameters.
+  </Tab>
+</Tabs>
+
+An agent cannot connect its own credentials. If one is missing, the agent's tool call returns `409` until an admin connects it.
+
+## Connect an account for a profile
+
+A profile is a named set of credentials that an admin connects once, for agents or other callers that run with no one signed in. A caller selects the profile by sending its ID in the `X-LangSmith-Profile` header. See [Act as users and agents](/langsmith/tool-gateway-identity).
+
+Creating a profile and connecting its credentials require the `workspaces:credentials:manage` permission. Connecting a server also requires permission to call that server.
+
+<Tabs>
+  <Tab title="UI">
+    1. Go to **Tools** > **MCP servers**, and set **Connected as** to **Profile**.
+    1. Click **Add profile**, enter a name, such as `Support agent`, and click **Create profile**.
+    1. On each server's row, click **Connect**, and complete the sign-in or enter the API key for the profile.
+
+    To copy the header that selects the profile, click **Copy profile header**.
+  </Tab>
+  <Tab title="API">
+    Create the profile and save its ID:
+
+    ```bash
+    export PROFILE_ID=$(curl -sS -X POST "$LANGSMITH_ENDPOINT/v1/managed-tools/profiles" \
+      -H "X-Api-Key: $LANGSMITH_API_KEY" \
+      -H "X-Tenant-Id: $LANGSMITH_WORKSPACE_ID" \
+      -H "Content-Type: application/json" \
+      -d '{"name": "Support agent"}' \
+      | jq -r '.id')
+    ```
+
+    Start a credential session for each server the profile needs:
+
+    ```bash
+    curl -sS -X POST "$LANGSMITH_ENDPOINT/v1/managed-tools/profiles/$PROFILE_ID/servers/<server-id>/credential-sessions" \
+      -H "X-Api-Key: $LANGSMITH_API_KEY" \
+      -H "X-Tenant-Id: $LANGSMITH_WORKSPACE_ID"
+    ```
+
+    Open the `verification_url` from the response, and sign in or enter the API key on the profile's behalf. As with agents, the link is single-use and expires after 10 minutes, and an OAuth server that uses client credentials connects with no link.
+
+    For a server that expects an API key, you can store the key directly with `PUT /v1/managed-tools/profiles/$PROFILE_ID/servers/<server-id>/credential` and a `fields` body.
+  </Tab>
+</Tabs>
+
+A caller that uses a profile cannot connect a missing credential. Its tool call returns `409` until an admin connects one.
+
+To rename or delete a profile, use the profile's actions menu in the UI, or `PATCH` or `DELETE /v1/managed-tools/profiles/<profile-id>`. Deleting a profile deletes every credential connected to it and revokes its OAuth tokens with the provider. Agents that use the profile stop working.
+
+## Connect one API key for the workspace
+
+A workspace credential is one API key that every caller of a server uses, including agents in the workspace. Use it for a service where everyone shares one account, so that no user needs to connect their own key.
+
+Only a workspace server that expects an API key accepts a workspace credential. Setting one requires the `workspaces:credentials:manage` permission.
+
+<Warning>
+Storing a workspace credential permanently deletes every other credential on the server, for every user, agent, and profile. While the workspace credential is stored, no other owner can connect one.
+</Warning>
+
+To set the key when you add the server, select **API key**, set **Credentials** to **Workspace**, and enter the key. In the API, include `"credential": {"owner_type": "workspace", "fields": {...}}` in the `POST /v1/managed-tools/servers` request. See [Add MCP servers](/langsmith/tool-gateway-servers).
+
+To set or replace the key on a server that already exists, use the API:
+
+```bash
+curl -sS -X PUT "$LANGSMITH_ENDPOINT/v1/managed-tools/servers/<server-id>/credential?credential_owner_type=workspace&credential_owner_id=$LANGSMITH_WORKSPACE_ID" \
+  -H "X-Api-Key: $LANGSMITH_API_KEY" \
+  -H "X-Tenant-Id: $LANGSMITH_WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"fields": {"X-Api-Key": "<shared-service-api-key>"}}'
+```
+
+A server that does not expect an API key, or is not a workspace server, returns `409`.
+
+## Disconnect an account
+
+Disconnecting deletes one owner's credential and keeps the server and every other owner's credentials. Calls that relied on the credential fail until the owner connects again. Disconnecting revokes OAuth tokens with the provider.
+
+To disconnect your own account:
+
+- **UI**: On **Tools** > **MCP servers**, open the server, then click **Disconnect**. Do not use the row's delete action, which deletes the server for everyone.
+- **API**:
+
+    ```bash
+    curl -sS -X DELETE "$LANGSMITH_ENDPOINT/v1/managed-tools/servers/<server-id>/credential" \
+      -H "X-Api-Key: $LANGSMITH_API_KEY" \
+      -H "X-Tenant-Id: $LANGSMITH_WORKSPACE_ID"
+    ```
+
+To disconnect another owner, set **Connected as** to that owner in the UI and click **Disconnect** on the server's row. In the API, send the same request with the owner named:
+
+- **An agent**: Add `?credential_owner_type=agent_identity&credential_owner_id=<agent-environment-id>`.
+- **A profile**: Send `DELETE /v1/managed-tools/profiles/<profile-id>/servers/<server-id>/credential`.
+- **The workspace**: Add `?credential_owner_type=workspace&credential_owner_id=$LANGSMITH_WORKSPACE_ID`. Callers then have no credential for the server until they connect their own.
+
+The request returns `204` if the owner is already disconnected.
+
+If the server uses [Manual OAuth](/langsmith/tool-gateway-servers#choose-what-credentials-the-server-needs), your credential lives in a shared [Agent Auth](/langsmith/agent-auth) connection. Disconnecting removes it from every server and integration that uses that connection.
+
+## See also
+
+- [How Tool Gateway works](/langsmith/tool-gateway-how-it-works)
+- [Add MCP servers](/langsmith/tool-gateway-servers)
+- [Act as users and agents](/langsmith/tool-gateway-identity)
+- [Call tools](/langsmith/tool-gateway-call-tools)
+- [Agent Auth](/langsmith/agent-auth)
