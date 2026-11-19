@@ -112,11 +112,9 @@ Product and menu names in `docs.json` do not match source directory names. Menu 
 
 ### AGENTS RUNTIME
 
-Five menu items: Home, Build, Deploy, No-code agents, Deep Agents Code.
+Three menu items: Build, Deploy, No-code agents.
 
-#### Home
-
-Single page (`src/index.mdx`).
+The site home page (`src/index.mdx`) is not a menu item. The logo links to `/`. Deep Agents Code (`src/oss/deepagents/code/`) is also not a menu item; those pages remain at `/oss/deepagents/code/...`.
 
 #### Build
 
@@ -155,16 +153,15 @@ Six tabs, all files flat in `src/langsmith/`:
 
 The Get started tab's Reference group holds two OpenAPI-generated sections. See [Reference docs](#reference-docs) below.
 
-#### No-code agents and Deep Agents Code
+#### No-code agents
 
 | Menu item | Source | Groups |
 |-----------|--------|--------|
 | No-code agents | `src/langsmith/build-an-agent.mdx` (Studio tab), `src/langsmith/fleet/` (Fleet tab) | Studio: single page. Fleet: Get started, Configure, Tools and automation, Advanced, Additional resources |
-| Deep Agents Code | `src/oss/deepagents/code/` | Configuration |
 
 "No-code agents" holds two tabs: Studio, for building agents in Studio, and Fleet. The Fleet source directory and URLs still use `fleet`. The Studio build page also appears in the Agent-based workspaces group through the `build-an-agent-link.mdx` stub, which points at `/langsmith/build-an-agent` with `url:` frontmatter.
 
-"Deep Agents Code" ships one set of pages at `/oss/deepagents/code/...` with no language split, even though it sits under `src/oss/deepagents/`. Conditional fences resolve against the Python branch.
+"Deep Agents Code" ships one set of pages at `/oss/deepagents/code/...` with no language split, even though it sits under `src/oss/deepagents/`. Conditional fences resolve against the Python branch. It is not listed in the product menus.
 
 ### AGENT IMPROVEMENT
 
@@ -228,9 +225,9 @@ Because nav names and directories diverge, use this to go from a file to its pla
 
 | Source | Appears under |
 |--------|---------------|
-| `src/index.mdx` | Agents Runtime → Home |
+| `src/index.mdx` | Site home (`/`; not in product menus) |
 | `src/oss/deepagents/` (except `code/`) | Build → Deep Agents |
-| `src/oss/deepagents/code/` | Agents Runtime → Deep Agents Code |
+| `src/oss/deepagents/code/` | Unlisted (`/oss/deepagents/code/...`; not in product menus) |
 | `src/oss/langchain/` | Build → LangChain |
 | `src/oss/langgraph/` | Build → LangGraph |
 | `src/oss/openwiki/` | Build → OpenWiki |
@@ -520,7 +517,7 @@ Reserve "the platform" for LangSmith. LangChain is the open agent engineering ec
 **Add a new LangSmith doc:**
 
 1. Create `src/langsmith/<name>.mdx` with frontmatter
-2. Decide which product the page belongs to, then find the matching menu item in `src/docs.json`: `navigation.products[0]` is AGENTS RUNTIME (Home, Build, Deploy, No-code agents, Deep Agents Code); `products[1]` is AGENT IMPROVEMENT (Test, Monitor, Engine); `products[2]` is AGENT GOVERNANCE (LangSmith setup, LLM Gateway)
+2. Decide which product the page belongs to, then find the matching menu item in `src/docs.json`: `navigation.products[0]` is AGENTS RUNTIME (Build, Deploy, No-code agents); `products[1]` is AGENT IMPROVEMENT (Test, Monitor, Engine); `products[2]` is AGENT GOVERNANCE (LangSmith setup, LLM Gateway)
 3. Add the page path (e.g., `"langsmith/<name>"`) to the correct group's `pages` array
 
 **Add a new integration page (Python):**
