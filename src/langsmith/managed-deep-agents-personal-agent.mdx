@@ -1,0 +1,277 @@
+---
+title: Build a personal agent you can text
+sidebarTitle: Personal agent
+description: Text a personal agent over iMessage or WhatsApp, and let it use a browser to get things done.
+---
+
+import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
+
+A personal agent lives in your messages. You text it a request, such as finding a dinner reservation or comparing flights, and it uses a [browser](/langsmith/managed-deep-agents-browser-use) to do the work and texts back. This example connects the agent to iMessage through a [custom channel](/langsmith/managed-deep-agents-channels-http) and [Photon](https://photon.codes).
+
+<ManagedDeepAgentsPublicBetaNote />
+
+:::python
+<Note>
+This Python example requires `managed-deepagents>=0.10.4` and the matching `mda` CLI.
+</Note>
+:::
+
+:::js
+<Note>
+This TypeScript example requires `managed-deepagents` version 0.10.4 or later and the matching `mda` CLI.
+</Note>
+:::
+
+## Set up Photon
+
+Photon gives the agent a phone number and forwards your texts to it as webhooks. This example uses the [Photon 2.0 API](https://photon.codes/docs/beta/photon). In a Photon project:
+
+1. Create a project API key with the `project:write` permission. See [Set up your project](https://photon.codes/docs/beta/get-started/project).
+1. Assign an iMessage line to your phone number. See [Build an iMessage agent](https://photon.codes/docs/beta/get-started/imessage).
+
+Add the values to the project `.env`. `OWNER_HANDLE` is your own phone number, in E.164 format:
+
+```text .env
+PHOTON_PROJECT_ID=<PHOTON_PROJECT_ID>
+PHOTON_API_KEY=<PHOTON_API_KEY>
+OWNER_HANDLE=+14155550123
+```
+
+## Add the messaging channel
+
+Start with a project from the [quickstart](/langsmith/managed-deep-agents-quickstart) and install the [Standard Webhooks](https://www.standardwebhooks.com/) library, which checks Photon's signatures:
+
+:::python
+```bash
+uv add standardwebhooks httpx
+```
+
+```python channels/messages.py
+import json
+import os
+import uuid
+
+import httpx
+from managed_deepagents import (
+    HttpChannelParseResult,
+    HttpChannelPostInput,
+    HttpChannelRequest,
+    HttpPostedMessage,
+    channels,
+)
+from standardwebhooks.webhooks import Webhook
+
+
+def verify(context: HttpChannelRequest) -> bool:
+    try:
+        Webhook(os.environ["PHOTON_WEBHOOK_SECRET"]).verify(
+            context.raw_body, dict(context.request.headers)
+        )
+    except Exception:
+        return False
+    return True
+
+
+def parse(context: HttpChannelRequest) -> HttpChannelParseResult:
+    event = json.loads(context.raw_body)
+    if event["type"] != "message.received":
+        return {"type": "ignore"}
+    message = event["data"]["object"]
+    if message["content"]["type"] != "text":
+        return {"type": "ignore"}
+    if message["sentBy"]["handle"] != os.environ["OWNER_HANDLE"]:
+        return {"type": "ignore"}
+    space_id = message["space"]["id"]
+    return {
+        "type": "message",
+        "message": {
+            "user_id": message["sentBy"]["id"],
+            "thread_id": str(uuid.uuid5(uuid.NAMESPACE_URL, space_id)),
+            "content": message["content"]["text"],
+            "target": {"space_id": space_id, "agent_id": message["receivedBy"]["id"]},
+        },
+    }
+
+
+async def post(input: HttpChannelPostInput) -> HttpPostedMessage:
+    if input["type"] != "content":
+        raise ValueError("This channel sends text replies only")
+    content = input["content"]
+    if not isinstance(content, str):
+        content = "".join(block.get("text", "") for block in content)
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"https://api.photon.codes/v1/projects/{os.environ['PHOTON_PROJECT_ID']}/messages",
+            headers={
+                "authorization": f"Bearer {os.environ['PHOTON_API_KEY']}",
+                "idempotency-key": str(uuid.uuid4()),
+            },
+            json={
+                "spaceId": input["target"]["space_id"],
+                "senderId": input["target"]["agent_id"],
+                "content": {"type": "text", "format": "plain", "text": content},
+            },
+        )
+        response.raise_for_status()
+    return {"id": response.json()["id"]}
+
+
+channel = channels.http(provider="photon", verify=verify, parse=parse, post=post)
+```
+:::
+
+:::js
+```bash
+npm install standardwebhooks
+```
+
+```ts channels/messages.ts
+import { createHash } from "node:crypto";
+import {
+  channels,
+  type HttpChannelParseResult,
+  type HttpChannelRequest,
+} from "managed-deepagents";
+import { Webhook } from "standardwebhooks";
+
+function verify({ request, rawBody }: HttpChannelRequest): boolean {
+  try {
+    new Webhook(process.env.PHOTON_WEBHOOK_SECRET ?? "").verify(
+      rawBody,
+      Object.fromEntries(request.headers),
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function parse({ rawBody }: HttpChannelRequest): HttpChannelParseResult {
+  const event = JSON.parse(new TextDecoder().decode(rawBody));
+  if (event.type !== "message.received") return { type: "ignore" };
+  const message = event.data.object;
+  if (message.content.type !== "text") return { type: "ignore" };
+  if (message.sentBy.handle !== process.env.OWNER_HANDLE) return { type: "ignore" };
+  const hex = createHash("sha256").update(message.space.id).digest("hex");
+  return {
+    type: "message",
+    message: {
+      userId: message.sentBy.id,
+      threadId: `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`,
+      content: message.content.text,
+      target: { spaceId: message.space.id, agentId: message.receivedBy.id },
+    },
+  };
+}
+
+export const channel = channels.http({
+  provider: "photon",
+  verify,
+  parse,
+  async post(input) {
+    if (input.type !== "content") {
+      throw new Error("This channel sends text replies only");
+    }
+    const text =
+      typeof input.content === "string"
+        ? input.content
+        : input.content.map((block) => ("text" in block ? block.text : "")).join("");
+    const target = input.target as { spaceId: string; agentId: string };
+    const response = await fetch(
+      `https://api.photon.codes/v1/projects/${process.env.PHOTON_PROJECT_ID}/messages`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${process.env.PHOTON_API_KEY}`,
+          "content-type": "application/json",
+          "idempotency-key": crypto.randomUUID(),
+        },
+        body: JSON.stringify({
+          spaceId: target.spaceId,
+          senderId: target.agentId,
+          content: { type: "text", format: "plain", text },
+        }),
+      },
+    );
+    if (!response.ok) throw new Error(`Photon send failed: ${response.status}`);
+    const sent = await response.json();
+    return { id: String(sent.id) };
+  },
+});
+```
+:::
+
+- `verify` rejects any request without a valid Photon signature.
+- `parse` ignores everything except text messages from `OWNER_HANDLE`, so only you can use the agent. Each Photon conversation maps to one agent thread.
+- `post` sends the agent's reply to the same conversation.
+
+## Add a browser and memory
+
+Declare a browser and agent memory at the project root:
+
+:::python
+```python browser.py
+from managed_deepagents import define_browser
+
+browser = define_browser(idle_ttl_seconds=900)
+```
+
+```python memory.py
+from managed_deepagents import MemoryLayer, define_memory
+
+memory = define_memory(agent=MemoryLayer())
+```
+:::
+
+:::js
+```ts browser.ts
+import { defineBrowser } from "managed-deepagents";
+
+export const browser = defineBrowser({ idleTtlSeconds: 900 });
+```
+
+```ts memory.ts
+import { defineMemory, memoryLayer } from "managed-deepagents";
+
+export const memory = defineMemory({ agent: memoryLayer() });
+```
+:::
+
+The browser is scoped to the thread, and your conversation is one thread, so the same browser carries over between texts.
+
+Replace `instructions.md`:
+
+```markdown instructions.md
+# Personal agent
+
+You are a personal assistant that one person texts. Keep replies short and
+plain: no markdown, tables, or headings.
+
+Use the browser to look things up and get things done on websites. Before you
+book, buy, or submit anything, text the details and wait for a yes.
+
+Save lasting preferences, such as favorite restaurants or dietary needs, to
+/memories/agent/preferences.md, and read that file before you start a task.
+```
+
+## Deploy and connect
+
+[Deploy the agent](/langsmith/managed-deep-agents-deploy). `mda deploy` forwards the values in `.env` as deployment secrets.
+
+In Photon, add a [webhook destination](https://photon.codes/docs/beta/message-delivery/webhook) for `https://<deployment-url>/channels/messages/events` that receives `message.received` events. Add its signing secret to `.env` as `PHOTON_WEBHOOK_SECRET`, then deploy again.
+
+Text the agent's number from your phone, for example: "Find a table for two at an Italian place near me on Friday at 7pm."
+
+Text replies cannot carry a browser [handoff](/langsmith/managed-deep-agents-browser-use#hand-off-the-browser) link, so the agent cannot ask you to sign in over iMessage. Start with tasks on sites that do not need a login.
+
+## Extend the pattern
+
+- Connect [WhatsApp Business](https://photon.codes/docs/beta/messaging/whatsapp-business) in the same Photon project to text the agent on WhatsApp.
+- Add a [schedule](/langsmith/managed-deep-agents-schedules) that sends a morning brief.
+- Restrict the browser to the sites you use with an [allow list](/langsmith/managed-deep-agents-browser-use#restrict-browser-network-access).
+
+## See also
+
+- [Custom channels](/langsmith/managed-deep-agents-channels-http): receive webhooks and send replies over HTTP.
+- [Browser use](/langsmith/managed-deep-agents-browser-use): configure browser scope, allow lists, and handoff.
+- [Memory](/langsmith/managed-deep-agents-memory): choose and control durable memory layers.
