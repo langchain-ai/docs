@@ -142,6 +142,50 @@ When scaling up the write path (trace ingestion), monitor the services and resou
 - Increase ingest queue service pod replicas if traces are not being processed from Redis fast enough.
 - Use a larger Redis cache if you notice that the current Redis instance is reaching resource limits. This could also be a reason why ingest requests take a long time.
 
+### Partition the ingestion queue
+
+By default, all traces wait in one Redis queue named `ingestion`. On a Redis Cluster, that queue lives on a single shard, which can limit ingestion throughput. Partitioning splits the queue across shards.
+
+<Note>
+Partitioning brings no benefit on a single-shard Redis deployment. It is a load-spreading measure that is only effective with a Redis Cluster.
+</Note>
+
+Two environment variables control partitioning. Both default to `1`:
+
+- `GO_INGESTION_QUEUE_PARTITIONS`: the number of partitions that services spread new traces across.
+- `GO_INGESTION_WORKER_PARTITIONS`: the number of partitions that ingest queue workers read from.
+
+Set both under `commonEnv`:
+
+```yaml
+commonEnv:
+  - name: GO_INGESTION_WORKER_PARTITIONS
+    value: "4"
+  - name: GO_INGESTION_QUEUE_PARTITIONS
+    value: "4"
+```
+
+With one partition, traces use the `ingestion` queue. With more, in LangSmith v0.18.0 and later, they use `ingestion-0` to `ingestion-3`, then `ingestion-fur-4`, `ingestion-qg-5`, and so on. Workers also keep reading `ingestion`, so tasks queued before you partitioned still drain.
+
+LangSmith supports up to 250 partitions, but you are unlikely to need that many. As a starting point, move to 4 partitions when ingestion approaches 10,000 runs per second and your Redis Cluster already has more than 4 shards.
+
+Change the variables in order, because tasks in a partition that no worker reads are never processed:
+
+- **To add partitions:** raise `GO_INGESTION_WORKER_PARTITIONS` and deploy, then raise `GO_INGESTION_QUEUE_PARTITIONS` to the same value and deploy.
+- **To remove partitions:** lower `GO_INGESTION_QUEUE_PARTITIONS` and deploy. Wait until the removed partitions have no pending, active, retry, or scheduled tasks, then lower `GO_INGESTION_WORKER_PARTITIONS`.
+
+To check that the removed partitions are empty, run the following for each one. Add your connection options to `redis-cli`, and `-c` on Redis Cluster. The example checks the partitions removed when going from 6 to 4:
+
+```bash
+for q in ingestion-fur-4 ingestion-qg-5; do
+  echo "$q pending=$(redis-cli LLEN "asynq:{$q}:pending") active=$(redis-cli LLEN "asynq:{$q}:active") retry=$(redis-cli ZCARD "asynq:{$q}:retry") scheduled=$(redis-cli ZCARD "asynq:{$q}:scheduled")"
+done
+```
+
+Continue when all four counts are `0` for every removed partition.
+
+To check partitioning, read the `asynq worker queue configuration` log line that a queue worker writes at startup. It lists the queues the worker reads.
+
 ## Trace querying (read path)
 
 Common usage that puts load on the read path:
