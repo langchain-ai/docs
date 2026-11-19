@@ -184,7 +184,7 @@ The Reference tab's LangSmith REST API group is OpenAPI-generated. See [Referenc
 
 ### PRODUCTS AND SETUP
 
-Five menu items. LangSmith setup and No-code agents have tabs. The rest are flat group lists.
+Six menu items. LangSmith setup and No-code agents have tabs. The rest are flat group lists.
 
 #### LangSmith setup
 
@@ -204,6 +204,7 @@ Six tabs, all files flat in `src/langsmith/`:
 | Menu item | Source | Groups |
 |-----------|--------|--------|
 | LLM Gateway | `src/langsmith/llm-gateway*.mdx` | Core capabilities, Administration and governance, Advanced |
+| Tool Gateway | `src/langsmith/tool-gateway*.mdx` | Get started, Set up tools, Use tools, Govern and observe, Reference (Tool Gateway API) |
 | No-code agents | `src/langsmith/build-an-agent.mdx` (Studio tab), `src/langsmith/fleet/` (Fleet tab) | Studio: single page. Fleet: Get started, Configure, Tools and automation, Advanced, Additional resources |
 | Engine | `src/langsmith/engine*.mdx` | No groups |
 | Deep Agents Code | `src/oss/deepagents/code/` | Configuration |
@@ -228,6 +229,7 @@ Because nav names and directories diverge, use this to go from a file to its pla
 | `src/oss/reference/` | Build → Reference |
 | `src/oss/contributing/` | Build → Contribute |
 | `src/langsmith/managed-deep-agents*.mdx` | Build → Managed Deep Agents |
+| `src/langsmith/tool-gateway*.mdx` | Products and setup → Tool Gateway |
 | `src/langsmith/fleet/` | Products and setup → No-code agents → Fleet |
 | `src/langsmith/build-an-agent.mdx` | Products and setup → No-code agents → Studio |
 | `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx`, `create-an-agent.mdx`, `build-an-agent-link.mdx` (stub for `build-an-agent.mdx`), `deploy-to-agent-environment.mdx` | Products and setup → LangSmith setup → Overview → Agent-based workspaces |
@@ -235,13 +237,14 @@ Because nav names and directories diverge, use this to go from a file to its pla
 
 ### Reference docs
 
-Three OpenAPI-generated sections. Mintlify generates the endpoint pages at deploy time, so they do not exist in the local `build/` output. `make broken-links-with-anchors` filters them as false positives.
+Four OpenAPI-generated sections. Mintlify generates the endpoint pages at deploy time, so they do not exist in the local `build/` output. `make broken-links-with-anchors` filters them as false positives.
 
 | Section | Nav location | Spec source | Generated under |
 |---------|--------------|-------------|-----------------|
 | Agent Server API | Deploy → Get started → Reference | `src/langsmith/agent-server-openapi.json` (committed) | `/langsmith/agent-server-api/` |
 | Control Plane API | Deploy → Get started → Reference | `https://api.host.langchain.com/openapi.json` (fetched at deploy time, no local file) | `/api-reference/` |
 | LangSmith REST API | Monitor → Reference | `src/langsmith/langsmith-platform-openapi.json` (committed) | `/langsmith/smith-api/` |
+| Tool Gateway API | Products and setup → Tool Gateway → Reference | `src/langsmith/tool-gateway-openapi.json` (committed) | `/langsmith/tool-gateway-api/` |
 
 `src/langsmith/langsmith-platform-openapi.json` is refreshed daily by `.github/workflows/refresh-langsmith-openapi.yml`, which runs `scripts/process_langsmith_openapi.py` and opens or appends to a standing `chore/refresh-langsmith-openapi` PR. Do not edit it by hand.
 
@@ -484,6 +487,7 @@ Capitalize a word when it refers to a **product or brand name**, or to a **named
 **Capitalize** named features of a product:
 
 - Agent Registry (a named feature of LangSmith)
+- LLM Gateway and Tool Gateway (named features of LangSmith; Vale enforces Tool Gateway)
 
 **Lowercase** common nouns (things you create, instances, or types):
 
@@ -510,7 +514,7 @@ Reserve "the platform" for LangSmith. LangChain is the open agent engineering ec
 **Add a new LangSmith doc:**
 
 1. Create `src/langsmith/<name>.mdx` with frontmatter
-2. Decide which lifecycle stage the page belongs to, then find the matching menu item in `src/docs.json`: `navigation.products[0].menu` holds Home, Build, Test, Deploy, and Monitor; `navigation.products[1].menu` holds LangSmith setup, LLM Gateway, No-code agents, Engine, and Deep Agents Code
+2. Decide which lifecycle stage the page belongs to, then find the matching menu item in `src/docs.json`: `navigation.products[0].menu` holds Home, Build, Test, Deploy, and Monitor; `navigation.products[1].menu` holds LangSmith setup, LLM Gateway, Tool Gateway, No-code agents, Engine, and Deep Agents Code
 3. Add the page path (e.g., `"langsmith/<name>"`) to the correct group's `pages` array
 
 **Add a new integration page (Python):**
@@ -548,7 +552,7 @@ When investigating a bug or unexpected behavior, always start by reading the rel
 
 ### CI broken-links failures
 
-`make broken-links-with-anchors` runs `mint broken-links --check-anchors --check-redirects`, the same check CI runs, then filters known false positives (OpenAPI-generated pages: `/langsmith/agent-server-api/`, `/api-reference/`, `../langchain/agents`). Output format:
+`make broken-links-with-anchors` runs `mint broken-links --check-anchors --check-redirects`, the same check CI runs, then filters known false positives (OpenAPI-generated pages: `/langsmith/agent-server-api/`, `/langsmith/smith-api/`, `/langsmith/tool-gateway-api/`, `/api-reference/`; relative-link false positives such as `../langchain/agents`). Output format:
 
 ```txt
 found N broken links in M files

@@ -1,0 +1,90 @@
+---
+title: Add MCP servers to Tool Gateway
+sidebarTitle: Add MCP servers
+description: Register remote MCP servers with Tool Gateway for your workspace or for yourself, choose the credentials each server needs, and use built-in servers.
+---
+
+import ToolGatewayBetaNote from '/snippets/langsmith/tool-gateway-beta-note.mdx';
+
+<ToolGatewayBetaNote />
+
+An MCP server is the source of the tools that [Tool Gateway](/langsmith/tool-gateway) serves to agents. Tool Gateway works with two kinds of server:
+
+- **Servers you add**: Any remote MCP server that you register, along with the kind of credential it needs.
+- **Built-in servers**: Servers that LangSmith hosts for common services. They are available in every workspace, with nothing to register.
+
+Adding a server declares what credential it needs, but stores no credential. Each user, agent, or profile then connects its own account. See [Connect accounts](/langsmith/tool-gateway-connect-accounts).
+
+## Add your own MCP server
+
+The server must use Streamable HTTP over HTTPS. Workspace Admins can add servers for the whole workspace. Workspace Editors can add personal servers only.
+
+In the UI:
+
+1. Go to **Tools** > **MCP servers** and click **Add MCP server**.
+1. Enter a name and the server's URL.
+1. Choose what credentials the server needs, as described in the next section, then save.
+
+In the API, send `POST /v1/managed-tools/servers` with `name`, `upstream_url`, and `connection`. Use a personal access token, because a service key cannot add servers. For a complete request, see [Step 1 of the quickstart](/langsmith/tool-gateway-quickstart#step-1-add-mcp-servers).
+
+### Choose what credentials the server needs
+
+Each server declares what it expects from Tool Gateway on each call. In the API, the `connection` field holds this declaration. To store a shared key when you add a workspace server that uses **API key**, also send a `credential` field; see [Connect accounts](/langsmith/tool-gateway-connect-accounts).
+
+- **Public**: The server needs no sign-in.
+  - UI: **Public**
+  - API: `"connection": {"type": "none"}`
+- **OAuth**: Each owner signs in with the service when they connect.
+  - **Automatic OAuth**: LangSmith sets up OAuth from the server's own OAuth settings. In the UI, select **OAuth** > **Automatic OAuth**. In the API, use `"connection": {"type": "oauth"}`.
+  - **Manual OAuth**: Use an existing [Agent Auth](/langsmith/agent-auth) connection, such as your own OAuth app. Admins only. In the UI, select **OAuth** > **Manual OAuth**, then select the connection. In the API, use `"connection": {"type": "oauth", "agent_auth_connection_slug": "<slug>"}`.
+- **API key**: The server expects an API key in a request header. Name the header, and each owner enters their own key when they connect.
+  - UI: **API key**, then enter the header name, such as `X-Api-Key`.
+  - API:
+
+    ```json
+    "connection": {
+      "type": "secret",
+      "fields": [{"name": "X-Api-Key", "injection": {"type": "header", "name": "X-Api-Key"}}]
+    }
+    ```
+
+For a workspace server that uses **API key**, an admin can instead store one shared key for every caller. See [Connect accounts](/langsmith/tool-gateway-connect-accounts).
+
+If adding a server returns "This MCP server isn't supported yet", Tool Gateway could not set up OAuth automatically. The response's `detail` gives the reason. If the server does not use OAuth, add it as **Public** or **API key**. If it needs an OAuth app that you register with the provider, use **Manual OAuth**.
+
+### Options
+
+- **Personal server**: Select **Personal** before you add the server (API: `"scope": "personal"`). Only you can use it, and a workspace tool kit cannot include it.
+- **Private network**: Use a [tunnel](/langsmith/tunnels) URL as the server URL, with **Manual OAuth** or **API key**.
+
+## Use a built-in server
+
+Built-in servers are listed on **Tools** > **MCP servers**. In the API, a built-in has `"owner": "langsmith"`, and its `id` is a fixed key, such as `parallel`.
+
+| Credential | Built-in servers |
+|------------|------------------|
+| None | Base, Parallel |
+| OAuth | Excel, GitHub, Gmail, Google BigQuery, Google Calendar, Google Docs, Google Drive, Google Meet, Google Sheets, Google Slides, Linear, LinkedIn, OneDrive, Outlook, PowerPoint, Salesforce, SharePoint, Slack, Teams, Word, X |
+| API key | Apollo, Ashby, Exa, Pylon, Tavily |
+
+Built-ins that need a credential still need a [connected account](/langsmith/tool-gateway-connect-accounts).
+
+## List servers
+
+```bash
+curl -sS "$LANGSMITH_ENDPOINT/v1/managed-tools/servers" \
+  -H "X-Api-Key: $LANGSMITH_API_KEY" \
+  -H "X-Tenant-Id: $LANGSMITH_WORKSPACE_ID"
+```
+
+The list includes workspace servers, your personal servers, and built-ins. If `next_cursor` is not null, pass it as the `cursor` query parameter for the next page.
+
+## Remove a server
+
+In the UI, open the server's row actions and delete it. In the API:
+
+```bash
+curl -sS -X DELETE "$LANGSMITH_ENDPOINT/v1/managed-tools/servers/<server-id>" \
+  -H "X-Api-Key: $LANGSMITH_API_KEY" \
+  -H "X-Tenant-Id: $LANGSMITH_WORKSPACE_ID"
+```

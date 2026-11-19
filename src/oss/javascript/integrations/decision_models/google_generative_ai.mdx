@@ -1,0 +1,266 @@
+---
+title: "Google Gemini Decisions integration"
+sidebarTitle: "Google Gemini Decisions"
+description: "Integrate with the GoogleClassifier decision model using LangChain JavaScript."
+---
+
+The [Gemini Decisions API](https://aistudio.google.com/docs/decisions-api) reads text, structured JSON, and media, and returns typed answers and probabilities instead of generated text.
+
+`GoogleClassifier` exposes these decisions as a LangChain `Runnable`, so you can invoke, batch, or compose them with other runnables. It accepts strings, JSON objects and arrays, [LangChain message objects](/oss/langchain/messages), and standard media blocks, and records traces and token usage in LangSmith. You can also use it with [agent middleware](#agent-middleware) to route models and gate tool calls. Use it for focused decisions such as routing a request, flagging content for review, or rating severity, where application code acts on the probability or confidence.
+
+<Note>
+`GoogleClassifier` is experimental and requires `@langchain/google` 0.2.16 or later and `@langchain/core` 1.4.2 or later. Its API may change without notice.
+</Note>
+
+## Setup
+
+<CodeGroup>
+```bash npm
+npm install @langchain/google @langchain/core
+```
+
+```bash yarn
+yarn add @langchain/google @langchain/core
+```
+
+```bash pnpm
+pnpm add @langchain/google @langchain/core
+```
+</CodeGroup>
+
+Create an API key in [Google AI Studio](https://aistudio.google.com/apikey) and export it:
+
+```bash
+export GOOGLE_API_KEY=...
+```
+
+`GoogleClassifier` reads `GOOGLE_API_KEY`. Use the Gemini Developer API (Google AI Studio).
+
+## Quickstart
+
+Create a `GoogleClassifier` with a decisions model, then pass the state and named questions together in each invocation. Questions that share state are answered in one request:
+
+```typescript
+import { GoogleClassifier } from "@langchain/google";
+
+const classifier = new GoogleClassifier("gemini-decision-1");
+
+const response = await classifier.invoke({
+  state: "The blue mug I ordered arrived cracked. Fix this today!",
+  questions: {
+    damaged: {
+      type: "noul",
+      instructions: "Did the item arrive damaged?",
+      criteria: { true: "The item is broken, cracked, or dented." },
+    },
+    department: {
+      type: "choice",
+      instructions: "Which team should handle this request?",
+      criteria: {
+        billing: "Payment or refund questions.",
+        shipping: "Delivery problems or damaged items.",
+        other: null,
+      },
+    },
+    frustration: {
+      type: "score",
+      instructions: "How frustrated does the customer appear?",
+      criteria: ["Calm.", "Concerned but civil.", "Very angry."],
+    },
+  },
+});
+
+console.log(response.nouls.damaged.noul);
+console.log(response.choices.department.choice, response.choices.department.confidence);
+console.log(response.scores.frustration.score);
+```
+
+Answers are keyed by the question names you supplied, and grouped by type on `nouls`, `choices`, and `scores`. All answers are also available on `answers`. Answer types are inferred from the questions, so `response.choices.department.choice` is typed as `"billing" | "shipping" | "other"`. The response carries the `model` that answered and token usage in `usage_metadata`.
+
+The question and response types, such as `Noul` and `ClassifierResponse`, come from `@langchain/core/decisions`.
+
+Every question requires `instructions`. Write the full question there, even when its name looks self-explanatory.
+
+## Question types
+
+Each question is one of three types:
+
+| Type | Description |
+|---|---|
+| `noul` | **Asks**: Is this true?<br></br>**Returns**: `noul`, the probability of yes between `0.01` and `0.99`, so a threshold above `0.99` never matches. A value near `0.5` means uncertainty, not "medium", so use `score` for a spectrum. Pass `criteria` with `true` and `false` descriptions when the instructions alone leave room for interpretation. `noul` answers have no `confidence`, because the probability is the answer.<br></br>**Reach for it when**: Your code branches on an `if`. |
+| `choice` | **Asks**: Which of these options?<br></br>**Returns**: `choice`, plus `probabilities` and `confidence`. Maps each label to a description, or to `null` when the label needs no description. A `choice` needs at least two labels. Include an `other` label when your options may not cover every input. Use labeled examples from your application to set thresholds.<br></br>**Reach for it when**: Options map to distinct code paths. |
+| `score` | **Asks**: Which level?<br></br>**Returns**: `score`, plus `legend`, `probabilities`, and `confidence`. Takes two or more levels, ordered from lowest to highest and indexed from `0`. The returned `score` is the probability-weighted average of the level indices, so it may fall between levels, and `legend` maps each index to the level you supplied.<br></br>**Reach for it when**: The answer is a spectrum you compare to a threshold. |
+
+Descriptions, criteria, and instructions can be text or structured JSON. JSON content is sent as JSON text. The Decisions API accepts only text in questions, so a media block in `instructions` throws `InvalidInputError`.
+
+`@langchain/core/decisions` also defines a `box` question type for locating objects in images. The Gemini Decisions API does not support it, and `GoogleClassifier` throws `InvalidInputError` for a request that includes one.
+
+## State
+
+The `state` can be a string, a JSON object or array, LangChain messages, or standard media blocks:
+
+- **Strings**: Sent as-is.
+- **JSON objects and arrays**: Sent as JSON text. LangChain messages nested inside them are converted to text transcripts.
+- **LangChain messages**: Converted to text, one entry per message, each starting with its role (for example, `user:` or `assistant:`). Media blocks inside a message are sent as native media.
+- **Media blocks**: Standard `image`, `audio`, `video`, and `file` blocks with base64 `data` or a URL are sent as native media when they appear at the root of `state`, as an element of a root `state` array, or inside a root message. Media nested inside a JSON object throws `InvalidInputError`.
+
+To classify a conversation, pass the messages as the state:
+
+```typescript
+import { AIMessage, HumanMessage } from "@langchain/core/messages";
+
+const response = await classifier.invoke({
+  state: [
+    new HumanMessage("Where is my order?"),
+    new AIMessage("It was delivered yesterday."),
+    new HumanMessage("It arrived smashed to pieces."),
+  ],
+  questions: {
+    damaged: { type: "noul", instructions: "Did the item arrive damaged?" },
+  },
+});
+```
+
+To classify an image, include a standard media block in a root `state` array. Replace `delivery.jpg` with the path to your image:
+
+```typescript
+import { readFile } from "node:fs/promises";
+
+const imageData = (await readFile("delivery.jpg")).toString("base64");
+
+const response = await classifier.invoke({
+  state: [
+    "Photo of the delivered item.",
+    { type: "image", data: imageData, mimeType: "image/jpeg" },
+  ],
+  questions: {
+    damaged: { type: "noul", instructions: "Did the item arrive damaged?" },
+  },
+});
+```
+
+## Configuration
+
+Pass the model name as the first argument, and options as the second, or pass a single object with `model`:
+
+| Parameter | Description |
+|---|---|
+| `model` | Decisions model name, such as `gemini-decision-1`. Required. |
+| `apiKey` | Google API key. Defaults to `GOOGLE_API_KEY`. |
+| `endpoint` | API host or base URL override. |
+| `apiVersion` | API version path segment. Defaults to `v1beta`. |
+| `mediaResolution` | Default resolution for image and video blocks that don't set their own: `"low"`, `"medium"`, `"high"`, or `"ultra_high"` (images only). |
+| `detail` | OpenAI-style alias for `mediaResolution`: `"auto"`, `"low"`, or `"high"`. When both are set, `mediaResolution` wins. |
+| `customHeaders` | Extra HTTP headers sent with every request. |
+| `maxRetries` | Maximum number of retries for a failed request. Defaults to `6`. |
+| `maxConcurrency` | Maximum number of requests in flight at once. Defaults to no limit. |
+
+To authenticate with Application Default Credentials or `googleAuthOptions` instead of an API key, import `GoogleClassifier` from `@langchain/google/node`.
+
+## Errors
+
+- **`ConfigurationError`**: Thrown when the model name is missing or empty.
+- **`AuthError`**: Thrown when no `apiKey` or `GOOGLE_API_KEY` is available (and no credentials are configured for the Node entry point).
+- **`InvalidInputError`**: Thrown when a request includes a `box` question, when question instructions contain a media block, or when a media block is nested inside a JSON object in `state`.
+- **`PromptRefusedError`**: Thrown when the API blocks the input for safety. The message includes the block reason. Check for it with `ModelRefusalError.isInstance(error)` from `@langchain/core/errors`.
+
+## Agent middleware
+
+The `langchain` package includes two beta middleware that use a decision model at an agent's decision points. Pass a `GoogleClassifier` as their `classifier`. Both require `langchain` 1.6.5 or later:
+
+<CodeGroup>
+```bash npm
+npm install langchain @langchain/google @langchain/core
+```
+
+```bash yarn
+yarn add langchain @langchain/google @langchain/core
+```
+
+```bash pnpm
+pnpm add langchain @langchain/google @langchain/core
+```
+</CodeGroup>
+
+### Route models
+
+`modelRouterMiddleware` picks one of your named models for each agent run, based on the latest human message, and stores the full `choice` answer in agent state as `modelRoute`:
+
+```typescript
+import { GoogleClassifier } from "@langchain/google";
+import { createAgent, modelRouterMiddleware } from "langchain";
+
+const router = modelRouterMiddleware({
+  choices: {
+    fast: {
+      model: "google:gemini-4-hydrogen",
+      criteria: "Simple, well-scoped tasks.",
+    },
+    powerful: {
+      model: "google:gemini-4-carbon",
+      criteria: "Complex tasks that need deeper reasoning.",
+    },
+  },
+  instructions: "Choose the least costly model that can complete the task.",
+  classifier: new GoogleClassifier("gemini-decision-1"),
+});
+
+const agent = createAgent({
+  model: "google:gemini-4-hydrogen",
+  middleware: [router],
+});
+
+const result = await agent.invoke({
+  messages: [{ role: "user", content: "What is 2 + 2?" }],
+});
+console.log(result.modelRoute?.choice);
+```
+
+### Gate tool calls
+
+`autoModeMiddleware` checks each call to the tools you list before it runs. It asks the classifier for the probability that the call is risky or insufficiently authorized, and blocks calls at or above `0.5`:
+
+```typescript
+import { GoogleClassifier } from "@langchain/google";
+import { autoModeMiddleware, createAgent, tool } from "langchain";
+import { z } from "zod";
+
+const deleteFile = tool(async ({ path }) => `Deleted ${path}.`, {
+  name: "delete_file",
+  description: "Delete a file.",
+  schema: z.object({ path: z.string() }),
+});
+
+const agent = createAgent({
+  model: "google:gemini-4-hydrogen",
+  tools: [deleteFile],
+  middleware: [
+    autoModeMiddleware({
+      tools: [deleteFile],
+      criteria: {
+        true: "The call writes, deletes, publishes, or changes access.",
+        false: "The call only reads public or user-provided data.",
+      },
+      classifier: new GoogleClassifier("gemini-decision-1"),
+    }),
+  ],
+});
+
+const result = await agent.invoke({
+  messages: [{ role: "user", content: "Delete notes.txt." }],
+});
+console.log(result.messages.at(-1)?.text);
+```
+
+With these `criteria`, deleting a file counts as risky, so the middleware returns an error `ToolMessage` instead of running the tool, and the agent reports that the call was blocked. Without `criteria`, the default instructions allow calls the user explicitly asked for, so the same request runs the tool. Tools not listed in `tools` run without classification.
+
+## Tracing
+
+`GoogleClassifier` runs are traced in [LangSmith](/langsmith/observability) with the `google` provider and model name, so you can inspect decisions and token usage alongside the rest of your application.
+
+## See also
+
+- [Gemini Decisions API guide](https://aistudio.google.com/docs/decisions-api)
+- [Google provider overview](/oss/integrations/providers/google)
+- [ChatGoogle](/oss/integrations/chat/google)
+- [Built-in middleware](/oss/langchain/middleware/built-in)
