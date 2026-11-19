@@ -1,16 +1,12 @@
 ---
 title: Keep an agent working toward a goal
 sidebarTitle: Goals
-description: Give an agent a completion condition and keep it working until a judge model confirms the condition is met.
+description: Keep an agent working until a judge model confirms its goal is met.
 ---
 
 import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
 
-A goal is a completion condition, such as "every open issue labeled `docs` has a reply". Instead of stopping when it thinks it is done, the agent keeps working until a separate judge model confirms the condition holds. After each turn, the judge reads the conversation and returns one of three verdicts:
-
-- **Not met**: The agent starts another turn, with the judge's reason as guidance.
-- **Met**: The goal clears and the run ends.
-- **Impossible**: The goal clears so the agent can explain what blocked it.
+A goal is a completion condition, such as "every open issue labeled `docs` has a reply". Instead of stopping when it thinks it is done, the agent keeps working until a separate judge model confirms the condition holds.
 
 <ManagedDeepAgentsPublicBetaNote />
 
@@ -28,136 +24,61 @@ This TypeScript example requires `managed-deepagents` version 0.10.4 or later an
 
 ## Add the goal middleware
 
-The [middleware](/langsmith/managed-deep-agents-middleware) gives the agent a `set_goal` tool and checks the goal after every turn:
+This [middleware](/langsmith/managed-deep-agents-middleware) runs after each turn. If the request starts with `Goal:`, a judge model checks whether the goal is met. If it is not, the judge's reason goes back to the agent as a new message, and the agent keeps working:
 
 :::python
-```python middleware/goal.py expandable
-from typing import Annotated, Literal, NotRequired
-
-from langchain.agents.middleware import AgentMiddleware, AgentState, hook_config
+```python middleware/goal.py
+from langchain.agents.middleware import after_agent
 from langchain.chat_models import init_chat_model
-from langchain.messages import HumanMessage, ToolMessage
-from langchain.tools import InjectedToolCallId, tool
-from langgraph.types import Command
+from langchain.messages import HumanMessage
 from pydantic import BaseModel
 
 
 class Verdict(BaseModel):
-    status: Literal["met", "not_met", "impossible"]
+    met: bool
     reason: str
 
 
-class GoalState(AgentState):
-    goal: NotRequired[str | None]
-    goal_turns: NotRequired[int]
-
-
-@tool
-def set_goal(condition: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
-    """Keep working until this condition is met. Use when asked to finish a task end to end."""
-    return Command(
-        update={
-            "goal": condition,
-            "goal_turns": 0,
-            "messages": [ToolMessage(f"Goal set: {condition}", tool_call_id=tool_call_id)],
-        }
-    )
-
-
-class GoalMiddleware(AgentMiddleware[GoalState]):
-    state_schema = GoalState
-    tools = [set_goal]
-
-    def __init__(self, judge: str = "openai:gpt-6.1-sol", max_turns: int = 20):
-        self.judge = init_chat_model(judge).with_structured_output(Verdict)
-        self.max_turns = max_turns
-
-    @hook_config(can_jump_to=["model"])
-    async def aafter_agent(self, state: GoalState, runtime) -> dict | None:
-        goal = state.get("goal")
-        if not goal:
-            return None
-        turns = state.get("goal_turns", 0) + 1
-        verdict = await self.judge.ainvoke(
-            [
-                *state["messages"],
-                HumanMessage(f"Judge only from the conversation above. Is this goal met? {goal}"),
-            ]
-        )
-        if verdict.status != "not_met" or turns >= self.max_turns:
-            return {"goal": None}
-        return {
-            "goal_turns": turns,
-            "messages": [HumanMessage(f"The goal is not met yet: {verdict.reason} Keep working.")],
-            "jump_to": "model",
-        }
+@after_agent(can_jump_to=["model"])
+async def keep_working(state, runtime):
+    messages = state["messages"]
+    start = max(i for i, m in enumerate(messages) if m.type == "human" and m.name != "judge")
+    goal = messages[start].text
+    nudges = sum(m.name == "judge" for m in messages[start:])
+    if not goal.startswith("Goal:") or nudges >= 10:
+        return None
+    judge = init_chat_model("openai:gpt-6.1-sol").with_structured_output(Verdict)
+    verdict = await judge.ainvoke([*messages, HumanMessage(f"Is this met? {goal}")])
+    if verdict.met:
+        return None
+    return {"messages": [HumanMessage(verdict.reason, name="judge")], "jump_to": "model"}
 ```
 :::
 
 :::js
-```ts middleware/goal.ts expandable
-import { Command } from "@langchain/langgraph";
-import {
-  createMiddleware,
-  HumanMessage,
-  initChatModel,
-  tool,
-  ToolMessage,
-  type ToolRuntime,
-} from "langchain";
+```ts middleware/goal.ts
+import { createMiddleware, HumanMessage, initChatModel } from "langchain";
 import { z } from "zod";
 
-const Verdict = z.object({
-  status: z.enum(["met", "not_met", "impossible"]),
-  reason: z.string(),
-});
+const Verdict = z.object({ met: z.boolean(), reason: z.string() });
 
-const setGoal = tool(
-  async ({ condition }, runtime: ToolRuntime) =>
-    new Command({
-      update: {
-        goal: condition,
-        goalTurns: 0,
-        messages: [
-          new ToolMessage({ content: `Goal set: ${condition}`, tool_call_id: runtime.toolCallId }),
-        ],
-      },
-    }),
-  {
-    name: "set_goal",
-    description: "Keep working until this condition is met. Use when asked to finish a task end to end.",
-    schema: z.object({ condition: z.string() }),
-  },
-);
-
-export function goalMiddleware({ judge = "openai:gpt-6.1-sol", maxTurns = 20 } = {}) {
-  return createMiddleware({
-    name: "GoalMiddleware",
-    stateSchema: z.object({
-      goal: z.string().nullable().default(null),
-      goalTurns: z.number().default(0),
-    }),
-    tools: [setGoal],
-    afterAgent: {
-      canJumpTo: ["model"],
-      hook: async (state) => {
-        if (!state.goal) return;
-        const turns = state.goalTurns + 1;
-        const model = await initChatModel(judge);
-        const verdict = await model.withStructuredOutput(Verdict).invoke([
-          ...state.messages,
-          new HumanMessage(`Judge only from the conversation above. Is this goal met? ${state.goal}`),
-        ]);
-        if (verdict.status !== "not_met" || turns >= maxTurns) return { goal: null };
-        return {
-          goalTurns: turns,
-          messages: [new HumanMessage(`The goal is not met yet: ${verdict.reason} Keep working.`)],
-          jumpTo: "model",
-        };
-      },
+export const keepWorking = createMiddleware({
+  name: "KeepWorking",
+  afterAgent: {
+    canJumpTo: ["model"],
+    hook: async (state) => {
+      const messages = state.messages;
+      const start = messages.map((m) => HumanMessage.isInstance(m) && m.name !== "judge").lastIndexOf(true);
+      const goal = messages[start].text;
+      const nudges = messages.slice(start).filter((m) => m.name === "judge").length;
+      if (!goal.startsWith("Goal:") || nudges >= 10) return;
+      const judge = (await initChatModel("openai:gpt-6.1-sol")).withStructuredOutput(Verdict);
+      const verdict = await judge.invoke([...messages, new HumanMessage(`Is this met? ${goal}`)]);
+      if (verdict.met) return;
+      return { messages: [new HumanMessage({ content: verdict.reason, name: "judge" })], jumpTo: "model" };
     },
-  });
-}
+  },
+});
 ```
 :::
 
@@ -167,12 +88,9 @@ Pass it to the agent definition:
 ```python agent.py
 from managed_deepagents import define_deep_agent
 
-from middleware.goal import GoalMiddleware
+from middleware.goal import keep_working
 
-agent = define_deep_agent(
-    name="goal-agent",
-    middleware=[GoalMiddleware()],
-)
+agent = define_deep_agent(name="goal-agent", middleware=[keep_working])
 ```
 :::
 
@@ -180,37 +98,30 @@ agent = define_deep_agent(
 ```ts agent.ts
 import { defineDeepAgent } from "managed-deepagents";
 
-import { goalMiddleware } from "./middleware/goal";
+import { keepWorking } from "./middleware/goal";
 
-export const agent = defineDeepAgent({
-  name: "goal-agent",
-  middleware: [goalMiddleware()],
-});
+export const agent = defineDeepAgent({ name: "goal-agent", middleware: [keepWorking] });
 ```
 :::
 
-A goal stops after 20 judged turns even if the judge never confirms it. Change the limit with `max_turns` in Python or `maxTurns` in TypeScript.
+The agent stops after 10 nudges from the judge, even if the goal is never met.
 
-## Write a good condition
+## Write a good goal
 
-The judge does not run tools. It reads only what the agent has already shown in the conversation, so write a condition the agent's own output can prove:
-
-- **One measurable end state**: A test result, a count, or an empty queue.
-- **How to check it**: For example, "`pytest` exits 0" or "the list has five sourced items".
-- **Constraints**: Anything that must not change on the way there.
+The judge does not run tools. It reads only what the agent has shown in the conversation, so write a goal the agent's own output can prove: one measurable end state, and how to check it. For example, "Goal: `pytest` exits 0 and no test files are modified."
 
 ## Try it
 
-Run the agent with `mda dev` and ask it to work toward a goal, for example: "Keep going until you have five sources on agent evaluation, each from a different publisher." The agent calls `set_goal`, then keeps searching across turns. Open the trace to see each "not met yet" message the judge adds between turns.
+Run the agent with `mda dev` and send: "Goal: find five sources on agent evaluation, each from a different publisher." Open the trace to see the judge's messages between turns.
 
 ## Extend the pattern
 
-- Use a smaller, faster model for the judge by passing `judge`.
+- Use a smaller, faster model for the judge.
 - Replace the judge with a deterministic check, such as running tests in the agent's [sandbox](/langsmith/managed-deep-agents-sandboxes).
 - Keep long goals going across hours with a [runtime schedule](/langsmith/managed-deep-agents-schedules#create-schedules-at-runtime) that resumes the thread.
 
 ## See also
 
 - [Middleware](/langsmith/managed-deep-agents-middleware): add custom middleware to a managed deep agent.
-- [Custom middleware](/oss/langchain/middleware/custom): hooks, state, and jumps in LangChain middleware.
+- [Custom middleware](/oss/langchain/middleware/custom): hooks and jumps in LangChain middleware.
 - [Schedules](/langsmith/managed-deep-agents-schedules): run work later or on a cadence.
