@@ -1,12 +1,16 @@
 ---
-title: Build a goal-oriented agent
+title: Keep an agent working toward a goal
 sidebarTitle: Goals
-description: Build a Slack agent that tracks team commitments and posts a daily review.
+description: Give an agent a completion condition and keep it working until a judge model confirms the condition is met.
 ---
 
 import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
 
-A goal-oriented agent works toward an ongoing outcome rather than a single task. In this example, people tell the agent about team commitments in Slack, and a weekday review posts what needs attention.
+A goal is a completion condition, such as "every open issue labeled `docs` has a reply". Instead of stopping when it thinks it is done, the agent keeps working until a separate judge model confirms the condition holds. After each turn, the judge reads the conversation and returns one of three verdicts:
+
+- **Not met**: The agent starts another turn, with the judge's reason as guidance.
+- **Met**: The goal clears and the run ends.
+- **Impossible**: The goal clears so the agent can explain what blocked it.
 
 <ManagedDeepAgentsPublicBetaNote />
 
@@ -22,94 +26,191 @@ This TypeScript example requires `managed-deepagents` version 0.10.4 or later an
 </Note>
 :::
 
-## Configure the agent
+## Add the goal middleware
 
-Start with a project from the [quickstart](/langsmith/managed-deep-agents-quickstart) that has a [Slack channel](/langsmith/managed-deep-agents-channels-slack#add-a-slack-channel). Enable shared [memory](/langsmith/managed-deep-agents-memory):
+The [middleware](/langsmith/managed-deep-agents-middleware) gives the agent a `set_goal` tool and checks the goal after every turn:
 
 :::python
-```python memory.py
-from managed_deepagents import MemoryLayer, define_memory
+```python middleware/goal.py expandable
+from typing import Annotated, Literal, NotRequired
 
-memory = define_memory(agent=MemoryLayer())
+from langchain.agents.middleware import AgentMiddleware, AgentState, hook_config
+from langchain.chat_models import init_chat_model
+from langchain.messages import HumanMessage, ToolMessage
+from langchain.tools import InjectedToolCallId, tool
+from langgraph.types import Command
+from pydantic import BaseModel
+
+
+class Verdict(BaseModel):
+    status: Literal["met", "not_met", "impossible"]
+    reason: str
+
+
+class GoalState(AgentState):
+    goal: NotRequired[str | None]
+    goal_turns: NotRequired[int]
+
+
+@tool
+def set_goal(condition: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
+    """Keep working until this condition is met. Use when asked to finish a task end to end."""
+    return Command(
+        update={
+            "goal": condition,
+            "goal_turns": 0,
+            "messages": [ToolMessage(f"Goal set: {condition}", tool_call_id=tool_call_id)],
+        }
+    )
+
+
+class GoalMiddleware(AgentMiddleware[GoalState]):
+    state_schema = GoalState
+    tools = [set_goal]
+
+    def __init__(self, judge: str = "openai:gpt-6.1-sol", max_turns: int = 20):
+        self.judge = init_chat_model(judge).with_structured_output(Verdict)
+        self.max_turns = max_turns
+
+    @hook_config(can_jump_to=["model"])
+    async def aafter_agent(self, state: GoalState, runtime) -> dict | None:
+        goal = state.get("goal")
+        if not goal:
+            return None
+        turns = state.get("goal_turns", 0) + 1
+        verdict = await self.judge.ainvoke(
+            [
+                *state["messages"],
+                HumanMessage(f"Judge only from the conversation above. Is this goal met? {goal}"),
+            ]
+        )
+        if verdict.status != "not_met" or turns >= self.max_turns:
+            return {"goal": None}
+        return {
+            "goal_turns": turns,
+            "messages": [HumanMessage(f"The goal is not met yet: {verdict.reason} Keep working.")],
+            "jump_to": "model",
+        }
 ```
 :::
 
 :::js
-```ts memory.ts
-import { defineMemory, memoryLayer } from "managed-deepagents";
+```ts middleware/goal.ts expandable
+import { Command } from "@langchain/langgraph";
+import {
+  createMiddleware,
+  HumanMessage,
+  initChatModel,
+  tool,
+  ToolMessage,
+  type ToolRuntime,
+} from "langchain";
+import { z } from "zod";
 
-export const memory = defineMemory({ agent: memoryLayer() });
+const Verdict = z.object({
+  status: z.enum(["met", "not_met", "impossible"]),
+  reason: z.string(),
+});
+
+const setGoal = tool(
+  async ({ condition }, runtime: ToolRuntime) =>
+    new Command({
+      update: {
+        goal: condition,
+        goalTurns: 0,
+        messages: [
+          new ToolMessage({ content: `Goal set: ${condition}`, tool_call_id: runtime.toolCallId }),
+        ],
+      },
+    }),
+  {
+    name: "set_goal",
+    description: "Keep working until this condition is met. Use when asked to finish a task end to end.",
+    schema: z.object({ condition: z.string() }),
+  },
+);
+
+export function goalMiddleware({ judge = "openai:gpt-6.1-sol", maxTurns = 20 } = {}) {
+  return createMiddleware({
+    name: "GoalMiddleware",
+    stateSchema: z.object({
+      goal: z.string().nullable().default(null),
+      goalTurns: z.number().default(0),
+    }),
+    tools: [setGoal],
+    afterAgent: {
+      canJumpTo: ["model"],
+      hook: async (state) => {
+        if (!state.goal) return;
+        const turns = state.goalTurns + 1;
+        const model = await initChatModel(judge);
+        const verdict = await model.withStructuredOutput(Verdict).invoke([
+          ...state.messages,
+          new HumanMessage(`Judge only from the conversation above. Is this goal met? ${state.goal}`),
+        ]);
+        if (verdict.status !== "not_met" || turns >= maxTurns) return { goal: null };
+        return {
+          goalTurns: turns,
+          messages: [new HumanMessage(`The goal is not met yet: ${verdict.reason} Keep working.`)],
+          jumpTo: "model",
+        };
+      },
+    },
+  });
+}
 ```
 :::
 
-Replace `instructions.md`:
-
-```markdown instructions.md
-# Coordination agent
-
-Help the team keep its commitments on track. When someone tells you about a
-commitment, update, or blocker, record it in /memories/agent/commitments.md
-with its owner and due date, then confirm what changed.
-
-On a scheduled review, read that file and post only what needs attention:
-blockers, missing owners, and commitments due soon. If nothing needs
-attention, respond with exactly [quiet].
-```
-
-Memory is shared across the deployment, so record only information that everyone in the channel may see.
-
-## Add a scheduled review
-
-Add a [schedule](/langsmith/managed-deep-agents-schedules) that reviews commitments each weekday and posts to a Slack channel. To find the channel ID, open the channel in Slack, click its name, and copy the **Channel ID** at the bottom of the **About** tab. Then invite the agent with `/invite @<agent-name>`.
+Pass it to the agent definition:
 
 :::python
-```python schedules/coordination_review.py
-from managed_deepagents import define_schedule
+```python agent.py
+from managed_deepagents import define_deep_agent
 
-schedule = define_schedule(
-    cron="0 9 * * 1-5",
-    timezone="America/Los_Angeles",
-    prompt="Review team commitments and post what needs attention today.",
-    deliver_to={
-        "channel": "slack",
-        "to": {"type": "provider_conversation", "conversation_id": "C0123456789"},
-    },
+from middleware.goal import GoalMiddleware
+
+agent = define_deep_agent(
+    name="goal-agent",
+    middleware=[GoalMiddleware()],
 )
 ```
 :::
 
 :::js
-```ts schedules/coordination-review.ts
-import { defineSchedule } from "managed-deepagents";
+```ts agent.ts
+import { defineDeepAgent } from "managed-deepagents";
 
-export const schedule = defineSchedule({
-  cron: "0 9 * * 1-5",
-  timezone: "America/Los_Angeles",
-  prompt: "Review team commitments and post what needs attention today.",
-  deliverTo: {
-    channel: "slack",
-    to: { type: "provider_conversation", conversationId: "C0123456789" },
-  },
+import { goalMiddleware } from "./middleware/goal";
+
+export const agent = defineDeepAgent({
+  name: "goal-agent",
+  middleware: [goalMiddleware()],
 });
 ```
 :::
 
-An exact `[quiet]` answer posts nothing.
+A goal stops after 20 judged turns even if the judge never confirms it. Change the limit with `max_turns` in Python or `maxTurns` in TypeScript.
+
+## Write a good condition
+
+The judge does not run tools. It reads only what the agent has already shown in the conversation, so write a condition the agent's own output can prove:
+
+- **One measurable end state**: A test result, a count, or an empty queue.
+- **How to check it**: For example, "`pytest` exits 0" or "the list has five sourced items".
+- **Constraints**: Anything that must not change on the way there.
 
 ## Try it
 
-[Deploy the agent](/langsmith/managed-deep-agents-deploy). In Slack, mention the agent with a commitment, such as "Maya is shipping the billing fix by Friday." Then ask it to review commitments, or wait for the scheduled review.
-
-To stop reviews, remove the schedule file and redeploy.
+Run the agent with `mda dev` and ask it to work toward a goal, for example: "Keep going until you have five sources on agent evaluation, each from a different publisher." The agent calls `set_goal`, then keeps searching across turns. Open the trace to see each "not met yet" message the judge adds between turns.
 
 ## Extend the pattern
 
-- Add read-only [tools](/langsmith/managed-deep-agents-tools) or [MCP servers](/langsmith/managed-deep-agents-mcp-connectors) for your issue tracker so the agent checks current status.
-- Use [watch mode](/langsmith/managed-deep-agents-watch-mode) so the agent picks up commitments without a mention.
-- Require [human approval](/langsmith/managed-deep-agents-tools#human-in-the-loop) before the agent changes anything outside Slack.
+- Use a smaller, faster model for the judge by passing `judge`.
+- Replace the judge with a deterministic check, such as running tests in the agent's [sandbox](/langsmith/managed-deep-agents-sandboxes).
+- Keep long goals going across hours with a [runtime schedule](/langsmith/managed-deep-agents-schedules#create-schedules-at-runtime) that resumes the thread.
 
 ## See also
 
-- [Memory](/langsmith/managed-deep-agents-memory): choose and control durable memory layers.
-- [Schedules](/langsmith/managed-deep-agents-schedules): configure and manage scheduled runs.
-- [Slack](/langsmith/managed-deep-agents-channels-slack): set up and deploy the Slack app.
+- [Middleware](/langsmith/managed-deep-agents-middleware): add custom middleware to a managed deep agent.
+- [Custom middleware](/oss/langchain/middleware/custom): hooks, state, and jumps in LangChain middleware.
+- [Schedules](/langsmith/managed-deep-agents-schedules): run work later or on a cadence.
