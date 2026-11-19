@@ -108,7 +108,7 @@ resource "langsmith_workspace_role" "issues_agent" {
 
 Use [resource tags](/langsmith/set-up-resource-tags) to organize workspace resources and apply [attribute-based access control (ABAC)](/langsmith/abac). The `langsmith_tag` convenience resource owns one tag key and one value. Use the independent `langsmith_tag_key` and `langsmith_tag_value` resources when keys or values are shared across configurations.
 
-The following configuration creates an `Environment=production` tag, applies it to a tracing project, and limits a workspace role to production projects:
+The following configuration creates an `Environment=production` tag, applies it to an agent environment, and limits a workspace role to the environments with that tag:
 
 ```hcl
 resource "langsmith_tag" "production" {
@@ -121,18 +121,18 @@ resource "langsmith_tag" "production" {
 resource "langsmith_tagging" "production_project" {
   tag_value_id  = langsmith_tag.production.tag_value_id
   resource_type = "project"
-  resource_id   = "00000000-0000-0000-0000-000000000000" # tracing project ID
+  resource_id   = "00000000-0000-0000-0000-000000000000" # agent environment's tracer_session_id
 }
 
 resource "langsmith_workspace_role" "production_reader" {
   display_name = "Production Reader"
-  description  = "Can read production projects"
+  description  = "Can read production agent environments"
   permissions  = ["projects:read"]
 }
 
 resource "langsmith_access_policy" "production_readers" {
   name        = "Production readers"
-  description = "Read access to production projects"
+  description = "Read access to production agent environments"
   effect      = "allow"
 
   condition_groups = [{
@@ -169,12 +169,12 @@ resource "langsmith_evaluator" "tool_calls" {
   }
 }
 
-# A run rule applies the evaluator to matching runs in a tracing project.
+# A run rule applies the evaluator to matching runs in an agent environment.
 # Run rules can also add runs to a dataset or annotation queue, or call webhooks.
 resource "langsmith_run_rule" "score_root_runs" {
   workspace_id  = langsmith_workspace.demo.id
   display_name  = "score root runs"
-  session_id    = "00000000-0000-0000-0000-000000000000" # tracing project ID
+  session_id    = "00000000-0000-0000-0000-000000000000" # agent environment's tracer_session_id
   sampling_rate = 1
   filter        = "eq(is_root, true)"
 
@@ -182,7 +182,7 @@ resource "langsmith_run_rule" "score_root_runs" {
 }
 
 resource "langsmith_alert_rule" "error_rate" {
-  session_id     = "00000000-0000-0000-0000-000000000000" # tracing project ID
+  session_id     = "00000000-0000-0000-0000-000000000000" # agent environment's tracer_session_id
   name           = "run error count high"
   type           = "threshold"
   attribute      = "error_count"
