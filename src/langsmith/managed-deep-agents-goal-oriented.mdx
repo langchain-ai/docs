@@ -1,12 +1,12 @@
 ---
-title: Keep an agent working toward a goal
+title: Work toward a goal over time
 sidebarTitle: Goals
-description: Keep an agent working until a judge model confirms its goal is met.
+description: Give an agent a goal and let it schedule its own progress checks until the goal is met.
 ---
 
 import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
 
-A goal is a completion condition, such as "every open issue labeled `docs` has a reply". Instead of stopping when it thinks it is done, the agent keeps working until a separate judge model confirms the condition holds.
+Some goals take hours or days: a pull request gets merged, CI on `main` turns green, a release ships. A goal-oriented agent sets its own schedule to check progress, moves the goal forward when it can, and stops checking once the goal is met.
 
 <ManagedDeepAgentsPublicBetaNote />
 
@@ -22,75 +22,96 @@ This TypeScript example requires `managed-deepagents` version 0.10.4 or later an
 </Note>
 :::
 
-## Add the goal middleware
+## Add the schedule tools
 
-This [middleware](/langsmith/managed-deep-agents-middleware) runs after each turn. If the request starts with `Goal:`, a judge model checks whether the goal is met. If it is not, the judge's reason goes back to the agent as a new message, and the agent keeps working:
+Give the agent two [tools](/langsmith/managed-deep-agents-tools) that wrap [runtime schedules](/langsmith/managed-deep-agents-schedules#create-schedules-at-runtime). `check_progress` starts a recurring check in the current thread, and `stop_checking` deletes it:
+
+:::js
+With `managed-deepagents` 0.10.4, use npm: pnpm can resolve incompatible LangChain versions. Install the tools' dependencies:
+
+```bash
+npm install langchain zod
+```
+:::
 
 :::python
-```python middleware/goal.py
-from langchain.agents.middleware import after_agent
-from langchain.chat_models import init_chat_model
-from langchain.messages import HumanMessage
-from pydantic import BaseModel
+```python tools/goals.py
+from langchain.tools import tool
+from managed_deepagents import ManagedDeepAgentRuntime
+
+OWNER = {"type": "agent"}
 
 
-class Verdict(BaseModel):
-    met: bool
-    reason: str
+@tool
+async def check_progress(goal: str, cron: str, runtime: ManagedDeepAgentRuntime) -> str:
+    """Check progress on a goal in this thread on a cron schedule, until you stop it."""
+    item = await runtime.schedules.create(
+        owner=OWNER,
+        cron=cron,
+        new_thread=False,
+        prompt=f"Check progress on this goal: {goal}",
+    )
+    return f"Checking progress with schedule {item['id']}."
 
 
-@after_agent(can_jump_to=["model"])
-async def keep_working(state, runtime):
-    messages = state["messages"]
-    start = max(i for i, m in enumerate(messages) if m.type == "human" and m.name != "judge")
-    goal = messages[start].text
-    nudges = sum(m.name == "judge" for m in messages[start:])
-    if not goal.startswith("Goal:") or nudges >= 10:
-        return None
-    judge = init_chat_model("openai:gpt-6.1-sol").with_structured_output(Verdict)
-    verdict = await judge.ainvoke([*messages, HumanMessage(f"Is this met? {goal}")])
-    if verdict.met:
-        return None
-    return {"messages": [HumanMessage(verdict.reason, name="judge")], "jump_to": "model"}
+@tool
+async def stop_checking(schedule_id: str, runtime: ManagedDeepAgentRuntime) -> str:
+    """Stop checking progress on a goal that is met or abandoned."""
+    await runtime.schedules.delete(schedule_id, owner=OWNER)
+    return f"Stopped schedule {schedule_id}."
 ```
 :::
 
 :::js
-```ts middleware/goal.ts
-import { createMiddleware, HumanMessage, initChatModel } from "langchain";
+```ts tools/goals.ts
+import { tool } from "langchain";
+import type { ManagedDeepAgentRuntime } from "managed-deepagents";
 import { z } from "zod";
 
-const Verdict = z.object({ met: z.boolean(), reason: z.string() });
+const owner = { type: "agent" } as const;
 
-export const keepWorking = createMiddleware({
-  name: "KeepWorking",
-  afterAgent: {
-    canJumpTo: ["model"],
-    hook: async (state) => {
-      const messages = state.messages;
-      const start = messages.map((m) => HumanMessage.isInstance(m) && m.name !== "judge").lastIndexOf(true);
-      const goal = messages[start].text;
-      const nudges = messages.slice(start).filter((m) => m.name === "judge").length;
-      if (!goal.startsWith("Goal:") || nudges >= 10) return;
-      const judge = (await initChatModel("openai:gpt-6.1-sol")).withStructuredOutput(Verdict);
-      const verdict = await judge.invoke([...messages, new HumanMessage(`Is this met? ${goal}`)]);
-      if (verdict.met) return;
-      return { messages: [new HumanMessage({ content: verdict.reason, name: "judge" })], jumpTo: "model" };
-    },
+export const checkProgress = tool(
+  async ({ goal, cron }, runtime) => {
+    const { schedules } = runtime as typeof runtime & Pick<ManagedDeepAgentRuntime, "schedules">;
+    const item = await schedules!.create({
+      owner,
+      cron,
+      newThread: false,
+      prompt: `Check progress on this goal: ${goal}`,
+    });
+    return `Checking progress with schedule ${item.id}.`;
   },
-});
+  {
+    name: "check_progress",
+    description: "Check progress on a goal in this thread on a cron schedule, until you stop it.",
+    schema: z.object({ goal: z.string(), cron: z.string() }),
+  },
+);
+
+export const stopChecking = tool(
+  async ({ scheduleId }, runtime) => {
+    const { schedules } = runtime as typeof runtime & Pick<ManagedDeepAgentRuntime, "schedules">;
+    await schedules!.delete(scheduleId, { owner });
+    return `Stopped schedule ${scheduleId}.`;
+  },
+  {
+    name: "stop_checking",
+    description: "Stop checking progress on a goal that is met or abandoned.",
+    schema: z.object({ scheduleId: z.string() }),
+  },
+);
 ```
 :::
 
-Pass it to the agent definition:
+Register the tools:
 
 :::python
 ```python agent.py
 from managed_deepagents import define_deep_agent
 
-from middleware.goal import keep_working
+from tools.goals import check_progress, stop_checking
 
-agent = define_deep_agent(name="goal-agent", middleware=[keep_working])
+agent = define_deep_agent(name="goal-agent", tools=[check_progress, stop_checking])
 ```
 :::
 
@@ -98,43 +119,44 @@ agent = define_deep_agent(name="goal-agent", middleware=[keep_working])
 ```ts agent.ts
 import { defineDeepAgent } from "managed-deepagents";
 
-import { keepWorking } from "./middleware/goal";
+import { checkProgress, stopChecking } from "./tools/goals";
 
-export const agent = defineDeepAgent({ name: "goal-agent", middleware: [keepWorking] });
+export const agent = defineDeepAgent({ name: "goal-agent", tools: [checkProgress, stopChecking] });
 ```
 :::
 
-The agent stops after 10 nudges from the judge, even if the goal is never met.
-
 ## Write the instructions
 
-The judge sees only the conversation, so tell the agent to show its evidence. Add to `instructions.md`:
+The instructions are what turn the tools into a loop. Add to `instructions.md`:
 
 ```markdown instructions.md
 ## Goals
 
-When a message starts with "Goal:", work until the goal is met. Before you
-start, state what "done" looks like and how you will check it. After each
-step, show the evidence, such as command output or the list so far, and say
-what is left. If the goal cannot be met, explain what blocks it and stop.
+When someone gives you a goal, decide how to tell when it is met and how often
+to check, then call check_progress with the goal and a cron expression. Do not
+keep working in place; let the schedule bring you back. Include the schedule
+ID in your reply.
+
+Each time you check progress, look at the current state with your tools.
+Never assume. If you can move the goal forward, do it. Otherwise, say who
+needs to act. When the goal is met or cannot be met, report it and call
+stop_checking with the schedule ID.
 ```
 
-## Write a good goal
-
-The judge does not run tools. It reads only what the agent has shown in the conversation, so write a goal the agent's own output can prove: one measurable end state, and how to check it. For example, "Goal: `pytest` exits 0 and no test files are modified."
+Each check runs in the same thread, so it sees the goal, the schedule ID, and earlier progress. If the goal came from Slack, each check replies in that Slack thread.
 
 ## Try it
 
-Run the agent with `mda dev` and send: "Goal: find five sources on agent evaluation, each from a different publisher." Open the trace to see the judge's messages between turns.
+The quickstart agent has web search, so it can watch for public events. [Deploy the agent](/langsmith/managed-deep-agents-deploy) and send: "Goal: tell me when LangChain publishes its next release." The agent schedules a check, searches each time it runs, and stops checking once the release appears.
 
 ## Extend the pattern
 
-- Use a smaller, faster model for the judge.
-- Replace the judge with a deterministic check, such as running tests in the agent's [sandbox](/langsmith/managed-deep-agents-sandboxes).
-- Keep long goals going across hours with a [runtime schedule](/langsmith/managed-deep-agents-schedules#create-schedules-at-runtime) that resumes the thread.
+- Add a GitHub [MCP server](/langsmith/managed-deep-agents-mcp-connectors) so the agent can work toward goals like "PR #123 is merged" and nudge reviewers along the way.
+- Save each goal to [memory](/langsmith/managed-deep-agents-memory) so the agent can list and report on every open goal.
+- Set a minimum interval in `check_progress` to keep costs predictable: each check is a model run.
 
 ## See also
 
-- [Middleware](/langsmith/managed-deep-agents-middleware): add custom middleware to a managed deep agent.
-- [Custom middleware](/oss/langchain/middleware/custom): hooks and jumps in LangChain middleware.
-- [Schedules](/langsmith/managed-deep-agents-schedules): run work later or on a cadence.
+- [Schedules](/langsmith/managed-deep-agents-schedules): create and manage runtime schedules.
+- [Tools](/langsmith/managed-deep-agents-tools): write custom tools.
+- [Watch mode](/langsmith/managed-deep-agents-watch-mode): schedule one-time check-ins from Slack.
