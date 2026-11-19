@@ -1,0 +1,271 @@
+---
+title: Agent Server deployment features on BYOC
+sidebarTitle: Agent Server deployments
+description: Deploy agents to your BYOC data plane from GitHub or the langgraph CLI, run them as Serverless or Dedicated deployments, place them in your own Kubernetes namespaces, and monitor them, with everything kept in your own cloud account.
+icon: "rocket"
+---
+
+Your BYOC data plane runs [LangSmith Agent Server](/langsmith/agent-server) inside your own cloud account. These features bring the LangSmith Cloud deployment experience to that data plane, while your source code, container images, databases, logs, and metrics stay in your account:
+
+- **[Deploy from GitHub](#deploy-from-github)**: Pick a repository and branch, and LangSmith builds and deploys it for you.
+- **[Deploy with the CLI](#deploy-with-the-cli)**: Run `langgraph deploy` from your laptop or CI with only a LangSmith API key.
+- **[Serverless deployments](#serverless-deployments)**: Scale to zero when idle and wake on the next request.
+- **[Dedicated deployments](#dedicated-deployments)**: Always-on, autoscaling capacity with a database of its own.
+- **[Deployment namespaces](#deployment-namespaces)**: Run each team's deployments in its own Kubernetes namespace.
+- **[Deployment monitoring and logs](#deployment-monitoring-and-logs)**: Monitoring charts and searchable log history for every deployment.
+
+Each feature is off until LangChain turns it on for your data plane. To get started, [prepare your cloud account](#prepare-your-cloud-account), then contact the LangChain team with your data plane ID and the features you want.
+
+## Deploy from GitHub
+
+Deploy from GitHub builds your agent's container image inside your data plane's cluster and pushes it to a container registry in your account: Amazon ECR on AWS, Artifact Registry on GCP, or Azure Container Registry on Azure. You do not need a registry or a build pipeline of your own, and your code and images never leave your cloud.
+
+When your data plane is reachable from the internet, auto-deploy on push builds a new revision each time you push to the deployment's branch. On a private data plane, GitHub cannot deliver webhooks, so you deploy each new revision from the LangSmith UI.
+
+Supported apps:
+
+- **Python**: Python 3.11 or 3.13.
+- **JavaScript**: Node.js 20 or 22, on AWS and Azure. JavaScript apps are not yet supported on GCP.
+
+If your data plane restricts outbound traffic, allow `github.com`, `api.github.com`, and the package registries your app installs from, such as PyPI or npm.
+
+### Create your GitHub App
+
+Each data plane uses its own GitHub App, which your organization owns. Its callback and webhook URLs point at your data plane, so one App cannot serve two data planes.
+
+Creating the App requires the Organization Admin role in LangSmith and membership in the workspace you deploy to.
+
+To connect GitHub after LangChain turns on deploy from GitHub:
+
+1. In GitHub, create a GitHub App with these settings, replacing `<data_plane_host>` with your [data plane endpoint](/langsmith/byoc-usage#find-your-data-plane-endpoint):
+    - **Callback URL**: `https://<data_plane_host>/api-host/v1/integrations/github/callback`
+    - **Webhook URL**: `https://<data_plane_host>/api-host/v1/integrations/github/webhook`
+    - **Repository permissions**: Contents (read), Metadata (read), and Checks, Issues, and Pull requests (read and write).
+    - **Events**: Push and Pull request.
+    - **Webhook secret**: A random value you keep for step 4.
+    - **Options**: Turn on **Request user authorization (OAuth) during installation** and **Redirect on update**.
+1. Generate a private key and a client secret for the App.
+1. In LangSmith, go to **Deployments** > **New deployment** > **GitHub**, and click **Configure GitHub App**.
+1. Enter the App ID, App slug, private key, client ID, client secret, and webhook secret, then save.
+1. Install the App on the repositories you want to deploy.
+
+LangSmith encrypts the App credentials and stores them in your data plane, not in the LangSmith control plane.
+
+You can now create a deployment from any repository the App can access. For the deployment form, see [Deploy to Cloud](/langsmith/deploy-to-cloud).
+
+## Deploy with the CLI
+
+`langgraph deploy` creates and updates deployments on your data plane from your terminal or CI, with only a LangSmith API key. The CLI finds your data plane from your workspace, so you do not need to know its URL. It uses the same in-cluster build infrastructure as [deploy from GitHub](#deploy-from-github), so LangChain turns on both together.
+
+The CLI builds your image in one of two ways:
+
+- **Remote build**: The CLI uploads your source, and your data plane builds the image in the cluster. Available on AWS, GCP, and Azure.
+- **Local build**: The CLI builds the image with Docker on your machine and pushes it to your data plane's registry. Available on AWS and Azure.
+
+BYOC support requires the JavaScript CLI, `@langchain/langgraph-cli` 1.8.0 or later. Python CLI support is coming in an upcoming `langgraph-cli` release.
+
+To deploy with the CLI:
+
+1. Set the API URL of your LangSmith region, a personal access token, and the ID of a workspace on your data plane. The workspace ID is the ID after `/o/` in the workspace URL:
+
+    ```bash
+    export LANGSMITH_ENDPOINT="<your-langsmith-api-url>"
+    export LANGSMITH_API_KEY="<your-personal-access-token>"
+    export LANGSMITH_TENANT_ID="<your-workspace-id>"
+    ```
+
+1. From your app's directory, deploy with a remote build:
+
+    ```bash
+    npx @langchain/langgraph-cli deploy --name my-agent --remote
+    ```
+
+    To build locally with Docker instead, pass `--no-remote`. To create a [Dedicated deployment](#dedicated-deployments), add `--deployment-type prod`.
+
+<Warning>
+Do not pass `--host-url` for a BYOC data plane. The CLI then skips the check that reads your data plane's capabilities, and the data plane rejects the request. Service keys are not yet supported for CLI deployments on BYOC.
+</Warning>
+
+The same CLI lists your deployments and streams their logs:
+
+```bash
+npx @langchain/langgraph-cli deploy list
+npx @langchain/langgraph-cli deploy logs --deployment-id <deployment-id> --type build
+```
+
+For every option, see [`langgraph deploy`](/langsmith/cli#deploy).
+
+## Serverless deployments
+
+A Serverless deployment scales to zero replicas after a period of inactivity and wakes on the next request, so idle agents do not hold compute. It suits development, testing, and background agents that can tolerate a cold start.
+
+On BYOC, each Serverless deployment gets its own database on a shared PostgreSQL server in your account, and its own URL under your data plane's hostname. To choose how long a deployment waits before it scales down, go to its **Settings** > **Scaling** and pick 1 hour, 1 day, or 1 week. The default is 1 week. Any request to the deployment counts as activity.
+
+Turning on Serverless creates one new PostgreSQL server in your data plane's region, so check that your account has quota for it.
+
+If you manage the data plane's DNS yourself on AWS, also resolve `*.<data_plane_host>` to the same internal load balancer as `<data_plane_host>`, so each Serverless deployment's URL resolves. LangSmith still issues the wildcard certificate.
+
+For how Serverless deployments behave and are billed, see [Deployment types](/langsmith/cloud-platform-features#deployment-types).
+
+## Dedicated deployments
+
+A Dedicated deployment stays on and autoscales separate pools of API servers and queue workers, so latency-sensitive agents never wait on a cold start. Each Dedicated deployment gets its own PostgreSQL database in your account: Amazon RDS on AWS, Cloud SQL on GCP, or Azure Database for PostgreSQL flexible server on Azure.
+
+Every new Dedicated deployment starts at the Small size.
+
+If you bring your own security groups on AWS, each deployment database joins your Postgres security groups, so it gets the same network access as the data plane's own database.
+
+For more information, see [Dedicated](/langsmith/cloud-platform-features#dedicated).
+
+## Deployment namespaces
+
+Deployment namespaces let a workspace's deployments run in Kubernetes namespaces you choose, instead of the namespace LangSmith is installed in. Use them to give each team its own namespace, so you can apply your own resource quotas, network policies, and access rules per team.
+
+To turn on deployment namespaces, send the LangChain team each workspace ID and the namespaces that workspace may use. The workspace ID is the ID after `/o/` in the workspace URL. LangSmith creates each namespace and grants itself the access it needs to deploy there.
+
+When someone creates a deployment in that workspace, the new-deployment form shows a **Kubernetes namespace** picker with the allowed namespaces. Leave it unset to use the installation namespace. The namespace cannot be changed after the deployment is created.
+
+Limits:
+
+- **Size**: Up to 50 workspaces, each with up to 10 namespaces.
+- **Ownership**: Each namespace belongs to one workspace.
+- **Names**: Lowercase letters, digits, and hyphens, up to 63 characters. Names that start with `kube-`, `gke-`, or `gmp-`, and system namespaces such as `default`, `keda`, and `cert-manager`, are not allowed.
+- **Deployment types**: Serverless deployments always run in the installation namespace.
+- **Builds**: Image builds run in the installation namespace. The deployment itself runs in the namespace you pick.
+
+[Deployment monitoring and logs](#deployment-monitoring-and-logs) cover deployments in every allowed namespace.
+
+To stop using a namespace, delete its deployments first, then ask the LangChain team to remove it. LangSmith keeps the namespace and its access bindings, so remove them yourself if you no longer need them.
+
+## Deployment monitoring and logs
+
+Deployment monitoring and logs give every deployment on your data plane Monitoring charts and a searchable history of its server and build logs that outlives pods and revisions. The charts cover API server and queue worker CPU, memory, restarts, and job stats, run counts, and database and Redis usage.
+
+Logs and metrics stay in your account, in your data plane's region, and are billed to your account:
+
+| Cloud | Logs | Metrics |
+| --- | --- | --- |
+| AWS | Amazon CloudWatch log group | Amazon Managed Service for Prometheus workspace |
+| GCP | Cloud Logging bucket | Google Cloud Managed Service for Prometheus |
+| Azure | Log Analytics workspace | Azure Monitor workspace |
+
+Logs are kept for 30 days by default. To keep them longer or shorter, tell the LangChain team the retention you want.
+
+LangSmith collects logs and metrics only from deployment pods and builds, so the charts and logs stay empty until the data plane has a deployment.
+
+Deployment monitoring and logs are not available on AWS or GCP data planes that use bring your own IAM.
+
+On GCP, you also create the log bucket before LangChain turns on the feature. The LangChain team gives you its name. Create it in the data plane's project and region, as a principal with the `logging.buckets.create` permission, such as one with the Logging Admin role:
+
+```bash
+gcloud logging buckets create <bucket-name> \
+  --project=<project-id> \
+  --location=<region> \
+  --retention-days=30
+```
+
+LangSmith manages the bucket after you create it. If the feature is turned off later, LangSmith keeps the bucket and its logs.
+
+## Prepare your cloud account
+
+The LangSmith BYOC Terraform module you applied during onboarding grants the access LangSmith needs in your account. Before you contact the LangChain team, upgrade it to the [latest release](https://github.com/langchain-ai/terraform/releases), then run `terraform apply`. Pin `ref` to that release's tag, as in the examples below.
+
+Deployment namespaces need no Terraform change. For the other features, each cloud has a few more steps.
+
+<Tabs>
+  <Tab title="AWS">
+    Upgrade the [`langsmith-byoc-role` module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/aws/langsmith-byoc-role).
+
+    If you [bring your own IAM](/langsmith/byoc-byoiam-aws), also set these variables on the `byoiam` module:
+
+    - **`deployment_builds = true`**: For deploy from GitHub and the CLI. Creates the build and push roles.
+    - **`dedicated_deployments = true`**: For Dedicated deployments. Grants the workload role access to the deployment databases.
+
+    ```hcl
+    module "byoiam" {
+      source = "github.com/langchain-ai/terraform//modules/byoc/aws/byoiam?ref=<release-tag>"
+
+      regions               = ["us-east-1"]
+      deployment_builds     = true
+      dedicated_deployments = true
+    }
+    ```
+
+    On AWS, the build roles are shared by every bring-your-own-IAM data plane in the account.
+
+    Serverless deployments need no extra variable on AWS, with or without bring your own IAM. Deployment monitoring and logs need none either: the `langsmith-byoc-role` module always grants the access.
+  </Tab>
+  <Tab title="GCP">
+    Upgrade the [`langsmith-byoc-service-account` module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/gcp/langsmith-byoc-service-account).
+
+    If you set `byo_iam = true`, also set these variables on the same module:
+
+    - **`deployment_builds = true`**: For deploy from GitHub and the CLI. Creates the `langsmith-deployment-builds` service account.
+    - **`dedicated_deployments = true`**: For Dedicated deployments. Grants the workload service account access to the deployment databases.
+    - **`scale_to_zero = true`**: For Serverless deployments. Creates the `langsmith-cell-operator` service account, which creates each Serverless deployment's database.
+
+    ```hcl
+    module "langsmith_byoc" {
+      source = "github.com/langchain-ai/terraform//modules/byoc/gcp/langsmith-byoc-service-account?ref=<release-tag>"
+
+      # Keep your existing settings.
+      byo_iam               = true
+      deployment_builds     = true
+      dedicated_deployments = true
+      scale_to_zero         = true
+    }
+    ```
+
+    The `langsmith-deployment-builds` service account is shared by every bring-your-own-IAM data plane in the project.
+
+    For deployment monitoring and logs, set `deployment_observability = true` on the module. It turns on the Cloud Logging API and lets LangSmith manage the log bucket and sink and read the logs. This variable is not available with `byo_iam = true`. Do not set it back to `false` until LangChain has turned off the feature for every data plane in the project.
+  </Tab>
+  <Tab title="Azure">
+    Upgrade the [`langsmith-byoc-access` module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/azure/langsmith-byoc-access).
+
+    Keep `reduced_access = false` on the data plane's `data_planes` entry until the LangChain team confirms the feature is on. LangSmith needs that access to create the feature's identities and role assignments.
+
+    For deploy from GitHub or the CLI, register the `Microsoft.ContainerRegistry` resource provider in your subscription.
+
+    For deployment monitoring and logs:
+
+    - Set `deployment_observability = true` on the data plane's `data_planes` entry. This works with or without `byo_iam`.
+    - Register the `Microsoft.Insights`, `Microsoft.Monitor`, `Microsoft.OperationalInsights`, and `Microsoft.OperationsManagement` resource providers in your subscription.
+    - If the data plane's AKS cluster already sends Container Insights logs to another Log Analytics workspace, turn off that add-on first.
+
+    If the data plane sets `byo_iam = true`, also set these attributes on its `data_planes` entry:
+
+    - **`deployment_builds = true`**: For deploy from GitHub and the CLI. Creates the build identity and its roles.
+    - **`dedicated_deployments = true`**: For Dedicated deployments. Creates the identity that manages the deployment databases.
+
+    ```hcl
+    data_planes = {
+      "my-data-plane" = {
+        location                 = "eastus"
+        byo_iam                  = true
+        deployment_builds        = true
+        dedicated_deployments    = true
+        deployment_observability = true
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## See also
+
+- [BYOC usage](/langsmith/byoc-usage)
+- [Deployment types](/langsmith/cloud-platform-features#deployment-types)
+- [`langgraph deploy`](/langsmith/cli#deploy)
+- [Deploy to Cloud](/langsmith/deploy-to-cloud)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/byoc-agent-server.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
