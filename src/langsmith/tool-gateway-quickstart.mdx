@@ -15,7 +15,7 @@ import ToolGatewayBetaNote from '/snippets/langsmith/tool-gateway-beta-note.mdx'
 You need:
 
 - **A LangSmith [Plus or Enterprise plan](https://www.langchain.com/pricing).**
-- **A [workspace role](/langsmith/rbac#workspace-roles) that can add servers.** Workspace Admins and Workspace Editors can both add personal servers.
+- **The Workspace Admin [role](/langsmith/rbac#workspace-roles).** This quickstart adds servers and a tool kit for the whole workspace, which requires a Workspace Admin. Workspace Editors can add only personal servers and kits. See [Add MCP servers](/langsmith/tool-gateway-servers) and [Create tool kits](/langsmith/tool-gateway-tool-kits).
 - **A [personal access token](/langsmith/create-account-api-key).** Creating servers and tool kits requires a user credential. A service key does not work for these steps.
 - **Your workspace ID**. Every API request sends it in the `X-Tenant-Id` header.
 - **Accounts on two services that offer a remote MCP server.** This quickstart uses Linear and Notion. To use other services, substitute their MCP URLs and tool names. If you follow the Linear example, use a test Linear workspace, because the kit includes a tool that can create issues.
@@ -47,33 +47,33 @@ The command prints `200` when your setup works.
 
 ## Step 1. Add MCP servers
 
-Register each MCP server once, along with the kind of credential it needs. Both example servers, Linear and Notion, use OAuth.
+Register each MCP server once for the whole workspace, along with the kind of credential it needs. Both example servers, Linear and Notion, use OAuth.
 
 <Tabs>
   <Tab title="UI">
     1. In [LangSmith](https://smith.langchain.com), go to **Tools** > **MCP servers**.
-    1. Select **Personal**, then click **Add MCP server**.
+    1. Click **Add MCP server**.
     1. Enter `Linear` as the name and `https://mcp.linear.app/mcp` as the URL, and select **OAuth**.
     1. Repeat for Notion, with the URL `https://mcp.notion.com/mcp`.
 
     Both servers appear with the status **Not connected**.
   </Tab>
   <Tab title="API">
-    Register Linear and Notion as personal servers that sign in with OAuth. Each command saves the new server's ID in an environment variable for the next steps:
+    Register Linear and Notion as workspace servers that sign in with OAuth. Each command saves the new server's ID in an environment variable for the next steps:
 
     ```bash
     export LINEAR_SERVER_ID=$(curl -sS -X POST "$LANGSMITH_ENDPOINT/v1/managed-tools/servers" \
       -H "X-Api-Key: $LANGSMITH_API_KEY" \
       -H "X-Tenant-Id: $LANGSMITH_WORKSPACE_ID" \
       -H "Content-Type: application/json" \
-      -d '{"name": "Linear", "upstream_url": "https://mcp.linear.app/mcp", "scope": "personal", "connection": {"type": "oauth"}}' \
+      -d '{"name": "Linear", "upstream_url": "https://mcp.linear.app/mcp", "scope": "workspace", "connection": {"type": "oauth"}}' \
       | jq -r '.id')
 
     export NOTION_SERVER_ID=$(curl -sS -X POST "$LANGSMITH_ENDPOINT/v1/managed-tools/servers" \
       -H "X-Api-Key: $LANGSMITH_API_KEY" \
       -H "X-Tenant-Id: $LANGSMITH_WORKSPACE_ID" \
       -H "Content-Type: application/json" \
-      -d '{"name": "Notion", "upstream_url": "https://mcp.notion.com/mcp", "scope": "personal", "connection": {"type": "oauth"}}' \
+      -d '{"name": "Notion", "upstream_url": "https://mcp.notion.com/mcp", "scope": "workspace", "connection": {"type": "oauth"}}' \
       | jq -r '.id')
 
     echo "$LINEAR_SERVER_ID $NOTION_SERVER_ID"
@@ -124,7 +124,7 @@ A tool kit is a curated set of tools, from any number of servers, that Tool Gate
 <Tabs>
   <Tab title="UI">
     1. Go to **Tools** > **Tool kits** and click **Create tool kit**.
-    1. Enter `Quickstart kit` as the name, and set who can use it to **Personal**.
+    1. Enter `Quickstart kit` as the name, and set who can use it to **Workspace**.
     1. In the tool picker, filter by server and select `list_issues` and `save_issue` from Linear and `notion-search` from Notion.
     1. Click **Review tool selection**, then **Create tool kit**.
 
@@ -144,7 +144,7 @@ A tool kit is a curated set of tools, from any number of servers, that Tool Gate
       -H "Content-Type: application/json" \
       -d "{
         \"name\": \"Quickstart kit\",
-        \"scope\": \"personal\",
+        \"scope\": \"workspace\",
         \"tools\": [
           {\"server_id\": \"$LINEAR_SERVER_ID\", \"tool_name\": \"list_issues\"},
           {\"server_id\": \"$LINEAR_SERVER_ID\", \"tool_name\": \"save_issue\"},
@@ -160,7 +160,7 @@ A tool kit is a curated set of tools, from any number of servers, that Tool Gate
   </Tab>
 </Tabs>
 
-The kit is personal because this quickstart's servers are personal. A workspace kit cannot include personal servers. Kit names must be unique, so if `Quickstart kit` is taken, choose another name.
+Everyone in the workspace can see and use a workspace kit. Kit names must be unique in the workspace, so if `Quickstart kit` is taken, choose another name.
 
 <Tip>
 Agents see each tool under the server's name as a prefix, for example, `linear_list_issues`, `linear_save_issue`, and `notion_notion-search`. For tool naming and other kit settings, see [Create tool kits](/langsmith/tool-gateway-tool-kits).
@@ -219,9 +219,9 @@ A tool kit is a standard Streamable HTTP MCP endpoint. Your agent or coding assi
 
 You now have one MCP URL that serves tools from two services, each called with your own account, without any authentication code in your client.
 
-Everything in this quickstart was personal. Tool Gateway is most useful when you share this setup:
+To build on this setup:
 
-1. [Register servers once for the whole workspace](/langsmith/tool-gateway-servers), or turn on built-in servers.
+1. [Add more servers](/langsmith/tool-gateway-servers), or turn on built-in servers.
 1. [Give each agent a kit](/langsmith/tool-gateway-tool-kits) with only the tools it needs.
 1. [Let every user or agent connect their own account](/langsmith/tool-gateway-connect-accounts), and [choose whose credentials each call uses](/langsmith/tool-gateway-identity).
 1. [Set policies](/langsmith/tool-gateway-policies) and [record traces](/langsmith/tool-gateway-traces), so you control and can review every tool call.
