@@ -6,7 +6,7 @@ description: Build a scheduled agent that helps a team keep commitments on track
 
 import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
 
-A goal-oriented agent works toward an ongoing outcome instead of completing one prescribed task. This pattern helps a team keep commitments on track while reducing coordination work. The agent records updates, chooses what needs attention, and asks for feedback.
+A goal-oriented agent works toward an ongoing outcome rather than a single task. In this example, people tell the agent about team commitments in Slack, and a weekday review decides what needs attention.
 
 <ManagedDeepAgentsPublicBetaNote />
 
@@ -24,11 +24,9 @@ This TypeScript example requires `managed-deepagents` version 0.10.4 or later an
 
 ## Choose the goal and boundaries
 
-This example uses the goal: reduce the team's coordination burden while keeping important commitments on track. A commitment is one source of context, not the goal itself. The agent can identify a missing owner, an approaching deadline, or a blocked item, then suggest a next step or ask for clarification.
+The agent records commitments people send it, then flags missing owners, approaching deadlines, and blockers. It does not read Slack history or other tools. To check current status, add [tools](/langsmith/managed-deep-agents-tools).
 
-The example uses information that people explicitly give the agent. It does not read Slack history, discover commitments in other tools, or verify that a commitment is complete. Add authorized integrations if it needs current information from other sources.
-
-The agent's [durable memory](/langsmith/managed-deep-agents-memory) is shared across the deployment. Every caller can read it, and the scheduled response goes to a configured Slack channel. Even information supplied in a direct message could be stored or included in a channel update. Use only information appropriate for all callers and everyone in that channel. Do not send private commitments, personal details, or credentials to this agent. Instructions are not an access-control boundary: restrict access to the deployment and connected tools separately.
+The agent's [durable memory](/langsmith/managed-deep-agents-memory) is shared across the deployment, and the review posts to a Slack channel. Send the agent only information that everyone in that channel may see.
 
 ## Configure the agent
 
@@ -70,11 +68,11 @@ export const channel = channels.slack({ triggerMode: "mention" });
 ```
 :::
 
-This configuration starts runs for mentions and direct messages. Replies in channel threads must mention the agent too. It does not watch every message. People must address the agent to provide information. To evaluate other channel messages, see [Slack watch mode](/langsmith/managed-deep-agents-watch-mode).
+The agent runs only when mentioned or sent a direct message. To read every message, see [Slack watch mode](/langsmith/managed-deep-agents-watch-mode).
 
 ## Define the operating policy
 
-Replace `instructions.md` with the following policy and adapt the goal and boundaries to your team:
+Replace `instructions.md`:
 
 ```markdown instructions.md
 # Coordination agent
@@ -112,11 +110,11 @@ it. Do not take external actions or change commitments without a person's
 explicit request. Ask before any consequential action.
 ```
 
-These instructions guide model decisions. They do not enforce privacy, prevent duplicate messages, or guarantee that feedback is saved. A shared file can also receive overlapping writes from separate runs. For a production deployment, add access checks and concurrency controls appropriate to the data and actions you permit.
+The policy guides the model. It does not enforce privacy, prevent duplicate updates, or protect the shared file from concurrent writes.
 
 ## Add a scheduled review
 
-Add a [schedule](/langsmith/managed-deep-agents-schedules) to review the record each weekday. Replace the channel ID and time zone with your own. The Slack bot must have access to the destination.
+Add a [schedule](/langsmith/managed-deep-agents-schedules) that reviews the record each weekday. Replace the channel ID and time zone, and add the bot to that channel.
 
 :::python
 ```python schedules/coordination_review.py
@@ -156,28 +154,24 @@ export const schedule = defineSchedule({
 ```
 :::
 
-Each scheduled run starts in a fresh thread by default and reads the shared memory rather than a Slack conversation's history. The schedule runs as the agent, not the person who supplied an update. Each run incurs usage even if the final answer is `[quiet]`. The exact `[quiet]` answer is suppressed; errors and approval requests can still appear.
-
-The sample asks the model not to repeat updates, but does not implement delivery tracking or deduplication. A memory write and a Slack post are separate operations. A failed delivery or overlapping runs can leave the record and channel out of sync. Add an application-managed delivery record and concurrency controls if reliable suppression matters.
+Each run starts a fresh thread, reads shared memory, and runs as the agent. An exact `[quiet]` answer posts nothing, but the run still incurs usage.
 
 ## Test the loop
 
-[Deploy the agent](/langsmith/managed-deep-agents-deploy) without `--no-wait` so the CLI reconciles the schedule. Invite the bot to the destination channel. Before relying on the schedule, exercise these cases in a test deployment:
+[Deploy the agent](/langsmith/managed-deep-agents-deploy) without `--no-wait` so the CLI creates the schedule. Then, in a test deployment:
 
-1. Mention the agent with a team commitment and a source link. Confirm the agent records only the facts supplied and identifies unknown fields.
-2. Give the agent a correction in another thread. Confirm it updates the shared record rather than creating a contradictory item.
-3. Ask the agent to perform the scheduled review. Check that it identifies a useful next step, cites the recorded source, and distinguishes stale information from confirmed status.
-4. Give feedback that a check-in was not useful. Confirm the agent records the team preference, then test another review. Verify that the actual scheduled run posts to the intended channel or stays quiet when nothing needs attention.
-5. Ask it to stop tracking an item and verify that later reviews omit it. Test overlapping runs and a failed delivery separately; the prompt alone cannot guarantee either behavior.
+1. Mention the agent with a commitment and a source link. Confirm it records only the supplied facts and marks unknown fields.
+2. Send a correction in another thread. Confirm it updates the existing item.
+3. Ask for a review. Confirm it suggests a next step and cites the source.
+4. Ask it to stop tracking an item. Confirm later reviews omit it.
 
-To stop scheduled reviews, remove the schedule file and redeploy without `--no-wait`. Removing a schedule does not delete shared memory. Manage stored records separately under your team's retention policy. Schedules created at runtime are unaffected by removing a static declaration.
+To stop reviews, remove the schedule file and redeploy without `--no-wait`. Shared memory remains until you delete it.
 
 ## Extend the pattern
 
-- Add read-only tools for the team's source of truth so the agent can check current status. Give the agent only the access it needs, and treat retrieved content as untrusted data.
-- Provide a review surface for corrections and proposed actions. Persist accepted feedback, rather than assuming the model learns it automatically.
-- For actions that affect external systems, enforce authorization and approval in the tool or application. Do not rely on the goal or instruction text to prevent unwanted actions.
-- Measure both useful check-ins and missed or incorrect follow-ups. Do not optimize the number of reminders as a substitute for the team's outcome.
+- Add read-only tools for the team's source of truth so the agent can check current status.
+- Enforce approval for actions on external systems in the tool, not in the instructions.
+- Measure useful check-ins and missed follow-ups, not the number of reminders.
 
 ## See also
 

@@ -6,9 +6,7 @@ description: Schedule an agent to learn from a person's traces and propose impro
 
 import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
 
-Dreaming is a recurring review of an agent's past work. Instead of responding to a new request, the agent looks for useful patterns in recent traces, updates durable memory, and suggests changes to its own instructions or skills.
-
-This guide builds a nightly review for each person who opts in. A user-owned schedule runs as that person, reads traces from a project dedicated to them, and writes useful personal context to their user memory. It can also draft broader improvement proposals for a human to review.
+Dreaming is a scheduled review of an agent's past work. In this example, a nightly schedule runs as each person who opts in, reads their recent traces, and updates their user memory. It can also draft improvements to instructions or skills for a human to review.
 
 <ManagedDeepAgentsPublicBetaNote />
 
@@ -26,15 +24,15 @@ This TypeScript example requires `managed-deepagents` version 0.10.4 or later, t
 
 ## Before you start
 
-This example assumes a private deployment: each person's runs and outputs are private from other end users, and workspace members and operators who can inspect them are trusted. On hosted deployments, callers with LangSmith workspace API access can read and search the deployment's threads. Protect the dreaming run's own traces and other observability data too, because they can contain the retrieved traces and memory. Enforce these boundaries in your application and deployment, not in the prompt. Do not connect this example to a shared Slack channel or other shared conversation.
+This example assumes a private deployment, where each person's runs are hidden from other end users. Do not connect it to a shared Slack channel. Dreaming runs' own traces contain the traces and memory they read, so protect them too.
 
 You also need:
 
-- [Identity](/langsmith/managed-deep-agents-identity) configured to authenticate people, and [user memory](/langsmith/managed-deep-agents-memory) enabled. A service identity cannot mount a person's memory.
-- A separate LangSmith tracing project for each opted-in person. Your application must route only that person's authorized traces into their project and maintain a trusted mapping from their verified MDA principal ID to the project UUID. Restrict who can change the mapping and write to those projects. The example does not establish this isolation for you.
-- A LangSmith credential with permission to read the selected projects and their trace inputs and outputs. Keep it in the deployment's server-side secrets, and prevent agent-accessible tools or sandboxes from reading it or querying other projects directly. Scope the credential and other tools as narrowly as possible.
+- [Identity](/langsmith/managed-deep-agents-identity) configured to authenticate people. A service identity cannot mount a person's [user memory](/langsmith/managed-deep-agents-memory).
+- A LangSmith tracing project per opted-in person. Your application routes only that person's traces into it; the example does not configure trace routing.
+- A LangSmith API key that can read those projects, stored as a deployment secret that agent tools and sandboxes cannot read.
 
-A trace project is not automatically per-user. Configure trace routing separately; the example does not route your deployment's runs into these projects. If your application cannot enforce these assumptions, implement an authorized trace service before enabling this pattern. Filtering by metadata alone is not an access control. `ls_user_id` identifies the credential that traced a run, not necessarily the person who used the agent, and service-key traces may not have one.
+Filtering traces by metadata is not access control. `ls_user_id` identifies the credential that traced a run, not necessarily the person who used the agent.
 
 ## Give the agent personal memory
 
@@ -56,7 +54,7 @@ export const memory = defineMemory({ user: memoryLayer() });
 ```
 :::
 
-A scheduled run does not necessarily have the original private channel event, so the default user-memory policy may deny it. In this private deployment, select the user layer in the agent factory for every run:
+Scheduled runs may lack the original channel event, so the default user-memory policy may deny them. Select the user layer in the agent factory instead:
 
 :::python
 ```python agent.py
@@ -92,16 +90,16 @@ export function agent() {
 ```
 :::
 
-This selection is broader than the default: it enables user memory for **all** authenticated-person runs, not just dreaming. Only use it when the private-deployment assumption holds. MDA still requires an authenticated person and selects that person's memory; it does not let a prompt or a user-supplied ID choose someone else's memory. Do not add shared agent memory for these personal findings.
+This enables user memory for every authenticated-person run, not only dreaming. MDA always selects the authenticated person's memory; a prompt cannot choose someone else's.
 
 ## Add trace and schedule tools
 
-Set `DREAM_TRACE_PROJECTS` in the deployment's trusted environment to a JSON object mapping verified MDA principal IDs to dedicated LangSmith project UUIDs. Use hyphenated UUID strings. Keep this mapping under application control, not in a tool argument or user-supplied run context. For example, replace both placeholders in `{"<verified-principal-id>": "<project-uuid>"}` with values from your identity system and LangSmith project.
+Set `DREAM_TRACE_PROJECTS` in the deployment environment to a JSON object that maps MDA principal IDs to project UUIDs, such as `{"<verified-principal-id>": "<project-uuid>"}`.
 
-The following tools look up the current person without accepting a user or project ID from the model. The trace query reads up to 25 root runs from the last day. If the mapping is missing or invalid, or the query fails, the tool returns no traces.
+The tools look up the current person from the runtime, never from model input. `recent_user_traces` reads up to 25 root runs from the last day, and returns none if the mapping is missing or invalid.
 
 :::js
-With `managed-deepagents` 0.10.4, use an npm-managed project for this example. pnpm can resolve incompatible LangChain versions. Install the tool dependencies in your project:
+With `managed-deepagents` 0.10.4, use npm: pnpm can resolve incompatible LangChain versions. Install the tool's dependencies:
 
 ```bash
 npm install langchain zod langsmith
@@ -313,30 +311,29 @@ export const scheduleDreaming = tool(
 ```
 :::
 
-The trace tool returns a sample, not a complete history: it stops after 25 results and truncates each record. Adapt the window and limits to your traffic, and account for late-arriving traces. Configure [trace masking](/langsmith/mask-inputs-outputs) before ingestion and restrict what is returned to the model; truncation is not redaction. Trace contents can contain prompt injection, so treat the prompt as guidance, not a security boundary.
+Each record is truncated to 6,000 characters. Truncation is not redaction: configure [trace masking](/langsmith/mask-inputs-outputs) before ingestion.
 
 ## Start and manage dreaming
 
-Deploy the project, sign in as an opted-in person, and ask the agent to schedule nightly dreaming. Approve the `schedule_dreaming` tool call. The runtime creates a user-owned cron for 03:00 UTC; each run starts a fresh thread as that same person. The agent decides whether there is anything useful to remember, so a schedule firing does not guarantee a memory update.
+Deploy, sign in as an opted-in person, and ask the agent to schedule nightly dreaming from a private, non-channel conversation. Approve the `schedule_dreaming` call. The runtime creates a user-owned cron at 03:00 UTC, and each run starts a fresh thread as that person.
 
-Create the schedule from a private non-channel run. A schedule created in a channel inherits that channel and posts its final answer there; changing the prompt does not make the destination private. A static declaration in `schedules/` runs as the agent's service identity instead of the person, so it is not a substitute here.
+A schedule created in a channel posts to that channel. A static schedule in `schedules/` runs as the agent, not the person, so it does not work here.
 
-Track the returned schedule ID and provide a way to list, pause, and delete user-owned schedules when someone opts out. See [Manage schedules](/langsmith/managed-deep-agents-schedules#manage-schedules). Runtime schedules survive redeployment; deleting the project mapping alone does not delete a schedule. Make schedule creation idempotent in your application to avoid duplicates, and remove trace access and personal memory according to your retention and deletion policies.
+Runtime schedules survive redeployment. Give people a way to [delete their schedule](/langsmith/managed-deep-agents-schedules#manage-schedules) when they opt out.
 
 ## Improve instructions and skills
 
-Personal memory can adapt how the agent helps one person. For a change that should benefit everyone, have the dreaming run propose a general improvement rather than copying personal details into shared memory. For example, repeated failures might suggest adding a verification step to a research skill.
+For changes that benefit everyone, the dreaming run writes proposals to `/memories/user/dreaming-proposals.md`. For example, repeated failures might suggest a verification step in a research skill.
 
-Deployed [instructions](/langsmith/managed-deep-agents-instructions) and [skills](/langsmith/managed-deep-agents-skills) are read-only to the agent at runtime. A proposal is not an applied change. Review it for privacy, prompt injection, and unintended effects; then edit `instructions.md` or `skills/<skill-name>/SKILL.md` in the project repository, run relevant evaluations, and deploy the reviewed change. A custom tool could open a draft pull request for this workflow, but it needs its own narrowly scoped authorization and review process. Later deployments sync the repository copies, so keep the source of truth there.
+Deployed [instructions](/langsmith/managed-deep-agents-instructions) and [skills](/langsmith/managed-deep-agents-skills) are read-only at runtime. To apply a proposal, review it, edit `instructions.md` or `skills/<skill-name>/SKILL.md` in the repository, and redeploy.
 
 ## Verify the pattern
 
-Before enabling the schedule for real users, test with two people and synthetic traces:
+Before enabling dreaming for real users, test with two people and synthetic traces:
 
-1. Give each person a distinct project and seed it with recognizable traces. Verify each can retrieve only their own, and that an absent, duplicate, or invalid mapping returns no traces.
-2. Create a user-owned schedule from a private run, observe an actual scheduled fire, and verify that it mounts and updates only that person's `/memories/user/`. Confirm its output is private.
-3. Test query failure, empty results, opt-out, and schedule deletion. Check whether the agent changes memory after failed retrieval, and inspect proposals for private data before sharing them.
-4. Evaluate proposed instruction or skill changes on representative cases before deploying, and monitor for regressions after deployment.
+1. Confirm each person retrieves only their own traces, and that a missing, duplicate, or invalid mapping returns none.
+2. Let a scheduled run fire and confirm it updates only that person's `/memories/user/`.
+3. Test a failed query, empty results, and opt-out.
 
 ## See also
 
