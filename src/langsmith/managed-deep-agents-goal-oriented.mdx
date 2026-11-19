@@ -6,7 +6,7 @@ description: Let an agent decide when work needs follow-up and schedule its own 
 
 import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
 
-Some work cannot finish in one turn: a pull request waits on review, a deploy is still rolling out, a release has not shipped yet. A goal-oriented agent finishes what it can right away. When the rest depends on something that has not happened yet, it sets its own schedule to check back, moves the work forward when it can, and stops checking once the goal is met.
+Some work cannot finish in one turn: a pull request waits on review, a deploy is rolling out, or a release has not shipped yet. A goal-oriented agent does what it can immediately, then schedules its own follow-up checks when progress depends on outside events. On each check, it moves the work forward and stops the schedule once the goal is met.
 
 <ManagedDeepAgentsPublicBetaNote />
 
@@ -127,27 +127,26 @@ export const agent = defineDeepAgent({ name: "goal-agent", tools: [checkProgress
 
 ## Write the instructions
 
-The instructions decide when the agent uses the tools. Nobody has to ask for a follow-up: the agent schedules one whenever a request cannot finish now. Add to `instructions.md`:
+Use `instructions.md` to tell the agent when to schedule follow-ups on its own:
 
 ```markdown instructions.md
 ## Follow through
 
-Try to finish every request in this turn. If you cannot, because the work
-depends on something that has not happened yet, such as a review, a deploy,
-or a release, decide how you will know it is done and how often to check.
-Then call check_progress and end your turn instead of waiting.
+Finish every request in the current turn when possible. If the work depends on
+something outside your control, such as a review, deploy, or release, define
+what "done" looks like and pick a check interval. Call check_progress and end
+your turn instead of waiting.
 
-Each time you check progress, look at the current state with your tools.
-Never assume. If you can move the work forward, do it. Otherwise, say who
-needs to act. When the work is done or cannot be done, report it and call
-stop_checking.
+On each check, inspect the current state with your tools rather than assuming.
+Move the work forward if you can; otherwise, note who needs to act. When the
+goal is met or blocked permanently, report the outcome and call stop_checking.
 ```
 
-Each check runs in the same thread, so it sees the original request, earlier progress, and the schedule ID that `check_progress` returned, which `stop_checking` needs. If the request came from Slack, each check replies in that Slack thread.
+Each check runs in the same thread, keeping the original request, prior updates, and the schedule ID needed by `stop_checking`. For Slack conversations, each check replies in the same Slack thread.
 
 ## Try it
 
-The quickstart agent has web search, so it can watch for public events. [Deploy the agent](/langsmith/managed-deep-agents-deploy) and ask: "Tell me when LangChain publishes its next release." The agent searches first. If the release is not out yet, it schedules a check, searches again each time it runs, and stops checking once the release appears. Ask something it can answer right away, and it answers without scheduling anything.
+Starting from the [quickstart](/langsmith/managed-deep-agents-quickstart) agent gives you web search for tracking public events. [Deploy the agent](/langsmith/managed-deep-agents-deploy) and ask: "Tell me when LangChain publishes its next release." The agent searches first, schedules recurring checks if the release is not out yet, and stops once it appears. Requests it can answer immediately finish without a schedule.
 
 ## Extend the pattern
 
