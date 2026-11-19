@@ -17,7 +17,8 @@ This page covers:
 - Required bucket [permissions](#permissions-required) for AWS S3 and GCS.
 - How to [create a destination](#create-a-destination) via the API, including provider-specific examples and credential options.
 - How to [rotate destination credentials](#rotate-destination-credentials) without recreating the destination.
-- How to [switch authentication mode](#switch-authentication-mode) between static credentials and AWS IAM role assumption.
+- How to [authenticate to GCS with workload identity](#authenticate-to-gcs-with-workload-identity) instead of HMAC keys.
+- How to [switch authentication mode](#switch-authentication-mode) between static credentials, AWS IAM role assumption, and GCS workload identity.
 - How to [debug destination errors](#debug-destination-errors).
 
 ## Configuration fields
@@ -202,6 +203,8 @@ curl --request POST \
 ```
 
 See [Google documentation](https://cloud.google.com/storage/docs/interoperability#xml_api) for more info
+
+To export to GCS without HMAC keys, use [workload identity](#authenticate-to-gcs-with-workload-identity) instead of `credentials`.
 
 ### S3-compatible bucket with virtual-hosted style addressing
 
@@ -448,18 +451,105 @@ resource "aws_iam_role" "langsmith_bulk_export" {
 
 See [AWS S3 permissions](#aws-s3-permissions) for optional permissions.
 
+## Authenticate to GCS with workload identity
+
+<Note>
+GCS workload identity is not yet available on BYOC deployments.
+</Note>
+
+Workload identity lets LangSmith export to a GCS bucket without HMAC keys. LangSmith signs a short-lived OpenID Connect (OIDC) token for your workspace, and Google Cloud [Workload Identity Federation](https://cloud.google.com/iam/docs/workload-identity-federation) exchanges it for a short-lived access token. LangSmith stores no Google credentials for the destination.
+
+Each token identifies the workspace that is exporting:
+
+| Claim | Value |
+| ----- | ----- |
+| `iss` | Your region's LangSmith API host: `https://api.smith.langchain.com` (US), `https://eu.api.smith.langchain.com` (GCP EU), `https://apac.api.smith.langchain.com` (GCP APAC), or `https://aws.api.smith.langchain.com` (AWS US). |
+| `sub` | `ws:<workspace_id>:bulk_export` |
+| `aud` | The `https://` form of your provider: `https://iam.googleapis.com/projects/<project_number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>` |
+
+<Warning>
+Every workspace in a region shares the LangSmith issuer. Always pin your workspace with the attribute condition below, and grant access to the exact `principal://` subject, never to the whole pool (`principalSet://.../*`). Otherwise the provider accepts tokens from any workspace.
+</Warning>
+
+### Configure Google Cloud
+
+1. Create a workload identity pool and an OIDC provider that trusts LangSmith's issuer for your workspace. The subject mapping and the attribute condition are both required:
+
+    ```bash
+    gcloud iam workload-identity-pools create langsmith --location global
+    gcloud iam workload-identity-pools providers create-oidc langsmith \
+      --location global --workload-identity-pool langsmith \
+      --issuer-uri https://api.smith.langchain.com \
+      --attribute-mapping 'google.subject=assertion.sub' \
+      --attribute-condition "assertion.sub == 'ws:<workspace_id>:bulk_export'"
+    ```
+
+    Leave the provider's allowed audiences at the default. If you set `--allowed-audiences`, include the `https://iam.googleapis.com/...` form of the provider.
+
+1. Grant the workspace's subject write access to the bucket:
+
+    ```bash
+    gcloud storage buckets add-iam-policy-binding gs://<bucket> \
+      --role roles/storage.objectCreator \
+      --member "principal://iam.googleapis.com/projects/<project_number>/locations/global/workloadIdentityPools/langsmith/subject/ws:<workspace_id>:bulk_export"
+    ```
+
+    Add `roles/storage.objectViewer` so LangSmith can read back each exported file's size, as described in [GCS permissions](#google-cloud-storage-gcs-permissions).
+
+    To act as a service account instead, grant the bucket roles to that service account, then let the subject impersonate it:
+
+    ```bash
+    gcloud iam service-accounts add-iam-policy-binding <service_account_email> \
+      --role roles/iam.workloadIdentityUser \
+      --member "principal://iam.googleapis.com/projects/<project_number>/locations/global/workloadIdentityPools/langsmith/subject/ws:<workspace_id>:bulk_export"
+    ```
+
+IAM binding changes can take a few minutes to take effect.
+
+### Create the destination
+
+Pass `gcp_workload_identity_provider` in `config` instead of `credentials`. Its value is the provider's resource name, which starts with `//iam.googleapis.com/`. Set `endpoint_url` to `https://storage.googleapis.com`. Add `gcp_service_account_email` only if you configured impersonation:
+
+```bash
+curl --request POST \
+  --url 'https://api.smith.langchain.com/api/v1/bulk-exports/destinations' \
+  --header 'Content-Type: application/json' \
+  --header 'X-API-Key: YOUR_API_KEY' \
+  --header 'X-Tenant-Id: YOUR_WORKSPACE_ID' \
+  --data '{
+    "destination_type": "s3",
+    "display_name": "My GCS Destination",
+    "config": {
+      "bucket_name": "my_bucket",
+      "prefix": "data_exports",
+      "endpoint_url": "https://storage.googleapis.com",
+      "gcp_workload_identity_provider": "//iam.googleapis.com/projects/<project_number>/locations/global/workloadIdentityPools/langsmith/providers/langsmith",
+      "gcp_service_account_email": "langsmith-export@my-project.iam.gserviceaccount.com"
+    }
+  }'
+```
+
+`gcp_workload_identity_provider` cannot be combined with `credentials` or `aws_role_arn`. As with other destinations, LangSmith writes a test file before saving the destination.
+
+### Self-hosted deployments
+
+Self-hosted LangSmith supports GCS workload identity when its signing key set (`LANGSMITH_SIGNING_JWKS`) holds an RS256 key after the Ed25519 key. The `/info` endpoint then reports `bulk_export_workload_identity_supported: true` and the issuer to trust as `bulk_export_workload_identity_issuer`. Without that key, creating a destination returns `Workload identity is not configured on this deployment.`
+
+Google must be able to verify the tokens. Either expose the issuer's `/.well-known/openid-configuration` and `/.well-known/jwks.json` to the internet, or upload the public key set to the provider with `--jwk-json-path` and set `--issuer-uri` to the issuer. With an uploaded key set, upload the new public keys after each key rotation.
+
 ## Switch authentication mode
 
-Switch an existing destination between static credentials and [AWS IAM role assumption](#authenticate-with-an-aws-iam-role) without recreating it. Use `PATCH /api/v1/bulk-exports/destinations/{destination_id}`.
+Switch an existing destination between static credentials, [AWS IAM role assumption](#authenticate-with-an-aws-iam-role), and [GCS workload identity](#authenticate-to-gcs-with-workload-identity) without recreating it. Use `PATCH /api/v1/bulk-exports/destinations/{destination_id}`.
 
 [**Required permission**](/langsmith/organization-workspace-operations#bulk-exports): `bulk-exports:manage`.
 
-LangSmith supports two mutually exclusive modes:
+LangSmith supports three mutually exclusive modes:
 
 - **Static credentials** (`credentials`): An `access_key_id` and `secret_access_key` (with an optional `session_token` for temporary credentials).
 - **IAM role assumption** (`aws_role_arn`): LangSmith assumes the specified AWS IAM role, so no static credentials are stored.
+- **GCS workload identity** (`gcp_workload_identity_provider`, with an optional `gcp_service_account_email`): LangSmith authenticates to GCS as your workspace, so no static credentials are stored.
 
-To switch to AWS IAM role assumption, provide `aws_role_arn` in the PATCH body. To switch to static credentials, provide `credentials`. When either field is present and nonempty, LangSmith clears the other.
+Provide exactly one mode in the PATCH body. LangSmith clears the others.
 
 Before switching, ensure the new authentication configuration has write access to the destination bucket. LangSmith validates the configuration with a test write before saving it.
 
@@ -493,6 +583,21 @@ curl --request PATCH \
       "access_key_id": "YOUR_NEW_ACCESS_KEY_ID",
       "secret_access_key": "YOUR_NEW_SECRET_ACCESS_KEY"
     }
+  }'
+```
+
+### Switch from HMAC keys to GCS workload identity
+
+[Configure Google Cloud](#configure-google-cloud) first, then provide the provider in the PATCH body. This clears the stored HMAC keys.
+
+```bash
+curl --request PATCH \
+  --url 'https://api.smith.langchain.com/api/v1/bulk-exports/destinations/{destination_id}' \
+  --header 'Content-Type: application/json' \
+  --header 'X-API-Key: YOUR_API_KEY' \
+  --header 'X-Tenant-Id: YOUR_WORKSPACE_ID' \
+  --data '{
+    "gcp_workload_identity_provider": "//iam.googleapis.com/projects/<project_number>/locations/global/workloadIdentityPools/langsmith/providers/langsmith"
   }'
 ```
 
@@ -563,4 +668,6 @@ Here are some common errors:
 | Bucket is not valid                | The specified blob store bucket is not valid. This error is thrown when the bucket doesn't exist or there is not enough access to perform writes on the bucket.                                                                                                                                        |
 | Key ID you provided does not exist | The blob store credentials provided are not valid. This error occurs when the access key ID used for authentication is not a valid key.                                                                                                                                                                |
 | Invalid endpoint                   | The endpoint_url provided is invalid. This error is raised when the specified endpoint is an invalid endpoint. Only S3 compatible endpoints are supported, for example `https://storage.googleapis.com` for GCS, `https://play.min.io` for minio, etc. If using AWS, you should omit the endpoint_url. |
+| GCP workload identity denied       | Google Cloud refused LangSmith's workload identity token. Check that the provider exists, that its attribute condition matches `ws:<workspace_id>:bulk_export` for the exporting workspace, and that the bucket roles (or the service account's `roles/iam.workloadIdentityUser`) are granted to that exact subject. The error includes Google's reason, for example `The given credential is rejected by the attribute condition.` |
+| Workload identity is not configured on this deployment | The LangSmith deployment cannot sign workload identity tokens. On self-hosted, see [Self-hosted deployments](#self-hosted-deployments). |
 | InvalidBucketName                  | The S3-compatible service rejected the request due to addressing style mismatch. Some services require virtual-hosted style addressing. Set `config_kwargs_s3: {"addressing_style": "virtual"}` in your destination config to resolve this. |
