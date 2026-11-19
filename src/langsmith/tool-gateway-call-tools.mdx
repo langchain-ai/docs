@@ -14,7 +14,7 @@ The examples on this page use the environment variables from the [quickstart](/l
 
 ## Send an MCP request
 
-Send each MCP message as a JSON-RPC `POST` request to the endpoint. Tool Gateway does not keep a session between requests, so you do not need to send `initialize` before you list or call tools. A tool kit accepts one message per request and rejects JSON-RPC batches.
+Send each MCP message as a JSON-RPC `POST` request to the endpoint. A tool kit and the me kit keep no session between requests, so you do not need to send `initialize` before you list or call tools. A tool kit accepts one message per request and rejects JSON-RPC batches. A single server's endpoint passes each request to the server as is, and can answer with `text/event-stream`. If that server uses sessions, send `initialize` first, and repeat the `MCP-Session-Id` header it returns on each request.
 
 Every request sends these headers:
 
@@ -28,6 +28,8 @@ Requests on MCP protocol version `2026-07-28` must also send the protocol versio
 
 - **`Mcp-Method`**: The JSON-RPC `method`, such as `tools/list`.
 - **`Mcp-Name`**: For `tools/call`, the tool's name, matching `params.name`.
+
+A `2026-07-28` request that is missing either header returns `400` with a JSON-RPC error, code `-32020`.
 
 Protocol version `2026-07-28` is required to get the [connection](#connect-when-a-call-asks) and [approval](#approve-a-tool-call) prompts inside the MCP response. Requests on an earlier version, such as `2025-06-18`, omit the extra headers and `_meta`, and get an HTTP error instead of a prompt.
 
@@ -119,9 +121,9 @@ The `428` body differs by endpoint. A tool kit or the me kit returns a `credenti
   "credentials": [
     {
       "kind": "oauth",
-      "slug": "linear",
+      "slug": "mt-<server-id>",
       "display_name": "Linear",
-      "verification_url": "https://smith.langchain.com/...",
+      "verification_url": "<sign-in-url>",
       "auth_id": "<auth-id>"
     }
   ]
@@ -134,14 +136,14 @@ A single server's endpoint returns the same fields for its one credential at the
 {
   "status": 428,
   "kind": "oauth",
-  "slug": "linear",
+  "slug": "mt-<server-id>",
   "display_name": "Linear",
-  "verification_url": "https://smith.langchain.com/...",
+  "verification_url": "<sign-in-url>",
   "auth_id": "<auth-id>"
 }
 ```
 
-`kind` is `oauth` for a server that signs in with OAuth, or `secret` for a server that expects an API key. The link opens a page where the user signs in or enters the key.
+`kind` is `oauth` for a server that signs in with OAuth, or `secret` for a server that expects an API key. The link opens a page where the user signs in or enters the key. For OAuth, it can go straight to the service's own sign-in page. Only the caller should open it: whoever signs in links their account to the caller.
 
 ### When the caller is an agent or a profile
 
@@ -162,11 +164,11 @@ A deny policy blocks the call with `403` and the detail "tool call was denied by
 
 ## Errors
 
-Error responses are JSON problem details. The `detail` field says what went wrong, and `remedy`, when present, says what to do next.
+Most error responses are JSON problem details. The `detail` field says what went wrong, and `remedy`, when present, says what to do next. Two errors use other bodies: an authentication failure can return `{"error": "Unauthorized"}`, and a missing or mismatched `Mcp-Method` or `Mcp-Name` header returns a JSON-RPC error.
 
 | Status | Meaning | What to do |
 |--------|---------|------------|
-| `400` | The request is malformed: for example, a JSON-RPC batch, or a `mode` other than `search`. | Send one JSON-RPC message per request, and check the query string. |
+| `400` | The request is malformed: for example, a JSON-RPC batch, a `mode` other than `search`, or a missing `Mcp-Method` or `Mcp-Name` header on protocol `2026-07-28`. | Send one JSON-RPC message per request, check the query string, and check the headers. |
 | `401` | Authentication is missing or invalid. | Check the API key and `X-Tenant-Id`. |
 | `403` | A deny policy blocked the call, an approval policy needs a client that can show the form, a workspace admin turned the server off, or the caller lacks permission. | Read `detail`. For policies, see [Approve a tool call](#approve-a-tool-call). |
 | `404` | The tool kit, server, or profile does not exist, or the caller cannot see it. | Check the ID in the URL or the `X-LangSmith-Profile` header. |
