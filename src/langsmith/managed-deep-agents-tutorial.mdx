@@ -1,43 +1,30 @@
 ---
-title: Add memory and a schedule
-sidebarTitle: Schedules
-description: Add durable memory and a daily schedule to the research assistant from the quickstart.
+title: Build a daily digest agent
+sidebarTitle: Daily digest
+description: Build an agent that remembers the topics you follow and sends a digest every weekday.
 ---
 
 import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
 
-This tutorial continues from the [quickstart](/langsmith/managed-deep-agents-quickstart). Use the `research-assistant` project you created there, with your model, instructions, and a working `mda dev` setup.
-
-`mda init` may also scaffold files such as `identity` and `sandbox/`. Leave those as they are; this tutorial does not change them.
-
-This guide enables durable memory, adds a daily schedule, then deploys. The agent keeps the search tool from the quickstart. To use LangSmith's built-in [web search](/langsmith/managed-deep-agents-search) instead, which needs no separate API key, add it before you continue.
+A digest agent combines memory and a schedule. You tell it which topics you follow, and each weekday morning it searches for news on those topics and writes a short digest.
 
 <ManagedDeepAgentsPublicBetaNote />
 
-## Extend the agent
+:::python
+<Note>
+This Python example requires `managed-deepagents>=0.10.4` and the matching `mda` CLI.
+</Note>
+:::
 
-<Steps>
-  <Step title="Update the instructions for memory" id="instructions">
+:::js
+<Note>
+This TypeScript example requires `managed-deepagents` version 0.10.4 or later and the matching `mda` CLI.
+</Note>
+:::
 
-Extend `instructions.md` so the agent knows what shared knowledge to keep. Keep the research behavior and add a memory policy:
+## Configure the agent
 
-```markdown instructions.md
-# Research assistant
-
-You are a careful research assistant. Use internet search to find sources,
-keep notes, and return concise answers with citations.
-
-## Memory
-
-- Record reusable research procedures and project knowledge that can improve future work.
-- For release research, check the project's official changelog before secondary sources.
-- Never store personal data or secrets in memory.
-```
-  </Step>
-
-  <Step title="Enable and use durable memory" id="memory">
-
-Durable memory is opt-in. Before asking the agent to remember anything, add a memory declaration at the project root:
+Start with the research assistant from the [quickstart](/langsmith/managed-deep-agents-quickstart), which already has web search. Enable shared [memory](/langsmith/managed-deep-agents-memory):
 
 :::python
 ```python memory.py
@@ -55,17 +42,21 @@ export const memory = defineMemory({ agent: memoryLayer() });
 ```
 :::
 
-Memory is shared across the deployment and visible to all callers, so do not store personal data or secrets.
+Replace `instructions.md`:
 
-Restart `mda dev` so it discovers the new file. In one thread, ask the agent to research a release and to record a reusable project rule, such as "For release research, check the official changelog before secondary sources." Then create a **new thread** in Studio and ask how it will research the next release. Confirm that it applies the shared rule even though the new thread has no conversation history.
+```markdown instructions.md
+# Digest agent
 
-See [Memory](/langsmith/managed-deep-agents-memory) for details.
+You are a research assistant. When someone asks you to follow or stop
+following a topic, update /memories/agent/topics.md and confirm the change.
 
-  </Step>
+When asked for a digest, read that file, search for news from the last day on
+each topic, and write a short digest with one or two cited items per topic.
+```
 
-  <Step title="Schedule a daily digest" id="schedule">
+## Add a schedule
 
-Add a `schedules/` module so the agent runs on a cron cadence without a user message. This schedule runs every weekday at 8am Pacific:
+Add a [schedule](/langsmith/managed-deep-agents-schedules) that asks for a digest every weekday at 8:00:
 
 :::python
 ```python schedules/daily_digest.py
@@ -74,10 +65,7 @@ from managed_deepagents import define_schedule
 schedule = define_schedule(
     cron="0 8 * * 1-5",
     timezone="America/Los_Angeles",
-    prompt=(
-        "Review durable memory for reusable research rules. "
-        "Summarize anything useful, then list open questions for today."
-    ),
+    prompt="Write today's digest.",
 )
 ```
 :::
@@ -89,79 +77,25 @@ import { defineSchedule } from "managed-deepagents";
 export const schedule = defineSchedule({
   cron: "0 8 * * 1-5",
   timezone: "America/Los_Angeles",
-  prompt:
-    "Review durable memory for reusable research rules. " +
-    "Summarize anything useful, then list open questions for today.",
+  prompt: "Write today's digest.",
 });
 ```
 :::
 
-If memory is empty on the first fire, the agent still returns open questions.
+## Try it
 
-`mda deploy` creates this schedule as a LangSmith cron job after the deployment is live. After you deploy in the next step, you should see:
+Run the agent with `mda dev` and ask it to follow a topic, such as "Follow LangChain releases." Start a new thread and ask for today's digest: the agent reads the topic from memory, even though the new thread has no history.
 
-- A managed cron for this file on the deployment. The schedule name matches the module stem: `daily_digest` (Python) or `daily-digest` (TypeScript).
-- No immediate digest run from this cron. The first fire waits until 8:00 America/Los_Angeles on a weekday.
-
-For thread behavior and constraints, see [Schedules](/langsmith/managed-deep-agents-schedules).
-
-  </Step>
-
-  <Step title="Deploy and inspect" id="deploy">
-
-Deploy the project to LangSmith:
-
-:::python
-```bash
-uv run mda deploy
-```
-:::
-
-:::js
-<CodeGroup>
-    ```bash npm
-    npx mda deploy
-    ```
-
-    ```bash pnpm
-    pnpm exec mda deploy
-    ```
-
-    ```bash bun
-    bunx mda deploy
-    ```
-</CodeGroup>
-:::
-
-On success, the CLI prints the deployment dashboard URL. The deploy syncs the instructions to Context Hub, uploads the compiled project, and creates the daily schedule.
-
-Open that URL and confirm:
-
-- The deployment is ready.
-- The `daily_digest` or `daily-digest` cron exists.
-- A test chat run shows model calls, search tool calls, and memory reads or writes in the traces.
-
-For deploy flags and troubleshooting, see [Deploy an agent](/langsmith/managed-deep-agents-deploy) and the [CLI reference](/langsmith/managed-deep-agents-cli#deploy-projects).
-
-  </Step>
-</Steps>
+[Deploy the agent](/langsmith/managed-deep-agents-deploy) to run the digest on schedule. Each run appears as a new thread on the deployment.
 
 ## Extend the pattern
 
 - Post the digest to Slack with [schedule delivery](/langsmith/managed-deep-agents-schedules#deliver-results-to-slack).
-- Let the agent set its own reminders with [runtime schedules](/langsmith/managed-deep-agents-schedules#create-schedules-at-runtime).
+- Let people set their own digest time with [runtime schedules](/langsmith/managed-deep-agents-schedules#create-schedules-at-runtime).
 - Switch to built-in [web search](/langsmith/managed-deep-agents-search) so search needs no provider API key.
 
-## Next steps
+## See also
 
-<CardGroup cols={2}>
-  <Card title="Custom middleware" icon="code" href="/langsmith/managed-deep-agents-middleware">
-    Add logging, retries, limits, and guardrails around model and tool calls.
-  </Card>
-  <Card title="Identity" icon="fingerprint" href="/langsmith/managed-deep-agents-identity">
-    Authenticate callers and use verified identity in tools and middleware.
-  </Card>
-  <Card title="Evals" icon="flask" href="/langsmith/managed-deep-agents-evals">
-    Develop Harbor evals with a coding agent and the eval-engineering skill.
-  </Card>
-</CardGroup>
+- [Memory](/langsmith/managed-deep-agents-memory): choose and control durable memory layers.
+- [Schedules](/langsmith/managed-deep-agents-schedules): configure and manage scheduled runs.
+- [Web search](/langsmith/managed-deep-agents-search): add built-in search without a separate API key.
