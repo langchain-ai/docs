@@ -1,7 +1,7 @@
 ---
 title: Track users
 sidebarTitle: Users
-description: Record the end user of each trace with the user_id metadata key, then view, filter, and chart users in LangSmith.
+description: Record the end user of each trace with the user_id metadata key, then view, filter, chart, and add traits to users in LangSmith.
 tag: "Beta"
 ---
 
@@ -139,6 +139,60 @@ Grouping by user splits each dashboard chart into one series per user. LangSmith
 - **Custom charts**: When you [configure a chart](/langsmith/dashboards#filter-and-group), select **User** as the group-by attribute. To start from a chart that already groups by user, use the **Traces by user** or **Cost by user** template.
 
 Like other group-by attributes, a chart shows the most frequent users. Runs without a `user_id`, and users outside the most frequent ones, count toward the **Other** group where the chart shows one. The **Metadata** key list does not offer `user_id`, because **User** replaces it.
+
+## Add traits to a user
+
+Traits are key-value attributes, such as a name or an email address, that you store for a user through the [LangSmith REST API](/langsmith/smith-api-ref). Use traits to keep the details your team needs about each user, such as who they are and how to reach them, under the same `user_id` that your traces record. LangSmith stores traits separately from traces, so [trace retention](/langsmith/observability-concepts#data-retention) does not apply to them. Traits stay until you remove them with an update, or until the [agent environment](/langsmith/agent-environments) or workspace is deleted.
+
+Traits belong to one agent environment. The same `user_id` in two environments has two separate sets of traits. The `{session_id}` path parameter is the agent environment's ID. To get it, [resolve the agent environment](/langsmith/resolve-an-agent), which returns the ID as `session_id`.
+
+### Set permissions
+
+Each operation requires a permission. For the roles that include each permission, see [Organization and workspace operations](/langsmith/organization-workspace-operations#runs):
+
+- **Create a user**: `runs:create`, the same permission that sending traces requires.
+- **Update traits**: `runs:create` and `runs:read`.
+- **Get or list users**: `runs:read`.
+
+The traits API is not available in an environment where an [access policy](/langsmith/abac#control-trace-access-with-root-run-metadata) limits which traces you can read by root run metadata. LangSmith returns `403` for those requests.
+
+### Create and update users
+
+The API provides these operations:
+
+- **[Create a user](/langsmith/smith-api/users/create-a-user)**: `POST /api/v1/platform/sessions/{session_id}/users` with a `user_id` and optional `traits`. Returns `201` with the new user, or `409` if the user already exists. To create a user or update an existing user, send a create request, then send an update request when the create request returns `409`.
+- **[Update traits](/langsmith/smith-api/users/update-a-users-traits)**: `PATCH /api/v1/platform/sessions/{session_id}/users/{user_id}` with a `traits` object. LangSmith merges the `traits` object into the stored traits: keys you send overwrite existing values, keys you omit are kept, and a `null` value removes a key. Returns `200` with the stored user, or `404` if the user does not exist.
+- **[Get a user](/langsmith/smith-api/users/get-a-user)**: `GET /api/v1/platform/sessions/{session_id}/users/{user_id}`. Returns `404` if the user does not exist.
+- **[List users](/langsmith/smith-api/users/list-users)**: `GET /api/v1/platform/sessions/{session_id}/users`, ordered by most recently updated. The optional `page_size` parameter defaults to 20, with a maximum of 100. Pass the `next_cursor` value from a response as `cursor` to get the next page. On the last page, `next_cursor` is `null`. Use `user_id_prefix` for a case-sensitive prefix match on the user ID.
+
+For example, this request body creates a user with a name and email:
+
+```json
+{"user_id": "user_123", "traits": {"name": "Alex Rivera", "email": "alex@example.com"}}
+```
+
+The response contains `user_id`, `traits`, `created_at`, and `updated_at`.
+
+This update request body changes the name and removes the email, keeping any other traits:
+
+```json
+{"traits": {"name": "Alex R.", "email": null}}
+```
+
+### Stay within request limits
+
+Each request must stay within the following limits:
+
+- **User ID**: A user ID has 1 to 512 characters. In a path, URL-encode the user ID but keep each `/` as is, because LangSmith rejects `%2F` in a path. You cannot get or update a user whose ID has a `.` or `..` segment, `//`, or a leading `/`, because the ID cannot be used in a path.
+- **Trait values**: `traits` must be a JSON object with at most 50 keys. The `name` and `email` keys must be strings, or `null` in an update. A create request cannot contain `null` values.
+- **Size**: A user's stored traits are limited to 16,384 bytes, and a request body to 65,536 bytes. An update that would exceed the stored limit fails, and the stored traits stay unchanged.
+- **Rate limit**: LangSmith limits how many users a workspace can create per minute. A request over the limit returns `429` with a `Retry-After` header.
+
+LangSmith also returns these errors:
+
+- **`400`**: LangSmith cannot read the request, such as invalid JSON, an unknown field, or a body over the size limit.
+- **`422`**: A user ID or trait value breaks a request limit. The response names the field.
+- **`501`**: The user features are not enabled for your workspace.
 
 ## See also
 
