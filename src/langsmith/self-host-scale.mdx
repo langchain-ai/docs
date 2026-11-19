@@ -168,6 +168,16 @@ Change the variables in order, because tasks in a partition that no worker reads
 - **To add partitions:** raise `GO_INGESTION_WORKER_PARTITIONS` and deploy, then raise `GO_INGESTION_QUEUE_PARTITIONS` to the same value and deploy.
 - **To remove partitions:** lower `GO_INGESTION_QUEUE_PARTITIONS` and deploy. Wait until the removed partitions have no pending, active, retry, or scheduled tasks, then lower `GO_INGESTION_WORKER_PARTITIONS`.
 
+To check that the removed partitions are empty, run the following for each one. Add your connection options to `redis-cli`, and `-c` on Redis Cluster. The example checks the partitions removed when going from 6 to 4:
+
+```bash
+for q in ingestion-fur-4 ingestion-qg-5; do
+  echo "$q pending=$(redis-cli LLEN "asynq:{$q}:pending") active=$(redis-cli LLEN "asynq:{$q}:active") retry=$(redis-cli ZCARD "asynq:{$q}:retry") scheduled=$(redis-cli ZCARD "asynq:{$q}:scheduled")"
+done
+```
+
+Continue when all four counts are `0` for every removed partition.
+
 To check partitioning, read the `asynq worker queue configuration` log line that a queue worker writes at startup. It lists the queues the worker reads.
 
 ## Trace querying (read path)
