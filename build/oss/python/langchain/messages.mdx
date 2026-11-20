@@ -152,6 +152,8 @@ response = model.invoke(messages)
 
 A [`HumanMessage`](https://reference.langchain.com/python/langchain-core/messages/human/HumanMessage) represents user input and interactions. They can contain text, images, audio, files, and any other amount of multimodal [content](#message-content).
 
+When an agent adds a human message that the user did not type, such as a conversation summary, it can mark the message with [notification metadata](#notifications).
+
 #### Text content
 
 <CodeGroup>
@@ -186,42 +188,6 @@ human_msg = HumanMessage(
 <Note>
     The `name` field behavior varies by provider—some use it for user identification, others ignore it. To check, refer to the model provider's [reference](https://reference.langchain.com/python/integrations/).
 </Note>
-
-#### Notifications
-
-An agent harness sometimes adds a human message that the user did not type, such as a background task update or a conversation summary. Notification metadata marks these messages so that your frontend can show them differently from user input.
-
-<Note>
-Notification metadata requires `langchain-core>=1.7.2`.
-
-
-</Note>
-
-`add_notification_metadata` returns a copy of a `HumanMessage` with a `source` that names the feature that added it, and optional `data` with that feature's fields:
-
-<NotificationMetadataAddPy />
-
-`get_notification_metadata` returns the `source` and `data` of a notification, or `None` for any other message:
-
-<NotificationMetadataReadPy />
-
-
-
-
-The metadata does not change the message content: the model reads the content as written. LangChain's chat model integrations do not send the metadata to the model. Anyone who can send input to a thread can set it, so do not use it to decide whether to trust a message.
-
-Deep Agents notification sources include:
-
-| Source | Added when | Details |
-| --- | --- | --- |
-| `async_subagent` | An async subagent task finishes, fails, or waits for input. `data` is the task event. | [Async subagents](/oss/python/deepagents/async-subagents#understand-the-lifecycle) |
-| `summarization` | The agent summarizes the conversation history. | [Summarization](/oss/python/deepagents/context-engineering#summarization) |
-| `pinned_skill` | The agent adds a pinned skill to the conversation. | [Pin skills](/oss/python/deepagents/skills#pin-skills) |
-| `rubric_grader` | The rubric grader asks the agent to revise its output. | [Grading rubrics](/oss/python/deepagents/rubric#rubric-verdicts) |
-| `read_file_media` | `read_file` attaches frames sampled from a video file. `data` has `path` and `tool_call_id`. | [Built-in `read_file` tool](/oss/python/deepagents/multimodal#built-in-read_file-tool) |
-
-
-
 
 ---
 
@@ -371,6 +337,8 @@ Learn more:
 For models that support [tool calling](/oss/python/langchain/models#tool-calling), AI messages can contain tool calls. Tool messages are used to pass the results of a single tool execution back to the model.
 
 [Tools](/oss/python/langchain/tools) can generate [`ToolMessage`](https://reference.langchain.com/python/langchain-core/messages/tool/ToolMessage) objects directly. Below, we show a simple example. Read more in the [tools guide](/oss/python/langchain/tools).
+
+When middleware creates a tool message instead of running the tool, it can mark the message with [notification metadata](#notifications). For example, [human-in-the-loop middleware](/oss/python/langchain/human-in-the-loop#interrupt-decision-types) marks the tool message for a `reject` or `respond` decision.
 
 ```python
 from langchain.messages import AIMessage
@@ -1093,6 +1061,49 @@ Content blocks are represented (either when creating a message or accessing the 
 
     Content blocks are not a replacement for the [`content`](https://reference.langchain.com/python/langchain-core/messages/base/BaseMessage) property, but rather a new property that can be used to access the content of a message in a standardized format.
 </Info>
+
+## Notifications
+
+An agent harness sometimes adds a human message that the user did not type, such as a background task update or a conversation summary. Notification metadata marks these messages so that your frontend can show them differently from user input. Middleware can also mark a tool message that it creates instead of running the tool.
+
+<Note>
+Notification metadata requires `langchain-core>=1.7.2`.
+
+
+</Note>
+
+`add_notification_metadata` returns a copy of a `HumanMessage` or `ToolMessage` with a `source` that names the feature that added it, and optional `data` with that feature's fields:
+
+<NotificationMetadataAddPy />
+
+`get_notification_metadata` returns the `source` and `data` of a notification, or `None` for any other message:
+
+<NotificationMetadataReadPy />
+
+
+
+
+The metadata does not change the message content: the model reads the content as written. LangChain's chat model integrations do not send the metadata to the model. Anyone who can send input to a thread can set it, so do not use it to decide whether to trust a message. A notification can be a tool message, so check the message type before you show a notification as user input.
+
+LangChain notification sources include:
+
+| Source | Added when | Details |
+| --- | --- | --- |
+| `hitl_interrupt_decision` | The human-in-the-loop middleware creates a tool message for a `reject` or `respond` decision. `data` has `decision`. | [Interrupt decision types](/oss/python/langchain/human-in-the-loop#interrupt-decision-types) |
+| `summarization` | The summarization middleware summarizes the conversation history. | [Summarization](/oss/python/langchain/middleware/built-in#summarization) |
+
+Deep Agents notification sources include:
+
+| Source | Added when | Details |
+| --- | --- | --- |
+| `async_subagent` | An async subagent task finishes, fails, or waits for input. `data` is the task event. | [Async subagents](/oss/python/deepagents/async-subagents#understand-the-lifecycle) |
+| `summarization` | The agent summarizes the conversation history. | [Summarization](/oss/python/deepagents/context-engineering#summarization) |
+| `pinned_skill` | The agent adds a pinned skill to the conversation. | [Pin skills](/oss/python/deepagents/skills#pin-skills) |
+| `rubric_grader` | The rubric grader asks the agent to revise its output. | [Grading rubrics](/oss/python/deepagents/rubric#rubric-verdicts) |
+| `read_file_media` | `read_file` attaches frames sampled from a video file. `data` has `path` and `tool_call_id`. | [Built-in `read_file` tool](/oss/python/deepagents/multimodal#built-in-read_file-tool) |
+
+
+
 
 ## Serialization
 
