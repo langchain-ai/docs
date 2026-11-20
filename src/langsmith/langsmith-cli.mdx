@@ -372,7 +372,9 @@ langsmith experiment get my-experiment-2024-01-15
 
 ### Manage insights
 
-`insights` commands create, run, and read [Insights](/langsmith/insights) reports, which group an agent environment's traces into categories to surface usage patterns and failure modes. Every `insights` command needs `--project`, `--project-id`, or the `LANGSMITH_PROJECT` environment variable.
+`insights` commands create, run, and read [Insights](/langsmith/insights) configurations and their jobs, which group an agent environment's traces into categories to surface usage patterns and failure modes. Every `insights` command needs `--project`, `--project-id`, or the `LANGSMITH_PROJECT` environment variable.
+
+On LangSmith Cloud, and on self-hosted installations that run continuous Insights, a configuration is an insight that categorizes new traces as they arrive. Each job builds or refreshes its categories. On other self-hosted installations, each job produces a [batch report](/langsmith/insights-batch-reports).
 
 <Note>
 `insights create`, `insights run`, and `insights config` require LangSmith CLI v0.2.60 or later.
@@ -391,21 +393,21 @@ To create a report, define it in a JSON file:
 }
 ```
 
-- **`name`** and **`summary_prompt`**: Required. The [summary prompt](/langsmith/insights#summary-prompt) is a Mustache template and must reference at least one of `{{run.inputs}}`, `{{run.outputs}}`, `{{run.error}}`, `{{run.feedback}}`, or `{{all_thread_messages}}`. The CLI does not support auto mode, so state what the report should look for in this prompt.
+- **`name`** and **`summary_prompt`**: Required. The [summary prompt](/langsmith/insights-batch-reports#summary-prompt) is a Mustache template and must reference at least one of `{{run.inputs}}`, `{{run.outputs}}`, `{{run.error}}`, `{{run.feedback}}`, or `{{all_thread_messages}}`. The CLI does not support auto mode, so state what the report should look for in this prompt.
 - **`last_n_hours`**, or **`start_time`** and **`end_time`**: The time range to sample traces from. Use one form, not both.
 - **`model`**: `openai` (default) or `anthropic`. To pick specific models, set **`cluster_model`** and **`summary_model`** together, each to `openai`, `anthropic`, or a [model configuration](/langsmith/model-configurations) UUID. Display names are not accepted.
-- **`schedule_cron`**: A cron expression for a recurring report. The first job starts immediately, and later jobs follow the schedule. Omit it for a one-time report.
+- **`schedule_cron`**: A cron expression for a recurring batch report. The first job starts immediately, and later jobs follow the schedule. Omit it for a one-time report. With continuous Insights, scheduled jobs do not run.
 
 The file also accepts `filter`, `sample`, `hierarchy`, `partitions`, `attribute_schemas`, and `description`. Unknown fields cause an error.
 
-`insights create` saves the file as a job configuration and starts the first report. Reports run asynchronously and incur model costs. The workspace needs secrets for the selected models. Pass `--wait` to poll until the report succeeds or fails, for up to 30 minutes. Pass `--config -` to read the file from stdin.
+`insights create` saves the file as a job configuration and starts its first job. Jobs run asynchronously and incur model costs. With continuous Insights, the insight also incurs model costs for each conversation it categorizes. The workspace needs secrets for the selected models. Pass `--wait` to poll until the job succeeds or fails, for up to 30 minutes. Pass `--config -` to read the file from stdin.
 
 ```bash
 langsmith insights create --project "<environment-tracer-session-name>" --config insights.json
 langsmith insights create --project "<environment-tracer-session-name>" --config insights.json --wait
 ```
 
-`insights run` starts a new report from a saved configuration without changing the configuration or its schedule:
+`insights run` starts a new job from a saved configuration without changing the configuration or its schedule. With continuous Insights, the job refreshes the insight's categories:
 
 ```bash
 langsmith insights config list --project "<environment-tracer-session-name>"
