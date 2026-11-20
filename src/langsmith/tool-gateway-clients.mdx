@@ -1,0 +1,218 @@
+---
+title: Connect an MCP client to a tool kit
+sidebarTitle: Connect an MCP client
+description: Connect Claude Code, Cursor, Managed Deep Agents, or another MCP client to a Tool Gateway tool kit, and turn on search mode for large kits.
+---
+
+import ToolGatewayBetaNote from '/snippets/langsmith/tool-gateway-beta-note.mdx';
+
+<ToolGatewayBetaNote />
+
+Every [tool kit](/langsmith/tool-gateway-tool-kits) is a standard MCP endpoint. Therefore, any MCP client can call its tools. The client sends a LangSmith API key, and [Tool Gateway](/langsmith/tool-gateway) attaches the stored credential for each server. This way, the client holds no service tokens or API keys of its own.
+
+## Client requirements
+
+The client must support Streamable HTTP and let you set a custom request header. The header carries a LangSmith API key, which decides whose credentials each call uses:
+
+- **Personal access token**: Calls run as you, with the accounts you [connected](/langsmith/tool-gateway-connect-accounts). Use this for your own coding assistant.
+- **Service key or agent key**: Calls run as a user, an agent, or a profile, chosen by extra headers or by the key itself. See [Act as users and agents](/langsmith/tool-gateway-identity).
+
+If you use an organization-scoped API key, also send your workspace ID in the `X-Tenant-Id` header.
+
+## Find the kit's MCP URL
+
+A kit's MCP URL has the form `<langsmith-api-url>/v1/managed-tools/kits/<kit-id>/mcp`. For example, on US LangSmith Cloud: `https://api.smith.langchain.com/v1/managed-tools/kits/<kit-id>/mcp`.
+
+To copy it, go to **Tools** > **Tool kits** and open the kit. The kit's panel shows:
+
+- The **MCP URL**, with your region's API URL filled in.
+- Setup for **Claude Code**, **Managed Deep Agents**, and **Cursor**, with the kit's URL already in each snippet.
+- A **Search mode** switch that changes the URL and every snippet to [search mode](#use-search-mode-for-large-kits).
+
+To give a client every tool you can use, use the [me kit](/langsmith/tool-gateway-tool-kits#use-the-me-kit) instead of a curated kit. Its path is `/v1/managed-tools/kits/me/mcp`, and it replaces the kit URL in any of the following steps.
+
+## Add the kit to a client
+
+Every client needs the same two values: the kit's MCP URL and a LangSmith API key. Only the place you enter them differs. Choose your client below, or follow the pattern in [Other MCP clients](#other-mcp-clients).
+
+### Claude Code
+
+Run `claude mcp add` in your project, with the kit's URL and your API key in the `X-Api-Key` header. The commands on this page use the environment variables from the [quickstart](/langsmith/tool-gateway-quickstart#before-you-begin):
+
+```bash
+claude mcp add --transport http support-agent \
+  "$LANGSMITH_ENDPOINT/v1/managed-tools/kits/<kit-id>/mcp" \
+  --header "X-Api-Key: $LANGSMITH_API_KEY"
+```
+
+Run `claude mcp list` and confirm that the server shows as connected. For more on adding MCP servers to Claude Code, see the [Claude Code MCP docs](https://code.claude.com/docs/en/mcp).
+
+Claude Code lists every tool in the kit, including tools on servers you have not connected yet. The first time you call one of those tools, Claude Code shows a link to connect the server.
+
+### Cursor
+
+Add the kit to your `mcp.json` file, and replace `<langsmith-api-key>` with your API key:
+
+```json
+{
+  "mcpServers": {
+    "support-agent": {
+      "url": "https://api.smith.langchain.com/v1/managed-tools/kits/<kit-id>/mcp",
+      "headers": {
+        "X-Api-Key": "<langsmith-api-key>"
+      }
+    }
+  }
+}
+```
+
+After you save `mcp.json`, open **Settings** > **MCPs** in Cursor and click **Reload** so that Cursor picks up the kit.
+
+### Managed Deep Agents
+
+A [Managed Deep Agents](/langsmith/managed-deep-agents) project declares the kit as an MCP server with `"auth": "langsmith"`. The agent then sends the deployment's LangSmith API key and workspace on each call. Tool Gateway uses the credentials of the person running the agent, or of the agent in an agent-owned schedule.
+
+<Note>
+Using Tool Gateway with Managed Deep Agents requires `managed-deepagents` version 0.10.5 or later, in both the Python and TypeScript packages.
+</Note>
+
+In `tools/mcp.py` or `tools/mcp.ts`, add the kit to the `servers` map:
+
+<CodeGroup>
+```python Python
+from managed_deepagents import define_mcp
+
+mcp = define_mcp(
+    servers={
+        "support-agent": {
+            "transport": "http",
+            "url": "https://api.smith.langchain.com/v1/managed-tools/kits/<kit-id>/mcp",
+            "auth": "langsmith",
+        },
+    },
+)
+```
+
+```typescript TypeScript
+import { defineMcp } from "managed-deepagents";
+
+export const mcp = defineMcp({
+  servers: {
+    "support-agent": {
+      transport: "http",
+      url: "https://api.smith.langchain.com/v1/managed-tools/kits/<kit-id>/mcp",
+      auth: "langsmith",
+    },
+  },
+});
+```
+</CodeGroup>
+
+Define `mcp` once per project, and add each kit or server as an entry in its `servers` map. To run the agent locally in Studio, set `LANGSMITH_WORKSPACE_ID` to your workspace ID and `LANGSMITH_API_KEY` to a personal access token in your environment.
+
+`"auth": "langsmith"` cannot be combined with a `connection`, or with headers that choose whose credentials to use. To use a [profile](/langsmith/tool-gateway-connect-accounts#connect-an-account-for-a-profile) on every run instead, set `"auth": {"type": "langsmith", "profile": "<profile-id>"}`. For other MCP server options, see [MCP connectors](/langsmith/managed-deep-agents-mcp-connectors).
+
+### Other MCP clients
+
+Any client that meets the [requirements](#client-requirements) works the same way: give it the kit's URL and an `X-Api-Key` header. For example, with a LangChain agent and `langchain-mcp-adapters`:
+
+<CodeGroup>
+```python Python
+import asyncio
+
+from langchain.agents import create_agent
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+client = MultiServerMCPClient(
+    {
+        "support-agent": {
+            "transport": "streamable_http",
+            "url": "https://api.smith.langchain.com/v1/managed-tools/kits/<kit-id>/mcp",
+            "headers": {
+                "X-Api-Key": "<langsmith-api-key>",
+                "X-Tenant-Id": "<workspace-id>",
+            },
+        }
+    }
+)
+
+
+async def main():
+    tools = await client.get_tools()
+    agent = create_agent("anthropic:claude-sonnet-5-5", tools=tools)
+    result = await agent.ainvoke({"messages": [{"role": "user", "content": "List my open issues."}]})
+    print(result["messages"][-1].content)
+
+
+asyncio.run(main())
+```
+
+```typescript TypeScript
+import { MultiServerMCPClient } from "@langchain/mcp-adapters";
+import { createAgent } from "langchain";
+
+const client = new MultiServerMCPClient({
+  mcpServers: {
+    "support-agent": {
+      transport: "http",
+      url: "https://api.smith.langchain.com/v1/managed-tools/kits/<kit-id>/mcp",
+      headers: {
+        "X-Api-Key": "<langsmith-api-key>",
+        "X-Tenant-Id": "<workspace-id>",
+      },
+    },
+  },
+});
+
+const agent = createAgent({
+  model: "anthropic:claude-sonnet-5-5",
+  tools: await client.getTools(),
+});
+```
+</CodeGroup>
+
+To nest each tool call under your agent's trace, see [Nest tool calls under your agent run](/langsmith/tool-gateway-traces#nest-tool-calls-under-your-agent-run). To send MCP requests without a client, see [Call tools](/langsmith/tool-gateway-call-tools).
+
+## Use search mode for large kits
+
+Many clients put every tool a server lists into the model's prompt. A kit with many tools can fill the prompt with tool definitions and make tool choice less accurate. In search mode, the kit lists three tools instead, and the model uses them to find and call the tools it needs.
+
+To turn on search mode, add `?mode=search` to the kit's URL, or turn on **Search mode** in the kit's panel:
+
+```txt
+https://api.smith.langchain.com/v1/managed-tools/kits/<kit-id>/mcp?mode=search
+```
+
+In a shell command, quote the URL, because the shell reads `?` as a wildcard:
+
+```bash
+claude mcp add --transport http support-agent \
+  "$LANGSMITH_ENDPOINT/v1/managed-tools/kits/<kit-id>/mcp?mode=search" \
+  --header "X-Api-Key: $LANGSMITH_API_KEY"
+```
+
+Search mode works on saved kits and the me kit. It is not available on a single server's endpoint.
+
+The kit lists these tools:
+
+| Tool | Arguments | Returns |
+|------|-----------|---------|
+| `search_tools` | `query` (required), `limit` (default 10, maximum 50), `full_results` (default `false`) | The best matches, each with its name, server, description, and whether the caller has connected its server. With `full_results` set to `true`, each match also includes its input schema. |
+| `get_tool` | `name`, from `search_tools` | One tool's full definition, including its input schema. |
+| `call_tool` | `name`, and `arguments` that match the tool's input schema | The tool's result, as a direct call returns it. |
+
+The model typically calls `search_tools`, then `get_tool`, then `call_tool`. To skip `get_tool`, the model can call `search_tools` with `full_results` set to `true`. Clients such as Claude Code use the three tools with no extra setup.
+
+Search mode changes only what the kit lists:
+
+- **Servers you have not connected**: Their tools still appear in search results, with `connected` set to `false`, and are matched by name only. Calling one asks you to connect, as a direct call does.
+- **Direct calls**: Calling a tool by its kit name, such as `linear_list_issues`, still works in search mode.
+- **Policies**: [Policies](/langsmith/tool-gateway-policies) apply to the tool that `call_tool` runs, as they do to a direct call.
+
+## See also
+
+- [Create tool kits](/langsmith/tool-gateway-tool-kits)
+- [Connect accounts](/langsmith/tool-gateway-connect-accounts)
+- [Act as users and agents](/langsmith/tool-gateway-identity)
+- [Call tools](/langsmith/tool-gateway-call-tools)
+- [MCP connectors in Managed Deep Agents](/langsmith/managed-deep-agents-mcp-connectors)

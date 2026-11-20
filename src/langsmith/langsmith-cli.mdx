@@ -31,10 +31,25 @@ scoop install langsmith-cli
 # https://github.com/langchain-ai/langsmith-cli/releases
 ```
 
+```bash PyPI
+# As a standalone tool
+uv tool install langchain-langsmith-cli
+pipx install langchain-langsmith-cli
+
+# Into the current Python environment
+pip install langchain-langsmith-cli
+```
+
 ```bash Go install
 go install github.com/langchain-ai/langsmith-cli/cmd/langsmith@latest
 ```
 </CodeGroup>
+
+The PyPI package, `langchain-langsmith-cli`, ships the same prebuilt binary as the other install methods, with one wheel per platform. It installs through any PyPI proxy, such as a JFrog Artifactory PyPI remote repository or a Nexus PyPI proxy, so you can install it where only an internal package index is reachable.
+
+<Warning>
+`pip install langsmith-cli` installs a different, third-party package. Install `langchain-langsmith-cli` instead.
+</Warning>
 
 To upgrade at any time:
 
@@ -43,6 +58,21 @@ langsmith self-update
 ```
 
 Use the `--dry-run` flag to preview the update without installing.
+
+`self-update` replaces the binary in place for installs from the install script or GitHub Releases. If a package manager installed the CLI, `self-update` leaves the binary alone and prints the command to run instead:
+
+| Installed with | Upgrade command |
+| --- | --- |
+| Homebrew | `brew upgrade langchain-ai/tap/langsmith-cli` |
+| Scoop | `scoop update langsmith-cli` |
+| `uv tool install` | `uv tool upgrade langchain-langsmith-cli` |
+| `pipx install` | `pipx upgrade langchain-langsmith-cli` |
+| `pip install` | `python -m pip install --upgrade langchain-langsmith-cli`, with the Python of the environment the CLI is installed in |
+| `uv pip install` | `uv pip install --python <python> --upgrade langchain-langsmith-cli` |
+| `uv add` (uv project) | `uv lock --upgrade-package langchain-langsmith-cli && uv sync`, run in the project |
+| `go install` | `go install github.com/langchain-ai/langsmith-cli/cmd/langsmith@latest` |
+
+To replace the binary in place anyway, pass `--force`.
 
 <Note>
 Querying a [SmithDB](/langsmith/smithdb-sdk-migration)-backed deployment requires LangSmith CLI `v0.2.44` or later.
@@ -191,21 +221,21 @@ langsmith sandbox tunnel my-vm --remote-port 5432
 
 ## Search with AI
 
-[AI search](/langsmith/filter-traces#search-with-ai) finds runs, traces, and threads by a natural-language description of their conversations. Use `--ai-search` on the streaming query commands to search from the terminal.
+[AI search](/langsmith/filter-traces#search-with-ai) finds runs, traces, and threads from a plain-language description, which LangSmith turns into filters, time bounds, and conditions on the conversation. Use `--ai-search` on the streaming query commands to search from the terminal.
 
 <Note>
 These commands require LangSmith CLI v0.3.9 or later and an organization admin to [enable AI search](/langsmith/filter-traces#enable-ai-search). The same data-handling and PHI restrictions apply as in the UI. For release stage and availability, see [Search with AI](/langsmith/filter-traces#search-with-ai). The commands require `--project-id` and do not resolve `--project` names.
 </Note>
 
 ```bash
-langsmith threads streaming query --project-id <project-id> --ai-search "user asks for a refund"
-langsmith traces streaming query --project-id <project-id> --ai-search "tool call failed"
-langsmith runs streaming query-v2 --project-id <project-id> --ai-search "tool call failed" --max-items 20
+langsmith threads streaming query --project-id <project-id> --ai-search "threads with more than 5 turns where the user got confused"
+langsmith traces streaming query --project-id <project-id> --ai-search "traces where the agent didn't complete the task"
+langsmith runs streaming query-v2 --project-id <project-id> --ai-search "llm calls that errored in the last 2 days" --max-items 20
 ```
 
 Each server-sent event prints as a JSON patch, and `--max-items` counts events, not matched runs, traces, or threads.
 
-Pass a nonempty description of at most 2,000 UTF-8 bytes. To combine the description with structured conditions using `AND`, add `--filter` for runs and threads, or `--trace-filter` and `--tree-filter` for traces.
+Pass a nonempty description of at most 2,000 UTF-8 bytes, and put structured conditions in the description itself. Combining `--ai-search` with `--filter`, `--trace-filter`, `--tree-filter`, or `--thread-filter` returns HTTP `400`. A time period in the description replaces `--min-start-time` and `--max-start-time`.
 
 The non-streaming `traces query` and `threads query` commands also accept `--ai-search`, but the server rejects those requests with HTTP `406` because AI search requires streaming. Ordinary list commands do not support AI search.
 

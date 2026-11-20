@@ -35,6 +35,7 @@ Native GCS blob storage engine support (using `engine: "GCS"`) is available in H
 
 * A bucket/directory in your blob storage to store the data. We highly recommend creating a separate bucket/directory for LangSmith data.
   * **If you are using TTLs**, you will need to set up a lifecycle policy to delete old data. For more information, see [configuring TTLs](/langsmith/self-host-ttl). These policies should mirror the TTLs you have set in your LangSmith configuration, or you may experience data loss. See [TTL configuration for blob storage](#ttl-configuration) for how to set up the lifecycle rules.
+  * If you use automation rules, configure [automation outcome retention](#automation-outcome-retention) separately, even when trace TTLs are disabled.
 
 * Credentials to permit LangSmith Services to access the bucket/directory
   * You will need to provide your LangSmith instance with the necessary credentials to access the bucket/directory. Read the authentication [section](#authentication) below for more information.
@@ -502,3 +503,105 @@ Neon Object Storage accepts and stores lifecycle configurations, but does not ru
 To enforce TTLs, run a scheduled job (for example, a Kubernetes CronJob) that deletes objects older than each prefix's TTL.
   </Tab>
 </Tabs>
+
+## Automation outcome retention
+
+[Automation rules](/langsmith/rules) can store outcome details under `run_rules/outcomes/` in your LangSmith blob-storage bucket or container. Configure a lifecycle rule to expire these objects after 30 days. This policy is independent of trace retention and does not apply to other `run_rules/` objects or SmithDB data.
+
+<Warning>
+Add the rule to your existing lifecycle configuration. Do not replace existing rules for `ttl_s/`, `ttl_l/`, or custom retention prefixes. Keep the same rule on any disaster recovery buckets.
+
+The rule covers both existing and future objects. Existing objects older than 30 days become eligible for deletion after the policy takes effect. Age is based on storage timestamps, not timestamps in object names. Lifecycle processing is asynchronous, so 30 days is not an exact deletion deadline.
+</Warning>
+
+<Tabs>
+  <Tab title="AWS">
+
+Add this rule to your existing `aws_s3_bucket_lifecycle_configuration` resource:
+
+```hcl
+rule {
+  id     = "automation-outcomes"
+  status = "Enabled"
+  filter {
+    prefix = "run_rules/outcomes/"
+  }
+  expiration {
+    days = 30
+  }
+  noncurrent_version_expiration {
+    noncurrent_days = 30
+  }
+}
+```
+
+In versioned buckets, expiration adds a delete marker rather than permanently deleting the current version. The example also deletes noncurrent versions 30 days after they become noncurrent. This can retain data beyond 30 days from upload. Review this additional retention and your expired delete-marker cleanup rules. See [S3 lifecycle actions](https://docs.aws.amazon.com/AmazonS3/latest/userguide/intro-lifecycle-rules.html#intro-lifecycle-rules-actions).
+
+  </Tab>
+  <Tab title="GCP">
+
+Add this block to your existing `google_storage_bucket` resource:
+
+```hcl
+lifecycle_rule {
+  condition {
+    age            = 30
+    matches_prefix = ["run_rules/outcomes/"]
+  }
+  action {
+    type = "Delete"
+  }
+}
+```
+
+Do not restrict this rule to live objects. Without an `is_live` condition, it also covers noncurrent versions. Soft-deleted objects remain recoverable for the bucket's soft-delete retention period. See [Cloud Storage lifecycle management](https://cloud.google.com/storage/docs/lifecycle).
+
+  </Tab>
+  <Tab title="Azure">
+
+Add this rule to your existing `azurerm_storage_management_policy` resource. Replace `my-container` with your LangSmith container name:
+
+```hcl
+rule {
+  name    = "automation-outcomes"
+  enabled = true
+  filters {
+    prefix_match = ["my-container/run_rules/outcomes/"]
+    blob_types   = ["blockBlob"]
+  }
+  actions {
+    base_blob {
+      delete_after_days_since_modification_greater_than = 30
+    }
+    snapshot {
+      delete_after_days_since_creation_greater_than = 30
+    }
+    version {
+      delete_after_days_since_creation = 30
+    }
+  }
+}
+```
+
+The base blob expires based on its last modification time. Snapshots and previous versions expire based on their creation time. Soft delete can retain deleted blobs beyond these periods. See [Azure lifecycle deletion policies](https://learn.microsoft.com/en-us/azure/storage/blobs/lifecycle-management-policy-delete).
+
+  </Tab>
+  <Tab title="MinIO">
+
+Use the MinIO client to add a prefix-scoped expiration rule. Replace `myminio/my-bucket` with your configured alias and LangSmith bucket:
+
+```bash
+mc ilm rule add --prefix "run_rules/outcomes/" --expire-days 30 --noncurrent-expire-days 30 myminio/my-bucket
+```
+
+As with S3, noncurrent-version retention starts when a version becomes noncurrent, not when it was uploaded. MinIO's scanner processes expiration rules asynchronously. See [MinIO lifecycle rule configuration](https://docs.min.io/aistor/reference/cli/mc-ilm-rule/mc-ilm-rule-add/).
+
+  </Tab>
+  <Tab title="Neon">
+
+Neon does not run lifecycle expiration rules. Extend your [scheduled cleanup job](#neon-object-storage-lifecycle-rules) to delete objects under `run_rules/outcomes/` older than 30 days.
+
+  </Tab>
+</Tabs>
+
+Object locks, legal holds, and storage retention policies can prevent deletion. Review these settings together with versioning, snapshots, and soft delete before relying on lifecycle rules for permanent erasure.
