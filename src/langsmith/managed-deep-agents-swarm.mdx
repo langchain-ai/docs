@@ -6,7 +6,7 @@ description: Coordinate async subagents to investigate an incident in parallel.
 
 import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
 
-A swarm splits a task across specialized subagents and combines their findings. In this example, a lead agent starts three [async subagents](/langsmith/managed-deep-agents-subagents#async-subagents) to investigate an incident in parallel, then writes one report.
+A swarm splits a task across parallel subagents and combines their findings. In this example, a lead agent starts three specialized [async subagents](/langsmith/managed-deep-agents-subagents#async-subagents) to investigate an incident in parallel, then writes one report. When the number of parallel tasks depends on the request, the lead can also [fan out dynamically](#fan-out-dynamically) with the built-in `general-purpose` subagent.
 
 <ManagedDeepAgentsPublicBetaNote />
 
@@ -118,6 +118,29 @@ The lead launches each task with `start_async_task`. Tasks run in separate threa
 ## Try it
 
 Run the agent with `mda dev` or [deploy it](/langsmith/managed-deep-agents-deploy). In a new conversation, describe an incident and paste logs, recent changes, and related issues. Confirm that the lead starts all three tasks at once and combines their findings.
+
+## Fan out dynamically
+
+Declare specialized subagents when each worker needs its own model, tool set, or reusable system prompt. When the number or scope of parallel tasks is known only at runtime, such as investigating an arbitrary list of affected services or projects, fan out to the built-in [`general-purpose`](/oss/deepagents/subagents#the-general-purpose-subagent) subagent instead.
+
+Every agent served by `mda dev` or a deployment includes both a synchronous and an async `general-purpose` subagent by default, even when you omit `subagents` from the agent definition. It inherits the lead's model, tools, and skills, and gets its own context window.
+
+To fan out in one turn, instruct the lead to issue multiple calls targeting `general-purpose` in the same model response, each with a self-contained `description`:
+
+- **`start_async_task`**: Starts background tasks in parallel and returns task IDs immediately, so the lead can continue working while results arrive independently.
+- **`task`**: Runs subagent invocations in parallel and waits for every result before the lead's next model step.
+
+```markdown instructions.md
+# Multi-service incident investigator
+
+When an incident spans multiple services, delegate one task per affected
+service to the general-purpose subagent. Issue the start_async_task calls
+together in one model response. Include the service name, time range,
+symptoms to look for, and expected output in each description. When the
+tasks finish, compare the findings and cite sources.
+```
+
+Because each invocation has its own context window and does not see the user's message or the lead's `instructions.md`, put every required detail (such as the service and time range) in each task's `description`. This fans out task invocations at runtime rather than creating new subagent definitions.
 
 ## Extend the pattern
 
