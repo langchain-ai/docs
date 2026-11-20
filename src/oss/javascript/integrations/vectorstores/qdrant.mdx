@@ -158,6 +158,98 @@ for (const [doc, score] of similaritySearchWithScoreResults) {
 * [SIM=0.148] Mitochondria are made out of lipids [{"source":"https://example.com"}]
 ```
 
+### Query with hybrid search
+
+Hybrid search combines dense vectors with sparse vectors, such as BM25, and fuses the two result lists into one ranking. It finds documents that match exact terms, such as identifiers, product codes, or names, which dense retrieval alone can miss. The [Python integration](/oss/python/integrations/vectorstores/qdrant) offers the same retrieval modes.
+
+<Note>
+Hybrid and sparse search require `@langchain/qdrant>=1.1.0`.
+</Note>
+
+Set `retrievalMode` to `"hybrid"`. By default, Qdrant computes the sparse vectors itself, with its built-in BM25 model. Server-side BM25 requires Qdrant 1.15.3 or later.
+
+```typescript
+const hybridStore = await QdrantVectorStore.fromDocuments(documents, embeddings, {
+  url: process.env.QDRANT_URL,
+  collectionName: "langchainjs-hybrid-testing",
+  retrievalMode: "hybrid",
+  sparseDocumentOptions: {
+    model: "qdrant/bm25",
+    options: { language: "english" },
+  },
+});
+
+const hybridResults = await hybridStore.similaritySearch("mitochondria", 2, filter);
+
+for (const doc of hybridResults) {
+  console.log(`* ${doc.pageContent} [${JSON.stringify(doc.metadata, null)}]`);
+}
+```
+
+In hybrid mode, `similaritySearch`, `similaritySearchWithScore`, and retrievers created with `asRetriever()` send one Qdrant query. The query has a dense and a sparse prefetch, each limited to `k` results and filtered with `filter`. Qdrant then fuses the two lists with Reciprocal Rank Fusion (RRF). The scores that `similaritySearchWithScore` returns are fusion scores, not similarities, so score thresholds do not apply to them.
+
+The following options configure hybrid and sparse search:
+
+- **`retrievalMode`**: `"dense"`, `"sparse"`, or `"hybrid"`. Defaults to `"dense"`, which searches a single dense vector.
+- **`sparseDocumentOptions`**: The Qdrant model and its options, used when Qdrant computes the sparse vectors. Defaults to `{ model: "qdrant/bm25" }`. The BM25 options include `language`, `k`, `b`, and `avg_len`. For more information, see [BM25 in Qdrant](https://qdrant.tech/documentation/inference/inference-bm25/).
+- **`sparseEmbeddings`**: Computes the sparse vectors on the client instead of in Qdrant. See [Compute sparse vectors on the client](#compute-sparse-vectors-on-the-client).
+- **`hybridFusion`**: The Qdrant fusion query. Defaults to `{ fusion: "rrf" }`. Set it to `{ fusion: "dbsf" }`, or to a weighted RRF such as `{ rrf: { weights: [1, 2] } }`. Weighted RRF requires Qdrant 1.17 or later.
+- **`vectorName`**: The name of the dense vector. Defaults to `""`, the unnamed vector.
+- **`sparseVectorName`**: The name of the sparse vector. Defaults to `"langchain-sparse"`.
+
+When the collection does not exist, the vector store creates it with both vectors. When Qdrant computes BM25, the sparse vector uses the `idf` modifier. Qdrant cannot add a sparse vector to an existing collection, so hybrid and sparse search need a new collection. A collection created in hybrid mode also works in dense mode.
+
+`similaritySearchVectorWithScore` and `maxMarginalRelevanceSearch` always search the dense vector.
+
+### Query with sparse search
+
+Set `retrievalMode` to `"sparse"` to index and search only sparse vectors. The vector store creates a collection without a dense vector, and `addDocuments` does not call the dense embeddings model. The constructor still requires an embeddings instance.
+
+```typescript
+const sparseStore = await QdrantVectorStore.fromDocuments(documents, embeddings, {
+  url: process.env.QDRANT_URL,
+  collectionName: "langchainjs-sparse-testing",
+  retrievalMode: "sparse",
+});
+
+const sparseResults = await sparseStore.similaritySearchWithScore("mitochondria", 2, filter);
+
+for (const [doc, score] of sparseResults) {
+  console.log(`* [SCORE=${score.toFixed(3)}] ${doc.pageContent} [${JSON.stringify(doc.metadata)}]`);
+}
+```
+
+```text
+* [SCORE=1.164] The powerhouse of the cell is the mitochondria [{"source":"https://example.com"}]
+* [SCORE=1.164] Mitochondria are made out of lipids [{"source":"https://example.com"}]
+```
+
+In sparse mode, `similaritySearchVectorWithScore`, `maxMarginalRelevanceSearch`, and `addVectors` throw an error, because the collection has no dense vector.
+
+### Compute sparse vectors on the client
+
+To use a sparse model other than Qdrant's BM25, such as SPLADE, pass a `sparseEmbeddings` object. It implements the `SparseEmbeddingsInterface` interface that `@langchain/qdrant` exports:
+
+```typescript
+type SparseVector = { indices: number[]; values: number[] };
+
+interface SparseEmbeddingsInterface {
+  embedDocuments(texts: string[]): Promise<SparseVector[]>;
+  embedQuery(text: string): Promise<SparseVector>;
+}
+```
+
+```typescript
+const clientSideStore = await QdrantVectorStore.fromDocuments(documents, embeddings, {
+  url: process.env.QDRANT_URL,
+  collectionName: "langchainjs-client-sparse-testing",
+  retrievalMode: "hybrid",
+  sparseEmbeddings: mySparseEmbeddings,
+});
+```
+
+Client-side sparse vectors require Qdrant 1.10 or later.
+
 ### Query by turning into retriever
 
 You can also transform the vector store into a [retriever](/oss/deepagents/retrieval) for easier usage in your chains.
