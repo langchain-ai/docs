@@ -9,7 +9,7 @@ The Tool Gateway lets agents call MCP tools through LangSmith. LangSmith stores 
 This guide enables it on a self-hosted Kubernetes install using the Helm chart. For the SaaS equivalent, see [Tool Gateway](/langsmith/tool-gateway).
 
 <Note>
-Enabling the Tool Gateway requires Helm chart version 0.18.0-rc.62 or later.
+Enabling the Tool Gateway requires Helm chart version 0.18.0-rc.87 or later.
 </Note>
 
 ## Enable the gateway
@@ -49,7 +49,7 @@ LangSmith still blocks cloud metadata endpoints and localhost.
 
 <Step title="Apply and verify" icon="rocket">
 
-Apply the chart with chart version 0.18.0-rc.62 or later. See [Upgrade an installation](/langsmith/self-host-upgrades) for additional instructions.
+Apply the chart with chart version 0.18.0-rc.87 or later. See [Upgrade an installation](/langsmith/self-host-upgrades) for additional instructions.
 
 ```bash
 helm upgrade --install langsmith langchain/langsmith \
@@ -75,13 +75,13 @@ If you set `config.basePath`, the URL becomes `https://<your-hostname>/<basePath
 
 ## Enable built-in tools (optional)
 
-Built-in tools, such as Gmail, Outlook, and Slack, need [Fleet](/langsmith/enable-self-hosted-fleet) and one OAuth app for each provider that you enable.
+Built-in tools, such as Gmail, Outlook, and Slack, run on the built-in tool server. The chart deploys it by default, so you do not need to enable Fleet. Each provider that you enable needs one OAuth app.
 
 <Accordion title="Set up built-in tools" id="built-in-tools">
 
 ### Before you start
 
-- **Fleet enabled:** Built-in tools run on the Fleet tool server. Set `fleet.enabled: true` and keep `fleetToolServer.enabled: true`. Without the tool server, the **Tools** page lists no built-in tools.
+- **Tool server enabled:** Keep `fleetToolServer.enabled: true`, which is the default. If you set it to `false`, the **Tools** page lists no built-in tools.
 - **Provider access:** Permission to create an OAuth app with each provider, and administrator approval where the provider requires it.
 
 You configure each app one time for the install. All organizations and workspaces use the same app for a provider. Each user's connection and tokens stay in their own workspace.
@@ -89,7 +89,7 @@ You configure each app one time for the install. All organizations and workspace
 Built-in tools that use an API key, such as Tavily and Exa, need no deployment configuration. Each workspace adds its key under **Settings** > **Workspace secrets**.
 
 <Warning>
-The Tool Gateway callback URL is different from the Fleet OAuth callback, `/host-oauth-callback/<provider-id>`. If you already configured Fleet OAuth providers, add the [Tool Gateway callback URL](#find-your-callback-url) to each app as an additional redirect URL.
+If you also run Fleet, the Tool Gateway callback URL is different from the Fleet OAuth callback, `/host-oauth-callback/<provider-id>`. If you already configured Fleet OAuth providers, add the [Tool Gateway callback URL](#find-your-callback-url) to each app as an additional redirect URL.
 </Warning>
 
 ### Create the OAuth apps
@@ -255,16 +255,16 @@ GitHub also requires `FLEET_GITHUB_APP_STATE_JWT_SECRET`. `platform-backend` rej
 ### Allow network access
 
 - **`platform-backend`:** Outbound HTTPS to each provider's token endpoint, such as `oauth2.googleapis.com`, `login.microsoftonline.com`, `slack.com`, `api.linear.app`, `www.linkedin.com`, `login.salesforce.com`, and `github.com`.
-- **Fleet tool server:** Outbound HTTPS to the provider APIs that tools call, such as `gmail.googleapis.com`, `graph.microsoft.com`, and `slack.com`.
+- **Built-in tool server:** Outbound HTTPS to the provider APIs that tools call, such as `gmail.googleapis.com`, `graph.microsoft.com`, and `slack.com`.
 - **Browser:** Access to each provider's sign-in page and to your callback URL.
 
-`fleet.egressProxy` applies only to Fleet pods. For `platform-backend`, add `HTTPS_PROXY` and `NO_PROXY` to `platformBackend.deployment.extraEnv`. See [Configure egress](/langsmith/self-host-egress).
+If your cluster routes egress through a proxy, add `HTTPS_PROXY` and `NO_PROXY` to `platformBackend.deployment.extraEnv` and `fleetToolServer.deployment.extraEnv`. See [Configure egress](/langsmith/self-host-egress).
 
 </Accordion>
 
 ## Troubleshooting
 
-- **The Tools page lists no built-in tools**: Check that `fleet.enabled` and `fleetToolServer.enabled` are `true` and that the Fleet tool server pod is `Running`.
+- **The Tools page lists no built-in tools**: Check that `fleetToolServer.enabled` is `true`, that the `langsmith-fleet-tool-server` pod is `Running`, and that your chart version is 0.18.0-rc.87 or later.
 - **Adding an MCP server fails for an internal URL**: Set `SSRF_ALLOW_PRIVATE_IPS_MCP_SERVERS` on `platform-backend`. See [Allow MCP servers on your network](#enable-the-gateway).
 - **Connect shows that the provider is not configured**: Set both variables for that provider. Check the Secret keys and namespace, then restart `platform-backend`.
 - **The provider reports a redirect mismatch**: The redirect URL in the app must match your [callback URL](#find-your-callback-url) exactly, including scheme, host, base path, and path.
@@ -281,5 +281,5 @@ GitHub also requires `FLEET_GITHUB_APP_STATE_JWT_SECRET`. `platform-backend` rej
 ## Next steps
 
 - [Tool Gateway](/langsmith/tool-gateway): learn how agents call tools through the gateway.
-- [Enable Fleet](/langsmith/enable-self-hosted-fleet): deploy the Fleet tool server that built-in tools run on.
+- [Enable Fleet](/langsmith/enable-self-hosted-fleet): build and run agents that use the Tool Gateway.
 - [Configure environment variables](/langsmith/self-host-environment-variables): see every variable the chart sets.
