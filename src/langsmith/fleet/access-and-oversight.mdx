@@ -10,30 +10,71 @@ Fleet gives you the control layer for scaling agents across your organization: t
 Fleet combines workspace role permissions with agent sharing. Your role determines which actions you can perform. Agent ownership and sharing determine which agents you can access.
 
 <Note>
-Custom roles are an Enterprise feature. The permissions below apply when Fleet RBAC is enabled for your workspace. For self-hosted v0.17, Fleet RBAC requires LangSmith 0.17.44 or a later v0.17 patch and the [deployment flag](#enable-fleet-rbac-on-self-hosted).
+The Fleet roles and custom roles are part of the Enterprise [RBAC](/langsmith/rbac) feature. Self-hosted v0.17 does not include the Fleet roles, and Fleet on v0.17 checks a different set of permissions. For v0.17, see [Enable Fleet RBAC on self-hosted v0.17](#enable-fleet-rbac-on-self-hosted-v0-17).
 </Note>
 
 ### Configure a Fleet role
 
-To let users use and manage Fleet, create a [custom workspace role](/langsmith/rbac#custom-roles) with these permissions:
+LangSmith includes three built-in workspace roles for Fleet. Each role includes every permission of the role before it:
 
-| Area | Permissions | Needed for |
-| --- | --- | --- |
-| Workspace | <span style={{ whiteSpace: "nowrap" }}>`workspaces:read`</span> | Access the workspace. |
-| Agents | <span style={{ whiteSpace: "nowrap" }}>`fleet-agents:read`<br />`fleet-agents:invoke`<br />`fleet-agents:create`<br />`fleet-agents:update`<br />`fleet-agents:delete`</span> | View, run, create, edit, clone, and delete agents. Manage agent connections. |
-| Skills | <span style={{ whiteSpace: "nowrap" }}>`fleet-skills:read`<br />`fleet-skills:create`<br />`fleet-skills:update`<br />`fleet-skills:delete`</span> | Browse, create, edit, and delete workspace skills. |
-| MCP servers | <span style={{ whiteSpace: "nowrap" }}>`mcp-servers:read`<br />`mcp-servers:invoke`<br />`mcp-servers:create`<br />`mcp-servers:update`<br />`mcp-servers:delete`</span> | Use tools and install, update, or remove workspace integrations. |
-| Deployments | <span style={{ whiteSpace: "nowrap" }}>`deployments:read`<br />`deployments:create`<br />`deployments:update`<br />`deployments:delete`</span> | Configure OAuth providers and manage connected accounts through the current Fleet UI. |
+- **Fleet User**: View, run, and rate shared agents, browse workspace skills, and use tools from MCP servers and integrations.
+- **Fleet Builder**: Everything in Fleet User, plus create, edit, clone, share, and delete agents and skills, and manage agent connections.
+- **Fleet Admin**: Everything in Fleet Builder, plus Fleet usage and limits, workspace MCP servers and integrations, integration access, Fleet webhooks, OAuth providers, workspace secrets, and snapshots.
 
-Grant each permission explicitly. Create, update, delete, and invoke permissions do not include read permission. Existing agent and skill ownership and sharing checks still apply.
+Assign one of these roles to each Fleet user, and use a [custom role](#create-a-custom-fleet-role) only when none of them fits. To assign a role, see [Assign a role to a user](/langsmith/user-management#assign-a-role-to-a-user).
 
-The `deployments:*` permissions also grant access to deployment resources outside Fleet.
+| Role | Permissions |
+| --- | --- |
+| Fleet User | <span style={{ whiteSpace: "nowrap" }}>`workspaces:read`<br />`fleet-agents:read`<br />`fleet-agents:invoke`<br />`fleet-skills:read`<br />`mcp-servers:read`<br />`mcp-servers:invoke`<br />`feedback:read`<br />`feedback:update`<br />`feedback:delete`<br />`prompts:read`<br />`deployments:read`</span> |
+| Fleet Builder | Fleet User permissions, plus:<br /><span style={{ whiteSpace: "nowrap" }}>`fleet-agents:create`<br />`fleet-agents:update`<br />`fleet-agents:delete`<br />`fleet-skills:create`<br />`fleet-skills:update`<br />`fleet-skills:delete`</span> |
+| Fleet Admin | Fleet Builder permissions, plus:<br /><span style={{ whiteSpace: "nowrap" }}>`fleet:read-admin-config`<br />`fleet:write-admin-config`<br />`mcp-servers:create`<br />`mcp-servers:update`<br />`mcp-servers:delete`<br />`workspaces:integrations:manage`<br />`workspaces:manage-secrets`<br />`workspaces:fleet-feedback:read-all`<br />`workspaces:manage`<br />`runs:read`<br />`projects:read`<br />`sandboxes:read`<br />`snapshots:create`<br />`snapshots:delete`<br />`deployments:create`<br />`deployments:update`<br />`deployments:delete`</span> |
 
-### Optional administration permissions
+Fleet User and Fleet Builder have no access to traces. A Fleet User cannot clone an agent, even one shared at the **Clone** level, because cloning requires `fleet-agents:create`.
 
-- **View Fleet usage and limits**: Add `fleet:read-admin-config` to view usage reports and usage limits.
+<Warning>
+Fleet Admin can read every trace in the workspace. It also holds `workspaces:manage`, which lets it change workspace settings, retention, and security policy, and delete the workspace. Fleet Admin cannot manage workspace members or API keys, which require `workspaces:manage-members` and `workspaces:manage-keys`.
+</Warning>
+
+#### Understand the LangSmith permissions in Fleet roles
+
+Fleet roles include LangSmith permissions that Fleet pages and API routes check. These permissions apply to the whole workspace, not only to Fleet. For example, the `deployments:*` permissions also grant access to deployment resources outside Fleet.
+
+All Fleet roles include these LangSmith permissions:
+
+| Permission | Needed for |
+| --- | --- |
+| `workspaces:read` | Access the workspace. |
+| <span style={{ whiteSpace: "nowrap" }}>`feedback:read`<br />`feedback:update`<br />`feedback:delete`</span> | Rate agent responses. Fleet shows the rating controls only to roles with all three permissions. Also allows reading, updating, and deleting any feedback in the workspace through the API. |
+| `prompts:read` | Read the workspace's [model configurations](/langsmith/model-configurations), which Fleet uses to show which models are available and which API keys they need. Also allows reading, liking, and commenting on prompts in the workspace. |
+| `deployments:read` | List the OAuth providers set up in the workspace. Also allows reading every deployment in the workspace. |
+
+Fleet Admin also includes these LangSmith permissions:
+
+| Permission | Needed for |
+| --- | --- |
+| `workspaces:fleet-feedback:read-all` | List every user's agent ratings in the workspace through the API. Also requires `feedback:read`. |
+| `workspaces:manage-secrets` | Add, update, and delete [workspace secrets](/langsmith/fleet/workspace-admin#workspace-secrets), such as model provider and tool API keys. |
+| `workspaces:integrations:manage` | Turn built-in integrations on or off in the [workspace integration policy](#workspace-integration-policy), and add, edit, and delete [Fleet webhooks](/langsmith/fleet/webhooks). |
+| `workspaces:manage` | List every agent in the workspace, including private agents, and lock or unlock agents through the API. Also allows changing workspace settings, retention, and security policy, and deleting the workspace. |
+| <span style={{ whiteSpace: "nowrap" }}>`projects:read`<br />`runs:read`</span> | Show total threads, total runs, and spend on the **Usage** page, which Fleet reads from its tracing projects. Also allows reading every trace in the workspace. |
+| `sandboxes:read` | List snapshots, so you can choose a **Snapshot** for an agent's [computer](/langsmith/fleet/computer-use). Also allows reading every sandbox, snapshot, and registry in the workspace. |
+| <span style={{ whiteSpace: "nowrap" }}>`snapshots:create`<br />`snapshots:delete`</span> | Build, capture, and delete custom [snapshots](/langsmith/sandbox-snapshots). |
+| <span style={{ whiteSpace: "nowrap" }}>`deployments:create`<br />`deployments:update`<br />`deployments:delete`</span> | Set up, edit, and remove OAuth providers. Also allows creating, updating, and deleting any deployment in the workspace. |
+
+### Create a custom Fleet role
+
+To give users a different set of Fleet permissions, create a [custom role](/langsmith/rbac#custom-roles) that starts from the permissions of the closest [Fleet role](#configure-a-fleet-role), then add or remove permissions. Grant each permission explicitly. Create, update, delete, and invoke permissions do not include read permission. Existing agent and skill ownership and sharing checks still apply.
+
+Common additions to a role based on Fleet Builder:
+
+- **View Fleet usage and limits**: Add `fleet:read-admin-config` to view usage reports and usage limits. To show total threads, total runs, and spend on the **Usage** page, also add `projects:read` and `runs:read`, which allow reading every trace in the workspace.
 - **Manage Fleet limits**: Add `fleet:write-admin-config` to create, update, and delete usage limits. Grant both Fleet admin permissions to view and manage limits.
-- **Manage workspace settings**: Add `workspaces:manage` for workspace settings, integration access controls, and OAuth provider management in **Settings**.
+- **Choose snapshots for agent computers**: Add `sandboxes:read`.
+- **Manage workspace secrets**: Add `workspaces:manage-secrets`.
+- **Manage integration access and Fleet webhooks**: Add `workspaces:integrations:manage`.
+- **Set up OAuth providers**: Add `deployments:create`, `deployments:update`, and `deployments:delete`.
+
+Custom roles cannot use the names Fleet User, Fleet Builder, or Fleet Admin. A custom role that already has one of these exact names keeps working, but saving any change to it fails with a `409` error unless the change also renames the role.
 
 For more information, see [Workspace administration](/langsmith/fleet/workspace-admin).
 
@@ -53,16 +94,55 @@ For setup instructions, see [Change access to the agent](/langsmith/fleet/manage
 
 ### Enable Fleet RBAC on self-hosted
 
-Fully self-hosted LangSmith installations enable Fleet role-based access control (RBAC) with a deployment flag. Cloud and hybrid (BYOC) deployments do not need this step.
+Fully self-hosted LangSmith v0.18 or later always enforces Fleet role-based access control (RBAC). There is no deployment flag to set.
+
+When you upgrade to v0.18, LangSmith adds the built-in [Fleet roles](#configure-a-fleet-role) and adds Fleet agent and skill permissions to existing custom roles, based on the Prompts permissions each role already holds:
+
+| Existing permission | Added permissions |
+| --- | --- |
+| `prompts:read` | `fleet-agents:read`, `fleet-agents:invoke`, `fleet-skills:read` |
+| `prompts:create` | `fleet-agents:create`, `fleet-skills:create` |
+| `prompts:update` | `fleet-agents:update`, `fleet-skills:update` |
+| `prompts:delete` | `fleet-agents:delete`, `fleet-skills:delete` |
+
+The built-in Workspace Admin and Workspace Editor roles include every Fleet agent and skill permission, and Workspace Viewer includes `fleet-agents:read`, `fleet-agents:invoke`, and `fleet-skills:read`.
+
+The upgrade does not add any other permissions to custom roles. Fleet denies requests from users whose roles lack the permissions it checks. Before you upgrade, compare the custom roles that Fleet users hold with [Configure a Fleet role](#configure-a-fleet-role), or plan to assign the Fleet roles instead.
+
+If your Helm values set `FLEET_RBAC_PERMISSIONS_ENABLED`, remove it. LangSmith v0.18 does not read it.
+
+#### Enable Fleet RBAC on self-hosted v0.17
+
+Fully self-hosted LangSmith v0.17 installations enable Fleet RBAC with a deployment flag. Cloud and hybrid (BYOC) deployments do not need this step.
 
 <Note>
-Fleet RBAC on self-hosted requires LangSmith 0.17.44 or a later v0.17 patch.
+Fleet RBAC on self-hosted v0.17 requires LangSmith 0.17.44 or a later v0.17 patch.
 </Note>
+
+On v0.17, to let users use and manage Fleet, create a [custom workspace role](/langsmith/rbac#custom-roles) with these permissions:
+
+| Area | Permissions | Needed for |
+| --- | --- | --- |
+| Workspace | <span style={{ whiteSpace: "nowrap" }}>`workspaces:read`</span> | Access the workspace. |
+| Agents | <span style={{ whiteSpace: "nowrap" }}>`fleet-agents:read`<br />`fleet-agents:invoke`<br />`fleet-agents:create`<br />`fleet-agents:update`<br />`fleet-agents:delete`</span> | View, run, create, edit, clone, and delete agents. Manage agent connections. |
+| Skills | <span style={{ whiteSpace: "nowrap" }}>`fleet-skills:read`<br />`fleet-skills:create`<br />`fleet-skills:update`<br />`fleet-skills:delete`</span> | Browse, create, edit, and delete workspace skills. |
+| MCP servers | <span style={{ whiteSpace: "nowrap" }}>`mcp-servers:read`<br />`mcp-servers:invoke`<br />`mcp-servers:create`<br />`mcp-servers:update`<br />`mcp-servers:delete`</span> | Use tools and install, update, or remove workspace integrations. |
+| Deployments | <span style={{ whiteSpace: "nowrap" }}>`deployments:read`<br />`deployments:create`<br />`deployments:update`<br />`deployments:delete`</span> | Configure OAuth providers and manage connected accounts through the current Fleet UI. |
+
+Grant each permission explicitly. Create, update, delete, and invoke permissions do not include read permission. Existing agent and skill ownership and sharing checks still apply.
+
+The `deployments:*` permissions also grant access to deployment resources outside Fleet.
+
+To administer Fleet on v0.17, also add:
+
+- **View Fleet usage and limits**: Add `fleet:read-admin-config` to view usage reports and usage limits.
+- **Manage Fleet limits**: Add `fleet:write-admin-config` to create, update, and delete usage limits. Grant both Fleet admin permissions to view and manage limits.
+- **Manage workspace settings**: Add `workspaces:manage` for workspace settings, integration access controls, and OAuth provider management in **Settings**.
 
 To enable Fleet RBAC:
 
 1. Upgrade all services to the required LangSmith version.
-2. Create or update [custom roles](#configure-a-fleet-role) with Fleet permissions, and assign them to users. The upgrade does not add Fleet permissions to existing roles.
+2. Create or update custom roles with the permissions above, and assign them to users. The upgrade does not add Fleet permissions to existing roles.
 3. Add the flag to your Helm values, preserving existing `extraEnv` entries:
 
     ```yaml
@@ -158,7 +238,7 @@ Built-in integrations have an additional control layer: a workspace-level enable
 If an integration is disabled at the workspace level, no user can access it regardless of their role or ABAC policies.
 
 <Note>
-The Access control page is only visible to admin users (requires `workspaces:manage` permission).
+The Access control page is only visible to users with the `workspaces:integrations:manage` or `workspaces:manage` permission.
 </Note>
 
 ### Policy evaluation order
