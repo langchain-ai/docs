@@ -40,7 +40,7 @@ We consider this acceptable for regulated environments: FIPS governs the platfor
 
 ### SmithDB FIPS boundary note
 
-The SmithDB service in `langchain/smithdb-fips` performs its security-critical encryption and hashing through the `aws-lc-fips-sys` cryptographic module, using the `rustls` `aws-lc-rs` crypto provider, rather than the system OpenSSL FIPS provider. The image ships a `check-fips` script that confirms this provider is active, in addition to the standard `openssl-fips-test` check. See [Verify FIPS mode](#verify-fips-mode).
+The SmithDB service in `langchain/smithdb-fips` performs its security-critical encryption and hashing through the `aws-lc-fips-sys` cryptographic module, using the `rustls` `aws-lc-rs` crypto provider, rather than the system OpenSSL FIPS provider. The `smithdb` binary includes a `check-fips` subcommand that confirms this provider is active and that AWS-LC runs in FIPS mode, in addition to the standard `openssl-fips-test` check. See [Verify the SmithDB image](#verify-the-smithdb-image).
 
 ## Use FIPS images
 
@@ -111,7 +111,36 @@ For more detail on interpreting the output, see [Chainguard's FIPS verification 
 
 ### Verify the SmithDB image
 
-In addition to `openssl-fips-test`, the SmithDB FIPS image ships a `check-fips` script that prints the crypto provider the service starts with:
+Each SmithDB FIPS image carries a signed SBOM (software bill of materials) in CycloneDX format. The SBOM lists the dependency tree, including the crates that perform encryption, so you can confirm that the FIPS-validated ones are built.
+
+Install [`cosign`](https://docs.sigstore.dev/cosign/system_config/installation/) to verify the attestation and download the SBOM.
+
+The attestation is attached to each platform-specific image, not to the multi-platform tag, so first resolve the digest of each platform:
+
+```bash
+# List the digest of each platform-specific image
+docker manifest inspect docker.io/langchain/smithdb-fips:0.18.30 \
+  | jq -r '.manifests[] | select(.platform.os != "unknown") | "\(.platform.os)/\(.platform.architecture) \(.digest)"'
+
+# Verify the attestation for each digest and extract the SBOM
+cosign verify-attestation --type cyclonedx \
+    --certificate-identity-regexp '^https://github\.com/langchain-ai/smithdb/\.github/workflows/promote-self-hosted-release\.yml@refs/heads/main$' \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    docker.io/langchain/smithdb-fips@<platform-digest> \
+  | jq -c '.payload | @base64d | fromjson' > sbom.json
+```
+
+Replace `<platform-digest>` with a `sha256:...` digest from the first command. The command writes the SBOM to `sbom.json` and prints the verification result:
+
+```text
+Verification for docker.io/langchain/smithdb-fips@sha256:... --
+The following checks were performed on each of these signatures:
+  - The cosign claims were validated
+  - Existence of the claims in the transparency log was verified offline
+  - The code-signing certificate was verified using trusted certificate authority certificates
+```
+
+In addition to `openssl-fips-test`, the SmithDB FIPS image includes a `smithdb check-fips` command. It prints the active crypto provider and exits non-zero unless the rustls provider is FIPS-approved and AWS-LC runs in FIPS mode on the certified module version.
 
 ```bash
 docker run --rm langchain/smithdb-fips:0.18.30 check-fips
