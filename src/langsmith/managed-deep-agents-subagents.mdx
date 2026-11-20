@@ -111,7 +111,58 @@ export const agent = defineDeepAgent({
 
 The agent runs a subagent with the `task` tool and waits for its answer. The subagent runs inside the agent's graph and works in the agent's [sandbox](/langsmith/managed-deep-agents-sandboxes).
 
-Every agent also gets a `general-purpose` subagent for delegated work that doesn't match a declared subagent. See [The general-purpose subagent](/oss/deepagents/subagents#the-general-purpose-subagent).
+### Use the general-purpose subagent
+
+By default, every agent gets a `general-purpose` subagent, even when you omit `subagents` from the agent definition. The orchestrator can delegate different tasks to it at runtime without declaring a specialized subagent for each task.
+
+The built-in subagent uses the agent's model and tools and loads its skills. It has its own prompt and context window, not the orchestrator's conversation or `instructions.md`. Include the context, constraints, and expected output in each task's `description`.
+
+Agents served by `mda dev` or a deployment also get an async `general-purpose` subagent. Choose how the orchestrator delegates:
+
+- **`task`**: Run delegated work and wait for the results before continuing.
+- **`start_async_task`**: Start background work and continue while it runs. Each call returns a task ID, and results arrive independently.
+
+`mda eval` only provides the synchronous version. For background task behavior, see [Async subagents](#async-subagents).
+
+### Fan out tasks in one turn
+
+The orchestrator can issue multiple calls to `task` in a single model response, each targeting `general-purpose` with a different `description`. The calls run in parallel as separate subagent invocations. The orchestrator receives their results before its next model step and can combine them into one answer.
+
+For example, ask the orchestrator to investigate logs across projects. Add guidance like this to its `instructions.md`:
+
+```text
+When investigating multiple independent projects, delegate one task per project
+to the general-purpose subagent. Issue the task calls together in one model
+response. Give each task the project, time range, symptoms to look for, and
+expected output. Wait for the results, then compare the findings and cite sources.
+```
+
+With access to the relevant log tools, the orchestrator can produce tool calls like these in one response. This JSON illustrates model-generated calls, not functions to import into your application:
+
+```json
+[
+  {
+    "name": "task",
+    "args": {
+      "subagent_type": "general-purpose",
+      "description": "In project-a, find symptoms and timing in the logs. Cite sources."
+    }
+  },
+  {
+    "name": "task",
+    "args": {
+      "subagent_type": "general-purpose",
+      "description": "In project-b, find symptoms and timing in the logs. Cite sources."
+    }
+  }
+]
+```
+
+Each call starts separate work, even though both use the same subagent type. Pass the actual time range in each description: the subagents do not see the user's message. The model decides whether and how many tasks to delegate; the prompt guides that decision rather than guaranteeing a particular number of calls.
+
+To keep the orchestrator working while investigations run, use multiple `start_async_task` calls instead, with the same `subagent_type` and task-specific `description` arguments.
+
+This is dynamic task fan-out, not runtime creation of new subagent definitions. Declare a specialized subagent when it needs a different model, tool set, or reusable system prompt. For customization options, see [The general-purpose subagent](/oss/deepagents/subagents#the-general-purpose-subagent).
 
 ### What a subagent inherits
 
