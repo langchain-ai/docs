@@ -121,26 +121,17 @@ Run the agent with `mda dev` or [deploy it](/langsmith/managed-deep-agents-deplo
 
 ## Fan out dynamically
 
-Declare specialized subagents when each worker needs its own model, tool set, or reusable system prompt. When the number or scope of parallel tasks is known only at runtime, such as investigating an arbitrary list of affected services or projects, fan out to the built-in [`general-purpose`](/oss/deepagents/subagents#the-general-purpose-subagent) subagent instead.
+When the number of parallel tasks depends on the request (such as one investigation per affected service), you do not need to declare subagents up front. Every deployed or `mda dev` agent includes a built-in [`general-purpose`](/oss/deepagents/subagents#the-general-purpose-subagent) subagent that inherits the lead's model, tools, and skills.
 
-Every agent served by `mda dev` or a deployment includes both a synchronous and an async `general-purpose` subagent by default, even when you omit `subagents` from the agent definition. It inherits the lead's model, tools, and skills, and gets its own context window.
-
-To fan out in one turn, instruct the lead to issue multiple calls targeting `general-purpose` in the same model response, each with a self-contained `description`:
-
-- **`start_async_task`**: Starts background tasks in parallel and returns task IDs immediately, so the lead can continue working while results arrive independently.
-- **`task`**: Runs subagent invocations in parallel and waits for every result before the lead's next model step.
+Instruct the lead to launch multiple `general-purpose` tasks in one turn, using `start_async_task` for background runs or `task` to wait for all results:
 
 ```markdown instructions.md
-# Multi-service incident investigator
-
-When an incident spans multiple services, delegate one task per affected
-service to the general-purpose subagent. Issue the start_async_task calls
-together in one model response. Include the service name, time range,
-symptoms to look for, and expected output in each description. When the
-tasks finish, compare the findings and cite sources.
+When an incident spans multiple services, launch one `general-purpose` task
+per service in the same turn. Include the service, time range, symptoms, and
+expected output in each description, then combine the findings.
 ```
 
-Because each invocation has its own context window and does not see the user's message or the lead's `instructions.md`, put every required detail (such as the service and time range) in each task's `description`. This fans out task invocations at runtime rather than creating new subagent definitions.
+Each task runs in its own context window and does not see the user's message, so include all needed details in the `description`.
 
 ## Extend the pattern
 
