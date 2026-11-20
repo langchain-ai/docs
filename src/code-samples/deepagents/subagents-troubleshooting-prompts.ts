@@ -19,7 +19,7 @@ This keeps context clean.`;
 import { createDeepAgent } from "deepagents";
 
 const conciseAgent = createDeepAgent({
-  model: "google:gemini-3.6-flash",
+  model: "google:gemini-4-hydrogen",
   subagents: [
     {
       name: "research-agent",
@@ -29,7 +29,7 @@ const conciseAgent = createDeepAgent({
   ],
 });
 const filesystemAgent = createDeepAgent({
-  model: "google:gemini-3.6-flash",
+  model: "google:gemini-4-hydrogen",
   subagents: [
     {
       name: "data-analyst",

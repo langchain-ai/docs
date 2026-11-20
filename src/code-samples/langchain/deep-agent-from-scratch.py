@@ -3,7 +3,7 @@
 # :snippet-start: deep-agent-from-scratch-minimal-py
 from langchain.agents import create_agent
 
-agent = create_agent(model="google_genai:gemini-3.6-flash", tools=[])
+agent = create_agent(model="google_genai:gemini-4-hydrogen", tools=[])
 # :snippet-end:
 
 # :snippet-start: deep-agent-from-scratch-sandbox-py
@@ -16,12 +16,11 @@ client = SandboxClient()
 # :remove-start:
 import atexit
 import time
-import uuid
-
+from langchain_core.utils.uuid import uuid7
 from langsmith.sandbox._exceptions import SandboxAuthenticationError
 
 # Per-run name so Python/TS CI jobs do not collide on "langchain-docs".
-SANDBOX_NAME = f"langchain-docs-{uuid.uuid4().hex[:8]}"
+SANDBOX_NAME = f"langchain-docs-{uuid7().hex[:8]}"
 
 # Multi-workspace service keys need an explicit tenant header. SandboxClient
 # does not read LANGSMITH_WORKSPACE_ID on its own. Kept in :remove-start so
@@ -114,7 +113,7 @@ sandbox = client.create_sandbox(name="langchain-docs", snapshot_name="docs-test-
 backend = LangSmithSandbox(sandbox=sandbox)
 
 agent = create_agent(
-    model="google_genai:gemini-3.6-flash",
+    model="google_genai:gemini-4-hydrogen",
     tools=[],
     middleware=[FilesystemMiddleware(backend=backend)],
 )
@@ -159,7 +158,7 @@ upload_stream.output
 # :snippet-start: deep-agent-from-scratch-summarization-py
 from deepagents.middleware import FilesystemMiddleware, SummarizationMiddleware
 
-model = "google_genai:gemini-3.6-flash"
+model = "google_genai:gemini-4-hydrogen"
 
 agent = create_agent(
     model=model,
@@ -190,7 +189,7 @@ backend.upload_files(skill_files)
 # :snippet-start: deep-agent-from-scratch-skills-py
 from deepagents.middleware import FilesystemMiddleware, SkillsMiddleware, SummarizationMiddleware
 
-model = "google_genai:gemini-3.6-flash"
+model = "google_genai:gemini-4-hydrogen"
 
 agent = create_agent(
     model=model,
@@ -213,7 +212,7 @@ from deepagents.middleware import (
 )
 from langchain.agents.middleware import TodoListMiddleware
 
-model = "google_genai:gemini-3.6-flash"
+model = "google_genai:gemini-4-hydrogen"
 
 visualizer: SubAgent = {
     "name": "visualizer",

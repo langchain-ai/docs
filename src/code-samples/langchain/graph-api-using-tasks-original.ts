@@ -1,5 +1,6 @@
 // :snippet-start: graph-api-using-tasks-original-js
 import * as z from "zod";
+import { uuid7 } from "langsmith";
 
 import {
   END,
@@ -30,7 +31,7 @@ const builder = new StateGraph(State)
 const checkpointer = new MemorySaver();
 const graph = builder.compile({ checkpointer });
 
-const threadId = crypto.randomUUID();
+const threadId = uuid7();
 const config = { configurable: { thread_id: threadId } };
 
 // :remove-start:

@@ -110,7 +110,7 @@ Rules:
 `);
 
 export const agent = createAgent({
-  model: "gpt-5.5",
+  model: "gpt-6.1-sol",
   tools: [executeSql],
   systemPrompt: await getSystemPrompt(),
 });

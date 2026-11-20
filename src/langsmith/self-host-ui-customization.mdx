@@ -31,7 +31,7 @@ config:
     darkModeLogoUrl: "https://example.com/logo-white-text.svg"
 ```
 
-Each name refers to the scheme the logo appears in. When you set only one value, LangSmith uses it in both schemes. Requires Helm chart version 0.17.0-rc.38 or later.
+Each name refers to the scheme the logo appears in. When you set only one value, LangSmith uses it in both schemes. Requires Helm chart version 0.17.0 or later.
 
 ### Serve a logo from a file
 

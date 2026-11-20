@@ -6,7 +6,7 @@ description: Send LangSmith Engine notifications to Slack, Jira Automation, and 
 
 import WebhookSignatureVerification from '/snippets/langsmith/webhook-signature-verification.mdx';
 
-[LangSmith Engine](/langsmith/engine) can notify you when it opens a new issue, links a new trace to an existing issue, or fails to complete a run. Deliver these notifications to a **Slack channel**, a **Jira Automation incoming webhook**, or an **HTTP webhook endpoint**. Each destination has its own event types and minimum priority, so you can route urgent issues to a paging webhook while sending every issue to a Slack channel.
+[LangSmith Engine](/langsmith/engine) can notify you when it opens a new issue, links a new trace to an existing issue, or fails to complete a run. Notifications bring Engine's findings to the tools your team already watches, so new issues get triaged as they appear instead of waiting until someone opens the **Engine** page. Deliver these notifications to a **Slack channel**, a **Jira Automation incoming webhook**, or an **HTTP webhook endpoint**. Each destination has its own event types and minimum priority, so you can route urgent issues to a paging webhook while sending every issue to a Slack channel.
 
 ## Add a destination
 
@@ -16,17 +16,19 @@ Notification destinations are configured per tracing project or agent environmen
 - **Notify when**: The [event types](#event-types) that trigger a notification.
 - **Minimum issue severity**: The issue [severity filter](#severity-filtering) that determines which notifications are sent.
 
-To be alerted when a [watched issue](/langsmith/engine#watch-an-issue) recurs, click **Alert me via Slack** on the issue, which opens the same **Notifications** section.
+To be alerted when a [watched issue](/langsmith/engine-issues#watch-an-issue) recurs, click **Alert me via Slack** on the issue, which opens the same **Notifications** section.
 
 ## Event types
 
-| Event | Sent when |
-| --- | --- |
-| [`issue.created`](#issue-created) | Engine opens a new issue. |
-| [`issue.trace.added`](#issue-trace-added) | Engine links a new trace to an existing issue. |
-| [`issue.agent_run.failed`](#issue-agent_run-failed) | An Engine run fails to complete. |
+| **Notify when** option | Sent when | Webhook event type |
+| --- | --- | --- |
+| **Issue created** | Engine opens a new issue. | [`issue.created`](#issue-created) |
+| **New traces linked to issue** | Engine links a new trace to an existing issue. | [`issue.trace.added`](#issue-trace-added) |
+| **Engine failed to complete a run** | An Engine run fails to complete. | [`issue.agent_run.failed`](#issue-agent_run-failed) |
 
-For new destinations, the **Notify when** picker offers `issue.created` and `issue.trace.added`. Existing subscriptions can also receive `issue.agent_run.failed`. A destination created without an explicit list of event types receives only `issue.created`.
+For new destinations, the **Notify when** picker offers **Issue created** and **New traces linked to issue**. Destinations created before **Engine failed to complete a run** was removed from the picker can still receive it. A destination created without an explicit list of event types receives only **Issue created**.
+
+Webhook payloads identify each event by its event type, shown in the last column. See [Webhook payload reference](#webhook-payload-reference).
 
 ## Severity filtering
 
@@ -45,7 +47,7 @@ Severity thresholds do not apply to [`issue.agent_run.failed`](#issue-agent_run-
 
 ## Notify a Slack channel
 
-If Slack is not configured on your self-hosted instance, the **Slack** tab shows **Contact your operator to enable Slack notifications**. The operator [creates a Slack app and configures its credentials](/langsmith/self-host-slack). You then connect a workspace through Slack authorization.
+If Slack is not configured on your self-hosted instance, the **Slack** tab shows **Contact your operator to enable Slack notifications**. The operator [creates a Slack app and configures its credentials](/langsmith/self-host-slack). On a [BYOC](/langsmith/byoc) data plane, an Organization Admin [configures the Slack app](/langsmith/self-host-slack#create-your-slack-app-on-byoc) under **Settings** > **General Settings** > **Slack**. You then connect a workspace through Slack authorization.
 
 To add a Slack destination:
 
@@ -66,6 +68,21 @@ LangSmith joins the selected public channel when it first delivers a message, if
 Each Slack message includes the issue title, description, and severity, a **View issue** link back to LangSmith, and (for issue events) a chart of the issue's recurrence over time. If a workspace's connection becomes invalid, for example, the app is removed from Slack, its destinations stop delivering until you reconnect it from your organization's **General** settings.
 
 Slack destinations use the configured Slack app to post messages. They do not send the [webhook payload](#webhook-payload-reference), so webhook signing secrets and custom headers do not apply.
+
+### Mention a coding agent
+
+A Slack destination can mention a coding agent's Slack bot, such as [Open SWE](https://github.com/langchain-ai/open-swe), in the thread of an Engine notification. The mention gives the agent Engine's fix prompt for the issue, so it can work on a fix from Slack.
+
+To mention a coding agent:
+
+1. In Slack, add the agent's bot to the destination's channel.
+2. In the Slack destination's settings, select the bot under **Mention agent on new issues**. To use a bot that is not listed, enter its Slack user ID. To stop mentioning the agent, select **None**.
+3. (Optional) Under **Message to the agent**, enter an instruction of up to 1,000 characters. When empty, the mention uses `Investigate this issue and open a fix if needed.`
+4. Save the destination.
+
+The agent is mentioned in the thread of each **Issue created** message. If the destination notifies on **Fix PR ready**, the mention appears under the **Fix PR ready** message instead, once per issue.
+
+The mention includes an issue marker, `<!-- langsmith-issue {"id":"<issue-id>"} -->`. If the agent includes the marker in the body of a pull request it opens in a GitHub repository [connected to Engine](/langsmith/engine-repositories), Engine links the pull request to the issue. Engine checks for the marker only when the pull request is opened, so adding it later has no effect. Engine does not link GitLab merge requests this way.
 
 ## Create Jira work items
 
@@ -102,7 +119,7 @@ To create a work item for each new Engine issue:
   <Step title="Add the Jira destination in LangSmith">
     On the **Engine** page, click **Configure Engine**. Under **Notifications**, click **Add** and select **Jira**. Enter the **Jira Webhook URL** and **Jira webhook token** from the trigger.
 
-    Under **Notify when**, select only `issue.created` for this creation rule. Choose the **Minimum issue severity**, then click **Add**. Enable the rule in Jira.
+    Under **Notify when**, select only **Issue created** for this creation rule. Choose the **Minimum issue severity**, then click **Add**. Enable the rule in Jira.
   </Step>
   <Step title="Verify Jira created the work item">
     After Engine creates an issue that matches your severity filter, check Jira's automation audit log. Confirm that the rule succeeds and creates a work item with the expected summary, description, severity, and LangSmith issue link.

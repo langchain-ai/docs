@@ -2,7 +2,7 @@
 
 🦜 **Welcome!** This repository contains the documentation build pipeline for LangChain projects.
 
-* 🏠 [`docs.langchain.com`](https://docs.langchain.com) is our docs home, centralizing LangChain, LangGraph, LangSmith, and LangChain Labs (Deep Agents, Open SWE, Open Agent Platform). This site is hosted on [Mintlify](https://mintlify.com).
+* 🏠 [`docs.langchain.com`](https://docs.langchain.com) is our docs home, centralizing documentation for LangChain, LangGraph, LangSmith, and LangChain Labs (Deep Agents, Open SWE, Open Agent Platform). This site is hosted on [Mintlify](https://mintlify.com).
 * 🛠️ [`reference.langchain.com`](https://reference.langchain.com/python/) hosts generated API reference for LangChain, LangGraph, LangSmith, and integration packages. That site is **not** built from this repository (no reference build scripts or output live here).
   * [`Python reference`](https://reference.langchain.com/python/)
   * [`JavaScript/TypeScript reference`](https://reference.langchain.com/javascript/)
@@ -103,8 +103,8 @@ API reference is generated and deployed outside this repo. Browse [Python](https
 
 * `make dev` - Start development mode with file watching and live rebuild
 * `make build` - Build documentation to `./build` directory
-* `make broken-links` - Check for broken links in documentation
-* `make broken-links-with-anchors` - Check for broken links + check links with anchors
+* `make broken-links-with-anchors` - Check for broken links, including anchors (the check CI runs)
+* `make broken-links` - Check for broken links, without anchors
 * `make install` - Install all dependencies and link authoring skills
 * `make clean` - Remove build artifacts
 * `make test` - Run the test suite

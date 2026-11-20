@@ -42,6 +42,18 @@ description: SEO summary with no markdown, no links, and no backticks
 For OSS pages that differ by language, use `:::python` and `:::js` fences in one
 file rather than writing two files. The build pipeline emits both versions.
 
+Before writing a JSX tag you have not seen in `src/`, look it up on
+[Mintlify components](https://mintlify.com/docs/components) or with the
+`docs-mintlify` MCP server. A plausible name is not evidence: `<Important>` and
+`<ItemTable>` both reached `main` and rendered as nothing.
+
+Take every fact on the page from the product source, not from memory, a sibling
+docs page, or the request that asked for the page. This covers behavior,
+defaults, field names, version minimums, and examples. Use the
+`verify-against-source` skill to find the repository that owns each claim. Never
+fabricate a value to fill a gap. Leave the claim out, and list what you could
+not confirm in the pull request body and in your reply to the requester.
+
 ## Step 3. Add the navigation entry
 
 Navigation lives in `src/docs.json` under `navigation.products`. There are two
@@ -76,14 +88,20 @@ instead, and touch `docs.json` only when creating a brand-new component group.
 ## Step 4. Add redirects for a move, rename, or deletion
 
 For a move or rename of a file that was already on `main`, run the repo's mover first. It rewrites cross-references
-across the corpus, which hand-editing misses:
+across the corpus, which hand-editing misses: every link to the page in every
+form (`/oss/langchain/x`, `/oss/python/langchain/x`, `href="..."`), plus the
+`src/docs.json` nav entries and redirect destinations that name it:
 
 ```bash
 uv run docs mv src/langsmith/old-name.mdx src/langsmith/new-name.mdx --dry-run
 ```
 
-Drop `--dry-run` once the preview looks right. Then add the redirect to the
-`redirects` array in `src/docs.json`:
+Read any `Left ... links unchanged` warning in the output. It marks links the
+mover could not rewrite safely, such as an unversioned `/oss/integrations/...`
+link that also reaches the other language's page. Fix those by hand.
+
+Drop `--dry-run` once the preview looks right. The mover does not add a
+redirect, so add one to the `redirects` array in `src/docs.json`:
 
 ```json
 { "source": "/langsmith/old-name", "destination": "/langsmith/new-name" }
@@ -137,7 +155,7 @@ Run all three, in this order:
 
 ```bash
 make lint_prose FILES="src/path/to/page.mdx"
-make build
+make check-mdx
 make broken-links-with-anchors
 ```
 
@@ -148,6 +166,19 @@ expects. Run the pipeline directly rather than working around the build:
 ```bash
 PYTHONPATH="$(pwd)" .venv/bin/python -m pipeline build
 ```
+
+A fresh git worktree has no `.venv`, and the same version check blocks
+`uv sync` from creating one. Point at the main checkout's interpreter instead;
+`PYTHONPATH` still loads the pipeline code from the worktree:
+
+```bash
+PYTHONPATH="$(pwd)" <main-checkout>/.venv/bin/python -m pipeline build
+```
+
+A fresh worktree's `.mise.toml` is also untrusted, so the first commit fails
+at the Vale hook with `Config files in <dir>/.mise.toml are not trusted`. Run
+`mise trust` once in the worktree. The `docs-edit` skill covers the permanent
+fix.
 
 `make broken-links-with-anchors` depends on `build`, so it fails the same way.
 Its link-check half runs on its own once the build output exists:
@@ -178,10 +209,27 @@ findings that go stale as soon as writing resumes.
 Skip this step for a change too small to have prose in it, such as a pure
 `docs.json` reorder or a redirect-only fix.
 
+## Step 7. Open the pull request
+
+Commit, push, and open the PR however you usually do. If the change belongs on
+an existing PR, use `docs-edit` instead. Two rules apply to the PR description:
+
+- **Linear**: When the work has a Linear issue, link it with
+  `Closes [DOC-N](<linear url>)` or `Refs [DOC-N](<linear url>)` as
+  appropriate. `sync-linear-issue-from-pr.yml` only syncs status for
+  docs-release-watch PRs labeled `release-watch-agent`, so a human PR does not
+  move the issue.
+- **AI disclosure**: End the description with one plain sentence, such as
+  `Prepared with Claude Code.` Do not add a `🤖 Generated with [Claude Code](...)`
+  badge or any similar badge. `check-pr-ai-attribution` fails a PR that carries
+  one, because the squash merge copies it into the commit on `main`.
+
 ## Checklist
 
 - [ ] File in the directory the source-directory table names, not `build/`.
 - [ ] Frontmatter present, `description` free of markdown.
+- [ ] Every claim checked against product source; unconfirmed claims cut and
+      listed in the PR body.
 - [ ] `src/docs.json` entry in the right product, menu item, tab, and group.
 - [ ] Both language entries added if the page is language-versioned.
 - [ ] Index page first if a new group was created.
@@ -189,5 +237,7 @@ Skip this step for a change too small to have prose in it, such as a pure
 - [ ] Inbound `#anchor` links checked before any heading was reworded.
 - [ ] A block now on three or more pages extracted to `src/snippets/`, and its
       built `python/` and `javascript/` targets confirmed to exist.
+- [ ] `make check-mdx` clean.
 - [ ] `make lint_prose` clean, `make broken-links-with-anchors` shows no new `⎿` lines.
 - [ ] `docs-review` run on the changed files, findings addressed.
+- [ ] PR description references the Linear issue, if any, and has no AI badge.

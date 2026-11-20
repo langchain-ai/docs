@@ -6,16 +6,27 @@ By default runs all code samples. Pass FILES to test specific files only.
   make test-code-samples FILES="src/code-samples/langchain/return-a-string.py"
   make test-code-samples FILES="src/code-samples/langchain/return-a-string.py src/code-samples/langchain/return-a-string.ts"
 
+Set ``CODE_SAMPLE_PATHS`` to space-separated directories under ``src/code-samples/``
+to run only the samples beneath them. It filters both the run-all case and an
+explicit ``FILES`` list, so CI can hand every leg of a per-product matrix the same
+modified-file list and let each leg keep only its own product's files:
+
+  CODE_SAMPLE_PATHS="src/code-samples/langsmith" make test-code-samples
+  CODE_SAMPLE_PATHS="src/code-samples/langchain src/code-samples/langgraph" make test-code-samples
+
 Set ``CODE_SAMPLE_TRACING=1`` to enable LangSmith tracing, share public links for
 agent runs from single-snippet samples, and update ``src/code-samples/trace-links.json``.
+Traced single-snippet samples set ``LANGSMITH_DOCS_SNIPPET`` so collection can
+match the correct root run under parallel jobs.
 
 Set ``CODE_SAMPLE_JOBS`` to run samples concurrently (default: 4). Trace-link
 collection stays serialized under a lock so parallel samples do not clobber the
 shared manifest or claim each other's runs.
 
-Samples that share a LangSmith dataset or experiment fixture are placed in a
-serial group (see ``SERIAL_GROUPS``): they never run concurrently with others
-in the same group, but still overlap with unrelated samples.
+Samples that share a LangSmith dataset, experiment, or hub-prompt fixture are
+placed in a serial group (see ``SERIAL_GROUPS``): each group runs as one
+ordered chain on a single worker (lexical path order), and still overlaps with
+unrelated samples.
 
 Rate-limit tuning (optional env overrides):
 
@@ -31,14 +42,18 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 # Allow ``from code_sample_tracing import …`` when run as ``python scripts/….py``.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from code_sample_tracing import DEFAULT_PROJECT, collect_trace_for_sample
+from code_sample_tracing import (
+    DEFAULT_PROJECT,
+    DOCS_SNIPPET_ENV,
+    collect_trace_for_sample,
+    primary_snippet_id,
+)
 
 TIMEOUT_SECONDS = int(os.environ.get("CODE_SAMPLE_TIMEOUT_SECONDS", "1200"))
 
@@ -58,13 +73,23 @@ TRACE_RATE_LIMIT_MAX_ATTEMPTS = RATE_LIMIT_MAX_ATTEMPTS
 
 DEFAULT_JOBS = 4
 
-# Relative-path prefixes. Matching samples share a lock so they do not race on
-# the same LangSmith dataset or experiment fixture under CODE_SAMPLE_JOBS > 1.
+# Relative-path prefixes. Matching samples run as one ordered chain so they do
+# not race on the same LangSmith dataset, experiment, or hub prompt under
+# CODE_SAMPLE_JOBS > 1. Chain order follows collect_files_to_test (sorted).
 SERIAL_GROUPS: dict[str, tuple[str, ...]] = {
     "evaluate-rag": ("src/code-samples/langsmith/evaluate-rag-",),
     "experiment-runs-query": (
         "src/code-samples/langsmith/smithdb-migration/experiment-runs-query-",
     ),
+    # Python and the three TS files push, pull, and re-push the same hub
+    # prompt ("prompt-quickstart"); the TS files are numbered so lexical
+    # order pushes before pulling.
+    "prompt-engineering-quickstart": (
+        "src/code-samples/langsmith/prompt-engineering-quickstart",
+    ),
+    # The dataset files recreate "Sample dataset" and the eval files read it;
+    # numeric prefixes put the dataset file first in lexical order.
+    "evaluation-quickstart": ("src/code-samples/langsmith/evaluation-quickstart-",),
 }
 
 
@@ -75,6 +100,30 @@ def serial_group_for(rel_path: Path) -> str | None:
         if any(path.startswith(prefix) for prefix in prefixes):
             return group
     return None
+
+
+def partition_by_serial_group(
+    files_to_test: list[tuple[Path, str]], repo_root: Path
+) -> tuple[list[tuple[Path, str]], list[list[tuple[Path, str]]]]:
+    """Split samples into unconstrained files and ordered serial chains.
+
+    Each SERIAL_GROUPS membership becomes one chain, preserving the order of
+    ``files_to_test`` (already sorted). Chains run on a single worker so
+    numbered siblings (create before test before iterate) stay ordered under
+    ``CODE_SAMPLE_JOBS > 1``.
+    """
+    chains_map: dict[str, list[tuple[Path, str]]] = {
+        name: [] for name in SERIAL_GROUPS
+    }
+    free: list[tuple[Path, str]] = []
+    for file_path, lang in files_to_test:
+        group = serial_group_for(file_path.relative_to(repo_root))
+        if group is None:
+            free.append((file_path, lang))
+        else:
+            chains_map[group].append((file_path, lang))
+    chains = [chain for chain in chains_map.values() if chain]
+    return free, chains
 
 
 def worker_count() -> int:
@@ -156,18 +205,50 @@ def is_valid_sample(p: Path, code_samples_dir: Path) -> bool:
     return "__pycache__" not in rel.parts and "node_modules" not in rel.parts
 
 
+def sample_path_prefixes(repo_root: Path, code_samples_dir: Path) -> list[Path]:
+    """Return the resolved directories named by CODE_SAMPLE_PATHS.
+
+    Entries outside src/code-samples/ are dropped with a warning so a typo
+    cannot widen the run to arbitrary paths. An empty list means no filter.
+    """
+    raw = os.environ.get("CODE_SAMPLE_PATHS", "").strip()
+    samples_root = code_samples_dir.resolve()
+    prefixes: list[Path] = []
+    for item in raw.split():
+        path = (repo_root / item).resolve()
+        if path != samples_root and samples_root not in path.parents:
+            print(
+                f"Warning: CODE_SAMPLE_PATHS entry {item} is not under "
+                "src/code-samples/, ignoring"
+            )
+            continue
+        prefixes.append(path)
+    return prefixes
+
+
+def matches_sample_paths(path: Path, prefixes: list[Path]) -> bool:
+    """Return True when ``path`` sits under any prefix, or when there is no filter."""
+    if not prefixes:
+        return True
+    resolved = path.resolve()
+    return any(resolved == prefix or prefix in resolved.parents for prefix in prefixes)
+
+
 def collect_files_to_test(
     repo_root: Path, code_samples_dir: Path
 ) -> list[tuple[Path, str]]:
     """Return list of (path, lang) for files to test.
 
     Uses FILES env var if set (space-separated paths). Otherwise runs all.
+    CODE_SAMPLE_PATHS narrows either set to the directories it names.
     """
     files_env = os.environ.get("FILES", "").strip()
+    prefixes = sample_path_prefixes(repo_root, code_samples_dir)
 
     if files_env:
         # Explicit list of files
         result = []
+        outside_paths = 0
         for raw in files_env.split():
             path = (repo_root / raw.strip()).resolve()
             if not path.exists():
@@ -180,6 +261,11 @@ def collect_files_to_test(
                 continue
             if code_samples_dir.resolve() not in path.parents:
                 print(f"Warning: {path} not under src/code-samples/, skipping")
+                continue
+            if not matches_sample_paths(path, prefixes):
+                # Expected under a per-product matrix: every leg sees the full
+                # modified list and keeps only its own files, so stay quiet.
+                outside_paths += 1
                 continue
             if path.suffix == ".py":
                 lang = "python"
@@ -194,39 +280,28 @@ def collect_files_to_test(
             else:
                 lang = "bash"
             result.append((path, lang))
+        if outside_paths:
+            print(
+                f"Skipped {outside_paths} file(s) outside CODE_SAMPLE_PATHS "
+                f"({os.environ.get('CODE_SAMPLE_PATHS', '').strip()})"
+            )
         return result
 
     # No FILES specified: run all by default
-    py_files = sorted(
-        p
-        for p in code_samples_dir.rglob("*.py")
-        if is_valid_sample(p, code_samples_dir)
-    )
-    ts_files = sorted(
-        p
-        for p in code_samples_dir.rglob("*.ts")
-        if is_valid_sample(p, code_samples_dir)
-    )
-    java_files = sorted(
-        p
-        for p in code_samples_dir.rglob("*.java")
-        if is_valid_sample(p, code_samples_dir)
-    )
-    kt_files = sorted(
-        p
-        for p in code_samples_dir.rglob("*.kt")
-        if is_valid_sample(p, code_samples_dir)
-    )
-    go_files = sorted(
-        p
-        for p in code_samples_dir.rglob("*.go")
-        if is_valid_sample(p, code_samples_dir)
-    )
-    sh_files = sorted(
-        p
-        for p in code_samples_dir.rglob("*.sh")
-        if is_valid_sample(p, code_samples_dir)
-    )
+    def listed(pattern: str) -> list[Path]:
+        return sorted(
+            p
+            for p in code_samples_dir.rglob(pattern)
+            if is_valid_sample(p, code_samples_dir)
+            and matches_sample_paths(p, prefixes)
+        )
+
+    py_files = listed("*.py")
+    ts_files = listed("*.ts")
+    java_files = listed("*.java")
+    kt_files = listed("*.kt")
+    go_files = listed("*.go")
+    sh_files = listed("*.sh")
     return (
         [(p, "python") for p in py_files]
         + [(p, "ts") for p in ts_files]
@@ -263,6 +338,16 @@ def run_sample(
                 "LANGSMITH_PROJECT",
                 os.environ.get("LANGSMITH_PROJECT", DEFAULT_PROJECT),
             )
+            # Stamp the sole snippet ID onto run metadata (Python/JS SDKs copy
+            # non-secret LANGSMITH_* env vars). Collection matches on this key
+            # so parallel jobs cannot claim a neighbor's LangGraph root.
+            try:
+                source_text = file_path.read_text(encoding="utf-8")
+            except OSError:
+                source_text = ""
+            snippet_id = primary_snippet_id(source_text)
+            if snippet_id is not None:
+                env[DOCS_SNIPPET_ENV] = snippet_id
         if lang == "python":
             result = subprocess.run(
                 ["uv", "run", "python", str(file_path)],
@@ -389,7 +474,6 @@ def run_sample_with_retries(
     repo_root: Path,
     code_samples_dir: Path,
     print_lock: threading.Lock,
-    group_locks: dict[str, threading.Lock],
 ) -> SampleOutcome:
     """Run one sample with rate-limit retries and return a structured outcome."""
     rel_path = file_path.relative_to(repo_root)
@@ -397,26 +481,23 @@ def run_sample_with_retries(
     stdout = ""
     stderr = ""
     started_at = datetime.now(timezone.utc)
-    group = serial_group_for(rel_path)
-    group_lock = group_locks[group] if group is not None else nullcontext()
 
-    with group_lock:
-        for attempt in range(1, RATE_LIMIT_MAX_ATTEMPTS + 1):
-            started_at = datetime.now(timezone.utc)
-            success, stdout, stderr = run_sample(
-                file_path, lang, repo_root, code_samples_dir
-            )
-            if success or not is_rate_limited(stdout, stderr, lang=lang):
-                break
-            if attempt < RATE_LIMIT_MAX_ATTEMPTS:
-                delay = rate_limit_sleep_seconds(attempt)
-                with print_lock:
-                    print(
-                        f"  ... {rel_path} hit a 429, retrying "
-                        f"({attempt}/{RATE_LIMIT_MAX_ATTEMPTS}) "
-                        f"after {delay}s"
-                    )
-                time.sleep(delay)
+    for attempt in range(1, RATE_LIMIT_MAX_ATTEMPTS + 1):
+        started_at = datetime.now(timezone.utc)
+        success, stdout, stderr = run_sample(
+            file_path, lang, repo_root, code_samples_dir
+        )
+        if success or not is_rate_limited(stdout, stderr, lang=lang):
+            break
+        if attempt < RATE_LIMIT_MAX_ATTEMPTS:
+            delay = rate_limit_sleep_seconds(attempt)
+            with print_lock:
+                print(
+                    f"  ... {rel_path} hit a 429, retrying "
+                    f"({attempt}/{RATE_LIMIT_MAX_ATTEMPTS}) "
+                    f"after {delay}s"
+                )
+            time.sleep(delay)
 
     return SampleOutcome(
         rel_path=rel_path,
@@ -478,8 +559,10 @@ def main() -> int:
     trace_failures: list[Path] = []
     print_lock = threading.Lock()
     trace_lock = threading.Lock()
-    group_locks = {name: threading.Lock() for name in SERIAL_GROUPS}
     claimed_run_ids: set[str] = set()
+    free_files, serial_chains = partition_by_serial_group(
+        files_to_test, repo_root
+    )
 
     def collect_trace_with_retries(outcome: SampleOutcome) -> dict | None:
         """Collect a public trace link, retrying LangSmith 429 responses."""
@@ -553,34 +636,40 @@ def main() -> int:
             with print_lock:
                 print_failure(outcome.rel_path, outcome.stdout, outcome.stderr)
 
+    def run_one(file_path: Path, lang: str) -> SampleOutcome:
+        return run_sample_with_retries(
+            file_path,
+            lang,
+            repo_root,
+            code_samples_dir,
+            print_lock,
+        )
+
+    def run_chain(
+        chain: list[tuple[Path, str]],
+    ) -> list[SampleOutcome]:
+        return [run_one(file_path, lang) for file_path, lang in chain]
+
     if jobs == 1:
+        # Sorted collect order already keeps serial siblings correctly sequenced.
         for file_path, lang in files_to_test:
-            handle_outcome(
-                run_sample_with_retries(
-                    file_path,
-                    lang,
-                    repo_root,
-                    code_samples_dir,
-                    print_lock,
-                    group_locks,
-                )
-            )
+            handle_outcome(run_one(file_path, lang))
     else:
         with ThreadPoolExecutor(max_workers=jobs) as executor:
             futures = [
-                executor.submit(
-                    run_sample_with_retries,
-                    file_path,
-                    lang,
-                    repo_root,
-                    code_samples_dir,
-                    print_lock,
-                    group_locks,
-                )
-                for file_path, lang in files_to_test
+                executor.submit(run_one, file_path, lang)
+                for file_path, lang in free_files
             ]
+            futures.extend(
+                executor.submit(run_chain, chain) for chain in serial_chains
+            )
             for future in as_completed(futures):
-                handle_outcome(future.result())
+                result = future.result()
+                if isinstance(result, list):
+                    for outcome in result:
+                        handle_outcome(outcome)
+                else:
+                    handle_outcome(result)
 
     # Summary
     print("-" * 40)

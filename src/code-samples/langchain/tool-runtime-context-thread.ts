@@ -1,5 +1,6 @@
 // :snippet-start: tool-runtime-context-thread-js
 import * as z from "zod";
+import { uuid7 } from "langsmith";
 import { ChatOpenAI } from "@langchain/openai";
 import { MemorySaver } from "@langchain/langgraph";
 import { createAgent, tool } from "langchain";
@@ -20,13 +21,14 @@ const contextSchema = z.object({
 });
 
 const agent = createAgent({
-  model: new ChatOpenAI({ model: "gpt-5.5" }),
+  // GPT-6 models need the Responses API for tool calling in @langchain/openai.
+  model: new ChatOpenAI({ model: "gpt-6.1-sol", useResponsesApi: true }),
   tools: [getUserName],
   checkpointer: new MemorySaver(),
   contextSchema,
 });
 
-const threadId = crypto.randomUUID();
+const threadId = uuid7();
 const threadConfig = {
   configurable: { thread_id: threadId },
   context: { user_name: "John Smith" },

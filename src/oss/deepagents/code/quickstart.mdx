@@ -4,6 +4,8 @@ sidebarTitle: Quickstart
 description: Install Deep Agents Code, run your first task, and use interactive or non-interactive modes
 ---
 
+import ProjectTracingCompatibility from '/snippets/langsmith/project-tracing-compatibility.mdx';
+
 Deep Agents Code (`dcode`) is a terminal coding agent built on the [Deep Agents SDK](/oss/deepagents/quickstart). This guide covers installation, your first task, daily interactive use, automation with piping, and LangSmith tracing. For a feature overview, see [Deep Agents Code overview](/oss/deepagents/code/overview). For `config.toml` and provider settings, see [Configuration](/oss/deepagents/code/configuration).
 
 ## Install and run your first task
@@ -37,7 +39,7 @@ Deep Agents Code (`dcode`) is a terminal coding agent built on the [Deep Agents 
     <Step title="Enable tracing (optional)" icon="chart-dots">
         To log agent operations, tool calls, and decisions in LangSmith, run `/auth` and add your LangSmith API key. Tracing is enabled on the next launch.
 
-        For project naming, advanced options, and CI or headless setup, see [Trace with LangSmith](#trace-with-langsmith).
+        For choosing an agent environment, advanced options, and CI or headless setup, see [Trace with LangSmith](#trace-with-langsmith).
     </Step>
 </Steps>
 
@@ -61,7 +63,7 @@ The agent uses its built-in tools, skills, and memory to help you with tasks.
         - `/goal <objective>`: Draft acceptance criteria from a measurable objective. See [Goals and rubrics](/oss/deepagents/code/goals-and-rubrics).
         - `/rubric`: Set explicit acceptance criteria for grading. See [Goals and rubrics](/oss/deepagents/code/goals-and-rubrics).
         - `/remember [context]`: Review conversation and update memory and skills. Optionally pass additional context.
-        - `/skill:<name> [args]`: Directly invoke a skill by name. The skill's `SKILL.md` instructions are injected into the prompt along with any arguments you provide.
+        - `/skill:<name> [args]`: Directly invoke a skill by name. The agent server resolves the skill and loads its `SKILL.md` instructions before the first model call. See [Invoke a skill mid-session](/oss/deepagents/code/memory-and-skills#invoke-a-skill-mid-session).
         - `/skill-creator [task]`: Guide for creating effective agent skills.
         - `/offload` (alias `/compact`) - Free up context window space by offloading messages to storage with a summary placeholder. The agent can retrieve the full history from the offloaded file if needed.
         - `/context`: Open a color-coded context-window usage report with model capacity, usage categories, and remaining space.
@@ -75,6 +77,7 @@ The agent uses its built-in tools, skills, and memory to help you with tasks.
         - `/force-clear`: Recover a stuck session with a fresh thread.
         - `/copy`: Copy the latest assistant message to the clipboard.
         - `/prompts`: Search, preview, copy, and reuse previously submitted prompts.
+        - `/rename [name]`: Name the current thread, or generate an editable suggestion when you omit the name. See [Name a thread](/oss/deepagents/code/cli-reference#name-a-thread).
         - `/threads`: Browse and resume previous conversation threads.
         - `/mcp [login <server> | reconnect]`: Show active MCP servers and tools. `login <server>` runs the OAuth flow for a server; `reconnect` loads deferred logins.
         - `/plugins`: Manage [plugins and marketplaces](/oss/deepagents/code/plugins).
@@ -95,7 +98,7 @@ The agent uses its built-in tools, skills, and memory to help you with tasks.
         - `/feedback`: Send feedback or report an issue.
         - `/version` (alias `/about`) - Show installed `deepagents-code` and SDK versions.
         - `/help`: Show help and available commands.
-        - `/quit`: Exit application.
+        - `/quit`: Exit Deep Agents Code.
     </Accordion>
 
     <Accordion title="Shell commands" icon="prompt">
@@ -152,7 +155,7 @@ The agent uses its built-in tools, skills, and memory to help you with tasks.
         <Note>
             **macOS `Cmd+Left` / `Cmd+Right` / `Cmd+Delete`**
 
-            Terminal emulators intercept `Cmd`-modified keys before they reach the running application, so Deep Agents Code never receives them directly. Instead, the terminal translates them into the readline shortcuts above.
+            Terminal emulators intercept `Cmd`-modified keys before they reach the terminal process, so Deep Agents Code never receives them directly. Instead, the terminal translates them into the readline shortcuts above.
 
             - **Ghostty:** Works out of the box. `Cmd+Left`, `Cmd+Right`, and `Cmd+Delete` are translated to `Ctrl+A`, `Ctrl+E`, and `Ctrl+U` by default.
             - **iTerm2:** Not bound by default. Add the following under **Settings > Profiles > Keys > Key Mappings** as `Send Text with vim special chars`:
@@ -271,47 +274,49 @@ Shell execution is disabled by default in non-interactive mode. Use `-S`/`--shel
 
 ## Trace with LangSmith
 
-Enable [LangSmith](https://smith.langchain.com) tracing to see agent operations, tool calls, and decisions in a LangSmith project.
+<ProjectTracingCompatibility />
+
+Enable [LangSmith](https://smith.langchain.com) tracing to see agent operations, tool calls, and decisions in a LangSmith agent environment.
 
 Run `/auth` and add your LangSmith API key. Tracing is enabled on the next launch and persists across sessions. See [Provider credentials](/oss/deepagents/code/credentials#use-%2Fauth-recommended) for details on the credential manager.
 
-To customize the project name or configure tracing without the TUI, add keys to `~/.deepagents/.env` so tracing is enabled in every session without per-shell exports:
+To select the agent environment or configure tracing without the TUI, add keys to `~/.deepagents/.env` so tracing is enabled in every session without per-shell exports:
 
 ```bash title="~/.deepagents/.env"
 LANGSMITH_TRACING=true
 LANGSMITH_API_KEY=lsv2_...
-DEEPAGENTS_CODE_LANGSMITH_PROJECT=deepagents-code  # Project for Deep Agents Code's own traces; defaults to "deepagents-code"
+DEEPAGENTS_CODE_LANGSMITH_PROJECT="<coding-agent-tracer-session-name>"
 ```
 
-Use `DEEPAGENTS_CODE_LANGSMITH_PROJECT` to name the project that receives Deep Agents Code's own traces. It is scoped to Deep Agents Code, so it is not affected by a `LANGSMITH_PROJECT` set in a project's `.env` (which routes that project's application traces; see **Separate agent traces from app traces** below).
+Set `DEEPAGENTS_CODE_LANGSMITH_PROJECT` to the coding agent environment's `tracer_session_name`. This setting controls Deep Agents Code's own traces. A separate `LANGSMITH_PROJECT` in your repository's `.env` controls traces from code run in shell commands. See **Separate coding-agent traces from shell-command traces** below.
 
-To override the project for a specific working directory, add `DEEPAGENTS_CODE_LANGSMITH_PROJECT` to a `.env` in that directory. See [environment variables](/oss/deepagents/code/configuration#environment-variables) for the full loading order.
+To override the destination for a specific working directory, add `DEEPAGENTS_CODE_LANGSMITH_PROJECT` to a `.env` in that directory. See [environment variables](/oss/deepagents/code/configuration#environment-variables) for the full loading order.
 
 <Accordion title="Disable agent tracing">
     Launch `dcode --no-tracing` to disable LangSmith agent tracing for one session. For future launches, set `DEEPAGENTS_CODE_LANGSMITH_TRACING=false` in your shell or `~/.deepagents/.env`.
 
     The flag overrides the environment setting. An explicit `false` in `DEEPAGENTS_CODE_LANGSMITH_TRACING` overrides other tracing-enable flags, including `LANGSMITH_TRACING=true`. Shell exports take precedence over `.env` values for the same variable.
 
-    Disabling agent tracing does not disable local conversation history or model-provider requests. It is separate from trace redaction and tracing emitted by applications run in shell commands.
+    Disabling agent tracing does not disable local conversation history or model-provider requests. It is separate from trace redaction and tracing emitted by agents run in shell commands.
 </Accordion>
 
-<Accordion title="Separate agent traces from app traces">
+<Accordion title="Separate coding-agent traces from shell-command traces">
     Deep Agents Code can produce two kinds of LangSmith traces:
 
     - `Agent traces` are Deep Agents Code's own model calls, tool calls, orchestration, and middleware.
-    - `Shell-command traces` are traces emitted by code that Deep Agents Code runs for you in a shell, such as tests, scripts, or a local LangGraph app.
+    - `Shell-command traces` are traces emitted by code that Deep Agents Code runs for you in a shell, such as tests, scripts, or a local LangGraph agent.
 
-    To send Deep Agents Code's own traces to a dedicated project, set `DEEPAGENTS_CODE_LANGSMITH_PROJECT`:
+    To select the environment for Deep Agents Code's own traces, set `DEEPAGENTS_CODE_LANGSMITH_PROJECT`:
 
     ```bash title="~/.deepagents/.env"
-    # Example value; use any LangSmith project name you want.
-    DEEPAGENTS_CODE_LANGSMITH_PROJECT=deepagents-code
+    # Use the coding agent environment's tracer_session_name.
+    DEEPAGENTS_CODE_LANGSMITH_PROJECT="<coding-agent-tracer-session-name>"
     ```
 
-    Then configure `LANGSMITH_PROJECT` for your application traces:
+    For code run in shell commands, this compatibility example uses `LANGSMITH_PROJECT` with a different agent environment's `tracer_session_name`:
 
     ```bash title=".env"
-    LANGSMITH_PROJECT=customer-support-agent
+    LANGSMITH_PROJECT="<shell-agent-tracer-session-name>"
     ```
 
     For example, suppose you ask Deep Agents Code to debug a failing LangGraph test:
@@ -320,25 +325,25 @@ To override the project for a specific working directory, add `DEEPAGENTS_CODE_L
     uv run pytest tests/test_escalation_flow.py
     ```
 
-    If that test runs your app with LangSmith tracing enabled, those app traces are created by the shell process and go to `customer-support-agent`. Deep Agents Code's own reasoning and tool-use traces go to `deepagents-code`.
+    If the test runs your agent with LangSmith tracing enabled, its traces go to the environment configured for that agent. Deep Agents Code's own reasoning and tool-use traces go to the coding agent's environment.
 
     You can also scope LangSmith credentials to Deep Agents Code using the [`DEEPAGENTS_CODE_` prefix](/oss/deepagents/code/configuration#deepagents_code_-prefix) (e.g., `DEEPAGENTS_CODE_LANGSMITH_API_KEY`).
 </Accordion>
 
-<Accordion title="Dual-write traces to a second project">
-    To mirror agent traces to a second LangSmith project, set `DEEPAGENTS_CODE_LANGSMITH_REPLICA_PROJECTS`. This is useful for sending the same traces to both a personal project and a shared team project.
+<Accordion title="Copy traces to a second agent environment">
+    To mirror traces to a second agent environment, set `DEEPAGENTS_CODE_LANGSMITH_REPLICA_PROJECTS`. This is useful for sending the same traces to agent environments in both a personal workspace and a shared team workspace.
 
     ```bash title="~/.deepagents/.env"
-    DEEPAGENTS_CODE_LANGSMITH_REPLICA_PROJECTS=team-shared
+    DEEPAGENTS_CODE_LANGSMITH_REPLICA_PROJECTS="<replica-tracer-session-name>"
     ```
 
-    When set and tracing is active, each agent run is written to both the primary project (`DEEPAGENTS_CODE_LANGSMITH_PROJECT`, or `deepagents-code` by default) and the project you name here. Leave the variable unset to write to a single project as usual.
+    When set and tracing is active, each run is written to both the primary destination and the replica destination. Set both variables to the corresponding environments' `tracer_session_name` values. Leave the replica variable unset to write to one environment.
 </Accordion>
 
-When configured, Deep Agents Code displays a status line with a link to the LangSmith project. In supported terminals, click the link to open it directly. You can also use `/trace` to print the URL and open it in your browser.
+When configured, Deep Agents Code displays a status line with a link to its trace destination in LangSmith. In supported terminals, click the link to open it directly. You can also use `/trace` to print the URL and open it in your browser.
 
 ```sh
-✓ LangSmith tracing: 'my-project'
+✓ LangSmith tracing: '<coding-agent-tracer-session-name>'
 ```
 
 <Tip>

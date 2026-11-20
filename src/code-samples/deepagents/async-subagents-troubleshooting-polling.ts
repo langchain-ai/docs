@@ -15,7 +15,7 @@ import { createDeepAgent } from "deepagents";
 
 // KEEP MODEL
 const agent = createDeepAgent({
-  model: "google:gemini-3.6-flash",
+  model: "google:gemini-4-hydrogen",
   systemPrompt: `...your instructions...
 
     After launching an async subagent, ALWAYS return control to the user.

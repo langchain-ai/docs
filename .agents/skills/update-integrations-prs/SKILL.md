@@ -90,7 +90,7 @@ git rebase upstream/main
 
    Prefer partner docs, then public GitHub/GitLab README, then PyPI/npm.
 3. **Downloads snippet** (sort by `data-sort-value`): add a row to the matching `src/snippets/oss/*-*-downloads.mdx` (for example `python-sandboxes-downloads.mdx`). Match existing badge markup.
-4. **`all_providers`**: card with external `href` (alphabetical). Use `icon="link"` or an existing provider icon.
+4. **`all_providers`**: card with external `href` (alphabetical). Use `icon="link"` or an existing provider icon. Card body max **160 characters**. If a draft description is longer, shorten it to one factual sentence ≤160 characters; do not invent claims. Limit: `PROVIDER_CARD_DESCRIPTION_MAX_LEN` in `scripts/provider_card_limits.py`.
 5. **`packages.yml`**: append only for a public LangChain-related package. Ensure a trailing newline before appending. Omit `path: .`. Skip if the source repo is private or not a normal public VCS listing.
 6. **Nav / redirects**: remove `docs.json` entries and redirects for deleted never-on-main pages. Do not add redirects for pages that never shipped.
 7. **Deep Agents / indexes**: if the PR added provider cards that main no longer uses, prefer downloads tables and index grids; keep brief mentions only when main already lists providers that way.

@@ -58,7 +58,8 @@ console.log(`Sample output: ${JSON.stringify(sampleResults)}`);
 import { ChatOpenAI } from "@langchain/openai";
 
 const model = process.env.OPENAI_API_KEY
-  ? new ChatOpenAI({ model: "gpt-5.5" })
+  ? // GPT-6 models need the Responses API for tool calling in @langchain/openai.
+    new ChatOpenAI({ model: "gpt-6.1-sol", useResponsesApi: true })
   : null;
 // :remove-end:
 
@@ -278,7 +279,7 @@ const checkQuery: GraphNode<typeof MessagesState> = async (state) => {
 
   // Generate an artificial user message to check
   const lastMessage = state.messages[state.messages.length - 1];
-  if (!lastMessage.tool_calls || lastMessage.tool_calls.length === 0) {
+  if (!AIMessage.isInstance(lastMessage) || !lastMessage.tool_calls?.length) {
     throw new Error("No tool calls found in the last message");
   }
   const toolCall = lastMessage.tool_calls[0];
@@ -300,7 +301,7 @@ import { ConditionalEdgeRouter } from "@langchain/langgraph";
 const shouldContinue: ConditionalEdgeRouter<{ InputSchema: typeof MessagesState; Nodes: "check_query" }> = (state) => {
   const messages = state.messages;
   const lastMessage = messages[messages.length - 1];
-  if (!lastMessage.tool_calls || lastMessage.tool_calls.length === 0) {
+  if (!AIMessage.isInstance(lastMessage) || !lastMessage.tool_calls?.length) {
     return END;
   } else {
     return "check_query";
@@ -382,7 +383,7 @@ import { Command, MemorySaver } from "@langchain/langgraph";
 const shouldContinueWithHuman: ConditionalEdgeRouter<{ InputSchema: typeof MessagesState; Nodes: "run_query" }> = (state) => {
   const messages = state.messages;
   const lastMessage = messages[messages.length - 1];
-  if (!lastMessage.tool_calls || lastMessage.tool_calls.length === 0) {
+  if (!AIMessage.isInstance(lastMessage) || !lastMessage.tool_calls?.length) {
     return END;
   } else {
     return "run_query";

@@ -1,5 +1,6 @@
 // :snippet-start: agent-invocation-thread-id-js
 import { AIMessage } from "@langchain/core/messages";
+import { uuid7 } from "langsmith";
 import { createAgent } from "langchain";
 import { MemorySaver } from "@langchain/langgraph";
 
@@ -9,7 +10,7 @@ const agent = createAgent({
   checkpointer: new MemorySaver(),
 });
 
-const config = { configurable: { thread_id: crypto.randomUUID() } };
+const config = { configurable: { thread_id: uuid7() } };
 
 let result = await agent.invoke(
   {

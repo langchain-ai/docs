@@ -5,12 +5,12 @@ description: Stream LangSmith deployments with typed projections for messages, s
 tag: "Beta"
 ---
 
-Event streaming is the typed-projection streaming model for LangSmith deployments. The LangGraph SDK ([Python](/langsmith/langgraph-python-sdk), [JavaScript](/langsmith/langgraph-js-ts-sdk)) opens a single subscription against the [LangSmith Deployment API](/langsmith/server-api-ref) and exposes typed projections—messages, state, tool calls, subgraphs, output, and custom transformer extensions—that can be consumed concurrently from one run.
+Event streaming is the typed-projection streaming model for LangSmith deployments. The LangGraph SDK ([Python](/langsmith/langgraph-python-sdk), [JavaScript](/langsmith/langgraph-js-ts-sdk)) opens a single subscription against the [LangSmith Agent Server API](/langsmith/server-api-ref) and exposes typed projections—messages, state, tool calls, subgraphs, output, and custom transformer extensions—that can be consumed concurrently from one run.
 
 Event streaming sits one level above the [streaming API](/langsmith/streaming), which exposes raw stream modes.
 
 <Note>
-Event streaming requires `langgraph-api>=0.10.0` on the [LangGraph Agent Server](/langsmith/agent-server). Managed LangSmith deployments are updated automatically; self-hosted servers must be on a compatible version. The client SDK must be `langgraph-sdk>=0.4.0` with `langchain-core>=1.4.0` (Python) or `@langchain/langgraph-sdk>=1.9.15` (JavaScript). Servers on earlier versions continue to serve the [streaming API](/langsmith/streaming).
+Event streaming requires `langgraph-api>=0.10.0` on the [Agent Server](/langsmith/agent-server). Managed LangSmith deployments are updated automatically; self-hosted servers must be on a compatible version. The client SDK must be `langgraph-sdk>=0.4.0` with `langchain-core>=1.4.0` (Python) or `@langchain/langgraph-sdk>=1.9.15` (JavaScript). Servers on earlier versions continue to serve the [streaming API](/langsmith/streaming).
 </Note>
 
 ## Quickstart
@@ -643,7 +643,7 @@ Each event is a `ProtocolEvent` envelope wrapping a channel-specific payload:
     ```text
     event: messages
     id: 42
-    data: {"type":"event","seq":42,"method":"messages","params":{"namespace":["researcher:6f4d"],"timestamp":1736283600123,"data":{"event":"content-block-delta","index":0,"delta":{"type":"text","text":"Hello"}}},"event_id":"01HZQ8XK5N6F9M2A3B4C5D6E7F"}
+    data: {"type":"event","seq":42,"method":"messages","params":{"namespace":["researcher:6f4d"],"timestamp":1736283600123,"data":{"event":"content-block-delta","index":0,"delta":{"type":"text-delta","text":"Hello"}}},"event_id":"01HZQ8XK5N6F9M2A3B4C5D6E7F"}
     ```
 
     The `id:` line carries the per-session `seq`; the durable `event_id` lives in the JSON body and is the key clients use for deduplication. The wire protocol does not use the `Last-Event-ID` header for resumption — instead, a client passes a `since` seq cursor in the request body. The Agent Server buffers events per run in a bounded buffer and replays them on a new subscription, and the SDK dedupes by `event_id` client-side.
@@ -675,6 +675,18 @@ The typed projections (`thread.messages`, `thread.values`, `thread.toolCalls`, e
 
 The `messages` channel models output as content blocks. The `data.event` field is one of `message-start`, `content-block-start`, `content-block-delta`, `content-block-finish`, `message-finish`, or `error`. Content blocks have explicit boundaries: a block starts, emits zero or more deltas, and finishes before the next block in the same message starts. `message-finish` may include token usage; unrecoverable model-call failures arrive as message error events.
 
+Each `content-block-delta` event carries one delta for the block at its `index`:
+
+| Delta `type` | Effect on the block |
+| ------------ | ------------------- |
+| `text-delta` | Appends its `text` to the block's `text`. |
+| `reasoning-delta` | Appends its `reasoning` to the block's `reasoning`. |
+| `data-delta` | Appends its `data` to the block's `base64`. |
+| `tool-call-delta` | Appends its `args` to the block's `args`. |
+| `block-delta` | Sets each key in `fields` on the block, replacing the earlier value. |
+
+`content-block-finish` carries the complete block. Ignore any delta type your client does not recognize, and keep reading the stream.
+
 ### Tools
 
 The `tools` channel exposes tool execution. The `data.event` field is one of `tool-started`, `tool-output-delta`, `tool-finished`, `tool-error`. Tool events are correlated by tool call ID, so a tool execution can be joined back to its originating tool-call content block on the `messages` channel.
@@ -686,6 +698,8 @@ The `lifecycle` channel tracks root run, subgraph, and subagent status. The `dat
 ## Resume from last event
 
 Event streams are resumable. The Agent Server buffers events per run in a bounded buffer, assigns each a `seq` (per-session ordering) and a durable `event_id` (stable across replays and replicas), and replays from a cursor on reconnect. The SDK handles transient drops automatically: each open subscription tracks its highest observed `seq`, and on reconnect the SDK replays from that cursor and dedupes resent events by `event_id`.
+
+If the Agent Server can't keep reading a thread's events, for example because of a backend error, it ends the stream with a final `error` frame (`{"type": "error", "id": null, "error": "unknown_error", ...}`) instead of closing it as if the stream had finished. The JavaScript SDK (`@langchain/langgraph-sdk` 1.11.0 and later) reports this as a stream error and reconnects.
 
 To resume across a process boundary—a page reload, a worker handoff, or a separate client—reopen the thread with the same `thread_id`. The server replays buffered events when a new subscription opens, and the SDK demultiplexes them into the same typed projections. Because the per-run buffer is bounded, the earliest events of a very long run may have been evicted.
 
@@ -734,6 +748,6 @@ To resume across a process boundary—a page reload, a worker handoff, or a sepa
 - [LangGraph event streaming](/oss/langgraph/event-streaming): the same concepts applied to an in-process LangGraph application.
 - [LangChain agent event streaming](/oss/langchain/event-streaming): agent-focused projections for messages, tool calls, and middleware updates.
 - [Deep Agents event streaming](/oss/deepagents/event-streaming): subagent streams, nested messages, and subagent tool calls.
-- [LangSmith Deployment API](/langsmith/server-api-ref): wire-level reference for `POST /threads/{thread_id}/stream/events` and related endpoints.
+- [LangSmith Agent Server API](/langsmith/server-api-ref): wire-level reference for `POST /threads/{thread_id}/stream/events` and related endpoints.
 
 The wire-level event and command formats are defined in the [Agent Protocol](https://github.com/langchain-ai/agent-protocol) repository.

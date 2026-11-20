@@ -6,7 +6,7 @@ const asyncSubagents: AsyncSubAgent[] = [
     name: "researcher",
     description: "Research agent",
     graphId: "researcher",
-    // No url → ASGI (co-deployed)
+    // No url → same Agent Server
   },
   {
     name: "coder",

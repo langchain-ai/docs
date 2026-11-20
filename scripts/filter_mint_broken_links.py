@@ -8,7 +8,7 @@ resolve correctly when imported into a page, so snippet reports are dropped.
 Also drops OpenAPI-generated paths that exist at deploy time but not in local builds.
 
 Reads mint output from stdin (or --input), writes filtered output to stdout.
-Pass --check-anchors to also drop known smithdb migration anchor false positives.
+Pass --check-anchors to also drop known anchor false positives.
 """
 
 from __future__ import annotations
@@ -20,14 +20,20 @@ import sys
 EXCLUDE_SUBSTRINGS = (
     "/langsmith/agent-server-api/",
     "/langsmith/smith-api",
+    "/langsmith/tool-gateway-api/",
     "/api-reference/",
     "../langchain/",
     "../integrations/",
     "../langgraph/local-server",
 )
 
-SMITHDB_ANCHOR_RE = re.compile(
-    r"/langsmith/smithdb-sdk-migration#(traces-query|runs-query|exceptions)$"
+# Anchors on headings that come from imported snippets. The local mint check does
+# not index snippet headings, so it reports them broken. Each entry was verified
+# to exist on the published page.
+KNOWN_ANCHOR_RE = re.compile(
+    r"(?<!\S)/langsmith/(?:smithdb-sdk-migration#(?:traces-query|runs-query|exceptions)"
+    r"|smithdb-sdk-migration-feedback#annotation-queues-(?:add|read)-runs"
+    r"|env-var-cloud#(?:n_jobs_per_worker|redis_uri_custom|resumable_stream_ttl_seconds))$"
 )
 
 _FILE_SUFFIXES = (".mdx", ".md", ".jsx", ".tsx", ".html")
@@ -54,7 +60,7 @@ def filter_broken_links(text: str, *, check_anchors: bool = False) -> str:
             continue
         if any(s in line for s in EXCLUDE_SUBSTRINGS):
             continue
-        if check_anchors and SMITHDB_ANCHOR_RE.search(line.rstrip("\n")):
+        if check_anchors and KNOWN_ANCHOR_RE.search(line.rstrip("\n")):
             continue
         out.append(line)
 
@@ -66,7 +72,7 @@ def main() -> None:
     parser.add_argument(
         "--check-anchors",
         action="store_true",
-        help="Also filter known smithdb migration anchor false positives",
+        help="Also filter known anchor false positives",
     )
     parser.add_argument(
         "--input",

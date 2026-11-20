@@ -41,7 +41,7 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 Task-specific procedures live in `.agents/skills/`, one directory per skill.
 Cursor, Codex, GitHub Copilot, Gemini CLI, OpenCode, and Deep Agents read that
 path directly. Claude Code reads `.claude/skills/` only, so run `make skills`
-once to link the tree.
+once to link the tree, and again in each new git worktree.
 
 | Skill | Use it for |
 |-------|-----------|
@@ -52,9 +52,10 @@ once to link the tree.
 | `docs-review` | Reviewing changed prose against Vale and the style guide, reporting the rule each finding breaks. `add-docs-page` invokes it before committing. |
 | `docs-tooling-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, and how to edit safely. Required whenever a PR adds or changes a script, workflow, or check. |
 | `docs-code-samples` | Moving inline MDX code blocks into external, testable sample files. |
-| `verify-against-source` | Checking that a code sample, signature, default, or behavior claim is true: which repository owns each product, how to reach the private ones, and naming what stayed unverified. |
+| `verify-against-source` | Checking that a code sample, signature, default, or behavior claim is true: which repository owns each product, how to reach the private ones, checking that a PR documents what it claims, and naming what stayed unverified. |
 | `submit-integration` | Turning a structured integration issue submission into a listing. Invoked by CI. |
 | `update-integrations-prs` | Processing open integration PRs against the featuring policy. |
+| `update-example-models` | Rolling a provider example model ID across docs and the snippet generator. |
 
 Invoke a skill when the task matches it. Adding or changing tooling (a script,
 a workflow, a Makefile target, a PR check, a scheduled job, or a skill) also
@@ -75,7 +76,7 @@ docs/
 │   ├── index.mdx               # Home page
 │   ├── style.css               # Custom CSS
 │   ├── langsmith/              # LangSmith product docs
-│   │   └── fleet/              #   Fleet (nav label: "No-code agents")
+│   │   └── fleet/              #   Fleet (nav: "No-code agents" > Fleet tab)
 │   ├── oss/                    # Open source docs
 │   │   ├── langchain/          #   LangChain framework
 │   │   ├── langgraph/          #   LangGraph framework
@@ -124,13 +125,13 @@ Two language dropdowns (Python, TypeScript) with the same 10 tabs each. Most con
 | Tab | Source | Groups |
 |-----|--------|--------|
 | Overview | `src/build-overview.mdx` | Single page |
-| Deep Agents | `src/oss/deepagents/` | Get started, Deployment (Going to production), Execution environment, Context management, Delegation, Steering, Frontend (Patterns), Protocols |
 | Managed Deep Agents | `src/langsmith/managed-deep-agents*.mdx` | Get started, Agent definition (Channels), Build and deploy |
+| Deep Agents | `src/oss/deepagents/` | Get started, Deployment (Going to production), Execution environment, Context management, Delegation, Steering, Frontend (Patterns), Protocols |
 | LangChain | `src/oss/langchain/` | Get started, Core components, Middleware, Frontend (Patterns → Generative UI, Integrations), Advanced usage (Multi-agent), Agent development (Test), Production |
-| LangGraph | `src/oss/langgraph/` | Get started, Capabilities, Production, Frontend, LangGraph APIs (Graph API, Functional API) |
-| OpenWiki | `src/oss/openwiki/` | Modes, Integrations, Visualize, CLI reference, Customize, Providers, Automate updates, Changelog |
+| LangGraph | `src/oss/langgraph/` | Get started, Capabilities, Patterns, Build with the Graph API, Deployment, Frontend, Advanced (Build with the Functional API) |
+| OpenWiki | `src/oss/openwiki/` | Modes, Integrations, Search and link, Visualize, CLI reference, Customize, Providers, Automate updates, Changelog |
 | Integrations | `src/oss/python/integrations/` or `src/oss/javascript/integrations/` | Python: Popular Providers, Integrations by component. TypeScript: Popular Providers (OpenAI, Anthropic, Google, AWS, Microsoft), General integrations, RAG integrations |
-| Learn | `src/oss/` (various) | Tutorials (Deep Agents, LangChain, Multi-agent, LangGraph), Conceptual overviews, Additional resources. TypeScript adds LangChain Academy |
+| Learn | `src/oss/` (various) | Tutorials (Managed Deep Agents, Deep Agents, LangChain, Multi-agent, LangGraph), Conceptual overviews, Additional resources. TypeScript adds LangChain Academy |
 | Reference | `src/oss/reference/` | Reference, Releases (Releases, Migration guides), Policies; short entry pages linking to reference.langchain.com |
 | Contribute | `src/oss/contributing/` | Contribute (Integrations) |
 
@@ -174,16 +175,16 @@ Five tabs, all files flat in `src/langsmith/`:
 | Tab | Groups |
 |-----|--------|
 | Overview | Single page |
-| Trace | Tracing setup (Integrations → LLM providers, Agent frameworks, Voice AI frameworks, Developer tools; Manual instrumentation), Configuration & troubleshooting (Project & environment settings, Advanced tracing techniques, Data & privacy, Troubleshooting guides) |
+| Trace | Tracing setup (Integrations → LLM providers, Agent frameworks, Voice AI frameworks, Developer tools, Productivity; Manual instrumentation), Configuration & troubleshooting (Project & environment settings, Advanced tracing techniques, Data & privacy, Troubleshooting guides) |
 | Debug | Viewing & managing traces, Bulk export trace data, Trajectory view, Data type reference |
 | Observe | Monitoring & alerting, Online evaluators, Automations |
-| Reference | SmithDB SDK migration, LangSmith REST API |
+| Reference | SmithDB API migration, LangSmith REST API |
 
 The Reference tab's LangSmith REST API group is OpenAPI-generated. See [Reference docs](#reference-docs) below.
 
 ### PRODUCTS AND SETUP
 
-Five menu items. Only LangSmith setup has tabs; the rest are flat group lists.
+Six menu items. LangSmith setup and No-code agents have tabs. The rest are flat group lists.
 
 #### LangSmith setup
 
@@ -195,7 +196,7 @@ Six tabs, all files flat in `src/langsmith/`:
 | Account | Billing & usage |
 | Cloud | Reference |
 | BYOC | No groups |
-| Self-hosted | Get started by cloud provider, Deploy with Terraform (AWS, GCP, Azure), Setup guides (Manage an installation), Configuration, Connect external services, Platform auth & access control, SmithDB, Self-hosted observability, Hybrid, Scripts, Reference |
+| Self-hosted | Get started by cloud provider, Deploy with Terraform (AWS, GCP, Azure), Install an instance (Additional features → Enable Sandboxes), Configure an instance, Connect external services, Platform auth & access control, SmithDB, Manage an instance, Self-hosted observability, Hybrid, Scripts, Reference |
 | Govern | Organization (Workspace setup), Users & access control, Tools, Auditing, Data & compliance, Additional resources (FAQ) |
 
 #### Other menu items
@@ -203,11 +204,12 @@ Six tabs, all files flat in `src/langsmith/`:
 | Menu item | Source | Groups |
 |-----------|--------|--------|
 | LLM Gateway | `src/langsmith/llm-gateway*.mdx` | Core capabilities, Administration and governance, Advanced |
-| No-code agents | `src/langsmith/fleet/` | Get started, Configure, Tools and automation, Advanced, Additional resources |
+| Tool Gateway | `src/langsmith/tool-gateway*.mdx` | Get started, Set up tools, Use tools, Govern and observe, Reference (Tool Gateway API) |
+| No-code agents | `src/langsmith/build-an-agent.mdx` (Studio tab), `src/langsmith/fleet/` (Fleet tab) | Studio: single page. Fleet: Get started, Configure, Tools and automation, Advanced, Additional resources |
 | Engine | `src/langsmith/engine*.mdx` | No groups |
 | Deep Agents Code | `src/oss/deepagents/code/` | Configuration |
 
-"No-code agents" is the nav label for Fleet. The source directory and URLs still use `fleet`.
+"No-code agents" holds two tabs: Studio, for building agents in Studio, and Fleet. The Fleet source directory and URLs still use `fleet`. The Studio build page also appears in the Agent-based workspaces group through the `build-an-agent-link.mdx` stub, which points at `/langsmith/build-an-agent` with `url:` frontmatter.
 
 "Deep Agents Code" ships one set of pages at `/oss/deepagents/code/...` with no language split, even though it sits under `src/oss/deepagents/`. Conditional fences resolve against the Python branch.
 
@@ -227,23 +229,26 @@ Because nav names and directories diverge, use this to go from a file to its pla
 | `src/oss/reference/` | Build → Reference |
 | `src/oss/contributing/` | Build → Contribute |
 | `src/langsmith/managed-deep-agents*.mdx` | Build → Managed Deep Agents |
-| `src/langsmith/fleet/` | Products and setup → No-code agents |
-| `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx`, `create-an-agent.mdx`, `build-an-agent.mdx`, `deploy-to-agent-environment.mdx` | Products and setup → LangSmith setup → Overview → Agent-based workspaces |
+| `src/langsmith/tool-gateway*.mdx` | Products and setup → Tool Gateway |
+| `src/langsmith/fleet/` | Products and setup → No-code agents → Fleet |
+| `src/langsmith/build-an-agent.mdx` | Products and setup → No-code agents → Studio |
+| `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx`, `create-an-agent.mdx`, `build-an-agent-link.mdx` (stub for `build-an-agent.mdx`), `deploy-to-agent-environment.mdx` | Products and setup → LangSmith setup → Overview → Agent-based workspaces |
 | `src/langsmith/*.mdx` (everything else) | Test, Deploy, Monitor, or LangSmith setup, depending on subject |
 
 ### Reference docs
 
-Three OpenAPI-generated sections. Mintlify generates the endpoint pages at deploy time, so they do not exist in the local `build/` output. `make broken-links` filters them as false positives.
+Four OpenAPI-generated sections. Mintlify generates the endpoint pages at deploy time, so they do not exist in the local `build/` output. `make broken-links-with-anchors` filters them as false positives.
 
 | Section | Nav location | Spec source | Generated under |
 |---------|--------------|-------------|-----------------|
 | Agent Server API | Deploy → Get started → Reference | `src/langsmith/agent-server-openapi.json` (committed) | `/langsmith/agent-server-api/` |
 | Control Plane API | Deploy → Get started → Reference | `https://api.host.langchain.com/openapi.json` (fetched at deploy time, no local file) | `/api-reference/` |
 | LangSmith REST API | Monitor → Reference | `src/langsmith/langsmith-platform-openapi.json` (committed) | `/langsmith/smith-api/` |
+| Tool Gateway API | Products and setup → Tool Gateway → Reference | `src/langsmith/tool-gateway-openapi.json` (committed) | `/langsmith/tool-gateway-api/` |
 
 `src/langsmith/langsmith-platform-openapi.json` is refreshed daily by `.github/workflows/refresh-langsmith-openapi.yml`, which runs `scripts/process_langsmith_openapi.py` and opens or appends to a standing `chore/refresh-langsmith-openapi` PR. Do not edit it by hand.
 
-`src/langsmith/agent-server-openapi.json` is updated by PRs from the `langgraph-api` repository, titled `Update Agent ServerOpenAPI spec for API version X.Y.Z`. Validate either spec with `make check-openapi`.
+`src/langsmith/agent-server-openapi.json` is updated by PRs that the `langgraph-api-sync-openapi.yml` workflow in the private `langchainplus` monorepo opens, titled `Update Agent ServerOpenAPI spec for API version X.Y.Z`. The workflow copies `langgraph-api/api/openapi.json` from that repository. The standalone `langgraph-api` repository is archived. Do not edit the spec by hand. To change it, change the source in `langchainplus`. Validate either spec with `make check-openapi`.
 
 ## Local development
 
@@ -275,13 +280,17 @@ description: SEO summary, no markdown allowed (no links, backticks, formatting)
 
 ### Language-specific content
 
-Use `:::python` or `:::js` fences for language-specific content. Pages with these fences generate separate Python and JavaScript versions.
+Use `:::python` or `:::js` fences for language-specific content. Every shared page under `src/oss/` builds a Python and a JavaScript version, and the fences decide what each version keeps.
+
+A shared page listed in only one language's navigation in `src/docs.json` builds only that language. To make a page Python-only, list it only in the Python nav, and add a `docs.json` redirect for the JavaScript URL if that URL was ever published. Pages listed in both navs, or in neither, build both versions.
 
 ```txt
 :::python
 Python-only content here
 :::
 ```
+
+Close each fence before opening the next. `make build` fails on a nested, stray, or unclosed fence.
 
 ### Code highlighting
 
@@ -320,6 +329,8 @@ Common Tabler names: `home` (not house), `tool` (not wrench), `player-play` (not
 | `<Card>` / `<CardGroup>` | Navigation/overview links only (not for highlighting points) |
 | `<Note>`, `<Tip>`, `<Warning>`, `<Info>` | Callouts |
 | `<Prompt>` | Copyable AI-assistant prompt. **Required at the top of every migration guide** |
+
+Use only Mintlify built-ins or components imported on the page. Mintlify silently renders any other tag as nothing. Confirm an unfamiliar tag on [Mintlify components](https://mintlify.com/docs/components) or through the `docs-mintlify` MCP server; `<Important>`, `<Anchor>`, and `:::note` are not Mintlify syntax. CI runs `make check-mdx` to catch both.
 
 ### Migration guide convention
 
@@ -401,6 +412,7 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Use model aliases: use full identifiers (e.g., `claude-sonnet-4-6`)
 - Use `>=` in prose for version minimums: write "v0.153.4 or later"; reserve `>=` for package specifiers in code (`langsmith>=0.3.13`)
 - Use "→" to separate UI navigation steps: write "Go to **Settings** > **API Keys**"
+- State LangChain prices in dollars or other currencies, such as the price of an LSU, a plan, or a seat: link to the pricing page (`https://www.langchain.com/pricing`) instead, because prices change outside the docs release cycle. Usage rates stated in LSU are fine. Cloud-provider cost estimates for infrastructure you run, such as the BYOC data plane cost pages, are not LangChain pricing
 - Use FontAwesome icon names
 - Use nested double quotes in component attributes: use `default="['a', 'b']"` not `default='["a", "b"]'`
 - Use contractions ("do not" not "don't", "cannot" not "can't", "it is" not "it's")
@@ -466,11 +478,16 @@ These are common nouns, not proper nouns. Write them lowercase in prose, includi
 
 ### Product and feature name capitalization
 
-Capitalize a word when it refers to a **product or brand name**. Use lowercase when it refers to a **common noun**: a thing you build, an instance, or a type.
+Capitalize a word when it refers to a **product or brand name**, or to a **named feature** of a product. Use lowercase when it refers to a **common noun**: a thing you build, an instance, or a type.
 
 **Capitalize** product and brand names:
 
 - LangChain, LangGraph, LangSmith, Deep Agents, Fleet, Engine
+
+**Capitalize** named features of a product:
+
+- Agent Registry (a named feature of LangSmith)
+- LLM Gateway and Tool Gateway (named features of LangSmith; Vale enforces Tool Gateway)
 
 **Lowercase** common nouns (things you create, instances, or types):
 
@@ -480,7 +497,7 @@ Capitalize a word when it refers to a **product or brand name**. Use lowercase w
 - "Build agents across the agent development lifecycle" (the lifecycle is a process, not a product; marketing materials capitalize it, docs do not)
 - "LangChain provides the open agent engineering platform" (the phrase describes what LangChain provides; it is not a product name)
 
-When in doubt, ask: is this word the product's proper name, or is it describing a thing the user creates or works with? If the latter, use lowercase.
+When in doubt, ask: is this word the proper name of a product or a named feature, or is it describing a thing the user creates or works with? If the latter, use lowercase.
 
 Spell out "agent development lifecycle" in prose. Do not use the "ADLC" acronym, which appears in marketing materials but not in the documentation.
 
@@ -497,7 +514,7 @@ Reserve "the platform" for LangSmith. LangChain is the open agent engineering ec
 **Add a new LangSmith doc:**
 
 1. Create `src/langsmith/<name>.mdx` with frontmatter
-2. Decide which lifecycle stage the page belongs to, then find the matching menu item in `src/docs.json`: `navigation.products[0].menu` holds Home, Build, Test, Deploy, and Monitor; `navigation.products[1].menu` holds LangSmith setup, LLM Gateway, No-code agents, Engine, and Deep Agents Code
+2. Decide which lifecycle stage the page belongs to, then find the matching menu item in `src/docs.json`: `navigation.products[0].menu` holds Home, Build, Test, Deploy, and Monitor; `navigation.products[1].menu` holds LangSmith setup, LLM Gateway, Tool Gateway, No-code agents, Engine, and Deep Agents Code
 3. Add the page path (e.g., `"langsmith/<name>"`) to the correct group's `pages` array
 
 **Add a new integration page (Python):**
@@ -513,11 +530,13 @@ Reserve "the platform" for LangSmith. LangChain is the open agent engineering ec
 2. Add the page to the component's index page (`src/oss/javascript/integrations/<component>/index.mdx`); only edit `src/docs.json` when creating a brand-new component group
 3. If the provider has an overview page at `src/oss/javascript/integrations/providers/<provider>.mdx`, add or update a section there linking to the new page (`/oss/integrations/<component>/<provider>`)
 
-**Beta callouts on agent-based workspace pages:** every page in the
+**Availability callouts on agent-based workspace pages:** every page in the
 `Agent-based workspaces` group opens with the shared
-`/snippets/langsmith/agent-beta-note.mdx` callout, placed after the page's
-opening definition and before the first `##` heading. Do not hand-write a
-per-page variant, and do not add a page-level `tag` on top of the group tag.
+`/snippets/langsmith/agent-availability-note.mdx` callout, placed after the
+page's opening definition and before the first `##` heading. Do not hand-write
+a per-page variant. Agent-based workspaces are available on LangSmith Cloud
+and not on self-hosted, so do not label them beta or add a `Beta` tag to the
+group or its pages.
 
 **Add a reusable snippet:**
 
@@ -533,7 +552,7 @@ When investigating a bug or unexpected behavior, always start by reading the rel
 
 ### CI broken-links failures
 
-`make broken-links` runs `mint broken-links` then filters known false positives (OpenAPI-generated pages: `/langsmith/agent-server-api/`, `/api-reference/`, `../langchain/agents`). Output format:
+`make broken-links-with-anchors` runs `mint broken-links --check-anchors --check-redirects`, the same check CI runs, then filters known false positives (OpenAPI-generated pages: `/langsmith/agent-server-api/`, `/langsmith/smith-api/`, `/langsmith/tool-gateway-api/`, `/api-reference/`; relative-link false positives such as `../langchain/agents`). Output format:
 
 ```txt
 found N broken links in M files
@@ -548,7 +567,7 @@ another-file.mdx                 ← no indented lines = all its links were filt
 
 **Common cause:** Page renamed/deleted but link and/or `src/docs.json` nav entry still references old name. Fix both the link in the MDX file AND the corresponding entry in `docs.json`.
 
-To run locally: `make broken-links`
+To run locally: `make broken-links-with-anchors`. Do not use plain `make broken-links`: it skips anchors, so it can pass locally on a link CI rejects.
 
 ## Helper scripts
 
@@ -592,6 +611,63 @@ Notes:
 - After regenerating, commit only `src/snippets/langsmith/mda-oauth-catalog.mdx`. Do not edit
   that snippet by hand.
 
+### Update the egress IP inventory
+
+The LangSmith and LangSmith Agent Server egress IP tables on `/langsmith/cloud` and
+`/langsmith/cloud-platform-features` are generated from
+`src/langsmith/egress-ip-addresses.json` by `scripts/generate_egress_ip_tables.py`. The JSON is
+also published as-is at `/langsmith/egress-ip-addresses.json` for customers to poll.
+
+Each address has a service (`langsmith` or `langsmith-deployment`), cloud (`gcp` or `aws`),
+customer region (`us`, `eu`, or `apac`), and IPv4 `/32` CIDR. Customers must allowlist every
+matching CIDR, including allocated reserves. Publish new reserves before using them. Attaching
+an already-published address does not require an inventory update. Remove an address only
+after it stops carrying traffic and has been released.
+
+```bash
+uv run python scripts/generate_egress_ip_tables.py           # rewrite the version and both tables
+uv run python scripts/generate_egress_ip_tables.py --check   # fail if anything is stale
+```
+
+Notes:
+
+- Commit the JSON and both generated pages together. Do not edit the generated tables or the
+  `version` field by hand.
+- `make test` runs the same `--check` on the committed files, so CI fails on drift.
+- After deployment, verify the changes at
+  [the public JSON](https://docs.langchain.com/langsmith/egress-ip-addresses.json).
+
+### Check integration repo links
+
+`scripts/check_integration_repos.py` scans every third-party `repo:` in `packages.yml`
+against GitHub. When a repo is 404, it looks for a live alternate on PyPI, npm, and
+existing `docs_url` values in `scripts/data/integration_external_docs.yaml`:
+
+- **Rename**: different live third-party GitHub `owner/repo` found → update
+  `packages.yml` (and listing hrefs that used the old URL). Never auto-retarget
+  into `langchain-ai/*`.
+- **Docs URL redirect**: an external `docs_url` that permanently redirects (HTTP
+  301 or 308) → update that `docs_url` and matching listing hrefs (for example
+  `hashlock.markets/docs` → `docs.hashlock.markets`). Temporary redirects
+  (302/307) are left alone.
+- **Delist**: no live GitHub, GitLab, or partner-docs home → remove the package
+  from `packages.yml`, matching external YAML rows, downloads-table rows, and the
+  `all_providers` card when no other package shares the provider key
+  (`name_short`).
+- **Attention only**: a live GitLab project or partner docs/homepage remains (for
+  example Writer's `dev.writer.com` when GitHub is gone), or the only alternate
+  is first-party → do not change listings; report in the evidence table.
+- **Skipped**: first-party `langchain-ai/*` packages.
+
+```bash
+export GITHUB_TOKEN="$(gh auth token)"
+uv run python scripts/check_integration_repos.py
+uv run python scripts/check_integration_repos.py --write --evidence /tmp/evidence.md
+```
+
+The weekly workflow `.github/workflows/check-integration-repos.yml` runs this with
+`--write` and opens or updates a standing **draft** PR on `chore/dead-integration-repos`.
+
 ## Pre-commit linting
 
 Always run `make lint_prose` (Vale) before handing off or committing doc changes. CI blocks on it. Common offenders: em-dashes with surrounding spaces (` — ` → `—`, enforced by `LangChain.DashesSpaces`), terminology, style.
@@ -600,7 +676,7 @@ Scope to changed files for speed: `make lint_prose FILES="src/path/to/file.mdx"`
 
 The Vale version is pinned once, in `.mise.toml`. The `Makefile`, `scripts/install-vale.sh`, and the `lint-prose` workflow all read it from there, so local runs use the same engine as CI. Bump it only in `.mise.toml`. Do not hardcode a version in any of the three call sites.
 
-Also run `make broken-links` when adding or renaming links, pages, or nav entries.
+Also run `make broken-links-with-anchors` when adding or renaming links, pages, or nav entries.
 
 ## Changelog / Release notes
 
@@ -610,7 +686,8 @@ When extracting data from PRs or changelogs, use the "Release Note:" section in 
 
 - Explain the "why" of changes
 - Highlight areas needing careful review
-- Disclose AI agent involvement in description
+- Disclose AI agent involvement as one plain sentence in the description, for example "Prepared with Claude Code."
+- Do not add a `🤖 Generated with [Claude Code]` badge or similar to PR descriptions or commit messages, and do not add a `Co-Authored-By` trailer for an AI agent to commits. This aligns with the `langster-safety` skill. The `check-pr-ai-attribution` workflow fails a PR whose description contains either one, and a ruleset on `main` blocks the Claude trailer.
 
 <!-- OPENWIKI:START -->
 
