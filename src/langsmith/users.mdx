@@ -1,0 +1,204 @@
+---
+title: Track users
+sidebarTitle: Users
+description: Record the end user of each trace with the user_id metadata key, then view, filter, chart, and add traits to users in LangSmith.
+tag: "Beta"
+---
+
+import AgentTracingPrerequisite from '/snippets/langsmith/agent-tracing-prerequisite.mdx';
+import FilteringExperienceNote from '/snippets/langsmith/filtering-experience-note.mdx';
+
+A user in LangSmith is the person your application served in a trace. LangSmith reads the user from the `user_id` key in the [metadata](/langsmith/observability-concepts#metadata) of the trace's root run, the same way it groups traces into [threads](/langsmith/threads) with `thread_id`. Recording users lets you find every trace for a person who reports a problem, and review each user's activity, cost, and errors.
+
+<Note>
+The user features on this page are in [beta](/langsmith/release-stages) and available on [LangSmith Cloud](/langsmith/cloud). They are not available on [self-hosted](/langsmith/self-hosted) LangSmith or [BYOC](/langsmith/byoc) deployments, where `user_id` is stored as ordinary metadata.
+</Note>
+
+<Note>
+`user_id` identifies an end user of your application. It is different from `ls_user_id`, which identifies the LangSmith user the run is attributed to.
+</Note>
+
+## Record the user on a trace
+
+To record the user, add a `user_id` key to the metadata of the root run of each trace. The value can be any string that identifies the user in your application. Use the same value for the same user across traces so filtering by user returns all their traces.
+
+The [LangSmith SDK](/langsmith/reference) copies a run's metadata to the child runs it creates. When you set `user_id` on the root run, the SDK records it on every run in the trace. A `user_id` set on a child run overrides the copied value for that run. If you set `user_id` only on a child run, the trace top bar does not show a user, and the search bar does not suggest that user ID.
+
+<AgentTracingPrerequisite />
+
+<CodeGroup>
+
+```python Python
+from langsmith import traceable
+
+
+@traceable
+def retrieve_docs(question: str) -> list[str]:
+    return ["Traces record each step of a request."]
+
+
+@traceable
+def answer_question(question: str) -> str:
+    docs = retrieve_docs(question)
+    return " ".join(docs)
+
+
+# Pass the user at invocation time so each request records its own user.
+answer_question(
+    "What is a trace?",
+    langsmith_extra={"metadata": {"user_id": "user_123"}},
+)
+```
+
+```typescript TypeScript
+import { traceable } from "langsmith/traceable";
+
+const retrieveDocs = traceable(
+  async (question: string) => {
+    return ["Traces record each step of a request."];
+  },
+  { name: "retrieve_docs" }
+);
+
+async function handleRequest(question: string, userId: string) {
+  // Create the root run with this request's user in its metadata.
+  const answerQuestion = traceable(
+    async (question: string) => {
+      const docs = await retrieveDocs(question);
+      return docs.join(" ");
+    },
+    { name: "answer_question", metadata: { user_id: userId } }
+  );
+  return answerQuestion(question);
+}
+
+await handleRequest("What is a trace?", "user_123");
+```
+
+</CodeGroup>
+
+For other ways to set metadata, such as `tracing_context` or a wrapped client, see [Add metadata and tags to traces](/langsmith/add-metadata-tags). With LangChain or LangGraph, pass `user_id` in the `metadata` field of the run config when you invoke the agent. See [Trace LangChain agents](/langsmith/trace-with-langchain#add-metadata-and-tags-to-traces).
+
+## View the user on a trace
+
+LangSmith shows the user ID in four places:
+
+- **Tracing table**: Turn on the **User** column from **Columns** to show each run's user ID. The **LangSmith User** column is different: it shows the LangSmith user the run is attributed to.
+- **Trace top bar**: When you open a trace that is not part of a thread, the top bar shows a **User** chip with the user ID.
+- **Run header**: When a trace belongs to a thread, the header of the selected run shows the user ID recorded on that run. This applies in a thread's **Details** view and when you open the trace from the tracing table.
+- **Trajectory view**: Hover over a user message in a thread's **Trajectory** view to show the user ID below it. AI messages and tool responses do not show a user.
+
+Click a user ID to copy the full value. For more information on these views, see [View traces](/langsmith/view-traces).
+
+## Filter traces by user
+
+<FilteringExperienceNote />
+
+The `user_id` shorthand works in the search bar experience. In the **Add filter** experience, filter on the `user_id` metadata key.
+
+To find the runs, traces, or threads for one user, enter a `user_id` clause in the tracing search bar:
+
+```text
+user_id:user_123
+```
+
+The **Traces** table uses the **Root run** scope by default, which matches each trace by the user on its root run. See [Choose what a filter matches](/langsmith/filter-traces#choose-what-a-filter-matches).
+
+As you type, the search bar suggests the most common user IDs from the selected time range. You can also enter a user ID that is not in the list.
+
+`user_id` is shorthand for `metadata.user_id` and supports the same operators:
+
+- `-user_id:user_123` matches runs from every other user, including runs with no `user_id`.
+- `user_id:*` matches runs that have a `user_id` key.
+- `-user_id:*` matches runs with no `user_id` key, such as traces you have not instrumented yet.
+- `metadata.user_id:user_123` matches the same runs as `user_id:user_123`.
+
+For the full query syntax, see [Filter traces](/langsmith/filter-traces).
+
+## Review user activity
+
+The **Users** tab on an agent's **Monitoring** page lists the users of one environment, ordered by most recent activity. Use it to see who is using your agent and which users have high cost or error rates.
+
+To review users:
+
+1. Select your agent, then select **Monitoring** in the sidebar.
+2. Select the **Users** tab.
+3. Choose the environment and time range.
+
+Each row shows the user ID, last activity, traces, tokens, total cost, error rate, and P50 latency for the selected time range. The tab covers at most 31 days, so LangSmith shortens a longer time range to its last 31 days.
+
+The tab lists only users recorded on root runs. If the tab is empty, check that your traces set `user_id` on the root run. See [Record the user on a trace](#record-the-user-on-a-trace).
+
+To find one user, enter their exact user ID in the search box. Click a row to open the **Tracing** page filtered to that user's traces.
+
+## Group charts by user
+
+Grouping by user splits each dashboard chart into one series per user. LangSmith groups runs by their `user_id` metadata value, so you do not need to enter the metadata path.
+
+- **Prebuilt dashboards**: Select **User** in the dashboard's [group by](/langsmith/dashboards#group-by) setting.
+- **Custom charts**: When you [configure a chart](/langsmith/dashboards#filter-and-group), select **User** as the group-by attribute. To start from a chart that already groups by user, use the **Traces by user** or **Cost by user** template.
+
+Like other group-by attributes, a chart shows the most frequent users. Runs without a `user_id`, and users outside the most frequent ones, count toward the **Other** group where the chart shows one. The **Metadata** key list does not offer `user_id`, because **User** replaces it.
+
+## Add traits to a user
+
+Traits are key-value attributes, such as a name or an email address, that you store for a user through the [LangSmith REST API](/langsmith/smith-api-ref). Use traits to keep the details your team needs about each user, such as who they are and how to reach them, under the same `user_id` that your traces record. LangSmith stores traits separately from traces, so [trace retention](/langsmith/observability-concepts#data-retention) does not apply to them. Traits stay until you remove them with an update, or until the [agent environment](/langsmith/agent-environments) or workspace is deleted.
+
+Traits belong to one agent environment. The same `user_id` in two environments has two separate sets of traits. The `{session_id}` path parameter is the agent environment's ID. To get it, [resolve the agent environment](/langsmith/resolve-an-agent), which returns the ID as `session_id`.
+
+### Set permissions
+
+Each operation requires a permission. For the roles that include each permission, see [Organization and workspace operations](/langsmith/organization-workspace-operations#runs):
+
+- **Create a user**: `runs:create`, the same permission that sending traces requires.
+- **Update traits**: `runs:create` and `runs:read`.
+- **Get or list users**: `runs:read`.
+
+The traits API is not available in an environment where an [access policy](/langsmith/abac#control-trace-access-with-root-run-metadata) limits which traces you can read by root run metadata. LangSmith returns `403` for those requests.
+
+### Create and update users
+
+The API provides these operations:
+
+- **[Create a user](/langsmith/smith-api/users/create-a-user)**: `POST /api/v1/platform/sessions/{session_id}/users` with a `user_id` and optional `traits`. Returns `201` with the new user, or `409` if the user already exists. To create a user or update an existing user, send a create request, then send an update request when the create request returns `409`.
+- **[Update traits](/langsmith/smith-api/users/update-a-users-traits)**: `PATCH /api/v1/platform/sessions/{session_id}/users/{user_id}` with a `traits` object. LangSmith merges the `traits` object into the stored traits: keys you send overwrite existing values, keys you omit are kept, and a `null` value removes a key. Returns `200` with the stored user, or `404` if the user does not exist.
+- **[Get a user](/langsmith/smith-api/users/get-a-user)**: `GET /api/v1/platform/sessions/{session_id}/users/{user_id}`. Returns `404` if the user does not exist.
+- **[List users](/langsmith/smith-api/users/list-users)**: `GET /api/v1/platform/sessions/{session_id}/users`, ordered by most recently updated. The optional `page_size` parameter defaults to 20, with a maximum of 100. Pass the `next_cursor` value from a response as `cursor` to get the next page. On the last page, `next_cursor` is `null`. Use `user_id_prefix` for a case-sensitive prefix match on the user ID.
+
+For example, this request body creates a user with a name and email:
+
+```json
+{"user_id": "user_123", "traits": {"name": "Alex Rivera", "email": "alex@example.com"}}
+```
+
+The response contains `user_id`, `traits`, `created_at`, and `updated_at`.
+
+This update request body changes the name and removes the email, keeping any other traits:
+
+```json
+{"traits": {"name": "Alex R.", "email": null}}
+```
+
+### Stay within request limits
+
+Each request must stay within the following limits:
+
+- **User ID**: A user ID has 1 to 512 characters. In a path, URL-encode the user ID but keep each `/` as is, because LangSmith rejects `%2F` in a path. You cannot get or update a user whose ID has a `.` or `..` segment, `//`, or a leading `/`, because the ID cannot be used in a path.
+- **Trait values**: `traits` must be a JSON object with at most 50 keys. The `name` and `email` keys must be strings, or `null` in an update. A create request cannot contain `null` values.
+- **Size**: A user's stored traits are limited to 16,384 bytes, and a request body to 65,536 bytes. An update that would exceed the stored limit fails, and the stored traits stay unchanged.
+- **Rate limit**: LangSmith limits how many users a workspace can create per minute. A request over the limit returns `429` with a `Retry-After` header.
+
+LangSmith also returns these errors:
+
+- **`400`**: LangSmith cannot read the request, such as invalid JSON, an unknown field, or a body over the size limit.
+- **`422`**: A user ID or trait value breaks a request limit. The response names the field.
+- **`501`**: The user features are not enabled for your workspace.
+
+## See also
+
+- [Configure threads](/langsmith/threads): group a user's traces into conversations with `thread_id`.
+- [View traces](/langsmith/view-traces): the Trajectory and Details views that show the user ID.
+- [Add metadata and tags to traces](/langsmith/add-metadata-tags): set `user_id` and other metadata keys.
+- [Filter traces](/langsmith/filter-traces): combine `user_id` with other fields in a query.
+- [Dashboards](/langsmith/dashboards): build prebuilt and custom charts, including charts grouped by user.
+- [Log user feedback using the SDK](/langsmith/attach-user-feedback): attach feedback from your users to their runs.
