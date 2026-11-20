@@ -1,0 +1,76 @@
+---
+title: GCP data plane cost estimate
+sidebarTitle: Cost estimate
+description: Rough Google Cloud cost of a LangSmith BYOC data plane running SmithDB, with the default resource sizes and a separate estimate for sandboxes.
+icon: brand-google
+---
+
+<Warning>
+These are estimates, not a quote. Google Cloud changes its prices without notice. Your bill depends on region, usage, and any discounts you have with Google Cloud, such as committed use discounts.
+</Warning>
+
+This is a rough monthly cost for a [LangSmith BYOC data plane on GCP](/langsmith/byoc-architecture-gcp). GCP data planes run SmithDB, not ClickHouse.
+
+The estimate uses USD on-demand list prices for `us-west1` and 730 hours per month. It does not include sustained use discounts, which Google Cloud applies automatically to N2 and N2D VMs. The database, Redis, and node pool sizes are the defaults for a new data plane. Application and SmithDB node counts are based on a LangChain-operated test data plane with low tracing volume. LangSmith increases capacity as tracing volume requires it.
+
+<Note>
+Scaling capacity for any resource can be lowered when required, as long as the deployment remains within safe operating limits.
+</Note>
+
+## Rough monthly estimate
+
+Sandboxes are excluded from this estimate. See [Sandbox add-on](#sandbox-add-on).
+
+| Area | Rough monthly estimate | Notes |
+| --- | --- | --- |
+| GKE cluster management | ~\$73 | One regional GKE cluster at \$0.10/hour. |
+| System node pool | ~\$455 | 3 `n2-standard-4` nodes, one per zone, with 100 GB balanced persistent disk boot disks. |
+| Application worker nodes | \$800–\$1,600 | 4 to 8 `e2-standard-8` nodes for LangSmith pods, created by GKE node auto-provisioning, with 100 GB standard persistent disk boot disks. |
+| SmithDB nodes | \$637–\$1,274 | 1 to 2 `n2-standard-16` nodes with 2 local SSDs (750 GB) each, for the SmithDB query, ingestion, and compaction workers. The pool scales up to 16 nodes. |
+| Cloud SQL for PostgreSQL, LangSmith | ~\$214 | PostgreSQL 18, Enterprise edition, `db-custom-2-7680` (2 vCPUs, 7.5 GB), high availability, 50 GB SSD storage. |
+| Cloud SQL for PostgreSQL, SmithDB metastore | ~\$195 | PostgreSQL 18, Enterprise edition, `db-custom-2-4096` (2 vCPUs, 4 GB), high availability, 100 GB SSD storage. |
+| Memorystore for Redis Cluster | ~\$46 | 1 shard with 1 replica: 2 `REDIS_SHARED_CORE_NANO` nodes. |
+| Networking | \$50–\$150 | Cloud NAT, the ingress load balancer, the Private Service Connect endpoint to the LangSmith control plane, external IP addresses, and low-volume data processing. |
+| Cloud Storage, Secret Manager, Cloud Logging, Cloud Monitoring | \$25–\$200 | Low-volume baseline. Grows with trace payloads, retention, and log volume. |
+
+Estimated monthly total, excluding sandboxes: **\$2,495–\$4,207**
+
+### Notes on the estimate
+
+- **Cloud SQL** prices both the primary and the standby for high availability. Storage grows automatically, and backup storage beyond the included allowance costs extra.
+- **SmithDB** keeps its caches on local SSD. They are not separately billed persistent disks. If the first SmithDB pool cannot add a node, for example during a zonal stockout, GKE scales up a fallback pool instead: `n2d-standard-16`, then `c3-standard-22-lssd`, then `c3d-standard-30-lssd`.
+- **Cloud NAT** costs \$0.0014 per VM per hour, plus \$0.045 per GB processed.
+- **Cloud Logging** receives VPC flow logs from every data plane subnet. Ingestion beyond the free monthly allowance is billed per GB.
+
+### SmithDB object store pricing
+
+SmithDB stores trace data in the data plane's Cloud Storage bucket, at Standard storage pricing of \$0.020 per GB per month in `us-west1`. The figures assume about 2 million traces per month.
+
+| Stored size per trace | 14-day retention | 400-day retention |
+| --- | --- | --- |
+| 10 KB | \$2 per year | \$64 per year |
+| 50 KB | \$11 per year | \$320 per year |
+| 200 KB | \$45 per year | \$1,280 per year |
+
+See [Prepare SmithDB supporting infrastructure](/langsmith/self-host-smithdb-infrastructure) for details of SmithDB infrastructure.
+
+## Sandbox add-on
+
+If your data plane runs sandboxes, budget separately for these resources:
+
+| Area | Rough monthly estimate | Notes |
+| --- | --- | --- |
+| Sandbox node pool | \$637–\$1,911 | 1 to 3 `n2-standard-16` nodes with 2 local SSDs (750 GB) each. The pool keeps at least one node running. |
+| Memorystore for Redis Cluster | +\$162 | Redis moves to 2 `REDIS_STANDARD_SMALL` nodes, about \$208 per month in total, because sandboxes keep their filesystem metadata in Redis. |
+| Cloud Storage | Usage-based | Sandbox filesystems are stored in the data plane bucket. |
+
+## See also
+
+- [Google Cloud pricing calculator](https://cloud.google.com/products/calculator)
+- [Compute Engine VM pricing](https://cloud.google.com/compute/vm-instance-pricing)
+- [GKE pricing](https://cloud.google.com/kubernetes-engine/pricing)
+- [Cloud SQL pricing](https://cloud.google.com/sql/pricing)
+- [Memorystore for Redis Cluster pricing](https://cloud.google.com/memorystore/docs/cluster/pricing)
+- [Cloud NAT pricing](https://cloud.google.com/nat/pricing)
+- [BYOC architecture on GCP](/langsmith/byoc-architecture-gcp)
+- [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale)

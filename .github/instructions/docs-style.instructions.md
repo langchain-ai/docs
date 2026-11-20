@@ -109,6 +109,7 @@ Capitalize a word when it refers to a **product or brand name**, or to a **named
 **Capitalize** named features of a product:
 
 - Agent Registry (a named feature of LangSmith)
+- LLM Gateway and Tool Gateway (named features of LangSmith; Vale enforces Tool Gateway)
 
 **Lowercase** common nouns (things you create, instances, or types):
 
