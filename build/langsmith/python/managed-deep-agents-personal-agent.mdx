@@ -1,0 +1,223 @@
+---
+title: Build a personal agent you can text
+sidebarTitle: Personal agent
+description: Text an agent over iMessage and let it complete web tasks in a browser.
+---
+
+import ManagedDeepAgentsPublicBetaNote from '/snippets/python/langsmith/managed-deep-agents-public-beta-note.mdx';
+
+A personal agent lives in your messages. Text a request, such as finding a restaurant or comparing flights. The agent completes the task in a [browser](/langsmith/python/managed-deep-agents-browser-use) and replies in the same conversation. This example connects an agent to iMessage through a [custom channel](/langsmith/python/managed-deep-agents-channels-http) and [Photon](https://photon.codes).
+
+<ManagedDeepAgentsPublicBetaNote />
+
+<Note>
+This Python example requires `managed-deepagents>=0.10.4` and the matching `mda` CLI.
+</Note>
+
+
+
+
+<img
+  className="block dark:hidden"
+  src="/langsmith/images/managed-deep-agents-personal-agent-light.png"
+  alt="Mock iMessage conversation where a user asks Personal Agent to find an Italian restaurant for Friday at 7 PM, the agent browses reservation sites, confirms before booking, and saves an outdoor seating preference."
+/>
+
+<img
+  className="hidden dark:block"
+  src="/langsmith/images/managed-deep-agents-personal-agent-dark.png"
+  alt="Mock iMessage conversation where a user asks Personal Agent to find an Italian restaurant for Friday at 7 PM, the agent browses reservation sites, confirms before booking, and saves an outdoor seating preference."
+/>
+
+## Set up Photon
+
+Photon gives the agent a phone number and forwards your texts to it as webhooks. This example uses the [Photon 2.0 API](https://photon.codes/docs/beta/photon). In a Photon project:
+
+1. Create a project API key with the `project:write` permission. See [Set up your project](https://photon.codes/docs/beta/get-started/project).
+2. Assign an iMessage line to your phone number. See [Build an iMessage agent](https://photon.codes/docs/beta/get-started/imessage).
+
+Add these values to `.env`, setting `OWNER_HANDLE` to your phone number in E.164 format:
+
+```text .env
+PHOTON_PROJECT_ID=<PHOTON_PROJECT_ID>
+PHOTON_API_KEY=<PHOTON_API_KEY>
+OWNER_HANDLE=+14155550123
+```
+
+## Add the messaging channel
+
+A [custom channel](/langsmith/python/managed-deep-agents-channels-http) turns your agent into an HTTP endpoint for any service that sends webhooks. Implement [`verify`](/langsmith/python/managed-deep-agents-channels-http#verify-the-request), [`parse`](/langsmith/python/managed-deep-agents-channels-http#parse-the-request), and [`post`](/langsmith/python/managed-deep-agents-channels-http#send-replies) under `channels/`, and Managed Deep Agents handles the agent run in between.
+
+Start from a [quickstart](/langsmith/python/managed-deep-agents-quickstart) project and install [Standard Webhooks](https://www.standardwebhooks.com/) to verify Photon signatures, along with the model provider package (factory definitions below do not auto-install provider packages):
+
+```bash
+uv add standardwebhooks httpx langchain-openai
+```
+
+```python channels/messages.py
+import json
+import os
+import uuid
+
+import httpx
+from managed_deepagents import (
+    HttpChannelParseResult,
+    HttpChannelPostInput,
+    HttpChannelRequest,
+    HttpPostedMessage,
+    channels,
+)
+from standardwebhooks.webhooks import Webhook
+
+
+def verify(context: HttpChannelRequest) -> bool:
+    try:
+        Webhook(os.environ["PHOTON_WEBHOOK_SECRET"]).verify(
+            context.raw_body, dict(context.request.headers)
+        )
+    except Exception:
+        return False
+    return True
+
+
+def parse(context: HttpChannelRequest) -> HttpChannelParseResult:
+    event = json.loads(context.raw_body)
+    if event["type"] != "message.received":
+        return {"type": "ignore"}
+    message = event["data"]["object"]
+    if message["content"]["type"] != "text":
+        return {"type": "ignore"}
+    if message["sentBy"]["handle"] != os.environ["OWNER_HANDLE"]:
+        return {"type": "ignore"}
+    space_id = message["space"]["id"]
+    return {
+        "type": "message",
+        "message": {
+            "user_id": message["sentBy"]["id"],
+            "thread_id": str(uuid.uuid5(uuid.NAMESPACE_URL, space_id)),
+            "content": message["content"]["text"],
+            "target": {"space_id": space_id, "agent_id": message["receivedBy"]["id"]},
+        },
+    }
+
+
+async def post(input: HttpChannelPostInput) -> HttpPostedMessage:
+    if input["type"] != "content":
+        raise ValueError("This channel sends text replies only")
+    content = input["content"]
+    if not isinstance(content, str):
+        content = "".join(block.get("text", "") for block in content)
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"https://api.photon.codes/v1/projects/{os.environ['PHOTON_PROJECT_ID']}/messages",
+            headers={
+                "authorization": f"Bearer {os.environ['PHOTON_API_KEY']}",
+                "idempotency-key": str(uuid.uuid4()),
+            },
+            json={
+                "spaceId": input["target"]["space_id"],
+                "senderId": input["target"]["agent_id"],
+                "content": {"type": "text", "format": "plain", "text": content},
+            },
+        )
+        response.raise_for_status()
+    return {"id": response.json()["id"]}
+
+
+channel = channels.http(provider="photon", verify=verify, parse=parse, post=post)
+```
+
+
+
+
+- **`verify`**: Rejects requests without a valid Photon signature.
+- **`parse`**: Accepts only text messages from `OWNER_HANDLE` and maps each Photon conversation to one agent thread.
+- **`post`**: Sends the agent's reply back to the same conversation.
+
+## Add a browser and memory
+
+Declare a browser and [user memory](/langsmith/python/managed-deep-agents-memory) at the project root. The quickstart project already includes the root [identity](/langsmith/python/managed-deep-agents-identity) declaration that user memory requires:
+
+```python browser.py
+from managed_deepagents import define_browser
+
+browser = define_browser(idle_ttl_seconds=900)
+```
+
+```python memory.py
+from managed_deepagents import MemoryLayer, define_memory
+
+memory = define_memory(user=MemoryLayer())
+```
+
+
+
+
+By default, the browser is scoped to the thread, so your conversation reuses the same browser session until it times out.
+
+User memory mounts by default only for Slack direct messages and verified Studio users. Because messages arrive over a custom channel, select user memory in the [agent factory](/langsmith/python/managed-deep-agents-memory#select-layers-for-each-run) too so each sender gets their own `/memories/user/` tree keyed to the user ID returned by `parse`:
+
+```python agent.py
+from managed_deepagents import MemoryLayer, define_deep_agent, define_memory
+
+
+def agent(runtime):
+    return define_deep_agent(
+        name="personal-agent",
+        model="openai:gpt-6.1-sol",
+        memory=define_memory(user=MemoryLayer()),
+    )
+```
+
+
+
+
+Replace `instructions.md`:
+
+```markdown instructions.md
+# Personal agent
+
+You are a personal assistant that responds over text. Keep replies short and
+plain: no markdown, tables, or headings.
+
+Use the browser to look things up and complete tasks on websites. Before you
+book, buy, or submit anything, text the details and wait for confirmation.
+
+Save lasting preferences, such as favorite restaurants or dietary needs, to
+/memories/user/preferences.md, and read that file before starting a task.
+```
+
+## Deploy and connect
+
+To connect the deployed agent to Photon:
+
+1. [Deploy the agent](/langsmith/python/managed-deep-agents-deploy). `mda deploy` forwards `.env` values as deployment secrets.
+2. In Photon, add a [webhook destination](https://photon.codes/docs/beta/message-delivery/webhook) pointing to `https://<deployment-url>/channels/messages/events` for `message.received` events.
+3. Add the destination's signing secret to `.env` as `PHOTON_WEBHOOK_SECRET` and redeploy.
+
+Text the agent's number from your phone, for example: "Find a table for two at an Italian place near me on Friday at 7 PM."
+
+Text replies cannot deliver a browser [handoff](/langsmith/python/managed-deep-agents-browser-use#hand-off-the-browser) link, so the agent cannot prompt you to sign in over iMessage. Start with sites that do not require a login.
+
+## Extend the pattern
+
+- Connect [WhatsApp Business](https://photon.codes/docs/beta/messaging/whatsapp-business) in the same Photon project to text the agent on WhatsApp.
+- Add a [schedule](/langsmith/python/managed-deep-agents-schedules) to send a morning brief.
+- Restrict which websites the agent can visit with a browser [allow list](/langsmith/python/managed-deep-agents-browser-use#restrict-browser-network-access).
+
+## See also
+
+- [Custom channels](/langsmith/python/managed-deep-agents-channels-http): receive webhooks and send replies over HTTP.
+- [Browser use](/langsmith/python/managed-deep-agents-browser-use): configure browser scope, allow lists, and handoff.
+- [Memory](/langsmith/python/managed-deep-agents-memory): choose and control durable memory layers.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/managed-deep-agents-personal-agent.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
