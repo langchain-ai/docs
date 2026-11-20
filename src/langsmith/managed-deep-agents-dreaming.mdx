@@ -36,7 +36,7 @@ This TypeScript example requires `managed-deepagents` version 0.10.4 or later, t
 
 ## Before you start
 
-- Configure [identity](/langsmith/managed-deep-agents-identity) so each person signs in, and keep the deployment private (do not connect a shared Slack channel).
+- Configure [identity](/langsmith/managed-deep-agents-identity) so each person signs in as themselves. User memory and per-user trace lookups require a signed-in person.
 - Route each person's traces to their own LangSmith tracing project.
 - Add `DREAM_TRACE_PROJECTS` to `.env` wrapped in single quotes so `mda deploy` preserves the JSON double quotes. Map MDA principal IDs to project IDs, and ensure the deployment's LangSmith credentials have read access to those projects:
 
@@ -64,7 +64,7 @@ export const memory = defineMemory({ user: memoryLayer() });
 ```
 :::
 
-Scheduled runs have no channel event, so enable user memory in the agent factory too. Requiring an interrupt on `schedule_dreaming` prompts for approval before creating a schedule:
+Scheduled runs have no channel event, so select user memory in the agent factory when a run has no channel origin (such as scheduled runs and Studio). Omitting `memory` on channel runs keeps MDA's default access rules, which mount user memory in Slack direct messages and keep it off in shared channels. Requiring an interrupt on `schedule_dreaming` prompts for approval before creating a schedule:
 
 :::python
 ```python agent.py
@@ -74,28 +74,38 @@ from tools.dreaming import recent_user_traces, schedule_dreaming
 
 
 def agent(runtime):
+    extra = (
+        {"memory": define_memory(user=MemoryLayer())}
+        if runtime.thread.origin is None
+        else {}
+    )
     return define_deep_agent(
         name="private-assistant",
         model="openai:gpt-6.1-sol",
         tools=[recent_user_traces, schedule_dreaming],
-        memory=define_memory(user=MemoryLayer()),
         interrupt_on={"schedule_dreaming": True},
+        **extra,
     )
 ```
 :::
 
 :::js
 ```ts agent.ts
-import { defineDeepAgent, defineMemory, memoryLayer } from "managed-deepagents";
+import {
+  defineDeepAgent,
+  defineMemory,
+  memoryLayer,
+  type ManagedServerRuntime,
+} from "managed-deepagents";
 
 import { recentUserTraces, scheduleDreaming } from "./tools/dreaming";
 
-export function agent() {
+export function agent(runtime: ManagedServerRuntime) {
   return defineDeepAgent({
     name: "private-assistant",
     model: "openai:gpt-6.1-sol",
     tools: [recentUserTraces, scheduleDreaming],
-    memory: defineMemory({ user: memoryLayer() }),
+    memory: runtime.thread?.origin ? undefined : defineMemory({ user: memoryLayer() }),
     interruptOn: { schedule_dreaming: true },
   });
 }
@@ -150,6 +160,8 @@ def trace_project(runtime: ManagedDeepAgentRuntime) -> str | None:
 @tool
 async def recent_user_traces(runtime: ManagedDeepAgentRuntime) -> str:
     """Read the current person's traces from the last day."""
+    if runtime.thread.origin is not None:
+        return "Ask from a private conversation, not a channel."
     project = trace_project(runtime)
     if project is None:
         return "No trace project for this person."
@@ -206,7 +218,9 @@ function traceProject(runtime: DreamRuntime): string | undefined {
 
 export const recentUserTraces = tool(
   async (_input, runtime) => {
-    const project = traceProject(runtime as typeof runtime & DreamRuntime);
+    const managed = runtime as typeof runtime & DreamRuntime;
+    if (managed.thread?.origin) return "Ask from a private conversation, not a channel.";
+    const project = traceProject(managed);
     if (!project) return "No trace project for this person.";
     const records: string[] = [];
     for await (const run of new Client().runs.query({
