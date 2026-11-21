@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from deepagents import create_deep_agent
 from langchain_quickjs import CodeInterpreterMiddleware
-from langchain_quickjs._repl import _Registry
+from langchain_quickjs._repl import _Slot, _SlotConfig
 
 # :snippet-start: dynamic-subagents-quickstart-py
 from deepagents import create_deep_agent
@@ -156,15 +156,8 @@ agent = create_deep_agent(
 
 # :remove-start:
 def _eval_js(code: str) -> str:
-    repl = _Registry(
-        memory_limit=64 * 1024 * 1024,
-        timeout=5.0,
-        capture_console=True,
-        max_stdout_chars=4000,
-        max_ptc_calls=256,
-        subagents_enabled=True,
-    ).get("dynamic-subagents-eval-test")
-    outcome = repl.eval_sync(code, outer_runtime=None)
+    repl = _Slot("dynamic-subagents-eval-test", _SlotConfig(subagents_enabled=True))
+    outcome = repl.eval_sync(code)
     if outcome.error_type:
         msg = outcome.error_message or outcome.error_type
         raise AssertionError(msg)

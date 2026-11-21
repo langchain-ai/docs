@@ -29,7 +29,7 @@ To set up a data plane, follow [BYOC onboarding on GCP](/langsmith/byoc-onboardi
 
 LangSmith creates the following in your GCP project:
 
-- **Network**: A VPC with a GKE subnet, Cloud NAT with a static egress IP address, and private services access.
+- **Network**: A VPC with a GKE subnet, Cloud NAT with a static egress IP address, private services access, and the routes and private DNS zones that keep Google API traffic on [Private Google Access](/langsmith/byoc-networking-gcp#private-google-access).
 - **GKE**: A regional, private GKE Standard cluster with Workload Identity and shielded nodes.
 - **Cloud SQL for PostgreSQL**: One instance for LangSmith and one for the SmithDB metastore. Private IP only, high availability, TLS, and IAM database login, so no database password exists.
 - **Memorystore for Redis Cluster**: TLS and IAM auth, reached through Private Service Connect.
@@ -60,16 +60,7 @@ GCP data planes store and query traces in [SmithDB](/langsmith/self-host-smithdb
 
 ## Network
 
-All subnets come from the `vpc_cidr` you choose, a range from `/16` to `/18`. All have Private Google Access on.
-
-| Range | Size | Use |
-|-------|------|-----|
-| GKE subnet | First `/20` | GKE nodes. Pods use the secondary range `192.168.0.0/18`, and services use `192.168.64.0/18`. |
-| Endpoints subnet | `/24` | Private Service Connect endpoints for Memorystore. |
-| Control plane endpoint subnet | `/24` | The Private Service Connect endpoint to the LangSmith control plane, in `us-central1`. |
-| Private services access | `/20` | Peered to Google services for the Cloud SQL private IP. |
-
-The VPC is one regional VPC with custom subnets. Cloud NAT uses one static external IP address, so you can allowlist the data plane, and logs errors only.
+LangSmith creates one regional VPC for the data plane, with custom subnets from the `vpc_cidr` you choose. Cloud NAT gives it one static egress IP address. Private Service Connect carries traffic to the control plane, and Private Google Access carries traffic to Google APIs and Artifact Registry. For the address ranges, MTU, connecting your network, DNS and ingress, and the egress the data plane needs, see [BYOC networking on GCP](/langsmith/byoc-networking-gcp).
 
 ## Storage
 
@@ -107,23 +98,6 @@ Not on by default: application-layer Secrets encryption with your Cloud KMS key,
 - **Istio**: Base, istiod, and the ingress gateway.
 - **Postgres setup job**: Creates the databases and the IAM database user, and grants it the database owner roles. It keeps no password.
 
-## DNS and ingress
-
-- **Hostname**: `<first 8 characters of the data plane ID>.gcp.langchain-byoc.com`. LangChain owns the parent zone.
-- **Public zone**: A public Cloud DNS zone for the hostname in your project, which LangChain delegates from the parent zone.
-- **Public endpoint**: An external passthrough load balancer. The hostname resolves on the internet.
-- **Internal endpoint** (default): An internal passthrough load balancer in the GKE subnet, with global access. The address record is in a private zone, visible only in the data plane VPC, so the private address is never published. The public zone stays for the delegation and the certificate challenges.
-- **TLS**: A Let's Encrypt certificate. HTTP redirects to HTTPS.
-- **Gateway hardening**: The gateway normalizes paths before routing, rejects request bodies over 100 MiB, limits requests per gateway pod, and denies `TRACE`, `TRACK`, and `CONNECT`.
-- **Control plane paths**: Paths such as sign-in are forwarded to the control plane over Private Service Connect.
-
-## Private Service Connect
-
-- LangChain publishes a service attachment in `us-central1`. LangSmith automatically adds your project to its accept list during data plane provisioning. No manual project allowlisting is required.
-- The data plane creates the endpoint: an internal address in the control plane endpoint subnet, and a forwarding rule to the service attachment. Data planes in other regions reach the endpoint through global access.
-- A private DNS zone for `us-central1.p.api.smith.langchain.com`, visible only in the data plane VPC, points at the endpoint.
-- Private Service Connect carries traffic from the data plane to the control plane only. The control plane reaches the cluster through the GKE DNS-based endpoint.
-
 ## Access and permissions
 
 ### Terraform module resources
@@ -135,7 +109,7 @@ The [`langsmith-byoc-service-account` Terraform module](https://github.com/langc
 | `langsmith-byoc-provisioner` service account | The service account LangSmith provisions as. Its description is your external ID. |
 | Token Creator on the provisioner | Lets `byoc-crossplane@langchain-prod.iam.gserviceaccount.com` impersonate the provisioner. No other LangChain identity is trusted. |
 | `langsmithByocProvisioner` custom role | The permissions to create, update, and delete data plane resources that a name condition cannot limit, bound on the project. |
-| `langsmithByocNamed<Kind>` custom roles | One role per resource kind: Cloud SQL instances, GKE clusters, networks, subnets, Cloud Routers, addresses, forwarding rules, Memorystore for Redis clusters, service connection policies, Cloud Storage, and Secret Manager. Each is bound with an IAM condition on the resource name, so the provisioner can create, change, and delete only resources whose names start with `langsmith-`, and secrets whose IDs start with `ls-`. |
+| `langsmithByocNamed<Kind>` custom roles | One role per resource kind: Cloud SQL instances, GKE clusters, networks, subnets, routes, Cloud Routers, network firewall policies (release v0.17.91 and later), addresses, forwarding rules, Memorystore for Redis clusters, service connection policies, Cloud Storage, and Secret Manager. Each is bound with an IAM condition on the resource name, so the provisioner can create, change, and delete only resources whose names start with `langsmith-`, and secrets whose IDs start with `ls-`. |
 | `managed_by: langsmith` tag | A project tag. The provisioner can bind it only to GKE clusters and Cloud SQL instances whose names start with `langsmith-`. |
 | `roles/container.admin` for the control plane | Granted to `byoc-crossplane@langchain-prod.iam.gserviceaccount.com` with the condition that the cluster has the `managed_by: langsmith` tag. It covers the GKE API and the Kubernetes API. |
 | `langsmithByocClusterConnect` custom role | `container.clusters.connect` for the control plane service account, limited to clusters whose names start with `langsmith-`. The DNS-based endpoint checks it without the cluster's tags. Connecting gives no access inside a cluster. |
@@ -207,5 +181,6 @@ To remove LangChain's access to your project:
 ## See also
 
 - [BYOC onboarding on GCP](/langsmith/byoc-onboarding-gcp)
+- [BYOC networking on GCP](/langsmith/byoc-networking-gcp)
 - [BYOC overview](/langsmith/byoc)
 - [BYOC shared responsibility model](/langsmith/byoc-shared-responsibility)
