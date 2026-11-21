@@ -15,7 +15,7 @@ const formattedPrompt = await prompt.invoke({ question: "What is the color of th
 
 const response = await oaiClient.chat.completions.create({
     // KEEP MODEL
-    model: "gpt-5.5",
+    model: "gpt-6.1-sol",
     messages: convertPromptToOpenAI(formattedPrompt).messages,
 });
 // :snippet-end:

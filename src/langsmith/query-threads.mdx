@@ -11,11 +11,17 @@ The SDK exposes two methods for working with threads:
 
 | Method | Use when |
 |--------|-------------|
-| [`list_threads`](https://reference.langchain.com/python/langsmith/client/Client/list_threads) / [`listThreads`](https://reference.langchain.com/javascript/langsmith/client/Client/listThreads) | You want to browse all threads in a project |
-| [`read_thread`](https://reference.langchain.com/python/langsmith/client/Client/read_thread) / [`readThread`](https://reference.langchain.com/javascript/langsmith/client/Client/readThread) | You already know the thread ID and need its runs |
+| `client.threads.query()` ([Python](https://reference.langchain.com/python/langsmith/resources/threads/threads/AsyncThreadsResource/query), [TypeScript](https://reference.langchain.com/javascript/langsmith/client/Langsmith/Threads/query)) | You want to browse the threads in a project |
+| `client.threads.list_traces()` / `client.threads.listTraces()` ([Python](https://reference.langchain.com/python/langsmith/resources/threads/threads/AsyncThreadsResource/list_traces), [TypeScript](https://reference.langchain.com/javascript/langsmith/client/Langsmith/Threads/listTraces)) | You already know the thread ID and need its traces |
+
+Both methods take a project ID. If you only have the project name, look it up with `aread_project()` / `readProject()` first, as the examples below do. In Python, both methods are async.
 
 <Note>
-To query the traces of an agent, an experiment, or the evaluators, [find its project ID](/langsmith/resolve-an-agent) and pass it as the project ID.
+To query the threads of an agent, an experiment, or the evaluators, [find its project ID](/langsmith/resolve-an-agent) and pass it as the project ID.
+</Note>
+
+<Note>
+These methods replace `list_threads` / `listThreads` and `read_thread` / `readThread`, which are deprecated. LangSmith Cloud removes them on January 31, 2027, and self-hosted LangSmith removes them in v0.19. The new methods require `langsmith>=0.10.15` (Python) or `langsmith>=0.8.9` (TypeScript) and, on self-hosted LangSmith, v0.16 or later. For the full list of changes, see the [migration guide](/langsmith/smithdb-sdk-migration-threads).
 </Note>
 
 ## How threads work
@@ -59,49 +65,52 @@ const myAgent = traceable(
 
 </CodeGroup>
 
-## List all threads in a project
+## List threads in a project
 
-`list_threads` / `listThreads` fetches all threads in a project and groups their runs together. Results are sorted by most recent activity first.
+`threads.query` returns the threads in a project, one row per thread with its aggregates. Results are paginated with a cursor; the SDK iterates through every page for you.
 
 <CodeGroup>
 
 ```python Python
+import asyncio
+
 from langsmith import Client
 
-client = Client()
 
-threads = client.list_threads(project_name="my-project")
+async def main():
+    client = Client()
+    project = await client.aread_project(project_name="my-project")
 
-for thread in threads:
-    print(thread["thread_id"])
-    print(f"  {thread['count']} runs")
-    print(f"  last active: {thread['max_start_time']}")
+    async for thread in client.threads.query(project_id=str(project.id)):
+        print(thread.thread_id)
+        print(f"  {thread.count} traces")
+        print(f"  last active: {thread.max_start_time}")
+
+
+asyncio.run(main())
 ```
 
 ```typescript TypeScript
 import { Client } from "langsmith";
 
 const client = new Client();
+const project = await client.readProject({ projectName: "my-project" });
 
-const threads = await client.listThreads({ projectName: "my-project" });
-
-for (const thread of threads) {
+for await (const thread of client.threads.query({ project_id: project.id })) {
   console.log(thread.thread_id);
-  console.log(`  ${thread.count} runs`);
+  console.log(`  ${thread.count} traces`);
   console.log(`  last active: ${thread.max_start_time}`);
 }
 ```
 
 </CodeGroup>
 
-Results are sorted by most recent activity:
-
 ```text Output
 conv-abc123
-  3 runs
+  3 traces
   last active: 2026-02-25T10:05:42+00:00
 conv-def456
-  1 runs
+  1 traces
   last active: 2026-02-25T09:30:00+00:00
 ```
 
@@ -109,90 +118,95 @@ conv-def456
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `project_name` / `projectName` | `string` | — | Project name. Required if `project_id` is not set. |
-| `project_id` / `projectId` | `string` | — | Project ID. Required if `project_name` is not set. |
-| `limit` | `int` | all | Maximum number of threads to return. |
-| `offset` | `int` | `0` | Number of threads to skip (for pagination). |
-| `filter` | `string` | — | Filter expression applied when fetching runs, using [LangSmith trace query syntax](/langsmith/trace-query-syntax). |
-| `start_time` / `startTime` | `datetime` / `Date` | 1 day ago | Only include runs started after this time. Widen this window to surface older threads. |
+| `project_id` | `string` | — | **Required.** Project ID. |
+| `min_start_time` | `datetime` / ISO `string` | 1 day ago | Only include threads with traces started after this time. Widen this window to surface older threads. |
+| `max_start_time` | `datetime` / ISO `string` | now | Only include threads with traces started before this time. |
+| `filter` | `string` | — | Filter expression evaluated against each thread's root runs, using [LangSmith trace query syntax](/langsmith/trace-query-syntax). |
+| `page_size` | `int` | — | Number of threads per page. |
+| `cursor` | `string` | — | Cursor for the next page, when you paginate by hand. |
 
 ### Return value
 
-A list of thread objects, each containing:
+An async iterator of `Thread` objects. The most useful fields:
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `thread_id` | `string` | The thread identifier. |
-| `runs` | `@[Run][]` | Root runs in this thread, sorted chronologically (oldest first). |
-| `count` | `int` | Number of runs in this thread. |
-| `min_start_time` | `string \| null` | ISO timestamp of the earliest run. |
-| `max_start_time` | `string \| null` | ISO timestamp of the most recent run. |
+| `count` | `int` | Number of traces in this thread. |
+| `min_start_time` | `datetime` (Python) / `string` (TypeScript) | Timestamp of the earliest trace. |
+| `max_start_time` | `datetime` (Python) / `string` (TypeScript) | Timestamp of the most recent trace. |
+| `first_trace_id`, `last_trace_id` | `string` | First and last trace of the thread in the query window. |
+| `first_inputs`, `last_outputs` | `string` | Truncated previews of the first input and last output. |
+| `last_error`, `num_errored_turns` | `string`, `int` | Last error message and number of traces that errored. |
+| `total_tokens`, `total_cost` | `int`, `number` | Token and cost totals across the thread. |
+| `latency_p50`, `latency_p99` | `number` | Latency percentiles across the thread's traces. |
+| `feedback_stats` | `object` | Aggregated feedback on the thread. |
 
-<Note>
-`list_threads` always returns root runs only. If you need child runs (e.g., tool calls, sub-chains), use `read_thread` instead, which accepts an `is_root` / `isRoot` parameter you can set to `false`.
-</Note>
+A `Thread` does not embed its runs. To get them, call `threads.list_traces` with the `thread_id`.
 
-## Read runs for a single thread
+## Read the traces of a single thread
 
-When you already know the `thread_id`, use `read_thread` / `readThread`. It returns an iterator over the thread's runs directly, without fetching all threads first.
+When you already know the `thread_id`, use `threads.list_traces` / `threads.listTraces`. It returns the thread's traces (root runs) in ascending `start_time` order.
 
 <CodeGroup>
 
 ```python Python
+import asyncio
+
 from langsmith import Client
 
-client = Client()
 
-for run in client.read_thread(
-    thread_id="conv-abc123",
-    project_name="my-project",
-):
-    print(run.id, run.name, run.start_time)
+async def main():
+    client = Client()
+    project = await client.aread_project(project_name="my-project")
+
+    async for trace in client.threads.list_traces(
+        "conv-abc123",
+        project_id=str(project.id),
+        selects=["TRACE_ID", "NAME", "START_TIME"],
+    ):
+        print(trace.trace_id, trace.name, trace.start_time)
+
+
+asyncio.run(main())
 ```
 
 ```typescript TypeScript
 import { Client } from "langsmith";
 
 const client = new Client();
+const project = await client.readProject({ projectName: "my-project" });
 
-for await (const run of client.readThread({
-  threadId: "conv-abc123",
-  projectName: "my-project",
+for await (const trace of client.threads.listTraces("conv-abc123", {
+  project_id: project.id,
+  selects: ["TRACE_ID", "NAME", "START_TIME"],
 })) {
-  console.log(run.id, run.name, run.start_time);
+  console.log(trace.trace_id, trace.name, trace.start_time);
 }
 ```
 
 </CodeGroup>
 
-Unlike `list_threads`, each item here is a `Run` object directly — there is no grouping wrapper. Runs are returned in ascending chronological order by default.
-
-```python Output
-[
-    Run(id=UUID("a1b2..."), name="my_agent", run_type="chain", status="success", start_time=datetime(2026, 2, 25, 10, 0, 0, tzinfo=utc), ...),
-    Run(id=UUID("c3d4..."), name="my_agent", run_type="chain", status="success", start_time=datetime(2026, 2, 25, 10, 3, 11, tzinfo=utc), ...),
-    Run(id=UUID("e5f6..."), name="my_agent", run_type="chain", status="error",   start_time=datetime(2026, 2, 25, 10, 5, 42, tzinfo=utc), ...),
-]
-```
+Each item is a lightweight `ThreadTrace`, not a full run. Only the fields listed in `selects` are populated; without `selects`, you get `trace_id` only. Use [`traces.list_runs`](/langsmith/smithdb-sdk-migration-traces) to get a trace's child runs (tool calls, sub-chains).
 
 ### Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `thread_id` / `threadId` | `string` | — | **Required.** The thread to query. |
-| `project_name` / `projectName` | `string` | — | Project name. Required if `project_id` is not set. |
-| `project_id` / `projectId` | `string \| string[]` | — | Project ID or list of IDs. Required if `project_name` is not set. |
-| `is_root` / `isRoot` | `bool` | `true` | Return only root runs. Set to `false` to include child runs. |
-| `limit` | `int` | all | Maximum number of runs to return. |
-| `filter` | `string` | — | Additional filter expression (combined with the thread filter). |
-| `order` | `"asc" \| "desc"` | `"asc"` | Sort order. `"asc"` returns runs oldest-first (chronological). |
-| `select` | `string[]` | all fields | Specific run fields to return, to reduce response size. |
+| `thread_id` | `string` | — | **Required.** The thread to read (first positional argument). |
+| `project_id` | `string` | — | **Required.** Project ID. |
+| `selects` | `string[]` | `["TRACE_ID"]` | Fields to return. List `TRACE_ID` too if you need it alongside other fields. For example `NAME`, `START_TIME`, `END_TIME`, `LATENCY`, `INPUTS`, `OUTPUTS`, `INPUTS_PREVIEW`, `OUTPUTS_PREVIEW`, `ERROR`, `TOTAL_TOKENS`, `TOTAL_COST`. |
+| `filter` | `string` | — | Filter expression evaluated against each trace's root run. |
+| `page_size` | `int` | — | Number of traces per page. |
+| `cursor` | `string` | — | Cursor for the next page, when you paginate by hand. |
 
 ### Return value
 
-An iterator ([Python](https://reference.langchain.com/python/langsmith)) or async iterator ([TypeScript](https://reference.langchain.com/javascript/langsmith)) of `Run` objects.
+An async iterator of `ThreadTrace` objects, sorted by `start_time` ascending.
 
 ## Examples
+
+The snippets below continue the samples above: in Python, run them inside the same `async def main()`, with `client` and `project` already set.
 
 ### Filter threads by run properties
 
@@ -201,82 +215,80 @@ Pass a filter expression to narrow results using [LangSmith trace query syntax](
 <CodeGroup>
 
 ```python Python
-threads = client.list_threads(
-    project_name="my-project",
+async for thread in client.threads.query(
+    project_id=str(project.id),
     filter='eq(status, "error")',
-)
+):
+    print(thread.thread_id, thread.last_error)
 ```
 
 ```typescript TypeScript
-const threads = await client.listThreads({
-  projectName: "my-project",
+for await (const thread of client.threads.query({
+  project_id: project.id,
   filter: 'eq(status, "error")',
-});
+})) {
+  console.log(thread.thread_id, thread.last_error);
+}
 ```
 
 </CodeGroup>
 
 ### Look back further than 24 hours
 
-By default, `list_threads` only surfaces threads with runs from the last day. Pass `start_time` to widen the window:
+By default, `threads.query` only surfaces threads with traces from the last day. Pass `min_start_time` to widen the window:
 
 <CodeGroup>
 
 ```python Python
-import datetime
+from datetime import datetime, timedelta, timezone
 
-threads = client.list_threads(
-    project_name="my-project",
-    start_time=datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=2),
-)
+async for thread in client.threads.query(
+    project_id=str(project.id),
+    min_start_time=datetime.now(timezone.utc) - timedelta(days=2),
+):
+    print(thread.thread_id)
 ```
 
 ```typescript TypeScript
-const threads = await client.listThreads({
-  projectName: "my-project",
-  startTime: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
-});
+for await (const thread of client.threads.query({
+  project_id: project.id,
+  min_start_time: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+})) {
+  console.log(thread.thread_id);
+}
 ```
 
 </CodeGroup>
 
 ### Reconstruct a conversation
 
-Use `read_thread` with `order="asc"` to replay a conversation turn by turn:
+`threads.list_traces` returns traces oldest first, so you can replay a conversation turn by turn. Select `INPUTS` and `OUTPUTS` to get the full payloads:
 
 <CodeGroup>
 
 ```python Python
-runs = list(
-    client.read_thread(
-        thread_id="conv-abc123",
-        project_name="my-project",
-        order="asc",
-    )
-)
-
-for run in runs:
-    user_msg = run.inputs.get("messages", [{}])[-1].get("content", "")
-    assistant_msg = (run.outputs or {}).get("content", "")
+async for trace in client.threads.list_traces(
+    "conv-abc123",
+    project_id=str(project.id),
+    selects=["INPUTS", "OUTPUTS"],
+):
+    user_msg = (trace.inputs or {}).get("messages", [{}])[-1].get("content", "")
+    assistant_msg = (trace.outputs or {}).get("content", "")
     print(f"User:      {user_msg}")
     print(f"Assistant: {assistant_msg}")
     print()
 ```
 
 ```typescript TypeScript
-const runs: Run[] = [];
-for await (const run of client.readThread({
-  threadId: "conv-abc123",
-  projectName: "my-project",
-  order: "asc",
+for await (const trace of client.threads.listTraces("conv-abc123", {
+  project_id: project.id,
+  selects: ["INPUTS", "OUTPUTS"],
 })) {
-  runs.push(run);
-}
-
-for (const run of runs) {
-  const messages = (run.inputs?.messages ?? []) as Array<Record<string, string>>;
+  const inputs = trace.inputs as { messages?: Array<Record<string, string>> } | undefined;
+  const outputs = trace.outputs as Record<string, string> | undefined;
+  const messages = inputs?.messages ?? [];
   const userMsg = messages.at(-1)?.content ?? "";
-  const assistantMsg = (run.outputs as Record<string, string>)?.content ?? "";
+  const assistantMsg = outputs?.content ?? "";
   console.log(`User:      ${userMsg}`);
   console.log(`Assistant: ${assistantMsg}`);
 }

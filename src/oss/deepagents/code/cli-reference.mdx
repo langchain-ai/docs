@@ -14,7 +14,7 @@ dcode --agent mybot
 
 # Use a specific model (provider:model format or auto-detect)
 dcode --model anthropic:claude-opus-4-8
-dcode --model gpt-5.5
+dcode --model gpt-6.1-sol
 
 # Auto-approve tool usage (skip human-in-the-loop prompts)
 dcode -y
@@ -30,11 +30,11 @@ dcode --startup-cmd "git diff --stat" -n "Review these changes"
 
 ## Choose a model
 
-Launch with `--model` (`-M`) to pin a model for one session. Use the `provider:model` format (for example, `openai:gpt-5.5`) or pass a bare model name when the provider is unambiguous:
+Launch with `--model` (`-M`) to pin a model for one session. Use the `provider:model` format (for example, `openai:gpt-6.1-sol`) or pass a bare model name when the provider is unambiguous:
 
 ```bash
 dcode --model anthropic:claude-opus-4-8
-dcode --model openai:gpt-5.5
+dcode --model openai:gpt-6.1-sol
 dcode --model fireworks:accounts/fireworks/models/deepseek-v4-pro
 ```
 
@@ -98,7 +98,7 @@ The summarization model resolves from `--summarization-model`, then `[models].su
 Pass extra constructor kwargs to the model with `--model-params` as a JSON string. These apply for the current session only and override `config.toml` provider params:
 
 ```bash
-dcode --model openai:gpt-5.5 --model-params '{"reasoning": {"effort": "high"}}'
+dcode --model openai:gpt-6.1-sol --model-params '{"reasoning": {"effort": "high"}}'
 dcode --model anthropic:claude-opus-4-8 --model-params '{"thinking": {"type": "enabled", "budget_tokens": 10000}, "max_tokens": 16000}'
 ```
 
@@ -106,7 +106,7 @@ Override [model profile](/oss/langchain/models#model-profiles) fields (for examp
 
 ```bash
 dcode --profile-override '{"max_input_tokens": 4096}'
-dcode --model google_genai:gemini-3.6-flash --profile-override '{"max_input_tokens": 4096}'
+dcode --model google_genai:gemini-4-hydrogen --profile-override '{"max_input_tokens": 4096}'
 ```
 
 For retry counts on transient errors, use `--max-retries` or the `[retries]` section in `config.toml`. See [Model parameters](/oss/deepagents/code/providers#model-parameters) and [Profile overrides](/oss/deepagents/code/config-file#profile-overrides-advanced).
@@ -245,7 +245,7 @@ Set the grader model and iteration limit separately:
 ```bash
 dcode -n "implement OAuth refresh handling" \
   --rubric "tests pass; no unrelated files changed" \
-  --rubric-model openai:gpt-5.5 \
+  --rubric-model openai:gpt-6.1-sol \
   --rubric-max-iterations 3
 ```
 
@@ -476,7 +476,7 @@ Run OAuth login for an MCP server marked `auth: "oauth"` with `dcode mcp login <
 | `--rubric-model MODEL` | Model the rubric grader uses. Defaults to the main agent model. Requires `-n` or piped stdin |
 | `--rubric-max-iterations N` | Grader iterations per rubric attempt before stopping. Requires `-n` or piped stdin |
 | `-n`, `--non-interactive TEXT` | Run a single task non-interactively and exit. Shell is disabled unless `--shell-allow-list` is set |
-| `--recursion-limit N`  | Set the LangGraph graph step budget (maximum node invocations per turn). When unset, the LangGraph server default applies |
+| `--recursion-limit N`  | Set the LangGraph graph step budget (maximum node invocations per turn). When unset, the LangSmith Agent Server default applies |
 | `--max-turns N`        | Cap agentic turns in non-interactive mode. Exits with code 124 when exceeded. Requires `-n` or piped stdin. See [Non-interactive mode and piping](#non-interactive-mode-and-piping) |
 | `--timeout SECONDS`    | Hard wall-clock timeout for non-interactive mode. Exits with code 124 when exceeded. Requires `-n` or piped stdin. See [Non-interactive mode and piping](#non-interactive-mode-and-piping) |
 | `-q`, `--quiet`        | Clean output for piping—only the agent's response goes to stdout. Requires `-n` or piped stdin |
@@ -549,6 +549,44 @@ Use `dcode doctor` when Deep Agents Code is not starting correctly, a provider o
 
 Pair `dcode doctor` with `dcode config show` when you need both a high-level health check and the exact source of a specific setting. See [Run diagnostics with `dcode doctor`](/oss/deepagents/code/configuration#run-diagnostics-with-dcode-doctor).
 
+## Generate shell completions (`dcode completion`)
+
+`dcode completion` prints a static shell completion script for bash, zsh, or fish. The generated script provides tab completion for commands, subcommands, aliases, flags, and predefined option or positional values. Regenerate the script after upgrading Deep Agents Code so new commands and options are completed.
+
+Use `--prog NAME` to register the script under a custom command name. The flag is repeatable and replaces the defaults (`dcode` and `deepagents-code`).
+
+To set up shell completions:
+
+<CodeGroup>
+    ```bash Bash
+    dcode completion bash > ~/.dcode-completion.bash
+    echo 'source ~/.dcode-completion.bash' >> ~/.bashrc
+    # macOS login shells read ~/.bash_profile instead of ~/.bashrc
+    ```
+
+    ```bash Zsh
+    mkdir -p ~/.zfunc
+    dcode completion zsh > ~/.zfunc/_dcode
+    # In ~/.zshrc, add these lines in this order:
+    # fpath=(~/.zfunc $fpath)
+    # autoload -Uz compinit && compinit
+    ```
+
+    ```bash Fish
+    # Fish loads one file per command name
+    mkdir -p ~/.config/fish/completions
+    cd ~/.config/fish/completions
+    dcode completion fish --prog dcode > dcode.fish
+    dcode completion fish --prog deepagents-code > deepagents-code.fish
+    ```
+
+    ```bash Other
+    # Generate completions for a custom alias (--prog replaces the defaults)
+    dcode completion bash --prog dcode --prog myalias > ~/.myalias-completion.bash
+    echo 'source ~/.myalias-completion.bash' >> ~/.bashrc
+    ```
+</CodeGroup>
+
 ## CLI commands
 
 | Command                              | Description                            |
@@ -561,6 +599,7 @@ Pair `dcode doctor` with `dcode config show` when you need both a high-level hea
 | `dcode uninstall NAME`         | Remove one installed optional extra while preserving the rest of the tool environment |
 | `dcode update`                  | Check for and install Deep Agents Code updates |
 | `dcode doctor`                  | Run diagnostics without launching a session. See [Run diagnostics](#run-diagnostics-dcode-doctor) |
+| `dcode completion <bash\|zsh\|fish>` | Generate a shell completion script. See [Generate shell completions](#generate-shell-completions-dcode-completion) |
 | `dcode skills list [--project]`           | List all skills (alias: `ls`) |
 | `dcode skills create NAME [--project]`    | Create a new skill with template `SKILL.md`. Idempotent—re-creating an existing skill prints an informational message instead of an error |
 | `dcode skills info NAME [--project]`      | Show detailed information about a skill |

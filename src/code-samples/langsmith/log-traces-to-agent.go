@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	agent, err := langsmith.NewAgentAddress("checkout", "production")
+	agent, err := langsmith.NewAgentAddress("checkout", "local")
 	if err != nil {
 		panic(err.Error())
 	}

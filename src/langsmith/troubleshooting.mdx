@@ -107,18 +107,28 @@ docker compose exec langchain-backend migrate -source "file://clickhouse/migrati
 
 ### *413 - request entity too large*
 
-This error occurs when the request size exceeds the maximum allowed size. You will need to increase the maximum request size in your Nginx configuration.
+This error occurs when the request size exceeds the maximum allowed size. The LangSmith frontend limits request size (default `25M`). If traffic passes through an ingress controller, that controller also has a limit (default `1m` on ingress-nginx), and the lower of the two wins. Increase every limit in the path to at least the size of your largest request.
 
 #### Kubernetes
 
-1. Edit your `langsmith_config.yaml` and increase the `frontend.maxBodySize` [value](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/values.yaml#L519). This might look something like this:
+1. Edit your `langsmith_config.yaml` and increase the `frontend.maxBodySize` [value](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/values.yaml). This might look something like this:
 
 ```yaml
 frontend:
   maxBodySize: "100M"
 ```
 
-2. Apply your changes to the cluster.
+2. If you use ingress-nginx, set the `nginx.ingress.kubernetes.io/proxy-body-size` annotation on your LangSmith ingress to the same value or higher. If the LangSmith chart manages your ingress (`ingress.enabled: true`), add the annotation under `ingress.annotations`. If you created the ingress yourself, add the annotation to that resource instead.
+
+```yaml
+ingress:
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+```
+
+The LangSmith chart does not set this annotation, so ingress-nginx applies its own default of `1m`. Other ingress controllers, the Gateway API, and Istio have their own body-size settings. Check your controller's documentation.
+
+3. Apply your changes to the cluster.
 
 ### *Details: code: 497, message: default: Not enough privileges. to execute this query, it's necessary to have the grant CREATE ROW POLICY ON default.feedbacks\_rmt*
 

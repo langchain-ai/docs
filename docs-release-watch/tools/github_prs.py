@@ -21,6 +21,8 @@ from tools.source import verify_evidence_in_source
 
 DOCS_REPO = "langchain-ai/docs"
 DEFAULT_BASE = "main"
+# Applied to every draft PR so sync-linear-issue-from-pr.yml can scope to agent handoffs.
+RELEASE_WATCH_PR_LABEL = "release-watch-agent"
 
 
 def _slugify(value: str) -> str:
@@ -58,6 +60,38 @@ async def _gh(
         if accept and "raw" in accept:
             return response.text
         return response.json()
+
+
+async def _ensure_release_watch_label(token: str) -> None:
+    """Create the release-watch PR label when it is missing from the repo."""
+    label_path = f"/repos/{DOCS_REPO}/labels/{RELEASE_WATCH_PR_LABEL}"
+    try:
+        await _gh("GET", label_path, token=token)
+        return
+    except RuntimeError as exc:
+        if "(404)" not in str(exc):
+            raise
+    await _gh(
+        "POST",
+        f"/repos/{DOCS_REPO}/labels",
+        token=token,
+        json_body={
+            "name": RELEASE_WATCH_PR_LABEL,
+            "color": "0E8A16",
+            "description": "Draft docs PR opened by the docs-release-watch agent",
+        },
+    )
+
+
+async def apply_release_watch_label(token: str, pr_number: int) -> None:
+    """Mark a PR so Linear sync runs only for release-watch handoffs."""
+    await _ensure_release_watch_label(token)
+    await _gh(
+        "POST",
+        f"/repos/{DOCS_REPO}/issues/{pr_number}/labels",
+        token=token,
+        json_body={"labels": [RELEASE_WATCH_PR_LABEL]},
+    )
 
 
 def _normalize_newlines(text: str) -> str:
@@ -373,6 +407,9 @@ async def create_draft_docs_pr(
             "draft": True,
         },
     )
+    # Label after create: the opened event may fire unlabeled, so the sync
+    # workflow also listens for labeled and starts Linear sync then.
+    await apply_release_watch_label(token, pr["number"])
 
     return json.dumps(
         {
@@ -381,6 +418,7 @@ async def create_draft_docs_pr(
             "branch": branch,
             "base": base_branch,
             "draft": True,
+            "labels": [RELEASE_WATCH_PR_LABEL],
             "files": [file["path"] for file in files],
             "rebased_paths": rebased_paths,
             "commit_sha": commit["sha"],

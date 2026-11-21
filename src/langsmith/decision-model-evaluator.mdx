@@ -6,10 +6,10 @@ description: Set up a LangSmith evaluator that uses a decision model as the judg
 
 A decision model evaluator uses a [decision model](/langsmith/online-evaluations-decision-models#decision-models) as the judge. Each question you define returns a typed answer that LangSmith records under its own feedback key.
 
-This guide shows you how to define a decision model evaluator in the [LangSmith UI](https://smith.langchain.com). You can use it on a dataset to [automatically run evaluations on experiments](/langsmith/bind-evaluator-to-dataset), or on a tracing project as an [online evaluator](/langsmith/online-evaluations-decision-models). To use an LLM as the judge instead, see [How to define an LLM-as-a-judge evaluator](/langsmith/llm-as-judge).
+This guide shows you how to define a decision model evaluator in the [LangSmith UI](https://smith.langchain.com) or [with the API](#create-the-evaluator-with-the-api). You can use it on a dataset to [automatically run evaluations on experiments](/langsmith/bind-evaluator-to-dataset), or on a tracing project as an [online evaluator](/langsmith/online-evaluations-decision-models). To use an LLM as the judge instead, see [How to define an LLM-as-a-judge evaluator](/langsmith/llm-as-judge).
 
 <Note>
-You can create decision model evaluators only in the LangSmith UI. The LangSmith SDKs do not support creating them yet.
+You can create decision model evaluators in the LangSmith UI or with the [LangSmith REST API](#create-the-evaluator-with-the-api). The LangSmith SDKs do not support creating them yet.
 </Note>
 
 <Note>
@@ -81,6 +81,67 @@ For what each question type returns and how answers map to feedback, see [Questi
 To save the evaluator, click **Create** or **Save**.
 
 On a dataset, the evaluator runs on each new experiment. On a tracing project, it evaluates incoming runs or threads that match its filter. For filters, sampling rates, and backfills, see [Set up decision model online evaluators](/langsmith/online-evaluations-decision-models).
+
+## Create the evaluator with the API
+
+To create a decision model evaluator and attach it to a dataset or tracing project in one request, send a `POST` request to the `/api/v1/runs/rules/decision-models` endpoint. The endpoint supports Jev, SemIf, and OpenAI decision models. Each question's key becomes a feedback key.
+
+Before you send the request, add your provider's API key as a workspace secret, as described in [Step 1](#step-1-create-the-evaluator).
+
+The following request creates a Jev evaluator on a dataset. Set `LANGSMITH_API_KEY` to your LangSmith API key and `LANGSMITH_WORKSPACE_ID` to the ID of the workspace that contains the dataset, and replace `<your-dataset-id>` with the ID of the dataset to evaluate:
+
+```bash
+curl -X POST 'https://api.smith.langchain.com/api/v1/runs/rules/decision-models' \
+  -H 'Content-Type: application/json' \
+  -H "X-API-Key: $LANGSMITH_API_KEY" \
+  -H "X-Tenant-Id: $LANGSMITH_WORKSPACE_ID" \
+  -d '{
+    "display_name": "answer-quality",
+    "dataset_id": "<your-dataset-id>",
+    "prompt": [["human", "Question: {{input}}\nAnswer: {{output}}"]],
+    "variable_mapping": {"input": "input", "output": "output"},
+    "provider": "typesafe",
+    "model": "jev-latest",
+    "questions": {
+      "helpful": {
+        "type": "noul",
+        "instructions": "Does the answer address the question?",
+        "yes": "It answers the question",
+        "no": "It does not"
+      },
+      "tone": {
+        "type": "choice",
+        "instructions": "What is the tone of the answer?",
+        "options": ["formal", "casual"]
+      },
+      "quality": {
+        "type": "score",
+        "instructions": "Rate the overall quality of the answer.",
+        "levels": ["poor", "ok", "great"]
+      }
+    }
+  }'
+```
+
+The request body accepts the following fields:
+
+- **`display_name`**: The evaluator name. Required.
+- **`dataset_id`** or **`session_id`**: The dataset whose experiments to evaluate, or the tracing project whose runs to evaluate.
+- **`prompt`**: The [state](#state) the decision model reads, as a list of `[role, template]` pairs. Required.
+- **`template_format`**: `mustache` (the default) or `f-string`.
+- **`variable_mapping`**: Maps each prompt variable to a run or example field, such as `input` or `output`. Map every variable in the prompt. The API accepts a request without a mapping, but the LangSmith UI cannot test or save the evaluator until each variable is mapped.
+- **`questions`**: The [questions](#questions), keyed by feedback key, in the order to ask them. Required. Each question has a `type` and `instructions`:
+  - **`noul`**: A yes or no question scored 0 to 1. Optionally set both `yes` and `no` to describe what each answer means.
+  - **`choice`**: One of 2 to 255 `options`, given as a list of names or as names mapped to descriptions.
+  - **`score`**: One of 2 to 10 `levels`, listed lowest first and scored by position.
+- **`provider`**: `typesafe` (the default) for Jev and SemIf, `typesafe_compatible` for a TypeSafe-compatible endpoint, or `openai_decisions`.
+- **`model`**: Defaults to `jev-latest` for `typesafe` and `gpt-6-luna` for `openai_decisions`. For SemIf, use `semif-qwen3.5-4b`.
+- **`base_url`**: The model endpoint to call directly instead of through the LangSmith gateway, using the workspace's `TYPESAFE_API_KEY` or `OPENAI_API_KEY` secret. Required for `typesafe_compatible`.
+- **`model_headers`**: Headers sent with each model call, such as `TypeSafe-Danger-Zone-Long-Context`. LangSmith saves them in the evaluator's prompt as given, so do not put API keys in them.
+- **`timeout_seconds`**: Seconds to wait for each model call. Applies only to `openai_decisions`.
+- **`max_retries`**: How many times to retry a failed model call. Applies only to `openai_decisions`.
+
+For the full schema, including sampling rates, filters, and saved model configurations, see [Create decision model rule](/langsmith/smith-api/run/create-decision-model-rule) in the API reference.
 
 ## See also
 

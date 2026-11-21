@@ -1,0 +1,206 @@
+---
+title: Tool Gateway traces and audit log
+sidebarTitle: Traces and audit log
+description: Record a trace for each Tool Gateway tool call, and review tool calls and policy changes in your organization's audit log.
+---
+
+import ToolGatewayBetaNote from '/snippets/langsmith/tool-gateway-beta-note.mdx';
+
+<ToolGatewayBetaNote />
+
+[Tool Gateway](/langsmith/tool-gateway) records its tool calls in two places. Traces show what your agents did: which tool ran, on which server, as whom, and how the call ended. The [audit log](/langsmith/audit-logs) shows who called which tool and who changed a policy, for security and compliance reviews.
+
+You can record traces in two ways, and use either or both:
+
+- **In your agent's trace**: Each tool call appears as a child run under the agent run that made it. Your agent sends LangSmith tracing headers with each call. See [Nest tool calls under your agent run](#nest-tool-calls-under-your-agent-run).
+- **In the workspace**: Every tool call in the workspace becomes its own trace in one project, whatever client made it. A workspace admin turns this on. See [Record every tool call in the workspace](#record-every-tool-call-in-the-workspace).
+
+## What a trace records
+
+A Tool Gateway trace records metadata about the call, not the data sent to or returned by the tool. It never contains tool arguments or results.
+
+Each trace records:
+
+- **Tool**: The tool's name on its server, such as `save_issue`.
+- **Server**: The MCP server or built-in server that the call reached.
+- **Tool kit**: The kit the call came through, if any.
+- **Acting as**: Whose credential the call used: a LangSmith user, an end user named by your backend, an agent, a profile, or the workspace.
+- **Outcome**: How the call ended. See the following table.
+- **Policies**: The policies that blocked the call, if any. See [Set policies](/langsmith/tool-gateway-policies).
+- **Timing**: The call's total time in Tool Gateway, and how long the MCP server took to start responding.
+
+| Outcome (UI) | `ls_tool_gateway_outcome` | Meaning |
+|--------------|---------------------------|---------|
+| **Success** | `success` | The tool ran and returned a result. |
+| **Tool error** | `tool_error` | The tool ran and returned an error. |
+| **Needs credential** | `credential_required` | The caller must connect or reconnect the server before the call can run. See [Connect accounts](/langsmith/tool-gateway-connect-accounts). |
+| **Failed** | `failed` | Tool Gateway or the MCP server could not complete the call, for example because the server timed out or returned a server error. |
+| **Blocked by policy** | `failed`, with `ls_tool_gateway_blocked` set to `true` | A [block policy](/langsmith/tool-gateway-policies) stopped the call. |
+
+To find Tool Gateway runs, filter on these metadata keys:
+
+- `ls_tool_gateway`: `true` on every Tool Gateway run.
+- `ls_tool_gateway_tool`: The tool's name on its server.
+- `ls_tool_gateway_server_id`: The server's ID, or the key of a built-in server, such as `parallel`.
+- `ls_tool_gateway_kit_id`: The tool kit's ID.
+- `ls_tool_gateway_outcome`: One of the outcomes in the preceding table. Handle values not listed here, because Tool Gateway can add new outcomes.
+- `ls_tool_gateway_reason`: A short label for why the call ended, such as `upstream_timeout` or `tool_call_blocked`. `none` on success.
+- `ls_tool_gateway_blocked`: `true` when a policy blocked the call.
+
+For how to filter runs by metadata, see [Filter traces](/langsmith/filter-traces-in-application).
+
+## Nest tool calls under your agent run
+
+If you [trace your agent](/langsmith/observability-quickstart) in LangSmith, send the agent's tracing headers with each tool call. Tool Gateway then adds a run named `Tool Gateway: <server name>` under the agent run that made the call. The run goes in the same project, with the `tool_gateway` tag.
+
+The headers are the standard LangSmith [distributed tracing](/langsmith/distributed-tracing) headers:
+
+- **`langsmith-trace`**: Identifies the parent run.
+- **`baggage`**: Carries the parent's project, metadata, and tags. The Tool Gateway run inherits the parent's metadata and tags.
+
+Set the headers on each tool call, not once when you create the client, so that each call nests under the run that made it.
+
+Tool Gateway writes the run with the API key that made the call. That key must be able to write traces to the agent's project. A caller that authenticates with only an identity provider token is not traced this way. This form of tracing does not depend on the workspace setting in the next section.
+
+### Use LangChain MCP adapters
+
+With `langchain-mcp-adapters`, add the headers in a tool interceptor. This works with any agent built on LangChain, such as one made with @[create_agent], Deep Agents, or LangGraph.
+
+<CodeGroup>
+```python Python
+import asyncio
+
+from langchain.agents import create_agent
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langsmith.run_helpers import get_current_run_tree
+
+
+async def trace_headers(request, handler):
+    # Nest each Tool Gateway call under the tool run that made it.
+    run = get_current_run_tree()
+    if run:
+        request = request.override(
+            headers={**(request.headers or {}), **run.to_headers()}
+        )
+    return await handler(request)
+
+
+client = MultiServerMCPClient(
+    {
+        "support-agent": {
+            "transport": "streamable_http",
+            "url": "https://api.smith.langchain.com/v1/managed-tools/kits/<kit-id>/mcp",
+            "headers": {
+                "X-Api-Key": "<langsmith-api-key>",
+                "X-Tenant-Id": "<workspace-id>",
+            },
+        }
+    },
+    tool_interceptors=[trace_headers],
+)
+
+
+async def main():
+    agent = create_agent("anthropic:claude-sonnet-5-5", tools=await client.get_tools())
+    result = await agent.ainvoke({"messages": [{"role": "user", "content": "List my open issues."}]})
+    print(result["messages"][-1].content)
+
+
+asyncio.run(main())
+```
+
+```typescript TypeScript
+import { MultiServerMCPClient } from "@langchain/mcp-adapters";
+import { createAgent } from "langchain";
+import { getCurrentRunTree } from "langsmith/singletons/traceable";
+
+const client = new MultiServerMCPClient({
+  mcpServers: {
+    "support-agent": {
+      transport: "http",
+      url: "https://api.smith.langchain.com/v1/managed-tools/kits/<kit-id>/mcp",
+      headers: {
+        "X-Api-Key": "<langsmith-api-key>",
+        "X-Tenant-Id": "<workspace-id>",
+      },
+    },
+  },
+  // Send the current run's tracing headers with each tool call.
+  beforeToolCall: () => ({ headers: getCurrentRunTree(true)?.toHeaders() }),
+});
+
+const agent = createAgent({
+  model: "anthropic:claude-sonnet-5-5",
+  tools: await client.getTools(),
+});
+```
+</CodeGroup>
+
+### Use another client
+
+Send the `langsmith-trace` and `baggage` headers from the current run with each `tools/call` request. In the LangSmith SDKs, `run_tree.to_headers()` (Python) and `runTree.toHeaders()` (TypeScript) return them. For details, see [Distributed tracing](/langsmith/distributed-tracing).
+
+## Record every tool call in the workspace
+
+Workspace traces record every tool call in the workspace as its own trace, whatever client made the call and whoever the caller is. The traces go to a tracing project named `tool-gateway`, which Tool Gateway creates when it records the first call.
+
+Workspace traces are free and do not count toward your trace limits.
+
+Turning workspace traces on or off requires the Workspace Admin role (`workspaces:settings:manage`). Viewing the traces requires permission to read runs in the `tool-gateway` project. For the roles, see [Role-based access control](/langsmith/rbac).
+
+<Tabs>
+  <Tab title="UI">
+    1. Go to **Tools** > **Usage**.
+    1. Turn on **Record tool call traces**.
+
+    The **Usage** tab lists the 100 most recent tool calls from the last 7 days, with each call's tool, server, outcome, latency, and start time. Click a call to open its trace. To see every call, with paging and filters, click **View all in tracing**.
+  </Tab>
+  <Tab title="API">
+    Send `PATCH /v1/platform/workspaces/current/info`. The API examples on this page use the environment variables from the [quickstart](/langsmith/tool-gateway-quickstart).
+
+    ```bash
+    curl -sS -X PATCH "$LANGSMITH_ENDPOINT/v1/platform/workspaces/current/info" \
+      -H "X-Api-Key: $LANGSMITH_API_KEY" \
+      -H "X-Tenant-Id: $LANGSMITH_WORKSPACE_ID" \
+      -H "Content-Type: application/json" \
+      -d '{"tool_gateway_traces_enabled": true}'
+    ```
+
+    Set `tool_gateway_traces_enabled` to `false` to turn workspace traces off. To check the current setting, send `GET` to the same path and read `config.tool_gateway_traces_enabled` in the response.
+  </Tab>
+</Tabs>
+
+A change can take a few minutes to apply to tool calls.
+
+## Review tool calls in the audit log
+
+<Note>
+Audit logs are available on [Enterprise plans](/langsmith/pricing-plans).
+</Note>
+
+Tool Gateway records tool calls, and changes to its servers, tool kits, profiles, and policies, in your organization's audit log. Each event records who acted, when, the operation, and whether it succeeded. A tool call event also names the tool kit, the server, and the tool.
+
+The audit log records tool calls only. It does not record requests that list tools.
+
+To view the audit log, go to **Organization Settings** > **Audit logs**. Viewing it requires the Organization Admin or Organization Operator role. For the API, filters, and retention, see [Audit logs](/langsmith/audit-logs).
+
+Tool Gateway records these operations:
+
+| Operation (`api.operation`) | Recorded when |
+|-----------------------------|---------------|
+| `invoke_mcp_gateway` | A tool is called through a tool kit or the me kit. |
+| `invoke_mcp_server` | A tool is called through a single server's endpoint. |
+| `create_mcp_server`, `update_mcp_server`, `delete_mcp_server`, `register_mcp_server_oauth` | A server is added, changed, or removed, or its OAuth client is registered. |
+| `create_mcp_credential_session` | Someone starts connecting an account to a server. |
+| `create_mcp_gateway`, `update_mcp_gateway`, `delete_mcp_gateway`, `refresh_mcp_gateway_tools` | A tool kit is created, changed, deleted, or has its tools refreshed. |
+| `create_mcp_profile`, `update_mcp_profile`, `delete_mcp_profile` | A profile is created, changed, or deleted. |
+| `update_mcp_oidc_connection`, `delete_mcp_oidc_connection` | An identity provider is linked to or unlinked from the workspace. |
+| `create_agent_policy`, `update_agent_policy`, `delete_agent_policy` | A policy is created, changed, turned on or off, or deleted. |
+
+## See also
+
+- [How Tool Gateway works](/langsmith/tool-gateway-how-it-works)
+- [Set policies](/langsmith/tool-gateway-policies)
+- [Connect an MCP client to a tool kit](/langsmith/tool-gateway-clients)
+- [Distributed tracing](/langsmith/distributed-tracing)
+- [Audit logs](/langsmith/audit-logs)

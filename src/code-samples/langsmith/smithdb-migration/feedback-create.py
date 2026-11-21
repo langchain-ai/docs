@@ -30,9 +30,23 @@ client = Client()
 run_id = "<run-id>"
 session_id = "<session-id>"
 # :remove-start:
+import asyncio
+from datetime import datetime, timedelta, timezone
+
 project = client.read_project(project_name="default")
 session_id = str(project.id)
-runs = list(client.list_runs(project_name="default", limit=1))
+
+
+async def _find_run():
+    page = await client.runs.query(
+        project_ids=[session_id],
+        min_start_time=datetime.now(timezone.utc) - timedelta(days=30),
+        page_size=1,
+    )
+    return page.items
+
+
+runs = asyncio.run(_find_run())
 assert len(runs) > 0, "expected at least one run in the 'default' project"
 run_id = str(runs[0].id)
 # :remove-end:

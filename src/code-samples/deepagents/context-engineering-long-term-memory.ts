@@ -8,7 +8,7 @@ import {
 import { InMemoryStore } from "@langchain/langgraph";
 
 const agent = await createDeepAgent({
-  model: "google:gemini-3.6-flash",
+  model: "google:gemini-4-hydrogen",
   store: new InMemoryStore(),
   backend: new CompositeBackend(new StateBackend(), {
     "/memories/": new StoreBackend({
@@ -42,7 +42,7 @@ function storeItemToText(item: { value: unknown }): string {
 
 const testStore = new InMemoryStore();
 const testAgent = await createDeepAgent({
-  model: "openai:gpt-5.5",
+  model: "openai:gpt-6.1-sol",
   store: testStore,
   backend: new CompositeBackend(new StateBackend(), {
     "/memories/": new StoreBackend({

@@ -150,3 +150,31 @@ def test_matches_sample_paths_is_prefix_based(tmp_path: Path) -> None:
     # Sibling that merely shares the string prefix is not under the directory.
     assert not runner.matches_sample_paths(tmp_path / "langsmith2" / "a.py", [prefix])
     assert runner.matches_sample_paths(tmp_path / "anything.py", [])
+
+
+def test_partition_by_serial_group_keeps_prompt_siblings_ordered(
+    tmp_path: Path,
+) -> None:
+    """Prompt-engineering samples form one chain in lexical path order."""
+    root = tmp_path
+    samples = [
+        root / "src/code-samples/langsmith/prompt-engineering-quickstart-0-create.ts",
+        root / "src/code-samples/langsmith/prompt-engineering-quickstart-1-test.ts",
+        root / "src/code-samples/langsmith/prompt-engineering-quickstart-2-iterate.ts",
+        root / "src/code-samples/langsmith/prompt-engineering-quickstart.py",
+        root / "src/code-samples/langsmith/unrelated.py",
+    ]
+    files = [(path, "ts" if path.suffix == ".ts" else "py") for path in samples]
+
+    free, chains = runner.partition_by_serial_group(files, root)
+
+    assert [p.relative_to(root).as_posix() for p, _ in free] == [
+        "src/code-samples/langsmith/unrelated.py"
+    ]
+    assert len(chains) == 1
+    assert [p.name for p, _ in chains[0]] == [
+        "prompt-engineering-quickstart-0-create.ts",
+        "prompt-engineering-quickstart-1-test.ts",
+        "prompt-engineering-quickstart-2-iterate.ts",
+        "prompt-engineering-quickstart.py",
+    ]

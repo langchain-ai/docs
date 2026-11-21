@@ -47,6 +47,7 @@ LINK_MAPS: list[LinkMap] = [
             "FilesystemPermission": "deepagents/middleware/permissions/FilesystemPermission",
             "SummarizationToolMiddleware": "deepagents/middleware/summarization/SummarizationToolMiddleware",
             "PatchToolCallsMiddleware": "deepagents/middleware/patch_tool_calls/PatchToolCallsMiddleware",
+            "UnsupportedContentMiddleware": "deepagents/middleware/unsupported_content/UnsupportedContentMiddleware",
             "RubricMiddleware": "deepagents/middleware/rubric/RubricMiddleware",
             "StateBackend": "deepagents/backends/state/StateBackend",
             "FilesystemBackend": "deepagents/backends/filesystem/FilesystemBackend",
@@ -92,6 +93,7 @@ LINK_MAPS: list[LinkMap] = [
             "ToolCallLimitMiddleware": "langchain/agents/middleware/tool_call_limit/ToolCallLimitMiddleware",
             "ProviderToolSearchMiddleware": "langchain/agents/middleware/provider_tool_search/ProviderToolSearchMiddleware",
             "ModelFallbackMiddleware": "langchain/agents/middleware/model_fallback/ModelFallbackMiddleware",
+            "ModelRefusalMiddleware": "langchain/agents/middleware/model_refusal/ModelRefusalMiddleware",
             "TodoListMiddleware": "langchain/agents/middleware/todo/TodoListMiddleware",
             "LLMToolSelectorMiddleware": "langchain/agents/middleware/tool_selection/LLMToolSelectorMiddleware",
             "ToolRetryMiddleware": "langchain/agents/middleware/tool_retry/ToolRetryMiddleware",
@@ -291,6 +293,7 @@ LINK_MAPS: list[LinkMap] = [
             # Exceptions
             "ContextOverflowError": "langchain-core/exceptions/ContextOverflowError",
             "OutputParserException": "langchain-core/exceptions/OutputParserException",
+            "ModelRefusalError": "langchain-core/exceptions/ModelRefusalError",
             "ModelError": "langchain-core/exceptions/ModelError",
             "ModelAuthenticationError": "langchain-core/exceptions/ModelAuthenticationError",
             "ModelPermissionDeniedError": "langchain-core/exceptions/ModelPermissionDeniedError",
@@ -412,7 +415,7 @@ LINK_MAPS: list[LinkMap] = [
             "TasksStreamPart": "langgraph/types/TasksStreamPart",
             "DebugStreamPart": "langgraph/types/DebugStreamPart",
             "Topic": "langgraph/channels/topic/Topic",
-            # LangSmith Deployment SDK
+            # LangSmith Agent Server SDK
             # Main client
             "get_client": "langchain-core/tracers/langchain/get_client",
             "get_sync_client": "langgraph-sdk/_sync/client/get_sync_client",
@@ -476,6 +479,10 @@ LINK_MAPS: list[LinkMap] = [
             "StudioUser": "langgraph-sdk/auth/types/StudioUser",
             "MinimalUserDict": "langgraph-sdk/auth/types/MinimalUserDict",
             "HTTPException": "langgraph-sdk/auth/exceptions/HTTPException",
+            # Priority types
+            "Priority": "langgraph-sdk/priority/Priority",
+            "PriorityContext": "langgraph-sdk/priority/types/PriorityContext",
+            "PrioritySettings": "langgraph-sdk/priority/types/PrioritySettings",
             # Auth types - Threads
             "ThreadsCreate": "langgraph-sdk/auth/types/ThreadsCreate",
             "ThreadsRead": "langgraph-sdk/auth/types/ThreadsRead",
@@ -502,6 +509,7 @@ LINK_MAPS: list[LinkMap] = [
             # Functional API
             "task": "langgraph/func/task",
             "@task": "langgraph/func/task",
+            "entrypoint": "langgraph/func/entrypoint",
             "@entrypoint": "langgraph/func/entrypoint",
             "entrypoint.final": "langgraph/func/entrypoint/final",
             # Configuration
@@ -697,10 +705,13 @@ LINK_MAPS: list[LinkMap] = [
             "AgentMiddleware": "langchain/index/AgentMiddleware",
             "piiMiddleware": "langchain/index/piiMiddleware",
             "ContextOverflowError": "langchain-core/errors/ContextOverflowError",
+            "ModelRefusalError": "langchain-core/errors/ModelRefusalError",
             "createReactAgent": "langchain-langgraph/prebuilt/createReactAgent",
             "createSupervisor": "langchain-langgraph-supervisor/createSupervisor",
             "entrypoint": "langchain-langgraph/index/entrypoint",
+            "@entrypoint": "langchain-langgraph/index/entrypoint",
             "entrypoint.final": "langchain-langgraph/index/entrypoint/final",
+            "CachePolicy": "langchain-langgraph/index/CachePolicy",
             "get_state_history": "langchain-langgraph/pregel/Pregel/getStateHistory",
             "get_state": "langchain-langgraph/pregel/Pregel/getState",
             "getStateHistory": "langchain-langgraph/pregel/Pregel/getStateHistory",
@@ -726,7 +737,7 @@ LINK_MAPS: list[LinkMap] = [
             "ToolRuntime": "langchain/index/Runtime",
             "RunnableLambda": "langchain-core/runnables/RunnableLambda",
             "PIIMiddleware": "langchain/index/piiMiddleware",
-            # LangSmith Deployment SDK - JS
+            # LangSmith Agent Server SDK - JS
             "LangGraphSDK": "langgraph-sdk/",
             "ThreadsClient": "langchain-langgraph-sdk/client/ThreadsClient",
             "ThreadsClient.create": "langchain-langgraph-sdk/client/ThreadsClient/create",
@@ -751,6 +762,9 @@ LINK_MAPS: list[LinkMap] = [
             "modelRetryMiddleware": "langchain/index/modelRetryMiddleware",
             "ModelRetryMiddleware": "langchain/index/modelRetryMiddleware",
             "ModelFallbackMiddleware": "langchain/index/modelFallbackMiddleware",
+            "modelFallbackMiddleware": "langchain/index/modelFallbackMiddleware",
+            "modelRefusalMiddleware": "langchain/index/modelRefusalMiddleware",
+            "ModelRefusalMiddleware": "langchain/index/modelRefusalMiddleware",
             "ModelCallLimitMiddleware": "langchain/index/modelCallLimitMiddleware",
             "ToolCallLimitMiddleware": "langchain/index/toolCallLimitMiddleware",
             "providerToolSearchMiddleware": "langchain/index/providerToolSearchMiddleware",
@@ -791,7 +805,7 @@ LINK_MAPS: list[LinkMap] = [
         },
     },
     {
-        # LangSmith Deployment Agent Server API - Python scope
+        # LangSmith Agent Server API - Python scope
         "host": "/langsmith/",
         "scope": "python",
         "links": {
@@ -806,7 +820,7 @@ LINK_MAPS: list[LinkMap] = [
         },
     },
     {
-        # LangSmith Deployment Agent Server API - JS scope
+        # LangSmith Agent Server API - JS scope
         "host": "/langsmith/",
         "scope": "js",
         "links": {

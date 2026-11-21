@@ -4,9 +4,9 @@ description: Configure and manage S3-compatible export destinations for LangSmit
 ---
 
 <Note>
-**For self-hosted, GCP EU, GCP APAC, and AWS US SaaS**
+**For self-hosted, GCP EU, GCP APAC, AWS US, and Azure US SaaS**
 
-Update the LangSmith URL in the requests below for self-hosted installs, GCP EU (`eu.api.smith.langchain.com`), GCP APAC (`apac.api.smith.langchain.com`), or AWS US (`aws.api.smith.langchain.com`).
+Update the LangSmith URL in the requests below for self-hosted installs, GCP EU (`eu.api.smith.langchain.com`), GCP APAC (`apac.api.smith.langchain.com`), AWS US (`aws.api.smith.langchain.com`), or Azure US (`azure.api.smith.langchain.com`).
 </Note>
 
 A destination is a named configuration that tells LangSmith where to write exported trace data. You [create a destination](/langsmith/data-export#1-create-a-destination) once, then reference it by ID when [creating export jobs](/langsmith/data-export#2-create-an-export-job). LangSmith currently supports S3 and any S3-compatible bucket (such as GCS or MinIO) as a destination. Exported data is written in [Parquet](https://parquet.apache.org/docs/overview/) columnar format and contains equivalent fields to the [Run data format](/langsmith/run-data-format).
@@ -18,6 +18,7 @@ This page covers:
 - How to [create a destination](#create-a-destination) via the API, including provider-specific examples and credential options.
 - How to [rotate destination credentials](#rotate-destination-credentials) without recreating the destination.
 - How to [switch authentication mode](#switch-authentication-mode) between static credentials and AWS IAM role assumption.
+- How to [delete a destination](#delete-a-destination) that no bulk export uses.
 - How to [debug destination errors](#debug-destination-errors).
 
 ## Configuration fields
@@ -504,6 +505,27 @@ The same transition behavior described in [credential rotation](#credential-rota
 - **Already running bulk export runs** continue using the previous authentication mode until they finish.
 
 If the test write fails because the new configuration does not have sufficient write permissions, the request returns `400`.
+
+## Delete a destination
+
+<Note>
+On self-hosted LangSmith, deleting a destination requires Helm version `0.17.0` or later (application version `0.17.29` or later).
+</Note>
+
+Use `DELETE /api/v1/bulk-exports/destinations/{destination_id}` to delete a destination you no longer need. Deleting a destination requires the `bulk-exports:manage` [permission](/langsmith/organization-workspace-operations#bulk-exports).
+
+```bash
+curl --request DELETE \
+  --url 'https://api.smith.langchain.com/api/v1/bulk-exports/destinations/{destination_id}' \
+  --header 'X-API-Key: YOUR_API_KEY' \
+  --header 'X-Tenant-Id: YOUR_WORKSPACE_ID'
+```
+
+The request returns `204` when the destination is deleted, or when no destination with that ID exists in the workspace.
+
+You can only delete a destination that has never been used by a bulk export. If any bulk export references the destination, whatever its status, including `Completed` and `Cancelled`, the request returns `409`. Bulk exports themselves cannot be deleted. Once an export uses a destination, the API cannot delete that destination.
+
+To stop writing to a destination that has been used, [cancel](/langsmith/data-export-monitor#stop-an-export) its exports.
 
 ## Debug destination errors
 

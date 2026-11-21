@@ -6,7 +6,7 @@ tag: "Beta"
 ---
 
 <Note>
-Red Teaming is in private [beta](/langsmith/release-stages#beta). It is available only on LangSmith Cloud, for organizations where it has been enabled. It supports only agents running on [LangSmith Cloud deployments](/langsmith/deploy-to-cloud), not externally hosted agents. To request access, [join the waitlist](https://www.langchain.com/langsmith-engine-v2-new-feature-access).
+Red Teaming is in private [beta](/langsmith/release-stages#beta). It is available only on LangSmith Cloud, for organizations where it has been enabled. It supports agents running on [LangSmith Cloud deployments](/langsmith/deploy-to-cloud) and [external deployments](#set-up-an-external-deployment). To request access, [join the waitlist](https://www.langchain.com/langsmith-engine-v2-new-feature-access).
 </Note>
 
 Red Teaming tests a deployed agent by sending it new, synthetic requests and judging how it responds. The [issues Engine detects](/langsmith/engine-issues) from your traces come from failures that already happened in production. Red Teaming looks for failures that have not happened yet, such as a prompt injection that succeeds, a consequential tool call made without the confirmation your agent requires, or hidden context that leaks into an answer.
@@ -15,12 +15,12 @@ Each run produces a report of hypotheses, the probes that tested each one, and a
 
 ## How Red Teaming works
 
-Red Teaming probes the deployment set as the tracing project's [baseline deployment](/langsmith/engine-fix-validation#set-the-baseline-deployment). Each run:
+By default, Red Teaming probes the tracing project's [baseline deployment](/langsmith/engine-fix-validation#set-the-baseline-deployment). If you configure an external target, Engine probes that endpoint instead. Each run:
 
-1. **Maps the application.** Engine reviews up to 25 recent traces from the tracing project and, if one is connected, your code repository. From them, it learns the agent's prompts, tools, guardrails, and request format. If Engine has already scanned the project, the run starts from the project's agent overview and runs a shorter confirmation scan.
+1. **Maps the application.** For a baseline deployment, Engine reviews up to 25 recent traces and, if connected, your code repository. It learns the agent's prompts, tools, guardrails, and request format. If Engine has already scanned the project, it starts from the project's agent overview and runs a shorter confirmation scan. External runs do not read traces or the agent overview. They use endpoint responses, the uploaded spec for HTTP APIs, and a screened behavior summary from a connected repository when available.
 2. **Forms hypotheses.** Each hypothesis describes one specific way the agent could fail. Engine assigns it an [issue class](#red-teaming-issue-classes) and a scenario type, which records whether an ordinary user could trigger the failure or whether it takes a deliberate attack.
-3. **Probes the deployment.** Engine sends up to two synthetic requests per hypothesis to the deployment. A probe reuses the request format of a real trace, but replaces its content with new, synthetic input.
-4. **Judges the results.** Engine reviews each probe's response and trace, then assigns the hypothesis a status and a severity. For an ambiguous result, Engine can send one follow-up probe.
+3. **Probes the deployment.** Engine sends up to two synthetic requests per hypothesis to the deployment. A baseline probe reuses the request format of a real trace, but replaces its content with new, synthetic input. An external probe uses the A2A protocol or an allowed OpenAPI operation.
+4. **Judges the results.** Engine reviews each probe's response and, for baseline deployments, its trace. It then assigns the hypothesis a status and a severity. For an ambiguous result, Engine can send one follow-up probe.
 
 Past traces only help Engine understand the application. Every confirmed finding comes from a probe sent during the run, not from an error in an earlier trace.
 
@@ -31,13 +31,52 @@ Red-team findings stay in the red-team report. A run does not create Engine issu
 To run Red Teaming, you need:
 
 - **Engine on the tracing project**: [Set up Engine](/langsmith/engine-setup) for the project that receives your agent's traces.
-- **A baseline deployment**: A ready, non-preview [LangSmith Cloud deployment](/langsmith/deploy-to-cloud) in the same workspace, set as the project's baseline. See [Set the baseline deployment](/langsmith/engine-fix-validation#set-the-baseline-deployment).
-- **Permissions**: `runs:read` on the tracing project to view red-team reports. To start a run, you also need `runs:create` on the project and `deployments:update` on the baseline deployment.
-- **A connected repository (recommended)**: With a [connected GitHub repository](/langsmith/engine-repositories), Engine reads your agent's prompts, tools, and guardrails from source. Without one, findings rely on traces alone, and the report shows **Repository context was not available**.
+- **A target deployment**: Either a ready, non-preview LangSmith Cloud deployment in the same workspace, set as the project's baseline, or an external endpoint. See [Set the baseline deployment](/langsmith/engine-fix-validation#set-the-baseline-deployment) or [Set up an external deployment](#set-up-an-external-deployment).
+- **Permissions**: `runs:read` on the tracing project to view red-team reports, and `runs:create` to start a run. Configuring an external target requires `issues:update` on the project. Using a baseline deployment also requires `deployments:update` on that deployment.
+- **A connected repository (recommended)**: With a [connected GitHub repository](/langsmith/engine-repositories), Engine can use your agent's prompts, tools, and guardrails to guide testing. External runs receive a screened behavior summary rather than raw source. Without a repository, baseline runs rely on traces. External runs rely on endpoint responses and, for HTTP APIs, the uploaded spec.
 
 <Warning>
-Probes are real requests. Each probe creates a thread and a run on the baseline deployment, and your agent can call its tools while it responds. Choose a deployment where synthetic test traffic and tool side effects are acceptable, such as a staging deployment.
+Probes are real requests, and your agent can call its tools while it responds. Baseline probes create threads and runs; external probes call the configured endpoint. Choose a deployment where synthetic test traffic and tool side effects are acceptable, such as a staging deployment. Use test credentials and non-production data stores.
 </Warning>
+
+## Set up an external deployment
+
+An external target lets Engine test an agent hosted outside LangSmith Cloud. You can connect an A2A agent or an HTTP API described by an OpenAPI spec. A baseline deployment is not required for external runs.
+
+External targets must be enabled for your project. If **Red team target** is missing from **Configure Engine**, request access through the [waitlist](https://www.langchain.com/langsmith-engine-v2-new-feature-access).
+
+To connect an external deployment:
+
+1. On the **Engine** page, select the tracing project, then click **Configure Engine**.
+2. Find the **Red team target** section and choose an **Endpoint type**:
+   - **A2A agent**: Enter the agent's A2A endpoint in **Endpoint URL**. Engine sends A2A messages to this URL.
+   - **HTTP API with an OpenAPI spec**: Enter the API's base URL in **Endpoint URL**, then click **Upload spec**. Upload an OpenAPI 3 document in JSON or YAML and select between 1 and 10 operations Engine may call.
+3. Under **Endpoint authentication**, click **Add header** and enter the headers your endpoint requires. At least one authentication header is required. Use credentials with the least access needed for testing.
+4. Click **Save**, return to **Red Teaming**, and click **Run red team**.
+
+### Choose a reachable endpoint
+
+The endpoint must use HTTPS and resolve to a public internet address. Engine blocks private, loopback, and cloud metadata addresses, and does not follow redirects. Enter a URL with a path, without embedded credentials, query parameters, or a fragment.
+
+For an A2A agent, use the message endpoint, not the agent card URL. Engine checks `/.well-known/agent-card.json` at the endpoint's origin to select the protocol version. It uses A2A v1.0 when the card advertises a v1.0 JSON-RPC interface at the configured URL, and v0.3 otherwise.
+
+For an HTTP API, Engine appends each allowed operation's path to the configured base URL. It does not use the spec's `servers` URLs. Supported methods are `GET`, `POST`, `PUT`, and `PATCH`. `DELETE` is not allowed. Operations with request bodies must accept JSON. References in the spec must be local `$ref` pointers. The spec size limit is 256 KB after conversion to compact JSON with non-ASCII characters escaped.
+
+<Warning>
+Restrict the allowed operations to endpoints you can safely test. Excluding `DELETE` does not prevent other operations from changing data or triggering external actions.
+</Warning>
+
+### Manage endpoint authentication
+
+Engine sends the saved headers only to the configured target, not to your baseline deployment. It does not send your LangSmith platform credential to an external endpoint. Header values are encrypted and write-only. The settings show only their names.
+
+Changing the endpoint URL requires entering every header value again. For an HTTP API, changing the URL also requires uploading the spec and selecting operations again. To change allowed operations for the same endpoint, click **Replace spec**, upload the document, select operations, and save.
+
+### Understand external-run limits
+
+External runs use endpoint responses rather than LangSmith traces to judge findings. They do not inspect internal tool calls or provide **View proof trace** links. A connected repository can supply a screened behavior summary. The model that reads target responses never reads raw source. External probes are single-turn, so they cannot confirm **Session Integrity** findings that require a two-turn conversation.
+
+When both targets are configured, the external target takes precedence for Red Teaming. [Fix validation](/langsmith/engine-fix-validation) continues to use the baseline deployment. To return Red Teaming to the baseline deployment, click **Remove** in **Red team target**. Without a baseline, removing the external target leaves no target to test.
 
 ## Start a Red Teaming run
 
@@ -95,9 +134,9 @@ Click a hypothesis to open its detail. The detail shows Engine's conclusion, fol
 Expand a probe card to see:
 
 - **The synthetic prompt**: The exact prompt Engine sent to the deployment.
-- **Observed**: An excerpt quoted from your agent's response, with a summary of the probe's trace, such as its tool calls, tool errors, and token count.
+- **Observed**: An excerpt quoted from your agent's response. Baseline probes also include a trace summary, such as tool calls, tool errors, and token count.
 - **Expected**: What a correct application would have returned.
-- **View proof trace**: Opens the probe's trace in the side panel.
+- **View proof trace**: Opens the probe's trace in the side panel. Available for baseline probes, not external probes.
 
 Below the probes, **Why the Judge Decided This** explains how Engine reached the status and severity, and **What to Do Next** recommends a fix. A hypothesis marked **Unexpected** is a finding that Engine discovered while testing a different hypothesis.
 
@@ -125,7 +164,7 @@ Two classes have extra requirements:
 
 ## Run Red Teaming again
 
-Red Teaming carries verdicts forward between runs of the same deployment revision. A new run receives the verdicts from up to five earlier successful runs against the same baseline deployment and active revision. Engine skips hypotheses that earlier runs already confirmed or found safe, unless the new run shows that the behavior changed, and prioritizes hypotheses that needed review.
+For baseline deployments, Red Teaming carries verdicts forward between runs of the same deployment revision. A new run receives the verdicts from up to five earlier successful runs against the same baseline deployment and active revision. Engine skips hypotheses that earlier runs already confirmed or found safe, unless the new run shows that the behavior changed, and prioritizes hypotheses that needed review.
 
 After you deploy a new revision to the baseline deployment, the next run starts without prior verdicts. Use **Findings Over Runs** to compare confirmed findings across runs.
 
@@ -135,16 +174,17 @@ Each red-team run is bounded:
 
 | Limit | Value per run |
 |---|---|
-| Traces reviewed | 25, selected from up to 100 recent trace summaries |
+| Traces reviewed | Baseline: 25, selected from up to 100 recent trace summaries. External: 0. |
 | Hypotheses | 50 |
 | Probes per hypothesis | 2 |
-| Requests to the baseline deployment | 100 |
+| Requests to the target | 60 |
 | Recommendations | 20 |
 
 ## How Red Teaming handles your data
 
-- **Synthetic probes**: Probe content is synthetic. Engine does not copy customer trace content or repository text into probes. A trace supplies only the request format.
-- **Read-only access**: Red Teaming reads your traces with a read-only LangSmith credential and clones your repository with a read-only GitHub token.
+- **Synthetic probes**: Probe content is synthetic. Engine does not copy customer trace content or raw repository source into probes. For baseline deployments, a trace supplies only the request format.
+- **Read-only access**: Red Teaming reads baseline traces with a read-only LangSmith credential and clones your repository with a read-only GitHub token. External runs do not read traces.
+- **Screened repository context**: For external targets, a separate analyst reads the repository and produces a behavior summary. Engine screens the summary for source code, file paths, URLs, and secrets before using it to guide probes.
 - **Screened reports**: Engine screens model-written report text for secrets before storing it, and bounds the length of response excerpts.
 
 For how Engine handles your data more broadly, see [Engine security](/langsmith/engine-security).

@@ -3,7 +3,7 @@
 # :snippet-start: deep-agent-from-scratch-minimal-py
 from langchain.agents import create_agent
 
-agent = create_agent(model="google_genai:gemini-3.6-flash", tools=[])
+agent = create_agent(model="google_genai:gemini-4-hydrogen", tools=[])
 # :snippet-end:
 
 # :snippet-start: deep-agent-from-scratch-sandbox-py
@@ -113,7 +113,7 @@ sandbox = client.create_sandbox(name="langchain-docs", snapshot_name="docs-test-
 backend = LangSmithSandbox(sandbox=sandbox)
 
 agent = create_agent(
-    model="google_genai:gemini-3.6-flash",
+    model="google_genai:gemini-4-hydrogen",
     tools=[],
     middleware=[FilesystemMiddleware(backend=backend)],
 )
@@ -158,7 +158,7 @@ upload_stream.output
 # :snippet-start: deep-agent-from-scratch-summarization-py
 from deepagents.middleware import FilesystemMiddleware, SummarizationMiddleware
 
-model = "google_genai:gemini-3.6-flash"
+model = "google_genai:gemini-4-hydrogen"
 
 agent = create_agent(
     model=model,
@@ -189,7 +189,7 @@ backend.upload_files(skill_files)
 # :snippet-start: deep-agent-from-scratch-skills-py
 from deepagents.middleware import FilesystemMiddleware, SkillsMiddleware, SummarizationMiddleware
 
-model = "google_genai:gemini-3.6-flash"
+model = "google_genai:gemini-4-hydrogen"
 
 agent = create_agent(
     model=model,
@@ -212,7 +212,7 @@ from deepagents.middleware import (
 )
 from langchain.agents.middleware import TodoListMiddleware
 
-model = "google_genai:gemini-3.6-flash"
+model = "google_genai:gemini-4-hydrogen"
 
 visualizer: SubAgent = {
     "name": "visualizer",

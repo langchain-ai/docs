@@ -19,7 +19,7 @@ const badDescription = {
 import { createDeepAgent } from "deepagents";
 
 const goodAgent = createDeepAgent({
-  model: "google:gemini-3.6-flash",
+  model: "google:gemini-4-hydrogen",
   subagents: [
     {
       systemPrompt: "You are a research specialist.",
@@ -28,7 +28,7 @@ const goodAgent = createDeepAgent({
   ],
 });
 const badAgent = createDeepAgent({
-  model: "google:gemini-3.6-flash",
+  model: "google:gemini-4-hydrogen",
   subagents: [
     {
       systemPrompt: "You are a helper.",

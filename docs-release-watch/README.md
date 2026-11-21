@@ -51,7 +51,7 @@ docs-release-watch/
 ## Prerequisites
 
 - LangSmith workspace with Managed Deep Agents beta access
-- LangSmith API key with Gateway access. Shipping uses `langsmith:anthropic/claude-opus-4-6`; research uses `langsmith:anthropic/claude-sonnet-4-6` (Anthropic must be configured as a workspace Provider Secret)
+- LangSmith API key with Gateway access. Shipping uses `langsmith:anthropic/claude-opus-4-6`; research uses `langsmith:anthropic/claude-sonnet-4-6` (Anthropic must be configured as a workspace Provider Secret). The `langsmith:` provider talks to the gateway through `langchain-openai` (declared in `pyproject.toml`)
 - GitHub **fine-grained** personal access token for `langchain-ai/docs` (the org blocks classic PATs). Needs Contents read/write and Pull requests read/write. Authorize SSO for `langchain-ai` if prompted.
 - Linear API key with **Read** and **Write** (or Create issues) on team `DOC`. New issues are assigned to the API key owner. Override with `LINEAR_ASSIGNEE_ID` if needed.
 
@@ -130,11 +130,11 @@ Release notes are secondary leads. If a claim is not in the diff and tagged sour
 
 ## Linear status sync
 
-The agent does not poll PR status. After it opens a draft PR whose `## Linear` section includes `Closes [DOC-N](<issue url>)`, GitHub Actions updates the Linear issue:
+The agent does not poll PR status. `create_draft_docs_pr` labels every handoff PR `release-watch-agent`. After that draft's `## Linear` section includes `Closes [DOC-N](<issue url>)`, GitHub Actions updates the Linear issue. The workflow runs only on same-repo PRs with that label (including the `labeled` event, because the label is applied right after PR create).
 
 | PR event | Linear status (preferred name / type) |
 | --- | --- |
-| Opened or converted to draft | In Progress (`started`) |
+| Opened, labeled, or converted to draft | In Progress (`started`) |
 | Ready for review | In Review (`started`) |
 | Merged | Done (`completed`) |
 | Closed without merge | Canceled (`canceled`) |

@@ -20,7 +20,7 @@ def researcher(config: RunnableConfig):
     # :remove-end:
     return create_deep_agent(
         # KEEP MODEL
-        model="google_genai:gemini-3.8-flash",
+        model="openai:gpt-5.5",
         system_prompt="You research topics thoroughly.",
     )
 # :snippet-end:

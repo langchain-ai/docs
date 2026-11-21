@@ -1,4 +1,4 @@
 # Files
 
-- [Markdown Preprocessing](preprocessing.md) - Build-time Markdown and MDX transformations for scoped API references, CTA attribution, language branches, and route-aware output. Documents fence and escape invariants plus strict source cross-reference validation.
-- [Documentation Routes and Language Versioning](versioning.md) - Explains how source families and docs.json navigation determine generated documentation routes, language variants, conditional content, and compatibility redirects. Covers unversioned product exceptions and safe verification of route changes.
+- [Markdown Preprocessing](preprocessing.md) - Build-time Markdown and MDX transformations for scoped API references, LangSmith CTA attribution, validated language branches, and route-aware output. Documents the ordering, fence failure semantics, and strict source cross-reference validation that protect generated documentation.
+- [Versioning and Navigation](versioning.md) - Explains how source ownership, docs.json navigation, and the documentation builder map authored files to public language routes. Covers lifecycle menus, redirects, unversioned exceptions, preprocessing, and safe verification.

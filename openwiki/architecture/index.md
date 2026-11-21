@@ -1,4 +1,4 @@
 # Files
 
-- [Documentation Build System](build-system.md) - How the documentation pipeline reconstructs the Mintlify build tree from src, selects language-aware OSS output, preprocesses Markdown, and supports local development.
-- [Repository Source Map](source-map.md) - Maps the durable owners of documentation, navigation, generated source, release automation, and deployment output. Use it to choose the safe change boundary and avoid editing derived artifacts.
+- [Build and Preprocessing Architecture](build-system.md) - How the pipeline CLI converts authored Markdown, MDX, and notebooks, preprocesses links and conditionals, and materializes language-aware Mintlify output. Covers full builds, incremental development, migration boundaries, validation, failures, and safe extension points.
+- [Repository Source Map](source-map.md) - Maps durable ownership boundaries for authored documentation, navigation, build output, generated content, automation, tests, agent skills, and external reference services. Use it to select the source of truth and regenerate derived artifacts rather than editing them.

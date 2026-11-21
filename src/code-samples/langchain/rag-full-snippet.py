@@ -37,7 +37,7 @@ def build_rag_agent():
     # Index chunks
     _ = vector_store.add_documents(documents=all_splits)
 
-    model = ChatOpenAI(model="gpt-4o-mini")
+    model = ChatOpenAI(model="gpt-5.4-mini")
 
     # Construct a tool for retrieving context
     @tool(response_format="content_and_artifact")
@@ -122,7 +122,7 @@ def build_rag_chain():
     # Index chunks
     _ = vector_store.add_documents(documents=all_splits)
 
-    model = ChatOpenAI(model="gpt-4o-mini")
+    model = ChatOpenAI(model="gpt-5.4-mini")
 
     @dynamic_prompt
     def prompt_with_context(request: ModelRequest) -> str:

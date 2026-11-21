@@ -192,42 +192,56 @@ To create datasets from the runs (spans) of your traces, you can use the same ap
 <CodeGroup>
 
 ```python Python
+import asyncio
+from datetime import datetime, timedelta, timezone
+
 from langsmith import Client
 
-client = Client()
-dataset_name = "Example Dataset"
 
-# Filter runs to add to the dataset
-runs = client.list_runs(
-  project_name="my_project",
-  is_root=True,
-  error=False,
-)
+async def main():
+    client = Client()
+    dataset_name = "Example Dataset"
+    project_id = str(client.read_project(project_name="my_project").id)
 
-dataset = client.create_dataset(dataset_name, description="An example dataset")
+    # Filter runs to add to the dataset
+    runs = [
+        run
+        async for run in client.runs.query(
+            project_ids=[project_id],
+            min_start_time=datetime.now(timezone.utc) - timedelta(days=7),
+            is_root=True,
+            has_error=False,
+            selects=["INPUTS", "OUTPUTS"],
+        )
+    ]
 
-# Prepare inputs and outputs for bulk creation
-examples = [{"inputs": run.inputs, "outputs": run.outputs} for run in runs]
+    dataset = client.create_dataset(dataset_name, description="An example dataset")
 
-# Use the bulk create_examples method
-client.create_examples(
-  dataset_id=dataset.id,
-  examples=examples
-)
+    # Prepare inputs and outputs for bulk creation
+    examples = [{"inputs": run.inputs, "outputs": run.outputs} for run in runs]
+
+    # Use the bulk create_examples method
+    client.create_examples(dataset_id=dataset.id, examples=examples)
+
+
+asyncio.run(main())
 ```
 
 ```typescript TypeScript
-import { Client, Run } from "langsmith";
+import { Client } from "langsmith";
 
 const client = new Client();
 const datasetName = "Example Dataset";
+const projectId = (await client.readProject({ projectName: "my_project" })).id;
 
 // Filter runs to add to the dataset
-const runs: Run[] = [];
-for await (const run of client.listRuns({
-  projectName: "my_project",
-  isRoot: 1,
-  error: false,
+const runs = [];
+for await (const run of client.runs.query({
+  project_ids: [projectId],
+  min_start_time: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+  is_root: true,
+  has_error: false,
+  selects: ["INPUTS", "OUTPUTS"],
 })) {
   runs.push(run);
 }
@@ -238,8 +252,8 @@ const dataset = await client.createDataset(datasetName, {
 });
 
 // Prepare inputs and outputs for bulk creation
-const inputs = runs.map(run => run.inputs);
-const outputs = runs.map(run => run.outputs ?? {});
+const inputs = runs.map((run) => run.inputs ?? {});
+const outputs = runs.map((run) => run.outputs ?? {});
 
 // Use the bulk createExamples method
 await client.createExamples({
@@ -256,8 +270,10 @@ import com.langchain.smith.core.JsonValue;
 import com.langchain.smith.models.datasets.Dataset;
 import com.langchain.smith.models.datasets.DatasetCreateParams;
 import com.langchain.smith.models.examples.bulk.BulkCreateParams;
-import com.langchain.smith.models.runs.RunQueryParams;
-import com.langchain.smith.models.runs.RunQueryResponse;
+import com.langchain.smith.models.runs.Run;
+import com.langchain.smith.models.runs.RunQueryV2Params;
+import com.langchain.smith.models.runs.RunSelectField;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -267,48 +283,17 @@ public class CreateDatasetExample {
         String projectId = System.getenv("LANGSMITH_PROJECT_ID");
         String datasetName = "Example Dataset";
 
-        List<RunQueryResponse.Run> allRuns = new ArrayList<>();
-        String cursor = null;
-        try {
-            do {
-                RunQueryParams.Builder paramsBuilder = RunQueryParams.builder()
-                    .addSession(projectId)
-                    .isRoot(true)
-                    .error(false)
-                    .limit(10L);
-
-                if (cursor != null) {
-                    paramsBuilder.cursor(cursor);
-                }
-
-                RunQueryResponse response = client.runs().query(paramsBuilder.build());
-                allRuns.addAll(response.runs());
-
-                // Get cursor for next page
-                try {
-                    Map<String, JsonValue> cursorProps = response.cursors()._additionalProperties();
-                    if (cursorProps != null && cursorProps.containsKey("next")) {
-                        JsonValue nextValue = cursorProps.get("next");
-                        if (nextValue != null && !nextValue.isNull() && !nextValue.isMissing()) {
-                            cursor = nextValue.asString().orElse(null);
-                        } else {
-                            cursor = null;
-                        }
-                    } else {
-                        cursor = null;
-                    }
-                } catch (Exception e) {
-                    cursor = null;
-                }
-                if (response.runs().size() < 50) {
-                    cursor = null;
-                }
-            } while (cursor != null && !cursor.isEmpty());
-        } catch (Exception e) {
-            System.err.println("Error querying runs: " + e.getMessage());
-            e.printStackTrace();
-            System.exit(1);
-        }
+        // Filter runs to add to the dataset; autoPager() follows the cursor for you
+        RunQueryV2Params params = RunQueryV2Params.builder()
+            .addProjectId(projectId)
+            .minStartTime(OffsetDateTime.now().minusDays(7))
+            .isRoot(true)
+            .hasError(false)
+            .addSelect(RunSelectField.INPUTS)
+            .addSelect(RunSelectField.OUTPUTS)
+            .build();
+        List<Run> allRuns = new ArrayList<>();
+        client.runs().queryV2(params).autoPager().forEach(allRuns::add);
 
         System.out.println("Total runs found: " + allRuns.size());
 
@@ -323,17 +308,13 @@ public class CreateDatasetExample {
         // Prepare inputs and outputs for bulk creation
         BulkCreateParams.Builder bulkParamsBuilder = BulkCreateParams.builder();
         int examplesWithData = 0;
-        for (RunQueryResponse.Run run : allRuns) {
+        for (Run run : allRuns) {
             if (run.inputs().isPresent() && run.outputs().isPresent()) {
-                // Get the additional properties maps which contain the actual data
-                Map<String, JsonValue> inputsMap = run.inputs().get()._additionalProperties();
-                Map<String, JsonValue> outputsMap = run.outputs().get()._additionalProperties();
-
                 bulkParamsBuilder.addBody(
                     BulkCreateParams.Body.builder()
                         .datasetId(dataset.id())
-                        .inputs(JsonValue.from(inputsMap))
-                        .outputs(JsonValue.from(outputsMap))
+                        .inputs(JsonValue.from(run.inputs().get()._additionalProperties()))
+                        .outputs(JsonValue.from(run.outputs().get()._additionalProperties()))
                         .build()
                 );
                 examplesWithData++;

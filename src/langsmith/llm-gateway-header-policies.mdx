@@ -1,17 +1,19 @@
 ---
 title: Header-based policies
-description: Scope gateway spend caps, rate limits, and model access by a custom request header, such as a customer, tenant, or team identifier, under a single API key.
+description: Scope gateway spend caps, rate limits, and model access by a custom request header, such as a customer, tenant, or cost center identifier, without issuing a separate API key for each value.
 ---
 
 import LLMGatewayBetaNote from '/snippets/langsmith/llm-gateway-beta-note.mdx';
 
 <LLMGatewayBetaNote />
 
-A header-based policy scopes a gateway policy by a request header that your application sends, such as an end customer, tenant, team, or environment identifier. Use one to give each header value its own limit under a single [LangSmith API key](/langsmith/create-account-api-key), without issuing a separate key for each value.
+A header-based policy scopes a gateway policy by a request header that your application sends, such as a customer, tenant, or cost center identifier. Use one to give each header value its own limit without issuing a separate [LangSmith API key](/langsmith/create-account-api-key) for each value.
+
+The same headers can also attribute spend for chargebacks. On the **Usage** tab, the **Custom Dimension** breakdown groups spend by header value. For this and other ways to attribute spend, see [Attribute spend for chargebacks](/langsmith/llm-gateway-monitoring#attribute-spend-for-chargebacks).
 
 A policy uses a header in one of two ways:
 
-- **Default separated by header**: A default [spend](/langsmith/llm-gateway-spend-policies) or [rate limit](/langsmith/llm-gateway-rate-limit-policies) policy applies its limit independently to every header value. For example, a default workspace spend limit separated by `X-Gateway-Customer-Id` gives `acme` and `globex` independent limits within each [workspace](/langsmith/administration-overview#workspaces).
+- **Default separated by header**: A default [spend](/langsmith/llm-gateway-spend-policies) or [rate limit](/langsmith/llm-gateway-rate-limit-policies) policy applies its limit independently to every header value. For example, a default workspace spend limit separated by `X-Gateway-Customer-Id` gives `acme` and `globex` independent limits within each [workspace](/langsmith/administration-overview#workspaces). A default applies to every subject of its type unless you pin it to one workspace, user, or API key.
 - **Explicit header condition**: A spend, rate limit, or [model access](/langsmith/llm-gateway-model-access-policies) policy matches one exact header value. For example, a policy with the condition `X-Gateway-Customer-Id: acme` limits only requests that carry that value.
 
 <Warning>
@@ -44,28 +46,30 @@ The gateway trusts the `X-Gateway-*` headers on an incoming request. Set the hea
 
 ## Separate a default limit by header
 
-A default spend or rate limit applies the same limit to every member of a subject dimension, such as every workspace or every API key. Separating it by a header applies that limit independently to every subject and header-value pair, without requiring a policy for each value.
+A default spend or rate limit applies the same limit to every member of a subject dimension, such as every workspace or every API key. Separating it by a header applies that limit independently to every subject and header-value pair, without requiring a policy for each value. A separated default can also be pinned to one workspace, user, or API key, so that only that subject gets a limit for each header value.
 
 Separated defaults follow these rules:
 
 - **One header per default**: Enter the header name only. The request supplies the value that identifies the bucket.
-- **Independent limits**: Each subject and header-value pair receives the configured limit. The gateway creates each of these limits the first time a request carries a new header value.
-- **Fallback limit**: Requests without the configured header share a fallback limit for their subject.
-- **One default per subject type**: Creating a default replaces the existing default of the same policy type for the same subject type, even when the two defaults use different headers.
+- **Independent limits**: Each subject and header-value pair receives the configured limit. The gateway creates each of these limits the first time a request carries a new header value. Requests without the configured header share a fallback limit for their subject.
+- **Replacement**: Creating an organization-wide default replaces the existing organization-wide default of the same policy type for the same subject type, even when the two defaults use different headers. Creating a pinned default replaces only a pinned default of the same policy type, subject, and header.
+- **Pinned defaults take precedence**: For requests from its subject, a pinned default replaces the organization-wide default of the same policy type, subject type, and header. Defaults separated by a different header, or not separated by a header, still apply.
 
 The UI offers header separation on default spend limits only. To separate a default spend limit by header:
 
 1. Go to **LLM Gateway** and select **Cost Controls**.
 1. Click **Create spend limit**.
-1. Select **Workspace**, **User**, or **API Key**
-1. Select the checkbox that applies the limit to every subject of that type.
-1. Select **Separate limits by custom header**. This checkbox appears only after you apply the limit by default.
+1. Select **Workspace**, **User**, or **API Key**.
+1. Choose the scope:
+    - To apply the limit to every subject of that type, select the checkbox that applies the limit by default.
+    - To pin the limit to one subject, select exactly one workspace, user, or API key.
+1. Select **Separate limits by custom header**.
 1. In **Header name**, enter the part of the header name after `X-Gateway-`, which the form shows in front of the field. For example, enter `Customer-Id` for the `X-Gateway-Customer-Id` request header.
 1. Set the spend limit, and then click **Create spend limit**.
 
-The policy table shows the header under the policy's scope, for example "Limits separated by X-Gateway-Customer-Id". You can also edit an existing default spend limit to add, change, or remove the header.
+The policy table shows the header under the policy's scope, for example "Limits separated by X-Gateway-Customer-Id". You can also edit an existing default spend limit to add, change, or remove the header. To remove the header from a pinned default or change its subject, delete it and create a new policy.
 
-To separate a default rate limit by header, create a `default_rate_limit` policy through the [LangSmith REST API](/langsmith/smith-api-ref). The **Rate Limiting** table does not show the header on a default rate limit that has one. Before you create a default through the API, list the existing defaults with `policy_type=default_spend_cap` or `policy_type=default_rate_limit`, so you do not replace a default that someone else configured.
+To separate a default rate limit by header, create a `default_rate_limit` policy through the [LangSmith REST API](/langsmith/smith-api-ref). To pin a default spend or rate limit through the API, set its subject matcher's value to the subject's ID. The **Rate Limiting** table does not show the header on a default rate limit that has one. Before you create a default through the API, list the existing defaults with `policy_type=default_spend_cap` or `policy_type=default_rate_limit`, so you do not replace a default that someone else configured.
 
 Use an explicit policy instead when different header values need different limits.
 
@@ -85,9 +89,9 @@ The UI offers explicit header conditions on spend limits and rate limits, but no
 
 1. Go to **LLM Gateway**, then select **Cost Controls** for a spend limit or **Rate Limiting** for a rate limit.
 1. Click **Create spend limit** or **Create rate limit**.
-1. Select the subject scope and set the limits. Leave the **Apply to every ... by default** checkbox cleared, because selecting it hides the header condition.
-1. Under **Custom header condition (optional)**, enter the **Header name** without its `X-Gateway-` prefix (for example, `Customer-Id`) and the **Header value** to match (for example, `acme`). Fill in both fields or neither: the create button stays disabled while only one has a value.
-1. Click **Create spend limit** or **Create rate limit**.
+1. Select the subject type, and then select one or more subjects. Leave the **Apply to every ... by default** checkbox cleared, because selecting it hides the header condition. On a spend limit for one subject, also leave **Separate limits by custom header** cleared.
+1. Under **Custom header condition (optional)**, enter the **Header name** without its `X-Gateway-` prefix (for example, `Customer-Id`) and the **Header value** to match (for example, `acme`).
+1. Set the limits, and then click **Create spend limit** or **Create rate limit**.
 
 The policy table shows the header value next to the subject, for example `my-key, acme`, but not the header name.
 
@@ -341,4 +345,5 @@ Spend caps and rate limits are separate families, so an end customer can hold on
 - [Spend policies](/langsmith/llm-gateway-spend-policies): set cost caps for organizations, workspaces, users, and API keys.
 - [Rate limit policies](/langsmith/llm-gateway-rate-limit-policies): limit requests and tokens in a rolling window.
 - [Model access policies](/langsmith/llm-gateway-model-access-policies): control which models each subject can call.
+- [Monitor LLM Gateway spend](/langsmith/llm-gateway-monitoring): break down spend by header value and attribute it for chargebacks.
 - [View LLM Gateway traces](/langsmith/llm-gateway-traces): understand where gateway traces land and who can configure policies.

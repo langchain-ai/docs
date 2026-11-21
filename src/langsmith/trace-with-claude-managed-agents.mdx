@@ -30,7 +30,7 @@ yarn add langsmith @anthropic-ai/sdk
 export LANGSMITH_TRACING=true
 export LANGSMITH_API_KEY=<your-langsmith-api-key>
 export LANGSMITH_AGENT_ID="<your-agent-id>"
-export LANGSMITH_AGENT_ENVIRONMENT="production"
+export LANGSMITH_AGENT_ENVIRONMENT="local"
 export ANTHROPIC_API_KEY=<your-anthropic-api-key>
 ```
 
