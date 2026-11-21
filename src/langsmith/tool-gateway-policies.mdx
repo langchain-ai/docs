@@ -1,0 +1,191 @@
+---
+title: Set Tool Gateway policies
+sidebarTitle: Policies
+description: Block Tool Gateway tool calls or require approval before they run, and see what callers get when a policy applies.
+---
+
+import ToolGatewayBetaNote from '/snippets/langsmith/tool-gateway-beta-note.mdx';
+
+<ToolGatewayBetaNote />
+
+A policy is a rule that [Tool Gateway](/langsmith/tool-gateway) checks on every tool call. It matches calls by who is calling and which tool, and either blocks them or requires the caller to approve each one before it runs. Use policies to stop agents from calling tools that write, delete, or send data, or to add a confirmation step before they do.
+
+Policies control what a caller may invoke. [Tool kits](/langsmith/tool-gateway-tool-kits) control only which tools an agent sees. Therefore, do not rely on a kit to restrict access. See [Tool kits curate, policies enforce](/langsmith/tool-gateway-how-it-works#tool-kits-curate-policies-enforce).
+
+Viewing policies requires the `organization:read` permission. Creating, changing, or deleting a policy requires a personal access token or a LangSmith session, not a service key, and one of these roles:
+
+- **Organization Admin**: Manages every policy in the organization, including policies that apply to every workspace.
+- **Workspace Admin**: Manages only policies limited to the workspace they are signed in to, or that the `X-Tenant-Id` header names. A Workspace Admin cannot make a policy apply to every workspace or move it to another workspace.
+
+For the roles, see [Role-based access control](/langsmith/rbac).
+
+## How policies work
+
+Each policy has one of two effects:
+
+| Effect (UI) | `effect` (API) | What happens to a matching call |
+|-------------|----------------|---------------------------------|
+| **Block** | `FORBID` | The call does not run. |
+| **Ask for approval** | `REQUIRE_APPROVAL` | The call runs only after the caller approves it in their MCP client. |
+
+Tool Gateway applies these rules on each call:
+
+- **Allowed by default**: A call that no policy matches runs.
+- **Block wins**: If a call matches a block policy and an approval policy, the call is blocked.
+- **Every endpoint**: Policies apply to calls through a tool kit, the me kit, and a single server's endpoint. In [search mode](/langsmith/tool-gateway-clients), they apply to the tool that `call_tool` runs.
+- **Organization or workspace**: A policy applies in every workspace in the organization, or in one workspace that you choose.
+- **Immediate**: Creating, changing, turning off, or deleting a policy takes effect on the next call.
+
+Policies check calls, not tool lists. A blocked tool still appears in the tools that a kit lists.
+
+An agent can call with an API key bound to its [agent environment](/langsmith/agent-environments). Tool Gateway then checks the policies for the key and the policies for the agent. A block from either one blocks the call. Policies can only restrict a call, so a policy on the agent never lifts a block on the key.
+
+## Create a policy
+
+This example requires approval before anyone creates a Linear issue with the `save_issue` tool from the [quickstart](/langsmith/tool-gateway-quickstart).
+
+<Tabs>
+  <Tab title="UI">
+    1. Go to **Tools** > **Policies** and click **Create policy**.
+    1. Enter a **Name**, such as `approve-linear-issues`, and optionally a **Description**. If you leave the description blank, LangSmith uses a summary of the policy.
+    1. Under **When a call matches**, select **Ask for approval**. To stop matching calls instead, select **Block**.
+    1. Under **Workspaces**, keep **All workspaces**, or select one workspace. A Workspace Admin can select only the current workspace.
+    1. Under **Applies to**, select **Everyone**, or select a kind of caller and pick the callers. See [Choose who a policy applies to](#choose-who-a-policy-applies-to).
+    1. (Optional) Under **Except**, pick callers that the policy should not apply to.
+    1. Under **Tools**, search for and select `save_issue` from Linear. You can also select every tool on a server, or **All tools**.
+    1. Click **Create policy**.
+
+    The tool picker lists servers in the current workspace. To pick another workspace's server, switch to that workspace first.
+
+    A new policy is on. The **Policies** tab lists each policy with an **On** or **Off** switch.
+  </Tab>
+  <Tab title="API">
+    Send `POST /v1/agent-policies`. The policies API is not under `/v1/managed-tools/`. The API examples on this page use the environment variables from the [quickstart](/langsmith/tool-gateway-quickstart).
+
+    ```bash
+    curl -sS -X POST "$LANGSMITH_ENDPOINT/v1/agent-policies" \
+      -H "X-Api-Key: $LANGSMITH_API_KEY" \
+      -H "X-Tenant-Id: $LANGSMITH_WORKSPACE_ID" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "approve-linear-issues",
+        "description": "Approve each Linear issue before it is created",
+        "effect": "REQUIRE_APPROVAL",
+        "workspace_id": "<workspace-id>",
+        "scope": {
+          "principals": [{"type": "*", "id": "*"}],
+          "actions": ["<linear-server-id>_save_issue"]
+        }
+      }'
+    ```
+
+    The request returns `201` with the policy, including its `id`.
+
+    - **`name`**: Required. See [Policy names and limits](#policy-names-and-limits).
+    - **`description`**: Required in the API, up to 1,024 characters.
+    - **`effect`**: `FORBID` or `REQUIRE_APPROVAL`.
+    - **`workspace_id`**: The workspace the policy applies in. Leave it out to apply the policy to every workspace in the organization.
+    - **`scope.principals`**: The callers the policy applies to. See [Choose who a policy applies to](#choose-who-a-policy-applies-to).
+    - **`scope.except_principals`**: (Optional) Callers the policy does not apply to.
+    - **`scope.actions`**: The tools the policy applies to. See [Choose which tools a policy applies to](#choose-which-tools-a-policy-applies-to).
+    - **`is_enabled`**: (Optional) Set to `false` to create the policy turned off. Defaults to `true`.
+  </Tab>
+</Tabs>
+
+### Choose who a policy applies to
+
+Each entry in `scope.principals` and `scope.except_principals` is an object with a `type` and an `id`. Use `"*"` as the `id` to match every caller of that type.
+
+| Applies to (UI) | API entry | Matches calls |
+|-----------------|-----------|---------------|
+| **Everyone** | `{"type": "*", "id": "*"}` | From any caller. Must be the only entry in `principals`. |
+| **Users** | `{"type": "User", "id": "<user-id>"}` | That a user makes with their own personal access token or LangSmith session. |
+| **User groups** | `{"type": "Team", "id": "<user-group-id>"}` | From members of the [user group](/langsmith/user-groups). |
+| **Service keys** | `{"type": "ServiceKey", "id": "<api-key-id>"}` | That a service key makes. |
+| **Agents** | `{"type": "AgentIdentity", "id": "<agent-environment-id>"}` | That an agent makes with an API key bound to that [agent environment](/langsmith/agent-environments). |
+| API only | `{"type": "Role", "id": "<role-id>"}` | From users whose workspace role is that role, directly or through a user group. |
+| API only | `{"type": "FleetAgent", "id": "<assistant-id>"}` | That a [Fleet](/langsmith/fleet/index) agent makes. |
+
+Use `"*"` as the `id` for **Users**, **Service keys**, and **Agents** to match all callers of that type. The UI shows these as **All users**, **All service keys**, and **All agents**. User groups and roles must name one ID.
+
+**User groups** appears in the UI when your organization uses user groups. **Except** accepts the same callers, except **Everyone**.
+
+### Choose which tools a policy applies to
+
+Each entry in `scope.actions` names a tool by its server and its name on that server:
+
+| Tools | API entry |
+|-------|-----------|
+| One tool on a server you added | `<server-id>_<tool-name>`, such as `<linear-server-id>_save_issue` |
+| Every tool on a server you added | `<server-id>_*` |
+| One tool on a built-in server | `langsmith_<key>_<tool-name>`, such as `langsmith_parallel_parallel_web_search` |
+| Every tool on a built-in server | `langsmith_<key>_*` |
+| Every tool on every server | `*`, as the only entry |
+
+<Note>
+A policy names a server you added by its ID, not by the server name that prefixes tools in a kit. For example, a kit lists `linear_save_issue`, but the policy entry is `<linear-server-id>_save_issue`. To find a server's ID, list servers with `GET /v1/managed-tools/servers`.
+</Note>
+
+A policy can name a tool on any server, including a server that no kit includes yet. The policy applies as soon as a caller can reach that tool.
+
+### Policy names and limits
+
+- **Name**: 1 to 63 lowercase letters, digits, or hyphens. It must start with a letter, end with a letter or digit, and be unique in the organization. A duplicate name returns `409`.
+- **Callers and tools**: Up to 100 entries each in `principals`, `except_principals`, and `actions`.
+- **Policies**: Up to 1,000 policies that apply to every workspace, plus up to 100 policies limited to each workspace. Creating a policy past either limit returns `422`.
+
+## What callers see
+
+- **Block**: The call returns `403` with `"code": "tool_call_blocked"`.
+- **Ask for approval**: An MCP client that supports form elicitation shows the caller an approval form. The form names the tool, its server, the policies that require approval, and the call's arguments. If the caller accepts, the call runs. If the caller declines, the call returns a tool error and does not run. A client that cannot show the form gets `403`.
+
+The caller approves the call, not a separate reviewer. Approval confirms each call before it runs, but it does not route calls to an admin. An agent that runs with no one present cannot approve calls. To stop such an agent from calling a tool, use a block policy.
+
+For the responses and how callers handle them, see [Approve a tool call](/langsmith/tool-gateway-call-tools#approve-a-tool-call).
+
+## Turn off, edit, or delete a policy
+
+### Turn a policy off or on
+
+A policy that is off stays saved but does not apply to any call.
+
+- **UI**: On **Tools** > **Policies**, use the policy's **On** switch.
+- **API**: Send `PATCH /v1/agent-policies/<policy-id>`. `is_enabled` is the only field that `PATCH` accepts.
+
+    ```bash
+    curl -sS -X PATCH "$LANGSMITH_ENDPOINT/v1/agent-policies/<policy-id>" \
+      -H "X-Api-Key: $LANGSMITH_API_KEY" \
+      -H "X-Tenant-Id: $LANGSMITH_WORKSPACE_ID" \
+      -H "Content-Type: application/json" \
+      -d '{"is_enabled": false}'
+    ```
+
+### Edit a policy
+
+- **UI**: On **Tools** > **Policies**, click the policy's edit action, change it, then click **Save**.
+- **API**: Send `PUT /v1/agent-policies/<policy-id>` with the whole policy, in the same format as when you created it. `PUT` replaces every field and keeps the policy's ID. If you leave out `is_enabled`, the policy turns on.
+
+### Delete a policy
+
+- **UI**: On **Tools** > **Policies**, click the policy's delete action, then confirm.
+- **API**:
+
+    ```bash
+    curl -sS -X DELETE "$LANGSMITH_ENDPOINT/v1/agent-policies/<policy-id>" \
+      -H "X-Api-Key: $LANGSMITH_API_KEY" \
+      -H "X-Tenant-Id: $LANGSMITH_WORKSPACE_ID"
+    ```
+
+    The request returns `204`, including when the policy is already deleted.
+
+To find a policy's ID, list policies with `GET /v1/agent-policies`. The response holds up to 20 policies in `items`. Set `page_size` to return up to 100, and pass the response's `next_cursor` as `cursor` to get the next page.
+
+Creating, changing, and deleting policies are recorded in the organization's audit log. See [Traces and audit log](/langsmith/tool-gateway-traces).
+
+## See also
+
+- [Approve a tool call](/langsmith/tool-gateway-call-tools#approve-a-tool-call)
+- [How Tool Gateway works](/langsmith/tool-gateway-how-it-works)
+- [Act as users and agents](/langsmith/tool-gateway-identity)
+- [Traces and audit log](/langsmith/tool-gateway-traces)
+- [Role-based access control](/langsmith/rbac)
