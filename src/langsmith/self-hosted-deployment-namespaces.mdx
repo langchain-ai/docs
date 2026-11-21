@@ -19,7 +19,7 @@ Verify that your installation meets these minimum versions before enabling deplo
 | Helm chart `langsmith` | `0.19.0-rc.2` or later |
 | LangSmith application images (`images.backendImage` and `images.frontendImage`) | `0.19.2rc1` or later |
 
-Early `0.19.0-rc.x` chart releases default `appVersion` to `0.18.29rc1`. Set `images.backendImage.tag` and `images.frontendImage.tag` to `0.19.2rc1` or later on standalone self-hosted installations, because earlier backend versions ignore `HOST_DEPLOYMENT_NAMESPACES`.
+Chart releases through at least `0.19.0-rc.6` default `appVersion` to `0.18.29rc1`. Set `images.backendImage.tag` and `images.frontendImage.tag` to `0.19.2rc1` or later on standalone self-hosted installations, because earlier backend versions ignore `HOST_DEPLOYMENT_NAMESPACES`.
 
 Ensure the following prerequisites are in place:
 
@@ -200,20 +200,23 @@ Removing a namespace while deployments still run there has the following effects
 
 ## Verify the configuration
 
-Run these commands after upgrading the Helm release to confirm the allowlist, RBAC bindings, and API endpoint are active:
+Run these commands after upgrading the Helm release to confirm the allowlist, RBAC bindings, and API endpoint are active. Replace `<fullname>` with the chart's full release name (for example, `langsmith` when the release name contains `langsmith`, or `<release>-langsmith` otherwise):
 
 ```bash
+# Look up the host-backend Deployment and ServiceAccount names in your release namespace
+kubectl get deploy,sa -n <namespace> | grep -E 'host-backend|listener'
+
 # Confirm HOST_DEPLOYMENT_NAMESPACES on host-backend
-kubectl exec -n <namespace> deploy/<helm-release>-langsmith-host-backend -- printenv HOST_DEPLOYMENT_NAMESPACES
+kubectl exec -n <namespace> deploy/<fullname>-host-backend -- printenv HOST_DEPLOYMENT_NAMESPACES
 
 # Confirm the RoleBinding exists in the target namespace
 kubectl get rolebinding -n <target-namespace> | grep deployment-namespaces
 
 # Confirm the host-backend and listener ServiceAccounts have access in the target namespace
 kubectl auth can-i get pods/log -n <target-namespace> \
-  --as=system:serviceaccount:<namespace>:<helm-release>-langsmith-host-backend
+  --as=system:serviceaccount:<namespace>:<fullname>-host-backend
 kubectl auth can-i create lgps.apps.langchain.ai -n <target-namespace> \
-  --as=system:serviceaccount:<namespace>:<helm-release>-langsmith-listener
+  --as=system:serviceaccount:<namespace>:<fullname>-listener
 
 # Confirm the control plane API returns the workspace's allowed namespaces
 curl -sS "https://<host>/api-host/v2/deployments/namespaces" \
