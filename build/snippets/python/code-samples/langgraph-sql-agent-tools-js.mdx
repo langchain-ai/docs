@@ -1,0 +1,102 @@
+```ts
+import { tool } from "langchain";
+import * as z from "zod";
+
+async function getTableNames() {
+  const rows = await runQuery(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';",
+  );
+  return rows.map((row) => String(row.name));
+}
+
+function quoteSqliteIdentifier(identifier: string) {
+  return `"${identifier.replaceAll('"', '""')}"`;
+}
+
+const listTablesTool = tool(
+  async () => {
+    const tableNames = await getTableNames();
+    return tableNames.join(", ");
+  },
+  {
+    name: "sql_db_list_tables",
+    description:
+      "Input is an empty string, output is a comma-separated list of tables in the database.",
+    schema: z.object({}),
+  },
+);
+
+const getSchemaTool = tool(
+  async ({ table_names }) => {
+    const validTables = new Set(await getTableNames());
+    const results: string[] = [];
+    for (const table of table_names.split(",").map((t) => t.trim())) {
+      if (!validTables.has(table)) {
+        results.push(`Error: table_names {'${table}'} not found in database`);
+        continue;
+      }
+      const schemaRows = await runQuery(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name=?;",
+        [table],
+      );
+      const schema = schemaRows[0]?.sql;
+      if (schema) {
+        results.push(String(schema));
+        try {
+          const rows = await runQuery(
+            `SELECT * FROM ${quoteSqliteIdentifier(table)} LIMIT 3;`,
+          );
+          if (rows.length > 0) {
+            const colNames = Object.keys(rows[0]);
+            results.push(
+              `/*\n3 rows from ${table} table:\n${colNames.join("\t")}\n` +
+                rows
+                  .map((row) =>
+                    colNames.map((col) => String(row[col])).join("\t"),
+                  )
+                  .join("\n") +
+                "\n*/",
+            );
+          }
+        } catch (e) {
+          results.push(`Error fetching sample rows: ${e}`);
+        }
+      }
+    }
+    return results.join("\n\n");
+  },
+  {
+    name: "sql_db_schema",
+    description:
+      "Input to this tool is a comma-separated list of tables, output is the schema and sample rows for those tables. Be sure that the tables actually exist by calling sql_db_list_tables first! Example Input: table1, table2, table3",
+    schema: z.object({
+      table_names: z.string().describe("Comma-separated list of table names"),
+    }),
+  },
+);
+
+const queryTool = tool(
+  async ({ query }) => {
+    try {
+      const result = await runQuery(query);
+      return JSON.stringify(result);
+    } catch (error) {
+      return `Error: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  },
+  {
+    name: "sql_db_query",
+    description:
+      "Input to this tool is a detailed and correct SQL query, output is a result from the database. If the query is not correct, an error message will be returned. If an error is returned, rewrite the query, check the query, and try again.",
+    schema: z.object({
+      query: z.string().describe("SQL query to execute"),
+    }),
+  },
+);
+
+const tools = [listTablesTool, getSchemaTool, queryTool];
+
+for (const toolItem of tools) {
+  console.log(`${toolItem.name}: ${toolItem.description}\n`);
+}
+```
