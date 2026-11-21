@@ -1,0 +1,129 @@
+---
+title: Restrict inbound access with an IP allowlist
+sidebarTitle: Inbound IP allowlist
+description: Restrict inbound traffic to a LangSmith Cloud Agent Server to approved IP addresses and CIDR ranges.
+---
+
+An inbound IP allowlist restricts which client IP addresses and CIDR ranges can reach a [LangSmith Cloud](/langsmith/cloud) [Agent Server](/langsmith/agent-server) endpoint. Use it to limit direct network access to your corporate network, VPN, or approved application servers. Requests from source addresses outside the allowlist receive `403 Forbidden`.
+
+<Note>
+Per-deployment inbound IP allowlists are available for LangSmith Cloud Agent Servers on request. To enable this feature for your organization, contact your LangChain account team or [LangChain sales](https://www.langchain.com/contact-sales). To allowlist LangSmith's own static egress and ingress addresses in your firewall, see [IP allowlisting](/langsmith/cloud-ip-allowlist) and [Static IP addresses](/langsmith/cloud-platform-features#static-ip-addresses).
+</Note>
+
+## Scope and behavior
+
+Review how per-deployment inbound IP allowlists interact with other LangSmith features before configuring one:
+
+- **Supported Agent Servers**: Available only for Agent Servers that LangSmith hosts in LangSmith Cloud, including Cloud Agent Servers built from external Docker images. Self-hosted, hybrid, BYOC data-plane, and sandbox deployments are not supported.
+- **Independent of the organization IP allowlist**: Each Agent Server manages its own inbound allowlist separately from an organization-level IP allowlist.
+- **Direct source IP matching**: The gateway matches the network connection's source IP address directly and ignores client-supplied `X-Forwarded-For` headers.
+- **LangSmith platform traffic**: When an allowlist is active, LangSmith control-plane egress IP addresses remain allowed automatically and do not appear in `allowed_ip_ranges`. Deployment health checks, run cancellation, and control-plane services such as the Playground and online evaluators still reach the Agent Server. Agent Server authentication still applies to every request.
+- **Preview builds**: [Preview Agent Servers](/langsmith/preview-builds) do not inherit the parent Agent Server's inbound IP allowlist.
+- **Empty allowlist**: An empty allowlist (`[]`) allows inbound traffic from all IP addresses.
+
+## Prerequisites
+
+- **Feature enablement**: LangChain must enable per-deployment inbound IP allowlists for your organization.
+- **Permissions**: Changing an Agent Server's allowlist requires both `workspaces:security-policy:manage` and `deployments:update` on that Agent Server, subject to any workspace [access policies](/langsmith/abac). Among built-in roles, only [Workspace Admin](/langsmith/rbac#workspace-admin) includes `workspaces:security-policy:manage`. On Enterprise plans, you can also grant both permissions in a [custom role](/langsmith/rbac#custom-roles). Service identities and an Agent Server's own runtime key cannot modify the allowlist. Users with `deployments:read` can view configured ranges in read-only mode.
+- **Deployed Agent Server**: Create the Agent Server and wait for its initial [revision](/langsmith/agent-server-revisions) to finish deploying before configuring an allowlist. Creation requests do not accept `allowed_ip_ranges`.
+
+## Configure an allowlist
+
+Configure an Agent Server's inbound IP allowlist from the LangSmith UI or the [control plane API](/langsmith/api-ref-control-plane).
+
+<Tabs>
+  <Tab title="LangSmith UI">
+    To configure an inbound IP allowlist:
+
+    1. From the [LangSmith UI](https://smith.langchain.com), select **Agent Servers**, then select an Agent Server.
+    1. In the top-right corner, select the gear icon (**Agent Server Settings**).
+    1. Scroll to the **Network Access** section.
+    1. In the **Allowed IP ranges** input, enter an IP address or CIDR range and press `Enter`. Repeat for each entry.
+    1. Select **Save and redeploy**.
+
+    Saving queues a new revision that redeploys the Agent Server's latest deployed image with the updated allowlist. If you lack `workspaces:security-policy:manage`, the **Allowed IP ranges** input displays configured ranges in read-only mode.
+  </Tab>
+  <Tab title="Control plane API">
+    Send the full list of allowed entries in the `allowed_ip_ranges` field of `PATCH /v2/deployments/{deployment_id}`. Each request replaces the stored list. Use your region's [control plane host](/langsmith/api-ref-control-plane#host).
+
+    ```shell
+    curl --request PATCH \
+      --url "https://api.host.langchain.com/v2/deployments/$DEPLOYMENT_ID" \
+      --header "X-Api-Key: $LANGSMITH_API_KEY" \
+      --header "X-Tenant-Id: $WORKSPACE_ID" \
+      --header "Content-Type: application/json" \
+      --data '{"allowed_ip_ranges": ["198.51.100.7", "203.0.113.0/24", "2001:db8::/32"]}'
+    ```
+
+    To inspect the configured allowlist, call `GET /v2/deployments/{deployment_id}` and read `allowed_ip_ranges`. The field returns `[]` when no allowlist is configured.
+
+    Omitting `allowed_ip_ranges` from a `PATCH` request leaves the stored list unchanged. Resending the exact stored list is a no-op and does not require `workspaces:security-policy:manage` or trigger a redeploy.
+  </Tab>
+</Tabs>
+
+## Entry format and limits
+
+Each entry is a single IP address or a CIDR range. LangSmith supports both IPv4 and IPv6, up to 200 entries per Agent Server.
+
+LangSmith trims whitespace, removes duplicates, and stores entries in canonical CIDR notation. Bare IPv4 addresses become `/32` (for example, `198.51.100.7` becomes `198.51.100.7/32`). Bare IPv6 addresses become `/128`, and LangSmith lowercases IPv6 hexadecimal digits.
+
+LangSmith rejects the update with `400 Bad Request` if any entry:
+
+- **Exceeds the limit**: The list contains more than 200 entries.
+- **Is invalid or sets host bits**: The value is not a valid IP address or CIDR block without host bits (for example, `10.1.2.3/24` instead of `10.1.2.0/24`). Entries with IPv6 zone identifiers (such as `fe80::1%eth0`) fail validation as well.
+- **Is a bare IPv4 `.0` or `.255` address**: LangSmith rejects bare IPv4 addresses ending in `.0` or `.255` to prevent accidental network or broadcast entries. Use explicit CIDR notation instead, such as `198.51.100.0/24` or `198.51.100.255/32`.
+- **Overlaps a multicast range**: The address or range falls within or overlaps `224.0.0.0/4` (IPv4) or `ff00::/8` (IPv6). Because `0.0.0.0/0` overlaps `224.0.0.0/4`, clear the list with `[]` instead of adding `0.0.0.0/0`.
+
+## Redeploy and revision behavior
+
+Allowlist updates take effect through a revision deployment:
+
+- **Allowlist-only update**: Updating only `allowed_ip_ranges` queues a new revision that redeploys the Agent Server's latest deployed image without rebuilding it. The Agent Server must be `READY`, and its latest `DEPLOYED` revision must have a recorded image.
+- **Combined update**: Updating `allowed_ip_ranges` alongside changes that create a new revision (such as `source_revision_config`) applies the allowlist when that revision deploys.
+- **Pending changes and failed deploys**: `GET /v2/deployments/{deployment_id}` returns the configured `allowed_ip_ranges` right away. Enforcement updates only after a revision deployed with the new list reaches `DEPLOYED`, and a failed build or deploy does not roll back the configured list.
+- **In-flight revision conflicts**: If another revision is building or deploying, `PATCH /v2/deployments/{deployment_id}` returns `409 Conflict` and writes no fields. The same conflict applies for one hour after a revision is [interrupted](/langsmith/agent-server-revisions#interrupt-a-revision). Retry once the active revision finishes.
+
+## Remove an allowlist
+
+To stop enforcing the allowlist and allow traffic from all IP addresses, clear all entries.
+
+<Tabs>
+  <Tab title="LangSmith UI">
+    To remove the allowlist:
+
+    1. Open **Agent Server Settings** and scroll to **Network Access**.
+    1. Remove all entries from **Allowed IP ranges**.
+    1. Select **Save and redeploy**.
+  </Tab>
+  <Tab title="Control plane API">
+    Send an empty array for `allowed_ip_ranges`:
+
+    ```shell
+    curl --request PATCH \
+      --url "https://api.host.langchain.com/v2/deployments/$DEPLOYMENT_ID" \
+      --header "X-Api-Key: $LANGSMITH_API_KEY" \
+      --header "X-Tenant-Id: $WORKSPACE_ID" \
+      --header "Content-Type: application/json" \
+      --data '{"allowed_ip_ranges": []}'
+    ```
+  </Tab>
+</Tabs>
+
+After the redeploy finishes, the Agent Server accepts inbound requests from any IP address.
+
+## Error responses
+
+| Status code | Cause | Resolution |
+|---|---|---|
+| `400 Bad Request` | An entry fails validation, the list exceeds 200 entries, or the Agent Server type is unsupported. | Fix the invalid entry or confirm the Agent Server is hosted on LangSmith Cloud. |
+| `403 Forbidden` | The caller lacks `workspaces:security-policy:manage` or `deployments:update`, or is using a service identity or runtime key. | Retry as a user or workspace API key with both permissions. |
+| `409 Conflict` | Another revision is in flight or was interrupted within the last hour, or an allowlist-only update targets an Agent Server that is not `READY` with a deployed image. | Wait for the active revision to complete, then retry. |
+| `501 Not Implemented` | Per-deployment inbound IP allowlists are not enabled for this installation, or the request targets a self-hosted or data-plane installation. | Confirm the feature is enabled for your LangSmith Cloud organization. |
+
+## See also
+
+- [Manage an Agent Server](/langsmith/manage-agent-server)
+- [Cloud platform features](/langsmith/cloud-platform-features)
+- [Control plane API reference](/langsmith/api-ref-control-plane)
+- [Role-based access control](/langsmith/rbac)
+- [Organization and workspace operations](/langsmith/organization-workspace-operations)
