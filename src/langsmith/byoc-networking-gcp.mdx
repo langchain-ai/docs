@@ -1,0 +1,100 @@
+---
+title: BYOC networking on GCP
+sidebarTitle: Networking
+description: The network that LangSmith BYOC creates in your GCP project, how to connect your network to it, and the traffic that leaves the data plane.
+icon: "network"
+---
+
+LangSmith creates one VPC for each BYOC data plane in your GCP project. This page describes its address ranges, how to connect your network to it, and which traffic stays on Google's network or needs the internet. For everything else LangSmith deploys, see [BYOC architecture on GCP](/langsmith/byoc-architecture-gcp).
+
+<Note>
+BYOC on GCP is in [beta](/langsmith/release-stages). Network details can change between releases. The values on this page are the current defaults.
+</Note>
+
+## Address ranges
+
+All subnets come from the `vpc_cidr` you choose, a range from `/16` to `/18`. All have Private Google Access on.
+
+| Range | Size | Use |
+|-------|------|-----|
+| GKE subnet | First `/20` | GKE nodes. |
+| Endpoints subnet | `/24` | Private Service Connect endpoints for Memorystore. |
+| Control plane endpoint subnet | `/24` | The Private Service Connect endpoint to the LangSmith control plane, in `us-central1`. |
+| Private services access | `/20` | Peered to Google services for the Cloud SQL private IP. |
+| GKE pods | `/18` | The GKE subnet's secondary range: the first `/18` after the private services access range. |
+
+A `/18` VPC has no room for the pod range, so its pods use `192.168.0.0/18`, and the VPC must not overlap that range. Use a `/17` or `/16` to keep every range inside your VPC.
+
+GKE services take no range from the VPC. GKE assigns them its Google-managed range, `34.118.224.0/20`, which stays inside the cluster and is not exported over VPC peering. Older data planes keep `192.168.0.0/18` for pods and `192.168.64.0/18` for services.
+
+The VPC is one regional VPC with custom subnets. Cloud NAT uses one static external IP address, which you can allowlist to accept traffic from the data plane. Cloud NAT logging is set to errors only.
+
+## Connect your network
+
+The data plane endpoint is internal by default: an internal passthrough load balancer in the GKE subnet, with global access, so clients in any region of a connected network can reach it. You choose public or internal when you [create the data plane](/langsmith/byoc-onboarding-gcp#choose-a-public-or-internal-endpoint).
+
+To reach an internal endpoint:
+
+- **Connect your network to the data plane VPC**, for example with VPC peering or Cloud VPN. Peering exchanges subnet routes, including the GKE pod range, so choose a `vpc_cidr` that does not overlap your networks. With a `/18` VPC, your networks must not overlap `192.168.0.0/18` either.
+- **Make the hostname resolve from your network.** The address record is in a private zone that only the data plane VPC can see, so the private address is never published.
+
+If you connect a network with a smaller MTU, set the VPC [MTU](#mtu) to match it. If that network exports a default route to the data plane VPC, Google API traffic still uses [Private Google Access](#private-google-access), and all other egress follows the imported route.
+
+## MTU
+
+The VPC uses the GCP default MTU, 1460 bytes. If you connect the VPC to a network with a smaller MTU, such as a hub VPC or an interconnect at 1440 bytes, set `mtu_bytes` when you create the data plane. LangSmith accepts 1300 to 8896.
+
+## Private Service Connect
+
+- LangChain publishes a service attachment in `us-central1`. LangSmith automatically adds your project to its accept list during data plane provisioning. No manual project allowlisting is required.
+- The data plane creates the endpoint: an internal address in the control plane endpoint subnet, and a forwarding rule to the service attachment. Data planes in other regions reach the endpoint through global access.
+- A private DNS zone for `us-central1.p.api.smith.langchain.com`, visible only in the data plane VPC, points at the endpoint.
+- Private Service Connect carries traffic from the data plane to the control plane only. The control plane reaches the cluster through the GKE DNS-based endpoint.
+
+## Private Google Access
+
+The data plane reaches Google APIs over `private.googleapis.com`, so that traffic stays on Google's network and does not depend on the VPC's default route. LangSmith creates the following in the data plane VPC:
+
+- **Routes**: `199.36.153.8/30` (`private.googleapis.com`) and `34.126.0.0/18` (direct connectivity for some Google APIs), both with the default internet gateway as next hop. Their names start with `langsmith-`.
+- **Private DNS zones**: `googleapis.com`, `pkg.dev`, and `gcr.io` resolve to `private.googleapis.com`. A `rep.googleapis.com` zone keeps regional endpoints, such as `aiplatform.us-central1.rep.googleapis.com`, on their public addresses. The zones are visible only in the data plane VPC.
+
+The routes are more specific than a default route, including one imported from a peered network. Secret Manager, Cloud Storage, Workload Identity, Cloud Logging, and image pulls from Artifact Registry therefore do not go through that network. VPC peering does not exchange routes whose next hop is the default internet gateway, so peered networks do not learn these routes, and their DNS is unchanged.
+
+## DNS and ingress
+
+- **Hostname**: `<first 8 characters of the data plane ID>.gcp.langchain-byoc.com`. LangChain owns the parent zone.
+- **Public zone**: A public Cloud DNS zone for the hostname in your project, which LangChain delegates from the parent zone.
+- **Public endpoint**: An external passthrough load balancer. The hostname resolves on the internet.
+- **Internal endpoint** (default): An internal passthrough load balancer in the GKE subnet, with global access. The address record is in a private zone, visible only in the data plane VPC, so the private address is never published. The public zone stays for the delegation and the certificate challenges.
+- **TLS**: A Let's Encrypt certificate. HTTP redirects to HTTPS.
+- **Gateway hardening**: The gateway normalizes paths before routing, rejects request bodies over 100 MiB, limits requests per gateway pod, and denies `TRACE`, `TRACK`, and `CONNECT`.
+- **Control plane paths**: Paths such as sign-in are forwarded to the control plane over Private Service Connect.
+
+## Container images
+
+LangSmith and its add-ons pull their images over Private Google Access from LangChain's Artifact Registry repository, `us-docker.pkg.dev/langchain-artifacts/langsmith-byoc`. The add-ons are cert-manager, trust-manager, External Secrets, Istio, and KEDA. No images come from Docker Hub, Quay, or GitHub Container Registry.
+
+## Outbound traffic
+
+The following traffic needs no internet access:
+
+- **Control plane**: Private Service Connect.
+- **Google APIs and images**: Private Google Access.
+- **Cloud SQL and Memorystore**: Private IP and Private Service Connect.
+
+All other egress leaves through the VPC's default route: Cloud NAT, or your network if you import a default route from it. If your network filters that traffic, allow the following destinations:
+
+| Feature | Destinations |
+|---------|--------------|
+| Model providers | The LLM providers your workspaces use, for example `api.openai.com` and `api.anthropic.com`, Azure OpenAI (`<resource>.openai.azure.com`), Amazon Bedrock (`bedrock-runtime.<region>.amazonaws.com`), or a custom base URL. For Vertex AI, including Gemini on Vertex AI, allow only its regional `aiplatform.<region>.rep.googleapis.com` endpoints. The Gemini Developer API (`generativelanguage.googleapis.com`) goes over Private Google Access and needs no entry. |
+| Certificates | `acme-v02.api.letsencrypt.org` on TCP 443, and DNS to `1.1.1.1` and `8.8.8.8` on TCP and UDP 53 for the DNS-01 propagation check. |
+| Deployment builds from GitHub | `github.com`, `api.github.com`, `codeload.github.com`, `pypi.org`, `files.pythonhosted.org`, `registry.npmjs.org`, and any package index or git host the project uses. |
+| Agent and sandbox code | The tools, APIs, and package indexes that the code calls. |
+| Webhooks, alerts, MCP servers, and integrations | The URLs you configure, for example `events.pagerduty.com` or `slack.com`. |
+
+If your network inspects TLS, exclude these destinations from inspection. Workloads in the data plane do not trust your inspection CA.
+
+## See also
+
+- [BYOC architecture on GCP](/langsmith/byoc-architecture-gcp)
+- [BYOC onboarding on GCP](/langsmith/byoc-onboarding-gcp)

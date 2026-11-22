@@ -8,7 +8,7 @@ LLM applications can be challenging to evaluate since they often generate conver
 This guide shows you how to define an [LLM-as-a-judge evaluator](/langsmith/evaluation-concepts#llm-as-judge) for [offline evaluation](/langsmith/evaluation-concepts#offline-evaluations) using the [LangSmith UI](https://smith.langchain.com).
 
 <Note>
-This guide uses the LangSmith UI. You can also create an LLM-as-a-judge evaluator programmatically with the SDK, and it appears in the LangSmith UI the same as one created here. Refer to [Manage evaluators with the SDK](/langsmith/manage-evaluators-sdk).
+This guide uses the LangSmith UI. You can also create an LLM-as-a-judge evaluator programmatically with the SDK, and it appears in the LangSmith UI the same as one created by following this guide. Refer to [Manage evaluators with the SDK](/langsmith/manage-evaluators-sdk).
 
 To run evaluations in real-time on your production traces, refer to [setting up online evaluations](/langsmith/online-evaluations-llm-as-judge).
 </Note>
@@ -47,6 +47,21 @@ Create a custom prompt inline for your evaluator.
 Select the desired model from the provided options.
 
 To use a decision model as the judge, see [How to define a decision model evaluator](/langsmith/decision-model-evaluator).
+
+#### Use the OpenAI flex service tier
+
+[OpenAI's flex service tier](https://developers.openai.com/api/docs/guides/flex-processing) runs model calls at a lower cost in exchange for slower responses. Use it for evaluators where a score can arrive minutes later, such as online evaluators and evaluators bound to a dataset.
+
+The flex tier is available for OpenAI GPT-5 and GPT-6 models, `o3`, and `o4-mini`. To use it, click the model name under **Prompt & Model** to open the **Model Configuration** dialog, then set **Service Tier** to **Flex**. New OpenAI evaluators start on the **auto** tier, which uses the default tier of the OpenAI project that your API key belongs to. The **Flex** option appears only for models that support flex.
+
+Flex calls work differently from standard calls:
+
+- **Longer wait**: LangSmith waits up to 10 minutes for each flex call to return a score.
+- **One attempt**: LangSmith does not retry a flex call that times out, so you do not pay twice for a slow response. Each run in a timed-out call gets an error instead of a score.
+- **Time limit**: Each time LangSmith applies the evaluator to a batch of runs, it has a fixed time limit. When that time is nearly used up, LangSmith skips the remaining flex calls and keeps the scores it already has. Skipped calls return the error `Skipped: this rule run used up its time on slower OpenAI flex calls`.
+- **Test runs**: When you click **Test**, LangSmith waits up to 4 minutes instead. A slow flex call can time out in a test and still succeed after you save the evaluator.
+
+[Evaluator spend limits](/langsmith/evaluator-spend) count flex calls at flex rates when the model's entry in [Model pricing](/langsmith/cost-tracking#create-a-new-or-modify-an-existing-model-price-entry) includes flex rates. A custom price entry without flex rates counts flex calls at standard rates.
 
 ### Mapping variables
 
