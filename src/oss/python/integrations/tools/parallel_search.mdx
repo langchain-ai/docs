@@ -199,6 +199,74 @@ agent.invoke({"messages": [("human", "What are the latest breakthroughs in quant
     Use the Parallel search and extract tools with a tool-calling model. For synthesized research answers, see the [Parallel Responses API](/oss/integrations/chat/parallel).
 </Note>
 
+## Use Parallel Search over MCP
+
+For agent loops that should call Parallel without the `langchain-parallel` package, connect to Parallel's hosted [MCP server](https://docs.parallel.ai/integrations/mcp/quickstart) with @[`MCPAdapter`]. The server exposes `web_search` and `web_fetch` (plus other tools). Without a Parallel API key, those tools are available at lower rate limits in `fast` mode. You still need credentials for your chat model.
+
+<Note>
+    This path requires `langchain[mcp]>=1.4.0`.
+</Note>
+
+```python
+from langchain.agents import create_agent
+from langchain.mcp import MCPAdapter
+
+
+async def main():
+    # No Parallel API key: free-tier rate limits. The model still needs its own key.
+    async with MCPAdapter("https://mcp.parallel.ai/mcp") as adapter:
+        tools = await adapter.list_tools()
+        agent = create_agent("claude-opus-4-8", tools)
+        return await agent.ainvoke(
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": (
+                            "Search for recent breakthroughs in quantum computing, "
+                            "open one strong source, and summarize it with links."
+                        ),
+                    }
+                ]
+            }
+        )
+```
+
+The agent can call `web_search`, then `web_fetch` on a result URL, and use the returned excerpts and links in its answer.
+
+To raise rate limits or unlock `web_research`, authenticate with a Parallel API key. Pass a FastMCP `Client` with a bearer token into @[`MCPAdapter`]:
+
+```python
+import os
+
+from fastmcp.client import Client
+from langchain.agents import create_agent
+from langchain.mcp import MCPAdapter
+
+client = Client(
+    "https://mcp.parallel.ai/mcp",
+    auth=os.environ["PARALLEL_API_KEY"],
+)
+
+
+async def main():
+    async with MCPAdapter(client) as adapter:
+        tools = await adapter.list_tools()
+        agent = create_agent("claude-opus-4-8", tools)
+        return await agent.ainvoke(
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "What are the latest breakthroughs in quantum computing?",
+                    }
+                ]
+            }
+        )
+```
+
+For connection details, tool arguments, and override headers, see [Parallel MCP](https://docs.parallel.ai/integrations/mcp/quickstart) and [LangChain MCP](/oss/langchain/mcp). Prefer @[`ParallelSearchTool`] above when you want typed Search API parameters in process.
+
 ## Response format
 
 ```python

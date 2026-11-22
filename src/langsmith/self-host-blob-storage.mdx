@@ -1,12 +1,11 @@
 ---
-title: Enable blob storage
-sidebarTitle: Enable blob storage
+title: Configure blob storage
+sidebarTitle: Configure blob storage
 ---
 
-By default, LangSmith stores run inputs, outputs, errors, manifests, extras, and events in ClickHouse. If you so choose, you can instead store this information in blob storage, which has a couple of notable benefits. For the best results in production deployments, we **strongly** recommend using blob storage, which offers the following benefits:
+LangSmith stores run inputs, outputs, errors, manifests, extras, events, and attachments in blob storage. As of LangSmith v0.18, blob storage is required: the self-hosted API and queue workers do not start without it.
 
-1. In high trace environments, inputs, outputs, errors, manifests, extras, and events may balloon the size of your databases.
-2. If using LangSmith Managed ClickHouse, you may want sensitive information in blob storage that resides in your environment. To alleviate this, LangSmith supports storing run inputs, outputs, errors, manifests, extras, events, and attachments in an external blob storage system.
+When you do not configure your own storage, the LangSmith Helm chart deploys [RustFS](https://rustfs.com), an S3-compatible object store, in your cluster and uses it. RustFS runs as a single pod with one persistent volume, so it has no replication and its capacity is the size of that volume. For production, use your own blob storage, such as Amazon S3, Google Cloud Storage, or Azure Blob Storage. It also keeps sensitive run data in storage you control when you use [LangSmith Managed ClickHouse](/langsmith/langsmith-managed-clickhouse).
 
 <Tip>
 **For cloud-specific setup**, choose your platform:
@@ -18,7 +17,44 @@ By default, LangSmith stores run inputs, outputs, errors, manifests, extras, and
 For complete cloud-specific setup and architecture guides, see [AWS](/langsmith/aws-self-hosted), [GCP](/langsmith/gcp-self-hosted), or [Azure](/langsmith/azure-self-hosted).
 </Tip>
 
+## Upgrade to v0.18
+
+How an upgrade to LangSmith v0.18 behaves depends on your current blob storage configuration:
+
+- **A bucket or container is configured**: If `config.blobStorage.bucketName` (S3 or GCS) or `config.blobStorage.azureStorageContainerName` (Azure) is set, LangSmith keeps using that storage. No values change is needed.
+- **No blob storage is configured**: The chart deploys RustFS and LangSmith stores blobs there. To use your own storage instead, configure it before you upgrade. See [Configuration](#configuration).
+- **`config.blobStorage.enabled` is set**: The chart no longer has this setting. Remove it from your values. The chart fails with `enabled: false`.
+- **`engine` is `GCS` or `Azure` with no bucket or container**: The chart fails instead of deploying RustFS. Set the bucket or container.
+
+If you deploy LangSmith without the Helm chart, configure blob storage before you upgrade. The services read the same `BLOB_STORAGE_ENGINE`, `S3_BUCKET_NAME`, and `AZURE_STORAGE_CONTAINER_NAME` settings the chart sets.
+
+## Use the bundled RustFS
+
+The chart deploys RustFS when `config.blobStorage.external.enabled` is `false` and neither `bucketName` nor `azureStorageContainerName` is set. It creates a `langsmith` bucket and points the LangSmith services at it. Use the bundled RustFS for development and evaluation, not production.
+
+Configure it under `rustfs` in your Helm values:
+
+- **Volume size**: `rustfs.statefulSet.persistence.size` sets the persistent volume, `50Gi` by default. Set `storageClassName` to choose its storage class. Without persistence, stored traces are lost when the RustFS pod restarts.
+- **Credentials**: The access key is `langsmith`. When `rustfs.secretKey` is empty, the chart keeps the secret key from an earlier install, or derives one from `config.apiKeySalt`, so every render of the chart produces the same key. To choose the key, set `rustfs.secretKey`, or set `rustfs.existingSecretName` to a Kubernetes secret with `access_key` and `secret_key` entries.
+- **Security context**: RustFS runs as user and group `10001`, with `fsGroup: 10001` so it can write to its volume. On platforms that assign user IDs, such as OpenShift with the `restricted-v2` security context constraint, set `runAsUser`, `runAsGroup`, and `fsGroup` under `rustfs.statefulSet.podSecurityContext` to `null`.
+
+```yaml Helm
+rustfs:
+  statefulSet:
+    persistence:
+      size: 100Gi
+      storageClassName: "your-storage-class"
+```
+
+<Note>
+If you use `config.existingSecretName` and render the chart without cluster access, as Argo CD does, `config.apiKeySalt` is not in your values. Set `rustfs.secretKey` or `rustfs.existingSecretName` in that case. Otherwise, each render generates a new random secret key.
+</Note>
+
+RustFS supports a read-only root filesystem. Set `readOnlyRootFilesystem: true` in `rustfs.statefulSet.securityContext` and `rustfs.bucketJob.securityContext`.
+
 ## Requirements
+
+To use your own blob storage instead of the bundled RustFS, you need the following.
 
 <Note>
 Azure blob storage is available in Helm chart versions 0.8.9 and greater. [Deleting trace projects](/langsmith/observability-concepts#data-retention) is supported in Azure starting in Helm chart version 0.10.43.
@@ -166,7 +202,8 @@ To set up Neon Object Storage for LangSmith:
     ```yaml
     config:
       blobStorage:
-        enabled: true
+        external:
+          enabled: true
         engine: "S3"
         bucketName: "langsmith"
         apiURL: "https://br-cool-darkness-a1b2c3d4.storage.c-1.us-east-2.aws.neon.tech"
@@ -190,12 +227,13 @@ By default, LangSmith will still store tokens for search in ClickHouse. If you a
 
 ## Configuration
 
-After creating your bucket and obtaining the necessary credentials, you can configure LangSmith to use your blob storage system.
+After creating your bucket and obtaining the necessary credentials, configure LangSmith to use your blob storage system. Set `external.enabled: true` so the chart does not deploy RustFS.
 
 ```yaml Helm
 config:
   blobStorage:
-    enabled: true
+    external:
+      enabled: true # Use your own storage instead of the bundled RustFS
     engine: "S3" # Or "GCS" or "Azure". This is case-sensitive.
     chSearchEnabled: true # Set to false if you want to disable CH search (Recommended for LangSmith Managed Clickhouse)
     bucketName: "your-bucket-name"
