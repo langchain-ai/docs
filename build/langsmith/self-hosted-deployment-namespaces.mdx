@@ -1,0 +1,269 @@
+---
+title: Deployment namespaces for self-hosted Agent Server
+sidebarTitle: Deployment namespaces
+description: Configure per-workspace Kubernetes namespaces for self-hosted LangSmith Agent Server deployments using the Helm chart, UI, and control plane API.
+---
+
+Deployment namespaces let administrators assign dedicated Kubernetes namespaces to each workspace's [Agent Server](/langsmith/agent-server) deployments. Use them to separate workloads and apply per-namespace resource quotas, network policies, and role-based access control (RBAC).
+
+<Note>
+Standalone self-hosted installations require `langsmith` Helm chart version `0.19.0-rc.2` or later and LangSmith backend and frontend images `0.19.2rc1` or later.
+</Note>
+
+| Hosting option | Support |
+| :--- | :--- |
+| [Standalone self-hosted](/langsmith/deploy-to-self-hosted-overview) | Supported without a remote listener. Follow the Helm steps below. |
+| [BYOC](/langsmith/byoc) | Supported on data planes without a remote listener. Ask the LangChain team to configure allowed namespaces. The Helm steps below do not apply. |
+| LangSmith Cloud | Not supported. |
+
+Deployments assigned to a remote listener (`source_config.listener_id`) and scale-to-zero deployments do not support deployment namespaces.
+
+## Prerequisites
+
+On standalone self-hosted installations, set `images.backendImage.tag` and `images.frontendImage.tag` to `0.19.2rc1` or later. Chart releases through `0.19.0-rc.6` default to `0.18.29rc1`, which does not support this configuration on standalone installations.
+
+Prepare your cluster and Helm values before you continue:
+
+- **Agent Server hosting enabled**: Set `config.deployment.enabled: true` in your Helm values. See [Enable Agent Server hosting](/langsmith/enable-self-hosted-agent-server).
+- **Gateway API or Istio Gateway**: Enable `gateway.enabled: true` ([Gateway API](/langsmith/self-host-ingress#option-2%3A-gateway-api)) or `istioGateway.enabled: true` ([Istio Gateway](/langsmith/self-host-ingress#option-3%3A-istio-gateway)). The shared Kubernetes Ingress (`ingress.enabled: true` alone) does not support deployment namespaces.
+- **Cross-namespace route allowance (Gateway API)**: When using `gateway.enabled: true`, configure your Kubernetes `Gateway` listener to allow `HTTPRoute` resources from the target namespaces. For example, set `allowedRoutes.namespaces.from: All` or a matching label `Selector`.
+- **Pre-existing namespaces**: Create every target Kubernetes namespace before upgrading the chart. The chart does not create namespaces.
+- **Image pull secrets in each target namespace**: When `images.imagePullSecrets` or `operator.templates.deployment` specifies pull secrets, create matching `Secret` objects in every target namespace. Kubernetes resolves pull secrets in the pod's own namespace, and the chart does not create or copy them. See [Configure authentication for private registries](/langsmith/enable-self-hosted-agent-server#configure-authentication-for-private-registries).
+- **Workspace IDs**: Gather the UUID of each LangSmith workspace that receives allowed namespaces.
+
+## Configure allowed namespaces
+
+Map each workspace UUID to its allowed Kubernetes namespaces under `config.deployment.namespaces` in your [`langsmith_config.yaml`](/langsmith/kubernetes#configure-your-helm-charts) file.
+
+To configure deployment namespaces:
+
+<Steps>
+  <Step title="Create target namespaces and pull secrets">
+    Create each target namespace in your cluster. If your installation uses `images.imagePullSecrets`, create matching pull secrets in each target namespace.
+
+    ```bash
+    kubectl create namespace agents-production
+    kubectl create namespace agents-staging
+    ```
+  </Step>
+  <Step title="Add config.deployment.namespaces to your Helm values">
+    Add the workspace-to-namespace map and image tags alongside `config.deployment.enabled: true` and either `gateway.enabled: true` or `istioGateway.enabled: true`. Replace the workspace ID and Gateway name and namespace with your values:
+
+    ```yaml
+    config:
+      deployment:
+        enabled: true
+        namespaces:
+          "00000000-0000-0000-0000-000000000001":
+            - "agents-production"
+            - "agents-staging"
+
+    images:
+      backendImage:
+        tag: "0.19.2rc1"
+      frontendImage:
+        tag: "0.19.2rc1"
+
+    gateway:
+      enabled: true
+      name: "my-gateway"
+      namespace: "gateway-system"
+    ```
+  </Step>
+  <Step title="Upgrade the LangSmith Helm release">
+    Apply the updated values to your LangSmith release. Replace `<version>` and `<namespace>` with your chart version and installation namespace:
+
+    ```bash
+    helm upgrade -i langsmith langchain/langsmith \
+      --values langsmith_config.yaml \
+      --version <version> \
+      -n <namespace> \
+      --wait --debug
+    ```
+  </Step>
+</Steps>
+
+### Review Helm chart configuration
+
+When `config.deployment.enabled` is `true` and `config.deployment.namespaces` is non-empty, the chart creates and updates the following resources:
+
+- **Allowlist environment variable**: Sets `HOST_DEPLOYMENT_NAMESPACES` as a JSON object in the shared ConfigMap read by `host-backend` and the in-cluster deployment worker (`listener`). For backward compatibility, `host-backend` also reads `HOST_BYOC_DEPLOYMENT_NAMESPACES` as a fallback alias; `HOST_DEPLOYMENT_NAMESPACES` takes precedence when both are set.
+- **Control plane and worker RBAC**: When `hostBackend.rbac.create` is `true` (default), the chart creates a `ClusterRole` named `<release-fullname>-<release-namespace>-deployment-namespaces`. It also creates a `RoleBinding` in each listed namespace outside the release namespace, binding both the `host-backend` and `listener` ServiceAccounts from the release namespace. The chart skips the release namespace because both ServiceAccounts already have access there.
+- **Operator watch scope**: When `operator.watchNamespaces` is a non-empty comma-separated list, the chart appends the deduplicated namespaces from `config.deployment.namespaces` to `WATCH_NAMESPACE`. When `operator.rbac.create` is `true`, it also creates per-namespace `Role` and `RoleBinding` resources for the operator in each watched namespace. When `operator.watchNamespaces` is empty (default), `WATCH_NAMESPACE` remains empty and the operator watches all namespaces cluster-wide.
+
+The chart's `ClusterRole` grants the following namespace-scoped permissions through each `RoleBinding`:
+
+| API group | Resources | Verbs |
+| :--- | :--- | :--- |
+| `""` (core) | `pods` | `list` |
+| `""` (core) | `pods/log` | `get` |
+| `""` (core) | `secrets` | `get`, `create`, `update`, `delete` |
+| `""` (core) | `services` | `delete` |
+| `""` (core) | `persistentvolumeclaims` | `list`, `delete` |
+| `apps` | `replicasets`, `deployments/status` | `get` |
+| `apps` | `deployments` | `get`, `delete` |
+| `apps` | `statefulsets` | `delete` |
+| `apps.langchain.ai` | `lgps` | `get`, `create`, `update`, `delete` |
+
+If you set `hostBackend.rbac.create: false`, create equivalent `RoleBinding` grants in every target namespace for both the `host-backend` and `listener` ServiceAccounts before creating deployments.
+
+### Check namespace constraints
+
+The Helm chart and `host-backend` enforce the following constraints. Chart validation runs even when `config.skipValidation` is `true`.
+
+- **Valid workspace UUIDs**: Every key in `config.deployment.namespaces` must be a valid workspace UUID.
+- **One workspace per namespace**: Each namespace belongs to at most one workspace. Helm template rendering fails if the same namespace appears under more than one workspace. At runtime, `host-backend` rejects deployments into any namespace listed under multiple workspaces in `HOST_DEPLOYMENT_NAMESPACES` for all of them.
+- **Reserved system namespaces**: Both the chart and `host-backend` reject namespaces starting with `kube-`, `gke-`, or `gmp-`. They also reject `default`, `crossplane-system`, `istio-system`, `istio-ingress`, `buildkit-system`, `cert-manager`, `external-secrets`, `gatekeeper-system`, `keda`, `karpenter`, `observability`, `sandbox`, and `sandbox-workloads`.
+- **Valid DNS label**: Namespace names passed to the API must match `^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$` and contain at most 63 characters.
+- **Cross-workspace conflict check**: Creating a deployment in a namespace fails with `409` if another workspace still has any deployment there. This includes deployments currently being deleted.
+- **Immutable after creation**: A deployment's namespace is fixed at creation time and cannot be changed later.
+
+## Understand workload and build placement
+
+Selecting a deployment namespace changes where runtime resources run, while image builds stay in the LangSmith installation namespace:
+
+- **Runtime resources**: The selected namespace runs the `LGP` custom resource, API server and queue worker pods, and managed PostgreSQL and Redis pods. Services, Secrets, PersistentVolumeClaims, and `HTTPRoute` or `VirtualService` objects also live there.
+- **Build jobs**: When builds are configured on your installation, build jobs still run in the LangSmith installation namespace rather than the selected deployment namespace.
+- **Runtime logs**: `host-backend` reads deployment pod logs directly from the selected namespace using the RBAC bindings configured by the chart.
+
+## Select a namespace
+
+Users with deployment creation permissions can choose from the namespaces allowed for their workspace through the LangSmith UI or the [control plane API](/langsmith/api-ref-control-plane).
+
+### Use the LangSmith UI
+
+When your workspace has allowed namespaces, the deployment creation form shows a **Kubernetes namespace** dropdown. It appears for Docker image deployments and, when GitHub builds are enabled, GitHub repository deployments.
+
+To place a new deployment in an allowed namespace:
+
+1. In LangSmith, open the deployment creation form for your workspace.
+1. Select an allowed namespace from **Kubernetes namespace**. Leave it unset to use the installation namespace. To clear a selection, select the same namespace again.
+1. Complete the remaining deployment settings and submit.
+
+LangSmith hides the dropdown if the namespace request fails or returns no allowed namespaces. It also hides the dropdown when you select a remote listener or a scale-to-zero deployment.
+
+### Use the control plane API
+
+For standalone self-hosted installations, use `https://<host>/api-host` as the control plane API base URL. For BYOC, use your [data plane endpoint](/langsmith/byoc-usage#route-api-requests) with the same `/api-host` prefix. Include `X-Api-Key` and `X-Tenant-Id` headers on every request.
+
+#### List allowed namespaces
+
+Call `GET /v2/deployments/namespaces` to retrieve the namespaces allowed for the workspace, sorted alphabetically by name:
+
+```bash
+curl -sS "https://<host>/api-host/v2/deployments/namespaces" \
+  -H "X-Api-Key: $LANGSMITH_API_KEY" \
+  -H "X-Tenant-Id: $WORKSPACE_ID"
+```
+
+Example response:
+
+```json
+{
+  "items": [
+    { "name": "agents-production" },
+    { "name": "agents-staging" }
+  ]
+}
+```
+
+The endpoint returns an empty `items` array when no namespaces are allowed for the workspace, on LangSmith Cloud, or on listener-backed installations.
+
+#### Create a deployment in a namespace
+
+Set `source_config.k8s_namespace` on `POST /v2/deployments`. Omit the field or pass `null` to place the deployment in the installation namespace:
+
+```json
+{
+  "name": "my-agent",
+  "source": "external_docker",
+  "source_config": {
+    "k8s_namespace": "agents-production",
+    "resource_spec": {}
+  },
+  "source_revision_config": {
+    "image_uri": "myregistry.example.com/my-agent:v1.0.0"
+  },
+  "secrets": []
+}
+```
+
+Before creating the deployment record, `host-backend` runs a Kubernetes `SelfSubjectAccessReview` check in the target namespace. That check confirms `host-backend` can list pods, read pod logs, and get deployments there. During deployment, the worker checks that the namespace is still in `HOST_DEPLOYMENT_NAMESPACES` for the workspace. It then runs a `SelfSubjectAccessReview` for the full set of deployment permissions.
+
+`GET /v2/deployments/{deployment_id}` returns the selected namespace in `source_config.k8s_namespace`, or `null` when the deployment runs in the installation namespace.
+
+Sending a non-null `source_config.k8s_namespace` on `PATCH /v2/deployments/{deployment_id}` returns `400` (`'source_config.k8s_namespace' cannot be updated.`). To move a deployment to another namespace, create a new deployment in the target namespace and delete the old deployment.
+
+## Remove or reassign a namespace
+
+Delete all deployments in a namespace before removing it from `config.deployment.namespaces` or reassigning it to another workspace.
+
+Removing a namespace while deployments still run there has the following effects:
+
+- **New revisions fail**: The deployment worker rejects namespaces no longer listed for that workspace in `HOST_DEPLOYMENT_NAMESPACES` without retrying.
+- **Scoped operator stops reconciling**: When `operator.watchNamespaces` is set, removing the namespace drops it from `WATCH_NAMESPACE`. The upgrade also deletes the operator's `Role` and `RoleBinding` in that namespace.
+- **Reassignment conflicts**: If deployments from the previous workspace remain (including deployments being deleted), calls to `POST /v2/deployments` in the new workspace return `409`.
+
+## Verify the configuration
+
+Run these commands after upgrading the Helm release to confirm the allowlist, RBAC bindings, and API endpoint are active. Replace `<fullname>` with the chart's full release name (for example, `langsmith` when the release name contains `langsmith`, or `<release>-langsmith` otherwise):
+
+```bash
+# Look up the host-backend Deployment and ServiceAccount names in your release namespace
+kubectl get deploy,sa -n <namespace> | grep -E 'host-backend|listener'
+
+# Confirm HOST_DEPLOYMENT_NAMESPACES on host-backend
+kubectl exec -n <namespace> deploy/<fullname>-host-backend -- printenv HOST_DEPLOYMENT_NAMESPACES
+
+# Confirm the RoleBinding exists in the target namespace
+kubectl get rolebinding -n <target-namespace> | grep deployment-namespaces
+
+# Confirm the host-backend and listener ServiceAccounts have access in the target namespace
+kubectl auth can-i get pods/log -n <target-namespace> \
+  --as=system:serviceaccount:<namespace>:<fullname>-host-backend
+kubectl auth can-i create lgps.apps.langchain.ai -n <target-namespace> \
+  --as=system:serviceaccount:<namespace>:<fullname>-listener
+
+# Confirm the control plane API returns the workspace's allowed namespaces
+curl -sS "https://<host>/api-host/v2/deployments/namespaces" \
+  -H "X-Api-Key: $LANGSMITH_API_KEY" \
+  -H "X-Tenant-Id: $WORKSPACE_ID"
+```
+
+After creating a deployment in `<target-namespace>`, confirm its custom resource and pods land in that namespace:
+
+```bash
+kubectl get lgp,pods -n <target-namespace>
+```
+
+## Troubleshoot
+
+| Symptom | Cause and resolution |
+| :--- | :--- |
+| Helm upgrade fails mentioning `gateway.enabled` or `istioGateway.enabled` | Deployment namespaces cannot use the shared Ingress. Enable `gateway.enabled` or `istioGateway.enabled` before setting `config.deployment.namespaces`. |
+| Helm upgrade fails mentioning workspace IDs, system namespaces, or duplicate namespaces | Confirm every key in `config.deployment.namespaces` is a valid workspace UUID, no reserved system namespace is listed, and each namespace appears under only one workspace. |
+| **Kubernetes namespace** dropdown is missing in the UI | On standalone self-hosted installations, check the image versions above. Confirm `GET /v2/deployments/namespaces` succeeds and returns allowed namespaces for your workspace. Clear any remote listener selection and use a deployment type without scale-to-zero. |
+| `POST /v2/deployments` returns `403` | The requested namespace is not allowed for the workspace in `HOST_DEPLOYMENT_NAMESPACES`, or it is listed under more than one workspace. |
+| `POST /v2/deployments` returns `400` mentioning missing permissions | The target namespace does not exist, or the `host-backend` ServiceAccount lacks `list pods`, `get pods/log`, or `get deployments` in that namespace. Confirm the namespace exists and check its `RoleBinding`. |
+| `POST /v2/deployments` returns `409` | Another workspace on the installation still has a deployment in that namespace, including one being deleted. Delete all deployments from the previous workspace first. |
+| Revision fails immediately with a namespace access error | The `listener` ServiceAccount lacks required permissions in the target namespace, or the namespace was removed from `config.deployment.namespaces`. Check the `RoleBinding` and `HOST_DEPLOYMENT_NAMESPACES`. |
+| Deployment pods enter `ImagePullBackOff` in the target namespace | Secrets named in `images.imagePullSecrets` (or `operator.templates.deployment`) exist in the release namespace but not in the target namespace. Create matching Secrets in the target namespace. |
+| Deployed Agent Server returns `404` or cannot be reached | With Gateway API (`gateway.enabled: true`), confirm the `Gateway` listener's `allowedRoutes.namespaces` permits `HTTPRoute` resources from the target namespace. |
+
+## See also
+
+- [Enable Agent Server hosting](/langsmith/enable-self-hosted-agent-server)
+- [Create an Ingress for installations (Kubernetes)](/langsmith/self-host-ingress)
+- [Self-hosted platform features](/langsmith/self-hosted-platform-features)
+- [Control plane API](/langsmith/api-ref-control-plane)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/self-hosted-deployment-namespaces.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
