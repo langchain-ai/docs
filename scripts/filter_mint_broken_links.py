@@ -20,6 +20,7 @@ import sys
 EXCLUDE_SUBSTRINGS = (
     "/langsmith/agent-server-api/",
     "/langsmith/smith-api",
+    "/langsmith/tool-gateway-api/",
     "/api-reference/",
     "../langchain/",
     "../integrations/",

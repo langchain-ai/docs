@@ -6,7 +6,7 @@ from deepagents import create_deep_agent
 from langchain.tools import tool
 from langchain_quickjs import CodeInterpreterMiddleware
 from langchain_quickjs._ptc import filter_tools_for_ptc
-from langchain_quickjs._repl import _Registry
+from langchain_quickjs._repl import _Slot, _SlotConfig
 from langgraph.checkpoint.memory import MemorySaver
 
 # :snippet-start: interpreters-quickstart-py
@@ -26,6 +26,16 @@ from langchain_quickjs import CodeInterpreterMiddleware
 agent = create_deep_agent(
     model="anthropic:claude-sonnet-4-6",
     middleware=[CodeInterpreterMiddleware(ptc=["web_search"])],
+)
+# :snippet-end:
+
+# :snippet-start: interpreters-enable-fs-py
+from deepagents import create_deep_agent
+from langchain_quickjs import CodeInterpreterMiddleware
+
+agent = create_deep_agent(
+    model="anthropic:claude-sonnet-4-6",
+    middleware=[CodeInterpreterMiddleware(fs=True)],
 )
 # :snippet-end:
 
@@ -62,20 +72,12 @@ def web_search(query: str) -> str:
     return f"results for {query}"
 
 
-def _registry() -> _Registry:
-    return _Registry(
-        memory_limit=64 * 1024 * 1024,
-        timeout=5.0,
-        capture_console=True,
-        max_stdout_chars=4000,
-        max_ptc_calls=256,
-        subagents_enabled=False,
-    )
+def _slot(name: str) -> _Slot:
+    return _Slot(name, _SlotConfig(subagents_enabled=False))
 
 
 def _eval_js(code: str) -> str:
-    repl = _registry().get("interpreters-eval-test")
-    outcome = repl.eval_sync(code, outer_runtime=None)
+    outcome = _slot("interpreters-eval-test").eval_sync(code)
     if outcome.error_type:
         msg = outcome.error_message or outcome.error_type
         raise AssertionError(msg)
@@ -86,6 +88,7 @@ assert agent is not None
 assert CodeInterpreterMiddleware().tools
 assert CodeInterpreterMiddleware(ptc=["web_search"]).tools
 assert CodeInterpreterMiddleware(mode="thread").tools
+assert CodeInterpreterMiddleware(fs=True).tools
 persistence_agent = create_deep_agent(
     model="anthropic:claude-sonnet-4-6",
     checkpointer=MemorySaver(),
@@ -112,10 +115,8 @@ totals;
 )
 assert "alpha" in totals_result and "29" in totals_result
 
-repl = _registry().get("interpreters-ptc-test")
-repl.install_tools(
-    filter_tools_for_ptc([web_search], [web_search], self_tool_name="eval"),
-)
+repl = _slot("interpreters-ptc-test")
+ptc_tools = filter_tools_for_ptc([web_search], [web_search], self_tool_name="eval")
 ptc_outcome = repl.eval_sync(
     """
 const result = await tools.webSearch({
@@ -123,7 +124,7 @@ const result = await tools.webSearch({
 });
 result;
 """,
-    outer_runtime=None,
+    tools=ptc_tools,
 )
 assert ptc_outcome.result == "results for deepagents interpreters"
 
@@ -139,7 +140,7 @@ const results = await Promise.all(
 
 results.join("\\n\\n");
 """,
-    outer_runtime=None,
+    tools=ptc_tools,
 )
 assert "retrieval best practices 2025" in (parallel_outcome.result or "")
 
@@ -148,7 +149,7 @@ task_outcome = repl.eval_sync(
 const paths = ["src/auth.ts", "src/routes/api.ts"];
 paths.length;
 """,
-    outer_runtime=None,
+    tools=ptc_tools,
 )
 assert task_outcome.result == "2"
 
