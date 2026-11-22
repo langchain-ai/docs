@@ -4,14 +4,12 @@ sidebarTitle: Per-deployment identities
 description: Create a Kubernetes ServiceAccount and a Secrets Store CSI SecretProviderClass for each self-hosted LangSmith deployment, so each agent gets its own cloud identity and mounted secrets.
 ---
 
-On self-hosted LangSmith, each [Agent Server deployment](/langsmith/deploy-to-self-hosted-overview) can declare its own Kubernetes `ServiceAccount` and Secrets Store CSI `SecretProviderClass`. The operator creates them in the deployment's namespace. Select the `ServiceAccount` in **Deployment Settings** to run the deployment's pods as that account.
+Each [self-hosted Agent Server deployment](/langsmith/deploy-to-self-hosted-overview) can define a Kubernetes `ServiceAccount` and Secrets Store CSI `SecretProviderClass`. These resources give the deployment its own cloud identity and mount cloud secrets as files. The operator creates them in the deployment's namespace.
 
-Use this to give each agent its own cloud identity through workload identity. Each agent can then mount its secrets from Azure Key Vault, AWS Secrets Manager, or Google Secret Manager as files. This avoids relying on the installation's default service account configuration.
-
-This feature is for standalone self-hosted installations that use the bundled operator. Deployments on a remote listener do not support it.
+This feature requires a full self-hosted LangSmith installation with the bundled operator. It is not available on LangSmith Cloud, BYOC, standalone Agent Servers, or deployments on a remote listener.
 
 <Note>
-Per-deployment identities require LangSmith Helm chart version 0.18.0-rc.55 or later. This minimum is a release candidate.
+Per-deployment identities require LangSmith Helm chart version [0.18.0-rc.55](https://github.com/langchain-ai/helm/releases/tag/langsmith-0.18.0-rc.55) or later. That release candidate includes LangSmith `0.18.20rc1` and `langgraph-operator` `0.1.66`, the minimum supported image versions. Keep these versions or later if you override the chart's images.
 </Note>
 
 ## How it works
@@ -30,13 +28,13 @@ LangSmith stores the manifests in plaintext in its database and in the deploymen
 ## Prerequisites
 
 - Agent Server hosting enabled on your installation. See [Enable Agent Server hosting](/langsmith/enable-self-hosted-agent-server).
-- LangSmith Helm chart version [0.18.0-rc.55](https://github.com/langchain-ai/helm/releases/tag/langsmith-0.18.0-rc.55) or later, with LangSmith `0.18.20rc1` or later and `langgraph-operator` `0.1.66` or later.
+- Permission to update the deployment.
 - The [Secrets Store CSI driver](https://secrets-store-csi-driver.sigs.k8s.io/getting-started/installation) and the provider for your cloud, installed on the cluster. The LangSmith chart does not install either.
 - Workload identity configured for your cluster.
 
 ## Enable the feature
 
-The feature defaults to `false`. Set `config.deployment.extraManifestsEnabled` in your [`langsmith_config.yaml`](/langsmith/kubernetes#configure-your-helm-charts):
+Per-deployment manifests are off by default. Set `config.deployment.extraManifestsEnabled` to `true` in your [`langsmith_config.yaml`](/langsmith/kubernetes#configure-your-helm-charts):
 
 ```yaml
 config:
@@ -49,7 +47,7 @@ operator:
 
 The chart enables the feature in the LangSmith backend and in the operator. It also grants the operator `get`, `create`, `patch`, and `delete` permissions on `secretproviderclasses`. When you set `operator.rbac.create` to `false`, grant those permissions yourself.
 
-Do not set `LGP_EXTRA_MANIFESTS_ENABLED` through environment values. The chart sets it on every component that needs it.
+Use the chart setting rather than separate environment variable overrides.
 
 ## Add manifests to a deployment
 
@@ -57,10 +55,10 @@ Create the deployment first. To configure its identity and secret mounts:
 
 <Steps>
   <Step title="Open the deployment settings">
-    In the LangSmith UI, open the deployment and select **Deployment Settings**. The **Kubernetes Resources** section holds the manifests editor.
+    Open the deployment's **Deployment Settings** and find the **Kubernetes Resources** section.
   </Step>
   <Step title="Write the manifests">
-    Enter the manifests in **Extra Kubernetes Manifests** as YAML documents separated by `---`. Every `metadata.name` must start with the prefix that the editor shows, which is the deployment's resource name followed by `-`.
+    In **Extra Kubernetes Manifests**, enter YAML documents separated by `---`. Start each `metadata.name` with the prefix shown in the editor: the deployment's resource name followed by `-`.
 
     Do not set `metadata.namespace`. The operator always uses the deployment's namespace.
   </Step>
@@ -68,10 +66,10 @@ Create the deployment first. To configure its identity and secret mounts:
     Under **Secret mounts**, each `SecretProviderClass` from the editor has a **Mount path**. Set a path, for example `/mnt/secrets`. Each secret appears as a file under that path.
   </Step>
   <Step title="Select the service account">
-    Set **Service account name** to the `ServiceAccount` from your manifests. When you edit the manifests to define exactly one `ServiceAccount`, LangSmith suggests its name. This fills an empty field or replaces the previous automatic suggestion, but preserves a manual choice.
+    Set **Service account name** to the account defined in your manifests. LangSmith suggests the name when you define exactly one `ServiceAccount`, but keeps any name you entered manually.
   </Step>
   <Step title="Save and redeploy">
-    Select **Save and redeploy** once. LangSmith applies the manifests, the mount, and the service account change in a single redeploy.
+    Select **Save and redeploy** to apply the manifests, secret mounts, and service account together.
   </Step>
 </Steps>
 
@@ -120,6 +118,10 @@ The workload identity binding on your cloud must name the exact `ServiceAccount`
     `clientID` is required. `usePodIdentity` and `useVMManagedIdentity` can only be `"false"`.
   </Tab>
   <Tab title="AWS Secrets Manager">
+    <Note>
+    This example is not yet verified on a live cluster.
+    </Note>
+
     Install the [AWS Secrets and Configuration Provider](https://docs.aws.amazon.com/secretsmanager/latest/userguide/integrating_csi_driver.html). Give the `ServiceAccount` an IAM role that can read the secret, through [IAM roles for service accounts](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html) or [EKS Pod Identity](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html).
 
     With IAM roles for service accounts, annotate the `ServiceAccount` with the role:
@@ -148,6 +150,10 @@ The workload identity binding on your cloud must name the exact `ServiceAccount`
     With EKS Pod Identity, create a pod identity association for the `ServiceAccount` instead of the annotation, and add `usePodIdentity: "true"` to `parameters`.
   </Tab>
   <Tab title="Google Secret Manager">
+    <Note>
+    This example is not yet verified on a live cluster.
+    </Note>
+
     Install the [Google Secret Manager provider](https://github.com/GoogleCloudPlatform/secrets-store-csi-driver-provider-gcp) and enable [Workload Identity Federation for GKE](https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity) on the cluster and node pools. The example links a Kubernetes `ServiceAccount` to a Google IAM service account:
 
     1. Create the Google IAM service account. Grant it `roles/secretmanager.secretAccessor` on the secret only.
@@ -206,7 +212,7 @@ When a saved `SecretProviderClass` that has a mount is missing from the manifest
 
 Deleting a deployment deletes its objects through Kubernetes garbage collection. This can remove the objects while the deployment's pods are still draining.
 
-Setting `config.deployment.extraManifestsEnabled` back to `false` leaves existing objects as they are. While the feature is off, the API rejects changes to `extra_manifests`, though updates that omit the field or resend the stored list still succeed. Clear the manifests and remove their references while the feature is on to remove the objects.
+To remove the objects, clear the manifests and their references before disabling the feature. Setting `config.deployment.extraManifestsEnabled` to `false` leaves existing objects unchanged. While disabled, the API rejects changes to `extra_manifests`. Updates that omit the field or resend the stored list still succeed.
 
 Before downgrading to a version that does not preserve extra manifests, disable the feature. Restore a supporting version and the intended manifests before you enable it again.
 
