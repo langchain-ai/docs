@@ -101,6 +101,7 @@ COMPONENTS: dict[str, dict[str, Any]] = {
     "document_transformers": {"capabilities": False, "link_label": "Integration"},
     "document_compressors": {"capabilities": False, "link_label": "Integration"},
     "stores": {"capabilities": False, "link_label": "Integration"},
+    "checkpointers": {"capabilities": False, "link_label": "Integration"},
     "graphs": {"capabilities": False, "link_label": "Integration"},
     "sandboxes": {"capabilities": False, "link_label": "Integration"},
     "caches": {"capabilities": False, "link_label": "Integration"},
