@@ -177,17 +177,20 @@ The following example shows only the eight override fields, not a full `resource
 }
 ```
 
-## Cluster and Terraform caveats
+## Check cluster policies
 
-Reference GCP and Azure Terraform bootstraps do not guarantee support for every override without cluster policy changes:
+Kubernetes policies in the deployment namespace can block some overrides. Check them before you disable a CPU limit, or before you turn off CPU scaling for queue workers and rely on queue-depth scaling alone:
 
 | Cluster policy | Impact |
 | :--- | :--- |
-| `ResourceQuota` requiring `limits.cpu` | Setting `cpu_limit_enabled` or `queue_cpu_limit_enabled` to `false` blocks new pods (`must specify limits.cpu`). Revisions stall in `DEPLOYING` or `QUEUED`. |
-| `LimitRange` default CPU limit (Azure reference) | Disabling the CPU limit may still result in a container with the namespace default limit applied by admission. |
-| `NetworkPolicy` blocking the `keda` namespace | Queue autoscaling via KEDA PostgreSQL metrics fails (`ScaledObject` not ready) if KEDA cannot reach the deployment database on port `5432`. API server CPU scaling still works. |
+| `ResourceQuota` that sets `limits.cpu` | Kubernetes rejects pods without a CPU limit (`must specify limits.cpu`). Setting `cpu_limit_enabled` or `queue_cpu_limit_enabled` to `false` blocks new pods, and revisions stall in `DEPLOYING` or `QUEUED`. |
+| `LimitRange` with a default CPU limit | Admission adds the namespace default limit to any container without one. The container keeps a CPU limit even when `cpu_limit_enabled` is `false`. |
+| `NetworkPolicy` that blocks the `keda` namespace | KEDA cannot reach the deployment's PostgreSQL on port `5432` to read queue depth. The `ScaledObject` reports `KEDAScalerFailed`, and queue workers stop scaling on queue depth. API server CPU scaling still works. To fix it, allow ingress from the `keda` namespace on TCP port `5432`. |
 
-Review namespace quotas, limit ranges, and network policies before disabling CPU limits or relying on KEDA queue-depth scaling without CPU scaling.
+If you installed with the [reference Terraform modules](/langsmith/self-host-terraform), check for these policies:
+
+- **GCP**: The `langsmith-default` NetworkPolicy admits traffic only from the LangSmith and Envoy Gateway namespaces, so it blocks KEDA. Add an ingress rule for the `keda` namespace on port `5432`.
+- **Azure**: Modules earlier than v0.17.54 create a `ResourceQuota` that sets CPU limits and a `LimitRange` with default limits. Modules earlier than v0.17.59 do not allow KEDA to reach port `5432`. Upgrade the module, or make the same changes to your cluster.
 
 ## Troubleshooting
 
@@ -196,8 +199,8 @@ Review namespace quotas, limit ranges, and network policies before disabling CPU
 | No autoscaling controls in the UI | `scalingOverridesEnabled` is `false`, or the install is LangSmith Cloud, Hybrid, or BYOC. Wait for `/api/v1/info` to load before opening the revision modal. |
 | `400` on save | Feature is off, not all eight override fields are set, `cpu_limit` is set while `cpu_limit_enabled` is `false`, or `cpu_target_percent` is set while `cpu_scaling_enabled` is `false`. |
 | Overrides saved but have no effect | Operator is older than `0.1.64`, the LangGraph CRD is stale, or the data-plane listener image is older than `0.18.14rc1`. |
-| Revision never finishes after disabling the CPU limit | Pod creation is denied by a namespace `ResourceQuota`. Check Kubernetes events for the deployment pods. |
-| Queue scaling fails or `ScaledObject` is not ready | KEDA cannot reach PostgreSQL on port `5432`, usually because of a `NetworkPolicy`. |
+| Revision never finishes after disabling the CPU limit | A namespace `ResourceQuota` that sets `limits.cpu` denies pod creation. Check Kubernetes events for the deployment pods. See [Check cluster policies](#check-cluster-policies). |
+| Queue scaling fails or the `ScaledObject` reports `KEDAScalerFailed` | KEDA cannot reach PostgreSQL on port `5432`, usually because of a `NetworkPolicy`. See [Check cluster policies](#check-cluster-policies). |
 
 ## Verify
 
