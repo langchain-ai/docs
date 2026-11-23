@@ -1,0 +1,202 @@
+---
+title: Call tools through Tool Gateway
+sidebarTitle: Call tools
+description: Send MCP requests to Tool Gateway tool kits and servers over HTTP, handle connection and approval prompts, and fix common errors.
+---
+
+import ToolGatewayBetaNote from '/snippets/python/langsmith/tool-gateway-beta-note.mdx';
+
+<ToolGatewayBetaNote />
+
+Every [Tool Gateway](/langsmith/tool-gateway) endpoint is a standard MCP server over Streamable HTTP. Therefore, you can list and call its tools with plain HTTP requests. Use this page to build your own MCP client or to debug a call that an agent made. It also covers the responses that ask a caller to connect an account or approve a call. To use an existing client, such as Claude Code or Cursor, see [Connect an MCP client](/langsmith/tool-gateway-clients) instead. The client sends these requests for you.
+
+The examples on this page use the environment variables from the [quickstart](/langsmith/tool-gateway-quickstart#before-you-begin), and send requests to a [tool kit](/langsmith/tool-gateway-tool-kits). The same requests work on the [me kit](/langsmith/tool-gateway-tool-kits#use-the-me-kit) and on a single server's endpoint, `/v1/managed-tools/servers/<server-id>/mcp`.
+
+## Send an MCP request
+
+Send each MCP message as a JSON-RPC `POST` request to the endpoint. A tool kit and the me kit keep no session between requests, so you do not need to send `initialize` before you list or call tools. A tool kit accepts one message per request and rejects JSON-RPC batches. A single server's endpoint passes each request to the server as is, and can answer with `text/event-stream`. If that server uses sessions, send `initialize` first, and repeat the `MCP-Session-Id` header it returns on each request.
+
+Every request sends these headers:
+
+- **`X-Api-Key`**: A LangSmith API key. The key decides whose credentials the call uses. To call as another user, as an agent, or with a profile, see [Act as users and agents](/langsmith/tool-gateway-identity).
+- **`X-Tenant-Id`**: Your workspace ID.
+- **`Content-Type`**: `application/json`.
+- **`Accept`**: `application/json, text/event-stream`.
+- **`MCP-Protocol-Version`**: The MCP protocol version the request uses.
+
+Requests on MCP protocol version `2026-07-28` must also send the protocol version and client capabilities in the request's `_meta`. They must also repeat the method and tool name in headers:
+
+- **`Mcp-Method`**: The JSON-RPC `method`, such as `tools/list`.
+- **`Mcp-Name`**: For `tools/call`, the tool's name, matching `params.name`.
+
+A `2026-07-28` request that is missing either header returns `400` with a JSON-RPC error, code `-32020`.
+
+Protocol version `2026-07-28` is required to get the [connection](#connect-when-a-call-asks) and [approval](#approve-a-tool-call) prompts inside the MCP response. Requests on an earlier version, such as `2025-06-18`, omit the extra headers and `_meta`, and get an HTTP error instead of a prompt.
+
+### List tools
+
+```bash
+curl -sS -X POST "$LANGSMITH_ENDPOINT/v1/managed-tools/kits/<kit-id>/mcp" \
+  -H "X-Api-Key: $LANGSMITH_API_KEY" \
+  -H "X-Tenant-Id: $LANGSMITH_WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "MCP-Protocol-Version: 2026-07-28" \
+  -H "Mcp-Method: tools/list" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/list",
+    "params": {
+      "_meta": {
+        "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+        "io.modelcontextprotocol/clientCapabilities": {}
+      }
+    }
+  }'
+```
+
+The response's `result.tools` lists each tool under the name agents call, such as `linear_list_issues`. For how Tool Gateway names tools, see [How kit tools are named](/langsmith/tool-gateway-tool-kits#how-kit-tools-are-named).
+
+The list includes tools on servers you have not connected yet. See [Connect when a call asks](#connect-when-a-call-asks).
+
+### Call a tool
+
+```bash
+curl -sS -X POST "$LANGSMITH_ENDPOINT/v1/managed-tools/kits/<kit-id>/mcp" \
+  -H "X-Api-Key: $LANGSMITH_API_KEY" \
+  -H "X-Tenant-Id: $LANGSMITH_WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "MCP-Protocol-Version: 2026-07-28" \
+  -H "Mcp-Method: tools/call" \
+  -H "Mcp-Name: linear_list_issues" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "tools/call",
+    "params": {
+      "name": "linear_list_issues",
+      "arguments": {},
+      "_meta": {
+        "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+        "io.modelcontextprotocol/clientCapabilities": {}
+      }
+    }
+  }'
+```
+
+The response's `result.content` holds the server's result, passed through unchanged. Treat it as untrusted input to your agent. If the tool itself fails, `result.isError` is `true` and the HTTP status is still `200`.
+
+Tool Gateway checks the caller's credential and [policies](/langsmith/tool-gateway-policies) on every call. A call that cannot run returns one of the responses in the following sections.
+
+## Connect when a call asks
+
+A tool kit lists all of its tools, including tools on servers the caller has not connected. A call to one of those tools does not run. Instead, Tool Gateway asks the caller to connect the server. How it asks depends on who the caller is acting as and what the client supports.
+
+### Check before you call
+
+To see which servers a caller still needs to connect, without calling a tool:
+
+- **From the tool list**: A kit's `tools/list` result names each missing credential, with its sign-in link, in `result._meta["com.langchain.langsmith/missingCredentials"]`. The me kit does not include this list.
+- **From the connections endpoint**: `GET /v1/managed-tools/kits/<kit-id>/connections` lists each server the kit uses, with `connected` set for the caller. To start a connection, see [Connect accounts](/langsmith/tool-gateway-connect-accounts#connect-your-own-account).
+
+A server the caller has not connected, and whose tools Tool Gateway does not know yet, is listed as one placeholder tool named `connect_<server>`. Calling the placeholder asks the caller to connect, like any other call.
+
+The missing credentials in a tool list can lag behind a connection made since. A tool call always checks the caller's current credential.
+
+### When the caller is a user
+
+A user can connect their own account, so the call returns a sign-in link:
+
+- **Clients that support URL elicitation**: On protocol `2026-07-28`, a client that declares the `elicitation.url` capability gets an `input_required` result with one link for each server to connect. The client shows the link to the user. After the user connects, the call continues.
+- **Every other client**: The call returns `428`. Open each `verification_url` in the body, connect, then send the call again.
+
+The `428` body differs by endpoint. A tool kit or the me kit returns a `credentials` array, because one call can need more than one server:
+
+```json
+{
+  "status": 428,
+  "detail": "Authorize the linked servers, then retry the MCP request",
+  "credentials": [
+    {
+      "kind": "oauth",
+      "slug": "mt-<server-id>",
+      "display_name": "Linear",
+      "verification_url": "<sign-in-url>",
+      "auth_id": "<auth-id>"
+    }
+  ]
+}
+```
+
+A single server's endpoint returns the same fields for its one credential at the top level, with no `credentials` array:
+
+```json
+{
+  "status": 428,
+  "kind": "oauth",
+  "slug": "mt-<server-id>",
+  "display_name": "Linear",
+  "verification_url": "<sign-in-url>",
+  "auth_id": "<auth-id>"
+}
+```
+
+`kind` is `oauth` for a server that signs in with OAuth, or `secret` for a server that expects an API key. The link opens a page where the user signs in or enters the key. For OAuth, it can go straight to the service's own sign-in page. Only the caller should open it: whoever signs in links their account to the caller.
+
+### When the caller is an agent or a profile
+
+An agent or a [profile](/langsmith/tool-gateway-connect-accounts#connect-an-account-for-a-profile) cannot connect its own credentials, because no one is present to sign in. The call returns `409` with the same `credentials` array as a `428`, but with no sign-in links. A workspace admin must connect the credential for the agent or the profile, then the agent can retry. See [Connect accounts](/langsmith/tool-gateway-connect-accounts).
+
+## Approve a tool call
+
+An [approval policy](/langsmith/tool-gateway-policies) pauses each matching call until the caller approves it. The approval comes from the person using the MCP client, not from a separate reviewer. Use it to confirm a call before it runs, not to route calls to an admin.
+
+On protocol `2026-07-28`, a client that supports form elicitation shows an approval form. The form names the tool, its server, the policies that require approval, and the call's arguments.
+
+- **Accept**: The call runs.
+- **Decline or cancel**: The call does not run. The result is a tool error with the text "The user declined this tool call, so it did not run."
+
+A client that cannot show the form, including any request on an earlier protocol version, gets `403`, and the call does not run. To call the tool, use a client that supports form elicitation, or ask an organization admin to change the policy.
+
+A deny policy blocks the call with `403` and `"code": "tool_call_blocked"`. Tool Gateway returns the same response when it blocks a call as unsafe, so the response does not say which one blocked the call. Match on `code`, because the `detail` text can change. Blocked tools still appear in tool lists.
+
+## Errors
+
+Most error responses are JSON problem details. The `detail` field says what went wrong, and `remedy`, when present, says what to do next. Two errors use other bodies: an authentication failure can return `{"error": "Unauthorized"}`, and a missing or mismatched `Mcp-Method` or `Mcp-Name` header returns a JSON-RPC error.
+
+| Status | Meaning | What to do |
+|--------|---------|------------|
+| `400` | The request is malformed: for example, a JSON-RPC batch, a `mode` other than `search`, or a missing `Mcp-Method` or `Mcp-Name` header on protocol `2026-07-28`. | Send one JSON-RPC message per request, check the query string, and check the headers. |
+| `401` | Authentication is missing or invalid. | Check the API key and `X-Tenant-Id`. |
+| `403` | A deny policy blocked the call, an approval policy needs a client that can show the form, a workspace admin turned the server off, or the caller lacks permission. | Read `detail`. For policies, see [Approve a tool call](#approve-a-tool-call). |
+| `404` | The tool kit, server, or profile does not exist, or the caller cannot see it. | Check the ID in the URL or the `X-LangSmith-Profile` header. |
+| `409` | An agent or a profile has no credential for a server the call needs. | Ask a workspace admin to [connect it](/langsmith/tool-gateway-connect-accounts). |
+| `413` | The request body is larger than 1 MB. | Send a smaller request. |
+| `428` | The user has not connected a server the call needs. | Open each `verification_url`, connect, then retry. See [When the caller is a user](#when-the-caller-is-a-user). |
+| `429` | The workspace reached its request rate limit, or a metered built-in server reached its monthly limit. | Wait the number of seconds in the `Retry-After` header, then retry. |
+| `502` | The MCP server is unreachable or returned an error. | Check that the server's URL is correct and the service is up. |
+| `503` | Tool calls are temporarily unavailable. | Retry later. |
+| `504` | The MCP server did not start responding within 60 seconds. | Retry, or check the service's status. |
+
+A single server's endpoint passes other status codes from the MCP server through unchanged. For request, response, and rate limits, see [Limits](/langsmith/tool-gateway-how-it-works#limits).
+
+## See also
+
+- [Connect an MCP client](/langsmith/tool-gateway-clients)
+- [Act as users and agents](/langsmith/tool-gateway-identity)
+- [Connect accounts](/langsmith/tool-gateway-connect-accounts)
+- [Set policies](/langsmith/tool-gateway-policies)
+- [How Tool Gateway works](/langsmith/tool-gateway-how-it-works)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/tool-gateway-call-tools.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
