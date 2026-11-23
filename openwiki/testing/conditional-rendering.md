@@ -1,11 +1,11 @@
 ---
 type: testing guide
 title: Conditional Rendering Tests
-description: Test the validated :::python and :::js preprocessing contract, including literal escaped markers, compact closers, diagnostics, and language-specific build artifacts. Use focused fence tests for structural failures and builder tests for emitted output.
+description: Test how validated :::python and :::js preprocessing produces Python and JavaScript content, route-specific pages, and language-scoped snippets. Use focused fence tests for structural failures and builder tests for emitted artifacts.
 tags: [testing, conditional-rendering, markdown-preprocessing, language-versioning]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-11-03T08:13:57.434Z
+    at: 2026-11-23T08:07:24.438Z
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
@@ -21,12 +21,12 @@ sources:
     resource: repo://tests/unit_tests/test_builder.py
   - id: openwiki-source-f260e53bc2ed7f10cc38d28f
     resource: repo://tests/unit_tests/test_conditional_fences.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-03T08:13:57.434Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-23T08:07:24.438Z" }
 ---
 
 # Conditional Rendering Tests
 
-Conditional rendering lets one Markdown or MDX source produce Python and JavaScript variants. The test contract has two levels: the preprocessor validates conditional-fence structure and selects branch content; the builder applies that preprocessor while producing language-specific artifacts. Test both targets and assert both inclusion and exclusion—finding the selected text alone does not detect leakage from the other branch.
+Conditional rendering lets one Markdown or MDX source produce Python and JavaScript variants. The test contract has two levels: the preprocessor validates conditional-fence structure and selects branch content; the builder applies that preprocessor while producing language-specific pages and snippets. Test both targets and assert both inclusion and exclusion—finding the selected text alone does not detect leakage from the other branch.
 
 ## Core selection invariant
 
@@ -95,13 +95,29 @@ The renderer is not a structural Markdown parser. Its substitution matches a com
 
 Do not rely on regular Markdown code fences to shield conditional-looking text: fence state exists in the autolink and CTA scanners, whereas validation and conditional selection scan the whole input without that state. Escape markers in a code sample if they must remain inert. Nested conditional blocks are invalid input, rather than a first-close rendering convention; validation rejects the second opening before regex rendering begins.
 
-## Prove generated artifacts when the change crosses the builder boundary
+## Route-specific pages and generated artifacts
 
-`DocumentationBuilder.build_all()` clears the build directory, then builds `oss/python` with target `python` and `oss/javascript` with target `js`. `_process_markdown_content()` runs `preprocess_markdown()` first, then rewrites targeted snippet imports, OSS routes, and Managed Deep Agents routes in that order. Use a direct conditional-fence test for parser/validator behavior; add a builder fixture when the change also affects generated paths, imports, or the placement of target output.
+`DocumentationBuilder.build_all()` clears the build directory, then builds `oss/python` with target `python` and `oss/javascript` with target `js`. The OSS builder filters language-specific source directories and uses navigation ownership for shared pages: a shared page listed only in one language's navigation is emitted only there, while a page listed in both—or in neither—is emitted in both. A source page can therefore have correct conditional content and still be absent from one route by design.
+
+`_process_markdown_content()` runs `preprocess_markdown()` first, then rewrites targeted snippet imports, OSS routes, and Managed Deep Agents routes in that order. Use a direct conditional-fence test for parser/validator behavior; add a builder fixture when the change also affects generated paths, imports, route ownership, or the placement of target output.
 
 `test_build_all_creates_managed_deep_agents_language_routes()` is the relevant artifact-level model. It creates a shared snippet containing both branch types, calls `build_all()`, and reads the generated Python and JavaScript snippet copies. The test asserts each copy retains its matching branch and excludes the other, while also checking language-specific snippet imports and rewritten Managed Deep Agents and OSS routes in the pages.
 
+`test_shared_oss_page_in_one_nav_builds_one_language()` is the route-ownership model: it asserts Python-only and JavaScript-only navigation entries produce only their respective output, while pages listed in both or neither language build in both trees. Keep this test alongside conditional-content assertions when changing navigation filtering, because route omission is a different failure from branch leakage.
+
 Shared Markdown snippets have an independent output path: the builder preprocesses each for both targets and writes `build/snippets/python/` and `build/snippets/javascript/`; it also writes a Python-targeted unprefixed copy for unversioned consumers. When a page imports a conditional snippet, inspect both the scoped import and both generated snippet artifacts.
+
+```mermaid
+flowchart LR
+    SourcePage["Source OSS or snippet"] --> Nav["Navigation and language filtering"]
+    Nav --> PyPage["build/oss/python or Python route"]
+    Nav --> JsPage["build/oss/javascript or JavaScript route"]
+    SourceSnippet["Shared snippet"] --> PySnippet["build/snippets/python"]
+    SourceSnippet --> JsSnippet["build/snippets/javascript"]
+    SourceSnippet --> DefaultSnippet["Python-targeted default copy"]
+```
+
+This diagram distinguishes route ownership for pages from the independently generated language-scoped snippet copies.
 
 ## Focused commands and regression checklist
 
@@ -123,7 +139,7 @@ make test TEST_FILE=tests/unit_tests/test_builder.py
 2. Pin every malformed case introduced by a syntax change: nested open, stray close, and never-closed block. Assert the diagnostic's relevant line information.
 3. Retain escaped-marker coverage and assert literal, unescaped output at the full-preprocessor boundary.
 4. Retain compact closer coverage for a closer with trailing text and for close-plus-open adjacency.
-5. If the change reaches build output, call `build_all()` and inspect both language-specific artifacts, including rewritten imports or routes when relevant.
+5. If the change reaches build output, call `build_all()` and inspect both language-specific artifacts, including rewritten imports, routes, and route ownership when relevant.
 
 ## See also
 

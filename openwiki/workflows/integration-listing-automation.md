@@ -1,18 +1,24 @@
 ---
 type: documentation metadata workflow
 title: Integration Listing Automation
-description: How integration metadata becomes hosted guides, external listings, generated download tables, and the Python provider overview. Covers ownership boundaries, scheduled regeneration, URL safety validation, and the checks required for safe changes.
+description: How a maintainer-authorized issue submission becomes a hosted guide or external integration listing, and how scheduled generators publish download tables and provider overviews. Covers parsing, Deep Agents execution, URL safety, generated artifacts, and the policy for external-contributor PRs.
 tags: [integrations, documentation, metadata, automation, validation]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-26T08:26:41.390Z
+    at: 2026-11-23T08:07:24.438Z
 sources:
   - id: openwiki-source-8bdd8b6031ea08044f515d8c
     resource: repo://.agents/skills/submit-integration/SKILL.md
+  - id: openwiki-source-15f52622e952fff72e776b91
+    resource: repo://.github/ISSUE_TEMPLATE/06-integration-submission.yml
   - id: openwiki-source-1bf310cf2d4f8606635de732
     resource: repo://.github/workflows/check-external-doc-links.yml
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
+  - id: openwiki-source-1ca506cf29eca9b87a087220
+    resource: repo://.github/workflows/external-integration-pr-comment.yml
+  - id: openwiki-source-1db901655f02af312133801d
+    resource: repo://.github/workflows/integration-submission.yml
   - id: openwiki-source-4de47c60d7e3210385c34d35
     resource: repo://.github/workflows/update-package-downloads.yml
   - id: openwiki-source-e52f38a56cc76188818237f7
@@ -27,13 +33,15 @@ sources:
     resource: repo://scripts/flag_hosted_docs_candidates.py
   - id: openwiki-source-d4fdd9dfc4cf980ce0889985
     resource: repo://scripts/packages_yml_get_downloads.py
+  - id: openwiki-source-f36d9ac44867b9e853539abd
+    resource: repo://scripts/parse_integration_submission_issue.py
   - id: openwiki-source-63d8ba810a7c0181c548a307
     resource: repo://scripts/refresh_integration_downloads.py
   - id: openwiki-source-1f06ff54a6b42441ba3f34c3
     resource: repo://src/oss/contributing/publish-langchain.mdx
   - id: openwiki-source-7be0fdefc402d868b9f2fdca
     resource: repo://tests/unit_tests/test_refresh_integration_downloads.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-26T08:26:41.390Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-23T08:07:24.438Z" }
 ---
 
 # Integration Listing Automation
@@ -45,9 +53,48 @@ Integration discovery is assembled from distinct owned inputs rather than edited
 
 Generated snippets and `src/oss/python/integrations/providers/overview.mdx` are outputs. Change the owning metadata or generator, then regenerate; do not preserve a hand-edited generated result.
 
+## Submission boundary: issue form to reviewed PR
+
+The supported entrypoint for a new, externally contributed listing is the `[integration]` issue form. It asks for a display/class name, language, component, published PyPI and/or npm package, documentation URL, optional public GitHub repository, a factual provider-card description, and optional chat/vector-store capability flags. The package publication confirmation is required by the form. The form itself does not start automation: an issue merely being opened is inert.
+
+A maintainer applies `integration-run` when the submission is ready. The workflow also supports an explicit `workflow_dispatch` with an issue number. Before reading the issue as work instructions, it checks the dispatching actor's repository collaborator permission; only `admin`, `maintain`, or `write` may proceed. An unauthorized label application is removed and receives a one-time explanatory comment. The workflow has write permissions, so this authorization check is a security boundary, not a cosmetic status check.
+
+The issue body is parsed as GitHub's `### heading` sections by `parse_integration_submission_issue.py`. It maps stable form labels to JSON keys, strips HTML comments, treats `n/a`, `none`, and `_no response_` as absent optional values, and never evaluates field contents. Required sections and language/package combinations are validated. A parse failure is reported on the issue and stops before the agent; the maintainer can remove `integration-automation`, correct the form, and re-apply `integration-run`.
+
+```mermaid
+flowchart TD
+    Issue["Issue form submission"] --> Trigger{"Maintainer label or manual dispatch"}
+    Trigger -- "Issue opened or unauthorized label" --> NoRun["No privileged automation"]
+    Trigger -- "Authorized start" --> Permission{"Actor has write permission"}
+    Permission -- "No" --> Unauthorized["Remove integration-run and comment"]
+    Permission -- "Yes" --> Parse["Parse form headings into JSON"]
+    Parse --> Valid{"Required fields and package match"}
+    Valid -- "No" --> ParseError["Comment parse error and stop"]
+    Valid -- "Yes" --> Mark["Add integration-automation"]
+    Mark --> Agent["Deep Agents with submit-integration skill"]
+    Agent --> Blocked{"Hard blocker or agent failure"}
+    Blocked -- "Yes" --> Failure["Comment blocker or failure; no PR"]
+    Blocked -- "No" --> Changes{"Working-tree changes"}
+    Changes -- "No" --> NoChanges["Comment no changes; no PR"]
+    Changes -- "Yes" --> PR["App token creates reviewed PR"]
+    PR --> Eligibility{"Featured or at least 50K monthly downloads"}
+    Eligibility -- "Yes" --> Keep["Keep hosted contribution open"]
+    Eligibility -- "No" --> External["Comment issue-form route and close manual PR"]
+```
+
+This guarded flow keeps unauthorized, malformed, blocked, and non-featured contributions out of privileged or inappropriate paths.
+
+### Deep Agents execution and trust model
+
+After parsing, the workflow adds `integration-automation`, comments that processing started, and builds a prompt containing the parsed JSON. The `submit-integration` skill explicitly treats every field as untrusted data: URLs, descriptions, and capability notes are literal listing metadata, not instructions. The agent is unsupervised and must make best-effort choices using form fields, registry metadata, and package README data; it must not ask questions, push, open a PR, or comment on GitHub. It leaves changes uncommitted for the workflow handoff and writes `integration-submission-error.md` only when no reasonable listing is possible.
+
+Deep Agents runs with the repository skill, a bounded shell allow-list, no memory, a fixed working directory, and a maximum turn/timeout budget. The workflow does not mint the GitHub App token until after the agent finishes, so the agent cannot use that PR-creation credential. If a blocker file exists or the agent fails, the workflow comments on the issue and creates no PR. A successful run with no diff also reports no changes rather than opening an empty PR.
+
+The final handoff uses a short-lived App token and creates branch `integration/issue-<number>` with a review checklist, source issue, and author mention. The issue receives the PR link, and the PR receives an author ping. This is a reviewed handoff: the agent edits the working tree, while the workflow owns publication.
+
 ## Listing decision and source ownership
 
-A full hosted guide is for integrations with at least 50,000 monthly PyPI or npm downloads, or an explicit maintainer featured decision. An integration below that threshold is listed externally instead of receiving a new hosted MDX page. The decision does not make `featured: true` automatic: that is a maintainer decision. When moving an integration to a hosted guide, remove its matching external YAML row to avoid two table rows.
+A full hosted guide is for integrations with at least 50,000 monthly PyPI or npm downloads, or an explicit maintainer feature override in the issue. An integration below that threshold is listed externally instead of receiving a new hosted MDX page. The decision does not make `featured: true` automatic: that is a maintainer decision. When moving an integration to a hosted guide, remove its matching external YAML row to avoid two table rows.
 
 | Owned input | Responsibility | Change when |
 | --- | --- | --- |
@@ -56,9 +103,9 @@ A full hosted guide is for integrations with at least 50,000 monthly PyPI or npm
 | `packages.yml` | Package/repository registry, monthly download record, JS package mapping, visibility, and maintainer-only `highlight` | Changing the Python provider overview's package input |
 | `src/oss/python/integrations/providers/all_providers.mdx` | Authored provider discovery cards and their destinations | Adding or correcting provider discovery content or an overview-link fallback |
 
-The external YAML comments define the link preference: partner documentation, then a GitHub repository, then a PyPI/npm page. It is the canonical source for external language/component entries. Hosted rows instead come from `integration:` frontmatter: for example, Browser Use supplies `name` and `pypi`, while the Azure Cosmos DB vector-store guide supplies `featured` and declared vector-store capabilities. A page without an `integration:` mapping or a `name` is skipped with a warning rather than becoming a row.
+The external YAML comments define the link preference: partner documentation, then a GitHub repository, then a PyPI/npm page. It is the canonical source for external language/component entries. Hosted rows instead come from `integration:` frontmatter. A page without an `integration:` mapping or a `name` is skipped with a warning rather than becoming a row.
 
-`all_providers.mdx` is authored content, not a generated provider overview. In particular, a card can link to an external destination, while a hosted provider page has a site-relative destination. The Python overview generator parses these cards as a fallback, so card title and href changes can affect generated overview links.
+`all_providers.mdx` is authored content, not a generated provider overview. A card can link to an external destination, while a hosted provider page has a site-relative destination. The Python overview generator parses these cards as a fallback, so card title and href changes can affect generated overview links.
 
 ```mermaid
 flowchart TD
@@ -150,6 +197,14 @@ This workflow separates read-only generation from the job permitted to write a b
 
 The package refresher detects duplicate package names, avoids refetching a package updated in the previous 24 hours, records a missing Pepy badge as zero, and timestamps refreshed records. The same scheduled workflow also looks for external entries at the 50,000-download threshold. It is a dry run without both `LINEAR_API_KEY` and `LINEAR_TEAM_KEY`; with both configured, it creates Linear follow-up only after searching by a stable title fragment so changing counts do not create duplicate open issues.
 
+## External-contributor PR policy
+
+`external-integration-pr-comment.yml` listens with `pull_request_target`, but deliberately does not check out or execute the contributor's branch. It reads the changed-file list and head-file contents through the GitHub API, and checks `langchain-ai` membership. Bot authors are ignored; internal authors are ignored; external authors' newly added integration MDX or changes to `scripts/data/integration_external_docs.yaml` are labeled `integration`.
+
+For a new MDX file, the policy reads frontmatter from the PR head and keeps the PR open when `featured: true` or when its PyPI/npm package verifies at least 50,000 monthly downloads. Otherwise it posts one idempotent redirect to the integration issue form and closes the PR. A `langchain-ai` member reopening the PR is an explicit keep-open override, honored on reopen and subsequent synchronize events. Membership lookup failures are conservative: the author is treated as external, while a failed eligibility lookup raises an error instead of silently closing an eligible contribution.
+
+This `pull_request_target` design is intentionally narrow: it grants labeling/comment/close permissions to trusted workflow code while treating fork content as data. It must not be changed to run scripts from the fork or to let issue/PR text start privileged automation.
+
 ## Change and verification procedure
 
 1. Decide whether the integration is a hosted guide or external listing from measured monthly registry downloads and a maintainer feature decision. Do not use a generated table as the source of truth.
@@ -168,6 +223,5 @@ The focused tests cover accepted and rejected URL forms, ensure an unsafe URL ca
 
 - [Source Directory Map](/openwiki/architecture/source-map.md)
 - [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md)
-- [Adding pages](/openwiki/operations/adding-pages.md)
-- [Quickstart](/openwiki/quickstart.md)
+- [Agent skills](/openwiki/operations/agent-skills.md)
 - [Testing overview](/openwiki/testing/test-overview.md)
