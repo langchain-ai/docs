@@ -14,6 +14,12 @@ import BackendStoreJs from '/snippets/code-samples/backend-store-js.mdx';
 import BackendContextHubPy from '/snippets/code-samples/backend-context-hub-py.mdx';
 import BackendCompositePy from '/snippets/code-samples/backend-composite-py.mdx';
 import BackendCompositeJs from '/snippets/code-samples/backend-composite-js.mdx';
+import BackendsNamespaceFactoryTypePy from '/snippets/code-samples/backends-namespace-factory-type-py.mdx';
+import BackendsNamespaceFactoryTypeJs from '/snippets/code-samples/backends-namespace-factory-type-js.mdx';
+import BackendsNamespacePatternsPy from '/snippets/code-samples/backends-namespace-patterns-py.mdx';
+import BackendsNamespacePatternsJs from '/snippets/code-samples/backends-namespace-patterns-js.mdx';
+import BackendsCompositeNamespaceBeforeJs from '/snippets/code-samples/backends-composite-namespace-before-js.mdx';
+import BackendsCompositeNamespaceAfterJs from '/snippets/code-samples/backends-composite-namespace-after-js.mdx';
 
 :::python
 Deep Agents expose a filesystem surface to the agent via tools like `ls`, `read_file`, `write_file`, `edit_file`, `delete`, `glob`, and `grep`. These tools operate through a pluggable backend. The `read_file` tool natively supports image files (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`) across all backends, returning them as multimodal content blocks.
@@ -292,9 +298,7 @@ A namespace factory controls where `StoreBackend` reads and writes data. It rece
 
 Pass the namespace factory to the `namespace` parameter when constructing a `StoreBackend`:
 
-```python
-NamespaceFactory = Callable[[Runtime], tuple[str, ...]]
-```
+<BackendsNamespaceFactoryTypePy />
 
 The `Runtime` provides:
 - `rt.context`—User-supplied context passed via LangGraph's [context schema](/oss/langgraph/graph-api#runtime-context) (for example, `user_id`)
@@ -311,16 +315,7 @@ A namespace factory controls where `StoreBackend` reads and writes data. It rece
 
 Pass the namespace factory to the `namespace` parameter when constructing a `StoreBackend`:
 
-```typescript
-type StoreBackendNamespaceFactory = (context: {
-  state: unknown;
-  config?: {
-    metadata?: Record<string, unknown>;
-    configurable?: Record<string, unknown>;
-  };
-  assistantId?: string;
-}) => string[];
-```
+<BackendsNamespaceFactoryTypeJs />
 
 The context provides:
 - `state`—Current graph state, when available
@@ -331,49 +326,11 @@ The context provides:
 **Common namespace patterns:**
 
 :::python
-```python
-from deepagents.backends import StoreBackend
-
-# Per-user: each user gets their own isolated storage
-backend = StoreBackend(
-    namespace=lambda rt: (rt.server_info.user.identity,),  # [!code highlight]
-)
-
-# Per-assistant: all users of the same assistant share storage
-backend = StoreBackend(
-    namespace=lambda rt: (
-        rt.server_info.assistant_id,  # [!code highlight]
-    ),
-)
-
-# Per-thread: storage scoped to a single conversation
-backend = StoreBackend(
-    namespace=lambda rt: (
-        rt.execution_info.thread_id,  # [!code highlight]
-    ),
-)
-```
+<BackendsNamespacePatternsPy />
 :::
 
 :::js
-```typescript
-import { StoreBackend } from "deepagents";
-
-// Per-user: derive from the authenticated Agent Server user
-const backend = new StoreBackend({
-  namespace: ({ config }) => [String(config?.configurable?.langgraph_auth_user_id)],  // [!code highlight]
-});
-
-// Per-assistant: use the resolved assistant id
-const backend = new StoreBackend({
-  namespace: ({ assistantId }) => [assistantId ?? "default"],  // [!code highlight]
-});
-
-// Static namespace when the scope is known at construction time
-const backend = new StoreBackend({
-  namespace: ["memories", orgId, userId, "filesystem"],  // [!code highlight]
-});
-```
+<BackendsNamespacePatternsJs />
 :::
 
 You can combine multiple components to create more specific scopes—for example, `(user_id, thread_id)` for per-user per-conversation isolation, or append a suffix like `"filesystem"` to disambiguate when the same scope uses multiple store namespaces.
@@ -994,33 +951,13 @@ agent = create_deep_agent(
 :::
 
 :::js
-```typescript
-// Before (deprecated)
-import { createDeepAgent, CompositeBackend, StateBackend, StoreBackend } from "deepagents";
+Before (deprecated):
 
-const agent = createDeepAgent({
-  backend: (config) => new CompositeBackend(
-    new StateBackend(config),
-    { "/memories/": new StoreBackend(config, {
-      namespace: ({ config: cfg }) => [
-        String(cfg?.configurable?.langgraph_auth_user_id),
-      ],
-    }) },
-  ),
-});
+<BackendsCompositeNamespaceBeforeJs />
 
-// After
-const agent = createDeepAgent({
-  backend: new CompositeBackend(
-    new StateBackend(),
-    { "/memories/": new StoreBackend({
-      namespace: ({ config }) => [
-        String(config?.configurable?.langgraph_auth_user_id),
-      ],
-    }) },
-  ),
-});
-```
+After:
+
+<BackendsCompositeNamespaceAfterJs />
 :::
 
 :::python
