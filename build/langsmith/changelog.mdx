@@ -15,6 +15,172 @@ Weekly updates to [LangSmith Cloud](/langsmith/observability). For LangSmith Fle
 If you use self-hosted LangSmith, see the [self-hosted changelog](/langsmith/self-hosted-changelog) for updates.
 </Info>
 
+<Update label="November 16-23, 2026" rss={{ title: "2026-11-16 - LangSmith Cloud update" }}>
+
+## Highlights
+
+- **Sandbox volumes, batch delete, and CLI options**: Sandbox volumes (beta) and LangSmith-login service URLs are now available to every workspace, including self-hosted and BYOC deployments. You can create, list, clone, and delete volumes, delete several sandboxes in one request, and check usage against workspace limits from the `langsmith sandboxes` CLI and the SDKs. The CLI also adds `cp` and `ls` for files, `--preserve-memory-on-stop` to keep running processes across stops, and `snapshot capture --include-memory` so new sandboxes resume from saved memory. [Learn more](/langsmith/sandbox-cli).
+- **Advanced code evaluators available by default**: Advanced code evaluators are now available by default, so you can create and run them without opting in. On BYOC and self-hosted LangSmith, they are available wherever Sandboxes are enabled, and the `SANDBOX_FEATURE_ENABLED` setting controls this on self-hosted installs. Deployments without Sandboxes do not show advanced evaluator controls or accept advanced evaluator creation, and the BYOC `codeEvaluatorV2Enabled` opt-in field is deprecated and ignored. [Learn more](/langsmith/advanced-code-evaluators).
+- **User Groups rename is complete**: User Groups now use one set of names across permissions, gateway traces, and gateway policies. The `organization:user-groups:*` and `workspaces:user-groups:*` permissions replace the `teams` permissions, and gateway traces carry `gateway.user_group_ids`, which the spend chart reads. This is a breaking change, so update clients that send the `X-LangSmith-Team-Tags` header or `ls_team:` tags, gateway policies with a `team_id` matcher, custom roles that use `teams:*` permissions, and saved trace filters on `gateway.team_ids`, because none of these work any longer. [Learn more](/langsmith/user-groups).
+- **Runs resume after replica shutdown**: When a replica shuts down, Agent Server on Postgres hands in-flight runs back to the queue at step boundaries. Checkpointed threads then resume on another worker instead of ending in an error. Agent Server now ships with LangGraph 1.2.20, and resuming drained runs requires LangGraph 1.2.15 or later. [Learn more](/langsmith/scalability-and-resilience).
+
+## Deployment
+
+- Your deployments now compress JSON responses with brotli or gzip when your client sends an `Accept-Encoding` header, which makes large responses from `GET /threads/{thread_id}/state` and `GET /threads/{thread_id}/history` much smaller. Streaming responses from `/runs/stream` are not compressed.
+- Cloud SQL deployments now show a Postgres Out-of-Memory Restarts chart on the Monitoring tab, and the deployment page warns you when Postgres ran out of memory in the last 24 hours. The warning includes a Change database size button when you can resize the database.
+- You can now create an agent environment with a personal or service key, so `mda dev` creates a local environment for your agent instead of falling back to a plain `<agent>-local` project. The key needs project creation permission. Tracing keys cannot create environments.
+- Deployment metrics now include per-priority charts for the Workers section when your deployment sets a priority callback: **Longest Wait to Start by Priority**, **Runs Ready to Start by Priority**, and **Running Runs by Priority**, each with one line per priority level. Deployments without a priority callback see no change.
+- Studio's default chat now shows approve, edit, and reject cards when a tool call needs approval, instead of a raw JSON editor. Proposed file writes and replacements appear as diffs inside these cards, and edited arguments are checked before you send them.
+- Deployable secrets are no longer returned for Cloud deployments. Requests to the **deployable secrets** and legacy `secrets` routes now return 404 for Cloud deployments, and listener-managed deployments continue to work.
+- Revision forms no longer show stored secret values. Saving a revision keeps the stored value for any secret you leave untouched.
+- GCP data planes now pull their add-on images (cert-manager, External Secrets, Istio, KEDA, and the Cloud SQL setup Jobs) from Artifact Registry at `us-docker.pkg.dev/langchain-artifacts/langsmith-byoc`, so your firewall allowlist needs only Google endpoints, the LangSmith control plane, Let's Encrypt, and your LLM providers. Existing data planes pick up the new registry on their next reconcile, and finished setup Jobs do not re-run.
+- Deny-by-default egress firewall for GCP data planes is now available. Set `spec.network.egressFirewall.enabled` to `true` on **LangsmithGcp** to allow only the internal ranges, Google APIs, your `allowedCidrs`, and HTTPS to your `allowedDomains`, with all other outbound traffic denied and logged. Turning it on requires `privateGoogleApis`, and it needs the patched compute provider image (`gcpProviders.computeRuntimeImage`) until a provider release can create the policy association.
+- You can now choose a Kubernetes namespace when you create a deployment on a self-hosted install or BYOC data plane. The list shows only the namespaces your administrator allowed for your workspace, and the namespace cannot be changed after creation.
+- Agent Server images now declare port 8000 with `EXPOSE`, so tools that read an image's declared ports, such as sandbox snapshots, can find the server port. Running `docker run -P` or Compose `publish_all` now publishes port 8000.
+- Workload identity for AWS, Azure, and GCP now uses the pod token of your deployment, so your deployment no longer sends its API key to get cloud tokens. If Agent Auth refuses the pod token, the deployment keeps using its API key.
+- You can now set an optional VPC network MTU when you create a GCP data plane, such as 1440 to match a peered hub or interconnect. Leave the field empty to keep GCP's default of 1460. Existing data planes keep their current MTU. Changing the MTU takes effect on nodes only after their node pools are rolled.
+- New private AWS data planes accept traffic on the internal ingress load balancer only from the VPC and its node subnets, instead of from any address. Existing data planes keep their current rules, and callers in peered VPCs, Transit Gateway, or VPN need to be listed in **allowedSourceRanges**.
+- New GCP data planes carve their GKE pod range from your network CIDR and give Services Google's managed range, so pod traffic to your private ranges keeps your address space; existing data planes are unchanged.
+- Cloud SQL backups for GCP dedicated deployments now stay in the instance's region, such as `us-central1` or `northamerica-northeast1`, instead of the `us` or `eu` multi-region. New instances use the region automatically, and existing backups remain in their original location until they age out.
+- New BYOC data planes start on the latest stable template snapshot for their cloud. Creation returns a 503 error before provisioning if your cloud has no stable snapshot yet.
+- Deployment builds and CLI builds now work on AWS, Azure, and GCP data planes that use `byoIam`. Apply the BYOC Terraform module's `deployment_builds` setting before you turn builds on.
+- Agent Server now has a `GET /threads/{thread_id}/transcript` endpoint that returns a thread's conversation as pages of turns, newest first. Each page includes a `position` you can use to replay newer stream events. Requests with a bad `limit`, `format`, `cursor`, or `position` return 422, and a cursor that is no longer on the thread's active branch returns 410.
+- Multi-process deployments now expose a public `lg_api_run_success_counter_total` metric in Prometheus, counting runs that complete successfully, so you can track run success rates against your SLA.
+- Deployment create and revision requests now return a 400 error when the same environment variable name appears more than once, and the error lists the repeated names. Previously, the last value silently replaced the earlier ones. Pasting a .env file into the variables form now updates existing rows with the same name instead of adding duplicates.
+- Scale to zero now works on AWS and GCP data planes that use `byoIam`, so you can enable `langsmith.scaleToZero` with your own IAM setup. On GCP, apply `scale_to_zero` in the BYOC Terraform module before you enable it.
+- Managed Deep Agents is now available to every organization with LangSmith Deployment access. You can deploy Managed Deep Agents without a separate entitlement.
+- Managed Deep Agents sandbox options can now be resolved per run: a `resolve` function on `defineSandbox` / `define_sandbox` picks each run's sandbox size and proxy, or returns `null` to give the run no sandbox, so a graph compiled once can still size each run's sandbox.
+- Agents can now return typed JSON in A2A responses as DataParts when the data content block's MIME type is listed in the `A2A_ALLOWED_DATA_MIME_TYPES` setting for Agent Server. Data blocks with listed MIME types keep their metadata in final responses, streamed artifacts, input-required messages, and history. Set `A2A_ALLOWED_DATA_MIME_TYPES` to a comma-separated list of MIME types; the default is empty.
+- You can now create a DEV tier AWS data plane from the create modal. DEV uses smaller, single-AZ databases and a single Redis node, which lowers cost but is not highly available.
+- Managed Deep Agents apps now answer GitHub, Linear, and Slack deliveries as soon as they are verified, before your `on_event` handler runs, so a slow handler no longer times out the delivery. Slack apps with `allow_bot_triggers` on and `trigger_mode` set to `all` now get every bot message in their channels, mentioned or not, so their handlers should decide which bots to answer.
+
+## Prompts and playground
+
+- The Databricks model selector in the **Playground** and evaluators now suggests endpoints for Claude, GPT, Gemini, Llama, GPT OSS, and DeepSeek. Availability depends on your workspace, and you can still type any custom endpoint name.
+- The Playground and LLM Gateway now offer `gpt-6.2-sol` and `gpt-6.2-astra` for OpenAI, plus `gemini-4-carbon`, `gemini-4-argon`, `gemini-4-neon`, and `gemini-4-hydrogen` for Google Gemini and Vertex AI. New LLM Gateway fallback chains start with `gpt-6.2-sol`, and new Google Gemini and Vertex AI model selectors default to `gemini-4-neon`.
+- Playground prompts no longer run script from file previews: stored file content now displays only as a sandboxed image, audio, JSON, CSV, or PDF preview, and other file sources show as a text card with the filename.
+
+## Administration
+
+- Free and Developer workspaces now see a usage meter on the Agent Overview page that shows how many of their 5k included traces they have used this month. From 80% usage, a dismissible banner replaces the meter and offers an **Unlock more traces** button.
+- Settings now uses agent environment terminology in unified workspaces, including Usage Configuration, data retention, evaluator spend limits, Engine usage, granular usage grouping, and webhook filters. Classic workspaces keep the project wording. API fields and exports are unchanged.
+- The workspace secrets list endpoint now returns results in pages with a `next_cursor` token for the next page. Use `page_size` to set up to 100 secrets per page, and pass `cursor` to retrieve the next page. The endpoint is available at `GET /api/v2/workspaces/current/secrets`.
+- You can now ask LangSmith Chat or any MCP client to list, create, update, delete, and test alert rules. Slack alert firings also show each rule's description as a context line above the buttons.
+- The org-wide service key that your BYOC data plane agents use can no longer be deleted or have its role changed. Attempts now return a 409 error explaining that LangSmith manages the key for the data plane.
+- The deprecated API usage report now lists custom apps that call deprecated endpoints, with each app's name and last editor, and the banner now names its 7-day window.
+- Your user group modal now shows each member's membership origin, a visible count in its tabs, and paginated member lists for large user groups, and member, workspace, and access policy lists use the same table layout.
+- The `langsmith` CLI now prints JSON by default when its output is piped or redirected, so scripts and agents no longer need `--format json`. Until 1.0.0, piped output stays pretty and the CLI warns on stderr; pass `--format pretty` or `--format json` to choose explicitly.
+- Agent Auth now mints installation tokens for the managed LangSmith GitHub App, and each token carries every permission the installation grants the App. Sessions on that connection require `github_user_credential_id` pointing to a user's `langsmith-github` credential, and Agent Auth refuses the session with a 403 unless GitHub shows the installation to that user's account.
+- MCP clients now display the LangSmith icon when you connect to the LangSmith MCP server. The server also supports the `2026-07-28` protocol version with `server/discover`, and browser clients from other origins must be listed in your `CORS_ALLOWED_ORIGINS` setting.
+- Organization Secrets now has its own menu item, with separate Workspace secrets and Browser secrets views. Usage Limits is split into Organization, Workspaces, Projects, and Users views, and Data Retention now has its own page and menu item.
+- You can now select **Switch account** on the OAuth consent screen to sign out and sign in with a different account, even when your current account cannot access the organization the app requires. Your authorization request is kept, so you can return to the app after signing in.
+- Insights now requires bound Vertex AI credentials for every Vertex model. A model that relies on the worker's own Google identity is rejected, and self-hosted ADC endpoints must be googleapis.com. Models using Vertex AI through Google GenAI, Anthropic, and LangChain wrappers are covered too.
+- LangSmith Chat now answers with a native Slack chart or table under its reply when the numbers call for one. Trends over time come as charts, and exact numbers to compare or look up come as tables.
+- A disabled agent environment now stops its agent: new agent access tokens are refused with `agent_disabled`, and the LLM Gateway, Managed Tools, and Tool Gateway refuse its API keys, access tokens, and Fleet calls with 403 `agent_disabled`. Enabling the environment again restores access.
+- API keys now appear in one list for personal, service, and tracing keys. Use the new Type, Created by, and Workspace filters to narrow the list, and the CSV export includes every key shown.
+- Role lists in the membership picker now sort alphabetically by display name, then by creation time. The roles API now accepts optional `sort_by` and `sort_order` parameters so you can choose the fields and directions for role lists. Requests without `sort_by` return roles in the same order as before.
+- Linear apps now get their tokens with client credentials, so a workspace admin no longer has to approve an install. Agent Auth renews the token for you, and existing apps keep the approval flow they already use.
+- The **Usage Dashboard** now loads each chart independently as it comes into view, so a slow or failed chart no longer holds up the others. A date range picker, which defaults to the last six months, sets the period for charts and CSV exports, and your selected category and dates stay in the URL.
+- Agents using the LangSmith MCP server can now report bugs, missing capabilities, and usability issues to the LangSmith team with the `report_feedback` tool. Only the message and optional `category` are sent, and no local files, environment variables, or traces are collected.
+- With `LLM_AUTH_PROXY_FORWARD_IDP_TOKEN` on, experiments run from the **Playground** in **Evaluate Mode** no longer receive your IdP token. Fleet agents still receive it.
+- Agent Auth now lets workspaces own apps, so you can register several apps per provider at the workspace level. Each app's installations are listed with their provider account ID, and you can remove an installation along with its token.
+- Agent Server now records a trace for each hosted MCP tool call, so you can see which tools agents use and why. Each call's optional reason is recorded, and calls from one session group into a single thread.
+- You can now list your workspace's resource tag keys and their values through the SDKs in one request. The call needs only the workspaces:read permission, and you can filter the results by resource type. Full create, read, update, and delete support for tag keys and tag values is also available in the SDKs.
+- Self-hosted license and cloud plan or contract expiration warnings now appear in the top-of-page banner two weeks before expiry, instead of only in Notifications. Your Notifications list no longer shows these expiry warnings.
+
+## Sandboxes
+
+- Attribution headers are now available in the sandbox create and edit forms. Add public `X-` headers such as `X-Agent-ID` to every HTTP(S) request the proxy handles, alongside destination-specific credentials. Literal values are returned by the API and sent to every proxied destination, so avoid sensitive values.
+- Sandbox command logs and network logs are now available in every workspace. Open a sandbox to view its command history and its network activity, including the Network view for traffic that a sandbox sent or received.
+- You can now pass `tag_value_ids` when you create a sandbox in the Python and JavaScript SDKs. A cloud identity scoped to a tag can use it, because the tag is fixed when the sandbox is created.
+- You can now build a sandbox snapshot from a local Dockerfile with the Go SDK's `client.Sandboxes.Snapshots.NewFromDockerfile` method and the `langsmith sandboxes snapshot build` command. The build runs in a temporary sandbox and skips files excluded by `.dockerignore`, so no local Docker is needed.
+- Tunnel connectors now run with your profile's OAuth login from `langsmith auth login`, so `langsmith tunnel connect` no longer needs an API key. The connector refreshes the token while it runs, so long-running tunnels keep working past token expiry.
+
+## Engine
+
+- Engine now files an issue from one trace that shows a concrete, actionable failure and links every other trace that shows it. Board priorities steer where Engine looks and cap severity: a finding outside them is rated medium or low unless it is PII or secret exposure, a guardrail bypass, or a destructive operation, and the scan states when it lowered one.
+- Taskset and simulation runs now check access to every deployment their secrets name by URL, so you can start a run only if you can update each of them. A run refuses to start if that check cannot complete, and the runner starts only the deployments you were authorized on.
+- The hosted MCP server now returns totals, error counts, and latency across every run in a project with `query_run_stats`, and updates evaluators with `update_evaluator` and Engine issue status and priority with `update_issue`. It also reads Engine goals with `list_engine_goals` and `get_engine_goal`.
+- Tasks whose agent can reach any public host are now refused at launch. Set `network_mode` to `allowlist` in `[environment]` and list the hosts the task needs in `allowed_hosts`.
+- Simulation runs now accept `context.agent_revision`, so a run can build the agent at an exact 40-character commit instead of the head of the default branch. A pinned run checks out its own commit each time, even when the thread already has a sandbox. Runs can also name up to 10 datasets with `context.context_sources` to seed their tasks.
+- Engine now watches CI on its GitLab fix merge requests, the same way it watches GitHub fix pull requests. When a pipeline fails, Engine revises the fix with the failed job's name, stage, failure reason, and the end of its log.
+- Engine settings now open in a centered modal with grouped navigation, so you can jump between sections without scrolling the whole page. Agent overview shows an expandable preview with Edit, Save, and Cancel pinned at the top while you scroll.
+- Engine re-checks whether a merged fix resolved its issue against the last day of runs, so a fix that did not hold no longer leaves the issue open. Issue charts also hide the fix marker for a fix that did not hold, when the issue was closed after the fix merged and is open again.
+
+## Tracing
+
+- Runs whose error starts with `ParentCommand`, `GraphDelegate`, `GraphBubbleUp`, or `NodeInterrupt` now show as **interrupted** instead of **error** in tracing ingest.
+- You can now group and filter the Coding Agent Overview by custom metadata keys, tags, and user groups. In cost and activity charts grouped by user group, runs on no user group appear as **Unclassified**.
+- Audio attachments now open in an inline player on the trace page, with play, pause, skip, mute, and speed controls. Traces with audio also show the same player beneath the root span in the single-trace tree, and playback position is kept when you switch between tree and waterfall views.
+- Insights configs and reports now accept v2 filters, so your saved Insights configs and reports can use the same filter syntax as the Runs API. Filters that reference group-level fields like `run_count` or `thread_idle_seconds` are rejected when you save a config or create a report.
+- On your first visit to Tracing, the page now opens the highest environment that has traces, checking Production, then Staging, then Development, then Local.
+- Queries that exceed the per-operation memory limit now return `422` instead of `429`, with guidance to narrow the time range or simplify the query before retrying. Other resource-limit errors still return `429`.
+- Full tree is now available for filtered trace trees with pagination on. It keeps the loaded pages, shows matches under their real parents, and loads missing parents for them. Trace tree rows also show a Load parents action when intermediate runs are not loaded.
+- The `get_coding_agent_report` MCP tool now reports on a coding agent's pull requests, cost, threads, and turns over a window of up to two weeks. It also returns merge rate and cost per merged pull request, and it can group results by LangSmith user, Git user, repo, or harness.
+- You can nest runs under a parent run without copying the parent's tags and metadata onto them by passing `inherit_parent_tags_and_metadata=False` to `tracing_context`. The option applies to every run created inside the block, including child runs. Copying stays on by default, so existing code behaves the same.
+- Thread aggregate stats now accept a `stride` parameter that returns statistics as a time series in `buckets`, with one entry per bucket in ascending order, including empty buckets. The `thread_feedback_stats` field is now returned in thread aggregate stats responses, so thread-level feedback appears for projects that have it.
+- OTLP traces now store generic span attributes in run metadata under the `otel.span.` prefix, such as `otel.span.http.route`, with no configuration needed. Self-hosted deployments can set `OTEL_PASSTHROUGH_TO_METADATA_ENABLED` to `false` to turn this off.
+
+## Evaluators
+
+- Trajectory rules now accept trace and tree filters, and they can use V2 filters. Your trajectory rules can select runs with the same trace and tree filter expressions as other rule types.
+- **langsmith evaluators rule list** now accepts `--limit`/`-n`, `--cursor`, `--name-contains`, and `--type project|dataset`, so you can page through evaluator rules and filter them by name or target. Passing `--cursor` returns `rules` and `cursors.next` in JSON output.
+- Run rule outcome data is now deleted automatically 30 days after it is written on hosted AWS, GCP, and Azure deployments and on BYOC and self-hosted deployments that use the LangSmith storage configuration.
+- Creating a rule with a backfill now returns `backfill_id` and `backfill_status` in the response, and backfill logs list every unit instead of only the first five. The `schema` field is now documented as not accepted for TypeSafe and OpenAI Decisions evaluators, whose schema comes from their questions.
+
+## Feedback
+
+- Feedback evidence now appears in the **Messages** view for threads and traces: select **Show evidence** on a feedback tag to step through each message the evidence points at, with the matching words highlighted.
+- Agents can review annotation queue items through the hosted MCP server. Reviews add feedback to the item's run and mark the item completed.
+- Feedback is now validated only against enforced feedback configs, so a feedback config you have not enforced no longer rejects scores outside its range. Your feedback keys can also have a second feedback config, such as one for an annotation queue, unless the key already has an enforced config.
+- Annotation queues now have an **Overview** button in the queue list, so you can open a queue's Overview page directly. The Overview page's back arrow returns you to the queue list with your sort and filters, or to the review view if you opened it from there.
+
+## Gateway
+
+- Model calls from your agents reach the LangSmith gateway even when code hard codes a provider URL or skips the SDK. OpenAI, Anthropic, Gemini, Vertex AI, Mistral, Groq, Fireworks, and xAI use their gateway routes with your workspace provider key. OpenRouter and Together use the custom provider routes, which need a custom model profile with that name whose base URL is the provider's OpenAI-compatible URL.
+- You can call the MCP endpoint with `me` as the kit ID to list and call every MCP server you can use, including workspace servers, personal servers, and enabled built-ins, without saving a kit. Saved kits also report each server's connection status at `GET /kits/{kit_id}/connections`, and MCP Apps UIs now render through tool kits.
+- Policies on Fleet agents now apply to personal agents and the general-purpose agent, not only shared agents. Role and user group rules also apply to Fleet calls, so "every Fleet agent except group X" no longer blocks members of group X.
+- Gateway fallback routing now avoids models in cooldown by default. Set `GATEWAY_COOLDOWN_LEARN_ENABLED` and `GATEWAY_COOLDOWN_ENFORCE_ENABLED` to `false` to turn either behavior off.
+- Saved Azure OpenAI configs now call the Responses API when Provider API is set to Responses, so Claude Code works with newer Azure models that reject function tools with reasoning effort on Chat Completions. The gateway also serves embeddings at POST /azure/v1/embeddings, and those requests appear in traces with token usage.
+- Playground can now send your own provider API key for a single request with the `X-LangSmith-Provider-Key` header. The gateway uses that key instead of the workspace secret for OpenAI, Anthropic, Groq, xAI, and DeepSeek routes. Requests from other callers, or with this header on other routes, return a 400 or 403 error.
+- The "Available in this workspace" switch for built-in and personal MCP servers is now available to every workspace, including self-hosted deployments. Turn a server off to block its tool calls, and see its Off state and other members' personal servers under **Tools** > **Servers**.
+- Non-admin members and workspace admins now see only organization-wide agent policies and the policies for their own workspace in **Tools** > **Policies** and in the agent policies API. Organization admins still see every policy. Requesting another workspace's policy by ID returns `404`.
+- Managed tool servers in Terraform now accept a `logo_path` attribute, so you can set a server logo from a PNG or JPEG file of up to 1 MiB and 2048 by 2048 pixels. Changing the file updates the logo in place without replacing the server.
+
+## Datasets and experiments
+
+- You can now pass `upload_runs` to `evaluate()` and `aevaluate()` to choose which runs are uploaded to LangSmith. Pass a callable to decide per example, and summary scores still cover every run.
+- The LangSmith MCP server now pages `list_datasets`, `list_projects`, `list_experiments`, and `list_prompt_commits` with `page_size` and `cursor`, so agents can list every result. `create_examples` can copy a run's inputs and outputs with `use_source_run_io`, and `get_thread_history` reads a long thread newest first when `order` is `desc`.
+
+## Fixes and improvements
+
+<Accordion title="Show all fixes">
+
+- Traces for Vercel AI SDK LLM steps now show the time to first token, which was missing before.
+- Filtering run rules with **GET /api/v1/runs/rules** now applies every filter you supply, so you get only rules that match all of `dataset_id`, `session_id`, `name_contains`, `id`, and `evaluator_id`.
+- Sandboxes whose saved memory cannot be loaded on the current CPU now boot from their disks instead of failing, so a sandbox suspended on an Intel host restarts cleanly on an AMD host.
+- Saved Databricks model configurations with **Use AI Gateway** turned on now work in Playground and evaluators. Requests reach the MLflow AI Gateway route, and your saved token is used for authentication.
+- Bedrock Converse and ChatBedrock configs saved with a `model` field now open in the Playground with their model and ARN intact. Before, the model was overwritten with a default.
+- The Alerts tab now shows alerts from every environment when an agent has more than one environment, instead of showing nothing.
+- Feedback on runs outside the current request now works for tenants that read from SmithDB without ClickHouse. Feedback creation and multipart ingestion look up run coordinates in SmithDB first, so they no longer fail or queue when ClickHouse is off.
+- Home, onboarding, and the agent overview now show an error state with a **Try again** button when a request fails, instead of a misleading empty state or a spinner that never stops.
+- Your first SAML sign-in now shows your organizations and tenants right away, so you no longer need to sign out and back in to see your organization access.
+- LangSmith Chat no longer crashes with a `TypeError` while a run streams messages, so turns with several tool calls render in full.
+- Billing and Trace Usage Limits pages now show a "Couldn't load" message with a **Try again** button when a request fails, instead of "Organization not found" or "Unlimited" spend limits.
+- Creating a run on a thread that another request is writing to now succeeds once the lock clears, instead of failing with a 500 error. If the thread stays locked through all three attempts, your request returns a 503 error and no run is saved.
+- Agent Auth now asks you to reconnect when X rejects a refresh token with an invalid_request error. Your MCP calls return 428 with a verification_url instead of a permanent 502.
+- Your BYOC Azure data plane now creates its AKS system pool with another 2 vCPU, 8 GiB VM size when your subscription cannot create the default Standard_D2s_v6 in a region. Creating the data plane no longer fails with an error about that VM size.
+- Fixed sandboxes that hung on restore with `SandboxUnavailableError: not ready after 30s`. Restored sandboxes now finish starting up.
+- Fixed an error that stopped **Chat** from reading issues with a GitHub pull request event. Those issues now load, and their pull request links and status updates display correctly.
+- Workload identity tokens for AWS, Azure, and GCP agents now mint successfully. Requests to your token endpoint no longer return a 404 when agent access tokens are not configured.
+- Trace Messages view no longer fails with a 500 error on traces that include ChatAnthropic runs with LangChain-serialized inputs. Messages now load for these traces.
+- `langgraphjs deploy --remote` on BYOC data planes now builds and deploys instead of failing with a 403 error on the base image pull.
+- UI requests no longer fail with dropped connections during rollouts or node consolidation on BYOC data planes on AWS and GCP.
+
+</Accordion>
+
+</Update>
+
 <Update label="November 9-16, 2026" rss={{ title: "2026-11-09 - LangSmith Cloud update" }}>
 
 ## Highlights
