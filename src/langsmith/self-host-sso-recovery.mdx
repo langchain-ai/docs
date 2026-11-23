@@ -1,0 +1,95 @@
+---
+title: Recovery admin login for self-hosted SSO
+sidebarTitle: Recovery admin login
+---
+
+If your identity provider (IdP) goes down or is misconfigured, [SSO login](/langsmith/self-host-sso) becomes unavailable and nobody can sign in. Recovery admin login is an opt-in emergency credential that bypasses SSO entirely, so a designated administrator can still get into the instance using a local password instead of going through the IdP.
+
+<Note>
+This is analogous to [ArgoCD's admin password reset](https://github.com/argoproj/argo-cd/blob/master/docs/faq.md#i-forgot-the-admin-password-how-do-i-reset-it): a break-glass credential for when the normal login path is unavailable, not a replacement for SSO.
+</Note>
+
+<Warning>
+**Minimum version.** Recovery admin login requires LangSmith chart version **0.18.2** (application version **0.18.32rc1**) or later on the v18 stable line, or chart version **0.19.0-rc.8** (application version **0.19.3rc1**) or later on the v19 line.
+</Warning>
+
+## When to use it
+
+- Your IdP is unreachable (network outage, certificate expiry, decommissioned tenant).
+- Your IdP is misconfigured after a LangSmith or IdP-side change, and SSO login fails for everyone.
+- You need emergency access to an installation before you can fix the underlying IdP issue.
+
+It is not a general-purpose login method. Recovery admin login is meant to be configured ahead of time and used only during an outage.
+
+## Prerequisites
+
+- [Self-hosted](/langsmith/self-hosted) LangSmith with [SSO via OAuth2.0/OIDC](/langsmith/self-host-sso) configured (`authType: mixed` and `oauth.enabled: true`).
+- An existing, enabled organization admin identity, already provisioned through SSO. Recovery admin login authenticates as this identity; it does not create a new user or a separate credential store.
+
+## Configure the recovery admin
+
+### 1. Generate a password hash
+
+Recovery admin passwords are never stored in plaintext. Generate a PBKDF2-SHA256 hash locally with the [LangSmith CLI](/langsmith/langsmith-cli#hash-a-recovery-password):
+
+```bash
+langsmith auth hash-password
+```
+
+This prompts for the password (and a confirmation) without echoing it to the terminal, and prints a hash in the form `pbkdf2_sha256$<iterations>$<salt>$<hash>`. No login or API key is required to run this command.
+
+### 2. Set the Helm values
+
+```yaml Helm
+config:
+  authType: mixed
+  oauth:
+    enabled: true
+    # ...your existing OAuth configuration
+  recoveryAdmin:
+    enabled: true
+    email: admin@example.com # Must match an existing, enabled SSO organization admin
+    passwordHash: "pbkdf2_sha256$600000$<salt>$<hash>" # From step 1
+```
+
+`email` must match the email of an organization admin identity that is already provisioned and enabled. If the identity is disabled, or belongs to a disabled organization, recovery login is rejected the same as a normal login would be.
+
+### Source the password hash from a secret instead
+
+Like the chart's other sensitive values, `passwordHash` can be sourced from an existing Kubernetes secret instead of set inline:
+
+```yaml Helm
+config:
+  existingSecretName: "langsmith-secrets"
+  recoveryAdmin:
+    enabled: true
+    email: admin@example.com
+```
+
+Add the hash under the `recovery_admin_password_hash` key in your secret. See [Use an existing secret](/langsmith/self-host-using-an-existing-secret#parameters).
+
+<Note>
+`email` is not treated as sensitive and must always be set inline, even when `passwordHash` is sourced from `existingSecretName`.
+</Note>
+
+## Log in during an outage
+
+Recovery admin login is not surfaced as a button on the normal login screen. While signed out, append `?recovery=true` to your instance's URL, for example:
+
+```
+https://langsmith.example.com/?recovery=true
+```
+
+This replaces the standard **Log in via SSO** screen with an email and password form. Sign in with the `email` and password configured above. The resulting session authenticates as the organization admin identity that email belongs to, with that identity's existing permissions.
+
+<Tip>
+Bookmark or document this URL alongside your incident runbooks. It is not discoverable from the UI.
+</Tip>
+
+## Related pages
+
+- [Set up SSO with OAuth2.0 and OIDC](/langsmith/self-host-sso)
+- [Authentication methods](/langsmith/authentication-methods)
+- [Use an existing secret](/langsmith/self-host-using-an-existing-secret)
+- [Disaster recovery for self-hosted LangSmith](/langsmith/self-host-disaster-recovery)
+- [LangSmith CLI](/langsmith/langsmith-cli)
