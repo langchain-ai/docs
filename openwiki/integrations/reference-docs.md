@@ -1,11 +1,11 @@
 ---
 type: integration boundary
 title: Reference Documentation Integration
-description: Explains how this repository links to externally hosted SDK references, publishes Mintlify-generated OpenAPI endpoint surfaces, and uses package metadata to choose reference or package destinations. Covers ownership, refresh workflows, scoped link resolution, and validation boundaries.
+description: Explains which API reference surfaces are external, which OpenAPI inputs are committed or fetched, how semantic link-map references resolve, and which workflows validate or refresh them.
 tags: [api-reference, openapi, cross-references, mintlify, langsmith, package-metadata]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-11-16T08:15:17.266Z
+    at: 2026-11-23T08:07:24.438Z
 sources:
   - id: openwiki-source-759309714d08144a07e1b2e0
     resource: repo://.github/ISSUE_TEMPLATE/04-reference-docs.yml
@@ -43,21 +43,23 @@ sources:
     resource: repo://src/langsmith/server-api-ref.mdx
   - id: openwiki-source-11cb186ad15806b001231824
     resource: repo://src/langsmith/smith-api-ref.mdx
+  - id: openwiki-source-e4f64bb0a31ff2d8ed6232cc
+    resource: repo://src/langsmith/tool-gateway-openapi.json
   - id: openwiki-source-c2764a7369c8fbf3e49da6f8
     resource: repo://tests/unit_tests/test_check_cross_refs.py
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-16T08:15:17.266Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-23T08:07:24.438Z" }
 ---
 
 # Reference Documentation Integration
 
-This repository builds the authored documentation site at `docs.langchain.com`. It **does not build** [reference.langchain.com](https://reference.langchain.com/python/): generated API reference for LangChain, LangGraph, LangSmith, and integration packages is built and deployed elsewhere, with separate [Python](https://reference.langchain.com/python/) and [JavaScript/TypeScript](https://reference.langchain.com/javascript/) sites.
+This repository builds the authored `docs.langchain.com` site. It does **not** build [reference.langchain.com](https://reference.langchain.com/python/): generated API reference for LangChain, LangGraph, LangSmith, and integrations is built and deployed elsewhere as separate [Python](https://reference.langchain.com/python/) and [JavaScript/TypeScript](https://reference.langchain.com/javascript/) sites.
 
-There are three related but distinct integrations:
+There are three related boundaries:
 
 1. Authored Markdown and MDX use semantic `@[symbol]` markers that preprocess into links to the external SDK reference site.
-2. `src/docs.json` declares OpenAPI inputs that Mintlify turns into endpoint pages during deployment.
+2. `src/docs.json` declares OpenAPI inputs that Mintlify turns into endpoint pages at deployment.
 3. `packages.yml` supplies package metadata used by the generated integration listing to choose a hosted reference URL or a PyPI fallback. It is routing metadata, not a generator for package reference pages.
 
 ```mermaid
@@ -67,14 +69,14 @@ flowchart TD
   Map --> External["reference.langchain.com"]
   Packages["packages.yml metadata"] --> Listing["Generated integration listing"]
   Listing --> PackageDest["Hosted reference URL or PyPI"]
-  Spec["OpenAPI input"] --> Config["docs.json OpenAPI declaration"]
+  Spec["OpenAPI input"] --> Config["docs.json declaration"]
   Config --> Deploy["Mintlify deployment"]
   Deploy --> Endpoints["Generated endpoint pages"]
 ```
 
-This diagram shows separate SDK-link, package-listing, and OpenAPI publication paths. Do not hand-author endpoint MDX as a substitute for a generated OpenAPI route, and do not infer package reference-page ownership from the integration listing.
+*This separates SDK links, package destination selection, and deployment-time OpenAPI publication.*
 
-## Link to the external SDK reference
+## Semantic links to the external SDK reference
 
 Use semantic markers rather than hard-coded SDK-reference URLs:
 
@@ -84,105 +86,88 @@ Use semantic markers rather than hard-coded SDK-reference URLs:
 @[`StateGraph`]
 ```
 
-The preprocessor resolves these forms through `SCOPE_LINK_MAPS`, which is assembled from the scoped `LINK_MAPS` entries in `pipeline/preprocessors/link_map.py`. Python and JavaScript maps associate symbol names with `reference.langchain.com` URLs; some LangSmith entries resolve to local `docs.langchain.com` routes because they point at this repository's OpenAPI-generated surface. Add or correct a map entry when a symbol must be linkable; do not duplicate a destination in authored pages.
+The preprocessor resolves these forms through `SCOPE_LINK_MAPS`, assembled from scoped `LINK_MAPS` entries in `pipeline/preprocessors/link_map.py`. Python and JavaScript maps associate symbol names with `reference.langchain.com` URLs; some LangSmith entries instead resolve to local `docs.langchain.com` routes for this repository's OpenAPI-generated surface. Add or correct a map entry when a symbol must be linkable; do not duplicate the destination in authored pages.
 
-Autolinking runs before conditional rendering. It begins in the page default scope, switches inside `:::python` or `:::js` fences, and resets to the default at a bare `:::`. Ordinary fenced code is unchanged, and `\\@[StateGraph]` renders as a literal marker after the escape is removed. An unknown name logs an informational message and remains unchanged rather than receiving a guessed URL. The unhandled `global` scope logs an error and falls back to Python.
+Autolinking starts in the page's default scope, switches inside `:::python` or `:::js` fences, and resets at a bare `:::`. Ordinary fenced code is unchanged. An escaped marker such as `\\@[StateGraph]` is emitted as literal text after the escape is removed. An unknown name logs an informational warning and remains unchanged; the `global` scope logs an error and falls back to Python.
 
-### Validate cross-references
+Run the source-level validator:
 
 ```bash
 make check-cross-refs
 ```
 
-This source-level check scans Markdown and MDX beneath `src/` with the same marker and fence patterns. It ignores ordinary code fences, escaped markers, `snippets/code-samples/`, and `node_modules`. Files in `oss/python/` and `oss/javascript/` are checked in their respective scopes; a shared `oss/` file is checked in both. Consequently, an unfenced reference in shared OSS content must resolve in every emitted language scope, while a language fence narrows the requirement. The command exits nonzero for unresolved names.
+It scans Markdown and MDX under `src/` with the shared reference and fence patterns, ignoring ordinary code fences, escaped markers, `snippets/code-samples/`, and `node_modules`. `oss/python/` defaults to Python, `oss/javascript/` to JavaScript, shared `oss/` files to both, and non-OSS content to Python. A language fence narrows validation, so an unfenced shared reference must resolve in every applicable map. This check establishes local map membership; it does not prove that a rendered route, redirect, anchor, or external destination is reachable.
 
-This is distinct from rendered-site link checking: passing a Mintlify link check does not establish that every semantic marker has a scoped mapping.
+## Package metadata chooses destinations
 
-## Package metadata and reference destinations
+`packages.yml` describes package identity and publication metadata, including `repo`, optional `path`, display-name overrides, integration visibility, JavaScript package names, download data, provider-page overrides, and `has_reference_docs`. The latter opts eligible third-party packages into hosted reference documentation; without it, the package URL falls back to PyPI.
 
-`packages.yml` describes package identity and publication metadata, including `repo`, optional `path`, display-name overrides, integration visibility, JavaScript package names, download data, provider-page overrides, and `has_reference_docs`. The file's comments define `has_reference_docs` as the opt-in for third-party packages whose reference documentation is hosted on `reference.langchain.com`; without it, the package URL falls back to PyPI.
+`pipeline/tools/partner_pkg_table.py` enriches this metadata and generates the provider overview. Monorepo and `langchain-ai` packages use `reference.langchain.com`; eligible third-party packages require `has_reference_docs`; otherwise `package_url` uses PyPI. Integration links use the canonical top-level `/python/<package>` path. The generated provider overview is refreshed by `uv run python pipeline/tools/partner_pkg_table.py` and must not be hand-edited: change `packages.yml` or table policy, then regenerate and review the result.
 
-`pipeline/tools/partner_pkg_table.py` enriches this metadata and generates the provider overview. Its `reference_url` policy gives monorepo and `langchain-ai` packages a Python reference URL, permits a third-party package to use that destination only when `has_reference_docs` is true, and otherwise returns no reference URL so `package_url` uses PyPI. Integration package links use the canonical top-level `/python/<package>` form; non-integration packages use `/python/<package>/`. The generated listing is therefore a link-selection consumer of external reference documentation, not evidence that this repository generates those pages.
+## OpenAPI inputs versus generated endpoint pages
 
-The generated provider overview is refreshed by `uv run python pipeline/tools/partner_pkg_table.py` and must not be hand-edited. Change package routing in `packages.yml` (or the table policy when the behavior itself needs changing), then regenerate and review the resulting listing.
+Mintlify generates endpoint pages at deployment from declarations in `src/docs.json`. Those pages are not repository-authored Markdown or MDX and are absent from the local `build/` output. Do not create placeholder endpoint pages or patch generated routes locally.
 
-## Declare OpenAPI inputs, not endpoint pages
-
-`src/docs.json` is the contract between each OpenAPI input and Mintlify route generation. The three LangSmith sections differ in source ownership and lifecycle:
-
-| Section | Input and lifecycle | Safe change path | Generated route directory |
-| --- | --- | --- | --- |
-| Agent Server API | Committed `src/langsmith/agent-server-openapi.json`; copied by the private `langchainplus` monorepo's `langgraph-api-sync-openapi.yml` workflow into specification-update PRs. The standalone `langgraph-api` repository is archived. | Change the source in `langchainplus`, then review the generated PR; do not edit the JSON by hand. | `langsmith/agent-server-api` |
-| Control Plane API | `https://api.host.langchain.com/openapi.json`, fetched by Mintlify at deployment; no local specification file exists. | Correct the service-owned source; do not commit a local copy. | Mintlify default, `/api-reference/` |
-| LangSmith REST API | Committed `src/langsmith/langsmith-platform-openapi.json`, produced by scheduled automation. | Fix upstream content or processor policy, regenerate, and review the refresh PR. Never patch the JSON manually. | `langsmith/smith-api` |
+| API section | Input ownership and lifecycle | Generated route |
+| --- | --- | --- |
+| Agent Server API | Committed `src/langsmith/agent-server-openapi.json`; copied into update PRs by the private `langchainplus` monorepo's `langgraph-api-sync-openapi.yml` workflow. The standalone `langgraph-api` repository is archived. | `/langsmith/agent-server-api/` |
+| Control Plane API | Remote `https://api.host.langchain.com/openapi.json`, fetched by Mintlify at deployment; no local specification file. | `/api-reference/` |
+| LangSmith REST API | Committed `src/langsmith/langsmith-platform-openapi.json`, refreshed by scheduled automation. | `/langsmith/smith-api/` |
+| Tool Gateway API | Committed `src/langsmith/tool-gateway-openapi.json`. | `/langsmith/tool-gateway-api/` |
 
 ```mermaid
-flowchart TD
-  AgentInput["Committed Agent Server spec"] --> AgentConfig["docs.json Agent Server declaration"]
-  ControlInput["Control Plane remote URL"] --> ControlConfig["docs.json Control Plane declaration"]
-  Service["api.smith.langchain.com"] --> Processor["LangSmith OpenAPI processor"]
-  Processor --> RestInput["Committed LangSmith REST spec"]
-  RestInput --> RestConfig["docs.json REST declaration"]
-  AgentConfig --> Mintlify["Mintlify deployment"]
-  ControlConfig --> Mintlify
-  RestConfig --> Mintlify
-  Mintlify --> Routes["Published endpoint routes"]
+flowchart LR
+  Agent["Committed Agent Server JSON"] --> Config["docs.json"]
+  Control["Control Plane remote URL"] --> Config
+  Rest["Committed LangSmith REST JSON"] --> Config
+  Gateway["Committed Tool Gateway JSON"] --> Config
+  Config --> Mint["Mintlify deployment"]
+  Mint --> Routes["Hosted endpoint pages"]
 ```
 
-This diagram distinguishes committed generated inputs from the deployment-fetched Control Plane input. Mintlify generates all endpoint pages at deployment; they are not repository-authored Markdown or MDX sources and do not exist in the local `build/` output. **Do not hand-author endpoint MDX.**
+*The repository owns declarations and selected inputs; Mintlify owns the endpoint-page generation step.*
 
-### Keep generated sections with authored context
+The navigation keeps authored overview pages beside their generated sections: Agent Server and Control Plane are in the LangSmith deployment **Reference** group, the LangSmith REST overview is in the product **Reference** tab, and Tool Gateway has its own product setup Reference section. The overview pages provide context; the OpenAPI declarations produce endpoint reference pages.
 
-Generated sections sit beside authored overview pages. The LangSmith deployment **Reference** group contains `langsmith/server-api-ref` with the Agent Server declaration and `langsmith/api-ref-control-plane` with the Control Plane declaration. The LangSmith product **Reference** tab contains `langsmith/smith-api-ref` with the LangSmith REST declaration. Keep the overview, group placement, and OpenAPI declaration aligned when changing a section.
+## Update and validate each input through its owner
 
-The overviews provide product context and examples; the declarations produce the endpoint reference. For example, the Agent Server overview points readers to a deployment's `/docs` endpoint, the Control Plane overview describes deployment automation, and the REST overview describes platform access. Do not move endpoint-specific documentation into invented generated-route source files.
+### Agent Server
 
-### Validate the committed Agent Server input
+`src/langsmith/agent-server-openapi.json` is updated by PRs opened by the private `langchainplus` workflow, titled `Update Agent ServerOpenAPI spec for API version X.Y.Z`; that workflow copies `langgraph-api/api/openapi.json`. Do not edit it by hand.
 
-Agent Server changes are independent of the LangSmith REST refresh. The committed specification is updated by PRs opened by the private `langchainplus` monorepo's `langgraph-api-sync-openapi.yml` workflow, titled `Update Agent ServerOpenAPI spec for API version X.Y.Z`. That workflow copies `langgraph-api/api/openapi.json`; the standalone `langgraph-api` repository is archived. Do not edit the spec by hand.
+`make check-openapi` builds the docs and runs `mint openapi-check langsmith/agent-server-openapi.json` from `build/`. Despite its name, the Make target currently checks the Agent Server specification only. The CI link-check workflow invokes this target after the rendered link check. It does not validate the deployment-fetched Control Plane API, LangSmith REST API, or Tool Gateway API.
 
-```bash
-make check-openapi
-```
+### LangSmith REST
 
-Despite its broad name, this target builds the documentation and runs `mint openapi-check langsmith/agent-server-openapi.json` from `build/`. It validates **only the Agent Server** specification. The CI link-check workflow runs the anchor-aware rendered link check and then this target. Do not interpret it as validation of the deployment-fetched Control Plane API or the LangSmith REST specification.
-
-### Refresh and shape the committed LangSmith REST input
-
-Do **not** hand-edit `src/langsmith/langsmith-platform-openapi.json`. The refresh workflow runs daily at 10:00 UTC and can be manually dispatched. It runs:
+Do **not** hand-edit `src/langsmith/langsmith-platform-openapi.json`. The workflow runs daily at 10:00 UTC and on demand:
 
 ```bash
 uv run python scripts/process_langsmith_openapi.py --write
 ```
 
-By default, the processor fetches `https://api.smith.langchain.com/openapi.json`. Network fetching accepts only the allow-listed `api.smith.langchain.com` host and uses a 30-second timeout. `--input` supplies controlled local input for reproduction or policy work. `--output` selects a destination, but the processor writes there only with `--write`; otherwise, it prints processed JSON to standard output.
+By default the processor fetches `https://api.smith.langchain.com/openapi.json`, allows only that host, and uses a 30-second timeout. `--input` supplies controlled local JSON; `--output` selects a destination, but writing occurs only with `--write`. Without `--write`, transformed JSON is printed to standard output.
 
-The processor curates the upstream specification for public Mintlify documentation. It hides configured Fleet, product-feedback, internal, infrastructure, metrics, health, and path-selected operations; assigns human-readable tag groups and group order; and normalizes operation titles. Visible non-sandbox v2 operations receive `(v2)` labels. Existing Beta and v2 markers are removed before normalized markers are reapplied, so repeated processing is idempotent.
+The processor shapes the public document by hiding configured Fleet, feedback, internal, infrastructure, metrics, health, and selected system operations; grouping and ordering tags; and normalizing operation titles. Visible non-sandbox v2 operations receive `(v2)` labels. Existing Beta and v2 markers are removed before normalized markers are reapplied, making repeated processing idempotent.
 
-The workflow saves the candidate specification, restores the checkout, then reuses the `chore/refresh-langsmith-openapi` branch when its PR is open or creates it otherwise. It stages only the specification and exits without a commit when that file has no diff. Treat the PR as the review boundary for externally sourced public-reference changes. For an unexpected exposure, omission, title, or group, change the upstream API description or explicit processor policy and regenerate.
+The refresh workflow stages only the committed platform specification, reuses an open `chore/refresh-langsmith-openapi` PR or creates it, and makes no commit when the generated file is unchanged. Review the PR as the publication boundary for externally sourced reference changes. Change upstream API content or explicit processor policy, not the generated JSON, when exposure, titles, or groups are wrong.
 
-## Understand rendered link-check exclusions
+## Rendered link checks and known boundaries
 
-`make broken-links` and `make broken-links-with-anchors` build first, run Mintlify in `build/` with redirect validation, filter the report through `scripts/filter_mint_broken_links.py`, and fail only when filtered output still contains an indented link report. The anchor-aware command also requests anchor checking; CI uses it before the Agent Server OpenAPI check.
+`make broken-links` and `make broken-links-with-anchors` build first, run Mintlify from `build/` with redirect validation, filter through `scripts/filter_mint_broken_links.py`, and fail when filtered output still contains an indented link report. The anchor-aware command additionally checks anchors and is used by CI.
 
-The filter deliberately removes known local-build false positives:
+The filter excludes reports for all four deployment-generated destinations—`/langsmith/agent-server-api/`, `/langsmith/smith-api`, `/langsmith/tool-gateway-api/`, and `/api-reference/`—because those routes are absent locally. It also removes complete standalone `snippets/` sections and selected legacy relative paths. Anchor mode additionally removes only the named SmithDB migration anchors, two feedback annotation-queue anchors, and three `env-var-cloud` anchors. Other broken links and anchors remain failures. A passing local check therefore does not prove a hosted OpenAPI route or an excluded anchor; inspect a Mintlify preview or deployment for those surfaces.
 
-- all reports for deployment-generated destinations under `/langsmith/agent-server-api/`, `/langsmith/smith-api`, and `/api-reference/`;
-- entire standalone `snippets/` report sections, because snippet links resolve only when imported; and
-- selected legacy relative paths.
-
-With `--check-anchors`, it additionally removes only the named imported-heading false positives: the SmithDB migration anchors `traces-query`, `runs-query`, and `exceptions`, the feedback anchors `annotation-queues-add-runs` and `annotation-queues-read-runs`, and the environment-variable anchors `n_jobs_per_worker`, `redis_uri_custom`, and `resumable_stream_ttl_seconds` on `/langsmith/env-var-cloud`. Other broken links and anchors remain failures. Therefore a passing local command does not prove the excluded deployment-time routes or named anchors work; inspect the generated endpoint surface in a hosted preview or deployment rather than creating local endpoint files.
-
-Focused tests cover cross-reference scope selection, shared-file validation, custom-title and backtick forms, multiple references, and the code-block, escaped-marker, and code-sample exclusions. Filter tests confirm that genuine failures and non-exempt anchors remain after filtering.
+Focused tests cover Python and JavaScript scope selection, shared-file validation, unresolved/custom-title/backtick/multiple references, and code-block, escaped-reference, and code-sample exclusions. Filter tests preserve genuine failures and non-exempt anchors while checking the OpenAPI and snippet exclusions.
 
 ## Route issues to the owning system
 
-For missing pages, broken links, or incorrect signatures on `reference.langchain.com`, open the [Reference Documentation issue](https://github.com/langchain-ai/docs/issues/new?template=04-reference-docs.yml). The template requires an issue type, language, and detailed description, and collects a product plus an optional reference-page URL for routing. Fixes belong in external reference-generation tooling, not this repository.
+For missing pages, broken links, or incorrect signatures on `reference.langchain.com`, open the [Reference Documentation issue](https://github.com/langchain-ai/docs/issues/new?template=04-reference-docs.yml). The template requires an issue type, language, and detailed description and collects a product plus an optional reference-page URL. Fixes belong in external reference-generation tooling, not this repository.
 
-Change this repository for an authored marker, scoped map entry, preprocessor or source-check behavior, package-listing metadata or policy, a `docs.json` declaration, an Agent Server specification update, or a reviewed LangSmith REST refresh. Preserve the boundary: external SDK reference is owned elsewhere; package metadata only selects destinations; committed OpenAPI inputs retain their own update policy; and Mintlify, not hand-authored endpoint MDX, creates endpoint documentation.
+Change this repository for authored markers and map entries, preprocessing or source-check behavior, package metadata or listing policy, `docs.json` declarations, Agent Server input updates through their owning workflow, or a reviewed LangSmith REST refresh. Preserve the boundary: external SDK reference is owned elsewhere, committed OpenAPI inputs retain their own update policy, remote inputs stay remote, and Mintlify—not hand-authored endpoint MDX—creates endpoint documentation.
 
 ## Related documentation
 
-- [Build System](/openwiki/architecture/build-system.md) — preprocessing and generated artifacts.
+- [Repository Source Map](/openwiki/architecture/source-map.md) — ownership and generated-artifact boundaries.
 - [Mintlify Integration](/openwiki/integrations/mintlify.md) — deployment, previews, hosted artifacts, and rendered-site checks.
+- [Cross-References and Link Resolution](/openwiki/operations/cross-references.md) — semantic markers and scoped validation.
 - [LangSmith OpenAPI Refresh](/openwiki/workflows/langsmith-openapi-refresh.md) — processor policy and refresh-PR lifecycle.

@@ -1,21 +1,25 @@
 ---
 type: documentation validation contract
 title: Validate Package Version Claims
-description: Verify that package versions named in authored documentation exist on PyPI or npm. Covers claim discovery, ecosystem resolution, failure semantics, ignore exceptions, focused use, and the checker’s deliberate limits.
+description: Verify that package versions named in authored documentation exist on PyPI or npm, while preserving human ownership of feature-version choices. Covers claim discovery, ecosystem routing, registry failures, deliberate exceptions, upstream-mirrored requirements, and CI operation.
 tags: [version-claims, documentation, validation, ci, package-registries]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-11-02T08:15:40.431Z
+    at: 2026-11-23T08:07:24.438Z
 sources:
   - id: openwiki-source-21617d8a6b2b570989a7c900
     resource: repo://.github/workflows/check-version-claims.yml
+  - id: openwiki-source-0976291f8216a4c7151f20a7
+    resource: repo://.github/workflows/refresh-external-versions.yml
+  - id: openwiki-source-6b3ad04031a04803eb901844
+    resource: repo://scripts/check_external_versions.py
   - id: openwiki-source-99b53585619b83f258314f8b
     resource: repo://scripts/check_version_claims.py
   - id: openwiki-source-0cd1dbd077626457942be406
     resource: repo://scripts/version_claims_ignore.cfg
   - id: openwiki-source-607673c5c40214b511f9e0a7
     resource: repo://tests/unit_tests/test_check_version_claims.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-02T08:15:40.431Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-23T08:07:24.438Z" }
 ---
 
 # Validate Package Version Claims
@@ -99,6 +103,14 @@ flowchart TD
 
 This distinction is intentional. A registry outage, private package, or temporary lookup problem does not make CI fail. In contrast, a successfully resolved package that lacks the named version is reported with its registry, latest release, and up to five documentation locations, then fails normally. If no blocking findings occur, the checker reports that every version exists on its registry.
 
+## Refresh requirements mirrored from upstream projects
+
+Package registries are not the only source of version requirements. Some documentation mirrors a requirement owned by another GitHub project, and those claims are registered in `scripts/data/external_versions.yaml` rather than sent to PyPI or npm. `scripts/check_external_versions.py` reads each entry’s page pattern and upstream source, supports GitHub file or latest-release sources, and requires the page pattern to match exactly once.
+
+The scheduled `refresh-external-versions.yml` workflow runs Mondays at 08:00 UTC and can also be dispatched manually. Its write job runs `uv run python scripts/check_external_versions.py --write`; when upstream versions drift, the script rewrites only the captured version digits in `src/` and the workflow opens or updates the standing `chore/refresh-external-versions` pull request. It does not validate or rewrite surrounding prose, so reviewers must check changed prerequisites, peer dependencies, flags, and other context. Upstream lookup failures are reported as unreadable entries but do not prevent resolved updates from reaching the pull request.
+
+The workflow’s separate full sweep runs the package checker with `--advisory-only` over every page. This finds package versions that stopped resolving even when their pages were not edited; the advisory mode prevents a registry outage or yanked release from turning the scheduled workflow red.
+
 ## Manage standing exceptions
 
 `scripts/version_claims_ignore.cfg` contains exact specifier strings that must not be checked. Blank lines and `#` comments, including trailing comments, are discarded; no ecosystem prefix is part of an entry. Filtering occurs before any registry lookup.
@@ -119,8 +131,7 @@ When changing the workflow, checker, or configuration, test the smallest affecte
 
 ## See also
 
+- [Source map and authored-content boundaries](/openwiki/architecture/source-map.md)
 - [Documentation Routes and Language Versioning](/openwiki/concepts/versioning.md)
 - [GitHub Actions and CI Automation](/openwiki/integrations/github-actions.md)
-- [Developer Commands and CLI Tools](/openwiki/operations/cli-tools.md)
-- [Repository Wiki Quickstart](/openwiki/quickstart.md)
 - [Testing Overview](/openwiki/testing/test-overview.md)
