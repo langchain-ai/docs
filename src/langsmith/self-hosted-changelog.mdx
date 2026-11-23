@@ -10,6 +10,63 @@ rss: true
 
 [Self-hosted LangSmith](/langsmith/self-hosted) is an add-on to the Enterprise plan designed for our largest, most security-conscious customers. For more details, refer to [Pricing](https://www.langchain.com/pricing). [Contact our sales team](https://www.langchain.com/contact-sales) if you want a license key to trial LangSmith in your environment.
 
+<Update label="2026-11-23" tags={["Preview"]} rss={{ title: "2026-11-23 - self-hosted" }}>
+## langsmith-0.19.0-rc.7
+
+**LangSmith version:** `0.19.3rc1`
+
+- Self-hosted Managed Tools migration and credential backfills require operator opt-in through `FLEET_MANAGED_TOOLS_MIGRATION_ENABLED`, and blocked upgrade checks identify this setting. Enable it during the 0.18 release series to complete the backfills required before upgrading to 0.19.0.
+- Coding agent pull request count and activity APIs return optional median time-to-merge metrics and measured pull request counts for totals, groups, and time buckets, excluding pull requests without both opening and merge timestamps. Coding agent metrics display median time to merge alongside merge rate, with both metrics in the ungrouped over-time chart and time to merge when grouped.
+- Clicking **View traces** from a Gateway Usage drilldown displays the applied filter in the **Traces** tab, so you can see which API key, user, or custom header filters the results.
+- Workspace API routes return validation errors as HTTP 422 responses in `application/problem+json` format instead of FastAPI's default `detail` array, including creation, renaming, deletion, statistics, usage limits, sharing, secrets, and tagging endpoints. Creation and renaming return the same full workspace representation as `GET`, including the caller's role and permissions (`null` when absent), duplicate-name creation returns HTTP 409, and bulk workspace secrets expose a named OpenAPI request schema without changing the payload or success response.
+- Deployment secrets remain masked for users who have deployment update permission only at the organization level when attribute-based access control is disabled, matching the workspace-level permission required to update them.
+- Database compatibility views for User Groups let legacy SQL queries continue to work after upgrades while preserving existing views and permissions.
+- Sandboxes can call the configured HTTPS Gateway on port 443 using delegated identity without storing a personal API key when the grant includes both `gateway:invoke` and `workspaces:read`. For that endpoint, delegated identity takes precedence over credentials supplied by the sandbox.
+- Chart descriptions in **Settings** > **Instance** clarify memory usage, query memory, background processing, and API request counts. The underlying chart data is unchanged.
+- Terraform-managed OAuth connections support the client credentials grant for app-based authentication without browser authorization. Managed tool profile credentials can complete this authentication during apply when credential fields are omitted.
+- MCP servers accept manual Agent Auth connections that use OAuth client credentials, in addition to authorization-code connections. Client-credentials tokens can be held by profile, agent, and workspace credentials, but not by individual users.
+- Caller-supplied `run_agent_identifier` values are reserved and removed before graph setup or execution. Deployments configured with agent identity authentication populate this metadata field from a verified identity token and reject new runs when authentication reports that the agent is disabled.
+- Agent owner and evaluator creator names appear when user information is resolved using a service key in self-hosted deployments.
+- Delegated sandboxes can authenticate without a local signing key by verifying assertions against the trusted issuer's published public keys, using `<OAUTH_AS_ISSUER>/.well-known/jwks.json` by default. Set `LANGSMITH_TRUSTED_JWKS_URL` to use a separate trusted HTTPS key endpoint.
+- Taskset and simulation runs require the taskset agent role to start. Apply the database migration that adds this role before upgrading.
+- Database partition bootstrapping no longer fails after migrations because of a circular import.
+- Feedback creation accepts numeric epoch timestamps in `start_time`, allowing JavaScript SDK feedback writes to succeed instead of returning `400 Invalid feedback request`.
+- Sandbox egress proxy rules with `match_paths` no longer attach credentials or rewrite destinations for non-canonical paths, preventing path traversal and encoded-path variants from bypassing path restrictions. Rules without `match_paths` continue to apply to all paths.
+- Long-lived retention settings above 36,500 days fail validation at startup instead of causing retention saves to fail later. This applies to `LONGLIVED_TTL_ALLOWED_DAYS` and the long-lived duration in `TRACE_TIER_TTL_DURATION_SEC_MAP`, while exactly 36,500 days (3,153,600,000 seconds) remains supported.
+- Bulk exports recover partition jobs stranded during retries, preventing affected exports from remaining stuck in **Running** until they time out. Recovered jobs resume from their saved progress and retain their retry counts.
+- Listing or searching tools in the `/me` tool kit no longer waits for credential setup on unconnected servers, reducing response times. Connecting to a tool still sets up credentials and returns verification URLs.
+- Run creation retries brief lock contention on the same thread, reducing intermittent failures when queuing follow-ups. If contention persists after three attempts, the request returns HTTP 503 instead of HTTP 500.
+- Code evaluator traces include their Python or JavaScript language and display source code with syntax highlighting and preserved formatting in the trace view, **Fields**, and **Additional Fields**, rather than interpreting it as Markdown. Run search also highlights matches within the code.
+- You can list, view, create, update, delete, and test alert rules through MCP using your existing credentials and permissions. Slack alert notifications also display the rule's description when one is set.
+- **Home** shows a retryable error when tracing projects fail to load instead of incorrectly prompting you to send your first traces. Failed organization creation during onboarding and failed agent loads on the agent overview also offer a **Try again** action.
+- Regression detection checks traces at a metric spike's peak to verify its cause and avoids blaming a deployed change when the metric returns to normal while that change remains deployed.
+- Supported PostgreSQL deployments running LangGraph 1.2.15 or later cooperatively drain in-flight runs during shutdown and resume them from checkpoints by default.
+- The MCP tools `list_datasets`, `list_projects`, `list_experiments`, and `list_prompt_commits` support cursor pagination with `page_size` and `cursor`, with dataset and experiment listings returning `{items, next_cursor}` and project listings returning `{projects, next_cursor}`. Experiment filtering by dataset name works, and legacy experiments are no longer incorrectly listed as projects.
+- The CLI's `evaluator rule list` command supports pagination with `--limit`/`-n` and `--cursor`, plus filtering with `--name-contains` and `--type project|dataset`. JSON output remains a plain array unless `--cursor` is supplied, in which case it includes rules and cursors.
+- Custom roles require `user-groups:*` permissions instead of `teams:*`, saved Gateway trace filters must use `gateway.user_group_ids` instead of `gateway.team_ids`, and Gateway policies reject `team_id` matchers. The `X-LangSmith-Team-Tags` header and `ls_team:` tag prefix no longer apply user group tagging, the upgrade migration briefly locks user group tables, and spend counters can undercount while old and new pods run together.
+- Sandbox network history capture supports up to 256 VMs per tenant per host and 512 VMs per host, up from 16 and 128, reducing missing network history on busy hosts. Operators can tune these limits with `SANDBOX_HOST_NETWORK_CAPTURE_MAX_TENANT_PRODUCERS` and `SANDBOX_HOST_NETWORK_CAPTURE_MAX_PRODUCERS`.
+- AWS, Azure, and GCP workload identity token requests no longer return HTTP 404 when workload identity signing is configured but agent access tokens are disabled. Deployments requesting these tokens fail at startup if their deployment key lacks an agent runtime binding or the `agent-auth-credentials:use` permission.
+- Thread TTL `keep_latest` sweeps and `POST /threads/prune` remove old checkpoints from custom checkpointers that support pruning. History is retained when pruning is unsupported or older checkpoints are needed to preserve DeltaChannel state.
+- Managed tool kits use short, identifier-safe ID suffixes to distinguish same-named MCP servers without full UUIDs that can exceed client name limits or cause compatibility issues, while saved kit tool names remain unchanged. List tools again if your client caches old `/me` or connection tool names.
+- Alerts appear for agents with multiple environments when no environment is selected. Filtering the workspace **Alerts** page by multiple projects shows alerts from any selected project instead of returning no results.
+- Run deletion endpoints enforce project-level attribute-based access control (ABAC) deny policies for `runs:delete`, preventing users from deleting runs when a policy denies that action.
+- Run queries and statistics requests that exceed the per-operation memory limit return HTTP 422 with guidance to narrow the time range or simplify the query, instead of HTTP 429. Resource-exhaustion errors with missing or unrecognized reasons continue to return HTTP 429.
+- Agent deployments use a mounted Kubernetes pod token to obtain cloud credentials, rereading it on each credential refresh to support token rotation. Deployments continue to use their deployment key when no pod token is mounted or when LangSmith rejects the pod token and a key is available.
+- Opening a workspace resolves to the **All agents** URL with the matching sidebar item selected, while preserving query parameters, fragments, and remembered-agent restoration.
+- Audio attachments served by your LangSmith installation play inline with playback speed controls, seeking, and channel-activity highlights instead of opening a dialog. Audio loads only when you press play, and seeking works even when the server does not support HTTP Range requests.
+- Users can choose an administrator-approved Kubernetes namespace when creating a BYOC deployment without a listener, and the namespace cannot be changed after creation. Deployment details show the namespace when it differs from the installation namespace.
+- When an OAuth provider rejects a refresh token with HTTP 400 and `invalid_request`, the credential requires reconnection instead of repeatedly failing with HTTP 502 errors. Managed Tools returns HTTP 428 with a reconnect URL so users can restore access.
+- Sandbox file downloads retain the original filename when clients explicitly request attachment or inline handling. Custom filename overrides are preserved, and Unicode and special characters are safely encoded.
+- Archiving completed annotation queue items removes pending reviewer assignments while preserving completed assignments as review history. Deleting items or cleaning up items whose runs have expired also removes their assignments, preventing stale assignments from inflating reviewers' pending workloads.
+- Issue board **Overview** counts update immediately when an issue changes. Status changes and updates after applying fixes or examples refresh all issue lists for the project.
+- A read-only MCP tool provides coding-agent reports covering pull request outcomes, costs, thread and turn usage, and the costliest pull requests over a window of up to two weeks. Outcome and usage reports support breakdowns by LangSmith user, Git user, repository, or harness.
+
+**Download the Helm chart:** [`langsmith-0.19.0-rc.7.tgz`](https://github.com/langchain-ai/helm/releases/download/langsmith-0.19.0-rc.7/langsmith-0.19.0-rc.7.tgz)
+
+**Sandbox runtime chart, for Sandboxes in a separate cluster:** [`langsmith-sandbox-0.18.0-rc.9.tgz`](https://github.com/langchain-ai/helm/releases/download/langsmith-sandbox-0.18.0-rc.9/langsmith-sandbox-0.18.0-rc.9.tgz)
+{/* langsmith-release-image: 0.19.0-rc.7 0.19.3-51b513a622e2c852f6f0faa059eba28431927be1 */}
+</Update>
+
 <Update label="2026-11-22" tags={["Stable"]} rss={{ title: "2026-11-22 - self-hosted" }}>
 ## langsmith-0.18.1
 
