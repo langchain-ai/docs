@@ -6,7 +6,7 @@ const server = new DeepAgentsServer({
     {
       name: "code-agent",
       description: "Full-featured coding assistant",
-      model: "claude-sonnet-4-5-20250929",
+      model: "claude-sonnet-5-5",
       skills: ["./skills/"],
       memory: ["./.deepagents/AGENTS.md"],
     },

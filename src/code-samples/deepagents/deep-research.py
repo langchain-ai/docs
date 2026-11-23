@@ -250,7 +250,7 @@ research_sub_agent = {
 }
 
 # KEEP MODEL
-model = init_chat_model(model="anthropic:claude-sonnet-4-5-20250929", temperature=0.0)
+model = init_chat_model(model="anthropic:claude-sonnet-5-5")
 
 agent = create_deep_agent(
     model=model,

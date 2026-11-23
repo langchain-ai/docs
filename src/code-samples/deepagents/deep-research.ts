@@ -267,8 +267,7 @@ const researchSubAgent = {
 
 // KEEP MODEL
 const model = new ChatAnthropic({
-  model: "claude-sonnet-4-5-20250929",
-  temperature: 0,
+  model: "claude-sonnet-5-5",
 });
 
 const agent = await createDeepAgent({
