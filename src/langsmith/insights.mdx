@@ -1,52 +1,65 @@
 ---
-title: Discover errors and usage patterns with Insights
+title: Discover usage patterns and failure modes with Insights
 sidebarTitle: Insights
-description: Use LangSmith Insights to automatically analyze traces, detect usage patterns, identify common agent behaviors, and surface failure modes without manual trace review.
-keywords: ["insights", "usage patterns", "failure modes", "trace analysis"]
+description: Use LangSmith Insights to continuously sort your agent's traces into categories, track how usage patterns and failure modes change over time, and share the results.
+keywords: ["insights", "usage patterns", "failure modes", "trace analysis", "trace categories"]
 boost: 2
 ---
 
-Insights automatically analyzes your traces to detect usage patterns, common agent behaviors, and failure modes, so you do not need to review thousands of traces manually.
+Insights continuously sorts your agent's traces into categories and subcategories, so you can see what users ask for, how your agent behaves, and where it fails, without reviewing traces one by one. You start an insight by asking a question about your traffic. Insights builds categories from recent traces, then assigns new conversations to them as they arrive, so its charts and metrics stay current.
 
-Running a report against a single [environment](/langsmith/agent-environments) is how to analyze production traffic without also analyzing local runs.
-
-Insights uses hierarchical categorization to make sense of your data and highlight actionable trends.
+An agent's Insights page lists every insight the agent has, labeled with the [environment](/langsmith/agent-environments) it belongs to. Insights you create in the UI go to **Production**.
 
 <Note>
-Insights is available for LangSmith Plus and Enterprise [plans](/langsmith/pricing-plans).
+Insights is available for LangSmith Plus and Enterprise [plans](/langsmith/pricing-plans). On self-hosted LangSmith, continuous Insights requires v0.18 or later with [SmithDB](/langsmith/self-host-smithdb). Other self-hosted installations generate [batch reports](/langsmith/insights-batch-reports) instead. To check which mode your installation uses, see [Check whether Insights runs continuously](/langsmith/self-host-insights-chat#check-whether-insights-runs-continuously).
 </Note>
+
+## How Insights works
+
+Each insight works in two stages:
+
+1. **Build categories**: Insights summarizes a sample of recent traces, by default up to 500 traces from the last 7 days, and groups the summaries into top-level categories and subcategories. The first build starts when you create the insight and can take up to 30 minutes.
+1. **Categorize new conversations**: Insights samples conversations as they arrive. For each sampled conversation, it writes a summary, extracts any [attributes](#add-attributes), and assigns the category and subcategory that fit best. A conversation is a [thread](/langsmith/threads), or a trace that does not belong to a thread. Insights analyzes a thread after it has been idle for the environment's [thread idle time](/langsmith/rules#set-the-thread-idle-time), 10 minutes by default.
+
+Categories do not change on their own. When you [refresh categories](#refresh-categories), traces that already have a category keep it, and new conversations use the refreshed categories.
+
+Each insight runs on three [automation rules](/langsmith/rules) that Insights creates and manages. The rules do not appear on the environment's **Online Evaluators** tab. On LangSmith Cloud, they count toward the maximum number of automation rules a workspace can have turned on, and an insight whose rules exceed the limit [pauses](#check-the-status-of-an-insight).
 
 ## Prerequisites
 
-- A [model configuration](/langsmith/model-configurations) set up for Insights in your workspace.
-- [Permissions](/langsmith/organization-workspace-operations#projects) to create rules in LangSmith (required to generate new Insights Reports).
-- [Permissions](/langsmith/organization-workspace-operations#projects) to view tracing projects in LangSmith (required to view existing Insights Reports).
+- Model access for Insights: the API key for each model provider Insights uses, saved in your workspace. To check or add keys, click **Configure** when you create an insight, or **Edit** on an existing one, then click **API keys** in the [Select models](#select-models) section. For workspace-wide model settings, see [model configurations](/langsmith/model-configurations).
+- [Permissions](/langsmith/organization-workspace-operations#projects) to view the agent environment. If an access policy limits which traces you can see in an environment, Insights does not show that environment's insights.
+- The `rules:create` permission to create insights and refresh their categories, `rules:update` to edit them, and `rules:delete` to delete them.
 
-## Generate your first Insights report
+## Create an insight
 
 <Tabs>
   <Tab title="UI" icon="layout-dashboard">
 
-1. Select your agent, go to **Tracing**, and select the environment. A report runs against one environment rather than the whole agent.
-1. Click **+ New** in the top right corner, then **New Insights Report**.
-1. Enter a name for your job.
-1. If you have not already, [configure a model](/langsmith/model-configurations) for Insights in your workspace settings.
-1. Answer the guided questions to focus your Insights Report on what you want to learn about your agent, then click **Run job**.
+To create an insight:
 
-<Tip>Toggle to Manual mode to [configure the job manually](#configure-a-job).</Tip>
+1. Select your agent in the [agent switcher](/langsmith/navigate-agents) and click **Insights** in the left-hand menu.
+1. If Insights already lists insights, click **New insight**.
+1. Under **What do you want to know about your users?**, enter a question, for example "What do users ask for most?"
+1. (Optional) Click **Configure** to change the settings before the first build. See [Configure an insight](#configure-an-insight).
+1. Click **Run analysis**.
 
-This will kick off a background Insights Report. Reports can take up to 30 minutes to complete.
+Insights names the insight and writes its summary instructions from your question, then starts building categories. While the build runs, Insights shows its steps: gathering traces, summarizing traces, grouping traces into categories, and saving categories. When the build finishes, the insight starts categorizing new conversations.
 
   </Tab>
   <Tab title="SDK" icon="code">
 
-You can generate Insights Reports over data stored outside LangSmith using the [Python SDK](/langsmith/smith-python-sdk). This allows you to analyze chat histories from your production systems, logs, or other sources.
+You can create an insight over chat histories stored outside LangSmith, such as production logs, using the [Python SDK](/langsmith/smith-python-sdk).
 
-When you call `generate_insights()`, the SDK will:
+When you call `generate_insights()`, the SDK:
 
-1. Upload your chat histories as traces to a new LangSmith project.
-1. Generate an Insights Report over those uploaded traces.
-1. Return a link to your results in the [LangSmith UI](https://smith.langchain.com).
+1. Uploads your chat histories to LangSmith as traces.
+1. Creates an insight over those traces and starts building its categories.
+1. Returns an object whose `link` opens the insight in the [LangSmith UI](https://smith.langchain.com). Until the build finishes, the link shows its progress.
+
+<Note>
+If the workspace has no key for the provider, `generate_insights()` saves the key you pass as a workspace secret. The SDK uploads up to 1,000 chat histories per call.
+</Note>
 
 <CodeGroup>
 
@@ -78,179 +91,152 @@ report = client.generate_insights(
 ```
 </CodeGroup>
 
+To wait for the build to finish, pass the report to `poll_insights()`.
+
   </Tab>
   <Tab title="CLI" icon="terminal-2">
 
-The [LangSmith CLI](/langsmith/langsmith-cli) creates a report from a JSON file that uses the fields of a [manual configuration](#manual-configuration):
+The [LangSmith CLI](/langsmith/langsmith-cli) creates an insight from a JSON configuration file and starts building its categories:
 
 ```bash
-langsmith insights create --project my-app --config insights.json --wait
+langsmith insights create --project "<environment-tracer-session-name>" --config insights.json --wait
 ```
 
-For the file format and the commands that run, list, and update saved configurations, see [Manage insights](/langsmith/langsmith-cli#manage-insights).
+Replace `<environment-tracer-session-name>` with the [`tracer_session_name`](/langsmith/create-an-agent#use-an-environment-project) of the agent environment the insight analyzes.
+
+For the file format and the commands that refresh, list, and update insights, see [Manage insights](/langsmith/langsmith-cli#manage-insights).
 
   </Tab>
 </Tabs>
 
-<Note>
-    Generating insights over 1,000 threads typically costs \$1.00-\$2.00 with OpenAI models and \$3.00-\$4.00 with current Anthropic models. The cost scales with the number of threads sampled and the size of each thread.
-</Note>
+## Read an insight
 
-## Understand the results
+Insights shows a card for each insight with its top categories over the last 14 days. Click a card to open the insight.
 
-Once your job has completed, you can navigate to the **Insights** tab where you'll see a table of Insights Report. Each Report contains insights generated over a specific sample of traces from the tracing project.
+An open insight shows its [status](#check-the-status-of-an-insight), when it last categorized a trace, and these views of the selected time range:
 
-<Frame caption="Insights Reports for a single tracing project"><img src="/langsmith/images/insights-job-results.png" /> </Frame>
+- **Top categories**: The number of categorized traces in each category. Click a category to focus the chart and the table on it.
+- **Categories over time**: Daily counts for each category, in UTC. **Trends** draws a line for each category, and **Volume** stacks the categories into the categorized total. A **Categories updated** marker shows when the insight's categories last changed.
+- **Breakdown table**: Each category's description, trace count, Number and Boolean [attribute](#add-attributes) values, feedback scores, error rate, P50 and P99 latency, P50 tokens, and P50 cost. Boolean attributes show the percentage of traces where the attribute is true. String attributes do not appear in the table. Expand a category to see its subcategories. Click a subcategory, or a category without subcategories, to open its traces in a new tab.
 
-Click into your job to see traces organized into a set of auto-generated categories.
+To change the time range, use the range menu next to **Share**. It shows the last 7, 14, or 30 days, and defaults to 14.
 
-You can drill down through categories and subcategories to view the underlying traces, feedback, and run statistics.
+Counts include only the traces Insights categorized. At a 10% sampling rate, for example, they cover roughly a tenth of your traffic. Use them to compare categories and to follow trends, not to measure total volume.
 
-<Frame caption="Common topics of conversations with the https://chat.langchain.com chatbot"><img src="/langsmith/images/insights-nav.gif" /> </Frame>
+### Check the status of an insight
 
-### Executive summary
+The status line under an insight's name says whether it categorizes new conversations, and what to do if it does not:
 
-At the top of each report, you'll find an executive summary that surfaces the most important patterns discovered in your traces. This includes:
+- **Building categories**: The first build is running. The status names its current step.
+- **Continuously analyzing**: The insight is live. The status shows its sampling rate.
+- **Paused**: Either the [sampling rate](#choose-runs) is 0%, or some of the insight's automation rules are missing. If the rate is 0%, set a higher rate. If rules are missing, the workspace reached its rule limit: turn off or delete unused rules, then click **Refresh categories** to recreate them.
+- **Off**: The insight does not analyze new conversations, for example a saved configuration from a one-time batch report. Set a sampling rate to start.
+- **Not live**: The insight needs a build before it can start. Click **Build categories** or **Refresh categories**. If the last build found no traces to categorize, check the insight's [filters](#choose-runs).
 
-- Key findings with percentages showing how often each pattern appears.
-- Clickable references (e.g., #1, #2, #3) to traces the agent identified as exceptionally relevant to your question.
+If the first build fails, Insights shows the error in the insight's place, such as a missing or invalid model API key. Click **Review** to fix the settings, or **Dismiss** to remove the failed build.
 
-### Top-level categories
+### Insights from earlier batch reports
 
-Your traces are automatically grouped into top-level categories that represent the broadest patterns in your data.
+Saved configurations from batch reports created before continuous analysis appear as insights. Those that ran on a schedule categorize new conversations. The others are **Off** until you set a sampling rate. Schedules no longer start reports.
 
-The distribution bars show how frequently each pattern occurs, making it easy to spot behaviors that happen more or less than expected.
+Past reports no longer open as report pages. The conversations each report categorized appear in the matching insight's charts for the dates the report covered. To read a past report's executive summary and category statistics, use [`langsmith insights get`](/langsmith/langsmith-cli#manage-insights).
 
-Each category has a brief description and displays aggregated metrics over the traces it contains, including:
+## Configure an insight
 
-- Typical trace stats (like error rates, latency, cost)
-- Feedback scores from your evaluators
-- [Attributes](#attributes) extracted as part of the job
+To change an existing insight, open it and click **Edit**. To set these options before the first build, click **Configure** when you [create the insight](#create-an-insight).
 
-### Subcategories
+Edits apply to conversations analyzed after you save, and traces that already have a category keep it. Changing the insight's categories saves the insight and starts a build, so the button reads **Save and run**.
 
-Clicking on any category shows a breakdown into subcategories, which gives you a more granular understanding of interaction patterns in that category of traces.
+### Choose runs
 
-In the [Chat Langchain](https://chat.langchain.com) example, under **Data & Retrieval** there are subcategories like **Vector Stores** and **Data Ingestion**.
+- **Add filters (optional)**: Choose conditions to include only certain runs. Insights always analyzes root runs. Below the filters, Insights shows how many conversations matched them last week.
+- **Choose sampling rate**: The percentage of incoming conversations that Insights analyzes. A higher rate gives more representative results and costs more. 0% pauses the insight.
 
-### Individual traces
+When you do not set a rate, Insights chooses one from last week's matching conversations, aiming for about 1,000 conversations per week. If fewer than 1,000 conversations matched, the rate is 100%. Insights sets this rate once and does not adjust it as traffic changes.
 
-You can view the traces assigned to each category or subcategory by clicking through to see the traces table. From there, you can click into any trace to see the full conversation details.
-
-## Configure a job
-
-You can create an Insights Report using the auto-generated flow or by configuring it manually.
-
-### Autogenerating a config
-
-1. Open **New Insights** and make sure the **Auto** toggle is active.
-2. Answer the natural-language questions about your agent's purpose, what you want to learn, and how traces are structured. Insights will translate your answers into a draft config (job name, summary prompt, attributes, and sampling defaults).
-3. Choose a provider, then click **Generate config** to preview or **Run job** to launch immediately.
-
-**Providing useful context**
-
-For best results, write a sentence or two for each prompt that gives Insights the context it needs—what you're trying to learn, which signals or fields matter most, and anything you already know isn't useful. The clearer you are about what your agent does and how its traces are structured, the more Insights can group examples in a way that's specific, actionable, and aligned with how you reason about your data.
-
-**Describing your traces**
-
-Explain how your data is organized: are these single runs or multi-turn conversations? Which inputs and outputs contain the key information? This helps Insights generate summary prompts and attributes that focus on what matters. You can also directly specify variables from the [summary prompt](#summary-prompt) section if needed.
-
-### Choose models
+### Select models
 
 Insights uses two models:
 
-- **Thinking model**: performs the clustering step (more capable, higher cost).
-- **Summarization model**: generates the per-trace summaries (faster, lower cost).
+- **Summarization model**: Summarizes each trace and extracts attributes. A fast model with a large context window works well.
+- **Categorization model**: Groups traces into categories and assigns new traces to them. A model with strong reasoning works well.
 
-Both models are selected from the providers you have configured in your workspace. When specific models have been enabled for Insights in your [model configurations](/langsmith/model-configurations), you can select them individually. If no individual models are configured, you select a provider (OpenAI or Anthropic) and Insights uses default models for that provider.
+Select **Recommended** to use your workspace's default Insights models, or **Custom** to pick each model.
 
-For best results, use models from the same provider for both roles.
+To see the defaults, go to **Settings** > **Workspace** > **Models** > **Feature Access** and find the **Insights (Summarization)** and **Insights (Thinking)** rows. If a row has no default model, Insights uses the first model available for that row. If no models are available, Insights uses OpenAI models, which need an OpenAI API key in the workspace. For more information, see [Feature Access](/langsmith/model-configurations#feature-access).
 
-### Manual configuration
+Click **API keys** to check that the workspace has a key for each model's provider.
 
-Manual configuration gives you more control—for example, predefining categories you want your data grouped into or targeting traces that match specific feedback scores and filters.
+### Create categories
 
-#### Select traces
+By default, **AI Suggested** has Insights find categories and subcategories on the first build. To set the top-level categories yourself, select **Custom** and add up to 10 categories, each with a name and a description. Insights still finds subcategories within them on each build.
 
-- **Sample size**: The maximum number of traces to analyze (1,000 limit).
-- **Time range**: Traces are sampled from this time range.
-- **Filters**: Additional trace filters. As you adjust filters, you'll see how many traces match your criteria.
+When you edit an insight, you can add, remove, or rename its categories. Saving starts a build with the new categories.
 
-#### Categories
+### Add attributes
 
-By default, top-level categories are automatically generated bottom-up from the underlying traces.
+Attributes capture properties of each trace, such as sentiment or user satisfaction, that the breakdown table reports for each category. To add an attribute, click **Add Attribute** and set:
 
-In some instances, you know specific categories you're interested in upfront and want the job to bucket traces into those predefined categories.
+- **Name**: The attribute's name. For Number and Boolean attributes, this is the column name in the breakdown table.
+- **Type**: **Boolean**, **Number**, or **String**.
+- **What should Insights look for?**: A description of the property, which the summarization model uses to extract it.
+- **Filter**: For Boolean attributes only. When selected, Insights categorizes and counts only traces where the attribute is true, for example to focus an insight on conversations where the agent made a mistake.
 
-The **Categories** section of the config lets you do this by enumerating the names and descriptions of the top-level categories you want to be used.
+### Delete an insight
 
-Subcategories are still auto-generated by the algorithm within the predefined top-level categories.
+To delete an insight, open it, click **Edit**, and click **Delete** at the bottom of its settings. Deleting an insight stops it from categorizing new traces. Traces it already categorized keep their categories.
 
-When a job completes, the discovered top-level categories are automatically saved back to the config—but only if the config had no categories defined beforehand. This means subsequent scheduled runs will reuse those categories for consistency.
+## Refresh categories
 
-#### Summary prompt
+Categories do not refresh automatically. To rebuild an insight's categories from a new sample of recent traces, open the insight and click **Refresh categories**.
 
-The first step of the job is to create a brief summary of every trace. These summaries are then categorized.
+New conversations keep using the current categories until the build finishes. While it runs, the insight shows **Refreshing categories**. If the build fails, the insight shows **Refresh failed** and keeps its current categories. If the build finds no usable categories, it shows **Categories not updated**.
 
-Extracting the right information in the summary is essential for getting useful categories.
+## Share an insight
 
-You can edit the prompt used to generate these summaries. The two things to think about when editing the prompt are:
+To share an insight, open it and click **Share**:
 
-- Summarization instructions: Any information that isn't in the trace summary won't affect the categories that get generated, so make sure to provide clear instructions on what information is important to extract from each trace.
-- Trace content: Use mustache formatting to specify which parts of each trace are passed to the summarizer. Large traces with lots of inputs and outputs can be expensive and noisy. Reducing the prompt to only include the most relevant parts of the trace can improve your results.
+- **Copy link**: Copies a link to the insight as you see it, including the time range and any selected category.
+- **Download CSV**: Downloads every category and subcategory with all of its statistics, whatever the table shows.
+- **Download PDF**: Downloads the charts and the full breakdown. This option is available once the chart data finishes loading.
 
-You must specify what parts of each trace to send to the summarizer using at least one of these template variables:
+## Send updates to Slack
 
-| Variable | Description | Example |
-| --- | --- | --- |
-| `run.inputs` | Inputs of the most recent root run | `{{run.inputs}}` |
-| `run.outputs` | Outputs of the most recent root run | `{{run.outputs}}` |
-| `run.error` | Error string, if the run failed | `{{run.error}}` |
-| `run.feedback` | All feedback scores as a JSON blob | `{{run.feedback}}` |
-| `run.feedback.<key>` | A specific feedback score by key | `{{run.feedback.correctness}}` |
-| `all_thread_messages` | Full message history for the thread (only available for projects with [threads](/langsmith/threads)) | `{{all_thread_messages}}` |
+Insights can post updates about an insight to a Slack channel. This requires a Slack workspace connected to your LangSmith organization. If none is connected, the **Slack notifications** section of the insight's settings shows a **Connect Slack** button. On self-hosted LangSmith, an operator must first [configure a Slack app](/langsmith/self-host-slack).
 
-You can access nested fields using dot notation. For example, `{{run.inputs.foo.bar}}` includes only the `bar` field within `foo` in the last run's inputs.
+To send updates to Slack:
 
-<Note>
-For projects with [threads](/langsmith/threads), Insights analyzes full conversations. Only the most recent root run from each thread is used for `run.*` variables. Use `all_thread_messages` to access the complete conversation history.
-</Note>
+1. In the insight's settings, go to **Slack notifications** and select a channel.
+1. Turn on the updates you want:
+    - **Categories ready**: Posts when the insight's categories are first built and each time they are refreshed.
+    - **Digest**: Posts the top categories and how they changed, on a schedule. Choose **Daily** or **Weekly**, then the day and time. The schedule uses the time zone of the browser you first set it up from.
+1. Click **Save**.
 
-#### Attributes
+Each update shows the insight's name, the period it covers, how many traces Insights categorized, and the sampling rate. It lists the top five categories with their trace counts, and up to three key changes: categories that appeared, or whose share of traces moved by 5 percentage points or more since the previous period. **Open in LangSmith** opens the insight for the dates the update covers.
 
-Along with a summary, you can define additional string, numerical, and boolean attributes to be extracted from each trace.
-These attributes will influence the categorization step—traces with similar attribute values will tend to be categorized together.
-You can also see aggregations of these attributes per category.
+To stop updates, turn off both options and save.
 
-As an example, you might want to extract the attribute `user_satisfied: boolean` from each trace to steer the algorithm towards categories that split up positive and negative user experiences, and to see the average user satisfaction per category.
+## Manage costs
 
-#### Filter attributes
+Insights calls your models for each conversation it analyzes, so its cost depends on:
 
-You can use the `filter_by` parameter on boolean attributes to pre-filter traces before generating insights. When enabled, only traces where the attribute evaluates to `true` are included in the analysis.
+- **Sampling rate and traffic**: Each sampled conversation takes one call to the summarization model and one to the categorization model. Because the sampling rate does not adjust to traffic, a traffic spike increases cost.
+- **Conversation size**: Longer conversations send more tokens to the summarization model.
+- **Category builds**: Each build summarizes up to 500 traces and groups them with the categorization model.
 
-This is useful when you want to focus your Insights Report on a specific subset of traces. For example, only analyzing errors, only examining English-language conversations, or only including traces that meet certain quality criteria.
+To reduce cost, lower the [sampling rate](#choose-runs), add filters, or [select](#select-models) smaller models.
 
-**How it works:**
-- Add `"filter_by": true` to any boolean attribute when creating a config for Insights.
-- The LLM evaluates each trace against the attribute description during summarization.
-- Traces where the attribute is `false` or missing are excluded before insights are generated.
+## Limitations
 
-## Schedule Insights Reports
+- Insights assigns each trace one category, the best fit, even when no category matches it exactly.
+- Insights reads a trace's inputs, outputs, errors, feedback, and thread messages. It does not read trace metadata.
+- An agent environment can hold up to 100 insights.
+- A workspace can build categories for up to three insights at a time.
 
-Schedule Insights reports to run automatically on a recurring basis. When creating or editing a configuration, use the **Schedule** section to choose:
+## See also
 
-- **Daily**: Runs every day at 8:00 UTC.
-- **Weekly on Monday**: Runs every Monday at 8:00 UTC.
-- **Custom**: Enter your own cron expression (in UTC).
-
-Each scheduled run generates a new report using your saved configuration. Time ranges are computed dynamically. For example, "last 24 hours" always analyzes the most recent 24-hour window at execution time.
-
-## Save your config
-
-You can optionally save configs for future reuse using the **Save as** button.
-This is especially useful if you want to compare Insights Reports over time to identify changes in user and agent behavior.
-
-Select from previously saved configs in the dropdown in the top-left corner of the pane when creating a new Insights Report.
-
-
-
+- [Generate batch Insights reports on self-hosted LangSmith](/langsmith/insights-batch-reports)
+- [Manage insights with the LangSmith CLI](/langsmith/langsmith-cli#manage-insights)
+- [How Engine differs from Insights](/langsmith/engine#how-engine-differs-from-insights)
+- [Configure model access](/langsmith/model-configurations)
+- [Set up thread-level online evaluators](/langsmith/online-evaluations-multi-turn)
