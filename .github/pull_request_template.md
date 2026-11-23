@@ -17,7 +17,7 @@ External contributors: a new page, guide, or tutorial needs a linked issue that 
 
 ## Checklist
 <!-- Tick only what you did. Leave the rest unticked. -->
-- [ ] I read the [contributing guidelines](https://docs.langchain.com/oss/contributing/documentation), including the [language policy](https://docs.langchain.com/oss/python/contributing/overview#language-policy)
+- [ ] I read the [contributing guidelines](https://docs.langchain.com/oss/python/contributing/documentation), including the [language policy](https://docs.langchain.com/oss/python/contributing/overview#language-policy)
 - [ ] I checked the rendered pages locally with `docs dev` or on the preview deployment
 - [ ] I ran every changed code example, or none changed
 - [ ] `make lint_prose` passes on the changed files
