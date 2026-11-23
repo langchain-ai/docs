@@ -5,7 +5,7 @@ description: Guidance for testing DocumentationBuilder route selection, docs.jso
 tags: [testing, pytest, builder, documentation-pipeline, routing]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-10-29T08:15:48.231Z
+    at: 2026-11-23T08:07:24.438Z
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
@@ -19,7 +19,7 @@ sources:
     resource: repo://tests/unit_tests/test_builder.py
   - id: openwiki-source-0d0e77eb273a56717af74faa
     resource: repo://tests/unit_tests/utils.py
-generated: { by: "openwiki/0.4.3", at: "2026-10-29T08:15:48.231Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-23T08:07:24.438Z" }
 ---
 
 `DocumentationBuilder` is the deterministic boundary from authored `src/` inputs to the disposable `build/` tree. Builder unit tests should prove observable local contracts: routes created and deliberately absent, final transformed text, copied bytes, and raised errors. They do **not** prove that Mintlify accepts the complete tree, that every `docs.json` redirect resolves in the renderer, or that a deployed site serves and navigates the result correctly.
@@ -30,7 +30,7 @@ Run the focused suite while changing this boundary:
 make test TEST_FILE=tests/unit_tests/test_builder.py
 ```
 
-The target runs pytest with Internet sockets disabled (Unix sockets remain allowed), so these tests are intentionally hermetic. Use [Conditional Rendering Tests](/openwiki/testing/conditional-rendering.md) for regex and preprocessing edge cases, [Documentation Build System](/openwiki/architecture/build-system.md) for lifecycle ownership, and [Documentation Routes and Language Versioning](/openwiki/concepts/versioning.md) for the route model.
+The target runs pytest with Internet sockets disabled (Unix sockets remain allowed), so these tests are hermetic. Use [Conditional Rendering Tests](/openwiki/testing/conditional-rendering.md) for syntax and preprocessing cases, [Documentation Build System](/openwiki/architecture/build-system.md) for lifecycle ownership, and [Documentation Routes and Language Versioning](/openwiki/concepts/versioning.md) for the route model.
 
 ## Use an isolated artifact fixture
 
@@ -66,15 +66,17 @@ flowchart TD
     Managed --> ManagedVariants["Two LangSmith language artifacts"]
 ```
 
-This is the full-build routing model. `build_file()` uses the same shared-OSS navigation decision, but a whole-tree property—cleanup, discovery, owned-language filtering, shared copying, and final overlay precedence—belongs in a `build_all()` fixture.
+This is the full-build routing model. `build_file()` uses the same shared-OSS navigation decision, but whole-tree properties—cleanup, discovery, language-owned filtering, shared copying, and final overlay precedence—belong in a `build_all()` fixture.
 
 ### Shared OSS pages and `docs.json`
 
-Ordinary shared Markdown below `oss/` is not necessarily duplicated. The builder recursively collects `oss/python/...` and `oss/javascript/...` strings from `src/docs.json` navigation and caches the result until the file modification time changes. A `.md` or `.mdx` page listed in exactly one language emits only for that language; a page listed in both or neither emits both. Non-Markdown OSS inputs always use both passes. Missing or invalid `docs.json` safely falls back to both variants.
+Ordinary shared Markdown below `oss/` is selected from the `navigation` values in `src/docs.json`. A `.md` or `.mdx` page listed in exactly one language emits only for that language; a page listed in both or neither emits both. Non-Markdown OSS inputs always use both passes. The navigation result is cached by `docs.json` modification time, so tests that mutate the configuration should account for that cache boundary.
 
-Test the four useful cases in one small fixture: Python-only nav, JavaScript-only nav, both, and neither. Also test targeted `build_file()` for a one-language page so dev-time routing cannot drift from full builds. A navigation entry for `widgets` can stand for `widgets/index`, but must not select that shared index where `src/oss/<language>/widgets.mdx` or `.md` owns the language route. This collision case requires a fixture with the navigation entry, shared index, and language-owned file.
+A missing or malformed `docs.json` is a deliberate fallback: the builder logs a warning and treats shared pages as belonging to both languages. `test_shared_oss_pages_build_both_without_docs_json` proves this with invalid JSON. Test Python-only, JavaScript-only, both, neither, and malformed configuration in focused fixtures. Also test targeted `build_file()` for a one-language page so dev-time rebuilds cannot drift from full builds.
 
-Language-owned source trees are separate from navigation membership. During `build_all()`, a file under `oss/python/` or `oss/javascript/` participates only in its matching pass and its source language segment is removed from the output remainder. Assert the opposite language path is absent.
+Directory navigation has an ownership boundary. A navigation entry for `widgets` can stand for `widgets/index`, but it must not select that shared index when `src/oss/<language>/widgets.mdx` or `.md` owns the language route. The `test_directory_nav_entry_owned_by_language_file` assertion is the regression guard for this collision.
+
+Language-owned source trees are separate from navigation membership. During `build_all()`, a file under `oss/python/` or `oss/javascript/` participates only in its matching pass and its source-language segment is removed from the output remainder. Assert the opposite language path is absent.
 
 ### Explicit route exceptions
 
@@ -84,15 +86,15 @@ Language-owned source trees are separate from navigation membership. During `bui
 
 ## Transformations: inspect final content
 
-For `.md` and `.mdx`, the builder calls `preprocess_markdown()`, then—when there is a language target—rewrites Markdown snippet imports, rewrites OSS links, and rewrites Managed Deep Agents links. It then appends the source-contribution footer when eligible. `.md` writes an `.mdx` artifact. Processing errors are logged and re-raised; assert the exception for a failing input rather than accepting partial output.
+For `.md` and `.mdx`, the builder calls `preprocess_markdown()`, then—when there is a language target—rewrites Markdown snippet imports, OSS links, and Managed Deep Agents links. It then appends the suggested-edits/source links when eligible. `.md` writes an `.mdx` artifact. Processing errors are logged and re-raised; assert the exception for a failing input rather than accepting partial output.
 
-`preprocess_markdown()` resolves autolinks, adds eligible LangSmith CTA UTM parameters, and filters `:::python` and `:::js` branches. With no explicit target, it reads `TARGET_LANGUAGE` and defaults to `python`. Keep syntax-level branch, autolink, and CTA tests in their dedicated preprocessor suites; add a builder fixture when target selection affects an emitted route, import, or link.
+`preprocess_markdown()` resolves autolinks, adds eligible LangSmith CTA UTM parameters, validates and filters `:::python` and `:::js` blocks, and defaults an omitted target from `TARGET_LANGUAGE` or to `python`. Keep syntax-level branch, malformed-fence, autolink, and CTA tests in their dedicated preprocessor suites; add a builder fixture when target selection affects an emitted route, import, or link.
 
 Test rewrites through their expected output forms:
 
 - A bare absolute `/oss/...` Markdown destination or quoted HTML `href` gains `python` or `javascript` for the current target. Existing language prefixes, image paths, and the Deep Agents Code and OpenWiki product paths are preserved. Include a pre-prefixed path to catch double insertion.
 - A bare `/langsmith/managed-deep-agents...` link gains the current language segment, while an already-prefixed destination stays pinned to its authored language.
-- The contribution footer is omitted for root `index.mdx` and every snippet path. It is best-effort: if its source-relative URL cannot be made, the original processed content remains.
+- The suggested-edits/source footer is omitted for root `index.mdx` and every snippet path. It is best-effort: if its source-relative URL cannot be made, the original processed content remains.
 
 `docs.yml` is another output contract, not a byte copy: `yaml.safe_load` produces indented `docs.json`; parse and I/O failures are re-raised. `TEMPLATE.mdx` and unsupported extensions are skipped. For an asset-copy test, supply `bytes` and compare output bytes; do not use a Markdown fixture to prove `copy2` behavior.
 
