@@ -1,0 +1,152 @@
+---
+title: LangSmith security overview
+sidebarTitle: Security overview
+description: Review LangSmith compliance certifications, deployment models, and the security controls for identity, access, API keys, auditing, data protection, and agent governance.
+---
+
+LangSmith runs under an independently audited security program, and gives administrators controls for who can sign in, what each user and key can access, and how trace data is stored, shared, and deleted. This page summarizes those controls, which plans and [deployment models](#deployment-models) support them, and the practices to adopt when you roll LangSmith out to an organization.
+
+For how security duties split between LangChain and your organization, see the [shared responsibility model](/langsmith/shared-responsibility-model), or the [BYOC shared responsibility model](/langsmith/byoc-shared-responsibility) for Bring Your Own Cloud.
+
+## Compliance and certifications
+
+LangSmith holds SOC 2 Type II, ISO/IEC 27001:2022, and ISO/IEC 42001 certifications, and complies with HIPAA and GDPR.
+
+The [LangChain Trust Center](https://trust.langchain.com) publishes LangChain's security reports and policies. You can request the following documents there, some under NDA:
+
+- SOC 2 Type II audit report.
+- ISO/IEC 27001:2022 certificate.
+- Penetration test executive summaries.
+- Consensus Assessments Initiative Questionnaire (CAIQ).
+- Subprocessor list with processing locations.
+- Security policies.
+
+For security questions or report requests, contact [trust@langchain.dev](mailto:trust@langchain.dev). To report a vulnerability, contact [security@langchain.dev](mailto:security@langchain.dev).
+
+## Deployment models
+
+Your deployment model determines who operates each layer of LangSmith, and so who configures and secures each control on this page.
+
+| Model | Control plane | Data plane | Where data lives |
+|-------|---------------|------------|------------------|
+| [Cloud](/langsmith/cloud) | LangChain | LangChain | The [region](/langsmith/cloud#regions) you choose at sign-up: GCP US, EU, or APAC, AWS US, or Azure US. |
+| [Hybrid](/langsmith/hybrid) | LangChain | You, in your own Kubernetes cluster | Your environment. |
+| [BYOC](/langsmith/byoc) | LangChain | LangChain, in your cloud account | Your cloud account, in the region you choose. |
+| [Self-hosted](/langsmith/self-hosted) | You | You | Your environment, in any region you run. |
+
+BYOC is generally available (GA) on AWS, and in beta on GCP and Azure. Self-hosted LangSmith and BYOC require an Enterprise plan.
+
+Cloud stores your organization's data in the region where you signed up. You cannot move an organization to another region. For the data that is stored outside your region, such as authentication and billing data, see [Regional storage](/langsmith/cloud#regional-storage) and the [Regions FAQ](/langsmith/regions-faq).
+
+## Identity and access
+
+### Authentication
+
+Single sign-on (SSO) lets users authenticate through your own identity provider (IdP), and you can require SSO for every login.
+
+- **Cloud, Hybrid, and BYOC**: Use [SAML SSO](/langsmith/user-management) with any SAML 2.0 IdP, such as Okta or Microsoft Entra ID. SAML SSO requires an Enterprise plan.
+- **Self-hosted**: Use [SSO with OAuth 2.0 and OIDC](/langsmith/self-host-sso).
+
+For every sign-in option, see [Authentication methods](/langsmith/authentication-methods).
+
+### Authorization
+
+An [organization](/langsmith/administration-overview#organizations) contains one or more [workspaces](/langsmith/administration-overview#workspaces). Resources such as tracing projects, datasets, and prompts belong to a workspace, and users get a role in each workspace they join. Use separate workspaces to isolate teams, environments, or customers. For patterns, see [Workload isolation](/langsmith/workload-isolation).
+
+Workspace RBAC, custom roles, role restriction, ABAC, and user groups require an Enterprise plan. Other plans give every user the Admin workspace role.
+
+- **[Role-based access control (RBAC)](/langsmith/rbac)**: Assign the built-in Admin, Editor, or Viewer workspace roles, or build custom roles from granular permissions. [Mark sensitive roles as restricted](/langsmith/rbac#restrict-roles) so that only Workspace Admins can assign them.
+- **[Attribute-based access control (ABAC)](/langsmith/abac)**: Narrow access within a workspace with access policies based on resource tags or root run metadata.
+- **[User groups](/langsmith/user-groups)**: Assign workspace membership and roles to a group of users instead of to each user.
+
+### User provisioning
+
+Provisioning connects LangSmith to your IdP, so that access follows your employee lifecycle.
+
+- **[SCIM](/langsmith/user-management#set-up-scim-for-your-organization)**: Add, update, and remove users and their roles from your IdP. On Cloud, SCIM requires SAML SSO.
+- **[SSO Groups Sync](/langsmith/user-management#sso-groups-sync-alternative)**: Read group membership from the SSO token at each login, as an alternative to SCIM.
+- **[JIT provisioning](/langsmith/jit-invite-sso)**: Add users to your organization and its default workspaces the first time they sign in with SSO.
+
+## API keys
+
+API keys authenticate your applications and scripts to LangSmith. There are three types:
+
+- **[Personal access tokens (PATs)](/langsmith/administration-overview#personal-access-tokens-pats)**: Inherit the permissions of the user who created them. Use PATs for personal scripts and tools.
+- **[Service keys](/langsmith/administration-overview#service-keys)**: Scope to specific workspaces or the whole organization, independent of any user. Use service keys for agents, CI, and production services.
+- **[Tracing keys](/langsmith/create-account-api-key#tracing-keys)**: Submit traces through the tracing ingestion APIs only. Use tracing keys to instrument agents that only need to send traces.
+
+Every key can carry an expiration date. An expired key cannot be reactivated. Organization Admins and Organization Operators can manage every member's PATs, and you can delete a key at any time to revoke it. On an Enterprise plan, assign a service key a [workspace role](/langsmith/administration-overview#workspace-roles), including a custom role, to limit it to the permissions an integration needs.
+
+To create and manage keys, see [Create an account and API key](/langsmith/create-account-api-key).
+
+## Audit logging
+
+[Audit logs](/langsmith/audit-logs) record administrative and configuration actions in your organization, such as membership and role changes, API key changes, and SSO configuration. Each event records the time, actor, operation, affected resources, and result. LangSmith retains audit logs for up to 400 days.
+
+Audit logs require an Enterprise plan. Self-hosted LangSmith requires Helm chart version 0.12.33 or later.
+
+The audit logs API returns events in the [OCSF](https://schema.ocsf.io/) v1.7.0 API Activity format. To pull events into Splunk or another security information and event management (SIEM) tool, see [Send audit logs to a SIEM](/langsmith/audit-logs-siem).
+
+## Data protection
+
+### Data in transit and at rest
+
+Your application sends traces to LangSmith through the SDK, the REST API, or [OpenTelemetry](/langsmith/trace-with-opentelemetry). Tracing is opt-in, and you decide what each trace contains. In Hybrid, BYOC, and self-hosted deployments, trace ingestion ends in your own data plane.
+
+LangSmith Cloud encrypts data at rest with AES-256 and in transit with TLS 1.2 or later. Where you run the data plane, you can also bring your own keys:
+
+- **BYOC on AWS**: Encrypt the data plane with your own AWS KMS keys. See [Bring your own keys (CMK)](/langsmith/byoc-byok-aws).
+- **Agent Server**: Encrypt agent data such as checkpoints with built-in AES encryption or your own encryption handlers. See [Encryption at rest](/langsmith/encryption).
+
+### Data retention and deletion
+
+Each trace belongs to a base or an extended retention tier. On Cloud, base traces are kept for 14 days and extended traces for 180 days. For BYOC and self-hosted defaults, see [Retention periods](/langsmith/usage-and-billing#retention-periods).
+
+Enterprise customers can shorten the extended retention period for a workspace, and delete traces and datasets on request. See [Data purging for compliance](/langsmith/data-purging-compliance).
+
+### Sensitive data in traces
+
+LangSmith offers controls at each stage of a trace's life to keep sensitive data out of view.
+
+- **Before data leaves your environment**: [Mask or hide trace inputs and outputs](/langsmith/mask-inputs-outputs) in the SDK, [redact secrets](/langsmith/redact-secrets) such as API keys and tokens, or [redact with an OpenTelemetry collector](/langsmith/otel-gateway-trace-redaction) that you run.
+- **Inside LangSmith**: Restrict who can read trace inputs and outputs with the `runs:read-inputs` and `runs:read-outputs` [permissions](/langsmith/rbac), and hide them in specific projects with an [access policy](/langsmith/abac#control-access-to-run-inputs-and-outputs). Users without these permissions still see run trees, latency, cost, and metadata. To limit which traces a user can read within a project, use a [root run metadata policy](/langsmith/abac#control-trace-access-with-root-run-metadata).
+- **When sharing**: Traces are private to your workspace until someone creates a public link. Review every public link under **Settings** > **Shared URLs**, and unshare the ones you no longer need. See [Share a trace](/langsmith/manage-trace#share-a-trace).
+
+For a walkthrough of the input, output, and trace-level access controls, read [Protect sensitive data in your traces](https://www.langchain.com/blog/protect-sensitive-data-in-your-traces-new-controls-in-langsmith) on the LangChain blog.
+
+## Agent and model governance
+
+These controls govern which models and tools your agents use, and keep provider credentials away from end users.
+
+- **[Model configurations](/langsmith/model-configurations)**: Choose which model providers and models are available across LangSmith features, such as the Playground and evaluators. LangSmith stores provider secrets server-side.
+- **[LLM auth proxy](/langsmith/llm-auth-proxy-self-hosted)**: Run an Envoy-based proxy in your environment that authenticates every model call, so provider credentials are never exposed to end users. The LLM auth proxy requires an Enterprise plan.
+- **[LLM Gateway](/langsmith/llm-gateway)** (beta): Route model calls through LangSmith to apply [spend policies](/langsmith/llm-gateway-spend-policies) and [data policies](/langsmith/llm-gateway-data-policy) that redact sensitive data.
+- **[Tool Gateway](/langsmith/tool-gateway)** (beta): Store MCP server credentials in LangSmith, and set [policies](/langsmith/tool-gateway-policies) that block tool calls or require approval.
+- **[Agent Auth](/langsmith/agent-auth)** (beta): Let agents authenticate to external services on behalf of users with OAuth 2.0.
+- **[Sandboxes](/langsmith/sandboxes)**: Run agent-generated code in isolated environments.
+
+To flag sensitive or unsafe content in production, run [online evaluators](/langsmith/online-evaluations-llm-as-judge) on live traces, and use [automation rules](/langsmith/rules) to send matching traces to an annotation queue or a webhook.
+
+[Fleet](/langsmith/fleet/access-and-oversight) and [Engine](/langsmith/engine-security) build on the same workspace permissions, retention, and masking controls. Each has its own security page.
+
+## Security best practices
+
+Use this checklist when you roll out LangSmith to your organization:
+
+- **Require SSO**: Enforce SSO-only login, and provision users with SCIM or SSO Groups Sync so that access ends when someone leaves your IdP.
+- **Grant least privilege**: Give users the lowest role they need. Use custom roles for narrow duties, and mark administrator-level roles as restricted.
+- **Separate workloads**: Put production, staging, and each team or customer in its own workspace.
+- **Hide sensitive inputs and outputs**: Remove `runs:read-inputs` and `runs:read-outputs` from roles that only need to debug performance, and grant them back per project or per trace with access policies.
+- **Use one service key per service**: Do not share keys between services, and do not use a PAT for a production service. Give each service key only the role it needs.
+- **Set key expirations and rotate keys**: Store keys in environment variables or a secrets manager, never in source code. If you suspect a key is exposed, delete it and create a new one.
+- **Redact at the source**: Mask PII and secrets in the SDK or an OpenTelemetry collector before traces leave your environment. Do not send prohibited data, such as payment card data.
+- **Review public links**: Audit **Settings** > **Shared URLs** regularly, and redact sensitive content before you share a trace with anyone, including LangChain support.
+- **Monitor audit logs**: Forward audit logs to your SIEM, and alert on role changes, key creation, and SSO configuration changes.
+- **Match retention to your policy**: Set the extended retention period to the shortest period your use case allows.
+
+## See also
+
+- [Shared responsibility model](/langsmith/shared-responsibility-model)
+- [BYOC shared responsibility model](/langsmith/byoc-shared-responsibility)
+- [Scalability and resilience](/langsmith/scalability-and-resilience)
+- [LangChain Trust Center](https://trust.langchain.com)
