@@ -38,6 +38,7 @@ Several rows cover a newer version of a feature that also works without SmithDB.
 | Large trace actions | The paginated trace tree for large traces, downloading a whole trace as JSON, and deleting a whole trace from the trace details page. | Viewing traces, downloading individual runs, and existing deletion workflows. |
 | [LLM Gateway usage](/langsmith/llm-gateway-monitoring) | The **Usage** dashboard: spend summary, charts, breakdowns, filters, and drilldowns. | Gateway routing and [policies](/langsmith/llm-gateway-spend-policies). |
 | Agent trace volume | Trace-count sparklines on agent overview cards and the trace volume chart on an agent's overview. | Agent deployment, management, and other agent statistics. |
+| [Continuous Insights](/langsmith/insights) | Categorizing new traces as they arrive, with category trends, breakdowns, CSV export, and Slack updates. Requires LangSmith v0.18 or later. | [Batch Insights reports](/langsmith/insights-batch-reports) over a sample of traces, once or on a schedule. |
 | [Bulk export filters](/langsmith/data-export#2-create-an-export-job) | Filtering exported runs with the `field:value` query syntax. | Filtering exported runs with function-style filters. |
 | [Feedback in bulk exports](/langsmith/data-export#limit-exported-fields) | Exporting the `feedbacks` field, which holds feedback keys and comments. | Bulk exports of every other field. |
 

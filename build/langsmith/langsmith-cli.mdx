@@ -80,7 +80,7 @@ Querying a [SmithDB](/langsmith/smithdb-sdk-migration)-backed deployment require
 
 ## Authenticate
 
-The CLI selects an agent environment through `--project` or `LANGSMITH_PROJECT`. [Retrieve that environment's `tracer_session_name`](/langsmith/create-an-agent#use-an-environment-project) and use it for these options. Commands named `project` operate on the [backing trace storage](/langsmith/observability-concepts#agents-and-environments).
+The CLI selects an agent environment through `--project` or `LANGSMITH_PROJECT`. [Retrieve that environment's `tracer_session_name`](/langsmith/create-an-agent#use-an-environment-project) and use it for these options. Commands named `project`, such as `project list`, work with the [trace storage](/langsmith/observability-concepts#agents-and-environments) behind each agent environment, not with agents.
 
 `langsmith auth login` requires LangSmith CLI `v0.2.30` or later. `langsmith profile` commands require LangSmith CLI `v0.2.26` or later.
 
@@ -372,13 +372,15 @@ langsmith experiment get my-experiment-2024-01-15
 
 ### Manage insights
 
-`insights` commands create, run, and read [Insights](/langsmith/insights) reports, which group an agent environment's traces into categories to surface usage patterns and failure modes. Every `insights` command needs `--project`, `--project-id`, or the `LANGSMITH_PROJECT` environment variable.
+`insights` commands create, run, and read [Insights](/langsmith/insights) configurations and their jobs, which group an agent environment's traces into categories that show usage patterns and where the agent fails. Select the environment with `--project` or `LANGSMITH_PROJECT`, set to its [`tracer_session_name`](/langsmith/create-an-agent#use-an-environment-project), or with `--project-id`, set to its [`session_id`](/langsmith/resolve-an-agent).
+
+On LangSmith Cloud, and on self-hosted installations that [run continuous Insights](/langsmith/self-host-insights-chat#check-whether-insights-runs-continuously), a configuration is an insight that categorizes new traces as they arrive. Each job builds or refreshes its categories. On other self-hosted installations, each job produces a [batch report](/langsmith/insights-batch-reports).
 
 <Note>
 `insights create`, `insights run`, and `insights config` require LangSmith CLI v0.2.60 or later.
 </Note>
 
-To create a report, define it in a JSON file:
+To create an insight or a batch report, define it in a JSON file:
 
 ```json
 {
@@ -391,21 +393,23 @@ To create a report, define it in a JSON file:
 }
 ```
 
-- **`name`** and **`summary_prompt`**: Required. The [summary prompt](/langsmith/insights#summary-prompt) is a Mustache template and must reference at least one of `{{run.inputs}}`, `{{run.outputs}}`, `{{run.error}}`, `{{run.feedback}}`, or `{{all_thread_messages}}`. The CLI does not support auto mode, so state what the report should look for in this prompt.
+- **`name`** and **`summary_prompt`**: Required. The [summary prompt](/langsmith/insights-batch-reports#summary-prompt) is a Mustache template and must reference at least one of `{{run.inputs}}`, `{{run.outputs}}`, `{{run.error}}`, `{{run.feedback}}`, or `{{all_thread_messages}}`. The CLI does not support auto mode, so state what Insights should look for in this prompt.
 - **`last_n_hours`**, or **`start_time`** and **`end_time`**: The time range to sample traces from. Use one form, not both.
 - **`model`**: `openai` (default) or `anthropic`. To pick specific models, set **`cluster_model`** and **`summary_model`** together, each to `openai`, `anthropic`, or a [model configuration](/langsmith/model-configurations) UUID. Display names are not accepted.
-- **`schedule_cron`**: A cron expression for a recurring report. The first job starts immediately, and later jobs follow the schedule. Omit it for a one-time report.
+- **`schedule_cron`**: A cron expression for a recurring batch report. The first job starts immediately, and later jobs follow the schedule. Omit it for a one-time report. With continuous Insights, scheduled jobs do not run.
 
 The file also accepts `filter`, `sample`, `hierarchy`, `partitions`, `attribute_schemas`, and `description`. Unknown fields cause an error.
 
-`insights create` saves the file as a job configuration and starts the first report. Reports run asynchronously and incur model costs. The workspace needs secrets for the selected models. Pass `--wait` to poll until the report succeeds or fails, for up to 30 minutes. Pass `--config -` to read the file from stdin.
+`insights create` saves the file as a job configuration and starts its first job. Jobs run asynchronously and incur model costs. With continuous Insights, the insight also incurs model costs for each conversation it categorizes. The workspace needs secrets for the selected models. Pass `--wait` to poll until the job succeeds or fails, for up to 30 minutes. Pass `--config -` to read the file from stdin.
+
+With continuous Insights, the insight chooses its own [sampling rate](/langsmith/insights#choose-runs). The CLI cannot set the rate or Slack updates. Use the UI instead.
 
 ```bash
 langsmith insights create --project "<environment-tracer-session-name>" --config insights.json
 langsmith insights create --project "<environment-tracer-session-name>" --config insights.json --wait
 ```
 
-`insights run` starts a new report from a saved configuration without changing the configuration or its schedule:
+`insights run` starts a new job from a saved configuration without changing the configuration. With continuous Insights, the job refreshes the insight's categories:
 
 ```bash
 langsmith insights config list --project "<environment-tracer-session-name>"
@@ -413,14 +417,14 @@ langsmith insights config list --project "<environment-tracer-session-name>" --i
 langsmith insights run <config-id> --project "<environment-tracer-session-name>" --wait
 ```
 
-`insights list` returns reports with their status and category counts. `insights get` adds the executive summary, highlighted traces, and per-category statistics:
+`insights list` returns jobs with their status and category counts. `insights get` adds the executive summary, highlighted traces, and per-category statistics:
 
 ```bash
 langsmith insights list --project "<environment-tracer-session-name>" --limit 5
 langsmith insights get <insight-id> --project "<environment-tracer-session-name>"
 ```
 
-`insights config update` replaces a configuration's name and analysis settings from a JSON file in the same format. It does not start a report. Omit `description` or `schedule_cron` to keep the current value, or set `schedule_cron` to `null` to stop the schedule. `insights config delete` removes the configuration and every report it produced.
+`insights config update` replaces a configuration's name and analysis settings from a JSON file in the same format. It does not start a job. With continuous Insights, the insight applies the new settings to conversations it analyzes from then on. Omit `description` or `schedule_cron` to keep the current value, or set `schedule_cron` to `null` to stop the schedule. `insights config delete` removes the configuration and every job it produced. With continuous Insights, it also stops categorizing new traces.
 
 ```bash
 langsmith insights config update <config-id> --project "<environment-tracer-session-name>" --config insights.json
