@@ -257,6 +257,12 @@ COMPONENT_RE = re.compile(r"\buse[A-Z][A-Za-z]+\b|\b[A-Z][a-z]+(?:[A-Z][a-z]+)+V
 # How Cloud is run, not what its customers see. Cloud and Fleet only: the self-hosted
 # changelog can name the operator's reconciler.
 HOSTING_RE = re.compile(r"\breconciler\b|\bother customers\b", re.IGNORECASE)
+# Self-hosted installations have their own changelog. An entry that mentions them goes
+# to the rewrite step, which drops a self-hosted-only change and strips self-hosted
+# detail from a change that also reaches Cloud.
+SELF_HOSTED_RE = re.compile(
+    r"\bself-hosted\b|\bHelm\b|\binstance admins?\b", re.IGNORECASE
+)
 # An entry that says only some workspaces have the change describes something most
 # readers cannot use yet. It is left out, not rewritten: dropping the phrase would
 # announce it as available.
@@ -970,8 +976,8 @@ place each group in one layer:
   hits, and removals of things that never shipped. Dropped groups are not published.
 
 Never drop a group only because its notes mention infrastructure. Changes for BYOC
-data planes, AWS, Azure, and GCP deployments, and self-hosted installations are for
-customers who read this changelog: keep them. A limit a customer can hit, such as a
+data planes and AWS, Azure, and GCP deployments are for customers who read this
+changelog: keep them. A limit a customer can hit, such as a
 429 response or a cap they can see, is a change. Internal detail in a note is not a
 reason to drop: the entry writer leaves it out.
 
@@ -981,9 +987,14 @@ keep it, and its entry covers only what is new.
 
 Fixes are only for generally available features. A fix to a feature in the
 <beta_features> list is dropped; a new capability in a beta feature can still be
-a change or a highlight. Fixes that only affect self-hosted installations, or that
-repair an outage in LangSmith's own hosting, are also dropped: the self-hosted
-changelog and the status page cover them.
+a change or a highlight. Fixes that repair an outage in LangSmith's own hosting are
+also dropped: the status page covers them.
+
+Drop every group that reaches only self-hosted installations: Helm values,
+environment variables or settings only self-hosted operators set, instance admin
+pages, self-hosted upgrade paths, and fixes that only affect self-hosted. The
+self-hosted changelog covers them. Keep a change that reaches Cloud customers and
+also self-hosted installations.
 
 Rank groups within each layer by how many customers they affect, most first.
 
@@ -1127,6 +1138,10 @@ what the check flagged, and the pull requests behind the line. Choose one action
   self-hosted operators set. Say why in reason. A change for BYOC data planes or
   an AWS, Azure, or GCP deployment is for customers: rewrite it, never drop it.
 
+For "self-hosted detail": drop the line when the change reaches only self-hosted
+installations, because the self-hosted changelog covers it. When the change also
+reaches Cloud customers, rewrite it without the self-hosted detail.
+
 {ENTRY_RULES}"""
 REWRITE_SCHEMA = {
     "type": "object",
@@ -1219,6 +1234,8 @@ def _text_reasons(group: dict, flags: dict) -> list[str]:
         or HOSTING_RE.search(text)
     ):
         reasons.append(f"internal name: {m.group(0)}")
+    if m := SELF_HOSTED_RE.search(text):
+        reasons.append(f"self-hosted detail: {m.group(0)}")
     reasons += [f"names flag key {k}" for k in flags if len(k) >= 8 and k in text]
     return reasons
 

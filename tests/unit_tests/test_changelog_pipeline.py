@@ -428,6 +428,28 @@ def test_text_reasons_catch_frontend_code_and_hosting_internals(
 
 
 @pytest.mark.parametrize(
+    ("entry", "match"),
+    [
+        ("Self-hosted operators can now show a banner.", "Self-hosted"),
+        ("Set the matching Helm values under `sandboxHost`.", "Helm"),
+        ("Instance admins can now edit the identity provider.", "Instance admins"),
+    ],
+)
+def test_text_reasons_send_self_hosted_entries_to_rewrite(
+    entry: str, match: str
+) -> None:
+    """Self-hosted detail is rewritten out or dropped; its own changelog covers it."""
+    group = {"title": "", "entry": entry}
+    assert cp._text_reasons(group, {}) == [f"self-hosted detail: {match}"]
+
+
+def test_group_prompt_drops_self_hosted_only_changes() -> None:
+    """The grouping step no longer tells the model to keep self-hosted changes."""
+    assert "reaches only self-hosted installations" in cp.GROUP_SYSTEM
+    assert "self-hosted installations are for" not in cp.GROUP_SYSTEM
+
+
+@pytest.mark.parametrize(
     "entry",
     [
         "Users and useful defaults stay the same.",
