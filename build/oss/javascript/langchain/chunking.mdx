@@ -1,0 +1,169 @@
+---
+title: Chunk documents for retrieval
+sidebarTitle: Chunk documents
+description: Choose a chunking strategy for RAG in LangChain, including recursive and token-based splitting, structure-aware and semantic chunking, small-to-big retrieval, and chunk metadata.
+---
+
+Chunking splits your source documents into smaller pieces before you embed and index them. Chunk boundaries decide what a retriever can return: a chunk that mixes several topics dilutes its embedding, and a chunk that splits one idea across two pieces hides context from the model. Chunking is one of the largest factors in [RAG](/oss/javascript/deepagents/retrieval) quality, and one of the least obvious to tune.
+
+This guide covers how to choose and tune a chunking strategy. For the mechanics of each splitter, see the [text splitter integrations](/oss/javascript/integrations/splitters). The examples assume `docs` is a list of loaded [Document](https://reference.langchain.com/javascript/langchain-core/documents/Document) objects, as produced in [RAG with Deep Agents](/oss/javascript/deepagents/rag).
+
+<Tip>
+Chunking choices are empirical. Trace and score them with [LangSmith](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=oss-langchain-chunking): the [RAG evaluation tutorial](/langsmith/evaluate-rag-tutorial) shows how to measure retrieval and answer quality on a dataset, so you can compare strategies instead of guessing.
+</Tip>
+
+## Balance chunk size and overlap
+
+Chunk size trades precision against context, and there is no universal best value. It depends on your documents, your embedding model, and the questions you expect.
+
+- **Small chunks** produce focused embeddings and precise matches, but a single chunk may lack the surrounding context the model needs to answer.
+- **Large chunks** carry more context per chunk, but their embeddings blur together multiple topics, which makes them harder to match and spends more tokens per retrieved chunk.
+
+Chunk overlap repeats a portion of text between adjacent chunks so that an idea split at a boundary still appears whole in at least one chunk. A common starting point is an overlap of 10% to 20% of the chunk size.
+
+| If retrieval | Adjust |
+|--------------|--------|
+| Returns fragments that lack context to answer | Increase chunk size or overlap |
+| Returns long chunks padded with irrelevant text | Decrease chunk size |
+| Cuts related ideas across two chunks | Increase overlap, or split on structure |
+
+Treat these as starting points and confirm them by [evaluating your chunking](#evaluate-your-chunking).
+
+## Start with recursive character splitting
+
+Start with [RecursiveCharacterTextSplitter](https://reference.langchain.com/javascript/langchain-textsplitters/RecursiveCharacterTextSplitter). It splits on a descending list of separators (paragraphs, then sentences, then words), which keeps semantically related text together whenever it fits within the target size. This is the recommended default for generic text.
+
+
+
+```typescript
+import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
+
+const splitter = new RecursiveCharacterTextSplitter({
+  chunkSize: 1000, // target chunk size (characters)
+  chunkOverlap: 200, // overlap between adjacent chunks (characters)
+});
+const chunks = await splitter.splitDocuments(docs);
+```
+
+
+## Size chunks by tokens
+
+Character count is a proxy for what actually matters: embedding models have a token limit and bill by the token. Sizing chunks by tokens keeps each chunk within the model's limit and makes cost predictable. Use a token-based splitter when a chunk must fit a specific model, or when you want to control token cost directly.
+
+
+
+`TokenTextSplitter` splits directly on a token window. It does not use the recursive separator list that `RecursiveCharacterTextSplitter` uses for character-based splitting:
+
+```typescript
+import { TokenTextSplitter } from "@langchain/textsplitters";
+
+const splitter = new TokenTextSplitter({
+  encodingName: "cl100k_base",
+  chunkSize: 256, // target chunk size (tokens)
+  chunkOverlap: 32, // overlap (tokens)
+});
+const chunks = await splitter.splitDocuments(docs);
+```
+
+
+<Note>
+The `cl100k_base` encoding is the tokenizer used by several OpenAI models. Other providers tokenize differently, so token counts are approximate across models. Choose the encoding that matches your embedding model when exact limits matter. For more token-splitting options, see [Split by tokens](/oss/javascript/integrations/splitters/split_by_token).
+</Note>
+
+## Split on document structure
+
+When a document has structure, such as Markdown, HTML, or source code, split along that structure. Structural boundaries keep related content together, and they let you capture the structure itself as metadata.
+
+
+
+Split source code along its own boundaries (functions, classes, and blocks) with `fromLanguage`:
+
+```typescript
+import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
+
+const splitter = RecursiveCharacterTextSplitter.fromLanguage("js", {
+  chunkSize: 500,
+  chunkOverlap: 0,
+});
+const chunks = await splitter.createDocuments([sourceCode]);
+```
+
+For Markdown and other structure-aware splitters, see the [text splitter integrations](/oss/javascript/integrations/splitters).
+
+
+## Chunk by meaning
+
+Semantic chunking places boundaries where the topic shifts rather than at a fixed size. It compares the embeddings of adjacent sentences and starts a new chunk when their similarity drops, which produces more coherent chunks for prose that lacks clear structure. The tradeoff is cost: it embeds the document while splitting it.
+
+
+
+Semantic chunking is available only in Python through the unmaintained `langchain-experimental` package. In TypeScript, prefer recursive or structure-aware splitting.
+
+
+## Retrieve more context than you embed
+
+Small chunks match precisely, but they can leave out the surrounding context a model needs to answer. The small-to-big pattern separates the two concerns: embed and index small chunks for accurate matching, then return the larger passage that contains the matched chunk to the model.
+
+To implement it, store a reference to the parent passage in each small chunk's metadata. After retrieval, look up and return the parent passage instead of the matched chunk.
+
+
+
+The `ParentDocumentRetriever` helper implements this pattern and lives in the [`@langchain/classic`](https://www.npmjs.com/package/@langchain/classic) package.
+
+
+## Attach metadata to chunks
+
+Metadata on each chunk enables filtering and citation at retrieval time. Carry the source, the section, and the chunk's position so you can scope searches and attribute answers.
+
+
+
+Metadata from each source `Document` carries through to its chunks. Add custom fields to the source documents before splitting so every chunk inherits them:
+
+```typescript
+import { Document } from "@langchain/core/documents";
+
+const docs = [
+  new Document({
+    pageContent: text,
+    metadata: { source: "handbook.md", section: "onboarding" },
+  }),
+];
+const chunks = await splitter.splitDocuments(docs);
+// Each chunk keeps the source and section metadata for filtering.
+```
+
+
+## Choose a strategy
+
+Match the strategy to your document type, then tune size and overlap by measuring.
+
+| Document type | Strategy |
+|---------------|----------|
+| Prose without clear structure | [Recursive character splitting](#start-with-recursive-character-splitting), or [semantic chunking](#chunk-by-meaning) |
+| Markdown or HTML | [Split on document structure](#split-on-document-structure) and keep headers as metadata |
+| Source code | [Language-aware splitting](#split-on-document-structure) |
+| Matches that need surrounding context | [Retrieve more context than you embed](#retrieve-more-context-than-you-embed) |
+| Strict model token limits or cost constraints | [Size chunks by tokens](#size-chunks-by-tokens) |
+
+## Evaluate your chunking
+
+No chunking strategy is correct in the abstract; the right one is the one that retrieves the right context for your queries. Vary chunk size, overlap, and strategy, re-index, then compare retrieval and answer quality on a fixed dataset. See [Evaluate a RAG application](/langsmith/evaluate-rag-tutorial) to set up the dataset and evaluators.
+
+## See also
+
+- [Retrieval](/oss/javascript/deepagents/retrieval): concepts and RAG architectures
+- [Improve retrieval quality](/oss/javascript/langchain/retrieval-optimization): metadata filters, hybrid search, MMR, and reranking
+- [RAG with Deep Agents](/oss/javascript/deepagents/rag): loading, indexing, and querying documents
+- [Text splitter integrations](/oss/javascript/integrations/splitters): the full catalog of splitters
+- [Evaluate a RAG application](/langsmith/evaluate-rag-tutorial): measure retrieval and answer quality
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/langchain/chunking.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
