@@ -11,7 +11,7 @@ This guide uses the Python and TypeScript SDKs. For installation and setup, refe
 </Callout>
 
 <Note>
-To write free-form acceptance criteria on individual runs while reviewing in the [LangSmith UI](https://smith.langchain.com), refer to [Use assertions](/langsmith/assertions).
+To review the free-form acceptance criteria that [LangSmith Engine](/langsmith/engine) proposes for a recurring issue, refer to [Use assertions](/langsmith/assertions).
 </Note>
 
 ## Feedback layers
@@ -19,7 +19,7 @@ To write free-form acceptance criteria on individual runs while reviewing in the
 LangSmith uses a three-layer architecture for structured human feedback:
 
 1. **Feedback configs**: Organization-wide definitions of feedback keys that establish the schema for evaluation metrics. For example, you might define "accuracy" as a continuous 0–1 score or "correctness" as a pass/fail categorical choice. These configs are reusable across all annotation queues in your organization.
-1. **Annotation queue rubric items**: Queue-specific assignments that determine which feedback configs annotators must fill out when reviewing [runs](/langsmith/observability-concepts#runs) in a particular queue. Each rubric item can include custom descriptions, guidance for specific score values, and whether the feedback is required or optional.
+1. **Annotation queue rubric items**: Queue-specific assignments that determine which feedback configs annotators must fill out when reviewing [runs](/langsmith/observability-concepts#runs) in a particular queue. Each rubric item can include custom descriptions, guidance for specific score values, whether the feedback is required or optional, and conditions that show or require the item based on earlier answers.
 1. **Feedback**: Individual scores and values that annotators submit on specific [runs](/langsmith/observability-concepts#runs). This is the actual evaluation data collected using the schemas you've defined. Learn more about [feedback in LangSmith](/langsmith/observability-concepts#feedback).
 
 ## Feedback configs
@@ -152,6 +152,40 @@ await client.updateFeedbackConfig("accuracy", {
 ```
 </CodeGroup>
 
+Passing `feedback_config` replaces the whole config, including its category list. To keep a multi-select config multi-select, include `allows_multiple_categories` in the new config.
+
+#### Add or remove categories
+
+To change a large category list without resending it, add or remove individual categories with `add_feedback_categories` and `remove_feedback_categories`. Both methods keep the config's other categories and its `allows_multiple_categories` setting:
+
+<Note>
+These methods require `langsmith>=0.15.0` (Python) or `langsmith>=0.12.0` (TypeScript). Self-hosted LangSmith requires v0.18 or later. Earlier versions ignore the change and return the config unchanged.
+</Note>
+
+<CodeGroup>
+```python Python
+# Add categories. Values and labels must not match existing ones.
+client.add_feedback_categories(
+    "topics",
+    [{"value": 3, "label": "warranty"}],
+)
+
+# Remove categories by value, not label.
+client.remove_feedback_categories("topics", [2])
+```
+```typescript TypeScript
+// Add categories. Values and labels must not match existing ones.
+await client.addFeedbackCategories("topics", [
+  { value: 3, label: "warranty" },
+]);
+
+// Remove categories by value, not label.
+await client.removeFeedbackCategories("topics", [2]);
+```
+</CodeGroup>
+
+Removing a category does not change feedback already written with that value. A categorical config must keep at least two categories, so a removal that leaves fewer than two fails with a 422 error.
+
 ### Delete a feedback config
 
 Remove a feedback config from your organization with @[`delete_feedback_config`]. This performs a soft delete, which marks the config as deleted but doesn't permanently remove it from the system. You can recreate a config with the same key later if needed:
@@ -276,6 +310,98 @@ await client.updateAnnotationQueue(queue.id, {
 });
 ```
 </CodeGroup>
+
+When an update omits an item's `required_if` or `visible_if`, the item keeps its current conditions. To clear conditions, pass `None` (Python) or `null` (TypeScript).
+
+### Add conditions to rubric items
+
+Conditions make a rubric item depend on answers to earlier items, so reviewers see follow-up questions only when they apply. Each rubric item accepts two optional condition fields:
+
+- **`required_if`**: The item is always shown, and is required only while the conditions hold.
+- **`visible_if`**: The item is hidden until the conditions hold. Once shown, it follows `is_required`.
+
+<Note>
+Rubric item conditions require `langsmith>=0.15.0` (Python) or `langsmith>=0.12.0` (TypeScript).
+</Note>
+
+Each condition object has a `join` of `"all"` or `"any"` and a list of `rules`. Each rule names the `key` of an earlier item in the same rubric, an `op`, and the category `values` to match:
+
+- **`is`**: The earlier item's answer is the one value given.
+- **`is_one_of`**: The earlier item's answer is any of the values given.
+- **`is_empty`**: The earlier item has no answer. Takes no values.
+- **`is_not_empty`**: The earlier item has an answer. Takes no values.
+
+Rule values are category values, not labels. For a multi-select item, `is` and `is_one_of` hold if any selected category matches.
+
+The following example asks for a failure reason only when the reviewer marks the response as failing:
+
+<CodeGroup>
+```python Python
+client.update_annotation_queue(
+    queue.id,
+    rubric_items=[
+        {"feedback_key": "correctness", "is_required": True},
+        {
+            "feedback_key": "failure_reason",
+            "description": "Why did the response fail?",
+            "is_required": True,
+            "visible_if": {
+                "join": "all",
+                "rules": [{"key": "correctness", "op": "is", "values": [0]}],
+            },
+        },
+    ],
+)
+```
+```typescript TypeScript
+await client.updateAnnotationQueue(queue.id, {
+  rubricItems: [
+    { feedback_key: "correctness", is_required: true },
+    {
+      feedback_key: "failure_reason",
+      description: "Why did the response fail?",
+      is_required: true,
+      visible_if: {
+        join: "all",
+        rules: [{ key: "correctness", op: "is", values: [0] }],
+      },
+    },
+  ],
+});
+```
+</CodeGroup>
+
+A rule can reference only an item that appears earlier in the rubric. A rule that references a later item, or the item itself, fails with a 422 error. LangSmith stores conditions and the review view applies them. The API does not enforce them when feedback is written directly.
+
+### Copy a rubric to another queue
+
+`read_annotation_queue` returns a queue's rubric items in order, each with the feedback config it uses. To copy the rubric, pass those items as-is to another queue's `rubric_items`:
+
+<Note>
+Reading rubric items with their feedback configs requires `langsmith>=0.15.0` (Python) or `langsmith>=0.12.0` (TypeScript).
+</Note>
+
+<CodeGroup>
+```python Python
+source = client.read_annotation_queue(source_queue_id)
+
+client.update_annotation_queue(
+    target_queue_id,
+    rubric_instructions=source.rubric_instructions,
+    rubric_items=source.rubric_items,
+)
+```
+```typescript TypeScript
+const source = await client.readAnnotationQueue(sourceQueueId);
+
+await client.updateAnnotationQueue(targetQueueId, {
+  rubricInstructions: source.rubric_instructions,
+  rubricItems: source.rubric_items,
+});
+```
+</CodeGroup>
+
+Because updates replace the full rubric item list, the update replaces the target queue's rubric. To keep the target's existing items, combine both lists before you update.
 
 ## Add runs and threads to a queue
 
@@ -523,6 +649,49 @@ await client.createFeedbackConfig({
 
 The first example shows a binary pass/fail config. The second example demonstrates a multi-class config for sentiment with three options. The numeric values allow you to compute aggregate scores even for categorical feedback.
 
+#### Allow multiple selections
+
+Set `allows_multiple_categories` to let a reviewer pick more than one category for a single item. Use it for multi-label taxonomies, such as tagging every topic a conversation covers. The flag defaults to `false` and applies to categorical configs only:
+
+<Note>
+`allows_multiple_categories` requires `langsmith>=0.15.0` (Python) or `langsmith>=0.12.0` (TypeScript).
+</Note>
+
+<CodeGroup>
+```python Python
+client.create_feedback_config(
+    "topics",
+    feedback_config={
+        "type": "categorical",
+        "categories": [
+            {"value": 0, "label": "billing"},
+            {"value": 1, "label": "shipping"},
+            {"value": 2, "label": "returns"},
+        ],
+        "allows_multiple_categories": True,
+    },
+)
+```
+```typescript TypeScript
+await client.createFeedbackConfig({
+  feedbackKey: "topics",
+  feedbackConfig: {
+    type: "categorical",
+    categories: [
+      { value: 0, label: "billing" },
+      { value: 1, label: "shipping" },
+      { value: 2, label: "returns" },
+    ],
+    allows_multiple_categories: true,
+  },
+});
+```
+</CodeGroup>
+
+When a reviewer picks several categories in the review pane, LangSmith saves each pick as its own feedback entry under the config's key, with the category label as the `value` and the category value as the `score`. Clearing a pick deletes its entry. To write a multi-select answer with the SDK, create one feedback entry per category.
+
+A composite evaluator cannot include a multi-select key, because a run can have several scores under that key.
+
 ### Freeform
 
 Freeform configs allow annotators to provide open-ended text feedback without any predefined structure or constraints. This type has no `min`, `max`, or `categories` fields—annotators can enter any text they want.
@@ -571,3 +740,11 @@ await client.createFeedbackConfig({
 | `score_descriptions` | `Record<string, string>` | Labels for specific score values (continuous). |
 | `value_descriptions` | `Record<string, string>` | Labels for specific category values (categorical). |
 | `is_required` | `boolean` | Whether annotators must complete this item before submitting. Defaults to false. |
+| `required_if` | `object` | Conditions on earlier items. The item is required only while they hold. See [Add conditions to rubric items](#add-conditions-to-rubric-items). |
+| `visible_if` | `object` | Conditions on earlier items. The item is hidden until they hold. See [Add conditions to rubric items](#add-conditions-to-rubric-items). |
+
+### Feedback config fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `allows_multiple_categories` | `boolean` | Categorical only. Whether a reviewer can select more than one category. Defaults to false. |
