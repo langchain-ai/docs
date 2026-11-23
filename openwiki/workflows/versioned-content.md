@@ -3,6 +3,9 @@ type: authoring workflow
 title: Versioned Content Workflow
 description: Shows how a documentation change moves from the correct source directory through navigation, language-specific or unversioned routes, redirects, generated artifacts, and validation without breaking prefixed routes.
 tags: [versioning, documentation, redirects, navigation, validation]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-11-23T08:07:24.438Z
 sources:
   - id: openwiki-source-75c7744a0e664440f0552945
     resource: repo://.github/workflows/check-onboarding-models.yml
@@ -26,6 +29,8 @@ sources:
     resource: repo://scripts/check_cross_refs.py
   - id: openwiki-source-819e9af046c9d9b8116a3da7
     resource: repo://scripts/check_onboarding_models.py
+  - id: openwiki-source-3988d52ac8d59fd5a6618960
+    resource: repo://scripts/check_removed_pages_redirects.py
   - id: openwiki-source-b44190969c9eb39de1c69815
     resource: repo://scripts/data/onboarding_models.yaml
   - id: openwiki-source-697851c98229599f97376bfb
@@ -41,9 +46,6 @@ sources:
   - id: openwiki-source-f260e53bc2ed7f10cc38d28f
     resource: repo://tests/unit_tests/test_conditional_fences.py
 generated: { by: "openwiki/0.4.3", at: "2026-11-16T08:15:17.266Z" }
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-11-16T08:15:17.266Z
 ---
 
 # Versioned Content Workflow
