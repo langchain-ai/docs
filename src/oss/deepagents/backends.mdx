@@ -287,43 +287,45 @@ Use with extreme caution and only in appropriate environments.
 
 #### Namespace factories
 
+:::python
 A namespace factory controls where `StoreBackend` reads and writes data. It receives a LangGraph @[`Runtime`] and returns a tuple of strings used as the store namespace. Use namespace factories to isolate data between users, tenants, or assistants.
 
 Pass the namespace factory to the `namespace` parameter when constructing a `StoreBackend`:
 
-:::python
 ```python
 NamespaceFactory = Callable[[Runtime], tuple[str, ...]]
 ```
-:::
-
-:::js
-```typescript
-type NamespaceFactory = (runtime: Runtime) => string[];
-```
-:::
 
 The `Runtime` provides:
 - `rt.context`—User-supplied context passed via LangGraph's [context schema](/oss/langgraph/graph-api#runtime-context) (for example, `user_id`)
-:::python
 - `rt.server_info`—Server-specific metadata when running on Agent Server (assistant ID, graph ID, authenticated user)
 - `rt.execution_info`—Execution identity information (thread ID, run ID, checkpoint ID)
-:::
-:::js
-- `rt.serverInfo`—Server-specific metadata when running on Agent Server (assistant ID, graph ID, authenticated user)
-- `rt.executionInfo`—Execution identity information (thread ID, run ID, checkpoint ID)
-:::
 
-:::python
 <Note>
 The `Runtime` argument is available in `deepagents>=0.5.2`. Earlier 0.5.x releases passed a `BackendContext` instead—see [migrating from `BackendContext`](#migrating-from-backendcontext) below. `rt.server_info` and `rt.execution_info` require `deepagents>=0.5.0`.
 </Note>
 :::
 
 :::js
-<Note>
-The `Runtime` argument is available in `deepagents>=1.9.1`. Earlier 1.9.x releases passed a `BackendContext` instead—see [migrating from `BackendContext`](#migrating-from-backendcontext) below. `rt.serverInfo` and `rt.executionInfo` require `deepagents>=1.9.0`.
-</Note>
+A namespace factory controls where `StoreBackend` reads and writes data. It receives a `StoreBackendContext` and returns an array of strings used as the store namespace. Use namespace factories to isolate data between users, tenants, or assistants.
+
+Pass the namespace factory to the `namespace` parameter when constructing a `StoreBackend`:
+
+```typescript
+type StoreBackendNamespaceFactory = (context: {
+  state: unknown;
+  config?: {
+    metadata?: Record<string, unknown>;
+    configurable?: Record<string, unknown>;
+  };
+  assistantId?: string;
+}) => string[];
+```
+
+The context provides:
+- `state`—Current graph state, when available
+- `config`—Runnable config metadata and `configurable` values, when available
+- `assistantId`—Assistant identifier resolved from config metadata or the injected runtime
 :::
 
 **Common namespace patterns:**
@@ -357,19 +359,19 @@ backend = StoreBackend(
 ```typescript
 import { StoreBackend } from "deepagents";
 
-// Per-user: each user gets their own isolated storage
+// Per-user: derive from graph state
 const backend = new StoreBackend({
-  namespace: (rt) => [rt.serverInfo.user.identity],  // [!code highlight]
+  namespace: ({ state }) => [(state as { userId: string }).userId],  // [!code highlight]
 });
 
-// Per-assistant: all users of the same assistant share storage
+// Per-assistant: use the resolved assistant id
 const backend = new StoreBackend({
-  namespace: (rt) => [rt.serverInfo.assistantId],  // [!code highlight]
+  namespace: ({ assistantId }) => [assistantId ?? "default"],  // [!code highlight]
 });
 
-// Per-thread: storage scoped to a single conversation
+// Static namespace when the scope is known at construction time
 const backend = new StoreBackend({
-  namespace: (rt) => [rt.executionInfo.threadId],  // [!code highlight]
+  namespace: ["memories", orgId, userId, "filesystem"],  // [!code highlight]
 });
 ```
 :::
@@ -1000,7 +1002,7 @@ const agent = createDeepAgent({
   backend: (config) => new CompositeBackend(
     new StateBackend(config),
     { "/memories/": new StoreBackend(config, {
-      namespace: (rt) => [rt.serverInfo.user.identity],
+      namespace: ({ state }) => [(state as { userId: string }).userId],
     }) },
   ),
 });
@@ -1010,16 +1012,17 @@ const agent = createDeepAgent({
   backend: new CompositeBackend(
     new StateBackend(),
     { "/memories/": new StoreBackend({
-      namespace: (rt) => [rt.serverInfo.user.identity],
+      namespace: ({ state }) => [(state as { userId: string }).userId],
     }) },
   ),
 });
 ```
 :::
 
+:::python
 ### Migrating from `BackendContext`
 
-In `deepagents>=0.5.2` (Python) and `deepagents>=1.9.1` (TypeScript), namespace factories receive a LangGraph @[`Runtime`] directly instead of a `BackendContext` wrapper. The old `BackendContext` form still works via backwards-compatible `.runtime` and `.state` accessors, but those accessors emit a deprecation warning and will be removed in `deepagents>=0.7`.
+In `deepagents>=0.5.2`, namespace factories receive a LangGraph @[`Runtime`] directly instead of a `BackendContext` wrapper. The old `BackendContext` form still works via backwards-compatible `.runtime` and `.state` accessors, but those accessors emit a deprecation warning and will be removed in `deepagents>=0.7`.
 
 **What changed:**
 
@@ -1027,7 +1030,6 @@ In `deepagents>=0.5.2` (Python) and `deepagents>=1.9.1` (TypeScript), namespace 
 - Drop the `.runtime` accessor—for example, `ctx.runtime.context.user_id` becomes `rt.server_info.user.identity`.
 - There is no direct replacement for `ctx.state`. Namespace info should be read-only and stable for the lifetime of a run, whereas state is mutable and changes step-to-step—deriving a namespace from it risks data ending up under inconsistent keys. If you have a use case that requires reading agent state, please [open an issue](https://github.com/langchain-ai/deepagents/issues).
 
-:::python
 ```python
 # Before (deprecated, removed in v0.7)
 StoreBackend(
@@ -1038,20 +1040,6 @@ StoreBackend(
 StoreBackend(
     namespace=lambda rt: (rt.server_info.user.identity,),  # [!code ++]
 )
-```
-:::
-
-:::js
-```typescript
-// Before (deprecated, removed in v0.7)
-new StoreBackend({
-  namespace: (ctx) => [ctx.runtime.context.userId],  // [!code --]
-});
-
-// After
-new StoreBackend({
-  namespace: (rt) => [rt.serverInfo.user.identity],  // [!code ++]
-});
 ```
 :::
 
