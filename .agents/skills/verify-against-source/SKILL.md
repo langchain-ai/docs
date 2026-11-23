@@ -133,8 +133,11 @@ like it. Three failures that recur:
 
 ## Step 4. Record what you checked, and what you could not
 
-Name the file and symbol in the pull request body, not just the conclusion. A
-reviewer can then disagree with the evidence rather than with an assertion.
+For a public source, name the file and symbol in the pull request body, not
+just the conclusion. A reviewer can then disagree with the evidence rather than
+with an assertion. For a private source, write the conclusion in public text
+and put the file and symbol in a private channel. See
+[Private evidence](#private-evidence).
 
 State the gaps in the same place. Common ones that no amount of source reading
 closes:
@@ -154,8 +157,9 @@ than a confident sentence a reader discovers is wrong.
 This repository, its PRs, and its Actions logs are public. Source in
 langchainplus, langgraph-api, or any other private repository is private.
 
-- Do not put private file paths, symbols, code, flag names, or unreleased
-  feature names in docs, commits, PR text, or review comments. Write the
+- Do not put private file paths, symbols, line numbers, code, flag names, or
+  unreleased feature names in docs, commits, PR text, or review comments.
+  "Cite the source" means "say you checked it," not "name the file." Write the
   conclusion: "The default is 30 seconds, not 60 (checked against product
   source)."
 - Public text may describe only behavior the change itself documents. A tool,
