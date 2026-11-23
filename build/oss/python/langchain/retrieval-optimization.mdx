@@ -1,0 +1,274 @@
+---
+title: Improve retrieval quality
+description: Improve RAG retrieval quality in LangChain with metadata filtering, query transformation, hybrid search, maximal marginal relevance, and reranking.
+---
+
+Retrieval quality sets the ceiling for a [RAG](/oss/python/deepagents/retrieval) application: a model can only answer from the context it receives. When answers are incomplete or wrong, the retriever is often the cause, not the model. This guide covers techniques to improve what your retriever returns, from cheap configuration changes to a two-stage reranking pipeline.
+
+Each technique changes the body of the baseline retrieval tool below. Combine them as needed, and measure every change against a fixed dataset so you keep what helps.
+
+<Tip>
+Use [LangSmith](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=oss-langchain-retrieval-optimization) to score those experiments. The [RAG evaluation tutorial](/langsmith/evaluate-rag-tutorial) shows how to measure retrieval and answer quality.
+</Tip>
+
+## Before you begin
+
+This guide assumes you have an indexed `vector_store` and expose retrieval to an agent as a [tool](/oss/python/langchain/tools). For indexing, see [Build a semantic search engine](/oss/python/langchain/knowledge-base).
+
+The baseline retrieval tool runs a single similarity search:
+
+```python
+from langchain.tools import tool
+
+
+@tool(response_format="content_and_artifact")
+def retrieve(query: str):
+    """Retrieve information related to a query."""
+    docs = vector_store.similarity_search(query, k=4)
+    serialized = "\n\n".join(
+        f"Source: {doc.metadata}\nContent: {doc.page_content}" for doc in docs
+    )
+    return serialized, docs
+```
+
+Pass the tool to an agent with [create_agent](https://reference.langchain.com/python/langchain/agents/factory/create_agent):
+
+```python
+from langchain.agents import create_agent
+
+agent = create_agent("claude-sonnet-4-6", [retrieve])
+```
+
+
+
+
+## Choose a technique
+
+Start with the technique that matches the failure you observe, then layer others as needed. Reranking gives the largest gain for most applications and composes well with a broad first-stage retrieval.
+
+| Symptom | Technique |
+|---------|-----------|
+| Results come from the wrong subset (wrong tenant, date, or category) | [Filter by metadata](#filter-by-metadata) |
+| Relevant documents are missed when phrased differently than the question | [Transform the query](#transform-the-query) |
+| Exact names, codes, or rare keywords are missed | [Combine semantic and keyword search](#combine-semantic-and-keyword-search) |
+| Several near-duplicate chunks crowd out other information | [Diversify results with maximal marginal relevance](#diversify-results-with-maximal-marginal-relevance) |
+| Results are roughly relevant but poorly ordered | [Rerank retrieved documents](#rerank-retrieved-documents) |
+
+A common high-quality pipeline combines several: filter to the right scope, retrieve a broad candidate set with hybrid search, then rerank to a small set. Validate the combination on a dataset with [LangSmith evaluation](/langsmith/evaluate-rag-tutorial) before shipping.
+
+The sections below change the body of the baseline tool. Each is independent, so adopt only the ones that address a problem you observe.
+
+## Filter by metadata
+
+Metadata filtering restricts the search to a subset of documents before similarity search runs. It improves precision and reduces latency by shrinking the candidate set, and it is the most reliable way to scope retrieval to a tenant, a date range, a category, or a section.
+
+Filtering requires that you attach metadata to each chunk at indexing time. Apply a static filter when the scope is fixed:
+
+```python
+docs = vector_store.similarity_search(
+    query,
+    k=4,
+    filter={"section": "introduction"},  # [!code highlight]
+)
+```
+
+
+
+
+To let the model choose the scope, expose the filter as a tool argument. The model populates it from the conversation:
+
+```python
+from typing import Literal
+
+from langchain.tools import tool
+
+
+@tool(response_format="content_and_artifact")
+def retrieve(query: str, section: Literal["introduction", "methods", "results"]):
+    """Retrieve information from a specific section of the document."""
+    docs = vector_store.similarity_search(query, k=4, filter={"section": section})
+    serialized = "\n\n".join(
+        f"Source: {doc.metadata}\nContent: {doc.page_content}" for doc in docs
+    )
+    return serialized, docs
+```
+
+
+
+
+<Note>
+Filter syntax is vector-store specific. The dictionary form shown here works with most production stores, such as Pinecone and PGVector. Some stores, including `InMemoryVectorStore`, take a predicate function instead. See your [vector store integration](/oss/python/integrations/vectorstores) for details.
+</Note>
+
+## Transform the query
+
+A user question is not always a good search query. It can be vague, conversational, or contain several distinct information needs. Transforming the question into one or more focused queries before retrieval improves recall.
+
+Generate focused queries with [structured output](/oss/python/langchain/structured-output), run a search for each, then merge the results:
+
+```python
+from langchain.chat_models import init_chat_model
+from pydantic import BaseModel, Field
+
+
+class SearchQueries(BaseModel):
+    """Focused search queries derived from a user question."""
+
+    queries: list[str] = Field(description="One to three search queries.")
+
+
+query_model = init_chat_model("claude-sonnet-4-6").with_structured_output(SearchQueries)
+
+
+def expand_query(question: str) -> list[str]:
+    result = query_model.invoke(
+        f"Generate one to three focused search queries for: {question}"
+    )
+    return result.queries
+```
+
+Retrieve for each generated query and deduplicate the results:
+
+```python
+from langchain.tools import tool
+
+
+@tool(response_format="content_and_artifact")
+def retrieve(query: str):
+    """Retrieve information related to a query."""
+    seen, docs = set(), []
+    for expanded in expand_query(query):
+        for doc in vector_store.similarity_search(expanded, k=4):
+            if doc.page_content not in seen:
+                seen.add(doc.page_content)
+                docs.append(doc)
+    serialized = "\n\n".join(
+        f"Source: {doc.metadata}\nContent: {doc.page_content}" for doc in docs
+    )
+    return serialized, docs
+```
+
+
+
+
+<Tip>
+An agent already rewrites queries to some degree: it decides what to search for based on the conversation. Query transformation is most useful when you retrieve once per turn, as in a two-step RAG chain, or when a single search misses relevant documents.
+</Tip>
+
+## Combine semantic and keyword search
+
+Semantic (dense) search matches meaning, but it can miss exact product codes, identifiers, names, and rare keywords. Keyword (sparse) search matches those terms exactly. Hybrid search runs both and combines the rankings, which improves recall for queries that mix concepts with specific terms.
+
+<Note>
+Many vector store integrations support hybrid search natively, which is the most efficient option for large corpora. See your [vector store integration](/oss/python/integrations/vectorstores) to enable it, then request hybrid results inside your retrieval tool.
+</Note>
+
+To combine retrievers yourself, pair the vector store with a keyword retriever such as [`BM25Retriever`](/oss/python/integrations/retrievers) and merge the two rankings with reciprocal rank fusion. `BM25Retriever` requires the `rank_bm25` package and builds an in-memory index from the same chunks:
+
+```python
+from langchain.tools import tool
+from langchain_community.retrievers import BM25Retriever
+
+keyword_retriever = BM25Retriever.from_documents(chunks)
+keyword_retriever.k = 10
+
+
+def reciprocal_rank_fusion(result_lists, smoothing=60):
+    scores, docs_by_key = {}, {}
+    for docs in result_lists:
+        for rank, doc in enumerate(docs):
+            key = doc.page_content
+            docs_by_key[key] = doc
+            scores[key] = scores.get(key, 0) + 1 / (smoothing + rank)
+    ranked = sorted(scores, key=scores.get, reverse=True)
+    return [docs_by_key[key] for key in ranked]
+
+
+@tool(response_format="content_and_artifact")
+def retrieve(query: str):
+    """Retrieve information related to a query."""
+    dense = vector_store.similarity_search(query, k=10)
+    sparse = keyword_retriever.invoke(query)
+    docs = reciprocal_rank_fusion([dense, sparse])[:4]
+    serialized = "\n\n".join(
+        f"Source: {doc.metadata}\nContent: {doc.page_content}" for doc in docs
+    )
+    return serialized, docs
+```
+
+
+
+
+## Diversify results with maximal marginal relevance
+
+Plain similarity search can return several near-duplicate chunks, which wastes context on repeated information. Maximal marginal relevance (MMR) selects results that are both relevant to the query and diverse from one another.
+
+Use the vector store's maximal marginal relevance search in place of `similarity_search`:
+
+```python
+docs = vector_store.max_marginal_relevance_search(
+    query,
+    k=4,  # number of documents to return
+    fetch_k=20,  # number of candidates to consider before selecting
+    lambda_mult=0.5,  # 1.0 favors relevance, 0.0 favors diversity
+)
+```
+
+
+
+
+MMR fetches `fetch_k` candidates by similarity, then selects `k` that balance relevance against redundancy. Not all vector stores implement MMR; check your [vector store integration](/oss/python/integrations/vectorstores).
+
+## Rerank retrieved documents
+
+Embedding similarity is a coarse relevance signal, so the top result by similarity is not always the most relevant. A reranker scores each candidate against the query directly and reorders them, which usually produces the largest single quality gain. Use two-stage retrieval: fetch a broad candidate set with similarity search, then rerank down to a small, high-precision set.
+
+Call a reranker inside the tool. This example uses [`CohereRerank`](/oss/python/integrations/retrievers/cohere-reranker):
+
+```python
+from langchain.tools import tool
+from langchain_cohere import CohereRerank
+
+reranker = CohereRerank(model="rerank-v5.0-pro", top_n=4)
+
+
+@tool(response_format="content_and_artifact")
+def retrieve(query: str):
+    """Retrieve information related to a query."""
+    candidates = vector_store.similarity_search(query, k=20)  # [!code highlight]
+    docs = reranker.compress_documents(candidates, query)  # [!code highlight]
+    serialized = "\n\n".join(
+        f"Source: {doc.metadata}\nContent: {doc.page_content}" for doc in docs
+    )
+    return serialized, docs
+```
+
+
+
+
+<Note>
+Reranking adds an extra step, and hosted rerankers add an API call per retrieval, which increases latency. In most RAG applications the quality gain is worth the cost. For a local option with no API call, use a [cross-encoder reranker](/oss/python/integrations/document_transformers/cross_encoder_reranker). Other hosted options include [Voyage AI](/oss/python/integrations/document_transformers/voyageai-reranker).
+</Note>
+
+
+
+
+## See also
+
+- [Retrieval](/oss/python/deepagents/retrieval): concepts and RAG architectures
+- [Build a semantic search engine](/oss/python/langchain/knowledge-base): index documents into a vector store
+- [RAG with Deep Agents](/oss/python/deepagents/rag): end-to-end retrieval and generation with Deep Agents
+- [Build a custom RAG agent with LangGraph](/oss/python/langgraph/agentic-rag): grade documents and rewrite queries with a custom graph
+- [Evaluate a RAG application](/langsmith/evaluate-rag-tutorial): measure retrieval and answer quality
+- [Retriever integrations](/oss/python/integrations/retrievers) and [vector store integrations](/oss/python/integrations/vectorstores)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/langchain/retrieval-optimization.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
