@@ -71,6 +71,37 @@ Host-driven runs follow the same resumable page-job lifecycle as native `openwik
 
 On each page, the host submits sparse Claim decisions (confirm, revise, add, or retract). OpenWiki retains unaffected Claims, applies the explicit decisions, and refuses to finish until the final Claims state is durable. The host can call `openwiki_inspect_page_claims` when it needs the complete Claims set for the current page.
 
+### Result capping in openwiki_begin
+
+<Note>
+    Result capping requires OpenWiki v0.8.0 or later.
+</Note>
+
+Repositories with many changed files or Claim issues can produce large `openwiki_begin` responses. To keep the response within transport limits, OpenWiki caps the returned lists and includes exact totals so the host can recover omitted data.
+
+The response includes the following capping fields:
+
+- **`changedPathCount`** (`number`): Exact number of repository paths changed since the previous run.
+- **`changedPathsTruncated`** (`boolean`): Whether `changedPaths` omits entries beyond the 200-path limit. Each `pageUpdateWindows` entry also carries its own `changedPathCount` and `changedPathsTruncated` for per-window visibility.
+- **`claimIssueCount`** (`number`): Exact number of Claim preflight issues.
+- **`claimIssuesTruncated`** (`boolean`): Whether `claimIssues` omits entries beyond the 50-issue limit.
+- **`claimIssuePages`** (`string[]`): Every page that has a Claim issue, including pages whose individual issues were omitted from `claimIssues`.
+
+When `changedPathsTruncated` is `true`, recover the full changed-path list from Git:
+
+```bash
+# Paths changed since the previous run baseline
+git diff --name-only <baseGitHead>..HEAD
+
+# Untracked files (for full-review windows)
+git diff --name-only HEAD
+git ls-files --others --exclude-standard
+```
+
+Exclude `openwiki/` and `.openwikiignore` paths from the result. The `baseGitHead` value is available in the `openwiki_begin` response.
+
+Planning and page jobs read the full run state internally, so capping does not affect correctness. The host uses the truncation fields only when it needs to present the complete list to the user or to make its own routing decisions before calling `openwiki_submit_plan`.
+
 ### Defer unplanned Claim issues
 
 <Note>
