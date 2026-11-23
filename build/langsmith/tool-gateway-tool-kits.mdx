@@ -1,0 +1,177 @@
+---
+title: Create tool kits
+sidebarTitle: Create tool kits
+description: Create, update, and delete Tool Gateway tool kits, which serve a chosen set of tools from any number of MCP servers at one MCP URL.
+---
+
+import ToolGatewayBetaNote from '/snippets/python/langsmith/tool-gateway-beta-note.mdx';
+
+<ToolGatewayBetaNote />
+
+A tool kit is a chosen set of tools that [Tool Gateway](/langsmith/tool-gateway) serves at one MCP URL. The tools can come from any number of MCP servers and built-in servers. Giving each agent a kit with only the tools it needs keeps its tool list short and its tool choices accurate.
+
+A kit curates which tools an endpoint exposes. It does not control which tools a caller may invoke: the same caller can reach every tool it can use through the [me kit](#use-the-me-kit). To restrict what callers can do, use permissions and [policies](/langsmith/tool-gateway-policies). See [Tool kits curate, policies enforce](/langsmith/tool-gateway-how-it-works#tool-kits-curate-policies-enforce).
+
+## Create a tool kit
+
+A kit selects tools from servers that are already [added](/langsmith/tool-gateway-servers). Managing kits requires a user credential, such as a personal access token. A service key can call a kit's tools, but it cannot create, change, or delete a kit.
+
+### Choose a scope
+
+Each kit has a scope. You choose it when you create the kit, and you cannot change it later:
+
+- **Workspace**: Everyone in the workspace can see and use the kit. It can include workspace servers and built-in servers, but not personal servers. Workspace Admins can create workspace kits.
+- **Personal**: Only you can see, use, change, or delete the kit. It can also include your personal servers. Workspace Admins and Workspace Editors can create personal kits.
+
+A workspace kit that includes a personal server's tool returns `400`. To combine personal and workspace tools, create a personal kit.
+
+### Select tools
+
+<Tabs>
+  <Tab title="UI">
+    1. Go to **Tools** > **Tool kits** and click **Create tool kit**.
+    1. Enter a **Tool kit name**, and optionally a description.
+    1. Select **Workspace** or **Personal** for who can use the kit.
+    1. In the tool picker, select the tools to include. Filter by server to find tools faster.
+    1. Click **Review tool selection**. (Optional) Enter a **Custom label** for any tool, or remove tools you selected by mistake.
+    1. Click **Create tool kit**.
+
+    The kit's panel lists its tools under the names agents call, and shows the kit's MCP URL.
+  </Tab>
+  <Tab title="API">
+    Send `POST /v1/managed-tools/kits` with a `name` and a `tools` array. Each entry names one tool on one server. Set `server_id` for a server you added, or `builtin_server_key` for a built-in server. Set `tool_name` to the tool's name on that server. The API examples on this page use the environment variables from the [quickstart](/langsmith/tool-gateway-quickstart).
+
+    ```bash
+    curl -sS -X POST "$LANGSMITH_ENDPOINT/v1/managed-tools/kits" \
+      -H "X-Api-Key: $LANGSMITH_API_KEY" \
+      -H "X-Tenant-Id: $LANGSMITH_WORKSPACE_ID" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "Support agent tools",
+        "description": "Tools for the support agent",
+        "scope": "workspace",
+        "tools": [
+          {"server_id": "<server-id>", "tool_name": "<tool-name>"},
+          {"builtin_server_key": "<built-in-key>", "tool_name": "<tool-name>"}
+        ]
+      }'
+    ```
+
+    The response holds the kit's `id`, its `mcp_path`, and each tool's `mcp_name`, the name agents call. `scope` defaults to `workspace`. To give a tool a display label, add `exposed_name` to its entry.
+
+    LangSmith checks that each server exists, but not that each tool name exists on the server. Copy tool names exactly as the server lists them.
+  </Tab>
+</Tabs>
+
+Kit names must be unique in the workspace. You create a kit with 1 to 10,000 tools. An update can leave it empty.
+
+To connect an agent or MCP client to the kit's URL, see [Connect an MCP client](/langsmith/tool-gateway-clients).
+
+## How kit tools are named
+
+Tool Gateway names each tool in a kit with a prefix, so tools from different servers cannot collide:
+
+- **Servers you add**: `<server>_<tool>`, where `<server>` is the server's name in lowercase, with each run of characters other than letters and numbers replaced by one underscore. For example, `list_issues` on a server named `Linear` becomes `linear_list_issues`.
+- **Built-in servers**: `langsmith_<key>_<tool>`, where `<key>` is the built-in server's key.
+
+Tool Gateway sets a tool's name when you first add it to the kit. Renaming the server later does not change the name, so agents that already call the tool keep working.
+
+Two tools in a kit can end up with the same name, for example when two servers have names that differ only in punctuation. Creating or saving such a kit returns `400`. Rename one of the servers, then try again.
+
+A custom label (`exposed_name` in the API) changes the title that clients display for the tool. It does not change the name that agents call.
+
+## What callers see before they connect
+
+A kit lists all of its tools to every caller, including tools on servers the caller has not connected yet. Calling one of those tools asks the caller to connect the server, then the caller retries the call. A caller using an agent identity or a profile cannot connect, so its call fails until an admin connects the credential. See [Call tools](/langsmith/tool-gateway-call-tools).
+
+Tool Gateway can list a server's tools to callers who have not connected it. When someone saves or refreshes the kit, Tool Gateway stores the tool list it gets through that person's connection. If nobody who saved or refreshed the kit was connected to a server, the kit lists one placeholder tool for that server instead, named `connect_<server>`. Calling the placeholder asks the caller to connect.
+
+## Refresh a kit's tools
+
+Tool Gateway caches each server's tool list for two hours. When a server adds, removes, or changes a tool, refresh the kit to pick up the change sooner. Refreshing also updates the stored tool list that callers who have not connected see.
+
+Refreshing requires permission to update the kit.
+
+- **UI**: On **Tools** > **Tool kits**, open the kit, then click **Refresh tools**.
+- **API**:
+
+    ```bash
+    curl -sS -X POST "$LANGSMITH_ENDPOINT/v1/managed-tools/kits/<kit-id>/tool-refresh" \
+      -H "X-Api-Key: $LANGSMITH_API_KEY" \
+      -H "X-Tenant-Id: $LANGSMITH_WORKSPACE_ID"
+    ```
+
+    The response's `missing_credentials` lists the servers you have not connected. Their tool lists are not refreshed. Connect those servers, then refresh again.
+
+A tool that a server no longer lists stays in the kit's selection, but is no longer listed to callers. To remove it, [update the kit](#update-a-tool-kit).
+
+## Use the me kit
+
+The me kit, at `/v1/managed-tools/kits/me/mcp`, serves every tool the caller can use. That includes the workspace servers the caller can invoke, the caller's personal servers, and every enabled built-in server. You do not create it. Tool Gateway builds it on each request and never saves it.
+
+Use the me kit to give your own MCP client every tool you have, without curating a kit. For agents, prefer a saved kit with only the tools the agent needs.
+
+The me kit differs from a saved kit:
+
+- A server the caller has not connected is always listed as one `connect_<server>` tool, not as its individual tools.
+- When two of the caller's servers have the same name, their tools are named `<server>_<id>_<tool>`, where `<id>` is the end of the server's ID.
+- Because it can serve many tools, consider search mode, which lists three tools that search for and call the rest. See [Connect an MCP client](/langsmith/tool-gateway-clients).
+
+## Update a tool kit
+
+You can change a kit's name, description, and tools. You cannot change its scope.
+
+- **UI**: On **Tools** > **Tool kits**, open the kit, then click **Edit**. Change the details or the tool selection, then click **Save changes**.
+- **API**: Send `PATCH /v1/managed-tools/kits/<kit-id>` with only the fields to change:
+
+    ```bash
+    curl -sS -X PATCH "$LANGSMITH_ENDPOINT/v1/managed-tools/kits/<kit-id>" \
+      -H "X-Api-Key: $LANGSMITH_API_KEY" \
+      -H "X-Tenant-Id: $LANGSMITH_WORKSPACE_ID" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "tools": [
+          {"server_id": "<server-id>", "tool_name": "<tool-name>"}
+        ]
+      }'
+    ```
+
+    `tools` replaces the kit's whole selection. Include every tool the kit should keep. An empty array removes every tool.
+
+To find a kit's ID, copy it from the kit's MCP URL in the UI, or list kits with `GET /v1/managed-tools/kits`. Add `?scope=workspace` or `?scope=personal` to list only one scope.
+
+## Delete a tool kit
+
+Deleting a kit removes its MCP URL. The servers it used and every connected account stay as they are. Agents and clients that use the kit's URL stop working.
+
+- **UI**: On **Tools** > **Tool kits**, open the kit, click **Delete**, then confirm.
+- **API**:
+
+    ```bash
+    curl -sS -X DELETE "$LANGSMITH_ENDPOINT/v1/managed-tools/kits/<kit-id>" \
+      -H "X-Api-Key: $LANGSMITH_API_KEY" \
+      -H "X-Tenant-Id: $LANGSMITH_WORKSPACE_ID"
+    ```
+
+    The request returns `204`, including when the kit is already deleted.
+
+Deleting a workspace kit requires permission to delete MCP servers. Only the owner can delete a personal kit.
+
+## See also
+
+- [How Tool Gateway works](/langsmith/tool-gateway-how-it-works)
+- [Add MCP servers](/langsmith/tool-gateway-servers)
+- [Connect an MCP client](/langsmith/tool-gateway-clients)
+- [Call tools](/langsmith/tool-gateway-call-tools)
+- [Set policies](/langsmith/tool-gateway-policies)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/tool-gateway-tool-kits.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
