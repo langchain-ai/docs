@@ -482,6 +482,8 @@ List available agents directly in the main agent's system prompt. The main agent
 - You want the simplest implementation
 
 **Example:**
+
+:::python
 ```python
 main_agent = create_agent(
     model="...",
@@ -496,6 +498,24 @@ main_agent = create_agent(
     ),
 )
 ```
+:::
+
+:::js
+```typescript
+const mainAgent = createAgent({
+  model: "...",
+  tools: [task],
+  systemPrompt: [
+    "You coordinate specialized sub-agents.",
+    "Available agents:",
+    "- research: Research and fact-finding",
+    "- writer: Content creation and editing",
+    "- reviewer: Code and document review",
+    "Use the task tool to delegate work.",
+  ].join("\n"),
+});
+```
+:::
 
 #### Enum constraint on dispatch tool
 
@@ -507,6 +527,8 @@ Add an enum constraint to the `agent_name` parameter in your dispatch tool. This
 - You prefer schema-based validation over prompt-based guidance
 
 **Example:**
+
+:::python
 ```python
 from enum import Enum
 
@@ -523,6 +545,28 @@ def task(
     """Launch an ephemeral subagent for a task."""
     # ...
 ```
+:::
+
+:::js
+```typescript
+import { tool } from "langchain";
+import { z } from "zod";
+
+const task = tool(
+  async ({ agentName, description }) => {
+    // ...
+  },
+  {
+    name: "task",
+    description: "Launch an ephemeral subagent for a task.",
+    schema: z.object({
+      agentName: z.enum(["research", "writer", "reviewer"]),
+      description: z.string(),
+    }),
+  }
+);
+```
+:::
 
 #### Tool-based discovery
 
@@ -535,6 +579,8 @@ Provide a separate tool (e.g., `list_agents` or `search_agents`) that the main a
 - Different teams manage different agents independently
 
 **Example:**
+
+:::python
 ```python
 @tool
 def list_agents(query: str = "") -> str:
@@ -553,6 +599,44 @@ main_agent = create_agent(
     system_prompt="Use list_agents to discover available subagents, then use task to invoke them."
 )
 ```
+:::
+
+:::js
+```typescript
+const listAgents = tool(
+  async ({ query = "" }) => {
+    const agents = searchAgentRegistry(query);
+    return formatAgentList(agents);
+  },
+  {
+    name: "list_agents",
+    description: "List available subagents, optionally filtered by query.",
+    schema: z.object({ query: z.string().optional() }),
+  }
+);
+
+const task = tool(
+  async ({ agentName, description }) => {
+    // ...
+  },
+  {
+    name: "task",
+    description: "Launch an ephemeral subagent for a task.",
+    schema: z.object({
+      agentName: z.string(),
+      description: z.string(),
+    }),
+  }
+);
+
+const mainAgent = createAgent({
+  model: "...",
+  tools: [task, listAgents],
+  systemPrompt:
+    "Use list_agents to discover available subagents, then use task to invoke them.",
+});
+```
+:::
 
 ### Subagent inputs
 
