@@ -1,0 +1,236 @@
+---
+title: Customize Agent Server autoscaling
+sidebarTitle: Autoscaling overrides
+icon: "adjustments-horizontal"
+description: Enable autoscaling overrides on self-hosted LangSmith. Set CPU targets, CPU limits, and scale-up and scale-down rules for each Agent Server deployment.
+---
+
+Autoscaling overrides change how an individual Agent Server deployment scales on [self-hosted](/langsmith/self-hosted) LangSmith with [Agent Server hosting](/langsmith/enable-self-hosted-agent-server). For each deployment, you can change the CPU target, turn off CPU-based scaling or the CPU limit, and set the HorizontalPodAutoscaler (HPA) rules that control how quickly API servers and queue workers scale up and down. After an administrator enables the feature, users who create or edit deployments set overrides in the UI or with the control plane API. Deployments without overrides use the operator defaults.
+
+<Note>
+Autoscaling overrides are not available on [LangSmith Cloud](/langsmith/cloud), [Hybrid](/langsmith/hybrid), or [BYOC](/langsmith/byoc).
+
+This setting is separate from `uncappedResourcesEnabled`, which raises CPU and memory size caps without changing autoscaling behavior.
+</Note>
+
+<Tip>
+With overrides off, the operator uses its built-in CPU target (50% of the CPU limit by default). See [Data plane autoscaling](/langsmith/data-plane#autoscaling). When overrides are on, the fields on this page replace those defaults.
+</Tip>
+
+## Requirements
+
+Autoscaling overrides require Agent Server hosting (`config.deployment.enabled: true`) and these minimum versions:
+
+| Component | Minimum version |
+| :--- | :--- |
+| LangSmith Helm chart (`langsmith`) | 0.18.0 or later. For v0.18 preview releases, 0.18.0-rc.43 or later. These charts include operator 0.1.64 or later. |
+| `langgraph-dataplane` Helm chart ([additional data planes](#additional-data-planes) only) | 0.2.27 or later, with the listener image set to 0.18.14rc1 or later. |
+
+Helm chart versions 0.17 and earlier do not include this feature.
+
+## Enable the feature
+
+Autoscaling overrides are off by default. Enable the flag on the control plane Helm release only:
+
+```yaml
+config:
+  deployment:
+    enabled: true
+    scalingOverridesEnabled: true
+```
+
+This sets `ENABLE_LGP_SCALING_OVERRIDES=true` on `host-backend` and the other LangSmith backend services. The UI shows the autoscaling controls when `GET /api/v1/info` returns `instance_flags.lgp_scaling_overrides_enabled: true`.
+
+### Recommended upgrade order
+
+Upgrade components before turning the flag on:
+
+<Steps>
+  <Step title="Upgrade charts with the flag off">
+    Upgrade to the versions in [Requirements](#requirements). Keep `scalingOverridesEnabled: false`.
+  </Step>
+  <Step title="Wait for rollouts">
+    Wait for CRD, operator, `host-backend`, and frontend rollouts to finish.
+  </Step>
+  <Step title="Enable overrides">
+    Set `scalingOverridesEnabled: true` and upgrade again.
+  </Step>
+</Steps>
+
+If the CRD or operator lags behind the control plane API, Kubernetes strips new fields from the LangGraph custom resource or the operator ignores them until versions align.
+
+### Additional data planes
+
+If you run [additional data planes](/langsmith/enable-self-hosted-agent-server#configure-additional-data-planes) with the `langgraph-dataplane` chart, set the flag on the control plane only. The `langgraph-dataplane` chart has no such setting.
+
+Upgrade each additional data plane to `langgraph-dataplane` 0.2.27 or later, and set its listener image to 0.18.14rc1 or later. Charts 0.2.27 through 0.2.29 default to listener 0.16.36 or 0.17.53, which ignore the override fields:
+
+```yaml
+# langgraph-dataplane values
+images:
+  listenerImage:
+    tag: "0.18.14rc1" # or the application version of your control plane
+```
+
+For more information, see [Listener version requirements](/langsmith/self-hosted-platform-features#listener-version-requirements).
+
+### Disable the feature
+
+To turn the feature off, set `scalingOverridesEnabled: false` on the control plane Helm release and upgrade.
+
+Existing revisions keep their overrides. After the flag is off:
+
+- **UI**: The autoscaling controls are hidden. The next revision you save in the UI drops the overrides, and the deployment returns to the operator defaults.
+- **Control plane API**: Requests that add or change override values return `400`. For which requests are rejected, see [API behavior](#api-behavior-and-example).
+
+To clear overrides while the flag is still on, turn off **Customize autoscaling** in the UI and save. With the API, send the full `resource_spec` with all eight override fields set to `null`.
+
+## Configure overrides in the UI
+
+To customize autoscaling when you create a deployment or a new revision:
+
+1. Open the container resources section and scroll to **Autoscaling (optional)**.
+1. Turn on **Customize autoscaling**.
+1. Configure both the **API server** and **Queue** tabs:
+   - **CPU**: Toggle **Scale on CPU**, set **CPU target** (when CPU scaling is on), and toggle **Set a CPU limit**. Turning off **Set a CPU limit** disables and clears the matching CPU limit field in the resources section above.
+   - **Scale up** and **Scale down**: Set **Stabilization window**, **When limits disagree**, and at least one row under **Limits** (**Unit**, **Amount**, and **Time window**).
+1. Optionally, select **Fill empty fields with defaults** to populate every empty field with the built-in operator defaults (`50%` CPU target; scale up `0` seconds, `Max`, `100%` every `15` seconds; scale down `900` seconds, `Min`, `10%` every `120` seconds).
+
+When **Customize autoscaling** is on, every required field on both tabs must be filled in before you can submit. The form sends all eight override fields together, or omits all of them when customization is off.
+
+## Field reference
+
+The eight scaling override fields live on `source_config.resource_spec` (v2) and `container_spec` (v1):
+
+| Field | Description |
+| :--- | :--- |
+| `cpu_scaling_enabled` / `queue_cpu_scaling_enabled` | Required boolean. When `false`, removes the CPU trigger for that component. With no other trigger, the operator removes the autoscaler and holds the current replica count within the configured min/max scale. On the queue with KEDA enabled, the queue-depth trigger remains active. |
+| `cpu_target_percent` / `queue_cpu_target_percent` | Integer from `1` to `100`. Required when the matching `*_cpu_scaling_enabled` is `true`, and must be `null` (or omitted) when it is `false`. Percentage of the CPU limit when a limit is set, or of the CPU request when there is no limit. Overrides the operator default (`50%`, or `LS_AUTOSCALING_CPU_TARGET_PERCENT_OF_LIMIT` if set). |
+| `cpu_limit_enabled` / `queue_cpu_limit_enabled` | Required boolean. When `false`, the operator omits `limits.cpu` for that container and applies the CPU target to the CPU request instead. The matching `cpu_limit` or `queue_cpu_limit` field must be `null` (or omitted). |
+| `autoscaling_behavior` / `queue_autoscaling_behavior` | Required object with both `scale_up` and `scale_down` rules (`stabilization_window_seconds`, `select_policy`, and at least one entry in `policies`). Overrides the operator's default scale-down behavior and any operator-wide `--autoscaling-scale-down-stabilization-seconds` flag. |
+
+Queue fields are independent and do not inherit API server values in the control plane API. Set both sides explicitly.
+
+Validation rules for `autoscaling_behavior` and `queue_autoscaling_behavior`:
+
+- **`stabilization_window_seconds`**: Integer from `0` to `3600` (one hour).
+- **`select_policy`**: One of `"Max"`, `"Min"`, or `"Disabled"`.
+- **`policies`**: Non-empty list of policy objects, each with `type` (`"Pods"` or `"Percent"`), `value` (`1` to `1000`), and `period_seconds` (`1` to `1800`).
+- **Unknown keys**: Rejected by the API (including Kubernetes HPA `tolerance`).
+
+## API behavior and example
+
+The [control plane API](/langsmith/api-ref-control-plane) applies these rules to the override fields:
+
+- **All or nothing**: If you set any override field to a non-null value, set all eight as described in the [field reference](#field-reference). Incomplete requests return `400` with a list of the missing or invalid fields.
+- **Feature off**: `POST /v2/deployments` and `POST /v2/deployments/{deployment_id}/revisions` reject any non-null override field. `PATCH /v2/deployments/{deployment_id}` rejects override values that differ from the stored values. Both return `400` (`Scaling overrides (...) are not enabled on this control plane`). A `PATCH` can still resend the stored values unchanged, or set all eight fields to `null` to clear them.
+- **`PATCH` replaces the whole `resource_spec`**: Fields you leave out reset to defaults, including Redis and PostgreSQL sizing, `volumes`, `volume_mounts`, `sidecars`, and `service_account_name`. For more information, see [Resource spec](/langsmith/api-ref-control-plane#resource-spec).
+
+To add overrides to an existing deployment with `PATCH`:
+
+1. Call `GET /v2/deployments/{deployment_id}` and copy `source_config.resource_spec` from the response.
+1. Add the eight override fields to that object. Keep every other field.
+1. Send the full object as `source_config.resource_spec` in `PATCH /v2/deployments/{deployment_id}`.
+
+The following example shows only the eight override fields, not a full `resource_spec`. It sets the API server CPU target to 80% and turns off CPU scaling and the CPU limit for queue workers. KEDA queue-depth scaling stays active. Because `queue_cpu_limit_enabled` is `false`, also set `queue_cpu_limit` to `null` in the full `resource_spec`.
+
+```json
+{
+  "cpu_scaling_enabled": true,
+  "cpu_target_percent": 80,
+  "cpu_limit_enabled": true,
+  "autoscaling_behavior": {
+    "scale_up": {
+      "stabilization_window_seconds": 0,
+      "select_policy": "Max",
+      "policies": [
+        { "type": "Percent", "value": 100, "period_seconds": 15 }
+      ]
+    },
+    "scale_down": {
+      "stabilization_window_seconds": 1800,
+      "select_policy": "Min",
+      "policies": [
+        { "type": "Percent", "value": 10, "period_seconds": 120 }
+      ]
+    }
+  },
+  "queue_cpu_scaling_enabled": false,
+  "queue_cpu_target_percent": null,
+  "queue_cpu_limit_enabled": false,
+  "queue_autoscaling_behavior": {
+    "scale_up": {
+      "stabilization_window_seconds": 0,
+      "select_policy": "Max",
+      "policies": [
+        { "type": "Percent", "value": 100, "period_seconds": 15 }
+      ]
+    },
+    "scale_down": {
+      "stabilization_window_seconds": 300,
+      "select_policy": "Min",
+      "policies": [
+        { "type": "Percent", "value": 10, "period_seconds": 120 }
+      ]
+    }
+  }
+}
+```
+
+## Check cluster policies
+
+Kubernetes policies in the deployment namespace can block some overrides. Check them before you disable a CPU limit, or before you turn off CPU scaling for queue workers and rely on queue-depth scaling alone:
+
+| Cluster policy | Impact |
+| :--- | :--- |
+| `ResourceQuota` that sets `limits.cpu` | Kubernetes rejects pods without a CPU limit (`must specify limits.cpu`). Setting `cpu_limit_enabled` or `queue_cpu_limit_enabled` to `false` blocks new pods, and revisions stall in `DEPLOYING` or `QUEUED`. |
+| `LimitRange` with a default CPU limit | Admission adds the namespace default limit to any container without one. The container keeps a CPU limit even when `cpu_limit_enabled` is `false`. |
+| `NetworkPolicy` that blocks the `keda` namespace | KEDA cannot reach the deployment's PostgreSQL on port `5432` to read queue depth. The `ScaledObject` reports `KEDAScalerFailed`, and queue workers stop scaling on queue depth. API server CPU scaling still works. To fix it, allow ingress from the `keda` namespace on TCP port `5432`. |
+
+If you installed with the [reference Terraform modules](/langsmith/self-host-terraform), check for these policies:
+
+- **GCP**: The `langsmith-default` NetworkPolicy admits traffic only from the LangSmith and Envoy Gateway namespaces, so it blocks KEDA. Add an ingress rule for the `keda` namespace on port `5432`.
+- **Azure**: Modules earlier than v0.17.54 create a `ResourceQuota` that sets CPU limits and a `LimitRange` with default limits. Modules earlier than v0.17.59 do not allow KEDA to reach port `5432`. Upgrade the module, or make the same changes to your cluster.
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+| :--- | :--- |
+| No autoscaling controls in the UI | `scalingOverridesEnabled` is `false`, or the install is LangSmith Cloud, Hybrid, or BYOC. Wait for `/api/v1/info` to load before opening the revision modal. |
+| `400` on save | Feature is off, not all eight override fields are set, `cpu_limit` is set while `cpu_limit_enabled` is `false`, or `cpu_target_percent` is set while `cpu_scaling_enabled` is `false`. |
+| Overrides saved but have no effect | Operator is older than `0.1.64`, the LangGraph CRD is stale, or the data-plane listener image is older than `0.18.14rc1`. |
+| Revision never finishes after disabling the CPU limit | A namespace `ResourceQuota` that sets `limits.cpu` denies pod creation. Check Kubernetes events for the deployment pods. See [Check cluster policies](#check-cluster-policies). |
+| Queue scaling fails or the `ScaledObject` reports `KEDAScalerFailed` | KEDA cannot reach PostgreSQL on port `5432`, usually because of a `NetworkPolicy`. See [Check cluster policies](#check-cluster-policies). |
+
+## Verify
+
+Run these commands against your control plane namespace to confirm the flag is active:
+
+```bash
+# Find the host-backend Deployment (usually <helm-release>-langsmith-host-backend)
+kubectl get deploy -n <namespace> | grep host-backend
+
+# Confirm the environment variable on the control plane
+kubectl exec -n <namespace> deploy/<helm-release>-langsmith-host-backend -- printenv ENABLE_LGP_SCALING_OVERRIDES
+
+# Confirm the flag the UI reads (/api/v1/info is unauthenticated unless FF_INFO_ENDPOINT_AUTH_REQUIRED is set)
+curl -sS https://<host>/api/v1/info | jq '.instance_flags.lgp_scaling_overrides_enabled'
+```
+
+## See also
+
+- [Enable Agent Server hosting](/langsmith/enable-self-hosted-agent-server)
+- [Configure Agent Server for scale](/langsmith/agent-server-scale)
+- [Self-hosted platform features](/langsmith/self-hosted-platform-features)
+- [Control plane API](/langsmith/api-ref-control-plane#resource-spec)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/self-hosted-autoscaling-overrides.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
