@@ -123,6 +123,8 @@ Operational telemetry is **separate from** billing telemetry. You can disable op
 We do not collect actual payload contents, database records, or any data that can identify your end users or customers. All telemetry data is associated with an organization and deployment, but never identified with individual users. We **do not collect PII** (personally identifiable information) in any form.
 </Info>
 
+For every metric LangChain keeps and the attributes kept with it, see the [operational telemetry metrics reference](/langsmith/self-host-telemetry-metrics).
+
 ### How to disable
 
 You can disable operational telemetry by setting the following values in your `langsmith_config.yaml` file:
@@ -141,11 +143,34 @@ You can also disable individual telemetry types by setting only specific values 
 Disabling operational telemetry stops exporting the logs, metrics, and traces described in this section. It does **not** disable billing telemetry (license verification and subscription/usage reporting).
 </Warning>
 
+### Disable metrics for one datastore
+
+The `queue` deployment collects PostgreSQL, Redis, ClickHouse, and SmithDB metrics. To stop sending one datastore's metrics while keeping the rest, set its environment variable to `false` in `queue.deployment.extraEnv`. For example, to stop sending SmithDB metrics:
+
+```yaml
+queue:
+  deployment:
+    extraEnv:
+      - name: ENABLE_SMITHDB_METRICS_CRON
+        value: "false"
+```
+
+| Datastore | Environment variable |
+| --- | --- |
+| PostgreSQL | `ENABLE_POSTGRES_METRICS_CRON` |
+| Redis | `ENABLE_REDIS_METRICS_CRON` |
+| ClickHouse | `ENABLE_CLICKHOUSE_METRICS_CRON` |
+| SmithDB | `ENABLE_SMITHDB_METRICS_CRON` (LangSmith v0.18 or later) |
+
+LangSmith services keep sending their own metrics. To stop all metrics, set `config.telemetry.metrics` to `false`.
+
 ### Example payloads
 
 #### Operational metrics
 
 **Endpoint:** `POST beacon.langchain.com/v1/beacon/v1/metrics`
+
+The following abridged request shows two metrics. Values are illustrative, and default OpenTelemetry SDK resource attributes are omitted. LangChain's collector drops any metric and attribute that is not in the [operational telemetry metrics reference](/langsmith/self-host-telemetry-metrics), such as the `path` attribute below.
 
 **Request:**
 
@@ -155,71 +180,52 @@ Disabling operational telemetry stops exporting the logs, metrics, and traces de
     {
       "resource": {
         "attributes": [
-          {
-            "key": "resource.name",
-            "value": { "stringValue": "langsmith-metrics" }
-          },
-          {
-            "key": "env",
-            "value": { "stringValue": "ls_self_hosted" }
-          }
+          { "key": "env", "value": { "stringValue": "ls_self_hosted" } },
+          { "key": "customer.id", "value": { "stringValue": "<CUSTOMER_ID_FROM_LICENSE>" } },
+          { "key": "customer.name", "value": { "stringValue": "<CUSTOMER_NAME_FROM_LICENSE>" } }
         ]
       },
       "scopeMetrics": [
         {
-          "scope": {
-            "name": "langsmith.metrics",
-            "version": "0.1.0"
-          },
+          "scope": { "name": "langsmith.self_hosted" },
           "metrics": [
             {
-              "name": "langsmith_http_requests_latency",
-              "unit": "seconds",
-              "description": "Request latency of LangSmith services",
-              "gauge": {
-                "dataPoints": [
-                  {
-                    "asDouble": 12.34,
-                    "startTimeUnixNano": 1678886400000000000,
-                    "timeUnixNano": 1678886400000000000,
-                    "attributes": [
-                      {
-                        "key": "endpoint",
-                        "value": { "stringValue": "/sessions" }
-                      },
-                      { "key": "method", "value": { "stringValue": "GET" } },
-                      {
-                        "key": "service_name",
-                        "value": { "stringValue": "langsmith_backend" }
-                      }
-                    ]
-                  }
-                ]
-              }
-            },
-            {
-              "name": "langsmith_http_requests_failed",
-              "unit": "1",
-              "description": "Counter of failed requests for LangSmith services",
+              "name": "self_hosted_langsmith_http_responses_total",
+              "description": "Total count of responses by method, path and status codes.",
               "sum": {
                 "dataPoints": [
                   {
-                    "asInt": 456,
-                    "startTimeUnixNano": 1678886400000000000,
-                    "timeUnixNano": 1678886400000000000,
+                    "asInt": "456",
+                    "startTimeUnixNano": "1678886400000000000",
+                    "timeUnixNano": "1678886460000000000",
                     "attributes": [
-                      {
-                        "key": "endpoint",
-                        "value": { "stringValue": "/info" }
-                      },
-                      { "key": "method", "value": { "stringValue": "POST" } },
-                      {
-                        "key": "service_name",
-                        "value": { "stringValue": "langsmith_platform_backend" }
-                      }
-                    ],
-                    "aggregationTemporality": 2,
-                    "isMonotonic": true
+                      { "key": "method", "value": { "stringValue": "GET" } },
+                      { "key": "path", "value": { "stringValue": "/sessions" } },
+                      { "key": "status_code", "value": { "stringValue": "200" } },
+                      { "key": "app_name", "value": { "stringValue": "backend" } }
+                    ]
+                  }
+                ],
+                "aggregationTemporality": 1,
+                "isMonotonic": true
+              }
+            }
+          ]
+        },
+        {
+          "scope": { "name": "self_hosted.postgres" },
+          "metrics": [
+            {
+              "name": "self_hosted_pg_stat_activity_count",
+              "description": "Number of connections in this state",
+              "gauge": {
+                "dataPoints": [
+                  {
+                    "asDouble": 12,
+                    "timeUnixNano": "1678886460000000000",
+                    "attributes": [
+                      { "key": "state", "value": { "stringValue": "active" } }
+                    ]
                   }
                 ]
               }
