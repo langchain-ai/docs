@@ -514,6 +514,31 @@ The simplest pattern is to iterate `stream.subagents` to track each delegated ta
 
 :::
 
+### Checkpoint namespace on task result
+
+:::js
+When a subagent finishes, the `ToolMessage` returned to the parent carries the checkpoint namespace the subagent saved its checkpoints under in `artifact.checkpoint_ns`. A client can use this namespace to load the finished subagent's checkpoint history directly, without scanning the full thread.
+
+The model never sees `artifact`; it is metadata for client-side consumption only.
+
+```javascript
+for await (const chunk of await agent.stream(input, config)) {
+  for (const msg of chunk.messages ?? []) {
+    if (msg._getType() === "tool" && msg.name === "task" && msg.artifact?.checkpoint_ns) {
+      console.log("Subagent checkpoint namespace:", msg.artifact.checkpoint_ns);
+      // Load the subagent's history from this namespace
+    }
+  }
+}
+```
+
+When checkpointing is not configured or the subagent did not save any checkpoints, `artifact` is not set on the `ToolMessage`.
+
+<Note>
+    The `checkpoint_ns` artifact on task results requires `deepagents>=1.16.5`.
+</Note>
+:::
+
 ### LangSmith tracing
 
 As your deep agent runs, all runs executed by a subagent or the coordinator will have the agent name in their metadata under the `lc_agent_name` key—for example, `{'lc_agent_name': 'research-agent'}`. This lets you identify and filter runs by subagent in LangSmith.
