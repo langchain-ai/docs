@@ -7,7 +7,7 @@ import LLMGatewayBetaNote from '/snippets/langsmith/llm-gateway-beta-note.mdx';
 
 <LLMGatewayBetaNote />
 
-A spend policy defines a cost cap for a specific scope (organization, workspace, user, or API key) over a time window (monthly, weekly, daily, or hourly). Once the spend recorded for the window reaches the cap, the [LLM Gateway](/langsmith/llm-gateway) blocks further requests with a `402` response that names the blocking policies:
+A spend policy defines a cost cap for a specific scope (organization, user group, workspace, user, or API key) over a time window (monthly, weekly, daily, or hourly). Once the spend recorded for the window reaches the cap, the [LLM Gateway](/langsmith/llm-gateway) blocks further requests with a `402` response that names the blocking policies:
 
 ```json
 {"type":"error","error":{"message":"request blocked by gateway policies: <POLICY_NAME>"}}
@@ -23,25 +23,26 @@ Spend policies do not apply to calls billed to a [Claude subscription](/langsmit
 
 ## Policy dimensions
 
-Spend policies are evaluated from broadest to most specific. All matching policies are checked, and if any one returns a block, the request is rejected. You can set a policy as a default (applying a blanket spend cap to all workspaces, users, or API keys) or as a granular policy (individual limits or limits on a group of entities).
+Spend policies are evaluated from broadest to most specific. All matching policies are checked, and if any one returns a block, the request is rejected. You can set a policy as a default (applying a blanket spend cap to all user groups, workspaces, users, or API keys) or as a granular policy (individual limits or limits on a group of entities).
 
 | Scope | What it caps | Example |
 | --- | --- | --- |
 | **Organization** | Total spend across all workspaces in the org | "The entire org cannot spend more than $10,000/month on LLM calls" |
+| **User group** | Combined spend by members of a user group, shared across members rather than a separate budget per member | Members share the group's spend cap |
 | **Workspace** | Total spend within a single workspace or group of workspaces | "The workspaces related to R&D cannot spend more than $2,000/month" |
 | **User** | Spend by a single user or group of users (resolved from the API key's identity) | "No individual developer can spend more than $50/day" |
 | **API key** | Spend by a single API key or group of API keys (maps to a service or agent) | "The customer support agent keys cannot spend more than $500/month cumulatively" |
 
 ### Conflict resolution
 
-By default, the gateway assesses the broadest scope first. Narrower scopes can only tighten limits, never loosen them. For example, if an org-level policy caps spend at \$10,000/month and a workspace-level policy caps at \$15,000/month, the $10,000 org cap still applies.
+By default, the gateway assesses the broadest scope first. Narrower scopes can only tighten limits, never loosen them. For example, if an org-level policy caps spend at \$10,000/month and a workspace-level policy caps at \$15,000/month, the $10,000 org cap still applies. If a caller belongs to multiple user groups, every matching group cap applies alongside organization and other applicable caps.
 
 ### Defaults vs. granular policies
 
 Spend policies have two aspects:
 
 1. **Sums across a dimension:** the total cap for that scope. Example: "This workspace's total spend cannot exceed $5,000/month."
-2. **Defaults for each member of a dimension:** a base limit that applies to every API key or user within a scope unless overridden. Example: "Each API key in this workspace gets a $200/month default cap." Individual API keys can receive additional policies that raise their specific limit, but no policy can loosen a cap set at a broader scope.
+2. **Defaults for each member of a dimension:** a base limit that applies to every user group, workspace, API key, or user within a scope unless overridden. A user group default gives each group its own shared budget. Example: "Each API key in this workspace gets a $200/month default cap." Individual API keys can receive additional policies that raise their specific limit, but no policy can loosen a cap set at a broader scope.
 
 ## Time window period
 
@@ -61,15 +62,16 @@ You can apply multiple time windows to the same scope. For example, a workspace 
 ## Create a spend policy
 
 <Warning>
-Creating and managing policies requires `organization:gateway:manage` permission. Organization Admins and Organization Operators have it by default. For what each organization role can do, see [Organization roles](/langsmith/rbac#organization-roles).
+Creating and managing policies requires `organization:gateway:manage` permission. Organization Admins and Organization Operators have it by default. For what each organization role can do, see [Organization roles](/langsmith/rbac#organization-roles). Selecting a user group also requires `organization:user-groups:read`; see [User Groups](/langsmith/user-groups) for availability and setup.
 </Warning>
 
-1. Go to **LLM Gateway** and select **Cost Controls**.
-1. Click **Create spend limit**.
-1. Select the **scope** (organization, workspace, user, or API key).
-1. (Optional) To separate a default limit by header, select **Workspace**, **User**, or **API Key**. Apply the limit to every subject of that type by default. Alternatively, select exactly one subject to pin the limit to it. Select **Separate limits by custom header**, and enter the header name, such as `Customer-Id`. Send the full `X-Gateway-Customer-Id` header on requests. Each subject and header-value pair receives an independent limit.
-1. Set the spend cap in USD and the time window period (monthly, weekly, daily, or hourly).
-1. Click **Create spend limit**.
+1. Go to **LLM Gateway** and select the **Policies** tab.
+1. Click **+ Policy**.
+1. Under **Policy type**, select **Spend limit**.
+1. Define a **Scope** (organization, user group, workspace, user, or API key).
+1. (Optional) To separate a default limit by header, select **User Group**, **Workspace**, **User**, or **API Key**. Apply the limit to every subject of that type by default. Alternatively, select exactly one subject to pin the limit to it. Select **Separate limits by custom header**, and enter the header name, such as `Customer-Id`. Send the full `X-Gateway-Customer-Id` header on requests. Each subject and header-value pair receives an independent limit.
+1. Set the **Spend limit** in USD and the **Period** (monthly, weekly, daily, or hourly).
+1. Click **Create policy**.
 
 Policies take effect immediately. The gateway evaluates them on every incoming request with sub-second enforcement latency.
 
@@ -79,7 +81,7 @@ A spend policy can also use a custom request header to give each end customer, t
 
 ## View spend
 
-In **LLM Gateway** > **Cost Controls**, the **Usage** column shows how much each policy has spent, in dollars and as a percentage of its cap.
+On the **Policies** tab of **LLM Gateway**, the **Usage** column shows how much each spend limit has spent, in dollars and as a percentage of its cap. To list only spend limits, filter the table by type.
 
 To analyze spend over time by user, API key, model, or request header, use the **Usage** tab. For more information, see [Monitor LLM Gateway spend](/langsmith/llm-gateway-monitoring).
 

@@ -1428,42 +1428,48 @@ Viewing subgraph state requires that LangGraph can **statically discover** the s
 
 ## Stream subgraph outputs
 
-To observe nested graph executions, we recommend [event streaming](/oss/langgraph/event-streaming): the `stream.subgraphs` projection discovers each nested run and exposes its `path`, `messages`, and `values` without parsing namespace strings.
+To include outputs from subgraphs in the streamed outputs, set the `subgraphs` option in the `stream` method of the parent graph. This streams outputs from both the parent graph and any subgraphs.
 
 :::python
-```python
-stream = graph.stream_events({"foo": "foo"}, version="v3")  # [!code highlight]
+<Tabs>
+    <Tab title="v2 (LangGraph 1.1 or later)">
+    With `version="v2"`, subgraph events use the same `StreamPart` format. The `ns` field identifies the source graph:
 
-for subgraph in stream.subgraphs:
-    print(subgraph.graph_name, subgraph.path)
-
-    for snapshot in subgraph.values:
-        print(subgraph.path, snapshot)
-```
-
-If you need the raw protocol events, iterate the stream directly and filter on `event["method"]` and `event["params"]["namespace"]`:
-
-```python
-from langgraph.stream import UpdatesTransformer
-
-stream = graph.stream_events({"foo": "foo"}, version="v3", transformers=[UpdatesTransformer])
-for event in stream:
-    if event["method"] == "updates":
-        print(event["params"]["namespace"], event["params"]["data"])
-```
+    ```python
+    for chunk in graph.stream(
+        {"foo": "foo"},
+        subgraphs=True, # [!code highlight]
+        stream_mode="updates",
+        version="v2", # [!code highlight]
+    ):
+        print(chunk["type"])  # "updates"
+        print(chunk["ns"])    # () for root, ("node_2:<task_id>",) for subgraph
+        print(chunk["data"])  # {"node_name": {"key": "value"}}
+    ```
+    </Tab>
+    <Tab title="v1 (default)">
+    ```python
+    for chunk in graph.stream(
+        {"foo": "foo"},
+        subgraphs=True, # [!code highlight]
+        stream_mode="updates",
+    ):
+        print(chunk)
+    ```
+    </Tab>
+</Tabs>
 :::
 
 :::js
 ```typescript
-const stream = await graph.streamEvents(
+for await (const chunk of await graph.stream(
   { foo: "foo" },
   {
     subgraphs: true,   // [!code highlight]
-    version: "v3",
+    streamMode: "updates",
   }
-);
-for await (const snapshot of stream.values) {
-  console.log(snapshot);
+)) {
+  console.log(chunk);
 }
 ```
 
