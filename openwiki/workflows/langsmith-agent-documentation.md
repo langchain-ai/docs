@@ -5,7 +5,7 @@ description: A repository-grounded workflow for documenting LangSmith agents, en
 tags: [langsmith, agents, documentation, observability, managed-deep-agents, code-samples]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-11-16T08:15:17.266Z
+    at: 2026-11-23T08:07:24.438Z
 sources:
   - id: openwiki-source-75c7744a0e664440f0552945
     resource: repo://.github/workflows/check-onboarding-models.yml
@@ -45,7 +45,7 @@ sources:
     resource: repo://tests/unit_tests/test_check_onboarding_models.py
   - id: openwiki-source-71e085db64c5296fd9b80141
     resource: repo://tests/unit_tests/test_otel_endpoints.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-16T08:15:17.266Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-23T08:07:24.438Z" }
 ---
 
 ## Scope and ownership
@@ -64,7 +64,7 @@ flowchart TD
   ModelCheck --> Issue["Scheduled or manual GitHub issue update"]
 ```
 
-This diagram shows the documentation dependency flow: product-owned pages and sample sources feed the rendered documentation, while onboarding snippets remain a read-only external integration monitored by this repository.
+*This diagram shows the documentation dependency flow: product-owned pages and sample sources feed rendered documentation, while onboarding snippets remain a read-only external integration monitored by this repository.*
 
 Edit the source that owns the behavior, then inspect its consumers:
 
@@ -80,15 +80,15 @@ The repository does not own the onboarding snippet files. The YAML names the ext
 
 ## Agent model and destination invariants
 
-An agent is a workspace-level organization unit. Each trace belongs to one agent and exactly one of the fixed environments: Production, Staging, Development, or Local. An identifier is set at creation and is immutable; a display name is editable and does not change trace routing. Agents created outside Studio start with all four environments, while a Studio-built agent starts with Production and creates another environment when first addressed.
+An agent is a workspace-level organization unit. Each trace belongs to one agent and exactly one of the fixed environments: Production, Staging, Development, or Local. Every environment records its traces separately. An identifier is set at creation and is immutable; a display name is editable and does not change trace routing. Agents created outside Studio start with all four environments, while a Studio-built agent starts with Production and creates another environment when first addressed.
 
 Registration is setup rather than application startup. Programmatic creation requires a PAT or service key with `projects:create`, not a tracing key. The creation response supplies each environment's `tracer_session_name` and `tracer_session_id`; an existing or archived identifier returns `409`. For older project-shaped integrations, use the returned `tracer_session_name` as `project_name`, and use `tracer_session_id` or the resolved `session_id` for APIs with `project_id` or `project_ids`. These values must be read from the environment, not derived from an agent name.
 
-An agent address is an identifier plus an environment. Code configuration takes precedence over `LANGSMITH_AGENT_ID` and `LANGSMITH_AGENT_ENVIRONMENT`; the variables are considered only when code supplies no destination. A partial variable pair warns and leaves otherwise unaddressed calls untraced. Agent addressing is available for Cloud agent-based workspaces. Project-based workspaces, including self-hosted LangSmith, use project settings; self-hosted ingestion with an agent address is rejected with `403`.
+An agent address is an identifier plus an environment. Code configuration takes precedence over `LANGSMITH_AGENT_ID` and `LANGSMITH_AGENT_ENVIRONMENT`; the variables are considered only when code supplies no destination. A partial variable pair warns and leaves otherwise unaddressed calls untraced. The inspected routing pages document agent addressing for the supported SDK integrations; project-based integrations use project settings. Do not generalize this page into a claim about unsupported deployment types without checking the current product page for that deployment.
 
 Keep destination dialects exclusive. Agent variables combined with `LANGSMITH_PROJECT`, `LANGCHAIN_PROJECT`, or `LANGCHAIN_SESSION` warn and suppress calls without an explicit code destination. Passing `address` and `project_name` together errors in SDK calls, and ingestion rejects requests containing both address types. A code-level `project_name` override is the intentional exception used by destinations such as evaluations.
 
-For OTLP, routing is carried by both `Langsmith-Agent-Id` and `Langsmith-Agent-Environment` headers, not by span attributes. The Python exporter derives both from the agent variables only when `OTEL_EXPORTER_OTLP_HEADERS` is unset; TypeScript and other exporters must set them. Partial headers, mixed project-and-agent headers, and unsupported self-hosted requests are rejected. Project-based workspaces use `Langsmith-Project` instead.
+For OTLP, routing is carried by both `Langsmith-Agent-Id` and `Langsmith-Agent-Environment` headers, not by span attributes. The Python exporter derives both from the agent variables only when `OTEL_EXPORTER_OTLP_HEADERS` is unset; TypeScript and other exporters must set them. A request must send both headers or neither: partial agent headers, agent headers mixed with `Langsmith-Project`, and invalid addressing are rejected with `400` according to the addressing note. Project-based workspaces use `Langsmith-Project` instead. Keep the self-hosted endpoint table and agent-addressing rules separate; the inspected source does not establish a blanket self-hosted agent-addressing policy.
 
 Endpoint shape is a separate concern. `OTEL_EXPORTER_OTLP_ENDPOINT` is a base URL to which OTLP/HTTP appends `/v1/traces`; `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and a collector `traces_endpoint` are used exactly as supplied. Do not put `/v1/traces` in the generic base variable, or the exporter produces a duplicate path and a `404`. The focused endpoint test checks both forms and scans documentation for the invalid generic pattern.
 
@@ -112,6 +112,29 @@ Review the MDX page that imports the regenerated fragment, but keep the runnable
 ## Managed Deep Agents: local versus hosted
 
 An MDA project is a normal Python or TypeScript package with one root agent entry: `agent.py` exporting a named `agent` created with `define_deep_agent`, or `agent.ts`/`agent.tsx` exporting a named `agent` created with `defineDeepAgent`. Managed paths such as `identity`, `memory`, direct children of `channels` and `schedules`, `tools/mcp`, and `sandbox` enable managed capabilities; other modules are application code imported by the entrypoint. `instructions.md` and `skills/` are managed context synchronized to Context Hub. Dependencies live in `pyproject.toml` or `package.json`, and non-reserved `.env` values can become deployment secrets.
+
+```mermaid
+sequenceDiagram
+  participant Dev as Developer
+  participant CLI as mda CLI
+  participant Build as .mda/build
+  participant Hub as Context Hub
+  participant Server as Agent Server
+  participant Cron as LangSmith schedules
+  Dev->>CLI: mda dev
+  CLI->>Build: Validate and compile project
+  CLI->>Server: Start local LangGraph development server
+  CLI-->>Dev: Open Studio
+  Note over CLI,Server: Local execution does not create or update a hosted deployment
+  Dev->>CLI: mda deploy
+  CLI->>Build: Compile deployment source
+  CLI->>Hub: Sync instructions.md and skills/
+  CLI->>Server: Trigger hosted deployment build
+  CLI->>Cron: Reconcile schedules after DEPLOYED
+  Note over CLI,Cron: --no-wait exits before deployment reaches DEPLOYED
+```
+
+*This sequence contrasts local compilation and Studio with the hosted deployment boundary and the post-deployment schedule step.*
 
 `mda dev` validates and compiles the project into `.mda/build`, copies local environment and identity configuration, creates a local Context Hub mock, starts the language-specific LangGraph development server, and opens Studio. It does not create or update a hosted deployment; source changes require stopping and rerunning it. Local runs target the agent's Local environment and `{name}-local`. In an agent-based workspace those traces are rejected until a matching agent record exists, although Studio chat still works. Local identity, temporary sandbox fallback, and non-provisioned schedules are development defaults, not production behavior.
 
@@ -139,14 +162,14 @@ The focused tests cover provider-prefix detection, dated snapshots, false-positi
 ## Change checklist
 
 1. Change registry or environment behavior in the current LangSmith source pages, then reconcile registration, resolution, routing, and UI terminology.
-2. For routing changes, verify code precedence, partial variables, project conflicts, Cloud versus self-hosted behavior, OTLP header pairing, and base versus per-signal endpoint semantics.
+2. For routing changes, verify code precedence, partial variables, project conflicts, supported deployment behavior, OTLP header pairing, and base versus per-signal endpoint semantics.
 3. For a sample change, edit the marked runnable source, run it, regenerate snippets, and inspect importing MDX. Do not edit generated output.
 4. For MDA changes, keep `mda dev` distinct from `mda deploy`; verify the root entrypoint, managed paths, Context Hub, secrets, Local traces, and schedule timing.
 5. For onboarding model changes, update the registry policy only when the external snippet contract changes; use the checker and its focused tests, and route snippet fixes to `langchainplus`.
 
 ## Related pages
 
-- [Reference Documentation Boundaries](/openwiki/integrations/reference-docs.md)
-- [Agent Skills and Operations](/openwiki/operations/agent-skills.md)
+- [Repository Source Map](/openwiki/architecture/source-map.md)
+- [Versioning and Navigation](/openwiki/concepts/versioning.md)
+- [Reference Documentation Integration](/openwiki/integrations/reference-docs.md)
 - [Release Watch Workflow](/openwiki/workflows/release-watch.md)
-- [Versioned Content Workflow](/openwiki/workflows/versioned-content.md)

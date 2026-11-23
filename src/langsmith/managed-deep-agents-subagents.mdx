@@ -23,9 +23,17 @@ A subagent runs inside the agent's graph. Managed Deep Agents builds each async 
 Async subagents require `managed-deepagents>=0.10.0`.
 </Note>
 
-## Declare a subagent
+## The general-purpose subagent
 
-Add subagent definitions to `subagents` in the [agent definition](/langsmith/managed-deep-agents-agent-definition). Each one needs a `name` and a `description`; the agent uses the description to decide when to delegate. To make a subagent async, add `async` to its definition:
+Every agent gets a built-in `general-purpose` subagent, even when you omit `subagents` from the [agent definition](/langsmith/managed-deep-agents-agent-definition). The agent can delegate independent tasks to it at runtime, including [fanning out tasks in parallel](#fan-out-tasks-in-parallel), without declaring specialized subagents up front.
+
+Unlike custom subagents, `general-purpose` inherits the agent's skills automatically, along with its model and tools. Like other subagents, it runs with its own prompt and context window, not the agent's conversation or [instructions](/langsmith/managed-deep-agents-instructions). Include all needed context, constraints, and expected output in each task's `description`.
+
+Declare a custom subagent when a task needs a different model, a restricted tool set, or a reusable system prompt. For customization options, see [The general-purpose subagent](/oss/deepagents/subagents#the-general-purpose-subagent).
+
+## Declare a custom subagent
+
+Add subagent definitions to `subagents` in the agent definition. Each one needs a `name` and a `description`; the agent uses the description to decide when to delegate. To make a subagent async, add `async` to its definition:
 
 :::python
 <Tabs>
@@ -111,8 +119,6 @@ export const agent = defineDeepAgent({
 
 The agent runs a subagent with the `task` tool and waits for its answer. The subagent runs inside the agent's graph and works in the agent's [sandbox](/langsmith/managed-deep-agents-sandboxes).
 
-Every agent also gets a `general-purpose` subagent for delegated work that doesn't match a declared subagent. See [The general-purpose subagent](/oss/deepagents/subagents#the-general-purpose-subagent).
-
 ### What a subagent inherits
 
 A subagent starts from the agent's configuration and replaces what its definition sets:
@@ -138,6 +144,35 @@ A subagent starts from the agent's configuration and replaces what its definitio
 :::
 
 A subagent in fork mode starts with a copy of the agent's conversation and also uses the agent's instructions, middleware, skills, and memory. See [Choose a launch mode](/oss/deepagents/async-subagents#choose-a-launch-mode).
+
+### Fan out tasks in parallel
+
+To fan out work in parallel, the agent issues multiple `task` calls in one turn. This works with the built-in `general-purpose` subagent or any declared custom subagent. Each call sets `subagent_type` and a distinct `description`, and runs in its own context window. The agent receives all results before its next turn and combines them into one answer. To keep working while tasks run in the background, the agent issues multiple `start_async_task` calls instead. See [Async subagents](#async-subagents).
+
+```mermaid
+flowchart LR
+    A["Agent (one turn)"] -->|"task: project-a"| S1["general-purpose"]
+    A -->|"task: project-b"| S2["general-purpose"]
+    S1 -->|"findings"| R["Agent combines results"]
+    S2 -->|"findings"| R
+
+    classDef trigger fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900
+    classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
+    classDef output fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33
+
+    class A trigger
+    class S1,S2 process
+    class R output
+```
+
+For example, to investigate logs across multiple projects in parallel, add guidance to `instructions.md`:
+
+```markdown instructions.md
+When investigating multiple independent projects, delegate one task per project
+to the general-purpose subagent in the same turn. Include the project, time
+range, symptoms to look for, and expected output in each task description.
+Wait for all results, then compare the findings and cite sources.
+```
 
 ### Select MCP servers
 
