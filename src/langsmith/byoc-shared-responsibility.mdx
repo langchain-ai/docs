@@ -26,7 +26,7 @@ For the exact access LangChain holds on each cloud, see [Cross-account IAM permi
 | **Service scope and architecture** | <ul><li>Define the BYOC architecture</li><li>Operate the control plane, covering organization configuration, authentication, billing metadata, and frontend assets</li></ul> | <ul><li>Get sign-off from your security, infrastructure, and application teams</li><li>Confirm the BYOC architecture meets your requirements</li></ul> |
 | **Cloud account ownership** | <ul><li>Operate only through customer-delegated roles and in-scope permissions</li></ul> | <ul><li>Own your cloud accounts or subscriptions and budgets</li><li>Own account guardrails, such as service control policies on AWS</li><li>Own organization structure and account lifecycle</li></ul> |
 | **Provisioning and changes** | <ul><li>Provision the BYOC infrastructure and Kubernetes resources that run the LangSmith data plane</li><li>Manage updates and rollouts for BYOC-managed components</li><li>Acknowledge and schedule change requests through the shared support channel</li></ul> | <ul><li>Approve onboarding steps and provide the required account and region details</li><li>Avoid manual edits to BYOC-managed resources</li><li>Request changes through the shared support channel</li></ul> |
-| **Networking** | <ul><li>Configure LangSmith components for the supported connectivity model, such as PrivateLink</li><li>Communicate the required endpoints and constraints</li></ul> | <ul><li>Own the internal connectivity your users and applications need to reach the LangSmith BYOC data plane</li></ul> |
+| **Networking** | <ul><li>Configure LangSmith components for the supported connectivity model, such as PrivateLink</li><li>Provision and operate the data plane load balancer and everything behind it</li><li>Communicate the required endpoints and constraints</li></ul> | <ul><li>Own the internal connectivity your users and applications need to reach the LangSmith BYOC data plane</li><li>For an internet-facing load balancer, own the edge controls in front of it, such as a web application firewall (WAF) or a content delivery network (CDN)</li></ul> |
 | **Control plane** | <ul><li>Operate authentication, organization configuration, and API key management</li><li>Serve the static frontend assets and operate the usage and billing surfaces</li></ul> | <ul><li>Manage organization-level admins and govern who can create and manage data planes and workspaces</li></ul> |
 | **Data plane services** | <ul><li>Operate the services that ingest and query traces, prompts, datasets, evaluations, insights, and deployments</li><li>Keep those services healthy through monitoring, scaling, and upgrades</li></ul> | <ul><li>Do not co-locate unrelated workloads in the BYOC cluster or private network</li><li>Validate application behavior in your environment</li></ul> |
 | **Scaling and capacity** | <ul><li>Monitor and scale BYOC-managed services</li><li>Give advance notice before material scaling events where possible, with the expected cost impact</li></ul> | <ul><li>Ensure cloud service quotas are high enough for the deployed services, and request increases as needed</li><li>Accept the cost implications in your cloud account</li><li>Define internal cost guardrails and alerts</li></ul> |
@@ -46,6 +46,18 @@ On AWS, with [BYOVPC](/langsmith/byoc-byovpc-aws), you also create and maintain:
 
 LangChain validates the supplied network before provisioning and manages the workload infrastructure inside it. Customer-managed network resources remain your responsibility during operation and after data plane deletion.
 </Note>
+
+### Internet-facing ingress on AWS
+
+The data plane load balancer is private by default. An internet-facing load balancer is opt-in when you create the data plane. To limit which sources can reach it, use the [ingress allowlist](/langsmith/byoc-operations-aws#ingress-allowlist).
+
+AWS WAF cannot attach to the default Network Load Balancer (NLB). To use AWS WAF, request an Application Load Balancer (ALB) through the shared support channel before you create the data plane.
+
+| Area | LangChain responsibilities | Your responsibilities |
+| :---- | :---- | :---- |
+| **Load balancer** | <ul><li>Provision and operate the ALB, including its listeners, TLS certificates, and source IP allowlist</li><li>Operate everything behind the ALB, including the Istio ingress and the LangSmith services</li><li>Leave your web ACL and AWS Shield Advanced associations in place when reconciling the ALB</li></ul> | <ul><li>Create the AWS WAF web ACL and attach it to the ALB</li><li>Manage the web ACL rules and policies, including false positives and request body inspection limits</li><li>Enable AWS Shield Advanced on the ALB if you need it</li><li>Own any CDN or Amazon CloudFront distribution in front of the ALB</li></ul> |
+
+The load balancer type is set when the data plane is created and cannot change later. On an ALB data plane, the private or internet-facing setting cannot change either. A scheme change replaces the ALB, which drops your web ACL association.
 
 ## Data and security
 
