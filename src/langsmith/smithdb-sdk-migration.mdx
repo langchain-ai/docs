@@ -124,60 +124,6 @@ The [LangSmith CLI](/langsmith/langsmith-cli) queries the same SmithDB-backed en
 - The deprecated methods stop working once ClickHouse is disabled.
 - Where possible, the SDK raises a warning or error identifying the version to upgrade to, instead of failing without explanation.
 
-## Python clients
-
-The new methods are async on `Client` and `AsyncClient`. For fully synchronous code, use `langsmith.Langsmith`, which needs `langsmith>=0.14.10`.
-
-| Client | Project lookup by name | New methods (`runs.retrieve`, `runs.query`, ...) |
-|---|---|---|
-| `Client` | `client.read_project(project_name=...)`, or `await client.aread_project(...)` in async code | Async: `await client.runs.retrieve(...)` |
-| `AsyncClient` | `await client.read_project(project_name=...)` (no `aread_` methods) | Async: `await client.runs.retrieve(...)` |
-| `Langsmith` | `client.sessions.list_v2(name=...)`, or `Client().read_project(...)` | Sync: `client.runs.retrieve(...)` |
-
-<Warning>
-`Langsmith()` reads `LANGSMITH_API_KEY` but not `LANGSMITH_ENDPOINT`. It reads `LANGCHAIN_BASE_URL`, then defaults to `https://api.smith.langchain.com`. Outside US Cloud (EU, APAC, self-hosted), pass `base_url` explicitly. `base_url` is the host root, without the `/api/v1` that self-hosted `LANGSMITH_ENDPOINT` values end with.
-</Warning>
-
-```python
-import os
-
-from langsmith import Langsmith
-
-endpoint = os.environ.get("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
-client = Langsmith(base_url=endpoint.rstrip("/").removesuffix("/api/v1"))
-[project] = client.sessions.list_v2(name="default")
-run = client.runs.retrieve(
-    "<run-id>",
-    project_id=project.id,
-    selects=["ID", "NAME", "INPUTS", "OUTPUTS", "METADATA"],
-)
-print(run.id, run.metadata)
-```
-
-The new methods return only the fields listed in `selects`, `ID` included: leave `"ID"` out and `run.id` is `None`.
-
-### Tests and mocks
-
-From `langsmith` 0.12.0, the new methods send requests with [`httpx2`](https://pypi.org/project/httpx2/), not `httpx`. Mocks that patch `httpx` (`respx`, `pytest-httpx`, `httpx.MockTransport`) do not intercept them, and `Langsmith(http_client=httpx.Client(...))` raises a `TypeError`. Pass an `httpx2` client with a mock transport instead:
-
-```python
-import httpx2
-from langsmith import Langsmith
-
-
-def handler(request: httpx2.Request) -> httpx2.Response:
-    return httpx2.Response(200, json={"id": "<run-id>"})
-
-
-client = Langsmith(
-    api_key="test",
-    base_url="http://test",
-    http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
-)
-```
-
-`Client().runs` builds its own HTTP client, so tests that mock the new methods should use `Langsmith` or `AsyncLangsmith`, or patch the method itself.
-
 ## Methods by area
 
 The before and after change for each method is documented on the page for its area.
@@ -212,6 +158,8 @@ Every SDK method and API endpoint below is deprecated and stops working on the r
 <Tabs>
   <Tab title="Python">
     Deprecated methods on `Client` and `AsyncClient`:
+
+    The replacements are async on `Client`. In sync code, call them on `Langsmith(base_url=...)` from `langsmith` instead, as in the sync tab of [Runs: retrieve](/langsmith/smithdb-sdk-migration-runs#runs-retrieve). They return only the fields listed in `selects`, so include `"ID"`.
 
     | Deprecated | Replacement |
     |---|---|
@@ -310,22 +258,7 @@ The annotation queue run endpoints move to the queue items API under `/api/v1/pl
   <Tab title="Python">
     The SmithDB-backed methods raise new exception classes instead of the legacy `langsmith.utils` exception classes.
 
-    <Warning>
-    This is not a rename across the whole SDK. Only the methods under a resource (`client.runs.*`, `client.traces.*`, `client.threads.*` and the other replacements in this guide) raise the new `langsmith` classes. Methods called directly on `Client` or `AsyncClient`, such as `read_project()`, `pull_prompt()` or `create_feedback()`, still raise the `langsmith.utils` classes.
-
-    The two families share no base class other than `Exception`. Change an `except` only where the call inside it moved to a new method. Code that wraps both kinds of call catches both classes:
-
-    ```python
-    from langsmith import NotFoundError
-    from langsmith.utils import LangSmithNotFoundError
-
-    try:
-        project = client.read_project(project_name="default")
-        run = await client.runs.retrieve(run_id, project_id=str(project.id))
-    except (NotFoundError, LangSmithNotFoundError):
-        ...
-    ```
-    </Warning>
+    Only the new methods (`client.runs.*` and the other replacements in this guide) raise these classes. Methods called directly on `Client` or `AsyncClient`, such as `read_project()`, still raise the `langsmith.utils` ones. See [Python troubleshooting](#python-troubleshooting) to catch both.
 
     | Before (`langsmith.utils`) | After (`langsmith`) | Notes |
     |---|---|---|
@@ -389,3 +322,53 @@ The following methods are discontinued. They call the retired `/feedback/formula
 | [`create_feedback_formula`](https://reference.langchain.com/python/langsmith/client/Client/create_feedback_formula) | NA |
 | [`update_feedback_formula`](https://reference.langchain.com/python/langsmith/client/Client/update_feedback_formula) | NA |
 | [`delete_feedback_formula`](https://reference.langchain.com/python/langsmith/client/Client/delete_feedback_formula) | NA |
+
+## Python troubleshooting
+
+### `Langsmith()` ignores `LANGSMITH_ENDPOINT`
+
+`Langsmith()` reads `LANGSMITH_API_KEY` but not `LANGSMITH_ENDPOINT`: it reads `LANGCHAIN_BASE_URL`, then defaults to US Cloud. Outside US Cloud (EU, APAC, self-hosted), pass `base_url`, the host root without `/api/v1`:
+
+```python
+import os
+
+from langsmith import Langsmith
+
+endpoint = os.environ.get("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
+client = Langsmith(base_url=endpoint.rstrip("/").removesuffix("/api/v1"))
+```
+
+### Catching errors from old and new methods
+
+The two exception families share no base class other than `Exception`. Code that wraps both kinds of call catches both:
+
+```python
+from langsmith import NotFoundError
+from langsmith.utils import LangSmithNotFoundError
+
+try:
+    project = client.read_project(project_name="default")
+    run = await client.runs.retrieve(run_id, project_id=str(project.id))
+except (NotFoundError, LangSmithNotFoundError):
+    ...
+```
+
+### Mocking the new methods in tests
+
+From `langsmith` 0.12.0, the new methods send requests with [`httpx2`](https://pypi.org/project/httpx2/), not `httpx`, so `respx`, `pytest-httpx` and `httpx.MockTransport` do not intercept them. Pass an `httpx2` client with a mock transport to `Langsmith` (or `AsyncLangsmith`), or patch the method itself:
+
+```python
+import httpx2
+from langsmith import Langsmith
+
+
+def handler(request: httpx2.Request) -> httpx2.Response:
+    return httpx2.Response(200, json={"id": "<run-id>"})
+
+
+client = Langsmith(
+    api_key="test",
+    base_url="http://test",
+    http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
+)
+```
