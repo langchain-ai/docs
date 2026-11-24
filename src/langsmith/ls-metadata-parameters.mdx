@@ -3,6 +3,7 @@ title: Metadata parameters reference
 sidebarTitle: Metadata parameters
 ---
 
+import ResolveAgentEnvironmentRequirements from '/snippets/langsmith/resolve-agent-environment-requirements.mdx';
 import LsMetadataParametersBasicJava from '/snippets/code-samples/ls-metadata-parameters-basic-java.mdx';
 import LsMetadataParametersBasicKt from '/snippets/code-samples/ls-metadata-parameters-basic-kt.mdx';
 import LsMetadataParametersConfiguredJava from '/snippets/code-samples/ls-metadata-parameters-configured-java.mdx';
@@ -542,9 +543,9 @@ Once you've added `ls_` metadata parameters to your traces, you can use them to 
 
 ### Use the API
 
-Replace `my-app` below with the [environment's `tracer_session_name`](/langsmith/create-an-agent#use-an-environment-project).
+Use the [`Client`](https://reference.langchain.com/python/langsmith/client/Client) class with the `client.runs.query()` method to query traces based on metadata values. [Resolve the agent environment](/langsmith/resolve-an-agent) and pass the returned `session_id` in `project_ids`. The query looks back 1 day unless you pass `min_start_time`. The [filter syntax](/langsmith/trace-query-syntax) supports equality checks, comparisons, and logical operators. For more examples, see [Query traces using the SDK](/langsmith/export-traces).
 
-Use the [`Client`](https://reference.langchain.com/python/langsmith/client/Client) class with the `client.runs.query()` method to query traces based on metadata values. It takes a project ID and looks back 1 day unless you pass `min_start_time`. The [filter syntax](/langsmith/trace-query-syntax) supports equality checks, comparisons, and logical operators. For more examples, see [Query traces using the SDK](/langsmith/export-traces).
+<ResolveAgentEnvironmentRequirements />
 
 <CodeGroup>
 
@@ -552,19 +553,20 @@ Use the [`Client`](https://reference.langchain.com/python/langsmith/client/Clien
 import asyncio
 from datetime import datetime, timedelta, timezone
 
-from langsmith import Client
+from langsmith import Client, agent_address
 
 
 async def main():
     client = Client()
-    project_id = str(client.read_project(project_name="my-app").id)
+    # Replace with your agent ID and environment
+    project = await client.sessions.resolve(**agent_address("support-agent", "production"))
     since = datetime.now(timezone.utc) - timedelta(days=7)
 
     async def query(filter: str):
         return [
             run
             async for run in client.runs.query(
-                project_ids=[project_id], min_start_time=since, filter=filter
+                project_ids=[project.session_id], min_start_time=since, filter=filter
             )
         ]
 
@@ -585,16 +587,17 @@ asyncio.run(main())
 ```
 
 ```typescript TypeScript
-import { Client } from "langsmith";
+import { AgentAddress, Client } from "langsmith";
 
 const client = new Client();
-const projectId = (await client.readProject({ projectName: "my-app" })).id;
+// Replace with your agent ID and environment
+const project = await client.sessions.resolve(new AgentAddress("support-agent", "production"));
 const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
 async function query(filter: string) {
   const runs = [];
   for await (const run of client.runs.query({
-    project_ids: [projectId],
+    project_ids: [project.session_id],
     min_start_time: since,
     filter,
   })) {

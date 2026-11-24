@@ -9,42 +9,43 @@ import LLMGatewayBetaNote from '/snippets/langsmith/llm-gateway-beta-note.mdx';
 
 A data policy controls what happens to the content of requests that pass through the [LLM Gateway](/langsmith/llm-gateway):
 
-- Whether LangSmith stores request and response bodies in traces
 - Which sensitive data, such as personal information or API keys, the gateway redacts before a request reaches the LLM provider.
+- Whether LangSmith stores request and response bodies in traces.
 
-Administrators use data policies to keep customer data and credentials that developers or agents put in prompts away from third-party providers, and to limit what LangSmith stores, without changing application code.
+Administrators use data policies to do the following without changing application code:
 
-Like the other gateway policies, a data policy can apply to an organization, a user group, a workspace, a user, or an API key. Each policy has two parts, matching the two sections of the create form:
+- Keep customer data and credentials that developers or agents put in prompts away from third-party providers.
+- Limit what LangSmith stores.
 
-- **Data retention**: whether the gateway writes request and response bodies to the LangSmith trace.
-- **Data protection**: which sensitive data the gateway scans for and redacts before a request reaches the LLM provider, how long that scan may run, and whether a request proceeds when the limit is exceeded.
+Like the other gateway policies, a data policy can apply to an organization, a user group, a workspace, a user, or an API key. In the LLM Gateway **Policies** tab, data policies have the **Data protection** policy type. Each policy combines three options and a timeout setting:
+
+- **Redact personal information (PII)** and **Redact secrets**: which sensitive data the gateway scans for and redacts before a request reaches the LLM provider. See [How redaction works](#how-redaction-works).
+- **Store trace content**: whether the gateway writes request and response bodies to the LangSmith trace. See [Store trace content](#store-trace-content).
+- **If redaction takes too long**: how long the scan may run, and whether a request proceeds when that limit is exceeded. See [Scan time and timeout behavior](#scan-time-and-timeout-behavior).
 
 ## Availability
 
-Data policies are available to every organization with access to the LLM Gateway. Two entitlements shape what the **Data Policy** tab offers:
+Data policies are available to every organization with access to the LLM Gateway. Every such organization can create policies that redact secrets and store trace content.
 
-- **Data protection** is on by default. If the entitlement is turned off, cloud Enterprise organizations see the tab grayed out with a **Request access** link. Every other organization does not see the tab at all.
-- **PII redaction** is off by default and enabled for selected organizations. Without it, the PII options are unavailable in the create and edit forms, and the API rejects any policy configured to detect PII.
+PII redaction requires a separate entitlement, which is off by default and enabled for selected organizations. Without it:
 
-Contact your account team to change either entitlement.
+- The **Redact personal information (PII)** option appears locked in the create and edit forms, with a **Request access** link.
+- The **If redaction takes too long** setting is hidden, and the policy uses the default timeout behavior.
+- The API rejects any policy configured to detect PII.
 
-## Data retention
+To enable PII redaction, click **Request access** or contact your account team.
 
-The **Trace content** toggle controls whether request and response bodies are stored in gateway traces. It is off for all organizations, and a data policy turns it on for the requests that policy matches. When several data policies match a request, the most specific scope decides. If policies at the same scope disagree, content is not stored. With content off, traces still record metadata such as token usage, latency, status, model information, and policy evaluation results.
-
-For where gateway traces appear, what metadata they carry, and how trace content affects billing, see [View LLM Gateway traces](/langsmith/llm-gateway-traces).
-
-## Data protection
+## How redaction works
 
 When a data policy enables detection, the gateway scans outbound requests before they reach the LLM provider. Detected values are replaced with placeholders before the request is forwarded upstream, so the provider only ever sees the redacted payload. For successful responses, the gateway restores the placeholders to the original values before returning the response to the caller.
 
-The **PII** and **Secrets** toggles are independent. On a new policy, PII detection starts on with every rule selected (for organizations that have the entitlement) and secrets detection starts off.
+The **Redact personal information (PII)** and **Redact secrets** options are independent. On a new policy, PII redaction starts on with every type selected (for organizations that have the entitlement), and secrets redaction and trace content start off.
 
-### PII detection
+### Redact personal information
 
-The **Personally Identifiable Information (PII)** toggle covers names, emails, US phone numbers, addresses, and US SSNs. Six rules sit beneath it, each selectable on its own, grouped by how the gateway detects them.
+The **Redact personal information (PII)** option covers names, emails, US phone numbers, addresses, and US SSNs. When the option is selected, six types appear beneath it, each selectable on its own, in two groups based on how the gateway detects them.
 
-Rule-based categories are matched with regular expressions and are faster to detect:
+Types under **Pattern match (instant)** are matched with regular expressions:
 
 | Category | Patterns detected |
 | --- | --- |
@@ -52,7 +53,7 @@ Rule-based categories are matched with regular expressions and are faster to det
 | **US phone numbers** | Common US formats, for example `415-555-1234` and `+1 (415) 555-1234`. A bare 10-digit number is not matched |
 | **US Social Security numbers** | US SSN patterns, for example `123-45-6789` |
 
-Model-based categories are matched by Presidio and are slower to detect:
+Types under **Model detection (slower)** are matched by Presidio:
 
 | Category | Examples |
 | --- | --- |
@@ -60,9 +61,9 @@ Model-based categories are matched by Presidio and are slower to detect:
 | **Locations** | Addresses, cities, countries |
 | **Nationality, religious, and political groups** | Nationality, religious affiliation, political affiliation |
 
-### Secrets detection
+### Redact secrets
 
-The **Secrets** toggle detects common API keys, tokens, and credentials and redacts them from the request:
+The **Redact secrets** option detects common API keys, tokens, and credentials and redacts them from the request:
 
 | Category | Patterns detected |
 | --- | --- |
@@ -77,16 +78,19 @@ The **Secrets** toggle detects common API keys, tokens, and credentials and reda
 | **Cryptographic** | Private keys, JWTs |
 | **Other** | Stripe access tokens, SendGrid API tokens |
 
-Detection is deliberately narrow: only rules anchored to a recognizable token shape are applied, so high-entropy prose in a prompt does not trigger a redaction.
+Detection is deliberately narrow. Only rules anchored to a recognizable token shape are applied, so high-entropy prose in a prompt does not trigger a redaction.
 
 ### Scan time and timeout behavior
 
-Each data policy caps how long the scanning pipeline may run and decides what happens when that cap is reached:
+Each data policy caps how long the scanning pipeline may run and decides what happens when that cap is reached. Under **If redaction takes too long**, set the number of seconds to wait, 2 by default and configurable from 0.1 to 30. Then select what happens when the scan does not finish in time: **Allow request unredacted**, the default, or **Block request**.
 
-- **Max processing time (seconds)**: 2 by default, configurable from 0.1 to 30.
-- **On timeout**: **Allow request** by default. Set it to **Block request** to reject a request whose scan does not finish in time.
+This setting appears only for organizations with the PII redaction entitlement. Elsewhere the policy uses the defaults.
 
-Both fields appear only for organizations with the PII detection entitlement. Elsewhere the policy uses the defaults.
+## Store trace content
+
+The **Store trace content** option controls whether request and response bodies are stored in gateway traces. It is off for all organizations, and a data policy turns it on for the requests that policy matches. To store content without redacting anything, create a data policy that selects only **Store trace content**. When several data policies match a request, the most specific scope decides. If policies at the same scope disagree, content is not stored. With content off, traces still record metadata such as token usage, latency, status, model information, and policy evaluation results.
+
+For where gateway traces appear, what metadata they carry, and how trace content affects billing, see [View LLM Gateway traces](/langsmith/llm-gateway-traces).
 
 ## Create a data policy
 
@@ -94,16 +98,14 @@ Both fields appear only for organizations with the PII detection entitlement. El
 Creating and managing policies requires `organization:gateway:manage` permission. Selecting a user group also requires `organization:user-groups:read`; see [User Groups](/langsmith/user-groups) for availability and setup.
 </Warning>
 
-1. In the LangSmith sidebar, click **LLM Gateway**.
-1. Open the **Data Policy** tab.
-1. Click **Create data policy**.
-1. Select the scope: **Organization**, **User Group**, **Workspace**, **User**, or **API Key**.
-1. Enter a **Policy name**, or keep the generated one.
-1. For a user group, workspace, user, or API key scope, select the specific subjects the policy applies to.
-1. (Optional) Under **Data retention**, enable **Trace content** to store request and response bodies in traces.
-1. Under **Data protection**, enable **Secrets**, **PII**, or both. For PII, select the rules to apply.
-1. (Optional) Set **Max processing time (seconds)** and **On timeout**.
-1. Click **Create data policy**.
+1. Go to **LLM Gateway** and select the **Policies** tab.
+1. Click **+ Policy**.
+1. Under **Policy type**, select **Data protection**.
+1. Enter a **Name**, or keep the generated one.
+1. Define a **Scope** and the subjects the policy applies to.
+1. Under **What should this policy do**, select any combination of **Redact personal information (PII)**, **Redact secrets**, and **Store trace content**. For PII, select the types to redact.
+1. (Optional) Under **If redaction takes too long**, set the number of seconds and what happens when the scan does not finish in time.
+1. Click **Create policy**.
 
 Data policies apply to all requests that pass through the gateway in the scope where they are configured. They take effect immediately.
 

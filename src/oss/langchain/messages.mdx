@@ -481,6 +481,56 @@ console.log(response.usage_metadata);
 
 See @[`UsageMetadata`] for details.
 
+#### Finish reason
+
+<Note>
+:::python
+Finish reason fields require `langchain-core>=1.8.4` and an integration that maps finish reasons, such as `langchain-openai>=1.8.5`, `langchain-anthropic>=1.7.12`, `langchain-google-genai>=4.5.2`, or `langchain-aws>=1.10.0`.
+:::
+:::js
+Finish reason fields require `@langchain/core>=1.5.0` and an integration that maps finish reasons, such as `@langchain/openai>=1.8.5`, `@langchain/anthropic>=1.6.6`, `@langchain/google-genai>=2.3.7`, or `@langchain/aws>=1.5.3`.
+:::
+</Note>
+
+An @[`AIMessage`] records why the model stopped in its `response_metadata`:
+
+| Key | Value |
+| --- | ----- |
+| `finish_reason` | The provider's raw value, such as `end_turn` from Anthropic or `MAX_TOKENS` from Gemini. |
+| `normalized_finish_reason` | The same reason in one shared set of values, listed below. |
+| `finish_state` | Anthropic only. `complete`, or `suspended` when the caller must send another request to continue the turn (`pause_turn`). |
+
+| `normalized_finish_reason` | Meaning |
+| -------------------------- | ------- |
+| `stop` | The model finished its answer. |
+| `length` | The output hit the token limit. |
+| `context_exceeded` | The conversation hit the context window limit. |
+| `tool_call` | The model is requesting tool calls. |
+| `content_filter` | A provider safety or policy filter blocked the output. |
+| `refusal` | The model declined to answer. The message also has a [`refusal` content block](#content-block-reference). |
+| `error` | The response ended in an error status but still returned output. |
+| `other` | LangChain has no mapping for the provider's value. Check `finish_reason`. |
+
+Use `normalized_finish_reason` to handle the same outcome across providers, and `finish_reason` when you need the provider's exact value:
+
+:::python
+```python
+response = model.invoke("Hello!")
+if response.response_metadata.get("normalized_finish_reason") == "length":
+    ...  # Retry with a higher token limit, or continue the answer
+```
+:::
+:::js
+```typescript
+const response = await model.invoke("Hello!");
+if (response.response_metadata.normalized_finish_reason === "length") {
+  // Retry with a higher token limit, or continue the answer
+}
+```
+:::
+
+The provider integration sets these keys, so they are absent when the integration doesn't map finish reasons or the provider doesn't report one. Messages from `invoke` and from event streaming carry them; individual chunks from `stream` do not.
+
 #### Streaming and chunks
 
 During streaming, you'll receive @[`AIMessageChunk`] objects that can be combined into a full message object:
