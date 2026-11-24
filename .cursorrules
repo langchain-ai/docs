@@ -37,7 +37,7 @@ docs/
 └── tests/                      # Pipeline tests
 ```
 
-For the navigation map (every product, menu item, tab, and group), see `AGENTS.md`. Navigation is defined in `src/docs.json` as 2 products: `AGENT DEVELOPMENT LIFECYCLE` (Home, Build, Test, Deploy, Monitor) and `PRODUCTS AND SETUP` (LangSmith setup, LLM Gateway, Tool Gateway, No-code agents, Engine, Deep Agents Code). Nav names do not match source directory names, so consult `AGENTS.md` before placing a new page.
+For the navigation map (every product, menu item, tab, and group), see `AGENTS.md`. Navigation is defined in `src/docs.json` as 3 products: `AGENT RUNTIME` (No-code agents, Build, Deploy), `AGENT IMPROVEMENT` (Test, Monitor, Engine), and `AGENT GOVERNANCE` (LangSmith setup, LLM Gateway, Tool Gateway). The site home (`index`) and Deep Agents Code are not menu items. Nav names do not match source directory names, so consult `AGENTS.md` before placing a new page.
 
 ## Quick reference
 

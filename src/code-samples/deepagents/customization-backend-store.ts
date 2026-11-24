@@ -7,7 +7,9 @@ const store = new InMemoryStore(); // Good for local dev; omit for LangSmith Age
 const agent = createDeepAgent({
   model: "openai:gpt-6.1-sol",
   backend: new StoreBackend({
-    namespace: (rt) => [rt.serverInfo.user.identity],
+    namespace: ({ config }) => [
+      String(config?.configurable?.langgraph_auth_user_id),
+    ],
   }),
   store,
 });

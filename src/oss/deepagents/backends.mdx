@@ -14,6 +14,12 @@ import BackendStoreJs from '/snippets/code-samples/backend-store-js.mdx';
 import BackendContextHubPy from '/snippets/code-samples/backend-context-hub-py.mdx';
 import BackendCompositePy from '/snippets/code-samples/backend-composite-py.mdx';
 import BackendCompositeJs from '/snippets/code-samples/backend-composite-js.mdx';
+import BackendsNamespaceFactoryTypePy from '/snippets/code-samples/backends-namespace-factory-type-py.mdx';
+import BackendsNamespaceFactoryTypeJs from '/snippets/code-samples/backends-namespace-factory-type-js.mdx';
+import BackendsNamespacePatternsPy from '/snippets/code-samples/backends-namespace-patterns-py.mdx';
+import BackendsNamespacePatternsJs from '/snippets/code-samples/backends-namespace-patterns-js.mdx';
+import BackendsCompositeNamespaceBeforeJs from '/snippets/code-samples/backends-composite-namespace-before-js.mdx';
+import BackendsCompositeNamespaceAfterJs from '/snippets/code-samples/backends-composite-namespace-after-js.mdx';
 
 :::python
 Deep Agents expose a filesystem surface to the agent via tools like `ls`, `read_file`, `write_file`, `edit_file`, `delete`, `glob`, and `grep`. These tools operate through a pluggable backend. The `read_file` tool natively supports image files (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`) across all backends, returning them as multimodal content blocks.
@@ -287,83 +293,44 @@ Use with extreme caution and only in appropriate environments.
 
 #### Namespace factories
 
+:::python
 A namespace factory controls where `StoreBackend` reads and writes data. It receives a LangGraph @[`Runtime`] and returns a tuple of strings used as the store namespace. Use namespace factories to isolate data between users, tenants, or assistants.
 
 Pass the namespace factory to the `namespace` parameter when constructing a `StoreBackend`:
 
-```python
-NamespaceFactory = Callable[[Runtime], tuple[str, ...]]
-```
+<BackendsNamespaceFactoryTypePy />
 
 The `Runtime` provides:
 - `rt.context`—User-supplied context passed via LangGraph's [context schema](/oss/langgraph/graph-api#runtime-context) (for example, `user_id`)
-:::python
 - `rt.server_info`—Server-specific metadata when running on Agent Server (assistant ID, graph ID, authenticated user)
 - `rt.execution_info`—Execution identity information (thread ID, run ID, checkpoint ID)
-:::
-:::js
-- `rt.serverInfo`—Server-specific metadata when running on Agent Server (assistant ID, graph ID, authenticated user)
-- `rt.executionInfo`—Execution identity information (thread ID, run ID, checkpoint ID)
-:::
 
-:::python
 <Note>
 The `Runtime` argument is available in `deepagents>=0.5.2`. Earlier 0.5.x releases passed a `BackendContext` instead—see [migrating from `BackendContext`](#migrating-from-backendcontext) below. `rt.server_info` and `rt.execution_info` require `deepagents>=0.5.0`.
 </Note>
 :::
 
 :::js
-<Note>
-The `Runtime` argument is available in `deepagents>=1.9.1`. Earlier 1.9.x releases passed a `BackendContext` instead—see [migrating from `BackendContext`](#migrating-from-backendcontext) below. `rt.serverInfo` and `rt.executionInfo` require `deepagents>=1.9.0`.
-</Note>
+A namespace factory controls where `StoreBackend` reads and writes data. It receives a `StoreBackendContext` and returns an array of strings used as the store namespace. Use namespace factories to isolate data between users, tenants, or assistants.
+
+Pass the namespace factory to the `namespace` parameter when constructing a `StoreBackend`:
+
+<BackendsNamespaceFactoryTypeJs />
+
+The context provides:
+- `state`—Current graph state, when available
+- `config`—Runnable config metadata and `configurable` values, when available
+- `assistantId`—Assistant identifier resolved from config metadata or the injected runtime
 :::
 
 **Common namespace patterns:**
 
 :::python
-```python
-from deepagents.backends import StoreBackend
-
-# Per-user: each user gets their own isolated storage
-backend = StoreBackend(
-    namespace=lambda rt: (rt.server_info.user.identity,),  # [!code highlight]
-)
-
-# Per-assistant: all users of the same assistant share storage
-backend = StoreBackend(
-    namespace=lambda rt: (
-        rt.server_info.assistant_id,  # [!code highlight]
-    ),
-)
-
-# Per-thread: storage scoped to a single conversation
-backend = StoreBackend(
-    namespace=lambda rt: (
-        rt.execution_info.thread_id,  # [!code highlight]
-    ),
-)
-```
+<BackendsNamespacePatternsPy />
 :::
 
 :::js
-```typescript
-import { StoreBackend } from "deepagents";
-
-// Per-user: each user gets their own isolated storage
-const backend = new StoreBackend({
-  namespace: (rt) => [rt.serverInfo.user.identity],  // [!code highlight]
-});
-
-// Per-assistant: all users of the same assistant share storage
-const backend = new StoreBackend({
-  namespace: (rt) => [rt.serverInfo.assistantId],  // [!code highlight]
-});
-
-// Per-thread: storage scoped to a single conversation
-const backend = new StoreBackend({
-  namespace: (rt) => [rt.executionInfo.threadId],  // [!code highlight]
-});
-```
+<BackendsNamespacePatternsJs />
 :::
 
 You can combine multiple components to create more specific scopes—for example, `(user_id, thread_id)` for per-user per-conversation isolation, or append a suffix like `"filesystem"` to disambiguate when the same scope uses multiple store namespaces.
@@ -984,34 +951,19 @@ agent = create_deep_agent(
 :::
 
 :::js
-```typescript
-// Before (deprecated)
-import { createDeepAgent, CompositeBackend, StateBackend, StoreBackend } from "deepagents";
+Before (deprecated):
 
-const agent = createDeepAgent({
-  backend: (config) => new CompositeBackend(
-    new StateBackend(config),
-    { "/memories/": new StoreBackend(config, {
-      namespace: (rt) => [rt.serverInfo.user.identity],
-    }) },
-  ),
-});
+<BackendsCompositeNamespaceBeforeJs />
 
-// After
-const agent = createDeepAgent({
-  backend: new CompositeBackend(
-    new StateBackend(),
-    { "/memories/": new StoreBackend({
-      namespace: (rt) => [rt.serverInfo.user.identity],
-    }) },
-  ),
-});
-```
+After:
+
+<BackendsCompositeNamespaceAfterJs />
 :::
 
+:::python
 ### Migrating from `BackendContext`
 
-In `deepagents>=0.5.2` (Python) and `deepagents>=1.9.1` (TypeScript), namespace factories receive a LangGraph @[`Runtime`] directly instead of a `BackendContext` wrapper. The old `BackendContext` form still works via backwards-compatible `.runtime` and `.state` accessors, but those accessors emit a deprecation warning and will be removed in `deepagents>=0.7`.
+In `deepagents>=0.5.2`, namespace factories receive a LangGraph @[`Runtime`] directly instead of a `BackendContext` wrapper. The old `BackendContext` form still works via backwards-compatible `.runtime` and `.state` accessors, but those accessors emit a deprecation warning and will be removed in `deepagents>=0.7`.
 
 **What changed:**
 
@@ -1019,7 +971,6 @@ In `deepagents>=0.5.2` (Python) and `deepagents>=1.9.1` (TypeScript), namespace 
 - Drop the `.runtime` accessor—for example, `ctx.runtime.context.user_id` becomes `rt.server_info.user.identity`.
 - There is no direct replacement for `ctx.state`. Namespace info should be read-only and stable for the lifetime of a run, whereas state is mutable and changes step-to-step—deriving a namespace from it risks data ending up under inconsistent keys. If you have a use case that requires reading agent state, please [open an issue](https://github.com/langchain-ai/deepagents/issues).
 
-:::python
 ```python
 # Before (deprecated, removed in v0.7)
 StoreBackend(
@@ -1030,20 +981,6 @@ StoreBackend(
 StoreBackend(
     namespace=lambda rt: (rt.server_info.user.identity,),  # [!code ++]
 )
-```
-:::
-
-:::js
-```typescript
-// Before (deprecated, removed in v0.7)
-new StoreBackend({
-  namespace: (ctx) => [ctx.runtime.context.userId],  // [!code --]
-});
-
-// After
-new StoreBackend({
-  namespace: (rt) => [rt.serverInfo.user.identity],  // [!code ++]
-});
 ```
 :::
 

@@ -8,7 +8,7 @@ description: Run self-hosted LangSmith installation on FIPS 140 compliant contai
   FIPS and airgapped LangSmith deployments require a conversation with your LangChain account executive before rollout. Reach out to scope licensing, supported configurations, and upgrade paths before you change your installation.
 </Note>
 
-As of v15, every LangChain-authored LangSmith image has a `-fips` counterpart that runs in FIPS 140 mode. Use these images when your self-hosted deployment needs FIPS compliance, for example in federal agencies, defense contractors, and regulated industries.
+As of v15, every LangChain-authored LangSmith image has a `-fips` counterpart that runs in FIPS 140 mode. As of v18 (LangSmith `appVersion` 0.18.0), the SmithDB image also has a `-fips` counterpart. Use these images when your self-hosted deployment needs FIPS compliance, for example in federal agencies, defense contractors, and regulated industries.
 
 ## How the images are built
 
@@ -22,6 +22,7 @@ Every LangChain-authored image has a `-fips` counterpart published at the same t
 | `langchain/langsmith-backend` | `langchain/langsmith-backend-fips` |
 | `langchain/langsmith-frontend` | `langchain/langsmith-frontend-fips` |
 | `langchain/langgraph-operator` | `langchain/langgraph-operator-fips` |
+| `langchain/smithdb` | `langchain/smithdb-fips` |
 
 <Note>
   **Fewer images from LangSmith 0.16.21 (chart `0.16.0-rc.17`) onward.** The platform backend, playground, host backend, and the Fleet tool and trigger servers now all run from the single `langsmith-backend` image, so `langsmith-go-backend-fips`, `langsmith-playground-fips`, `hosted-langserve-backend-fips`, `agent-builder-tool-server-fips`, and `agent-builder-trigger-server-fips` are no longer needed. The corresponding `values.yaml` keys: `platformBackendImage`, `playgroundImage`, `hostBackendImage`, `fleetToolServerImage`, and `fleetTriggerServerImage`, have been removed from the chart; any values you still set for them are ignored.
@@ -37,28 +38,36 @@ PostgreSQL, Redis, and ClickHouse are not published as FIPS variants by LangChai
 
 We consider this acceptable for regulated environments: FIPS governs the platform's cryptographic operations on sensitive data, and ACE performs none. It injects no secrets into user code, persists no data and performs no data-at-rest cryptography, and its execution subprocesses have no network access. ACE is an in-cluster HTTP service called by the LangSmith backend; when TLS is terminated upstream by a FIPS-validated mesh or ingress, ACE performs no in-scope cryptographic operations.
 
+### SmithDB FIPS boundary note
+
+The SmithDB service in `langchain/smithdb-fips` performs its security-critical encryption and hashing through the `aws-lc-fips-sys` cryptographic module, using the `rustls` `aws-lc-rs` crypto provider, rather than the system OpenSSL FIPS provider. The `smithdb` binary includes a `check-fips` subcommand that confirms this provider is active and that AWS-LC runs in FIPS mode, in addition to the standard `openssl-fips-test` check. See [Verify the SmithDB image](#verify-the-smithdb-image).
+
 ## Use FIPS images
 
-Update `values.yaml` in your LangSmith Helm installation to point each LangChain image repository at its `-fips` counterpart, keeping your existing tag. Replace `0.16.21` with the [LangSmith version](/langsmith/self-hosted-changelog) you want to deploy:
+Update `values.yaml` in your LangSmith Helm installation to point each LangChain image repository at its `-fips` counterpart, keeping your existing tag. Replace `0.18.2026112100` with the [LangSmith version](/langsmith/self-hosted-changelog) you want to deploy:
 
 ```yaml
 images:
   aceBackendImage:
     repository: "langchain/langsmith-ace-backend-fips"
     pullPolicy: IfNotPresent
-    tag: "0.16.21"
+    tag: "0.18.2026112100"
   backendImage:
     repository: "langchain/langsmith-backend-fips"
     pullPolicy: IfNotPresent
-    tag: "0.16.21"
+    tag: "0.18.2026112100"
   frontendImage:
     repository: "langchain/langsmith-frontend-fips"
     pullPolicy: IfNotPresent
-    tag: "0.16.21"
-  operatorImage:
+    tag: "0.18.2026112100"
+  operatorImage: # The operator is versioned separately from LangSmith
     repository: "langchain/langgraph-operator-fips"
     pullPolicy: IfNotPresent
-    tag: "0.16.21"
+    tag: "0.1.66"
+  smithdbImage: # Only when SmithDB is enabled
+    repository: "langchain/smithdb-fips"
+    pullPolicy: IfNotPresent
+    tag: "0.18.2026112100"
 ```
 
 Apply the change and upgrade following the [Upgrading LangSmith](/langsmith/self-host-upgrades) guide.
@@ -95,10 +104,69 @@ Locate applicable CMVP certificate(s) at: CMVP #4985
 You can also verify an image outside Kubernetes:
 
 ```bash
-docker run --rm --entrypoint openssl-fips-test langchain/langsmith-backend-fips:0.16.21
+docker run --rm --entrypoint openssl-fips-test langchain/langsmith-backend-fips:0.18.2026112100
 ```
 
 For more detail on interpreting the output, see [Chainguard's FIPS verification guide](https://edu.chainguard.dev/chainguard/fips/verify-fips/).
+
+### Verify the SmithDB image
+
+Each SmithDB FIPS image carries a signed SBOM (software bill of materials) in CycloneDX format. The SBOM lists the dependency tree, including the crates that perform encryption, so you can confirm that the FIPS-validated ones are built.
+
+Install [`cosign`](https://docs.sigstore.dev/cosign/system_config/installation/), then verify the tag. The SBOM attestation is attached to the multi-platform index and to each platform manifest, so verifying the tag checks every platform and returns one attestation per platform:
+
+```bash
+cosign verify-attestation --type cyclonedx \
+    --certificate-identity-regexp '^https://github\.com/langchain-ai/smithdb/\.github/workflows/promote-self-hosted-release\.yml@refs/heads/main$' \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    docker.io/langchain/smithdb-fips:0.18.2026112100
+```
+
+The command prints the verification result for each attestation, followed by the attestation itself as JSON:
+
+```text
+Verification for docker.io/langchain/smithdb-fips:0.18.2026112100 --
+The following checks were performed on each of these signatures:
+  - The cosign claims were validated
+  - Existence of the claims in the transparency log was verified offline
+  - The code-signing certificate was verified using trusted certificate authority certificates
+Certificate subject: https://github.com/langchain-ai/smithdb/.github/workflows/promote-self-hosted-release.yml@refs/heads/main
+Certificate issuer URL: https://token.actions.githubusercontent.com
+GitHub Workflow Trigger: repository_dispatch
+GitHub Workflow SHA: ...
+GitHub Workflow Name: Promote Self-Hosted Release
+GitHub Workflow Repository: langchain-ai/smithdb
+GitHub Workflow Ref: refs/heads/main
+```
+
+Each attestation is an in-toto statement whose `predicate` holds the CycloneDX document. To save a single platform's SBOM as a standalone CycloneDX file, resolve that platform's digest and verify it instead of the tag:
+
+```bash
+# List the digest of each platform-specific image
+docker manifest inspect docker.io/langchain/smithdb-fips:0.18.2026112100 \
+  | jq -r '.manifests[] | select(.platform.os != "unknown") | "\(.platform.os)/\(.platform.architecture) \(.digest)"'
+
+# Verify one platform's attestation and extract its SBOM
+cosign verify-attestation --type cyclonedx \
+    --certificate-identity-regexp '^https://github\.com/langchain-ai/smithdb/\.github/workflows/promote-self-hosted-release\.yml@refs/heads/main$' \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    docker.io/langchain/smithdb-fips@<platform-digest> \
+  | jq '.payload | @base64d | fromjson | .predicate' > sbom.json
+```
+
+Replace `<platform-digest>` with a `sha256:...` digest from the first command. `sbom.json` then contains that platform's CycloneDX SBOM.
+
+In addition to `openssl-fips-test`, the SmithDB FIPS image includes a `smithdb check-fips` command. It prints the active crypto provider and exits non-zero unless the rustls provider is FIPS-approved and AWS-LC runs in FIPS mode on the certified module version.
+
+```bash
+docker run --rm langchain/smithdb-fips:0.18.2026112100 check-fips
+```
+
+Expected output:
+
+```text
+FIPS mode: rustls crypto provider aws-lc-rs on AWS-LC FIPS 3.1.0
+```
 
 ## Mirror for airgapped deployments
 

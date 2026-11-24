@@ -5,7 +5,7 @@ description: Map documentation and pipeline changes to the smallest deterministi
 tags: [testing, validation, ci, documentation, code-samples]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-11-16T08:15:17.266Z
+    at: 2026-11-23T08:07:24.438Z
 sources:
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
@@ -15,6 +15,8 @@ sources:
     resource: repo://.github/workflows/_test.yml
   - id: openwiki-source-692d56c7e73dca0d6d880109
     resource: repo://.github/workflows/check-deprecated.yml
+  - id: openwiki-source-2ff9d7e39bfac05172340de7
+    resource: repo://.github/workflows/check-removed-pages-redirects.yml
   - id: openwiki-source-21617d8a6b2b570989a7c900
     resource: repo://.github/workflows/check-version-claims.yml
   - id: openwiki-source-164e2da859b5277df81c7d94
@@ -33,6 +35,8 @@ sources:
     resource: repo://pyproject.toml
   - id: openwiki-source-0a0a6c8d7a88288e6b6b9b5b
     resource: repo://scripts/check_cross_refs.py
+  - id: openwiki-source-3988d52ac8d59fd5a6618960
+    resource: repo://scripts/check_removed_pages_redirects.py
   - id: openwiki-source-99b53585619b83f258314f8b
     resource: repo://scripts/check_version_claims.py
   - id: openwiki-source-2654e40275744504b4ca7e2b
@@ -51,6 +55,8 @@ sources:
     resource: repo://tests/changelog-navigation.test.js
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
+  - id: openwiki-source-58d896f2f9026577fb560fd7
+    resource: repo://tests/unit_tests/test_check_removed_pages_redirects.py
   - id: openwiki-source-607673c5c40214b511f9e0a7
     resource: repo://tests/unit_tests/test_check_version_claims.py
   - id: openwiki-source-30a490be0964e690a58135e7
@@ -65,7 +71,7 @@ sources:
     resource: repo://tests/unit_tests/test_test_code_samples.py
   - id: openwiki-source-98a4de3472710de1bf3ccb4f
     resource: repo://tests/unit_tests/test_url_stub_noindex.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-16T08:15:17.266Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-23T08:07:24.438Z" }
 ---
 
 ## Choose the smallest meaningful boundary
@@ -78,6 +84,7 @@ Each validation layer proves a different contract. Start with the focused test o
 | Formatting, types, spelling, or prose style | `make lint`; `make lint_prose FILES="src/..."` | None | Static quality or Vale style, not rendering or factual correctness. |
 | Authored `@[Name]` cross-reference | `make check-cross-refs` | CI repeats it | Source references resolve in applicable language scopes, not final route reachability. |
 | Route, redirect, navigation, anchor, or OpenAPI input | `make broken-links-with-anchors`; `make check-openapi` | Hosted preview when deployment behavior matters | A fresh generated Mint tree, including redirects and anchors; not a deployed site. |
+| Removed or renamed navigated page | `python scripts/check_removed_pages_redirects.py <base_docs.json> src/docs.json` | `check-removed-pages-redirects.yml` on pull requests to `main` | Every current navigation page has a source, and removed source pages retain a redirect. |
 | Generated provider overview | `uv run python pipeline/tools/partner_pkg_table.py`, then inspect the diff | `check-generated-files` regenerates and diffs the owned file | The generated file agrees with its generator and metadata; manual edits are rejected. |
 | Version claim in authored MDX | `uv run python scripts/check_version_claims.py --files src/path/to/page.mdx` | Changed-document version-claim workflow | The named version exists on its resolved registry, not that it is the right feature floor. |
 | Deprecated example pattern | Inspect added lines for `create_react_agent` | `check-deprecated.yml` on eligible pull requests | New eligible additions do not reintroduce the blocked pattern. |
@@ -114,6 +121,8 @@ flowchart TD
 `make test` runs pytest with Internet sockets disabled while allowing Unix sockets. Pytest discovers `test_*.py` under `tests`, uses automatic asyncio mode, and defaults the asyncio fixture loop scope to a function. HTTP-facing tests therefore use mocks or local doubles rather than the public network. `make lint` runs Ruff format and lint checks, `ty check`, and Codespell over `src`; `make lint_prose` installs the configured Vale binary and checks specified files or `src`, excluding `node_modules` and `src/code-samples`. `make lint_md` is separate and fails when `markdownlint` is unavailable; it is not part of `make lint`.
 
 The main CI workflow runs reusable test, lint, and documentation-link workflows for pull requests, pushes to `main`, and manual dispatch. Its matrix currently uses Python 3.13 for each of those jobs. Separate five-minute checks detect merge markers, unresolved source cross-references, unsafe integration `docs_url` schemes, and drift in the generated provider overview. The workflow cancels an older run for the same workflow/ref when a newer push arrives; reusable jobs have 20-minute timeouts and focused jobs have five-minute timeouts.
+
+The pull-request-only `check-removed-pages-redirects.yml` workflow fetches the base branch, compares its `src/docs.json` with the head configuration, and runs `scripts/check_removed_pages_redirects.py`. The checker recursively understands products, tabs, dropdowns, and groups; it maps ordinary navigation paths to `src/*.md` or `src/*.mdx` and shared `oss/python/` or `oss/javascript/` paths to `src/oss/`. A removed page whose source no longer exists must have a redirect, and every current navigation path must map to an existing source. The workflow reports failures in a PR comment, so run this check whenever navigation removes or renames a page rather than relying only on the generated link check.
 
 `check-deprecated.yml` is a read-only pull-request gate. It fetches the merge diff and checks only added lines in eligible Python, Markdown, MDX, or notebook changes for `create_react_agent`; it does not claim that existing occurrences elsewhere were removed. The version-claim workflow similarly examines only changed authored MDX and treats registry lookup failures as unresolved evidence rather than proof of an unpublished version.
 
