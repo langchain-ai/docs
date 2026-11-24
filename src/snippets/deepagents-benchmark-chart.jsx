@@ -33,8 +33,9 @@ export const DeepAgentsBenchmarkChart = () => {
   const BENCHMARKS = [
     {
       id: "tb4",
+      group: "coding",
       title: "Terminal-Bench 4.0",
-      tasks: { opus: 57, sol: 60 },
+      tasks: { opus: 57, sol: 60, kimi: 57 },
       runs: [
         { model: "opus", harness: "deepagents", score: 0.5175, scoreSe: 0.0218, cost: 1.414, costSe: 0.064 },
         { model: "opus", harness: "claude-code", score: 0.5263, scoreSe: 0.0226, cost: 1.565, costSe: 0.109 },
@@ -42,10 +43,14 @@ export const DeepAgentsBenchmarkChart = () => {
         { model: "sol", harness: "deepagents", score: 0.4472, scoreSe: 0.0237, cost: 0.364, costSe: 0.015 },
         { model: "sol", harness: "codex", score: 0.475, scoreSe: 0.0231, cost: 0.438, costSe: 0.013 },
         { model: "sol", harness: "pi", score: 0.3667, scoreSe: 0.0235, cost: 0.164, costSe: 0.005 },
+        { model: "kimi", harness: "claude-code", score: 0.5848, scoreSe: 0.0306, cost: 2.441, costSe: 0.177 },
+        { model: "kimi", harness: "codex", score: 0.5936, scoreSe: 0.029, cost: 1.261, costSe: 0.033 },
+        { model: "kimi", harness: "pi", score: 0.5029, scoreSe: 0.0274, cost: 1.419, costSe: 0.086 },
       ],
     },
     {
       id: "tbs",
+      group: "coding",
       title: "Terminal-Bench Science 0.1",
       tasks: { opus: 59, sol: 59 },
       runs: [
@@ -57,11 +62,31 @@ export const DeepAgentsBenchmarkChart = () => {
         { model: "sol", harness: "pi", score: 0.2514, scoreSe: 0.0233, cost: 0.228, costSe: 0.009 },
       ],
     },
+    {
+      id: "apex",
+      group: "work",
+      title: "APEX-Agents 1.1",
+      tasks: { opus: 38, sol: 39 },
+      runs: [
+        { model: "opus", harness: "deepagents", score: 0.4912, scoreSe: 0.0274, cost: 0.241, costSe: 0.007 },
+        { model: "opus", harness: "claude-code", score: 0.4737, scoreSe: 0.0258, cost: 0.253, costSe: 0.007 },
+        { model: "opus", harness: "pi", score: 0.4912, scoreSe: 0.0196, cost: 0.226, costSe: 0.005 },
+        { model: "sol", harness: "deepagents", score: 0.547, scoreSe: 0.014, cost: 0.068, costSe: 0.004 },
+        { model: "sol", harness: "codex", score: 0.5385, scoreSe: 0.0217, cost: 0.148, costSe: 0.005 },
+        { model: "sol", harness: "pi", score: 0.5684, scoreSe: 0.0173, cost: 0.057, costSe: 0.002 },
+      ],
+    },
   ];
+
+  const GROUPS = {
+    coding: "Coding",
+    work: "Professional work",
+  };
 
   const MODELS = {
     opus: { label: "Claude Opus 5.5 (med)", light: "#2a78d6", dark: "#3987e5" },
     sol: { label: "GPT-6.1 Sol (med)", light: "#eb6834", dark: "#d95926" },
+    kimi: { label: "Kimi K3.1 Pro (med)", light: "#1f9d6b", dark: "#2bb07c" },
   };
 
   // Deep Agents is the only filled mark; competing harnesses are outlined.
@@ -305,12 +330,19 @@ export const DeepAgentsBenchmarkChart = () => {
     );
   };
 
-  const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 28 };
+  const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 420px), 1fr))", gap: 28 };
 
   return (
     <div className="deepagents-benchmark-chart" style={{ margin: "16px 0" }}>
       {legend}
-      <div style={grid}>{BENCHMARKS.map(scatter)}</div>
+      {Object.entries(GROUPS).map(([g, label]) => (
+        <section key={g} style={{ marginTop: 20 }}>
+          <div style={{ fontWeight: 600, fontSize: 13, letterSpacing: 0.4, textTransform: "uppercase", color: theme.muted, marginBottom: 10 }}>
+            {label}
+          </div>
+          <div style={grid}>{BENCHMARKS.filter((b) => b.group === g).map(scatter)}</div>
+        </section>
+      ))}
     </div>
   );
 };
