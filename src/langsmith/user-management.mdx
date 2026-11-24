@@ -1,7 +1,7 @@
 ---
 title: User management
 sidebarTitle: User management
-description: Configure role-based access control, SAML SSO, and SCIM user provisioning for your LangSmith organization.
+description: Configure role-based access control, SAML or OIDC SSO, and SCIM user provisioning for your LangSmith organization.
 keywords: ['scim']
 ---
 
@@ -10,10 +10,10 @@ import SaasRegionUrls from '/snippets/langsmith/saas-region-urls.mdx';
 Organization Admins control who can sign in to a LangSmith organization and what each user can do in its workspaces. This page covers three independent features, all available on the Enterprise plan:
 
 - [Access control](#set-up-access-control): Create custom roles and assign roles to workspace members. Without it, every user has the `Admin` role.
-- [SAML SSO](#set-up-saml-sso-for-your-organization): Let users sign in through your identity provider (IdP) on LangSmith Cloud. Self-hosted deployments use [OAuth2.0 and OIDC](/langsmith/self-host-sso) instead.
+- SSO: Let users sign in through your identity provider (IdP) on LangSmith Cloud, with [SAML SSO](#set-up-saml-sso-for-your-organization) or [OIDC SSO](#set-up-oidc-sso-for-your-organization). Self-hosted deployments use [OAuth2.0 and OIDC](/langsmith/self-host-sso) instead.
 - [SCIM provisioning](#set-up-scim-for-your-organization): Add, update, and remove users and their roles automatically from your IdP.
 
-To use all three, set them up in the order listed. SCIM group names reference role names. On cloud, SCIM requires SAML SSO.
+To use all three, set them up in the order listed. SCIM group names reference role names. On cloud, SCIM requires SAML or OIDC SSO.
 
 ## Set up access control
 
@@ -89,16 +89,13 @@ Once you have completed your configuration of SAML SSO for your organization, us
 
 ### Enforce SAML SSO only
 
-<Note>
-User invites are not supported in organizations enforcing SAML SSO only. Initial workspace membership and role is determined by [JIT provisioning](/langsmith/jit-invite-sso#jit-provisioning), and changes afterwards can be managed in the UI.
-For additional flexibility in automated user management, LangSmith supports SCIM.
-</Note>
-
-To ensure users can only access the organization when logged in using SAML SSO and no other method, check the **Allow Invites** checkbox. Once this happens, users accessing the organization that are logged-in via a non-SSO login method are required to log back in using SAML SSO. This setting can be switched back to allow all login methods by unselecting the checkbox.
+To require SSO for everyone in the organization, go to **Settings** > **Login & Provisioning** > **SSO** and turn on **SSO-Only Login** under **Access**. Users signed in with any other login method must sign in again through SSO to access the organization. To allow all login methods again, turn the setting off.
 
 <Note>
-You must be logged in via SAML SSO in order to update this setting to `Only SAML SSO`. This is to ensure the SAML settings are valid and avoid locking users out of your organization.
+You must be signed in through SSO to turn on **SSO-Only Login**. This confirms that your SSO configuration works before other login methods stop working.
 </Note>
+
+Invites still work in an organization that enforces SSO-only login. Invited users accept their invite by signing in through SSO. For automated user management, LangSmith also supports [SCIM](#set-up-scim-for-your-organization).
 
 For troubleshooting, refer to the [SAML SSO FAQs](/langsmith/faq#saml-sso-faqs). If you have issues setting up SAML SSO, contact the LangChain support team via [support.langchain.com](https://support.langchain.com).
 
@@ -110,7 +107,7 @@ SAML SSO is available for organizations on the [Enterprise plan](https://www.lan
 
 - Your organization must be on an Enterprise plan.
 - Your Identity Provider (IdP) must support the SAML 2.0 standard.
-- Only [`Organization Admins`](/langsmith/organization-workspace-operations#sso-and-authentication) can configure SAML SSO.
+- Only [`Organization Admins`](/langsmith/organization-workspace-operations#sso-and-authentication) and [`Organization Operators`](/langsmith/rbac#organization-operator) can configure SAML SSO.
 
 For instructions on using SCIM along with SAML for user provisioning and deprovisioning, refer to the [SCIM setup](#set-up-scim-for-your-organization).
 
@@ -139,10 +136,10 @@ For IdP-specific configuration steps, refer to one of the following:
    4. Application username: email address.
    5. Required claims: `sub` and `email`.
 
-2. In LangSmith: Go to **Settings** > **SSO Configuration**. Fill in the required information and submit to activate SSO login:
+2. In LangSmith: Go to **Settings** > **Login & Provisioning** > **SSO** and click **Set up** next to **SAML**:
 
-   1. Fill in either the `SAML metadata URL` or `SAML metadata XML`.
-   2. Select the `Default workspace role` and `Default workspaces`. New users logging in via SSO will be added to the specified workspaces with the selected role.
+   1. Choose the **SAML metadata type**, then enter the `SAML metadata URL` or `SAML metadata XML`.
+   2. Select the `Default workspace role` and `Default workspaces`, then click **Set up**. New users logging in via SSO will be added to the specified workspaces with the selected role.
 
       - `Default workspace role` and `Default workspaces` are editable. The updated settings will apply to new users only, not existing users.
       - `SAML metadata URL` and `SAML metadata XML` are editable without deleting and recreating the SSO configuration. The new metadata must have the same entity ID as the current configuration. Edit them when cryptographic keys are rotated or expire, or when the metadata URL changes but the IdP stays the same.
@@ -165,14 +162,14 @@ The attribute name is preserved end-to-end: the IdP attribute name, the SAML Att
 
 #### Configuration
 
-In **Settings** > **SSO Configuration**, scroll to the **SAML Attribute Mapping** section and add one row per non-standard attribute you want to forward:
+In **Settings** > **Login & Provisioning** > **SSO**, scroll to the **SAML Attribute Mapping** section and add one row per non-standard attribute you want to forward:
 
 | Column | Description |
 | --- | --- |
 | **Attribute name** | The SAML attribute name as emitted by your IdP. Must match the JWT claim name LangSmith expects downstream (for SSO Groups Sync, this matches the **Groups claim field** value). |
 | **Array** | Check this if the attribute is multi-valued (a list of strings). Leave unchecked for scalar (single-value) attributes. Example: check this for `groups`; leave unchecked for `full_name`. |
 
-Click **Add row** for each additional attribute, then **Save**. An empty mapping table means no non-standard attributes flow through to the JWT.
+Click **Add row** for each additional attribute, then **Save mapping**. An empty mapping table means no non-standard attributes flow through to the JWT.
 
 ### Entra ID (Azure)
 
@@ -223,7 +220,7 @@ For additional information, see Microsoft's [documentation](https://learn.micros
 
 **Step 3: Set up LangSmith SSO configuration**
 
-Follow the instructions under [initial configuration](#initial-configuration) in the `Fill in required information` step, using the metadata URL from the previous step.
+Follow the instructions under [initial configuration](#initial-configuration) in step 2, using the metadata URL from the previous step.
 
 **Step 4: Verify the SSO setup**
 
@@ -239,7 +236,7 @@ Follow the instructions under [initial configuration](#initial-configuration) in
       2. Search for the user you want to assign to the enterprise application, and then click **Select**.
       3. Verify that the user is selected, and click **Assign**.
 
-2. Have the user sign in via the unique login URL from the **SSO configuration** page, or go to **Manage** > **Single sign-on** and select **Test single sign-on with (application name)**.
+2. Have the user sign in via the unique login URL from the **SSO** settings page, or go to **Manage** > **Single sign-on** and select **Test single sign-on with (application name)**.
 
 ### Google
 
@@ -274,7 +271,7 @@ For additional information, see Google's [documentation](https://support.google.
 
 **Step 2: Set up LangSmith SSO configuration**
 
-Follow the instructions under [initial configuration](#initial-configuration) in the `Fill in required information` step, using the `IDP metadata` from the previous step as the metadata XML.
+Follow the instructions under [initial configuration](#initial-configuration) in step 2, using the `IDP metadata` from the previous step as the metadata XML.
 
 **Step 3: Turn on the SAML app in Google**
 
@@ -298,7 +295,7 @@ Follow the instructions under [initial configuration](#initial-configuration) in
 
 **Step 4: Verify the SSO setup**
 
-Have a user with access sign in via the unique login URL from the **SSO configuration** page, or go to the SAML application page in Google and click **TEST SAML LOGIN**.
+Have a user with access sign in via the unique login URL from the **SSO** settings page, or go to the SAML application page in Google and click **TEST SAML LOGIN**.
 
 ### Okta
 
@@ -371,7 +368,7 @@ SCIM works with a custom app integration, though the [Okta Integration Network a
 
 **Step 2: Set up LangSmith SSO configuration**
 
-Follow the instructions under [initial configuration](#initial-configuration) in the **Fill in required information** step, using the metadata URL from the previous step.
+Follow the instructions under [initial configuration](#initial-configuration) in step 2, using the metadata URL from the previous step.
 
 **Step 3: Assign users to LangSmith in Okta**
 
@@ -381,11 +378,11 @@ Follow the instructions under [initial configuration](#initial-configuration) in
 
 **Step 4: Verify the SSO setup**
 
-Have a user with access sign in via the unique login URL from the `SSO configuration` page, or have a user select the application from their Okta dashboard.
+Have a user with access sign in via the unique login URL from the **SSO** settings page, or have a user select the application from their Okta dashboard.
 
 #### SP-initiated SSO
 
-Once service-provider-initiated SSO is configured, users can sign in using a unique login URL. You can find this in the LangSmith UI in **Settings** > **SSO configuration**.
+Once service-provider-initiated SSO is configured, users can sign in using a unique login URL. You can find this in the LangSmith UI in **Settings** > **Login & Provisioning** > **SSO**.
 
 To send a user to a specific page after sign-in, add a URL-encoded `redirect_to` path to the login URL:
 
@@ -401,6 +398,86 @@ Encode the path. An unencoded path that contains its own query string or fragmen
 Most links do not need this parameter. Opening a LangSmith URL directly, then signing in through **SSO** with a work email, already returns the user to that page. Use `redirect_to` when the link must start SAML sign-in itself, such as a link generated by a script or shared with users who all sign in through the same identity provider.
 </Note>
 
+## Set up OIDC SSO for your organization
+
+LangSmith Cloud, including [BYOC](/langsmith/byoc) organizations, supports Single Sign-On with OpenID Connect (OIDC) as an alternative to [SAML SSO](#set-up-saml-sso-for-your-organization). Each organization connects its own OIDC identity provider (IdP), such as Okta or Microsoft Entra ID. An organization can have one OIDC and one SAML configuration at the same time, and can [switch between them](#switch-between-saml-and-oidc-sso) without locking out members.
+
+<Note>
+OIDC SSO is available on request for organizations on the [Enterprise plan](https://www.langchain.com/pricing-langsmith). To request it, contact [LangChain support](https://support.langchain.com).
+</Note>
+
+### Prerequisites
+
+- Your organization must be on an Enterprise plan.
+- Your IdP must support the OIDC authorization code flow with a client secret, publish a discovery document and signing keys, and return each user's email address.
+- Only [`Organization Admins`](/langsmith/organization-workspace-operations#sso-and-authentication) and [`Organization Operators`](/langsmith/rbac#organization-operator) can configure OIDC SSO.
+
+### Request OIDC SSO
+
+Contact [LangChain support](https://support.langchain.com) with your organization ID and every email domain your users sign in with, for example `example.com`. LangSmith accepts an OIDC sign-in only from these domains, matched exactly. Once support enables OIDC SSO, **Settings** > **Login & Provisioning** > **SSO** shows the OIDC form and lists your trusted email domains.
+
+### Initial configuration
+
+1. In your IdP: Register LangSmith as an OIDC web application that uses the authorization code flow, with the scopes `openid` and `email` and the redirect URI for your region:
+   <SaasRegionUrls suffix="/oauth/oidc-sso/callback" />
+   LangSmith does not use a sign-out redirect URI.
+2. In LangSmith: Go to **Settings** > **Login & Provisioning** > **SSO**. If your organization already has SAML SSO, select the **OIDC** tab. Fill in the `Issuer URL`, `Client ID`, and `Client secret` from your IdP. Select the `Default workspace role` and `Default workspaces` for new users, then save.
+   - `Scopes` is optional and defaults to `openid email`. LangSmith always adds `openid`. If the IdP does not return the user's email, sign-in fails.
+   - LangSmith never shows the client secret again. To rotate it, enter a new secret and save.
+   - The issuer URL and client ID cannot be changed after you save. To use a different IdP application, delete the configuration and set up a new one.
+3. Check that the `Redirect URI` shown on the page matches the one registered in your IdP.
+
+### Link existing accounts
+
+**Link to Existing Accounts** controls what happens when someone signs in through OIDC for the first time with an email that already has a LangSmith account, for example from email and password, Google, or SAML SSO:
+
+- **On**: The OIDC sign-in joins that account, and LangSmith notifies the account owner.
+- **Off** (default): The sign-in fails.
+
+Turn it on only if your IdP is the authority for every email in your trusted email domains. Switching from SAML SSO requires it.
+
+### Sign in
+
+Users sign in from the SSO login URL shown on the **SSO** settings page, in the form `https://smith.langchain.com/sso/login/<slug>`. After a user's first OIDC sign-in, they can also select **SSO** on the login page and enter their work email.
+
+### Add users
+
+OIDC SSO supports JIT provisioning, invites, [SSO Groups Sync](#sso-groups-sync-alternative), and [SCIM](#set-up-scim-for-your-organization) in the same way as SAML SSO. Refer to [Manage user access in SSO organizations](/langsmith/jit-invite-sso).
+
+To require SSO for the organization, turn on **SSO-Only Login** after a test user signs in successfully. You must be signed in through SSO to turn it on.
+
+### Switch between SAML and OIDC SSO
+
+An organization on SAML SSO can move to OIDC SSO without members losing access. SAML sign-in keeps working until you delete the SAML configuration.
+
+To switch from SAML to OIDC:
+
+1. [Request OIDC SSO](#request-oidc-sso), then set it up on the **OIDC** tab with **Link to Existing Accounts** on.
+2. Under **Sign-in protocol**, open the OIDC test login URL in a private window and sign in.
+3. Select **OIDC**, then **Switch to OIDC**. The SSO login URL, the **SSO** option on the login page, and new invites now use OIDC.
+4. Ask members to sign in through OIDC once. The **SAML** tab lists members who have not done so yet.
+5. Delete the SAML configuration. LangSmith blocks this while any active member has not signed in through OIDC. Have those members sign in, or remove members who no longer need access.
+
+While both configurations exist, you can switch back to SAML the same way. **Link to Existing Accounts** cannot be turned off while the organization uses OIDC and still has a SAML configuration.
+
+If your organization uses SCIM, switching copies each member's SSO sign-in to the new protocol, so SCIM keeps managing the same users.
+
+### Delete the OIDC configuration
+
+Deleting the configuration removes members' OIDC sign-ins. Members keep their access to the organization and can sign in another way. You cannot delete an SSO configuration while signed in through SSO, or delete the last one while **SSO-Only Login** is on.
+
+### Troubleshoot OIDC sign-in
+
+| Message or symptom | Check |
+| --- | --- |
+| The IdP rejects the redirect | The redirect URI in your IdP matches the one on the **SSO** settings page. |
+| "Your email domain isn't allowed for this organization's SSO." | The user's email domain was in your request to support. |
+| "An account with your email already exists, and this organization's SSO isn't set up to link to it." | **Link to Existing Accounts** is on. |
+| "You aren't an active member of this organization." | JIT provisioning is on, or the user has an invite. |
+| "You are not a member of any authorized groups for this organization." | The user's groups follow the [naming convention](#group-naming-convention), or the SSO Groups Sync [login gate](#behavior) is off. |
+
+For other issues, contact [LangChain support](https://support.langchain.com).
+
 ## Set up SCIM for your organization
 
 <Note>
@@ -414,7 +491,6 @@ SCIM is available for organizations on the [Enterprise plan](https://www.langcha
 
 SCIM is available on Helm chart versions 0.10.41 (application version 0.10.108) and later.
 
-SCIM support is API-only (see instructions below).
 </Note>
 
 SCIM eliminates the need for manual user management and ensures that user access is always up-to-date with your organization's identity system. This allows for:
@@ -431,7 +507,7 @@ SCIM eliminates the need for manual user management and ensures that user access
 - Your organization must be on an Enterprise plan.
 - Your Identity Provider (IdP) must support SCIM 2.0.
 - Only [Organization Admins](/langsmith/administration-overview#organization-roles) can configure SCIM.
-- For cloud customers: [SAML SSO](#set-up-saml-sso-for-your-organization) must be configurable for your organization.
+- For cloud customers: [SAML SSO](#set-up-saml-sso-for-your-organization) or [OIDC SSO](#set-up-oidc-sso-for-your-organization) must be set up before you generate a SCIM token.
 - For self-hosted customers: [OAuth with Client Secret](/langsmith/self-host-sso#with-client-secret-recommended) authentication mode must be enabled.
 - For self-hosted customers, network traffic must be allowed from the identity provider to LangSmith:
   - Microsoft Entra ID supports allowlisting IP ranges or an agent-based solution to provide connectivity.
@@ -549,7 +625,7 @@ Once SCIM is running, LangSmith applies the following rules: Role precedence dec
 When a user belongs to multiple groups for the same workspace, the following precedence applies:
 
 1. **Organization Admin groups** take highest precedence. Users in these groups will be `Admin` in all workspaces.
-2. **Most recently created workspace-specific group** takes precedence over other workspace groups.
+2. For workspace-specific groups, the highest workspace role applies: `Admin`, then [custom roles](/langsmith/rbac#custom-roles) in alphabetical order by name, then `Editor`, then `Viewer`. The order in which groups were created does not affect precedence.
 
 <Note>
 When a group is deleted or a user is removed from a group, their access is updated according to their remaining group membership, following the precedence rules.
@@ -561,9 +637,12 @@ SCIM group membership overrides manually assigned roles or roles assigned via Ju
 
 In cloud only, creating a new user with SCIM triggers an email to the user.
 They must verify their email address by clicking the link in this email.
-The link expires in 24 hours, and can be resent if needed by removing and re-adding the user via SCIM.
+The link expires in 24 hours. To get a new link, the user signs in through SAML SSO and clicks **Resend verification email**.
+Users whose email domain LangChain has set as trusted for your organization do not need to verify. To set up trusted domains, contact [LangChain support](https://support.langchain.com).
 
 ### Step 1 - configure SAML SSO (Cloud only)
+
+If your organization uses [OIDC SSO](#set-up-oidc-sso-for-your-organization) instead, set it up first, then continue to [Step 2](#step-2-disable-jit-provisioning). The NameID requirements below apply to SAML only.
 
 There are two scenarios for [SAML SSO](#set-up-saml-sso-for-your-organization) configuration:
 
@@ -615,7 +694,11 @@ commonEnv:
 In self-hosted environments, the full URL below may look like `https://langsmith.yourdomain.com/api/v1/platform/orgs/current/scim/tokens` (without a subdomain, note the `/api/v1` path prefix) or `https://langsmith.yourdomain.com/subdomain/api/v1/platform/orgs/current/scim/tokens` (with a subdomain) - see the [ingress docs](/langsmith/self-host-ingress) for more details.
 </Note>
 
-Generate a SCIM Bearer Token for your organization. This token will be used by your IdP to authenticate SCIM API requests. Ensure env vars are set appropriately, for example:
+Generate a SCIM Bearer Token for your organization. Your IdP uses this token to authenticate SCIM API requests.
+
+To generate a token in the UI, go to **Settings** > **Login & Provisioning** > **Directory Sync**, click **Generate token**, and enter a description. Copy the token from the dialog: it is not shown again.
+
+To generate a token with the API, set the environment variables appropriately, for example:
 
 ```bash
 curl -X POST $LANGCHAIN_ENDPOINT/v1/platform/orgs/current/scim/tokens \
@@ -804,7 +887,7 @@ Other identity providers have not been tested but may function depending on thei
 ### SSO Groups Sync (alternative)
 
 <Note>
-SSO Groups Sync is available for organizations on the [Enterprise plan](/langsmith/pricing-plans) with SAML SSO (cloud) or OIDC (self-hosted) configured. [Contact our sales team](https://www.langchain.com/contact-sales) to learn more.
+SSO Groups Sync is available for organizations on the [Enterprise plan](/langsmith/pricing-plans) with SAML or OIDC SSO (cloud) or OIDC (self-hosted) configured. [Contact our sales team](https://www.langchain.com/contact-sales) to learn more.
 </Note>
 
 SSO Groups Sync is a simpler alternative to [SCIM](#set-up-scim-for-your-organization) for organizations that can't or prefer not to configure SCIM group push. Instead of pushing groups from your IdP to LangSmith on a separate sync interval, LangSmith reads group memberships directly from a configurable claim in the SSO token at login time and applies org-level and workspace-level role assignments using the same [naming convention](#group-naming-convention) as SCIM.
@@ -826,16 +909,16 @@ Choose **SSO Groups Sync** when IdP admin involvement is minimal and reactive (l
 #### Configuration
 
 1. In your IdP: add the user's group memberships to the SSO token claim (default claim name: `groups`). Group names must follow the [SCIM naming convention](#group-naming-convention).
-2. In LangSmith: go to **Settings** > **SSO Configuration** > **SSO Groups Sync** and configure the following:
+2. In LangSmith: go to **Settings** > **Login & Provisioning** > **SSO** and, under **Groups Sync**, configure the following:
 
    | Setting | Description |
    | --- | --- |
-   | **Enable SSO Groups Sync** | Automatically assign workspace roles based on group memberships in the SSO token. |
+   | **SSO Groups Sync** | Automatically assign workspace roles based on group memberships in the SSO token. |
    | **Groups claim field** (default `groups`) | The claim name in the SSO token that contains group memberships. |
-   | **Sync workspace/role assignments** | Update workspace memberships and roles from group names on each SSO login. |
-   | **Require matching group to sign in** | Block login if the SSO token contains no groups matching the naming convention. |
+   | **Workspace and Role Sync** | Update workspace memberships and roles from group names on each SSO login. |
+   | **Require a Matching Group** | Block login if the SSO token contains no groups matching the naming convention. |
 
-You can also configure these settings via the API by sending a `PATCH` to the SSO settings endpoint:
+For a SAML SSO configuration, you can also configure these settings via the API by sending a `PATCH` to the SSO settings endpoint:
 
 ```bash
 curl -X PATCH $LANGCHAIN_ENDPOINT/api/v1/orgs/current/sso-settings/$SSO_PROVIDER_ID \
@@ -850,13 +933,13 @@ curl -X PATCH $LANGCHAIN_ENDPOINT/api/v1/orgs/current/sso-settings/$SSO_PROVIDER
 ```
 
 <Warning>
-Disabling SSO Groups Sync does not remove existing access. Users provisioned by SSO groups will retain their current access until their next login.
+Turning off SSO Groups Sync does not remove access. Members keep the roles it assigned until an administrator changes them.
 </Warning>
 
 #### Configure your IdP to emit a groups SAML attribute (cloud)
 
 <Note>
-This section applies to **enterprise cloud** only. Self-hosted customers configure groups directly in their OIDC IdP, see [SSO Groups Sync on self-hosted](/langsmith/self-host-sso#sso-groups-sync).
+This section applies to SAML SSO on **enterprise cloud** only. With [OIDC SSO](#set-up-oidc-sso-for-your-organization) on cloud, add the groups claim to your IdP's OIDC application instead. Self-hosted customers configure groups directly in their OIDC IdP, see [SSO Groups Sync on self-hosted](/langsmith/self-host-sso#sso-groups-sync).
 </Note>
 
 To make a user's group memberships visible to LangSmith at login, you need to do two things:
@@ -922,12 +1005,12 @@ Group names follow the [SCIM naming convention](#group-naming-convention). The `
 
 - **Naming convention**: Group names follow the same format as SCIM (e.g., `LS:Organization Admins` for org admins, `LS:Organization User:Production:Editor` for workspace-scoped). See [Group naming convention](#group-naming-convention) for the full format. The separator is configured per-org via [`scim_group_name_separator`](#configure-custom-separator) and is shared with SCIM.
 - **Malformed group names**: Group names that do not match the convention are skipped silently (logged) and do not block login for valid groups. A group that matches a [synced user group](/langsmith/user-groups#sync-user-group-members-from-your-identity-provider) is not skipped. It adds the user to that user group.
-- **Login gate**: When **Require matching group to sign in** is enabled and the SSO token contains zero matching groups, login is blocked. A group that matches a synced user group counts as a matching group.
-- **Precedence**: SSO Groups Sync does not modify SCIM-sourced, manually assigned, or JIT-provisioned memberships. It is fully authoritative for its own assignments and replaces them on each login based on the token's group membership.
+- **Login gate**: When **Require a Matching Group** is enabled and the SSO token contains zero matching groups, login is blocked. A group that matches a synced user group counts as a matching group.
+- **Precedence**: SSO Groups Sync never modifies SCIM-sourced memberships. When a group maps a user to a role, the sync replaces that user's manual, invite, or JIT-provisioned role in the organization or workspace, and manages it from then on. It removes only memberships it created.
 - **Org admin propagation**: If a user receives an org admin role from their groups, they are granted workspace admin in all workspaces (same as SCIM behavior).
 
 #### Things to note
 
-- **Deprovisioning lag**: Unlike SCIM (proactive push), SSO Groups Sync only updates on login. A user removed from a group in the IdP retains their existing workspace access until their next LangSmith login. The **Require matching group to sign in** gate mitigates this by blocking the user entirely on next login.
+- **Deprovisioning lag**: Unlike SCIM (proactive push), SSO Groups Sync only updates on login. A user removed from a group in the IdP retains their existing workspace access until their next LangSmith login. The **Require a Matching Group** gate mitigates this by blocking the user entirely on next login.
 - **No retroactive sync**: Changing role mappings or enabling the feature does not update existing users until they log in again.
 - **Naming convention required**: Customers must name their IdP groups following the SCIM convention. If your IdP groups follow a different naming policy, SCIM with `description`-based mapping (see [Group attributes](#group-attributes)) may be a better fit.
