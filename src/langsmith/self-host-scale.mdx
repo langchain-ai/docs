@@ -167,7 +167,7 @@ commonEnv:
 
 With one partition, traces use the `ingestion` queue. With more, in LangSmith v0.18.0 and later, they use `ingestion-0` to `ingestion-3`, then `ingestion-fur-4`, `ingestion-qg-5`, and so on. Workers also keep reading `ingestion`, so tasks queued before you partitioned still drain.
 
-LangSmith supports up to 250 partitions, but you are unlikely to need that many. As a starting point, move to 4 partitions when ingestion approaches 10,000 runs per second and your Redis Cluster already has more than 4 shards.
+LangSmith supports up to 250 partitions, but you are unlikely to need that many. As a starting point, move to 4 partitions when ingestion approaches 10,000 runs per second and your Redis Cluster has 3 or more shards.
 
 Change the variables in order, because tasks in a partition that no worker reads are never processed:
 
@@ -562,7 +562,7 @@ This configuration requires Helm chart version 0.18.0 or later, with SmithDB as 
 
 You ingest up to 10,000 runs per second and have many users querying traces on the frontend (about 50 users), or scripts that regularly call the `/runs/query` or `/runs/<run-id>` endpoints.
 
-This configuration replaces ClickHouse with [SmithDB](/langsmith/self-host-smithdb), so it applies to a new installation [without ClickHouse](/langsmith/self-host-smithdb-install#install-without-clickhouse). Size SmithDB with the Large tier in [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale#baseline-tiers). Run Redis as an external [Redis cluster](/langsmith/self-host-external-redis#redis-cluster) with 3 shards.
+This configuration replaces ClickHouse with [SmithDB](/langsmith/self-host-smithdb), so it applies to a new installation [without ClickHouse](/langsmith/self-host-smithdb-install#install-without-clickhouse). Size SmithDB with the Large tier in [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale#baseline-tiers). Run Redis as an external [Redis cluster](/langsmith/self-host-external-redis#redis-cluster) with 4 shards, and [partition the ingestion queue](#partition-the-ingestion-queue) into 4 partitions.
 
 Treat the replica counts below as a minimum. The example sets `redisRunsExpirySeconds` to `7200` (2 hours; the chart default is 6 hours). At 10,000 runs per second, Redis then holds about 145 GB of run data, so give the Redis cluster at least 240 GB of memory.
 
@@ -575,6 +575,12 @@ config:
     enabled: true
   settings:
     redisRunsExpirySeconds: "7200"
+
+commonEnv:
+  - name: GO_INGESTION_WORKER_PARTITIONS
+    value: "4"
+  - name: GO_INGESTION_QUEUE_PARTITIONS
+    value: "4"
 
 frontend:
   deployment:
@@ -619,7 +625,7 @@ backend:
 redis:
   external:
     enabled: true
-    existingSecretName: langsmith-redis-secret # Set the connection URL for your external Redis cluster (3 shards, 240+ GB)
+    existingSecretName: langsmith-redis-secret # Set the connection URL for your external Redis cluster (4 shards, 240+ GB)
     cluster:
       enabled: true
 
