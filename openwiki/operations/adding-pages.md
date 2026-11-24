@@ -5,7 +5,7 @@ description: Safely add, move, rename, or retire documentation pages by selectin
 tags: [documentation, operations, navigation, redirects, build-system]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-11-16T08:15:17.266Z
+    at: 2026-11-23T08:07:24.438Z
 sources:
   - id: openwiki-source-18732c72f962c06354cb62db
     resource: repo://.agents/skills/add-docs-page/SKILL.md
@@ -37,7 +37,7 @@ sources:
     resource: repo://scripts/refresh_integration_downloads.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
-generated: { by: "openwiki/0.4.3", at: "2026-11-16T08:15:17.266Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-23T08:07:24.438Z" }
 ---
 
 # Adding, Moving, and Retiring Documentation Pages
@@ -71,7 +71,7 @@ Do not invent examples, field names, product behavior, or policy details. Put a 
 
 | Source family | Authored location | Emitted routes and navigation consequence |
 | --- | --- | --- |
-| Shared OSS | `src/oss/`, excluding language-owned and unversioned product directories | The builder emits `/oss/python/...` and/or `/oss/javascript/...`. A page listed in one language navigation builds only there; a page listed in both or neither builds both. Use one source file with `:::python` and `:::js` sections. |
+| Shared OSS | `src/oss/`, excluding language-owned and unversioned product directories | The builder emits `/oss/python/...` and/or `/oss/javascript/...`. A page listed in one language navigation builds only there; a page listed in both, or in neither, builds both. Use one source file with `:::python` and `:::js` sections. |
 | Language-owned OSS | `src/oss/python/` or `src/oss/javascript/` | One matching language route; put it in that language's navigation branch. |
 | OpenWiki and Deep Agents Code | `src/oss/openwiki/` or `src/oss/deepagents/code/` | One unversioned `/oss/openwiki/...` or `/oss/deepagents/code/...` route. These are not duplicated. |
 | Ordinary LangSmith | `src/langsmith/` | One unversioned `/langsmith/...` route. Place it in the lifecycle or product menu that owns the reader journey. |

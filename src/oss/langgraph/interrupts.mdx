@@ -87,12 +87,12 @@ When you call @[`interrupt`], here's what happens:
 After an interrupt pauses execution, you resume the graph by invoking it again with a `Command` that contains the resume value. The resume value is passed back to the `interrupt` call, allowing the node to continue execution with the external input.
 
 :::python
-The recommended way to drive a graph that may interrupt is [event streaming](/oss/langgraph/event-streaming) — it surfaces interrupts via `stream.interrupts` and `stream.interrupted`, and exposes the final state through `stream.output`.
+With `version="v2"`, `graph.invoke(...)` returns a @[`GraphOutput`]. Its `interrupts` field holds the payloads passed to `interrupt()`, and its `value` field holds the graph state.
 
 <LanggraphInterruptsResumeV2Py />
 
 <Note>
-The default `graph.invoke(...)` API still works and surfaces interrupts under `result["__interrupt__"]`. Use it when you don't need streamed projections; otherwise prefer `graph.stream_events(..., version="v3")`.
+Without `version="v2"`, `graph.invoke(...)` surfaces interrupts under `result["__interrupt__"]`.
 </Note>
 
 **Key points about resuming:**
@@ -1371,6 +1371,7 @@ As an example, you might have an API call to update a record inside of a node. I
 * ✅ Use idempotent operations before @[`interrupt`]
 * ✅ Place side effects after @[`interrupt`] calls
 * ✅ Separate side effects into separate nodes when possible
+* ✅ After a long interrupt, re-read external state (price, inventory, policy) before the mutating side effect. Do not assume the pre-pause world is still valid.
 
 In the post-approval examples below, side effects run only when approval succeeds. If a node fails after committing a side effect but before completing, retrying the node can repeat the effect. Use idempotent operations or deduplicate writes in the external system.
 
@@ -1542,6 +1543,14 @@ const nodeA: GraphNode<typeof State> = async (state) => {
 ```
 </CodeGroup>
 :::
+
+### When approval lives outside the graph
+
+Some workflows use an external system for approval and job execution. In that case, treat the resume value as acknowledgement that the operator returned, not as the approval decision itself.
+
+- Submit the governed job in one node and checkpoint its identifier before a separate interrupt.
+- On resume, observe that job's status in the external system. If approval is still pending, call @[`interrupt`] again instead of submitting a new job.
+- Keep authorization and request edits at their own boundaries. A changed request needs a new governed job, not a resume payload that rewrites the original.
 
 ## Using with subgraphs called as functions
 
