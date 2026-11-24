@@ -2320,6 +2320,29 @@ router = ModelRouterMiddleware(
 
 agent = create_agent("openai:gpt-6-luna", middleware=[router])
 ```
+
+<Accordion title="Configuration options">
+
+<ParamField body="choices" type="Mapping[str, ModelChoice]" required>
+    Named model choices. Each key is the route label the decision model selects, and each value is a `ModelChoice` with two fields:
+
+    - `model` (`str | BaseChatModel`): A model identifier string accepted by @[`init_chat_model`][init_chat_model(model)] or a `BaseChatModel` instance. An instance is used as is.
+    - `criteria`: A description of the tasks the model suits. Can be a string or any other JSON-compatible value.
+
+    Must contain at least one choice.
+</ParamField>
+
+<ParamField body="instructions" type="str | dict | list" required>
+    Instructions the decision model follows when selecting a route.
+</ParamField>
+
+<ParamField body="classifier" type="BaseDecisionModel" required>
+    Decision model that selects a route. If it raises an error, the error propagates and the run ends instead of falling back to another model.
+</ParamField>
+
+</Accordion>
+
+The router routes on the latest human message and raises a `ValueError` if the agent state has none.
 :::
 
 :::python
@@ -2355,6 +2378,26 @@ agent = create_agent(
     ],
 )
 ```
+
+<Accordion title="Configuration options">
+
+<ParamField body="tools" type="list[str | BaseTool]" required>
+    Tool names or `BaseTool` instances to classify before they run. Tools not listed run without classification. Must contain at least one tool.
+</ParamField>
+
+<ParamField body="classifier" type="BaseDecisionModel" required>
+    Decision model that classifies each call. It receives the proposed tool call (`id`, `name`, and `args`), the tool description, and up to the 30 most recent messages. If it raises an error, the error propagates and the tool does not run.
+</ParamField>
+
+<ParamField body="instructions" type="str">
+    Classification instructions sent to the decision model. Uses built-in instructions if not specified. The built-in instructions treat destructive actions, credential access, external sharing, and actions the user did not clearly authorize as risky.
+</ParamField>
+
+<ParamField body="criteria" type="NoulCriteria | None" default="None">
+    Descriptions of the blocked outcome (`true`) and the allowed outcome (`false`). If not specified, no criteria are sent and the decision model relies on `instructions`.
+</ParamField>
+
+</Accordion>
 :::
 
 
@@ -2726,7 +2769,7 @@ agent = create_agent(
         FilesystemMiddleware(
             backend=CompositeBackend(
                 default=StateBackend(),
-                routes={"/memories/": StoreBackend()}
+                routes={"/memories/": StoreBackend(namespace=lambda rt: (rt.server_info.user.identity,))}
             ),
             custom_tool_descriptions={
                 "ls": "Use the ls tool when...",

@@ -1,8 +1,11 @@
 ---
 type: documentation pipeline
-title: Markdown Preprocessing
-description: Build-time Markdown and MDX transformations for scoped API references, LangSmith CTA attribution, validated language branches, and route-aware output. Documents the ordering, fence failure semantics, and strict source cross-reference validation that protect generated documentation.
+title: Documentation Preprocessing
+description: Build-time Markdown and MDX transformations resolve scoped API references, attribute LangSmith CTAs, render language branches, and rewrite language-aware routes before Mintlify consumes the output. Covers ordering, validation, failure behavior, and focused regression checks.
 tags: [build, markdown, preprocessing, cross-references, language-versioning, api-reference]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-11-23T08:07:24.438Z
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
@@ -28,17 +31,14 @@ sources:
     resource: repo://tests/unit_tests/test_handle_auto_links.py
   - id: openwiki-source-5255204fc494ae04cd6ba685
     resource: repo://tests/unit_tests/test_utm_links.py
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-11-03T08:13:57.434Z
-generated: { by: "openwiki/0.4.3", at: "2026-11-03T08:13:57.434Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-23T08:07:24.438Z" }
 ---
 
-# Markdown Preprocessing
+# Documentation Preprocessing
 
-`DocumentationBuilder` transforms source Markdown and MDX while writing build artifacts; it does not edit files under `src/`. The pipeline allows a shared page to yield Python and JavaScript variants while applying source-level API links and CTA attribution before route-aware output rewriting.
+`DocumentationBuilder` transforms source Markdown and MDX while writing build artifacts; it does not edit files under `src/`. The pipeline lets shared pages produce Python and JavaScript variants while applying source-level API links and CTA attribution before route-aware output rewriting.
 
-For a regular Markdown file, `preprocess_markdown()` resolves scoped cross-references, decorates eligible LangSmith CTA links, validates and renders conditional blocks, then returns content to the builder. The builder scopes snippet imports, rewrites routes, appends an eligible source footer, and writes the artifact.
+For a regular Markdown or MDX file, `preprocess_markdown()` resolves scoped cross-references, decorates eligible LangSmith CTA links, validates conditional fences, and renders supported language blocks. The builder then scopes snippet imports, rewrites routes, appends an eligible source footer, converts `.md` output to `.mdx`, and writes the artifact.
 
 ```mermaid
 flowchart TD
@@ -51,11 +51,10 @@ flowchart TD
     Snippets --> Oss["Rewrite OSS routes"]
     Oss --> Managed["Rewrite Managed Deep Agents routes"]
     Managed --> Footer["Append eligible footer"]
-    Footer --> Output["Page artifact"]
+    Footer --> Output["Write page artifact"]
     Validate --> Failure["Raise ValueError for broken fences"]
 ```
-
-The diagram shows the regular-page ordering; validation occurs immediately before final conditional rendering and stops the build path when the conditional structure is broken.
+Figure: regular-file preprocessing and output-rewrite order; broken conditional structure stops the path during validation.
 
 ## Entry points and target selection
 
@@ -63,7 +62,7 @@ The diagram shows the regular-page ordering; validation occurs immediately befor
 
 The preprocessing target keys are `python` and `js`; `DocumentationBuilder.language_url_names` turns them into the route segments `python` and `javascript`. If `preprocess_markdown()` receives no target, it uses `TARGET_LANGUAGE`, defaulting to `python`; its `default_scope` likewise defaults to that target. Conditional rendering rejects any other target with `ValueError`.
 
-Build routing selects those targets deliberately:
+Build routing selects targets deliberately:
 
 - A shared `oss/` Markdown page is emitted for both Python and JavaScript unless `docs.json` navigation lists its route in exactly one language; then it is emitted only for that language. Files below `oss/python/` or `oss/javascript/` are selected only for their matching target.
 - `oss/deepagents/code` and `oss/openwiki` are emitted once with Python selection and retain language-agnostic routes. Ordinary LangSmith Markdown uses Python selection; Managed Deep Agents pages emit Python and JavaScript routes.
@@ -79,7 +78,7 @@ Authors can write `@[link_name]`, `@[title][link_name]`, and `@[`link_name`]`. `
 
 Resolution starts in `default_scope`. A `:::python` or `:::js` line changes the active scope; a bare closing `:::` resets it to the default scope. Regular backtick and tilde code fences prevent both reference replacement and scope changes within their content. An unclosed regular fence protects the remaining input from reference replacement.
 
-`SCOPE_LINK_MAPS` is assembled by scope from host-and-scope `LINK_MAPS` entries: relative targets are joined to the entry host, while absolute targets remain absolute. The maps deliberately allow one key to resolve differently in Python and JavaScript and include compatibility aliases where shared prose needs the other language's API spelling. Python includes MCPAdapter, tool conversion, `MultiServerMCPClient`, MCP loading, interceptor, callback, and connection/session references; JavaScript includes `MCPAdapter` and `MCPAdapter.listTools`. The special runtime `global` scope logs an error and falls back to Python.
+`SCOPE_LINK_MAPS` is assembled by scope from host-and-scope `LINK_MAPS` entries: relative targets are joined to the entry host, while absolute targets remain absolute. The maps deliberately allow one key to resolve differently in Python and JavaScript and include compatibility aliases where shared prose needs the other language’s API spelling. Python includes MCPAdapter, tool conversion, `MultiServerMCPClient`, MCP loading, interceptor, callback, and connection/session references; JavaScript includes `MCPAdapter` and `MCPAdapter.listTools`. The special runtime `global` scope logs an error and falls back to Python.
 
 A missing key is deliberately non-fatal during a build: preprocessing logs it at info level with file, line, key, and scope, then leaves the authored marker literal. Add or correct mappings in `pipeline/preprocessors/link_map.py`, then run the strict source-validation gate described below. See [Cross-Reference Links](/openwiki/operations/cross-references.md).
 
@@ -93,7 +92,7 @@ Functional routes such as settings, hub, projects, public traces, and Studio are
 
 Only `:::python ... :::` and `:::js ... :::` are conditional language branches. They are processed after reference resolution and CTA decoration: a target-matching block emits its content without the fences and the other supported block is removed. The implementation deliberately leaves a complete block with an unsupported label unchanged; an unsupported label is **not** a language selector.
 
-Before that regular-expression rendering pass, `_validate_conditional_fences()` scans the complete input and rejects malformed structure. It raises `ValueError` headed `Broken conditional fences:` when a block opens inside another open block, a closer has no open block, or an open block is never closed; diagnostics identify the relevant line and, for nesting, the earlier opening line. Thus an unclosed `:::python` block now fails preprocessing rather than being silently retained. The validator uses the same permissive closer shape as the renderer: text following `:::` is accepted, and a compact `::::::js` is treated as a close followed by another opening marker.
+Before the rendering pass, `_validate_conditional_fences()` scans the complete input and rejects malformed structure. It raises `ValueError` headed `Broken conditional fences:` when a block opens inside another open block, a closer has no open block, or an open block is never closed; diagnostics identify the relevant line and, for nesting, the earlier opening line. The validator uses the same permissive closer shape as the renderer: text following `:::` is accepted, and a compact `::::::js` is treated as a close followed by another opening marker.
 
 Escaped `\:::` markers are ignored by validation and rendering, then unescaped in output so syntax examples can remain literal. The validator and renderer are whole-input mechanisms, not normal-code-fence-aware parsers: an apparent conditional marker inside a backtick or tilde code example can participate in validation or rendering. Escape literal markers in examples that must not be interpreted. See [Conditional Rendering Tests](/openwiki/testing/conditional-rendering.md).
 
@@ -114,7 +113,7 @@ After source preprocessing, the regular-file path applies these transformations 
 1. **Snippet import scoping.** An MDX import from `/snippets/...md` or `.mdx` becomes `/snippets/{python|javascript}/...` for a language build. Imports already prefixed with `python/` or `javascript/` remain unchanged.
 2. **OSS route rewriting.** Markdown URLs and HTML `href` values beginning `/oss/` receive the selected language segment. Paths already prefixed with a language, paths containing `images`, and the language-agnostic `/oss/deepagents/code` and `/oss/openwiki` paths remain unchanged.
 3. **Managed Deep Agents routes.** Bare Markdown or HTML `/langsmith/managed-deep-agents...` URLs become `/langsmith/{language}/managed-deep-agents...`. Already language-qualified URLs do not match the bare-route pattern.
-4. **Source footer.** `_add_suggested_edits_link()` appends a Mintlify callout with a documentation/MCP connection link and GitHub edit and issue links only for files below `src/`. It excludes the root `index.mdx` and paths with a `snippets` path segment.
+4. **Source footer.** `_add_suggested_edits_link()` appends a Mintlify callout with a documentation/MCP connection link and GitHub edit and issue links only for files below `src/`. It excludes the root `index.mdx` and files whose path contains the `snippets` component.
 
 Snippet Markdown is processed separately for each language, with preprocessing plus OSS and Managed Deep Agents rewriting, then written below `build/snippets/{python|javascript}/`. A Python-default base copy is also written for unversioned imports. This path does not add the source footer.
 
@@ -129,6 +128,6 @@ When extending the pipeline, preserve its order. Scope-sensitive references must
 
 ## Focused regression coverage
 
-`tests/unit_tests/test_conditional_fences.py` verifies successful rendering of balanced blocks, the accepted compact closer forms, ignored escaped markers, and line-specific `ValueError` failures for nested, stray, malformed, and unclosed conditional fences. `tests/unit_tests/test_handle_auto_links.py` covers replacement outside regular fences, preservation inside backtick, tilde, extended, indented, and unclosed fences, conditional-looking lines inside code, and escaping. `tests/unit_tests/test_utm_links.py` covers CTA allowlisting, path-derived attribution, query and title preservation, exclusions, and fence skipping.
+`tests/unit_tests/test_conditional_fences.py` verifies successful rendering of balanced blocks, accepted compact closer forms, ignored escaped markers, and line-specific `ValueError` failures for nested, stray, malformed, and unclosed conditional fences. `tests/unit_tests/test_handle_auto_links.py` covers replacement outside regular fences, preservation inside backtick, tilde, extended, indented, and unclosed fences, conditional-looking lines inside code, and escaping. `tests/unit_tests/test_utm_links.py` covers CTA allowlisting, path-derived attribution, query and title preservation, exclusions, and fence skipping.
 
 `tests/unit_tests/test_check_cross_refs.py` covers scope-aware validation, the both-scope requirement for shared OSS content, titled and backticked references, and exclusions. Builder tests cover language route insertion and exemptions, scoped snippet copies, and Managed Deep Agents variants. See [Test Overview](/openwiki/testing/test-overview.md) for the wider suite.

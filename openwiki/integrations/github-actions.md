@@ -1,167 +1,158 @@
 ---
 type: CI automation guide
 title: GitHub Actions Integration
-description: Maps the repository’s active GitHub Actions validation, scheduled maintenance, preview-adjacent, and pull-request integrations. Explains event boundaries, permissions, secrets, generated outputs, review-PR lifecycle, and failure behavior.
-tags: [github-actions, ci, automation, testing, security]
+description: Describes the repository’s reusable CI, documentation previews, publication, and integration-submission automation. Explains triggers, permissions, untrusted-input boundaries, generated branches, and review-PR lifecycles.
+tags: [github-actions, ci, automation, documentation, security]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-11-16T08:15:17.266Z
+    at: 2026-11-23T08:07:24.438Z
 sources:
-  - id: openwiki-source-3638ff2c170b760df159d81b
-    resource: repo://.github/actions/uv_setup/action.yml
   - id: openwiki-source-1307a98427393d045f958ba3
     resource: repo://.github/CODEOWNERS
+  - id: openwiki-source-1e075575622e1a77a3dc46e6
+    resource: repo://.github/pull_request_template.md
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
   - id: openwiki-source-f35e7c44cc1805709393a581
     resource: repo://.github/workflows/_lint.yml
   - id: openwiki-source-4d9cccca7700db7220ec055e
     resource: repo://.github/workflows/_test.yml
-  - id: openwiki-source-5e9ca8e4c3cab7d91998bc9e
-    resource: repo://.github/workflows/changelog-weekly.yml
+  - id: openwiki-source-1bf310cf2d4f8606635de732
+    resource: repo://.github/workflows/check-external-doc-links.yml
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
-  - id: openwiki-source-6d4b4e707b8d60b6ccfa3425
-    resource: repo://.github/workflows/openwiki-update.yml
-  - id: openwiki-source-5153f86e64d6ee0b305f72b3
-    resource: repo://.github/workflows/refresh-langsmith-openapi.yml
-  - id: openwiki-source-192dd6007b37a6bb76dc7586
-    resource: repo://.github/workflows/sync-linear-issue-from-pr.yml
-  - id: openwiki-source-97746d8f3662d803e625550e
-    resource: repo://.github/workflows/test-code-samples.yml
-  - id: openwiki-source-eab62bc712c4650a5ee3e7d3
-    resource: repo://scripts/sync_linear_issue_from_pr.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-16T08:15:17.266Z" }
+  - id: openwiki-source-7346220ed051a41471043c07
+    resource: repo://.github/workflows/create-preview-branch.yml
+  - id: openwiki-source-1ca506cf29eca9b87a087220
+    resource: repo://.github/workflows/external-integration-pr-comment.yml
+  - id: openwiki-source-1db901655f02af312133801d
+    resource: repo://.github/workflows/integration-submission.yml
+  - id: openwiki-source-9db08afb765c73035414b518
+    resource: repo://.github/workflows/lint-prose.yml
+  - id: openwiki-source-f2608d0d515da097485b6ec5
+    resource: repo://.github/workflows/publish.yml
+generated: { by: "openwiki/0.4.3", at: "2026-11-23T08:07:24.438Z" }
 ---
 
 ## Operating model
 
-The active automation is split between read-only validation, credentialed sample execution, scheduled generators, and a small number of writers that propose changes through pull requests. The repository default owner for `.github/`, scripts, pipeline tooling, and otherwise unowned files is `@lnhsingh`; integration listings and OSS code samples are assigned to `@npentrel`, while the more specific rules in `.github/CODEOWNERS` win because GitHub applies the last matching rule. There is no `.github/OWNERS` file in this checkout, so ownership claims should be based on `CODEOWNERS` and branch-protection configuration rather than an undocumented owner map.
+GitHub Actions separates read-only validation from jobs that can write branches, pull requests, comments, or issues. The main entrypoints are:
 
-The local `.github/actions/uv_setup` composite action is the common Python bootstrap. It accepts a `MAJOR.MINOR` Python version, pins `astral-sh/setup-uv@v7` to uv `0.9.26`, and sets `ignore-nothing-to-cache: true` so a job that exits before `uv sync` or `uv run` does not fail during cache cleanup. Reuse it instead of selecting uv independently in a workflow.
+- `ci.yml` for repository tests, lint, documentation validation, and generated-file checks.
+- `create-preview-branch.yml` for building documentation and publishing a deterministic preview branch for pull requests.
+- `publish.yml` for manually or automatically publishing `main` to the `prod` branch.
+- `integration-submission.yml` for maintainer-authorized, issue-driven integration listing proposals.
+- `external-integration-pr-comment.yml` for processing external integration PRs without executing their code.
 
-```mermaid
-flowchart TD
-  Change["Pull request or main push"] --> Core["CI reusable tests lint links"]
-  Core --> Checks["Read-only repository checks"]
-  Samples["Internal PR or full sample run"] --> Matrix["OSS and LangSmith legs"]
-  Matrix --> Result["Sample result"]
-  Schedule["Scheduled maintenance"] --> Writers["OpenAPI changelog OpenWiki"]
-  Writers --> Proposal["Bounded review PR"]
-  Release["Labeled same-repository release-watch PR"] --> Linear["Guarded Linear state sync"]
-  Fork["Fork pull request"] --> Skip["No credentialed sample execution"]
-```
+`.github/CODEOWNERS` gives the default repository and workflow owner role to `@lnhsingh`, assigns integration listing areas to `@npentrel`, and assigns product areas through later, more-specific rules. GitHub applies the last matching rule; branch protection is expected to require Code Owner review. The pull-request template asks contributors to explain the change, identify review notes and related issues, and check documentation, examples, prose-lint, link, and navigation requirements.
 
-*The map distinguishes validation, credentialed sample execution, scheduled writers, and the guarded downstream Linear synchronization path.*
+## Core CI and reusable workflows
 
-## Core CI
-
-`ci.yml` runs on pull requests, pushes to `main`, and manual dispatch. Its concurrency group is the workflow plus ref, and a newer push cancels an obsolete run. The workflow calls reusable test, lint, and documentation-link workflows, then checks merge-conflict markers, source cross-references, external documentation URL schemes, and generated-file drift. The generated-file job regenerates `src/oss/python/integrations/providers/overview.mdx` and fails if it differs, except for the package-download bot update and the `bypass-auto-check` label.
-
-| Gate | Contract |
-| --- | --- |
-| Tests | `_test.yml` receives `python-version` and `working-directory`, installs the `test` dependency group, runs `make test`, and additionally runs `make test_integration` when the directory is `./libs/server`. |
-| Lint | `_lint.yml` receives the same inputs, installs the test group, runs `make lint`, and sets `RUFF_OUTPUT_FORMAT: github` for annotations. |
-| Documentation | `_check-links.yml` has `contents: read`, a 20-minute timeout, Node 22, a pinned Mintlify CLI cache, anchor-link validation, MDX validation, and OpenAPI validation. |
-| Repository checks | `ci.yml` uses read-only permissions for merge-marker, cross-reference, external-URL, and generated-file checks. |
-
-The reusable workflows are contracts, not independent triggers: callers choose the Python version and working directory. The current CI caller uses Python 3.13. Run the focused equivalents locally after a documentation or integration-listing change:
-
-```bash
-make test
-make lint
-make check-cross-refs
-make broken-links-with-anchors
-make check-openapi
-uv run python scripts/refresh_integration_downloads.py --check-docs-urls
-uv run python pipeline/tools/partner_pkg_table.py
-```
-
-Do not hand-edit the generated provider overview; change its generator or package metadata and regenerate it.
-
-## Code-sample matrix and trust boundary
-
-`test-code-samples.yml` runs for relevant internal pull requests, manual dispatch, and at 00:00 UTC on the first day of each month. Fork pull requests are skipped because sample execution requires provider secrets. The matrix has separate `oss` and `langsmith` legs with `fail-fast: false`: OSS owns `langchain`, `langgraph`, and `deepagents`, while LangSmith owns `langsmith`. The path-resolution step fails if a product directory under `src/code-samples/` belongs to no leg, preventing silently untested samples.
-
-Pull-request runs compute the merge-base and pass changed `.py`, `.ts`, `.java`, `.kt`, `.go`, and `.sh` files to `make test-code-samples`; manual and scheduled runs test all samples in each leg. Jobs use PostgreSQL with pgvector, Python 3.13 and pinned uv, Node 22, Java 21/JBang, and Go. Pull-request jobs have a 60-minute timeout; full runs have 150 minutes.
+`ci.yml` runs on pushes to `main`, all pull requests, and manual dispatch. Its concurrency group is keyed by workflow and ref, and a newer run cancels an in-progress older run. The current caller uses Python 3.13 and delegates to reusable workflows:
 
 ```mermaid
 flowchart TD
-  Event["Sample workflow event"] --> Fork{"Fork pull request"}
-  Fork -->|"yes"| Skip["Skip because secrets are unavailable"]
-  Fork -->|"no"| Scope{"Manual or scheduled"}
-  Scope -->|"yes"| All["Run all samples in each product leg"]
-  Scope -->|"no"| Diff["Run changed eligible files"]
-  All --> OSS{"Full OSS run"}
-  OSS -->|"yes and gates pass"| Refresh["Regenerate trace links and snippets"]
-  OSS -->|"no"| Result["Final step reports sample failures"]
-  Diff --> Result
-  Refresh --> PR["Open or update standing review PR"]
-  PR --> Result
+  Event["Push to main pull request or manual dispatch"] --> CI["ci.yml"]
+  CI --> Test["_test.yml"]
+  CI --> Lint["_lint.yml"]
+  CI --> Docs["_check-links.yml"]
+  CI --> Repo["Repository checks"]
+  Test --> TestResult["make test"]
+  Lint --> LintResult["make lint"]
+  Docs --> DocsResult["Links MDX and OpenAPI"]
+  Repo --> Merge["Merge markers"]
+  Repo --> Cross["Cross references"]
+  Repo --> URLs["External docs URL schemes"]
+  Repo --> Generated["Generated overview drift"]
 ```
 
-*Only a full manual or scheduled OSS run can refresh trace artifacts; the final step still fails when the sample step failed.*
+*The CI workflow fans out into reusable validation contracts and read-only repository checks.*
 
-The sample test step uses `continue-on-error: true` so a bounded trace refresh can finish. Trace regeneration requires the OSS leg, a full run, a non-cancelled test, fewer than 20 sample failures, and changed traces. The writer is limited to `src/code-samples/trace-links.json` and `src/snippets/code-samples`, appends to `chore/refresh-code-sample-traces` when its PR is open, or creates that PR from `main`; it never merges. Afterward the final step fails whenever the sample step outcome is failure.
+The reusable contracts accept caller-supplied `python-version` and `working-directory`, check out shallowly, and install the `test` dependency group with uv. `_test.yml` runs `make test` and additionally runs `make test_integration` when the working directory is `./libs/server`; `_lint.yml` runs `make lint` with `RUFF_OUTPUT_FORMAT: github`. Each has a 20-minute job timeout.
 
-## Scheduled writers
+`_check-links.yml` has `contents: read`, a 20-minute timeout, Node 22, Mintlify CLI version `4.2.1181`, and runs `make broken-links-with-anchors`, `make check-mdx`, and `make check-openapi`. The repository checks in `ci.yml` also use read-only contents permissions. They reject unresolved conflict markers, broken cross-references, invalid `docs_url` schemes, and manual changes to generated `src/oss/python/integrations/providers/overview.mdx`; the generated file must instead be changed through `pipeline/tools/partner_pkg_table.py` or package metadata.
 
-### Weekly changelog
+Documentation-specific pull-request checks complement `ci.yml`: `lint-prose.yml` finds changed Markdown and MDX files under `src/` from the merge base and runs the pinned Vale version through `make lint_prose`; `check-external-doc-links.yml` blocks links to retired documentation sites. These jobs check out with read-only permissions and do not execute pull-request code with write credentials.
 
-`changelog-weekly.yml` runs Mondays at 13:00 UTC or by manual dispatch. Its `changelog-weekly` concurrency group does not cancel an active run. Manual `since` and `until` values must be supplied together and match `YYYY-MM-DD`; `dry_run` writes only public candidate entries to the run summary. Non-dry runs use a GitHub App token, generate `changelog/weekly-<UTC-date>`, and create or update a review PR only when tracked changelog state changes.
+## Previews and publication
 
-Before force-pushing a same-day branch, it compares commits against `main` and refuses to overwrite commits whose author is not `github-actions[bot]`. The pipeline uses read-only LangChain Plus access, gateway-backed model credentials, optional read-only Datadog keys, and an encrypted changelog-state key. Its detailed report is not exposed in the public summary or PR body; the PR body contains counts and the Vale tail. A Vale failure is captured with `continue-on-error`, so it does not prevent the proposal.
+`create-preview-branch.yml` handles `opened`, `synchronize`, `reopened`, and `closed` pull-request events, plus manual dispatch. The workflow defaults to `contents: read` and `actions: read`; only the branch-creating and cleanup jobs receive `contents: write`, and only the comment job receives `pull-requests: write`. Runs share a ref-based concurrency group and cancel superseded runs.
 
-### LangSmith OpenAPI refresh
+Fork pull requests do not create preview branches because the creator job requires the pull-request head repository to equal the current repository. For an eligible branch, the workflow validates the branch name, builds with Python 3.13, derives `preview-<slug>-<sha256-prefix>` from the source branch, and updates that branch with build artifacts using `--force-with-lease`. Closing a pull request deletes the deterministic branch and matching legacy preview branches, but refuses to delete any branch that does not begin with `preview-`.
 
-`refresh-langsmith-openapi.yml` runs daily at 10:00 UTC or manually, with a 15-minute timeout and write permission for contents and pull requests. It mints a GitHub App token before checkout because App-created PRs allow downstream pull-request workflows to run without manual approval. `scripts/process_langsmith_openapi.py --write` fetches and filters the public specification into `src/langsmith/langsmith-platform-openapi.json`.
-
-The workflow preserves the generated candidate while it checks out `chore/refresh-langsmith-openapi`. It appends to an existing open PR, exits successfully when the specification has no diff, or force-pushes an unreferenced standing branch and opens a PR. It never merges.
-
-### OpenWiki maintenance
-
-`openwiki-update.yml` runs Mondays at 08:00 UTC or manually. It checks out full history because `openwiki code --update` compares against the commit it last documented; shallow history would hide that baseline. It installs `openwiki@0.4.3` with Mermaid and jsdom validation dependencies, runs through the configured gateway, and may trace the run to LangSmith.
-
-The job mints a GitHub App token and uses `peter-evans/create-pull-request` on branch `openwiki/update`. Its `add-paths` allowlist is limited to `openwiki`, `AGENTS.md`, and `.github/workflows/openwiki-update.yml`, so the maintenance writer proposes a bounded documentation change instead of merging arbitrary generated output.
+After a successful branch build, the comment job requires `MINTLIFY_API_KEY` and `MINTLIFY_PROJECT_ID`, calls Mintlify’s preview API, and replaces earlier bot preview comments. It links at most five changed routable Markdown/MDX pages, excluding code samples and snippets. Missing secrets, a missing branch output, or an invalid API response fails the comment job rather than silently claiming that a preview exists.
 
 ```mermaid
-sequenceDiagram
-  participant Trigger as Schedule or manual dispatch
-  participant Job as Maintenance workflow
-  participant App as GitHub App
-  participant PR as Review pull request
-  Trigger->>Job: Start generator
-  Job->>Job: Generate candidate
-  Job->>App: Mint write token
-  App-->>Job: Token for branch and PR
-  Job->>PR: Create or update bounded proposal
-  PR-->>Job: Human review remains required
+flowchart TD
+  PR["Pull request event"] --> Closed{"Closed"}
+  Closed -->|"yes"| Cleanup["Delete preview and legacy branches"]
+  Closed -->|"no"| SameRepo{"Head repository is this repository"}
+  SameRepo -->|"no"| ForkSkip["Skip write-capable preview job"]
+  SameRepo -->|"yes"| Build["Build documentation"]
+  Build --> Branch["Create or update deterministic preview branch"]
+  Branch --> Secrets{"Mintlify secrets present"}
+  Secrets -->|"no"| PreviewFail["Fail preview comment job"]
+  Secrets -->|"yes"| Deploy["Trigger Mintlify preview"]
+  Deploy --> Comment["Replace bot PR comment with preview links"]
 ```
 
-*Scheduled generators produce reviewable proposals; they do not merge their own output.*
+*Preview creation is write-capable only for same-repository pull requests; deployment and comments are separate, explicitly scoped jobs.*
 
-## Pull-request integration and failure behavior
+`publish.yml` runs on pushes to `main` and manual dispatch. It has `contents: write`, installs the test dependency group with Python 3.13 and the shared uv setup, runs `make build`, verifies that `build/` exists, copies it under `public/build`, and uses `peaceiris/actions-gh-pages@v4` with `GITHUB_TOKEN` to force-update the `prod` branch. The workflow does not describe a separate hosting deployment; its observable publication boundary is the generated content under `/build` on `prod`.
 
-**Linear state synchronization** is active in `sync-linear-issue-from-pr.yml`. It observes opened, reopened, draft, ready-for-review, closed, and label events, but runs only for same-repository pull requests labeled `release-watch-agent`; the label event guard handles the race where the label is added after opening. It has read-only GitHub permissions. An unset `LINEAR_API_KEY` is a successful skip, and fork pull requests cannot receive the secret.
+## Privileged integration submission
 
-The script accepts an explicit `Closes DOC-N` convention or the canonical linked form, then maps draft, ready, merged, and closed-unmerged pull requests to In Progress, In Review, Done, and Canceled. It prefers those state names and falls back to Linear workflow-state types. Missing links, already-correct issues, and dry runs are reported as skips. A missing target workflow state is different: it causes the script to return failure after reporting the result, so configuration drift is visible rather than silently ignored.
+The integration submission workflow is intentionally not triggered by an issue being opened. It accepts manual dispatch with an issue number, or an issue `labeled` event only when the label added is `integration-run`. Its concurrency group is per issue and does not cancel an active run. The workflow grants `contents: write`, `pull-requests: write`, and `issues: write` at the workflow level, so authorization and input handling are critical.
 
-The repository also has `create-preview-branch.yml`, `publish.yml`, and other narrowly scoped checks in `.github/workflows/`; they are separate from the seeded workflows described here. Do not infer an active integration-submission or AI documentation-review path from older documentation: neither `integration-submission.yml` nor `docs-ai-review.yml` exists in this checkout.
+```mermaid
+flowchart TD
+  Start["Issue labeled integration-run or manual dispatch"] --> Authorize{"Actor has admin maintain or write"}
+  Authorize -->|"no"| Remove["Remove label and comment; skip"]
+  Authorize -->|"yes"| ReadIssue["Read issue metadata and body"]
+  ReadIssue --> Already{"integration-automation already present"}
+  Already -->|"yes"| Skip["Skip duplicate run"]
+  Already -->|"no"| Parse["Parse structured issue fields"]
+  Parse -->|"invalid"| ParseComment["Comment errors; wait for label retry"]
+  Parse -->|"valid"| Mark["Mark integration-automation and comment"]
+  Mark --> Agent["Deep Agents edits working tree"]
+  Agent --> Outcome{"Blocker failure or no changes"}
+  Outcome -->|"blocker"| Blocked["Comment blocker"]
+  Outcome -->|"failure"| Failed["Comment failure and retry instructions"]
+  Outcome -->|"no changes"| NoChange["Comment no changes"]
+  Outcome -->|"changes"| App["Mint GitHub App token after agent"]
+  App --> PR["Create or update review PR"]
+  PR --> IssueComment["Comment PR link on source issue"]
+```
 
-## Safe-change checklist
+*Only a maintainer or collaborator with write-level permission can start the privileged agent path; all terminal paths are explicit.*
 
-1. Reuse `.github/actions/uv_setup` and preserve its uv pin and cache cleanup behavior.
-2. Keep validation jobs read-only and retain same-repository guards wherever secrets or write-capable operations are involved.
-3. When adding a code-sample product directory, assign it to exactly one matrix leg or the coverage check will fail.
-4. Keep trace refresh full-run, OSS-only, bounded by cancellation and failure thresholds, and restricted to its two generated paths.
-5. Preserve no-diff, standing-PR, and human-review boundaries for changelog, OpenAPI, OpenWiki, and trace writers.
-6. Treat fork skips as lack of credentialed coverage, not as passing sample execution.
-7. Keep Linear synchronization limited to same-repository `release-watch-agent` PRs and explicit `Closes DOC-N` links; absent credentials skip, while absent target states fail.
-8. Route ownership changes through `.github/CODEOWNERS`; there is no `.github/OWNERS` file to update.
+The metadata step uses the repository `GITHUB_TOKEN` to check the triggering actor’s collaborator permission. Unauthorized issue-triggered runs remove `integration-run`, explain the restriction, set a skip output, and exit successfully. Authorized runs fetch the issue body, reject issues already marked `integration-automation`, and parse the structured fields with `scripts/parse_integration_submission_issue.py`. Parse errors are reported to the issue and stop before the agent.
+
+The parsed values are untrusted metadata. They are passed to the Deep Agents `submit-integration` skill as data, not as workflow instructions. The agent is told to leave changes uncommitted and not to push, open a PR, or comment on GitHub. It receives the gateway key, GitHub token, and a bounded shell allow-list; its step is `continue-on-error: true` so the result handler can distinguish a blocker file, an unsuccessful agent, no file changes, or real edits. A hard blocker is communicated through `integration-submission-error.md`; that file is removed when real edits also exist.
+
+Only after the agent completes successfully with changes does the workflow mint the GitHub App token. This ordering keeps the write-capable App token out of the agent step. `peter-evans/create-pull-request` then creates or updates `integration/issue-<number>`, labels it `integration`, assigns `npentrel`, and includes a review checklist for eligibility, URLs, provider cards, downloads, YAML, `packages.yml`, or hosted MDX. The workflow comments the PR URL on the issue and mentions the submitter on the PR. It does not merge the result.
+
+## External-contributor boundary
+
+`external-integration-pr-comment.yml` uses `pull_request_target` because it must label, comment on, and sometimes close fork pull requests. It grants only `contents: read`, `issues: read`, and `pull-requests: write`, mints an organization-membership App token, and uses the GitHub API to inspect changed files and the pull-request head. It does **not** check out or execute fork code.
+
+The job skips drafts and bot authors, recognizes newly added integration pages under `src/oss/python/integrations/` or `src/oss/javascript/integrations/` (excluding `TEMPLATE.mdx`) and changes to `scripts/data/integration_external_docs.yaml`, then checks whether the author is an active `langchain-ai` member. External contributions receive the `integration` label. A maintainer reopening the PR is an explicit keep-open override; later synchronize events honor the most recent maintainer reopen.
+
+For added MDX pages, featured pages or packages with at least 50,000 monthly downloads are left open. Download eligibility is looked up from npm or PyPI; lookup failures fail the check rather than guessing. Other external integration PRs receive an idempotent redirect comment to the Integration listing issue form and are closed. This complements the issue-driven `integration-submission.yml` path: untrusted PR content is inspected through API responses, while privileged listing generation starts only after maintainer authorization.
+
+## Ownership and safe-change checklist
+
+1. Keep validation jobs read-only and scope write permissions to the job that needs them.
+2. Do not move fork-controlled data into a privileged execution context; `pull_request_target` jobs must continue to use API inspection only.
+3. Preserve the `integration-run` maintainer gate, duplicate-run marker, parse-before-agent ordering, and post-agent App-token minting.
+4. Keep preview branch names deterministic, validate branch input, use `--force-with-lease`, and retain the `preview-` deletion safety check.
+5. Treat generated provider overview and publication output as build products; change their generators or inputs, not the generated file by hand.
+6. Use the pull-request template’s checklist and route ownership changes through `.github/CODEOWNERS`; the last matching rule wins.
 
 ## Related pages
 
 - [Mintlify Integration](/openwiki/integrations/mintlify.md)
 - [Testing and Validation Overview](/openwiki/testing/test-overview.md)
-- [Weekly Changelog Publication](/openwiki/workflows/changelog-publication.md)
-- [Release Watch](/openwiki/workflows/release-watch.md)
+- [Integration Listing Automation](/openwiki/workflows/integration-listing-automation.md)
+- [Local Development](/openwiki/workflows/local-development.md)
+- [Agent Skills](/openwiki/operations/agent-skills.md)

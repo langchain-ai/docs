@@ -8,6 +8,8 @@ LangSmith is a multi-tenant SaaS product. Under the shared responsibility model,
 
 For the Bring Your Own Cloud (BYOC) equivalent, see the [BYOC shared responsibility model](/langsmith/byoc-shared-responsibility).
 
+For LangSmith's certifications and the security controls available to administrators, see the [security overview](/langsmith/security-overview).
+
 ## Responsibility matrix
 
 | Domain | LangChain responsibility (provider) | Customer responsibility (user) |

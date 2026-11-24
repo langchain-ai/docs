@@ -1,0 +1,186 @@
+---
+title: Work toward a goal over time
+sidebarTitle: Goals
+description: Let an agent decide when work needs follow-up and schedule its own progress checks until the work is done.
+---
+
+import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
+
+Some work cannot finish in one turn: a contract waits for signature, a pull request waits on review, or an announcement has not been published yet. A goal-oriented agent does what it can immediately, then schedules its own follow-up checks when progress depends on outside events. On each check, it moves the work forward and stops the schedule once the goal is met.
+
+<ManagedDeepAgentsPublicBetaNote />
+
+:::python
+<Note>
+This Python example requires `managed-deepagents>=0.10.4` and the matching `mda` CLI.
+</Note>
+:::
+
+:::js
+<Note>
+This TypeScript example requires `managed-deepagents` version 0.10.4 or later and the matching `mda` CLI.
+</Note>
+:::
+
+<img
+  className="block dark:hidden"
+  src="/langsmith/images/managed-deep-agents-goals-light.png"
+  alt="Mock Slack thread in #deals-ops showing Goal Agent checking a vendor contract, scheduling daily progress checks with check_progress, reporting a mid-week update, and calling stop_checking once countersigned."
+/>
+
+<img
+  className="hidden dark:block"
+  src="/langsmith/images/managed-deep-agents-goals-dark.png"
+  alt="Mock Slack thread in #deals-ops showing Goal Agent checking a vendor contract, scheduling daily progress checks with check_progress, reporting a mid-week update, and calling stop_checking once countersigned."
+/>
+
+## Add the schedule tools
+
+Give the agent two [tools](/langsmith/managed-deep-agents-tools) that wrap [runtime schedules](/langsmith/managed-deep-agents-schedules#create-schedules-at-runtime). `check_progress` starts an agent-owned recurring check in the current channel thread, and `stop_checking` deletes it:
+
+:::js
+With `managed-deepagents` 0.10.4, use npm: pnpm can resolve incompatible LangChain versions. Install the tools' dependencies:
+
+```bash
+npm install langchain zod
+```
+:::
+
+:::python
+```python tools/goals.py
+from langchain.tools import tool
+from managed_deepagents import ManagedDeepAgentRuntime
+
+OWNER = {"type": "agent"}
+
+
+@tool
+async def check_progress(goal: str, cron: str, runtime: ManagedDeepAgentRuntime) -> str:
+    """Check back on unfinished work in this thread on a cron schedule, until you stop it."""
+    item = await runtime.schedules.create(
+        owner=OWNER,
+        cron=cron,
+        new_thread=False,
+        prompt=f"Check progress on this goal: {goal}",
+    )
+    return f"Checking progress with schedule {item['id']}."
+
+
+@tool
+async def stop_checking(schedule_id: str, runtime: ManagedDeepAgentRuntime) -> str:
+    """Stop checking progress on a goal that is met or abandoned."""
+    await runtime.schedules.delete(schedule_id, owner=OWNER)
+    return f"Stopped schedule {schedule_id}."
+```
+:::
+
+:::js
+```ts tools/goals.ts
+import { tool } from "langchain";
+import type { ManagedDeepAgentRuntime } from "managed-deepagents";
+import { z } from "zod";
+
+const owner = { type: "agent" } as const;
+
+export const checkProgress = tool(
+  async ({ goal, cron }, runtime) => {
+    const { schedules } = runtime as typeof runtime & Pick<ManagedDeepAgentRuntime, "schedules">;
+    const item = await schedules!.create({
+      owner,
+      cron,
+      newThread: false,
+      prompt: `Check progress on this goal: ${goal}`,
+    });
+    return `Checking progress with schedule ${item.id}.`;
+  },
+  {
+    name: "check_progress",
+    description: "Check back on unfinished work in this thread on a cron schedule, until you stop it.",
+    schema: z.object({ goal: z.string(), cron: z.string() }),
+  },
+);
+
+export const stopChecking = tool(
+  async ({ scheduleId }, runtime) => {
+    const { schedules } = runtime as typeof runtime & Pick<ManagedDeepAgentRuntime, "schedules">;
+    await schedules!.delete(scheduleId, { owner });
+    return `Stopped schedule ${scheduleId}.`;
+  },
+  {
+    name: "stop_checking",
+    description: "Stop checking progress on a goal that is met or abandoned.",
+    schema: z.object({ scheduleId: z.string() }),
+  },
+);
+```
+:::
+
+Register the tools alongside the quickstart model and web search tool:
+
+:::python
+```python agent.py
+from managed_deepagents import define_deep_agent
+
+from tools.goals import check_progress, stop_checking
+
+agent = define_deep_agent(
+    name="goal-agent",
+    model="openai:gpt-6.1-sol",
+    tools=[{"type": "web_search"}, check_progress, stop_checking],
+)
+```
+:::
+
+:::js
+```ts agent.ts
+import { defineDeepAgent, type DefineDeepAgentConfig } from "managed-deepagents";
+
+import { checkProgress, stopChecking } from "./tools/goals";
+
+export const agent = defineDeepAgent({
+  name: "goal-agent",
+  model: "openai:gpt-6.1-sol",
+  tools: [
+    { type: "web_search_preview" },
+    checkProgress,
+    stopChecking,
+  ] as DefineDeepAgentConfig["tools"],
+});
+```
+:::
+
+## Write the instructions
+
+Use `instructions.md` to tell the agent when to schedule follow-ups on its own, and customize the examples and check cadence to match your workflow:
+
+```markdown instructions.md
+## Follow through
+
+Finish every request in the current turn when possible. If the work depends on
+something outside your control, such as an approval, review, or publication,
+define what "done" looks like and pick a check interval. Call check_progress
+and end your turn instead of waiting.
+
+On each check, inspect the current state with your tools rather than assuming.
+Move the work forward if you can; otherwise, note who needs to act. When the
+goal is met or blocked permanently, report the outcome and call stop_checking.
+```
+
+Each check runs in the same thread, keeping the original request, prior updates, and the schedule ID needed by `stop_checking`. For Slack conversations, each check replies in the same Slack thread.
+
+## Try it
+
+Starting from the [quickstart](/langsmith/managed-deep-agents-quickstart) agent gives you web search for tracking public events. Add a [Slack channel](/langsmith/managed-deep-agents-channels-slack) (same-thread agent-owned schedules require a channel), [deploy the agent](/langsmith/managed-deep-agents-deploy), and ask in Slack: "Tell me when LangChain publishes its next release." The agent searches first, schedules recurring checks if the release is not out yet, and stops once it appears. Requests it can answer immediately finish without a schedule.
+
+## Extend the pattern
+
+- Connect [MCP servers](/langsmith/managed-deep-agents-mcp-connectors) for your tools, such as GitHub, Linear, or a CRM, so the agent can track goals like getting a pull request merged or a contract signed and nudge owners along the way.
+- Save each goal to [memory](/langsmith/managed-deep-agents-memory) so the agent can list and report on every open goal.
+- Set a minimum interval in `check_progress` to keep costs predictable: each check is a model run.
+- Prune finished or abandoned goals: agent-owned schedules share a default limit of 20 per agent across all conversations (see [Schedule limits](/langsmith/managed-deep-agents-schedules#schedule-limits)).
+
+## See also
+
+- [Schedules](/langsmith/managed-deep-agents-schedules): create and manage runtime schedules.
+- [Tools](/langsmith/managed-deep-agents-tools): write custom tools.
+- [Watch mode](/langsmith/managed-deep-agents-watch-mode): schedule one-time check-ins from Slack.
