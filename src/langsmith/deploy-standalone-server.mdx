@@ -261,3 +261,35 @@ Assuming everything is running correctly, you should see a response like:
 ```shell
 {"ok":true}
 ```
+
+## Authenticate requests with LangSmith API keys
+
+By default, a standalone Agent Server does not authenticate incoming requests. You can configure it to require a LangSmith API key on every request.
+
+<Note>
+If `langgraph.json` defines a [custom authentication](/langsmith/custom-auth) handler in `auth`, that handler authenticates requests instead of this configuration. The server then checks LangSmith API keys only for Studio requests, or for requests without an `Authorization` header when `auth.allow_langsmith_api_keys` is `true`. For more information, see [Set up custom auth](/langsmith/set-up-custom-auth).
+</Note>
+
+With the [Helm chart](#kubernetes), set these values:
+
+```yaml
+config:
+  auth:
+    enabled: true
+    langSmithAuthEndpoint: "https://api.smith.langchain.com"
+    langSmithTenantId: "<workspace-id>"
+```
+
+For other platforms, set the equivalent environment variables on the server:
+
+- **`LANGGRAPH_AUTH_TYPE`**: `langsmith`. The Helm chart sets this when `auth.enabled` is `true`.
+- **`LANGSMITH_AUTH_ENDPOINT`** (`auth.langSmithAuthEndpoint`): The LangSmith API URL that validates keys, for your region or instance. For example, `https://api.smith.langchain.com` or `https://eu.api.smith.langchain.com`. For [self-hosted LangSmith](/langsmith/self-hosted), use your instance's API URL, ending in `/api/v1`.
+- **`LANGSMITH_TENANT_ID`** (`auth.langSmithTenantId`): The ID of the [workspace](/langsmith/administration-overview#workspaces) whose API keys the server accepts.
+
+Callers send their LangSmith API key in the `X-Api-Key` header. For each request, the server asks LangSmith to validate the key, then checks that the key belongs to the workspace in `LANGSMITH_TENANT_ID`:
+
+- **Any key for the workspace works**: The caller's key does not need to be the server's own `LANGSMITH_API_KEY`. A personal access token or service key for the same workspace is accepted.
+- **The key's role is not checked**: The server accepts a valid key for the workspace whatever its [workspace role](/langsmith/rbac#workspace-roles), including Workspace Viewer. The server does not receive the role, so it cannot limit what the caller does: a caller authenticated with a LangSmith key carries only its LangSmith user ID and the `authenticated` permission. To control access per caller, replace LangSmith key auth with custom authentication that issues your own credentials.
+- **Keys for other workspaces are rejected**: The server rejects a valid key for a different workspace with `Invalid tenant ID`. A key with access to several workspaces resolves to its default workspace. To use it with a server in another workspace, send that workspace's ID in the `X-Tenant-Id` header.
+- **Tracing keys are rejected**: A [tracing key](/langsmith/create-account-api-key#tracing-keys) can only send traces, so the server rejects it with `Forbidden`.
+- **Validation results are cached**: The server caches each successful validation for up to 60 seconds, so a revoked key can keep working for up to a minute.
