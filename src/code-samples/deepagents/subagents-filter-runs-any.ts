@@ -6,7 +6,7 @@ const client = new Client();
 
 // :snippet-start: subagents-filter-runs-any-js
 const runs = client.listRuns({
-  projectName: "<your-project>",
+  projectName: "<environment-tracer-session-name>",
   filter: "has(metadata, 'lc_agent_name')",
 });
 // :snippet-end:
