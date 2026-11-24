@@ -126,7 +126,7 @@ The [LangSmith CLI](/langsmith/langsmith-cli) queries the same SmithDB-backed en
 
 ## Python clients
 
-The new methods are async on `Client` and `AsyncClient`. For fully synchronous code, use `langsmith.Langsmith`.
+The new methods are async on `Client` and `AsyncClient`. For fully synchronous code, use `langsmith.Langsmith`, which needs `langsmith>=0.14.10`.
 
 | Client | Project lookup by name | New methods (`runs.retrieve`, `runs.query`, ...) |
 |---|---|---|
@@ -135,7 +135,7 @@ The new methods are async on `Client` and `AsyncClient`. For fully synchronous c
 | `Langsmith` | `client.sessions.list_v2(name=...)`, or `Client().read_project(...)` | Sync: `client.runs.retrieve(...)` |
 
 <Warning>
-`Langsmith()` reads `LANGSMITH_API_KEY` but not `LANGSMITH_ENDPOINT`, and defaults to `https://api.smith.langchain.com`. Outside US Cloud (EU, APAC, self-hosted), pass `base_url` explicitly, for example `Langsmith(base_url=os.environ["LANGSMITH_ENDPOINT"])`.
+`Langsmith()` reads `LANGSMITH_API_KEY` but not `LANGSMITH_ENDPOINT`. It reads `LANGCHAIN_BASE_URL`, then defaults to `https://api.smith.langchain.com`. Outside US Cloud (EU, APAC, self-hosted), pass `base_url` explicitly. `base_url` is the host root, without the `/api/v1` that self-hosted `LANGSMITH_ENDPOINT` values end with.
 </Warning>
 
 ```python
@@ -143,7 +143,8 @@ import os
 
 from langsmith import Langsmith
 
-client = Langsmith(base_url=os.environ["LANGSMITH_ENDPOINT"])
+endpoint = os.environ.get("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
+client = Langsmith(base_url=endpoint.rstrip("/").removesuffix("/api/v1"))
 [project] = client.sessions.list_v2(name="default")
 run = client.runs.retrieve(
     "<run-id>",
@@ -155,7 +156,7 @@ print(run.metadata)
 
 ### Tests and mocks
 
-The new methods send requests with [`httpx2`](https://pypi.org/project/httpx2/), not `httpx`. Mocks that patch `httpx` (`respx`, `pytest-httpx`, `httpx.MockTransport`) do not intercept them, and `Langsmith(http_client=httpx.Client(...))` raises a `TypeError`. Pass an `httpx2` client with a mock transport instead:
+From `langsmith` 0.12.0, the new methods send requests with [`httpx2`](https://pypi.org/project/httpx2/), not `httpx`. Mocks that patch `httpx` (`respx`, `pytest-httpx`, `httpx.MockTransport`) do not intercept them, and `Langsmith(http_client=httpx.Client(...))` raises a `TypeError`. Pass an `httpx2` client with a mock transport instead:
 
 ```python
 import httpx2
