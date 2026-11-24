@@ -680,15 +680,16 @@ async def search_recent_conversations(query: str, runtime: ToolRuntime) -> str:
     since = datetime.now(timezone.utc) - timedelta(hours=6)
     threads = await sdk_client.threads.search(
         metadata={"user_id": user_id},
-        updated_after=since.isoformat(),
+        sort_by="updated_at",
+        sort_order="desc",
         limit=20,
     )
     conversations = []
     for thread in threads:
-        history = await sdk_client.threads.get_history(
-            thread_id=thread["thread_id"]
-        )
-        conversations.append(history["values"]["messages"])
+        if datetime.fromisoformat(thread["updated_at"]) < since:
+            break
+        state = await sdk_client.threads.get_state(thread_id=thread["thread_id"])
+        conversations.append(state["values"]["messages"])
     return str(conversations)
 
 
