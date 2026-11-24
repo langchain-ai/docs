@@ -86,7 +86,7 @@ Disabling the feature pauses attached LangChain Tuned Evaluators. LangSmith pres
 
 Availability and pricing vary by LangChain Tuned Evaluator. LangSmith charges LSUs only for an evaluation run that attaches feedback. Skipped and failed evaluation attempts that do not attach feedback are not billed.
 
-Like other online evaluators, LangChain Tuned Evaluators upgrade evaluated traces to extended retention. This can increase trace storage charges. For current rates, see [LangSmith pricing](/langsmith/pricing-plans). For details about retention upgrades and trace charges, see [data retention auto-upgrades](/langsmith/usage-and-billing#data-retention-auto-upgrades).
+Like other online evaluators, LangChain Tuned Evaluators upgrade evaluated traces to extended retention. This can increase trace storage charges. The [workspace retention restriction](/langsmith/data-purging-compliance#disable-extended-trace-retention) blocks new upgrades without stopping evaluations. For current rates, see [LangSmith pricing](/langsmith/pricing-plans). For details about retention upgrades and trace charges, see [data retention auto-upgrades](/langsmith/usage-and-billing#data-retention-auto-upgrades).
 
 ## Troubleshoot LangChain Tuned Evaluators
 
