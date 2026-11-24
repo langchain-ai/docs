@@ -6,14 +6,14 @@ from langsmith import Client
 client = Client()
 
 runs = client.list_runs(
-    project_name="<your-project>",
+    project_name="<environment-tracer-session-name>",
     filter='has(metadata, \'{"lc_agent_name": "research-agent"}\')',
 )
 # :snippet-end:
 
 # :snippet-start: subagents-filter-runs-any-py
 runs = client.list_runs(
-    project_name="<your-project>",
+    project_name="<environment-tracer-session-name>",
     filter="has(metadata, 'lc_agent_name')",
 )
 # :snippet-end:
