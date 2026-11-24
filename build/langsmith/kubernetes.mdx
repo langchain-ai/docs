@@ -36,8 +36,7 @@ To self-host LangSmith on Kubernetes, gather the following before you install.
 
 - **kubectl**: Access to your Kubernetes cluster.
 - **Helm**: The package manager that installs the LangSmith chart. To install it, refer to the [Helm documentation](https://helm.sh/docs/intro/install/).
-- **OpenSSL**: Generates the API key salt and JWT secret.
-- **Python with the `cryptography` package**: Generates the Insights and Chat encryption keys.
+- **OpenSSL**: Generates all required keys and secrets.
 
 ### Keys and secrets
 
@@ -48,11 +47,24 @@ To self-host LangSmith on Kubernetes, gather the following before you install.
   openssl rand -base64 32
   ```
 
-- **Insights and Chat encryption keys**: Insights and Chat (formerly Polly) are enabled by default in Helm chart version 0.15.1 or later. Each requires a Fernet encryption key at installation time. Generate a separate key for each feature:
+- **Insights and Chat encryption keys**: Insights and Chat (formerly Polly) are enabled by default in Helm chart version 0.15.1 or later. Each requires a Fernet encryption key at installation time. A Fernet key is 32 random bytes encoded in URL-safe base64. Generate a separate key for each feature:
 
   ```bash
-  python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+  openssl rand -base64 32 | tr '+/' '-_'
   ```
+
+<Tip>
+Instead of running the commands above one at a time, you can generate all four values at once. The following command prints them in Helm values format. Copy each value into the matching key when you [configure your Helm charts](#configure-your-helm-charts):
+
+```bash
+printf \
+  "config:\n  apiKeySalt: \"%s\"\n  basicAuth:\n    jwtSecret: \"%s\"\ninsights:\n  encryptionKey: \"%s\"\npolly:\n  encryptionKey: \"%s\"\n" \
+  "$(openssl rand -base64 32)" \
+  "$(openssl rand -base64 32)" \
+  "$(openssl rand -base64 32 | tr '+/' '-_')" \
+  "$(openssl rand -base64 32 | tr '+/' '-_')"
+```
+</Tip>
 
 ### Kubernetes cluster
 
