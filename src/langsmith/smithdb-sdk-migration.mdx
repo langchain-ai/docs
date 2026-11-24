@@ -64,7 +64,7 @@ Keep raw HTTP calls as raw HTTP calls: change only the path, request body, respo
 
 Show a table: file:line, language, SDK or HTTP, current call, replacement, risk.
 
-Flag as risk: code reading `total_tokens`, `total_cost`, `prompt_*` or `completion_*` from a runs query (no longer includes child runs; use the traces query and its aggregates), and catches of old exception classes.
+Flag as risk: code reading `total_tokens`, `total_cost`, `prompt_*` or `completion_*` from a runs query (no longer includes child runs; use the traces query and its aggregates), and catches of old exception classes around migrated calls (in Python, methods still called directly on `Client` or `AsyncClient` keep raising the `langsmith.utils` classes; see the guide's Exceptions section).
 
 List per language: current version, latest stable, guide minimum.
 
@@ -123,6 +123,57 @@ The [LangSmith CLI](/langsmith/langsmith-cli) queries the same SmithDB-backed en
 - The new methods documented in this guide require self-hosted version 0.16 or later, independent of the data store used.
 - The deprecated methods stop working once ClickHouse is disabled.
 - Where possible, the SDK raises a warning or error identifying the version to upgrade to, instead of failing without explanation.
+
+## Python clients
+
+The new methods are async on `Client` and `AsyncClient`. For fully synchronous code, use `langsmith.Langsmith`.
+
+| Client | Project lookup by name | New methods (`runs.retrieve`, `runs.query`, ...) |
+|---|---|---|
+| `Client` | `client.read_project(project_name=...)`, or `await client.aread_project(...)` in async code | Async: `await client.runs.retrieve(...)` |
+| `AsyncClient` | `await client.read_project(project_name=...)` (no `aread_` methods) | Async: `await client.runs.retrieve(...)` |
+| `Langsmith` | `client.sessions.list_v2(name=...)`, or `Client().read_project(...)` | Sync: `client.runs.retrieve(...)` |
+
+<Warning>
+`Langsmith()` reads `LANGSMITH_API_KEY` but not `LANGSMITH_ENDPOINT`, and defaults to `https://api.smith.langchain.com`. Outside US Cloud (EU, APAC, self-hosted), pass `base_url` explicitly, for example `Langsmith(base_url=os.environ["LANGSMITH_ENDPOINT"])`.
+</Warning>
+
+```python
+import os
+
+from langsmith import Langsmith
+
+client = Langsmith(base_url=os.environ["LANGSMITH_ENDPOINT"])
+[project] = client.sessions.list_v2(name="default")
+run = client.runs.retrieve(
+    "<run-id>",
+    project_id=project.id,
+    selects=["NAME", "INPUTS", "OUTPUTS", "METADATA"],
+)
+print(run.metadata)
+```
+
+### Tests and mocks
+
+The new methods send requests with [`httpx2`](https://pypi.org/project/httpx2/), not `httpx`. Mocks that patch `httpx` (`respx`, `pytest-httpx`, `httpx.MockTransport`) do not intercept them, and `Langsmith(http_client=httpx.Client(...))` raises a `TypeError`. Pass an `httpx2` client with a mock transport instead:
+
+```python
+import httpx2
+from langsmith import Langsmith
+
+
+def handler(request: httpx2.Request) -> httpx2.Response:
+    return httpx2.Response(200, json={"id": "<run-id>"})
+
+
+client = Langsmith(
+    api_key="test",
+    base_url="http://test",
+    http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
+)
+```
+
+`Client().runs` builds its own HTTP client, so tests that mock the new methods should use `Langsmith` or `AsyncLangsmith`, or patch the method itself.
 
 ## Methods by area
 
@@ -256,16 +307,33 @@ The annotation queue run endpoints move to the queue items API under `/api/v1/pl
   <Tab title="Python">
     The SmithDB-backed methods raise new exception classes instead of the legacy `langsmith.utils` exception classes.
 
+    <Warning>
+    This is not a rename across the whole SDK. Only the methods under a resource (`client.runs.*`, `client.traces.*`, `client.threads.*` and the other replacements in this guide) raise the new `langsmith` classes. Methods called directly on `Client` or `AsyncClient`, such as `read_project()`, `pull_prompt()` or `create_feedback()`, still raise the `langsmith.utils` classes.
+
+    The two families share no base class other than `Exception`. Change an `except` only where the call inside it moved to a new method. Code that wraps both kinds of call catches both classes:
+
+    ```python
+    from langsmith import NotFoundError
+    from langsmith.utils import LangSmithNotFoundError
+
+    try:
+        project = client.read_project(project_name="default")
+        run = await client.runs.retrieve(run_id, project_id=str(project.id))
+    except (NotFoundError, LangSmithNotFoundError):
+        ...
+    ```
+    </Warning>
+
     | Before (`langsmith.utils`) | After (`langsmith`) | Notes |
     |---|---|---|
     | `LangSmithError` | `LangsmithError` | Base exception class for the SDK; casing changed |
     | `LangSmithAPIError` | `InternalServerError` | 5xx |
     | `LangSmithRequestTimeout` | `APITimeoutError` | Raised when a request times out |
     | `LangSmithUserError` | *(removed)* | No direct equivalent. The 403 org-scoped-key case now raises `PermissionDeniedError`; client-side argument validation now raises a standard `ValueError` or `TypeError` |
-    | `LangSmithRateLimitError` | `RateLimitError` | 429; unchanged name |
+    | `LangSmithRateLimitError` | `RateLimitError` | 429 |
     | `LangSmithAuthError` | `AuthenticationError` | 401 |
-    | `LangSmithNotFoundError` | `NotFoundError` | 404; unchanged name |
-    | `LangSmithConflictError` | `ConflictError` | 409; unchanged name |
+    | `LangSmithNotFoundError` | `NotFoundError` | 404 |
+    | `LangSmithConflictError` | `ConflictError` | 409 |
     | `LangSmithConnectionError` | `APIConnectionError` | Raised when the client cannot connect to the API |
     | `LangSmithExceptionGroup` | *(removed)* | No equivalent |
     | *(not available)* | `APIError` | New: base class for all API-related errors, with `message`, `request`, and `body` attributes |
