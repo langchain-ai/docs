@@ -9,6 +9,8 @@ import SandboxLifecycleFactoryThreadPy from '/snippets/python/deepagents-sandbox
 import SandboxLifecycleFactoryThreadTs from '/snippets/python/deepagents-sandbox-lifecycle-factory-thread-ts.mdx';
 import DeepagentsProductionInvokeJs from '/snippets/python/code-samples/deepagents-production-invoke-js.mdx';
 import DeepagentsProductionInvokePy from '/snippets/python/code-samples/deepagents-production-invoke-py.mdx';
+import DeepagentsProductionSandboxSyncJs from '/snippets/python/code-samples/deepagents-production-sandbox-sync-js.mdx';
+import DeepagentsProductionSandboxSyncPy from '/snippets/python/code-samples/deepagents-production-sandbox-sync-py.mdx';
 import DeployFrameworksPlatformsReference from '/snippets/python/langsmith/deploy-frameworks-platforms-reference.mdx';
 
 This guide covers considerations for taking a deep agent from a local prototype to a production deployment with the SDK. To run production agents without having to manage infrastructure, start with [Managed Deep Agents](/langsmith/python/managed-deep-agents-overview) or [migrate to Managed Deep Agents](/langsmith/python/managed-deep-agents-migrate) instead. The rest of this page walks through scoping memory, configuring execution environments, adding guardrails, and connecting a frontend when you host agents yourself or run a custom [Agent Server](/langsmith/agent-server).
@@ -502,85 +504,8 @@ For provider-specific file transfer examples, see [working with files](/oss/pyth
 <Accordion title="Example: syncing skills and memories with custom middleware">
   [Skill](/oss/python/deepagents/skills) scripts that the agent needs to execute must be uploaded into the sandbox before the agent runs. You may also want to sync [memories](/oss/python/deepagents/memory) so the agent can read and update them inside the container. Use [custom middleware](/oss/python/langchain/middleware/custom) with `before_agent` and `after_agent` hooks to move files across the sandbox boundary:
 
-```python agent.py
-from deepagents import create_deep_agent
-from deepagents.backends import CompositeBackend, StoreBackend
-from deepagents.backends.langsmith import LangSmithSandbox
-from langchain.agents.middleware import AgentMiddleware, AgentState
-from langgraph.runtime import Runtime
-from langsmith.sandbox import SandboxClient
+<DeepagentsProductionSandboxSyncPy />
 
-
-def _safe_filename(key: str) -> str:
-    """Reject keys that contain path traversal or glob characters."""
-    name = key.split("/")[-1]
-    if ".." in name or any(c in name for c in ("*", "?")):
-        raise ValueError(f"Invalid key: {key}")
-    return name
-
-
-class SandboxSyncMiddleware(AgentMiddleware):
-    """Sync skills and memories between the store and the sandbox."""
-
-    def __init__(self, backend: CompositeBackend):
-        super().__init__()
-        self.backend = backend
-
-    async def abefore_agent(self, state: AgentState, runtime: Runtime) -> None:
-        """Upload skill scripts and memories into the sandbox."""
-        user_id = runtime.server_info.user.identity  # [!code highlight]
-        store = runtime.store
-        files = []
-        for item in await store.asearch(("skills", user_id)):
-            name = _safe_filename(item.key)
-            files.append((f"/skills/{name}", item.value["content"].encode()))
-        for item in await store.asearch(("memories", user_id)):
-            name = _safe_filename(item.key)
-            files.append((f"/memories/{name}", item.value["content"].encode()))
-        if files:
-            await self.backend.upload_files(files)
-
-    async def aafter_agent(self, state: AgentState, runtime: Runtime) -> None:
-        """Sync updated memories back to the store."""
-        user_id = runtime.server_info.user.identity  # [!code highlight]
-        store = runtime.store
-        items = await store.asearch(("memories", user_id))
-        results = await self.backend.download_files(
-            [f"/memories/{item.key}" for item in items]
-        )
-        for result in results:
-            if result.content is not None:
-                await store.aput(
-                    ("memories", user_id),
-                    result.path.split("/")[-1],
-                    {"content": result.content.decode()},
-                )
-
-
-client = SandboxClient()
-ls_sandbox = client.create_sandbox()
-
-
-backend = CompositeBackend(
-    default=LangSmithSandbox(sandbox=ls_sandbox),
-    routes={
-        "/skills/": StoreBackend(
-            rt,
-            namespace=lambda rt: ("skills", rt.server_info.user.identity),  # [!code highlight]
-        ),
-        "/memories/": StoreBackend(
-            rt,
-            namespace=lambda rt: ("memories", rt.server_info.user.identity),  # [!code highlight]
-        ),
-    },
-)
-
-agent = create_deep_agent(
-    model="google_genai:gemini-4-hydrogen",
-    backend=backend,
-    middleware=[SandboxSyncMiddleware(backend)],
-)
-```
 
 
 
