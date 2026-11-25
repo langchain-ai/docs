@@ -77,7 +77,7 @@ Then STOP and wait for my approval.
 **Phase 3: migrate (after approval, only the scope and decisions I approved)**
 
 1. Upgrade each LangSmith SDK in use to its latest stable release (and its lockfile: uv.lock/poetry.lock, package-lock/pnpm-lock/yarn.lock, go.sum, Gradle/Maven). The guide's minimum is only the floor. If the latest release breaks something unrelated to this migration, use the newest version that works, never below the minimum, and say why in the PR.
-2. Migrate each call site from the table. The v2 queries take `project_ids` (UUIDs), not a project name. Resolve a plain project by name as the guide shows. If the project is an agent environment, an experiment or the workspace evaluators, propose resolving it with https://docs.langchain.com/langsmith/resolve-an-agent, and flag that it is beta and needs a newer SDK and server.
+2. Migrate each call site from the table. The v2 queries take `project_ids` (UUIDs), not a project name. Resolve a plain project by name as the guide shows. If the project is an agent environment, an experiment or the workspace evaluators, propose resolving it with https://docs.langchain.com/langsmith/resolve-an-agent, and flag that it is beta and needs a newer SDK and server. In Python, the replacements are async on `Client`; keep the same `Client`. In async code (async functions, FastAPI `async def` handlers, async LangGraph nodes, notebooks), `await` them. In a sync script, put the migrated calls in one `async def` and run it once with `asyncio.run()`. Do not call `asyncio.run()` where an event loop is already running, or from several threads that share a `Client`: make that path async instead and list it as a decision. See the guide's "Python troubleshooting" section.
 3. Run tests, linters and the build for every language touched. Re-run the phase 2 search and show it finds nothing, or explain each leftover.
 4. Keep the changes local: commit them, do not push. Show me a summary: per file, what changed and why, plus anything left for review. Then STOP. Push and open a pull request only if I approve.
 
@@ -177,7 +177,7 @@ Every SDK method and API endpoint below is deprecated and stops working on the r
     | `delete_run_from_annotation_queue()` | `client.annotation_queues.items.delete_all()` |
     | `evaluate_run()`, `aevaluate_run()` | No replacement: run the evaluator yourself and log the result with `create_feedback()` |
 
-    The replacements are async on `Client`. In sync code, call them on `Langsmith(base_url=...)` from `langsmith` instead (requires `langsmith>=0.14.10`), as in the sync tab of [Runs: retrieve](/langsmith/smithdb-sdk-migration-runs#runs-retrieve). They return only the fields listed in `selects`, so include `"ID"`.
+    The replacements are async on `Client`. In async code, `await` them. In sync code, keep the same `Client`: put the migrated calls in one `async def` and run it once with `asyncio.run()` (see [Python troubleshooting](#python-troubleshooting)). They return only the fields listed in `selects`, so include `"ID"`.
   </Tab>
   <Tab title="TypeScript">
     Deprecated methods on `Client`:
@@ -325,17 +325,30 @@ The following methods are discontinued. They call the retired `/feedback/formula
 
 ## Python troubleshooting
 
-### `Langsmith()` ignores `LANGSMITH_ENDPOINT`
+### Calling the new methods from sync code
 
-`Langsmith()` (`langsmith>=0.14.10`) reads `LANGSMITH_API_KEY` but not `LANGSMITH_ENDPOINT`: it reads `LANGCHAIN_BASE_URL`, then defaults to US Cloud. Outside US Cloud (EU, APAC, self-hosted), pass `base_url`, the host root without `/api/v1`:
+Keep the same `Client` and pick the pattern that matches where the code runs:
+
+- Sync script: put the migrated calls in one `async def` and run it once with `asyncio.run()`.
+- Notebooks, async functions, FastAPI `async def` handlers, async LangGraph nodes: `await` the calls directly.
+- `asyncio.run()` where an event loop is already running raises `RuntimeError: asyncio.run() cannot be called from a running event loop`. `await` the call instead.
+- `asyncio.run()` from several threads that share a `Client` (thread pools, FastAPI `def` handlers, sync LangGraph nodes under load) can fail with `Event loop is closed`. Make that path async, or batch the calls with `asyncio.gather()` inside one `asyncio.run()`.
 
 ```python
-import os
+import asyncio
 
-from langsmith import Langsmith
+from langsmith import Client
 
-endpoint = os.environ.get("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
-client = Langsmith(base_url=endpoint.rstrip("/").removesuffix("/api/v1"))
+client = Client()
+
+
+async def fetch_runs(run_ids, project_id):
+    return await asyncio.gather(
+        *(client.runs.retrieve(run_id, project_id=project_id) for run_id in run_ids)
+    )
+
+
+runs = asyncio.run(fetch_runs(run_ids, project_id))
 ```
 
 ### Catching errors from old and new methods
@@ -355,20 +368,15 @@ except (NotFoundError, LangSmithNotFoundError):
 
 ### Mocking the new methods in tests
 
-From `langsmith` 0.12.0, the new methods send requests with [`httpx2`](https://pypi.org/project/httpx2/), not `httpx`, so `respx`, `pytest-httpx` and `httpx.MockTransport` do not intercept them. Pass an `httpx2` client with a mock transport to `Langsmith` (or `AsyncLangsmith`), or patch the method itself:
+From `langsmith` 0.12.0, the new methods send requests with [`httpx2`](https://pypi.org/project/httpx2/), not `httpx`, so `respx`, `pytest-httpx` and `httpx.MockTransport` do not intercept them. Patch the method on `client.runs` (or the other resource) with an `AsyncMock` instead:
 
 ```python
-import httpx2
-from langsmith import Langsmith
+from unittest.mock import AsyncMock, patch
 
+from langsmith import Client
 
-def handler(request: httpx2.Request) -> httpx2.Response:
-    return httpx2.Response(200, json={"id": "<run-id>"})
+client = Client()
 
-
-client = Langsmith(
-    api_key="test",
-    base_url="http://test",
-    http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
-)
+with patch.object(client.runs, "retrieve", AsyncMock(return_value=fake_run)):
+    run = await client.runs.retrieve(run_id, project_id=project_id)
 ```
