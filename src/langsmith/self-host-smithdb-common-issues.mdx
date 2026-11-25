@@ -23,7 +23,7 @@ If users report a problem, find the symptom below. Then go to the issue that it 
 
 LangSmith keeps each new run in Redis until an ingest queue worker writes it to SmithDB. If ingestion cannot keep up, the queue in Redis increases, and users see their runs late. LangSmith deletes run data in Redis after the time set by `config.settings.redisRunsExpirySeconds`, 6 hours by default. Retries do not extend this time. If the queue gets too old, or Redis gets full, LangSmith loses runs.
 
-**Alerts**: [1. Runs are lost](/langsmith/self-host-smithdb-alerts#1-runs-are-lost), [2. The ingestion backlog gets old](/langsmith/self-host-smithdb-alerts#2-the-ingestion-backlog-gets-old), [3. Redis is almost full](/langsmith/self-host-smithdb-alerts#3-redis-is-almost-full).
+**Alerts**: [1. Runs are lost](/langsmith/self-host-smithdb-alerts#1-runs-are-lost), [3. The ingestion backlog gets old](/langsmith/self-host-smithdb-alerts#3-the-ingestion-backlog-gets-old), [4. Redis is almost full](/langsmith/self-host-smithdb-alerts#4-redis-is-almost-full).
 
 ### Find the cause of the backlog
 
@@ -44,7 +44,7 @@ LangSmith keeps each new run in Redis until an ingest queue worker writes it to 
 
 SmithDB ingestion writes runs to object storage as segments and records the metadata of each segment in the metastore. A write is durable only when both steps succeed. If writes fail, LangSmith tries them again from Redis, and the ingestion backlog increases.
 
-**Alerts**: [4. Writes fail](/langsmith/self-host-smithdb-alerts#4-writes-fail), [7. Writes are slow](/langsmith/self-host-smithdb-alerts#7-writes-are-slow).
+**Alerts**: [5. Writes fail](/langsmith/self-host-smithdb-alerts#5-writes-fail), [8. Writes are slow](/langsmith/self-host-smithdb-alerts#8-writes-are-slow).
 
 | What you see | Cause |
 |---|---|
@@ -59,7 +59,7 @@ SmithDB ingestion writes runs to object storage as segments and records the meta
 
 The metastore is the PostgreSQL database of SmithDB. SmithDB records the metadata of each segment that it writes in the metastore. The metastore also holds new feedback until compaction moves it. A slow metastore makes ingestion, queries, and compaction slow at the same time. When there are no more connections or no more storage, writes fail.
 
-**Alert**: [6. The metastore is saturated](/langsmith/self-host-smithdb-alerts#6-the-metastore-is-saturated).
+**Alert**: [7. The metastore is saturated](/langsmith/self-host-smithdb-alerts#7-the-metastore-is-saturated).
 
 | What you see | Cause |
 |---|---|
@@ -73,7 +73,7 @@ To size the metastore, see [Metastore capacity](/langsmith/self-host-smithdb-sca
 
 SmithDB ingestion writes many small segments. Compaction merges them into fewer, larger segments. If compaction falls behind, each query must open more segments. Queries then get slow, time out, or SmithDB rejects them.
 
-**Alerts**: [5. Queries fail](/langsmith/self-host-smithdb-alerts#5-queries-fail), [8. Queries are slow](/langsmith/self-host-smithdb-alerts#8-queries-are-slow), [9. Compaction falls behind](/langsmith/self-host-smithdb-alerts#9-compaction-falls-behind), [10. Compaction stops or fails](/langsmith/self-host-smithdb-alerts#10-compaction-stops-or-fails).
+**Alerts**: [6. Queries fail](/langsmith/self-host-smithdb-alerts#6-queries-fail), [9. Queries are slow](/langsmith/self-host-smithdb-alerts#9-queries-are-slow), [10. Compaction falls behind](/langsmith/self-host-smithdb-alerts#10-compaction-falls-behind), [11. Compaction stops or fails](/langsmith/self-host-smithdb-alerts#11-compaction-stops-or-fails).
 
 ### Find the cause of late compaction
 
@@ -109,6 +109,8 @@ Queries can also get slow or fail for other reasons. Before you scale compaction
 
 In cluster mode, the query service serves all SmithDB reads. A heavy load of one kind, such as run statistics on a large project, can slow down all other queries. [Dedicated query services](/langsmith/self-host-smithdb-scale#dedicated-query-services) move one kind of load to its own pods, so you can size and scale it separately.
 
+**Alert**: [2. Feedback is lost](/langsmith/self-host-smithdb-alerts#2-feedback-is-lost).
+
 For large deployments, such as the large [tier](/langsmith/self-host-smithdb-scale#baseline-tiers), enable the dedicated query services. Each service needs its own replicas, with the resources of the query tier.
 
 For smaller deployments, enable a service when you see its signals in the following table. To find which kind of request uses the query pods, split [`server_requests_duration` on query pods](/langsmith/self-host-smithdb-metrics#server_requests_duration-on-query-pods) by `path`.
@@ -125,7 +127,7 @@ Query pods often use all their memory while their CPU stays low. An autoscaler t
 
 A SmithDB pod that restarts stops its work in progress: writes, queries, and compaction jobs. A component without available pods sends no metrics, so the alerts that use its metrics do not fire.
 
-**Alerts**: [11. A component has no pods](/langsmith/self-host-smithdb-alerts#11-a-component-has-no-pods), [12. Pods restart often](/langsmith/self-host-smithdb-alerts#12-pods-restart-often), [13. SmithDB panics](/langsmith/self-host-smithdb-alerts#13-smithdb-panics).
+**Alerts**: [12. A component has no pods](/langsmith/self-host-smithdb-alerts#12-a-component-has-no-pods), [13. Pods restart often](/langsmith/self-host-smithdb-alerts#13-pods-restart-often), [14. SmithDB panics](/langsmith/self-host-smithdb-alerts#14-smithdb-panics).
 
 Run `kubectl describe pod <pod>`, and read the logs of the previous container with `kubectl logs -p <pod>`. Then compare with this table:
 
