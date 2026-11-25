@@ -333,41 +333,15 @@ ai_msg
 AIMessage(content='', additional_kwargs={'tool_calls': [{'id': 'call_jUqhd8wzAIzInTJl72Rla8ht', 'function': {'arguments': '{"location":"San Francisco, CA"}', 'name': 'GetWeather'}, 'type': 'function'}], 'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 17, 'prompt_tokens': 68, 'total_tokens': 85}, 'model_name': 'gpt-4o-2024-05-13', 'system_fingerprint': 'fp_3aa7262c27', 'finish_reason': 'tool_calls', 'logprobs': None}, id='run-5e3356a9-132d-4623-8e73-dd5a898cf4a6-0', tool_calls=[{'name': 'GetWeather', 'args': {'location': 'San Francisco, CA'}, 'id': 'call_jUqhd8wzAIzInTJl72Rla8ht', 'type': 'tool_call'}], usage_metadata={'input_tokens': 68, 'output_tokens': 17, 'total_tokens': 85})
 ```
 
-#### Turn off strict mode
-
-Some valid JSON Schema features fail in strict mode. For example, a `pattern` that uses a look-ahead such as `(?=` or `(?!` returns a `400` error on the Responses API, even when `strict` is not set. Tools loaded from third-party MCP servers can carry schemas like this.
-
-Pass `strict=False` to send tools without strict validation:
+Some valid schemas fail in strict mode, such as a `pattern` with a look-ahead (`(?=`, `(?!`), which returns a `400` on the Responses API even when `strict` is not set. Pass `strict=False` to turn strict mode off. For agents built with [`create_agent`](/oss/langchain/agents), set it from a [middleware](/oss/langchain/middleware/custom#wrap-style-hooks):
 
 ```python
-llm_with_tools = llm.bind_tools([GetWeather], strict=False)
-```
-
-Agents built with [`create_agent`](/oss/langchain/agents) call `bind_tools` internally. `create_agent` passes the request's `model_settings` to `bind_tools`, so a [wrap-style middleware](/oss/langchain/middleware/custom#wrap-style-hooks) can set `strict=False`:
-
-```python
-from langchain.agents import create_agent
 from langchain.agents.middleware import wrap_model_call
-from langchain_openai import ChatOpenAI
-
 
 @wrap_model_call
-def non_strict_openai_tools(request, handler):
-    if isinstance(request.model, ChatOpenAI):
-        request = request.override(
-            model_settings={**request.model_settings, "strict": False}
-        )
-    return handler(request)
-
-
-agent = create_agent(
-    model=ChatOpenAI(model="gpt-6.2-astra"),
-    tools=tools,
-    middleware=[non_strict_openai_tools],
-)
+def non_strict_tools(request, handler):
+    return handler(request.override(model_settings={**request.model_settings, "strict": False}))
 ```
-
-The `isinstance` check limits the change to OpenAI models when an agent or its subagents use more than one provider. For agents that run asynchronously, define the middleware with `async def` and `await handler(request)`.
 
 ### Tool calls
 
