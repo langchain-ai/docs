@@ -1,0 +1,110 @@
+---
+title: Restrict inbound access with an IP allowlist
+sidebarTitle: Inbound IP allowlist
+description: Restrict inbound traffic to a LangSmith Cloud Agent Server to approved IP addresses and CIDR ranges.
+---
+
+An inbound IP allowlist restricts which client IP addresses and CIDR ranges can reach a [LangSmith Cloud](/langsmith/cloud) [Agent Server](/langsmith/agent-server) endpoint. Use it to limit direct network access to your corporate network, VPN, or approved application servers. Requests from source addresses outside the allowlist receive `403 Forbidden`.
+
+<Note>
+Per-deployment inbound IP allowlists are pending rollout on LangSmith Cloud. Follow these steps only after your LangChain account team confirms availability for your organization. Self-hosted, hybrid, bring your own cloud (BYOC), and sandbox deployments are not supported. A Helm chart upgrade does not enable this feature.
+</Note>
+
+This allowlist controls access to one Agent Server endpoint, not access to the LangSmith organization. To allow LangSmith traffic through your own firewall, see [IP allowlisting](/langsmith/cloud-ip-allowlist) and [Static IP addresses](/langsmith/cloud-platform-features#static-ip-addresses).
+
+## Scope and behavior
+
+Per-deployment inbound IP allowlists enforce source IP restrictions at the Cloud gateway:
+
+- **Supported Agent Servers**: LangSmith-hosted Cloud Agent Servers, including those built from external Docker images.
+- **Source IP matching**: The gateway uses the connection's source IP address and ignores client-supplied `X-Forwarded-For` headers.
+- **LangSmith platform traffic**: LangSmith control-plane egress addresses remain allowed automatically, including calls from the Playground and online evaluators. These addresses do not appear in `allowed_ip_ranges`. Agent Server authentication still applies.
+- **Empty allowlist**: An empty list (`[]`) allows inbound traffic from all IP addresses.
+
+## Prerequisites
+
+- **Permissions**: Use the [Workspace Admin](/langsmith/rbac#workspace-admin) role or an Enterprise [custom role](/langsmith/rbac#custom-roles) with `workspaces:security-policy:manage` and `deployments:update`. Workspace [access policies](/langsmith/abac) also apply.
+- **API key**: For API requests, use a personal access token or service key with both permissions. An Agent Server's runtime key cannot change the allowlist.
+- **Deployed Agent Server**: Wait for the initial [revision](/langsmith/agent-server-revisions) to finish deploying. Creation requests do not accept `allowed_ip_ranges`.
+
+## Configure an allowlist
+
+Configure an Agent Server's inbound IP allowlist from the LangSmith UI or the [control plane API](/langsmith/api-ref-control-plane).
+
+<Tabs>
+  <Tab title="LangSmith UI">
+    To configure an inbound IP allowlist:
+
+    1. From the [LangSmith UI](https://smith.langchain.com), select **Agent Servers**, then select an Agent Server.
+    1. In the top-right corner, select the gear icon (**Agent Server Settings**).
+    1. Scroll to the **Network Access** section.
+    1. In the **Allowed IP ranges** input, enter an IP address or CIDR range and press `Enter`. Repeat for each entry.
+    1. Select **Save and redeploy**.
+
+    Saving redeploys the latest deployed image with the updated allowlist. Without `workspaces:security-policy:manage`, you can view the ranges but cannot edit them.
+  </Tab>
+  <Tab title="Control plane API">
+    Send the full list of allowed entries in the `allowed_ip_ranges` field of `PATCH /v2/deployments/{deployment_id}`. Each request replaces the stored list. Use your region's [control plane host](/langsmith/api-ref-control-plane#host).
+
+    ```shell
+    curl --request PATCH \
+      --url "https://api.host.langchain.com/v2/deployments/$DEPLOYMENT_ID" \
+      --header "X-Api-Key: $LANGSMITH_API_KEY" \
+      --header "X-Tenant-Id: $WORKSPACE_ID" \
+      --header "Content-Type: application/json" \
+      --data '{"allowed_ip_ranges": ["198.51.100.7", "203.0.113.0/24", "2001:db8::/32"]}'
+    ```
+
+    To inspect the configured allowlist, call `GET /v2/deployments/{deployment_id}` and read `allowed_ip_ranges`. The field returns `[]` when no allowlist is configured.
+
+    Omitting `allowed_ip_ranges` from a `PATCH` request leaves the stored list unchanged. Resending the exact stored list is a no-op and does not require `workspaces:security-policy:manage` or trigger a redeploy.
+  </Tab>
+</Tabs>
+
+## Entry format and limits
+
+Each entry is a single IP address or a CIDR range. LangSmith supports both IPv4 and IPv6, up to 200 entries per Agent Server.
+
+LangSmith trims whitespace, removes duplicates, and stores entries in canonical CIDR notation. Bare IPv4 addresses become `/32` (for example, `198.51.100.7` becomes `198.51.100.7/32`). Bare IPv6 addresses become `/128`, and LangSmith lowercases IPv6 hexadecimal digits.
+
+LangSmith rejects the update with `400 Bad Request` in the following cases:
+
+- **Too many entries**: The list contains more than 200 entries.
+- **Invalid address or host bits**: An entry is not a valid IP address or CIDR block, or it sets host bits (for example, `10.1.2.3/24` instead of `10.1.2.0/24`). Entries with IPv6 zone identifiers (such as `fe80::1%eth0`) also fail validation.
+- **Bare IPv4 `.0` or `.255` address**: Bare IPv4 addresses ending in `.0` or `.255` fail validation to prevent accidental network or broadcast entries. Use explicit CIDR notation instead, such as `198.51.100.0/24` or `198.51.100.255/32`.
+- **Multicast overlap**: An entry falls within or overlaps `224.0.0.0/4` (IPv4) or `ff00::/8` (IPv6). Because `0.0.0.0/0` overlaps `224.0.0.0/4`, clear the list with `[]` instead.
+
+## Redeploy and revision behavior
+
+Allowlist updates take effect through a revision deployment:
+
+- **Allowlist-only update**: LangSmith redeploys the latest deployed image without rebuilding it. The Agent Server must be `READY`, with a recorded image on its latest `DEPLOYED` revision.
+- **Combined update**: If the request also creates a revision, that revision deploys with the new allowlist.
+- **Pending or failed changes**: The API returns the configured list immediately. Enforcement changes only after the revision reaches `DEPLOYED`. A failed build or deploy does not roll back the stored list.
+- **In-flight revision conflicts**: An allowlist change returns `409 Conflict` without writing fields if another revision is building or deploying. Recently [interrupted revisions](/langsmith/agent-server-revisions#interrupt-a-revision) can also block changes for up to one hour. Retry after the conflict clears.
+
+## Remove an allowlist
+
+To allow inbound traffic from all IP addresses:
+
+- **LangSmith UI**: Remove all entries from **Network Access** in **Agent Server Settings**, then select **Save and redeploy**.
+- **Control plane API**: Send `{"allowed_ip_ranges": []}` in the same `PATCH` request used to configure the list.
+
+The change takes effect after the redeploy finishes. Agent Server authentication still applies.
+
+## Error responses
+
+| Status code | Cause | Resolution |
+|---|---|---|
+| `400 Bad Request` | An entry fails validation, the list exceeds 200 entries, or the Agent Server type is unsupported. | Fix the invalid entry or confirm the Agent Server is hosted on LangSmith Cloud. |
+| `403 Forbidden` | The caller lacks a required permission or uses an Agent Server runtime key. | Use a personal access token or service key with both required permissions. |
+| `409 Conflict` | A revision is in flight or was recently interrupted, or the Agent Server cannot redeploy its latest image. | Wait for the revision to finish. For an interrupted revision, wait up to one hour. Otherwise, deploy a revision successfully before retrying. |
+| `501 Not Implemented` | The feature is not enabled on this installation. | Confirm Cloud availability with your LangChain account team. Self-hosted and BYOC installations are not supported. |
+
+## See also
+
+- [Manage an Agent Server](/langsmith/manage-agent-server)
+- [Cloud platform features](/langsmith/cloud-platform-features)
+- [Control plane API reference](/langsmith/api-ref-control-plane)
+- [Role-based access control](/langsmith/rbac)
+- [Organization and workspace operations](/langsmith/organization-workspace-operations)
