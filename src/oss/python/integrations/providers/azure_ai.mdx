@@ -82,6 +82,25 @@ llm = AzureAIOpenAIApiChatModel(
 llm.invoke('Tell me a joke and include some emojis')
 ```
 
+### Anthropic Claude models
+
+Call Claude models deployed in Microsoft Foundry through the `/anthropic` endpoint with `AzureAIAnthropicChatModel`:
+
+```python
+from azure.identity import DefaultAzureCredential
+from langchain_azure_ai.chat_models import AzureAIAnthropicChatModel
+
+claude = AzureAIAnthropicChatModel(
+    endpoint="https://<resource>.services.ai.azure.com",
+    credential=DefaultAzureCredential(),
+    model="claude-sonnet-4-5",  # your Claude deployment name
+)
+
+claude.invoke("Translate 'hi!' from English into Italian.").pretty_print()
+```
+
+You can also pass `project_endpoint` (or set `AZURE_AI_PROJECT_ENDPOINT` or `FOUNDRY_PROJECT_ENDPOINT`) to resolve the resource endpoint automatically. See [Microsoft Foundry chat models](/oss/integrations/chat/azure_ai#anthropic-claude-models) for details.
+
 ## LLMs
 
 Microsoft offers two main options for accessing LLMs through Azure:
@@ -175,6 +194,49 @@ The backend defaults to [`DefaultAzureCredential`](https://learn.microsoft.com/e
 For more information, see [Backend integrations](/oss/integrations/backends). See the [package repository](https://github.com/langchain-ai/langchain-azure/tree/main/libs/azure-storage) for full usage details and security guidance.
 
 ## Memory
+
+### Microsoft Foundry memory
+
+Use `AzureAIMemoryMiddleware` (experimental) from `langchain-azure-ai` to extract long-term memories from agent turns into a Microsoft Foundry Memory store and expose a matching retrieval tool to the agent:
+
+```python
+from azure.identity import DefaultAzureCredential
+from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
+from langchain_azure_ai.agents.middleware import AzureAIMemoryMiddleware
+
+memory_middleware = AzureAIMemoryMiddleware(
+    project_endpoint="https://<resource>.services.ai.azure.com/api/projects/<project>",
+    credential=DefaultAzureCredential(),
+    store_name="my-memory-store",
+    scope="user:123",
+    roles=["user", "assistant"],
+)
+
+agent = create_agent(
+    model=init_chat_model("azure_ai:gpt-6.1-sol"),
+    tools=[memory_middleware.get_retriever_tool()],
+    middleware=[memory_middleware],
+)
+```
+
+To query a Foundry Memory store directly as a LangChain retriever, use `AzureAIMemoryRetriever` (experimental) standalone or obtain a history-bound retriever from `AzureAIMemoryChatMessageHistory`:
+
+```python
+from azure.identity import DefaultAzureCredential
+from langchain_azure_ai.retrievers import AzureAIMemoryRetriever
+
+retriever = AzureAIMemoryRetriever(
+    project_endpoint="https://<resource>.services.ai.azure.com/api/projects/<project>",
+    credential=DefaultAzureCredential(),
+    store_name="my-memory-store",
+    scope="user:123",
+    k=5,
+)
+docs = retriever.invoke("What are my preferences?")
+```
+
+Create the memory store in your Foundry project before use. See the [Foundry Memory guide](https://learn.microsoft.com/en-us/azure/foundry/how-to/develop/langchain-memory) and the [Foundry Memory sample](https://github.com/langchain-ai/langchain-azure/blob/main/samples/foundry-memory/README.md) for an end-to-end multi-session walkthrough.
 
 ### Azure cosmos DB chat message history
 
@@ -383,10 +445,14 @@ See the [vector store guide](/oss/integrations/vectorstores/azuresearch) and the
 [Microsoft Foundry hosted agents](https://learn.microsoft.com/en-us/azure/foundry/how-to/develop/langchain-hosted-agents) run custom LangGraph code in a managed runtime. Use the `langchain_azure_ai.agents.hosting` package to expose a compiled LangGraph graph while Foundry manages the runtime, sessions, scaling, identity, and protocol endpoints.
 
 <Note>
-    LangGraph hosting support requires `langchain-azure-ai[hosting]>=1.2.8`.
+    LangGraph hosting support requires `langchain-azure-ai[hosting]>=1.3.0`.
 </Note>
 
-Before you begin, you need an Azure subscription, a Foundry project, a deployed chat model, Python 3.10 or later, and Azure CLI authentication. Deploying the agent also requires the Foundry Project Manager role on the project.
+Before you begin, you need an Azure subscription, a Foundry project, a deployed chat model, Python 3.11 or later, and Azure CLI authentication. Deploying the agent also requires the Foundry Project Manager role on the project.
+
+- **Why host on Microsoft Foundry:** Read [Hosting your LangGraph application on Microsoft Foundry Agents](https://techcommunity.microsoft.com/blog/azure-ai-foundry-blog/hosting-your-langgraph-application-on-microsoft-foundry-agents/4573342) for an overview of the architecture and managed runtime benefits.
+- **Migrating an existing graph:** Follow the step-by-step [LangGraph-to-Foundry migration guide](https://github.com/langchain-ai/langchain-azure/blob/main/libs/azure-ai/docs/hosting/host-langgraph-on-foundry.md).
+- **New or migrated agents:** Use the [LangGraph hosting guide](https://learn.microsoft.com/en-us/azure/foundry/how-to/develop/langchain-hosted-agents), the [hosted-agent samples](https://github.com/langchain-ai/langchain-azure/blob/main/samples/hosting/langgraph-hosted-agents/README.md#start-here), and the [Foundry LangGraph samples](https://github.com/microsoft-foundry/foundry-samples/tree/main/samples/python/hosted-agents/langgraph) for prerequisites, local runs, and deployment.
 
 Choose a hosting protocol based on how clients interact with the agent:
 
