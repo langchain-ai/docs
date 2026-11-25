@@ -9,7 +9,7 @@ import SaasRegionUrls from '/snippets/langsmith/saas-region-urls.mdx';
 
 Organization Admins control who can sign in to a LangSmith organization and what each user can do in its workspaces. This page covers three independent features, all available on the Enterprise plan:
 
-- [Access control](#set-up-access-control): Create custom roles and assign roles to workspace members. Without it, every user has the `Admin` role.
+- [Access control](#set-up-access-control): Create custom organization and workspace roles, and assign roles to members.
 - [SAML SSO](#set-up-saml-sso-for-your-organization): Let users sign in through your identity provider (IdP) on LangSmith Cloud. Self-hosted deployments use [OAuth2.0 and OIDC](/langsmith/self-host-sso) instead.
 - [SCIM provisioning](#set-up-scim-for-your-organization): Add, update, and remove users and their roles automatically from your IdP.
 
@@ -37,19 +37,17 @@ By default, LangSmith comes with a set of system roles:
 - `Viewer`: has read-only access to all resources within the workspace.
 - `Editor`: has full permissions except for workspace management (adding/removing users, changing roles, configuring service keys).
 
-If these do not fit your access model, `Organization Admins` can create custom roles to suit your needs.
+[Organization Admins and Organization Operators](/langsmith/rbac#organization-roles) can create custom roles with either organization or workspace scope. Organization roles grant organization-level permissions. Workspace roles control resources within a workspace. Custom organization roles do not grant workspace access.
 
-To create a role, go to **Settings** > **Roles**. Note that new roles that you create will be usable across all workspaces within your organization.
+To create a role, go to **Settings** > **Roles**, click **Create role**, and select a **Scope**. Enter the role name and description, choose permissions, and click **Create**. The scope cannot change after creation.
 
-Click on the **Create Role** button to create a new role. A **Create role** form will open.
-
-![Create Role](/langsmith/images/create-role.png)
-
-Assign permissions for the different LangSmith resources that you want to control access to.
+For permission exclusions and defaults, refer to [Custom roles](/langsmith/rbac#custom-roles).
 
 ### Assign a role to a user
 
-Once you have your roles set up, you can assign them to users. To assign a role to a user, navigate to the `Workspace members` tab in the `Workspaces` section of the [Organization settings page](https://smith.langchain.com/settings)
+Assign an organization role in Organization **Settings** > **Members**, when inviting a member or editing an existing member. New custom organization roles start restricted, so only Organization Admins and Organization Operators can assign them until an administrator removes the restriction.
+
+Organization roles and workspace roles are separate assignments. To assign a workspace role, navigate to the `Workspace members` tab in the `Workspaces` section of the [Organization settings page](https://smith.langchain.com/settings).
 
 Each user will have a **Role** dropdown that you can use to assign a role to them.
 
@@ -456,17 +454,20 @@ LangSmith maps a group to access by its name:
 Renaming groups is **not** supported via SCIM. Group names are persistent because they must match role names and/or workspace names in LangSmith.
 </Warning>
 
-A group name tells LangSmith which organization role to grant and, optionally, which workspace role to grant in which workspace. Each group name takes one of two forms:
+A group name tells LangSmith which organization role to grant and, optionally, which workspace role to grant in which workspace. Group names use the following forms:
 
 | Group type | Format | Grants |
 | --- | --- | --- |
 | Organization Admin | `<prefix>Organization Admin` or `<prefix>Organization Admins` | `Organization Admin`, plus `Admin` in every workspace |
 | Workspace | `<prefix><org_role><separator><workspace><separator><workspace_role>` | The organization role, plus the workspace role in the named workspace |
+| Custom organization role | `LS<separator><custom_org_role>` | The custom organization role, without workspace access |
+| Custom organization role and workspace | `LS<separator><custom_org_role><separator><workspace><separator><workspace_role>` | The custom organization role, plus the workspace role in the named workspace |
 
 Each part of the format works as follows:
 
-- **`<prefix>`** (optional): Any text before the organization role name, such as `LS:` or `Groups-`.
-- **`<org_role>`**: An organization role name, such as `Organization User`. You can omit the spaces in this part, so `OrganizationUser` matches `Organization User`. This helps with IdPs that disallow spaces in group names.
+- **`<prefix>`** (optional for built-in roles): Any text before a built-in organization role name, such as `LS:` or `Groups-`. Custom organization roles use `LS` followed by the separator instead.
+- **`<org_role>`**: A built-in organization role name, such as `Organization User`. You can omit spaces in built-in names, so `OrganizationUser` matches `Organization User`.
+- **`<custom_org_role>`**: The display name of an existing custom organization role. Custom names match case-insensitively, ignore surrounding whitespace, and preserve internal spaces. Custom organization roles require the `LS` prefix followed by the configured separator, unlike built-in organization roles. Create the role in LangSmith before provisioning its group.
 - **`<separator>`**: A colon (`:`) by default. You can [configure a custom separator](#configure-custom-separator) for your organization.
 - **`<workspace>`**: The workspace name as it appears in LangSmith. Spaces are literal characters here, so `ProdTeam` does not match `Prod Team`. If the workspace name contains the separator, such as `my-team` with separator `-`, LangSmith tries every possible split to find a valid workspace and role.
 - **`<workspace_role>`**: A workspace role name: `Admin`, `Editor`, `Viewer`, or the name of a [custom role](/langsmith/rbac#custom-roles). Matching ignores case, but spaces are literal characters here too. The full UI label, such as `Workspace Editor`, does not match. With SCIM, LangSmith rejects a group whose role name does not match, and your IdP reports a provisioning error for that group. With [SSO Groups Sync](#sso-groups-sync-alternative), LangSmith skips the group and reports no error.
@@ -546,10 +547,16 @@ Once SCIM is running, LangSmith applies the following rules: Role precedence dec
 
 #### Role precedence
 
-When a user belongs to multiple groups for the same workspace, the following precedence applies:
+SCIM and SSO Groups Sync resolve organization roles and workspace roles independently. Each user receives one organization role and one direct role per workspace, rather than a union of the permissions from every matching role.
 
-1. **Organization Admin groups** take highest precedence. Users in these groups will be `Admin` in all workspaces.
-2. **Most recently created workspace-specific group** takes precedence over other workspace groups.
+| Scope | Precedence, highest first |
+|-------|---------------------------|
+| Organization | Organization Admin, Organization Operator, custom organization role, Organization User, Organization Viewer, Organization Restricted |
+| Workspace | Workspace Admin, custom workspace role, Workspace Editor, Workspace Viewer |
+
+For multiple custom roles at the same scope, the case-insensitive display name sorts A–Z, with the lowest role ID breaking ties. Group creation time does not affect precedence. Organization Admin still grants Workspace Admin in every workspace.
+
+Renaming a custom role can change which role wins at the next sync. Existing SCIM groups retain their stored role mappings after a role rename. For SSO Groups Sync, update the IdP group names to match the new role name.
 
 <Note>
 When a group is deleted or a user is removed from a group, their access is updated according to their remaining group membership, following the precedence rules.
@@ -908,7 +915,7 @@ Google's SAML SSO does not natively emit Google Group memberships as a SAML attr
 
 #### Group naming examples
 
-Group names follow the [SCIM naming convention](#group-naming-convention). The `<workspace_role>` segment accepts both built-in roles and [custom workspace roles](/langsmith/rbac#custom-roles) by name.
+Group names follow the [SCIM naming convention](#group-naming-convention), including custom organization roles with the required `LS` prefix. The `<workspace_role>` segment accepts both built-in and [custom workspace roles](/langsmith/rbac#custom-roles) by name.
 
 | Intent | Example group name |
 | --- | --- |
@@ -924,6 +931,7 @@ Group names follow the [SCIM naming convention](#group-naming-convention). The `
 - **Malformed group names**: Group names that do not match the convention are skipped silently (logged) and do not block login for valid groups. A group that matches a [synced user group](/langsmith/user-groups#sync-user-group-members-from-your-identity-provider) is not skipped. It adds the user to that user group.
 - **Login gate**: When **Require matching group to sign in** is enabled and the SSO token contains zero matching groups, login is blocked. A group that matches a synced user group counts as a matching group.
 - **Precedence**: SSO Groups Sync does not modify SCIM-sourced, manually assigned, or JIT-provisioned memberships. It is fully authoritative for its own assignments and replaces them on each login based on the token's group membership.
+- **Role conflicts**: Organization and workspace roles use the same [role precedence](#role-precedence) as SCIM, including custom roles.
 - **Org admin propagation**: If a user receives an org admin role from their groups, they are granted workspace admin in all workspaces (same as SCIM behavior).
 
 #### Things to note
