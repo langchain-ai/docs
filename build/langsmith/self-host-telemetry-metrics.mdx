@@ -1,0 +1,306 @@
+---
+title: Operational telemetry metrics reference
+sidebarTitle: Telemetry metrics reference
+description: Every operational metric that self-hosted LangSmith sends to LangChain, the attributes kept with each one, and how to turn metrics off.
+---
+
+<Info>
+This page applies to self-hosted LangSmith instances that are not running in offline (air-gapped) mode and have operational telemetry metrics turned on.
+</Info>
+
+With `config.telemetry.metrics` set to `true` (the default), your LangSmith instance exports operational metrics to `https://beacon.langchain.com` over OpenTelemetry (OTLP) once a minute. For what operational telemetry is and how it differs from billing and usage telemetry, see [Egress for billing and operational telemetry](/langsmith/self-host-egress).
+
+LangChain's telemetry collector keeps only the metrics listed on this page. It drops any other metric it receives, so a metric that is not on this page is not stored. Metrics contain counts, sizes, durations, and status values. They do not contain trace contents, database records, or information about your users.
+
+## How metrics are collected
+
+| Source | Collected by | When it is sent |
+| --- | --- | --- |
+| LangSmith services | Each LangSmith service, as it handles requests and jobs | Always, while metrics are on |
+| PostgreSQL | The `queue` deployment, every minute | Always, while metrics are on |
+| Redis | The `queue` deployment, every minute | Always, while metrics are on |
+| ClickHouse | The `queue` deployment, every minute | When `clickhouse.enabled` is `true` |
+| SmithDB | The `queue` deployment, every minute | LangSmith v0.18 or later, when `smithdb.enabled` is `true` |
+| SmithDB migration | The `queue` deployment, every minute | LangSmith v0.18 or later, when `smithdb.langsmith.migration.enabled` is `true` |
+
+To turn off all metrics, set `config.telemetry.metrics` to `false`. To stop sending the metrics of a single datastore, such as SmithDB, see [Disable metrics for one datastore](/langsmith/self-host-egress#disable-metrics-for-one-datastore).
+
+## Attributes
+
+Each metric carries attributes that identify the instance that sent it: `env`, plus `customer.id` and `customer.name`, which come from your license. The collector removes every other resource attribute.
+
+On individual data points, the collector keeps only the following attributes and removes the rest, including request paths:
+
+`app_name`, `cmd`, `collector`, `component`, `dbname`, `error_type`, `fault`, `file_type`, `job_kind`, `kind`, `level`, `maxmemory_policy`, `method`, `mode`, `name`, `op`, `outcome`, `pointer_type`, `quantile`, `queue_name`, `reason`, `redis_mode`, `redis_version`, `replica`, `resource_name`, `resource_type`, `result`, `role`, `rule_owner`, `source`, `state`, `status`, `status_code`, `store_type`, `unit_kind`, `value`, `version`, and `workload_kind`.
+
+## Metrics
+
+### LangSmith services
+
+HTTP traffic, connection pools, and ingestion counts from the LangSmith API and ingestion services.
+
+| Metric | Description |
+| --- | --- |
+| `self_hosted_langsmith_app_info` | Service information, one series per LangSmith service. |
+| `self_hosted_langsmith_http_exceptions_total` | Total count of exceptions raised while handling requests. |
+| `self_hosted_langsmith_http_requests_latency_seconds` | Histogram of request processing time in seconds. |
+| `self_hosted_langsmith_http_requests_size_bytes` | Summary of request size in bytes. |
+| `self_hosted_langsmith_http_requests_total` | Total count of HTTP requests. |
+| `self_hosted_langsmith_http_responses_total` | Total count of HTTP responses by status code. |
+| `self_hosted_langsmith_http_requests_in_progress` | Requests currently being processed. |
+| `self_hosted_langsmith_pg_pool_idle` | Idle connections in the service's PostgreSQL connection pool. |
+| `self_hosted_langsmith_pg_pool_used` | Used connections in the service's PostgreSQL connection pool. |
+| `self_hosted_langsmith_runs_batch_count` | Runs processed per ingestion batch. |
+| `self_hosted_langsmith_upserted_feedbacks` | Total count of upserted feedback. |
+| `self_hosted_langsmith_upserted_runs` | Total count of upserted runs. |
+
+### Queues
+
+Depth of the Redis-backed queues that LangSmith workers consume.
+
+| Metric | Description |
+| --- | --- |
+| `self_hosted_langsmith_asynq_ingestion_queue_pending` | Tasks in the pending state of the run ingestion queue. |
+| `self_hosted_langsmith_asynq_ingestion_queue_active` | Tasks in the active state of the run ingestion queue. |
+| `self_hosted_langsmith_asynq_ingestion_queue_scheduled` | Tasks in the scheduled state of the run ingestion queue. |
+| `self_hosted_langsmith_asynq_ingestion_queue_retry` | Tasks in the retry state of the run ingestion queue. |
+| `self_hosted_langsmith_asynq_ingestion_queue_archived` | Tasks in the archived state of the run ingestion queue. |
+| `self_hosted_langsmith_asynq_adhoc_queue_pending` | Tasks in the pending state of the background job queue. |
+| `self_hosted_langsmith_asynq_adhoc_queue_active` | Tasks in the active state of the background job queue. |
+| `self_hosted_langsmith_asynq_adhoc_queue_scheduled` | Tasks in the scheduled state of the background job queue. |
+| `self_hosted_langsmith_asynq_adhoc_queue_retry` | Tasks in the retry state of the background job queue. |
+| `self_hosted_langsmith_asynq_github_outcomes_queue_pending` | Tasks in the pending state of the GitHub outcomes queue. |
+| `self_hosted_langsmith_asynq_github_outcomes_queue_active` | Tasks in the active state of the GitHub outcomes queue. |
+| `self_hosted_langsmith_asynq_github_outcomes_queue_scheduled` | Tasks in the scheduled state of the GitHub outcomes queue. |
+| `self_hosted_langsmith_asynq_github_outcomes_queue_retry` | Tasks in the retry state of the GitHub outcomes queue. |
+| `self_hosted_langsmith_asynq_taskset_queue_pending` | Tasks in the pending state of the task set queue. |
+| `self_hosted_langsmith_asynq_taskset_queue_active` | Tasks in the active state of the task set queue. |
+| `self_hosted_langsmith_asynq_taskset_queue_scheduled` | Tasks in the scheduled state of the task set queue. |
+| `self_hosted_langsmith_asynq_taskset_queue_retry` | Tasks in the retry state of the task set queue. |
+| `self_hosted_langsmith_saq_queue_active` | Active jobs in each Python worker queue. |
+| `self_hosted_langsmith_saq_queue_scheduled` | Scheduled jobs in each Python worker queue. |
+| `self_hosted_langsmith_saq_queue_queued` | Queued jobs in each Python worker queue. |
+
+### Automation rules
+
+Health of [automation rules](/langsmith/rules) and online evaluators.
+
+| Metric | Description |
+| --- | --- |
+| `self_hosted_langsmith_run_rules_apply_run_rule_results_total` | Automation rule attempts by result, error type, and fault. |
+| `self_hosted_langsmith_run_rules_apply_run_rule_duration_seconds` | Time of one automation rule attempt, from job start to its result. |
+| `self_hosted_langsmith_run_rules_window_lag_seconds` | Delay between the end of a rule's evaluation window and the start of a live attempt. |
+| `self_hosted_langsmith_run_rules_run_pickup_latency_seconds` | Time from a run, thread, or trajectory becoming eligible to a rule picking it up. For threads and trajectories, the project's idle window is excluded. |
+| `self_hosted_langsmith_run_rules_bookmark_write_failures_total` | Failed Redis writes of skipped rule bookmarks. |
+| `self_hosted_langsmith_run_rules_applier_runs_processed_total` | Runs, threads, or trajectories handed to a rule applier. |
+| `self_hosted_langsmith_run_rules_applier_results_total` | Rule applier runs by batch outcome. |
+| `self_hosted_langsmith_run_rules_applier_duration_seconds` | Time of one rule applier run, by batch outcome. |
+| `self_hosted_langsmith_run_rules_applier_run_outcomes_total` | Outcomes of a rule applier run per run, thread, or trajectory. |
+| `self_hosted_langsmith_run_rules_code_evaluator_feedback_truncated_total` | Code evaluator rule applications whose feedback fetch hit the row limit. |
+| `self_hosted_langsmith_run_rules_code_evaluator_result_failures_total` | Code evaluator results that did not succeed, by result status. |
+| `self_hosted_langsmith_run_rules_code_evaluator_missing_at_dispatch_total` | Code evaluator rules that reached dispatch without their code. |
+
+### SmithDB
+
+<Note>
+SmithDB and SmithDB migration metrics require LangSmith v0.18 (Helm chart version 0.18.0) or later. Earlier versions do not send them.
+</Note>
+
+Sent when SmithDB is enabled. Read from each SmithDB component's metrics endpoint.
+
+| Metric | Description |
+| --- | --- |
+| `self_hosted_smithdb_up` | SmithDB service metrics scrape availability status. |
+| `self_hosted_smithdb_last_scrape_duration_seconds` | Duration of the last SmithDB service scrape. |
+| `self_hosted_smithdb_last_scrape_error` | Error status of the last SmithDB service scrape. |
+| `self_hosted_smithdb_instance_up` | SmithDB component availability status. |
+| `self_hosted_smithdb_sys_jemalloc_resident_bytes` | Bytes in physically resident jemalloc pages. |
+| `self_hosted_smithdb_semaphore_permits_in_use` | SmithDB semaphore permits currently in use. |
+| `self_hosted_smithdb_semaphore_max_permits` | SmithDB semaphore configured max permits. |
+| `self_hosted_smithdb_ingest_flush_count` | Ingest flush count by level and status. |
+| `self_hosted_smithdb_ingest_flush_reason` | Ingest flush reason count by level. |
+| `self_hosted_smithdb_ingest_pending_segment_entry_count` | Pending ingest segment entries not yet flushed. |
+| `self_hosted_smithdb_metrics_ingest_pending_bytes` | Decoded metric bytes awaiting admission, buffered, or flushing. |
+| `self_hosted_smithdb_query_admission_queue_length` | Queries waiting for admission. |
+| `self_hosted_smithdb_query_admission_queue_rejections` | Queries rejected by the admission queue. |
+| `self_hosted_smithdb_compaction_queue_job_count` | Compaction queue job count by kind and status. |
+| `self_hosted_smithdb_compaction_queue_oldest_pending_created_at_seconds` | Unix time the oldest pending compaction job was enqueued; zero when none are pending. |
+| `self_hosted_smithdb_compaction_queue_jobs_skipped_capacity` | Compaction jobs skipped for capacity. |
+| `self_hosted_smithdb_compaction_jobs_scheduled` | Compaction jobs scheduled by kind. |
+| `self_hosted_smithdb_compaction_jobs_executed` | Compaction jobs executed by kind and status. |
+| `self_hosted_smithdb_compaction_job_completion` | Compaction jobs completed by kind and status. |
+| `self_hosted_smithdb_compaction_worker_capacity_used` | Compaction worker in-flight capacity by job kind. |
+| `self_hosted_smithdb_compaction_worker_capacity_limit` | Compaction worker configured capacity limit in bytes. |
+| `self_hosted_smithdb_compaction_worker_running_tasks` | Compaction worker running tasks by job kind. |
+| `self_hosted_smithdb_object_store_ops` | Object store operations by store type, operation and result. |
+| `self_hosted_smithdb_object_store_op_duration_seconds` | Total object store operation time by store type, operation and result. |
+| `self_hosted_smithdb_ingest_batches` | Ingest batches processed. |
+| `self_hosted_smithdb_ingest_batch_latency_seconds` | Total time from ingest batch received to flush completed. |
+| `self_hosted_smithdb_ingest_flush_tasks` | Timed ingest flush tasks by level. |
+| `self_hosted_smithdb_ingest_flush_duration_seconds` | Total ingest flush time by level. |
+| `self_hosted_smithdb_ingest_rows_flushed` | Ingest rows flushed by level and status. |
+| `self_hosted_smithdb_metrics_ingest_requests` | Metric ingest requests by status. |
+| `self_hosted_smithdb_metrics_ingest_request_duration_seconds` | Total metric ingest request time from enqueue to flush completion by status. |
+| `self_hosted_smithdb_metrics_ingest_flushes` | Metric ingest flushes by status. |
+| `self_hosted_smithdb_metrics_ingest_flush_duration_seconds` | Total metric ingest flush time by status. |
+| `self_hosted_smithdb_metrics_ingest_rows_flushed` | Metric ingest rows flushed by status. |
+| `self_hosted_smithdb_query_admission_waits` | Queries that waited for admission. |
+| `self_hosted_smithdb_query_admission_queue_duration_seconds` | Total time queries waited for admission. |
+| `self_hosted_smithdb_compaction_job_latency_seconds` | Total compaction job time from creation to completion by kind and status. |
+| `self_hosted_smithdb_server_requests` | SmithDB server requests by status. |
+| `self_hosted_smithdb_server_request_duration_seconds` | Total SmithDB server request time by status. |
+
+### SmithDB migration
+
+Sent every minute while `smithdb.langsmith.migration.enabled` is `true`, which also requires `smithdb.enabled` unless you migrate into a BYOC data plane. When no migration pod is running, only `self_hosted_smithdb_migration_pod_up` (as `0`), `self_hosted_smithdb_migration_last_scrape_duration_seconds`, and `self_hosted_smithdb_migration_last_scrape_error` are sent. The other migration metrics are sent only while a migration pod is up.
+
+| Metric | Description |
+| --- | --- |
+| `self_hosted_smithdb_migration_last_scrape_duration_seconds` | Duration of the last SmithDB migration scrape. |
+| `self_hosted_smithdb_migration_last_scrape_error` | Error status of the last SmithDB migration scrape. |
+| `self_hosted_smithdb_migration_pod_up` | SmithDB migration pod availability status. |
+| `self_hosted_smithdb_migration_jobs` | SmithDB migration jobs by kind and status. |
+| `self_hosted_smithdb_migration_tasks` | SmithDB migration tasks by kind and status. |
+| `self_hosted_smithdb_migration_run_tasks_completed` | SmithDB run migration tasks completed. |
+| `self_hosted_smithdb_migration_run_task_planned_rows_migrated` | Planned rows of completed SmithDB run migration tasks. |
+| `self_hosted_smithdb_migration_sys_jemalloc_resident_bytes` | Bytes in physically resident jemalloc pages of the migration pod. |
+| `self_hosted_smithdb_migration_sys_jemalloc_allocated_bytes` | Bytes allocated by jemalloc in the migration pod. |
+| `self_hosted_smithdb_migration_sys_jemalloc_active_bytes` | Bytes in active jemalloc pages of the migration pod. |
+| `self_hosted_smithdb_migration_object_store_ops` | Migration object store operations by store type, operation and result. |
+| `self_hosted_smithdb_migration_object_store_transfer_bytes` | Migration object store bytes transferred by store type, operation and result. |
+| `self_hosted_smithdb_migration_vortex_files_written` | Vortex files written by the migration by file type. |
+| `self_hosted_smithdb_migration_vortex_file_bytes_written` | Vortex file bytes written by the migration by file type. |
+
+### PostgreSQL
+
+Read from your PostgreSQL database.
+
+| Metric | Description |
+| --- | --- |
+| `self_hosted_pg_up` | PostgreSQL instance availability status. |
+| `self_hosted_pg_last_scrape_duration_seconds` | Duration of the last scrape operation. |
+| `self_hosted_pg_last_scrape_error` | Error status of the last scrape. |
+| `self_hosted_pg_scrape_collector_success` | Whether a collector scrape was successful. |
+| `self_hosted_pg_scrape_collector_duration_seconds` | Duration of a collector scrape in seconds. |
+| `self_hosted_pg_static` | Version string as reported by postgres. |
+| `self_hosted_pg_settings_max_connections` | Maximum number of connections configured. |
+| `self_hosted_pg_settings_max_wal_size_bytes` | The maximum WAL size that triggers a checkpoint. |
+| `self_hosted_pg_stat_database_tup_inserted` | Number of tuples inserted into database. |
+| `self_hosted_pg_stat_database_tup_updated` | Number of tuples updated in database. |
+| `self_hosted_pg_stat_database_tup_deleted` | Number of tuples deleted from database. |
+| `self_hosted_pg_stat_activity_count` | Number of connections in this state. |
+| `self_hosted_pg_stat_database_tup_fetched` | Number of tuples fetched from database. |
+| `self_hosted_pg_stat_database_tup_returned` | Number of tuples returned by queries. |
+| `self_hosted_pg_stat_database_blks_hit` | Number of buffer cache hits. |
+| `self_hosted_pg_stat_database_blks_read` | Number of disk blocks read. |
+| `self_hosted_pg_wal_size_bytes` | Size of WAL segments. |
+| `self_hosted_pg_database_connection_limit` | Connection limit set for the database. |
+| `self_hosted_pg_database_size_bytes` | Disk space used by the database. |
+| `self_hosted_pg_stat_database_deadlocks` | Number of deadlocks detected. |
+| `self_hosted_pg_locks_count` | Number of locks. |
+| `self_hosted_pg_stat_database_xact_commit` | Number of committed transactions. |
+| `self_hosted_pg_stat_database_xact_rollback` | Number of rolled back transactions. |
+| `self_hosted_pg_stat_database_conflicts` | Number of database conflicts. |
+| `self_hosted_pg_stat_bgwriter_buffers_alloc_total` | Total buffers allocated. |
+| `self_hosted_pg_stat_bgwriter_checkpoints_req_total` | Total requested checkpoints. |
+
+### Redis
+
+Read from your Redis instance.
+
+| Metric | Description |
+| --- | --- |
+| `self_hosted_redis_up` | Redis instance availability status. |
+| `self_hosted_redis_last_scrape_duration_seconds` | Duration of the last scrape operation. |
+| `self_hosted_redis_last_ping_duration_seconds` | Duration of the last ping to Redis. |
+| `self_hosted_redis_last_scrape_error` | Error status of the last scrape. |
+| `self_hosted_redis_keyspace_hits_total` | Total number of keyspace hits. |
+| `self_hosted_redis_keyspace_misses_total` | Total number of keyspace misses. |
+| `self_hosted_redis_evicted_keys_total` | Total number of evicted keys. |
+| `self_hosted_redis_evicted_clients_total` | Total number of evicted clients. |
+| `self_hosted_redis_commands_total` | Total number of commands executed. |
+| `self_hosted_redis_errors_total` | Total number of errors encountered. |
+| `self_hosted_redis_latency_percentiles_usec` | Command latency percentiles in microseconds. |
+| `self_hosted_redis_commands_failed_calls_total` | Total number of failed command calls. |
+| `self_hosted_redis_commands_rejected_calls_total` | Total number of rejected command calls. |
+| `self_hosted_redis_uptime_in_seconds` | Redis server uptime in seconds. |
+| `self_hosted_redis_commands_processed_total` | Total number of commands processed. |
+| `self_hosted_redis_instance_info` | Redis instance information. |
+| `self_hosted_redis_blocked_clients` | Number of clients blocked on operations. |
+| `self_hosted_redis_connected_clients` | Number of currently connected clients. |
+| `self_hosted_redis_max_clients` | Maximum number of clients allowed. |
+| `self_hosted_redis_net_input_bytes_total` | Total bytes received over network. |
+| `self_hosted_redis_net_output_bytes_total` | Total bytes sent over network. |
+| `self_hosted_redis_db_keys` | Number of keys in the database. |
+| `self_hosted_redis_memory_used_bytes` | Current memory usage in bytes. |
+| `self_hosted_redis_memory_used_rss_bytes` | RSS memory usage in bytes. |
+| `self_hosted_redis_memory_max_bytes` | Maximum memory usage in bytes. |
+| `self_hosted_redis_cpu_sys_seconds_total` | Total system CPU time consumed by Redis. |
+| `self_hosted_redis_cpu_user_seconds_total` | Total user CPU time consumed by Redis. |
+| `self_hosted_redis_cpu_sys_children_seconds_total` | Total system CPU time consumed by child processes. |
+| `self_hosted_redis_cpu_user_children_seconds_total` | Total user CPU time consumed by child processes. |
+| `self_hosted_redis_cpu_sys_main_thread_seconds_total` | System CPU time consumed by main thread. |
+| `self_hosted_redis_cpu_user_main_thread_seconds_total` | User CPU time consumed by main thread. |
+| `self_hosted_redis_db_avg_ttl_seconds` | Average TTL for keys with expiration. |
+| `self_hosted_redis_total_writes_processed` | Total number of write operations processed. |
+| `self_hosted_redis_total_reads_processed` | Total number of read operations processed. |
+| `self_hosted_redis_commands_duration_seconds_total` | Total duration of all commands in seconds. |
+| `self_hosted_redis_connections_received_total` | Total number of connections received. |
+
+### ClickHouse
+
+Sent when ClickHouse is enabled. Read from your ClickHouse instance.
+
+| Metric | Description |
+| --- | --- |
+| `self_hosted_clickhouse_up` | ClickHouse instance availability status. |
+| `self_hosted_clickhouse_last_scrape_duration_seconds` | Duration of the last scrape operation. |
+| `self_hosted_clickhouse_last_scrape_error` | Error status of the last scrape. |
+| `self_hosted_clickhouseasyncmetrics_uptime` | ClickHouse server uptime. |
+| `self_hosted_clickhousemetrics_versioninteger` | ClickHouse version as integer. |
+| `self_hosted_clickhousemetrics_revision` | ClickHouse revision number. |
+| `self_hosted_clickhouseprofileevents_slowread` | Number of slow read operations. |
+| `self_hosted_clickhouseprofileevents_readbackoff` | Number of read backoff events. |
+| `self_hosted_clickhouseasyncmetrics_numberofdatabases` | Total number of databases. |
+| `self_hosted_clickhouseasyncmetrics_numberoftables` | Total number of tables. |
+| `self_hosted_clickhouseprofileevents_query` | Total number of queries executed. |
+| `self_hosted_clickhouseprofileevents_selectquery` | Number of SELECT queries. |
+| `self_hosted_clickhouseprofileevents_insertquery` | Number of INSERT queries. |
+| `self_hosted_clickhouseprofileevents_failedselectquery` | Number of failed SELECT queries. |
+| `self_hosted_clickhouseprofileevents_failedinsertquery` | Number of failed INSERT queries. |
+| `self_hosted_clickhouseprofileevents_failedquery` | Total number of failed queries. |
+| `self_hosted_clickhousemetrics_tcpconnection` | Number of active TCP connections. |
+| `self_hosted_clickhousemetrics_httpconnection` | Number of active HTTP connections. |
+| `self_hosted_clickhouseprofileevents_insertedrows` | Total number of rows inserted. |
+| `self_hosted_clickhouseprofileevents_insertedbytes` | Total bytes inserted. |
+| `self_hosted_clickhouseprofileevents_rejectedinserts` | Number of rejected insert operations. |
+| `self_hosted_clickhouseprofileevents_delayedinserts` | Number of delayed insert operations. |
+| `self_hosted_clickhouseprofileevents_readbufferfromfiledescriptorread` | File descriptor read operations. |
+| `self_hosted_clickhouseprofileevents_writebufferfromfiledescriptorwrite` | File descriptor write operations. |
+| `self_hosted_clickhouseprofileevents_readbufferfromfiledescriptorreadfailed` | Failed file descriptor reads. |
+| `self_hosted_clickhouseprofileevents_readbufferfromfiledescriptorreadbytes` | Bytes read from file descriptors. |
+| `self_hosted_clickhouseprofileevents_writebufferfromfiledescriptorwritebytes` | Bytes written to file descriptors. |
+| `self_hosted_clickhousemetrics_diskspacereservedformerge` | Disk space reserved for merge operations. |
+| `self_hosted_clickhouseprofileevents_merge` | Number of merge operations. |
+| `self_hosted_clickhouseprofileevents_mergedrows` | Number of rows merged. |
+| `self_hosted_clickhouseprofileevents_mergeduncompressedbytes` | Uncompressed bytes merged. |
+| `self_hosted_clickhouseprofileevents_mergeexecutemilliseconds` | Time spent executing merges. |
+| `self_hosted_clickhouseprofileevents_querymemorylimitexceeded` | Queries that exceeded memory limit. |
+| `self_hosted_clickhouseprofileevents_querytimemicroseconds` | Total query execution time in microseconds. |
+| `self_hosted_clickhouseprofileevents_insertquerytimemicroseconds` | INSERT query execution time in microseconds. |
+| `self_hosted_clickhouseprofileevents_selectquerytimemicroseconds` | SELECT query execution time in microseconds. |
+| `self_hosted_clickhouseprofileevents_selectedparts` | Number of data parts selected. |
+| `self_hosted_clickhouseprofileevents_selectedbytes` | Number of bytes selected. |
+| `self_hosted_clickhousemetrics_partstemporary` | Number of temporary data parts. |
+| `self_hosted_clickhousemetrics_partsoutdated` | Number of outdated data parts. |
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/self-host-telemetry-metrics.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
