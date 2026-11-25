@@ -727,9 +727,12 @@ def _safe_filename(key: str) -> str:
 class SandboxSyncMiddleware(AgentMiddleware):
     """Sync skills and memories between the store and the sandbox."""
 
-    def __init__(self, backend: CompositeBackend):
+    def __init__(self, sandbox: LangSmithSandbox):
         super().__init__()
-        self.backend = backend
+        # Call the sandbox directly. CompositeBackend routes /skills/ and
+        # /memories/ to StoreBackend, so upload_files on the composite would
+        # write back to the store instead of seeding the container.
+        self.sandbox = sandbox
 
     async def abefore_agent(self, state: AgentState, runtime: Runtime) -> None:
         """Upload skill scripts and memories into the sandbox."""
@@ -743,14 +746,14 @@ class SandboxSyncMiddleware(AgentMiddleware):
             name = _safe_filename(item.key)
             files.append((f"/memories/{name}", item.value["content"].encode()))
         if files:
-            await self.backend.upload_files(files)
+            await self.sandbox.aupload_files(files)
 
     async def aafter_agent(self, state: AgentState, runtime: Runtime) -> None:
         """Sync updated memories back to the store."""
         user_id = runtime.server_info.user.identity  # [!code highlight]
         store = runtime.store
         items = await store.asearch(("memories", user_id))
-        results = await self.backend.download_files(
+        results = await self.sandbox.adownload_files(
             [f"/memories/{item.key}" for item in items]
         )
         for result in results:
@@ -764,17 +767,15 @@ class SandboxSyncMiddleware(AgentMiddleware):
 
 client = SandboxClient()
 ls_sandbox = client.create_sandbox()
-
+sandbox_backend = LangSmithSandbox(sandbox=ls_sandbox)
 
 backend = CompositeBackend(
-    default=LangSmithSandbox(sandbox=ls_sandbox),
+    default=sandbox_backend,
     routes={
         "/skills/": StoreBackend(
-            rt,
             namespace=lambda rt: ("skills", rt.server_info.user.identity),  # [!code highlight]
         ),
         "/memories/": StoreBackend(
-            rt,
             namespace=lambda rt: ("memories", rt.server_info.user.identity),  # [!code highlight]
         ),
     },
@@ -783,7 +784,7 @@ backend = CompositeBackend(
 agent = create_deep_agent(
     model="google_genai:gemini-4-hydrogen",
     backend=backend,
-    middleware=[SandboxSyncMiddleware(backend)],
+    middleware=[SandboxSyncMiddleware(sandbox_backend)],
 )
 ```
 :::
@@ -807,7 +808,10 @@ function safeFilename(key: string): string {
   return name;
 }
 
-const createSandboxSyncMiddleware = (backend: CompositeBackend) => {
+// Call the sandbox directly. CompositeBackend routes /skills/ and /memories/
+// to StoreBackend, so uploadFiles on the composite would write back to the
+// store instead of seeding the container.
+const createSandboxSyncMiddleware = (sandbox: LangSmithSandbox) => {
   return createMiddleware({
     name: "SandboxSyncMiddleware",
     beforeAgent: async (state, runtime) => {
@@ -825,7 +829,7 @@ const createSandboxSyncMiddleware = (backend: CompositeBackend) => {
         files.push([`/memories/${name}`, encoder.encode(item.value.content)]);
       }
       if (files.length > 0) {
-        await backend.uploadFiles(files);
+        await sandbox.uploadFiles(files);
       }
     },
     afterAgent: async (state, runtime) => {
@@ -833,7 +837,7 @@ const createSandboxSyncMiddleware = (backend: CompositeBackend) => {
       const userId = runtime.serverInfo.user.identity;  // [!code highlight]
       const store = runtime.store;
       const items = await store.search(["memories", userId]);
-      const results = await backend.downloadFiles(
+      const results = await sandbox.downloadFiles(
         items.map((item) => `/memories/${item.key}`),
       );
       const decoder = new TextDecoder();
@@ -852,9 +856,10 @@ const createSandboxSyncMiddleware = (backend: CompositeBackend) => {
 
 const client = new SandboxClient();
 const lsSandbox = await client.createSandbox();
+const sandboxBackend = new LangSmithSandbox({ sandbox: lsSandbox });
 
 const backend = new CompositeBackend(
-  new LangSmithSandbox({ sandbox: lsSandbox }),
+  sandboxBackend,
   {
     "/skills/": new StoreBackend({
       namespace: (rt) => ["skills", rt.serverInfo.user.identity],  // [!code highlight]
@@ -867,7 +872,7 @@ const backend = new CompositeBackend(
 
 export const agent = createDeepAgent({
   backend,
-  middleware: [createSandboxSyncMiddleware(backend)],
+  middleware: [createSandboxSyncMiddleware(sandboxBackend)],
 });
 ```
 :::
