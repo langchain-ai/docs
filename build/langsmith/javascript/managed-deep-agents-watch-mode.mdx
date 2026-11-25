@@ -1,0 +1,166 @@
+---
+title: Build a Slack watch agent
+sidebarTitle: Watch mode
+description: Build a Slack agent that reads every channel message and decides when to reply.
+---
+
+import ManagedDeepAgentsPublicBetaNote from '/snippets/javascript/langsmith/managed-deep-agents-public-beta-note.mdx';
+
+Watch mode lets a [Slack-connected agent](/langsmith/javascript/managed-deep-agents-channels-slack) read channel messages without waiting for a mention. The agent decides from context whether to reply or stay silent.
+
+<ManagedDeepAgentsPublicBetaNote />
+
+
+
+<Note>
+This TypeScript example requires `managed-deepagents` version 0.10.4 or later and the matching `mda` CLI.
+</Note>
+
+
+<img
+  className="block dark:hidden"
+  src="/langsmith/images/managed-deep-agents-watch-mode-light.png"
+  alt="Mock Slack channel #ops-deploys showing Watch Agent staying silent on casual chatter, silently scheduling a 15-minute check-in after a deploy message, and posting a latency check reply in the thread."
+/>
+
+<img
+  className="hidden dark:block"
+  src="/langsmith/images/managed-deep-agents-watch-mode-dark.png"
+  alt="Mock Slack channel #ops-deploys showing Watch Agent staying silent on casual chatter, silently scheduling a 15-minute check-in after a deploy message, and posting a latency check reply in the thread."
+/>
+
+## Configure the Slack channel
+
+Start with a project that has a [Slack channel](/langsmith/javascript/managed-deep-agents-channels-slack#add-a-slack-channel) and update its declaration:
+
+
+
+```ts channels/slack.ts
+import { channels } from "managed-deepagents";
+
+export const channel = channels.slack({
+  triggerMode: "all",
+  reactions: false,
+  status: false,
+});
+```
+
+
+Every message in channels the bot belongs to starts a run, and each run incurs usage. Turning off reactions and working status keeps the agent quiet when it chooses not to reply.
+
+## Write the instructions
+
+Add to `instructions.md`:
+
+```markdown instructions.md
+# Slack watch agent
+
+Answer direct questions and mentions. For other messages, reply only when you
+can add something useful. Otherwise, respond with exactly [quiet].
+```
+
+An exact `[quiet]` response posts nothing.
+
+[Deploy the agent](/langsmith/javascript/managed-deep-agents-deploy) and invite it to a channel. Send a message that needs no reply and a message that mentions the agent, then confirm only the mention gets a reply.
+
+## Add check-ins
+
+To let the agent follow up later, add a [custom tool](/langsmith/javascript/managed-deep-agents-tools) that schedules a one-time [check-in](/langsmith/javascript/managed-deep-agents-schedules#create-schedules-at-runtime) in the current thread.
+
+With `managed-deepagents` 0.10.4, use npm: pnpm can resolve incompatible LangChain versions. Install the tool's dependencies:
+
+```bash
+npm install langchain zod
+```
+
+
+
+
+```ts tools/watch.ts
+import { tool } from "langchain";
+import type { ManagedDeepAgentRuntime } from "managed-deepagents";
+import { z } from "zod";
+
+export const scheduleCheckIn = tool(
+  async ({ prompt, minutes }, runtime) => {
+    const managedRuntime = runtime as typeof runtime &
+      Pick<ManagedDeepAgentRuntime, "thread" | "schedules">;
+    const origin = managedRuntime.thread?.origin;
+    if (!origin || origin.channel.provider !== "slack") {
+      return "A Slack conversation is required to schedule a check-in.";
+    }
+    if (minutes < 2 || minutes > 1440) {
+      return "Choose a delay between 2 and 1440 minutes.";
+    }
+    const item = await managedRuntime.schedules!.create({
+      owner: { type: "agent" },
+      at: new Date(Date.now() + minutes * 60_000),
+      newThread: false,
+      prompt,
+    });
+    return `Scheduled check-in ${item.id}.`;
+  },
+  {
+    name: "schedule_check_in",
+    description: "Schedule one check-in in the current conversation, 2 to 1440 minutes from now.",
+    schema: z.object({
+      prompt: z.string(),
+      minutes: z.number().int(),
+    }),
+  },
+);
+```
+
+
+Register the tool:
+
+
+
+```ts agent.ts
+import { defineDeepAgent } from "managed-deepagents";
+
+import { scheduleCheckIn } from "./tools/watch";
+
+export const agent = defineDeepAgent({
+  name: "watch-agent",
+  model: "openai:gpt-6.1-sol",
+  tools: [scheduleCheckIn],
+});
+```
+
+
+Add to `instructions.md`:
+
+```markdown instructions.md
+When work is ongoing and a later check could help, call schedule_check_in.
+When a check-in runs, reply only if there is something new; otherwise respond
+with exactly [quiet].
+```
+
+For example, if someone says a fix is rolling out, the agent can schedule a check-in for 15 minutes later. Check-ins run as the agent and see only messages already delivered to its thread.
+
+## Extend the pattern
+
+
+
+- Filter messages before a run starts by returning `null` from an `onEvent` `"message"` handler on `channels.slack(...)` to cut usage in busy channels.
+
+- Add a Slack history [tool](/langsmith/javascript/managed-deep-agents-tools) so check-ins can read the latest replies in the thread.
+- Track a thread across multiple check-ins by letting each check-in schedule the next, with tools to [list and delete](/langsmith/javascript/managed-deep-agents-schedules#manage-schedules) pending checks when done.
+
+## See also
+
+- [Slack](/langsmith/javascript/managed-deep-agents-channels-slack): set up the Slack app and configure channel triggers.
+- [Schedules](/langsmith/javascript/managed-deep-agents-schedules): create and manage runtime schedules.
+- [Instructions](/langsmith/javascript/managed-deep-agents-instructions): configure the agent's behavior.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/managed-deep-agents-watch-mode.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
