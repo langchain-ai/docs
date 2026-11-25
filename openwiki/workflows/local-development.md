@@ -5,7 +5,7 @@ description: Set up the supported local toolchain, edit source documentation, bu
 tags: [local development, documentation, build pipeline, code samples, validation]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-11-16T08:15:17.266Z
+    at: 2026-11-23T08:07:24.438Z
 sources:
   - id: openwiki-source-b372ee6d00ad6d446e0fc042
     resource: repo://.agents/skills/docs-review/SKILL.md
@@ -39,7 +39,7 @@ sources:
     resource: repo://README.md
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-16T08:15:17.266Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-23T08:07:24.438Z" }
 ---
 
 # Local Documentation Development
@@ -84,7 +84,7 @@ uv run pipeline dev              # direct development command
 uv run pipeline dev --skip-build # reuse an existing generated tree
 ```
 
-`make build` is a one-shot production-style build. Although the CLI accepts `docs build --watch`, the build handler ignores that option; `dev` is the supported watcher entrypoint.
+`make build` and `make dev` run `npm install` before invoking the pipeline. `make build` is a one-shot production-style build. Although the CLI accepts `docs build --watch`, the build handler ignores that option; `dev` is the supported watcher entrypoint.
 
 ### Local edit-to-preview flow
 

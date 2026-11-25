@@ -1,0 +1,285 @@
+---
+title: Dream over traces
+sidebarTitle: Dreaming
+description: Schedule an agent to review a person's traces each night and update their memory.
+---
+
+import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
+
+Dreaming is a scheduled review of an agent's past work. In this example, a nightly schedule runs as each opted-in user, reads their recent traces, and updates their user memory.
+
+<ManagedDeepAgentsPublicBetaNote />
+
+:::python
+<Note>
+This Python example requires `managed-deepagents>=0.10.4`, the matching `mda` CLI, and `langsmith>=0.10.15`. Self-hosted LangSmith must be v0.16 or later.
+</Note>
+:::
+
+:::js
+<Note>
+This TypeScript example requires `managed-deepagents` version 0.10.4 or later, the matching `mda` CLI, and `langsmith` version 0.11.7 or later. Self-hosted LangSmith must be v0.16 or later.
+</Note>
+:::
+
+<img
+  className="block dark:hidden"
+  src="/langsmith/images/managed-deep-agents-dreaming-light.png"
+  alt="Mock private assistant chat alongside memory files showing an approved nightly dreaming schedule running at 03:00 UTC, updating /memories/user/AGENTS.md, and writing a skill proposal to dreaming-proposals.md."
+/>
+
+<img
+  className="hidden dark:block"
+  src="/langsmith/images/managed-deep-agents-dreaming-dark.png"
+  alt="Mock private assistant chat alongside memory files showing an approved nightly dreaming schedule running at 03:00 UTC, updating /memories/user/AGENTS.md, and writing a skill proposal to dreaming-proposals.md."
+/>
+
+## Before you start
+
+- Configure [identity](/langsmith/managed-deep-agents-identity) so each person signs in as themselves. User memory and per-user trace lookups require a signed-in person.
+- Route each person's traces to their own LangSmith tracing project.
+- Add `DREAM_TRACE_PROJECTS` to `.env` wrapped in single quotes so `mda deploy` preserves the JSON double quotes. Map MDA principal IDs to project IDs, and ensure the deployment's LangSmith credentials have read access to those projects:
+
+```text .env
+DREAM_TRACE_PROJECTS='{"<principal-id>": "<project-id>"}'
+```
+
+## Add personal memory
+
+Declare [user memory](/langsmith/managed-deep-agents-memory) at the project root:
+
+:::python
+```python memory.py
+from managed_deepagents import MemoryLayer, define_memory
+
+memory = define_memory(user=MemoryLayer())
+```
+:::
+
+:::js
+```ts memory.ts
+import { defineMemory, memoryLayer } from "managed-deepagents";
+
+export const memory = defineMemory({ user: memoryLayer() });
+```
+:::
+
+Scheduled runs have no channel event, so select user memory in the agent factory when a run has no channel origin (such as scheduled runs and Studio). Omitting `memory` on channel runs keeps MDA's default access rules, which mount user memory in Slack direct messages and keep it off in shared channels. Requiring an interrupt on `schedule_dreaming` prompts for approval before creating a schedule:
+
+:::python
+```python agent.py
+from managed_deepagents import MemoryLayer, define_deep_agent, define_memory
+
+from tools.dreaming import recent_user_traces, schedule_dreaming
+
+
+def agent(runtime):
+    extra = (
+        {"memory": define_memory(user=MemoryLayer())}
+        if runtime.thread is None or runtime.thread.origin is None
+        else {}
+    )
+    return define_deep_agent(
+        name="private-assistant",
+        model="openai:gpt-6.1-sol",
+        tools=[recent_user_traces, schedule_dreaming],
+        interrupt_on={"schedule_dreaming": True},
+        **extra,
+    )
+```
+:::
+
+:::js
+```ts agent.ts
+import {
+  defineDeepAgent,
+  defineMemory,
+  memoryLayer,
+  type ManagedServerRuntime,
+} from "managed-deepagents";
+
+import { recentUserTraces, scheduleDreaming } from "./tools/dreaming";
+
+export function agent(runtime: ManagedServerRuntime) {
+  return defineDeepAgent({
+    name: "private-assistant",
+    model: "openai:gpt-6.1-sol",
+    tools: [recentUserTraces, scheduleDreaming],
+    memory: runtime.thread?.origin ? undefined : defineMemory({ user: memoryLayer() }),
+    interruptOn: { schedule_dreaming: true },
+  });
+}
+```
+:::
+
+MDA always mounts the signed-in person's memory, so a prompt cannot read someone else's.
+
+## Add the tools
+
+`recent_user_traces` reads up to 25 of the current person's traces from the last day. `schedule_dreaming` creates a nightly schedule that runs as that person.
+
+:::python
+Install the model provider package (factory definitions do not auto-install provider packages):
+
+```bash
+uv add langchain-openai
+```
+:::
+
+:::js
+With `managed-deepagents` 0.10.4, use npm: pnpm can resolve incompatible LangChain versions. Install the tools' dependencies and the model provider package (factory definitions do not auto-install provider packages):
+
+```bash
+npm install langchain zod langsmith @langchain/openai
+```
+:::
+
+:::python
+```python tools/dreaming.py expandable
+import json
+import os
+from datetime import datetime, timedelta, timezone
+
+from langchain.tools import tool
+from langsmith import Client
+from managed_deepagents import ManagedDeepAgentRuntime
+
+DREAM_PROMPT = """Read your recent traces with recent_user_traces. Save useful
+preferences and recurring context to /memories/user/AGENTS.md, without secrets.
+Write ideas for improving your instructions or skills to
+/memories/user/dreaming-proposals.md."""
+
+
+def trace_project(runtime: ManagedDeepAgentRuntime) -> str | None:
+    principal = runtime.server_info.principal if runtime.server_info else None
+    if principal is None or principal.kind != "person":
+        return None
+    return json.loads(os.environ["DREAM_TRACE_PROJECTS"]).get(principal.id)
+
+
+@tool
+async def recent_user_traces(runtime: ManagedDeepAgentRuntime) -> str:
+    """Read the current person's traces from the last day."""
+    if runtime.thread.origin is not None:
+        return "Ask outside Slack or other channels, including DMs."
+    project = trace_project(runtime)
+    if project is None:
+        return "No trace project for this person."
+    records = []
+    async for run in Client().runs.query(
+        project_ids=[project],
+        min_start_time=datetime.now(timezone.utc) - timedelta(days=1),
+        is_root=True,
+        selects=["INPUTS", "OUTPUTS"],
+        page_size=25,
+    ):
+        records.append(json.dumps([run.inputs, run.outputs], default=str)[:6000])
+        if len(records) == 25:
+            break
+    return "\n".join(records) or "No recent traces."
+
+
+@tool
+async def schedule_dreaming(runtime: ManagedDeepAgentRuntime) -> str:
+    """Schedule a nightly trace review for the current person."""
+    if runtime.thread.origin is not None:
+        return "Ask outside Slack or other channels, including DMs."
+    if trace_project(runtime) is None:
+        return "No trace project for this person."
+    item = await runtime.schedules.create(
+        owner={"type": "user"},
+        cron="0 3 * * *",
+        timezone="UTC",
+        prompt=DREAM_PROMPT,
+    )
+    return f"Created nightly dreaming schedule {item['id']}."
+```
+:::
+
+:::js
+```ts tools/dreaming.ts expandable
+import { tool } from "langchain";
+import { Client } from "langsmith";
+import type { ManagedDeepAgentRuntime } from "managed-deepagents";
+import { z } from "zod";
+
+type DreamRuntime = Pick<ManagedDeepAgentRuntime, "serverInfo" | "thread" | "schedules">;
+
+const DREAM_PROMPT = `Read your recent traces with recent_user_traces. Save useful
+preferences and recurring context to /memories/user/AGENTS.md, without secrets.
+Write ideas for improving your instructions or skills to
+/memories/user/dreaming-proposals.md.`;
+
+function traceProject(runtime: DreamRuntime): string | undefined {
+  const principal = runtime.serverInfo?.principal;
+  if (principal?.kind !== "person") return undefined;
+  return JSON.parse(process.env.DREAM_TRACE_PROJECTS ?? "{}")[principal.id];
+}
+
+export const recentUserTraces = tool(
+  async (_input, runtime) => {
+    const managed = runtime as typeof runtime & DreamRuntime;
+    if (managed.thread?.origin) return "Ask outside Slack or other channels, including DMs.";
+    const project = traceProject(managed);
+    if (!project) return "No trace project for this person.";
+    const records: string[] = [];
+    for await (const run of new Client().runs.query({
+      project_ids: [project],
+      min_start_time: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+      is_root: true,
+      selects: ["INPUTS", "OUTPUTS"],
+      page_size: 25,
+    })) {
+      records.push(JSON.stringify([run.inputs, run.outputs]).slice(0, 6000));
+      if (records.length === 25) break;
+    }
+    return records.join("\n") || "No recent traces.";
+  },
+  {
+    name: "recent_user_traces",
+    description: "Read the current person's traces from the last day.",
+    schema: z.object({}),
+  },
+);
+
+export const scheduleDreaming = tool(
+  async (_input, runtime) => {
+    const managed = runtime as typeof runtime & DreamRuntime;
+    if (managed.thread?.origin) return "Ask outside Slack or other channels, including DMs.";
+    if (!traceProject(managed)) return "No trace project for this person.";
+    const item = await managed.schedules!.create({
+      owner: { type: "user" },
+      cron: "0 3 * * *",
+      timezone: "UTC",
+      prompt: DREAM_PROMPT,
+    });
+    return `Created nightly dreaming schedule ${item.id}.`;
+  },
+  {
+    name: "schedule_dreaming",
+    description: "Schedule a nightly trace review for the current person.",
+    schema: z.object({}),
+  },
+);
+```
+:::
+
+Trace contents reach the model, so configure [trace masking](/langsmith/mask-inputs-outputs) for anything it should not see.
+
+## Start dreaming
+
+[Deploy the agent](/langsmith/managed-deep-agents-deploy), sign in, and ask it to schedule nightly dreaming from a direct conversation outside channels (such as LangSmith Studio or your own signed-in app, not Slack DMs). Approve the `schedule_dreaming` call. Each night at 03:00 UTC, the agent reviews your traces and updates `/memories/user/AGENTS.md`.
+
+Deployed instructions and skills are read-only at runtime. To apply an idea from `/memories/user/dreaming-proposals.md`, edit `instructions.md` or the skill in your project and redeploy. To stop dreaming, [delete the schedule](/langsmith/managed-deep-agents-schedules#manage-schedules).
+
+## Extend the pattern
+
+- Review a week of traces instead of a day by changing the cron and the query window.
+- Test proposed instruction changes with [evals](/langsmith/managed-deep-agents-evals) before deploying.
+- Add a [skill](/langsmith/managed-deep-agents-skills) defining what is worth remembering so reviews stay consistent.
+
+## See also
+
+- [Schedules](/langsmith/managed-deep-agents-schedules): manage recurring user-owned runs.
+- [Memory](/langsmith/managed-deep-agents-memory): configure durable memory and access policies.
+- [Export traces](/langsmith/export-traces): query and paginate trace data.

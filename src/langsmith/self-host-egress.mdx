@@ -1,17 +1,20 @@
 ---
 title: Egress for billing and operational telemetry
 sidebarTitle: Configure egress
+description: Learn what billing, operational, and usage telemetry a self-hosted LangSmith instance sends to LangChain, and how to disable the optional telemetry.
 ---
 
 <Info>
 This page only applies to customers who are not running in offline (air-gapped) mode and assumes you are using a self-hosted LangSmith instance serving version 0.9.0 or later.
 </Info>
 
-Self-hosted LangSmith stores platform data in your environment. Unless you are running in offline mode, LangSmith requires egress to `https://beacon.langchain.com` for the following:
+Self-hosted LangSmith stores platform data in your environment. Unless you are running in offline mode, LangSmith requires egress to `https://beacon.langchain.com` for the following telemetry:
 
-- **Billing telemetry**: License verification and subscription/usage reporting (required)
-- **Operational telemetry**: Logs, metrics, and traces for support diagnostics (optional, can be disabled)
-- **Usage telemetry**: Anonymized usage snapshots for product insights (optional, can be disabled)
+| Telemetry | What it sends | Required |
+|-----------|---------------|----------|
+| [Billing](#billing-telemetry) | License verification and subscription/usage reporting | Yes |
+| [Operational](#operational-telemetry) | Logs, metrics, and traces for support diagnostics | No, can be disabled |
+| [Usage](#usage-telemetry) | Anonymized usage metrics, plus organization security contact email addresses | No, can be disabled |
 
 <Warning>
 **Egress to `https://beacon.langchain.com` is required.** Refer to the [allowlisting IP section](/langsmith/cloud-ip-allowlist#allowlisting-ip-addresses) for static IP addresses, if needed.
@@ -123,6 +126,8 @@ Operational telemetry is **separate from** billing telemetry. You can disable op
 We do not collect actual payload contents, database records, or any data that can identify your end users or customers. All telemetry data is associated with an organization and deployment, but never identified with individual users. We **do not collect PII** (personally identifiable information) in any form.
 </Info>
 
+For every metric LangChain keeps and the attributes kept with it, see the [operational telemetry metrics reference](/langsmith/self-host-telemetry-metrics).
+
 ### How to disable
 
 You can disable operational telemetry by setting the following values in your `langsmith_config.yaml` file:
@@ -141,11 +146,34 @@ You can also disable individual telemetry types by setting only specific values 
 Disabling operational telemetry stops exporting the logs, metrics, and traces described in this section. It does **not** disable billing telemetry (license verification and subscription/usage reporting).
 </Warning>
 
+### Disable metrics for one datastore
+
+The `queue` deployment collects PostgreSQL, Redis, ClickHouse, and SmithDB metrics. To stop sending one datastore's metrics while keeping the rest, set its environment variable to `false` in `queue.deployment.extraEnv`. For example, to stop sending SmithDB metrics:
+
+```yaml
+queue:
+  deployment:
+    extraEnv:
+      - name: ENABLE_SMITHDB_METRICS_CRON
+        value: "false"
+```
+
+| Datastore | Environment variable |
+| --- | --- |
+| PostgreSQL | `ENABLE_POSTGRES_METRICS_CRON` |
+| Redis | `ENABLE_REDIS_METRICS_CRON` |
+| ClickHouse | `ENABLE_CLICKHOUSE_METRICS_CRON` |
+| SmithDB | `ENABLE_SMITHDB_METRICS_CRON` (LangSmith v0.18 or later) |
+
+LangSmith services keep sending their own metrics. To stop all metrics, set `config.telemetry.metrics` to `false`.
+
 ### Example payloads
 
 #### Operational metrics
 
 **Endpoint:** `POST beacon.langchain.com/v1/beacon/v1/metrics`
+
+The following abridged request shows two metrics. Values are illustrative, and default OpenTelemetry SDK resource attributes are omitted. LangChain's collector drops any metric and attribute that is not in the [operational telemetry metrics reference](/langsmith/self-host-telemetry-metrics), such as the `path` attribute below.
 
 **Request:**
 
@@ -155,71 +183,52 @@ Disabling operational telemetry stops exporting the logs, metrics, and traces de
     {
       "resource": {
         "attributes": [
-          {
-            "key": "resource.name",
-            "value": { "stringValue": "langsmith-metrics" }
-          },
-          {
-            "key": "env",
-            "value": { "stringValue": "ls_self_hosted" }
-          }
+          { "key": "env", "value": { "stringValue": "ls_self_hosted" } },
+          { "key": "customer.id", "value": { "stringValue": "<CUSTOMER_ID_FROM_LICENSE>" } },
+          { "key": "customer.name", "value": { "stringValue": "<CUSTOMER_NAME_FROM_LICENSE>" } }
         ]
       },
       "scopeMetrics": [
         {
-          "scope": {
-            "name": "langsmith.metrics",
-            "version": "0.1.0"
-          },
+          "scope": { "name": "langsmith.self_hosted" },
           "metrics": [
             {
-              "name": "langsmith_http_requests_latency",
-              "unit": "seconds",
-              "description": "Request latency of LangSmith services",
-              "gauge": {
-                "dataPoints": [
-                  {
-                    "asDouble": 12.34,
-                    "startTimeUnixNano": 1678886400000000000,
-                    "timeUnixNano": 1678886400000000000,
-                    "attributes": [
-                      {
-                        "key": "endpoint",
-                        "value": { "stringValue": "/sessions" }
-                      },
-                      { "key": "method", "value": { "stringValue": "GET" } },
-                      {
-                        "key": "service_name",
-                        "value": { "stringValue": "langsmith_backend" }
-                      }
-                    ]
-                  }
-                ]
-              }
-            },
-            {
-              "name": "langsmith_http_requests_failed",
-              "unit": "1",
-              "description": "Counter of failed requests for LangSmith services",
+              "name": "self_hosted_langsmith_http_responses_total",
+              "description": "Total count of responses by method, path and status codes.",
               "sum": {
                 "dataPoints": [
                   {
-                    "asInt": 456,
-                    "startTimeUnixNano": 1678886400000000000,
-                    "timeUnixNano": 1678886400000000000,
+                    "asInt": "456",
+                    "startTimeUnixNano": "1678886400000000000",
+                    "timeUnixNano": "1678886460000000000",
                     "attributes": [
-                      {
-                        "key": "endpoint",
-                        "value": { "stringValue": "/info" }
-                      },
-                      { "key": "method", "value": { "stringValue": "POST" } },
-                      {
-                        "key": "service_name",
-                        "value": { "stringValue": "langsmith_platform_backend" }
-                      }
-                    ],
-                    "aggregationTemporality": 2,
-                    "isMonotonic": true
+                      { "key": "method", "value": { "stringValue": "GET" } },
+                      { "key": "path", "value": { "stringValue": "/sessions" } },
+                      { "key": "status_code", "value": { "stringValue": "200" } },
+                      { "key": "app_name", "value": { "stringValue": "backend" } }
+                    ]
+                  }
+                ],
+                "aggregationTemporality": 1,
+                "isMonotonic": true
+              }
+            }
+          ]
+        },
+        {
+          "scope": { "name": "self_hosted.postgres" },
+          "metrics": [
+            {
+              "name": "self_hosted_pg_stat_activity_count",
+              "description": "Number of connections in this state",
+              "gauge": {
+                "dataPoints": [
+                  {
+                    "asDouble": 12,
+                    "timeUnixNano": "1678886460000000000",
+                    "attributes": [
+                      { "key": "state", "value": { "stringValue": "active" } }
+                    ]
                   }
                 ]
               }
@@ -401,7 +410,7 @@ We only export error log messages from self-hosted LangSmith instances. This all
 
 ## Usage telemetry
 
-Usage telemetry collects anonymized snapshots of your LangSmith instance's usage metrics. This data helps LangChain understand platform adoption patterns and inform product development decisions.
+Usage telemetry collects snapshots of your LangSmith instance's anonymized usage metrics. This data helps LangChain understand platform adoption patterns and inform product development decisions. Snapshots can also include security contacts for notices from LangChain.
 
 <Info>
 Usage telemetry is **enabled by default** and can be disabled. Unlike billing telemetry, you have full control over whether these snapshots are sent to LangChain.
@@ -419,12 +428,17 @@ Usage telemetry is **enabled by default** and can be disabled. Unlike billing te
 - **Feature usage**: Counts of run rules, annotation queues, prompts, and prompt-related activity
 - **Users**: Total number of registered users and count of active PATs (Personal Access Tokens) in the last 30 days
 - **Timestamps**: Time range for the snapshot (from/to timestamps in UTC)
+- **Security contacts**: Email addresses configured for each organization, with organization and installation identifiers
 
 <Info>
-All metrics are **aggregated counts only**. No individual resource data, identifiers, or usage patterns are collected. We do not collect any information that could identify your end users or customers.
+All metrics are **aggregated counts only**. No individual resource data or identifiers are included in the metrics. Security contact email addresses and their associated identifiers are not anonymous.
 </Info>
 
+Contact reporting is enabled by default when phone-home and usage reporting are enabled. Offline instances do not send these snapshots. See [Manage security contacts](/langsmith/set-up-hierarchy#manage-security-contacts) to update the addresses.
+
 ### Example payloads
+
+This example shows usage metrics without the optional security contacts report.
 
 **Endpoint:** `POST /v1/beacon/usage-snapshot`
 
@@ -453,6 +467,18 @@ All metrics are **aggregated counts only**. No individual resource data, identif
 }
 ```
 
+### Disable security contact reporting
+
+To stop sending security contacts while keeping usage telemetry enabled, add the following to `commonEnv` in your Helm values and redeploy:
+
+```yaml
+commonEnv:
+  - name: PHONE_HOME_SECURITY_CONTACTS_REPORTING_ENABLED
+    value: "false"
+```
+
+The next usage snapshot that includes a contact report sends an empty list to clear the previously reported contacts for that installation. A snapshot without an installation identifier cannot clear the contacts. If phone-home or usage reporting is disabled, no snapshot is sent and the previously reported contacts are not cleared by this setting. This setting does not remove contacts from your local organization settings.
+
 ### How to disable
 
 You can disable usage telemetry by setting the following environment variable in your deployment configuration:
@@ -462,6 +488,12 @@ PHONE_HOME_USAGE_REPORTING_ENABLED: false
 ```
 
 Add this to the `commonEnv` section of your Helm configuration to permanently disable usage telemetry reporting.
+
+Disabling usage telemetry stops all usage snapshots, so LangChain keeps any security contacts your installation already reported. To also clear those contacts:
+
+1. [Disable security contact reporting](#disable-security-contact-reporting).
+1. Wait for the next daily usage snapshot (02:00 UTC by default), which sends an empty contact list.
+1. Set `PHONE_HOME_USAGE_REPORTING_ENABLED` to `false`.
 
 <Warning>
 Disabling usage telemetry does **not** affect billing or operational telemetry. License verification and subscription/usage reporting will continue to function normally.
@@ -508,4 +540,4 @@ Offline (air-gapped) Self-hosted can run Engine on your own model providers. See
 
 ## Our commitment
 
-The following commitments apply to the billing, operational, and usage telemetry described on this page. LangChain will not store sensitive information in that telemetry or share it with a third party. Log messages are filtered to only include error severity levels, and we do not capture log messages that could contain sensitive application data. Engine's use of LangSmith Intelligence is a separate data flow described in [Engine on Self-hosted](/langsmith/engine-self-hosted). If you have any concerns about the data being sent, disable optional telemetry or [contact our sales team](https://www.langchain.com/contact-sales).
+The following commitments apply to the billing, operational, and usage telemetry described on this page. LangChain will not store sensitive information other than the security contact email addresses described above in that telemetry or share the telemetry with a third party. Log messages are filtered to only include error severity levels, and we do not capture log messages that could contain sensitive application data. Engine's use of LangSmith Intelligence is a separate data flow described in [Engine on Self-hosted](/langsmith/engine-self-hosted). If you have any concerns about the data being sent, disable optional telemetry or [contact our sales team](https://www.langchain.com/contact-sales).

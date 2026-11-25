@@ -3,6 +3,9 @@ title: Memory
 description: Add persistent memory to agents built with Deep Agents so they learn and improve across conversations
 ---
 
+import MemoryConsolidationAgentPy from '/snippets/code-samples/memory-consolidation-agent-py.mdx';
+import MemoryConsolidationAgentJs from '/snippets/code-samples/memory-consolidation-agent-js.mdx';
+
 Memory lets your agent learn and improve across conversations. Deep Agents makes memory first class with filesystem-backed memory: the agent reads and writes memory as files, and you control where those files are stored using [backends](/oss/deepagents/backends).
 
 <Tip>
@@ -662,85 +665,11 @@ The recommended pattern is to deploy a **consolidation agent** alongside your ma
 The consolidation agent reads recent conversation history and merges key facts into the memory store. Register it alongside your main agent in `langgraph.json`:
 
 :::python
-```python consolidation_agent.py
-from datetime import datetime, timedelta, timezone
-
-from deepagents import create_deep_agent
-from langchain.tools import tool, ToolRuntime
-from langgraph_sdk import get_client
-
-sdk_client = get_client(url="<DEPLOYMENT_URL>")
-
-
-@tool
-async def search_recent_conversations(query: str, runtime: ToolRuntime) -> str:
-    """Search this user's conversations updated in the last 6 hours."""
-    user_id = runtime.server_info.user.identity  # [!code highlight]
-
-    since = datetime.now(timezone.utc) - timedelta(hours=6)
-    threads = await sdk_client.threads.search(
-        metadata={"user_id": user_id},
-        updated_after=since.isoformat(),
-        limit=20,
-    )
-    conversations = []
-    for thread in threads:
-        history = await sdk_client.threads.get_history(
-            thread_id=thread["thread_id"]
-        )
-        conversations.append(history["values"]["messages"])
-    return str(conversations)
-
-
-agent = create_deep_agent(
-    model="google_genai:gemini-4-hydrogen",
-    system_prompt="""Review recent conversations and update the user's memory file.
-Merge new facts, remove outdated information, and keep it concise.""",
-    tools=[search_recent_conversations],
-)
-```
+<MemoryConsolidationAgentPy />
 :::
 
 :::js
-```typescript src/consolidation-agent.ts
-import { createDeepAgent } from "deepagents";
-import { Client } from "@langchain/langgraph-sdk";
-import { tool } from "@langchain/core/tools";
-
-const sdkClient = new Client({ apiUrl: "<DEPLOYMENT_URL>" });
-
-const searchRecentConversations = tool(
-  async ({ query }, runtime) => {
-    const userId = runtime.serverInfo.user.identity;  // [!code highlight]
-
-    const since = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
-    const threads = await sdkClient.threads.search({
-      metadata: { userId },
-      updatedAfter: since,
-      limit: 20,
-    });
-    const conversations = [];
-    for (const thread of threads) {
-      const history = await sdkClient.threads.getHistory(thread.threadId);
-      conversations.push(history.values.messages);
-    }
-    return JSON.stringify(conversations);
-  },
-  {
-    name: "search_recent_conversations",
-    description: "Search this user's conversations updated in the last 6 hours.",
-  }
-);
-
-const agent = createDeepAgent({
-  model: "google:gemini-4-hydrogen",
-  systemPrompt: `Review recent conversations and update the user's memory file.
-Merge new facts, remove outdated information, and keep it concise.`,
-  tools: [searchRecentConversations],
-});
-
-export { agent };
-```
+<MemoryConsolidationAgentJs />
 :::
 
 :::python

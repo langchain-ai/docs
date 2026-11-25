@@ -1,11 +1,11 @@
 ---
 type: documentation workflow
 title: Code Sample Lifecycle
-description: Explains how runnable documentation samples are selected, executed, retried, traced, extracted, and rendered into committed MDX. Distinguishes durable source samples from disposable extraction output and generated documentation.
+description: Explains how runnable documentation samples are selected, executed, retried, traced, extracted, and rendered into generated MDX. Distinguishes durable source samples from disposable extraction output and records the CI credential and fixture boundaries.
 tags: [code-samples, documentation, mdx, testing, tracing, ci, langsmith]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-11-16T08:15:17.266Z
+    at: 2026-11-23T08:07:24.438Z
 sources:
   - id: openwiki-source-ddbddbe474c8dc57119458d7
     resource: repo://.agents/skills/docs-code-samples/SKILL.md
@@ -37,7 +37,7 @@ sources:
     resource: repo://tests/unit_tests/test_generate_code_snippet_mdx.py
   - id: openwiki-source-b631fb59f417cefbd356f03e
     resource: repo://tests/unit_tests/test_test_code_samples.py
-generated: { by: "openwiki/0.4.3", at: "2026-11-16T08:15:17.266Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-11-23T08:07:24.438Z" }
 ---
 
 ## Source of truth and lifecycle
@@ -59,6 +59,8 @@ flowchart TD
   Extract --> Generate["Generate MDX fragments"]
   Generate --> Durable["Committed snippets and importing docs"]
 ```
+
+This flow shows the ownership boundary from executable source through validation, optional trace publication, extraction, and generated documentation.
 
 The runner's `CODE_SAMPLE_PATHS` filter is restrictive: paths outside `src/code-samples/` are ignored, and resolved ancestry matching prevents a similarly named sibling directory from qualifying. An explicit `FILES` list is still filtered by that setting and by the supported extensions.
 
@@ -86,6 +88,8 @@ The CI matrix has independent `oss` and `langsmith` legs. OSS covers `langchain`
 The runner defaults to four workers (`CODE_SAMPLE_JOBS`) and keeps unrelated samples concurrent. Samples sharing LangSmith datasets, experiments, or hub prompts are placed into ordered serial chains: `evaluate-rag-`, `experiment-runs-query-`, `prompt-engineering-quickstart`, and `evaluation-quickstart-`. A chain runs on one worker in lexical path order while other samples continue in parallel.
 
 Recognized LangSmith rate-limit output is retried up to five total attempts by default. The delay is linear from `CODE_SAMPLE_RATE_LIMIT_DELAY_SECONDS` (default 30 seconds) and capped at 120 seconds. `CODE_SAMPLE_RATE_LIMIT_ATTEMPTS` and the delay are configurable. An exhausted rate-limited sample is skipped, while an ordinary nonzero exit, missing executable, or timeout is a failure.
+
+The child process inherits the runner environment, so provider and fixture configuration is supplied at the execution boundary rather than embedded in generated snippets. CI supplies gateway-routed provider variables, `POSTGRES_URI`, and provider/API secrets; fork pull requests are excluded because repository secrets are unavailable. The trace-refresh path additionally requires `LANGSMITH_API_KEY`. Treat generated snippets as documentation output: credential values and test-only setup must remain in the executable source or CI environment, never be serialized into a generated fragment.
 
 ## Generate MDX
 
@@ -126,6 +130,8 @@ sequenceDiagram
   Collector->>Manifest: Store URL and run identity
 ```
 
+This sequence shows how a successful, eligible sample becomes a verified public-trace link before MDX generation.
+
 For a source with exactly one safe snippet marker, the runner stamps `LANGSMITH_DOCS_SNIPPET` into the sample environment. After a successful run, collection runs under a lock, queries the configured project for a root run with that exact metadata, excludes already claimed run IDs, and stores its public URL in `src/code-samples/trace-links.json`. The generator appends a **View example trace** Card only when the manifest has a URL.
 
 Multi-snippet sources are recorded as skipped and their stale per-snippet entries are removed. If a successful single-snippet source has no stamped root run, an old manifest entry is removed so regeneration removes the stale CTA instead of linking an unverified run. Trace collection retries 429 responses with the runner policy; collection exceptions are warnings and do not fail an otherwise successful sample suite.
@@ -149,6 +155,8 @@ A separate scheduled `workflow_run` observer warns rather than failing when `LIN
 
 ## Related pages
 
+- [Source Map](/openwiki/architecture/source-map.md)
+- [NPM Snippets](/openwiki/integrations/npm-snippets.md)
 - [Local Tooling and Commands](/openwiki/operations/cli-tools.md)
 - [Testing and Validation Overview](/openwiki/testing/test-overview.md)
 - [LangSmith agent documentation](/openwiki/workflows/langsmith-agent-documentation.md)
