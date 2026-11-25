@@ -1,0 +1,46 @@
+```go
+package main
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/langchain-ai/langsmith-go"
+)
+
+func main() {
+	agent, err := langsmith.NewAgentAddress("checkout", "production")
+	if err != nil {
+		panic(err.Error())
+	}
+	client := langsmith.NewClient()
+
+	id := uuid.New()
+	start := time.Now().UTC()
+	order := fmt.Sprintf("%s%06dZ%s", start.Format("20060102T150405"), start.Nanosecond()/1000, id)
+
+	if err := client.CreateRun(&langsmith.RunCreate{
+		ID:          id,
+		TraceID:     id,
+		Name:        "handle_order",
+		RunType:     "chain",
+		StartTime:   start,
+		DottedOrder: order,
+		Address:     agent,
+		Inputs:      map[string]any{"order_id": "A-1"},
+	}); err != nil {
+		panic(err.Error())
+	}
+	if err := client.UpdateRun(&langsmith.RunUpdate{
+		ID:          id,
+		TraceID:     id,
+		DottedOrder: order,
+		EndTime:     time.Now().UTC(),
+		Outputs:     map[string]any{"status": "charged"},
+	}); err != nil {
+		panic(err.Error())
+	}
+	client.Close()
+}
+```

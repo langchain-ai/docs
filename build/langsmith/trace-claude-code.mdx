@@ -1,0 +1,149 @@
+---
+title: Trace Claude Code sessions
+sidebarTitle: Claude Code
+---
+
+import CodingAgentManagedSettings from '/snippets/python/langsmith/coding-agent-managed-settings.mdx';
+import CodingAgentSecretRedaction from '/snippets/python/langsmith/coding-agent-secret-redaction.mdx';
+import CodingAgentStrictAuth from '/snippets/python/langsmith/coding-agent-strict-auth.mdx';
+
+The LangSmith tracing plugin sends your [Claude Code](https://code.claude.com/docs/en/overview) conversations to LangSmith so you can see what the agent did. Each message becomes a trace, and a session's messages are grouped into a thread.
+
+## Prerequisites
+
+- [Claude Code](https://code.claude.com/docs/en/overview) installed.
+- A LangSmith account.
+- [Node.js](https://nodejs.org/) 20 or later on Windows and Linux. On macOS the plugin runs its own build and does not need Node.js.
+
+## Install the plugin
+
+Run these commands inside Claude Code:
+
+```bash
+/plugin marketplace add langchain-ai/langsmith-claude-code-plugins
+/plugin install langsmith-tracing@langsmith-claude-code-plugins
+/reload-plugins
+```
+
+Auto-update is off for this marketplace by default. To turn it on, run `/plugin` and open **Marketplaces**. To install the plugin for everyone, see [Deploy to your organization](#deploy-to-your-organization). For more on installing plugins, see [Install plugins](https://code.claude.com/docs/en/plugins/install) in the Claude Code docs.
+
+## Sign in
+
+Sign in once with the LangSmith CLI. See [Install the LangSmith CLI](/langsmith/langsmith-cli#install) if you do not have it yet.
+
+```bash
+langsmith auth login
+```
+
+If you use the CLI sign-in and have more than one profile, set `profile` in your config file to the one the plugin should use. Your own `api_key` ignores this setting, but a generic `LANGSMITH_API_KEY` is not used as a fallback while `profile` is set.
+
+To use an API key instead, add it to `~/.claude/langsmith.json`:
+
+```json
+{ "enabled": true, "api_key": "lsv2_pt_...", "agent_id": "shared-claude" }
+```
+
+If more than one credential is set, the plugin uses the first one it finds:
+
+1. The plugin's own key from `api_key` or `CC_LANGSMITH_API_KEY`.
+2. Your `langsmith auth login` sign-in.
+3. A generic `LANGSMITH_API_KEY` from your environment.
+
+Tracing stops when your sign-in expires or your key is rejected, and turns from that gap are never uploaded. Claude Code reminds you in the chat until you fix it. Admins can also [require a working sign-in](#require-a-working-sign-in) for every prompt.
+
+## Turn on tracing
+
+Tracing is off until you turn it on in `~/.claude/langsmith.json`, unless your admin already turned it on with a [managed file](#lock-settings). Send traces to an [agent](/langsmith/log-traces-to-agent#send-traces-to-an-agent) with `agent_id`:
+
+```json
+{ "enabled": true, "agent_id": "shared-claude" }
+```
+
+Or send them to a project with `project`:
+
+```json
+{ "enabled": true, "project": "shared-claude" }
+```
+
+Use either one. If you set both, `agent_id` wins.
+
+<Warning>
+A project can override these settings with `<project>/.claude/langsmith.json` or `<project>/langsmith-plugins.json`. A cloned repository can use them to turn tracing on and send your conversations to someone else's server. Before you trust a repository, review those files along with `.claude/settings.json` and `.claude/settings.local.json`.
+</Warning>
+
+Send a message and open your agent or project in [LangSmith](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=langsmith-trace-claude-code). Run `/langsmith-tracing:trace` to get a link to the current conversation's trace.
+
+## Deploy to your organization
+
+Admins can install the plugin for everyone and control how it traces from one place.
+
+### Install for everyone
+
+Use Claude Code's managed settings to install the plugin on every machine. For the setup, see [Manage Claude Code plugins for your organization](https://code.claude.com/docs/en/plugins/org).
+
+### Lock settings
+
+<CodingAgentManagedSettings />
+
+### Require a working sign-in
+
+<CodingAgentStrictAuth />
+
+<Warning>
+Strict auth also blocks non-interactive runs such as `claude -p` in CI. Leave it off for automated runs unless a failed sign-in should stop the job.
+</Warning>
+
+## Hide a conversation
+
+Run `/langsmith-tracing:mute` inside Claude Code to keep a conversation's content out of LangSmith, and `/langsmith-tracing:unmute` to turn it back on. The confirmation appears as a prompt blocked by a hook, because that is how Claude Code shows a plugin's reply. To mute every conversation by default, set `defaultMuted` to `true`.
+
+## Secret redaction
+
+<CodingAgentSecretRedaction />
+
+To turn redaction off or add your own patterns, see the [plugin settings](https://github.com/langchain-ai/langsmith-claude-code-plugins#settings).
+
+## Settings
+
+Each setting has a config file key and an environment variable. The environment variable wins when both are set.
+
+| Config key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | `TRACE_TO_LANGSMITH` | `false` | Turns tracing on. |
+| `api_key` | `CC_LANGSMITH_API_KEY` | none | LangSmith API key. Not needed if you sign in with the CLI. |
+| `project` | `CC_LANGSMITH_PROJECT` | `claude-code` | Project the traces go to. Use this or `agent_id`. |
+| `agent_id` | `LANGSMITH_AGENT_ID` | none | Agent the traces go to. Wins over `project` if both are set. |
+| `api_url` | `LANGSMITH_ENDPOINT` | `https://api.smith.langchain.com` | LangSmith server to send to. |
+
+For every setting, see the [plugin settings](https://github.com/langchain-ai/langsmith-claude-code-plugins#settings).
+
+## Other examples
+
+The plugin's [Advanced configuration](https://github.com/langchain-ai/langsmith-claude-code-plugins/blob/main/ADVANCED.md) guide has worked examples for:
+
+- [Setting variables in Claude Code's settings](https://github.com/langchain-ai/langsmith-claude-code-plugins/blob/main/ADVANCED.md#set-variables-in-claude-codes-settings)
+- [Adding custom metadata](https://github.com/langchain-ai/langsmith-claude-code-plugins/blob/main/ADVANCED.md#add-custom-metadata)
+- [Muting every conversation by default](https://github.com/langchain-ai/langsmith-claude-code-plugins/blob/main/ADVANCED.md#mute-every-conversation-by-default)
+- [Redacting extra patterns](https://github.com/langchain-ai/langsmith-claude-code-plugins/blob/main/ADVANCED.md#redact-extra-patterns)
+- [Sending the same trace to two places](https://github.com/langchain-ai/langsmith-claude-code-plugins/blob/main/ADVANCED.md#send-the-same-trace-to-two-places)
+- [Tracing a Claude Code run in CI](https://github.com/langchain-ai/langsmith-claude-code-plugins/blob/main/ADVANCED.md#trace-a-claude-code-run-in-ci)
+- [Nesting traces under a run you already trace](https://github.com/langchain-ai/langsmith-claude-code-plugins/blob/main/ADVANCED.md#nest-traces-under-a-run-you-already-trace) in Python and TypeScript
+
+## Troubleshooting
+
+- **No traces**: Check that the plugin is enabled in `/plugin` and that tracing is on.
+- **Tracing is paused**: Run `langsmith auth login` again or replace the rejected API key.
+- **Still stuck**: Set `CC_LANGSMITH_DEBUG=true` and check `~/.claude/state/hook.log`.
+
+For more fixes, see [When nothing shows up](https://github.com/langchain-ai/langsmith-claude-code-plugins#when-nothing-shows-up).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/trace-claude-code.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
