@@ -328,6 +328,7 @@ When sending traces to LangSmith via OpenTelemetry, the following attributes are
 | `langsmith.trace.id`           | Trace ID         | The trace (root run) the span belongs to; set to attach to an existing trace |
 | `langsmith.span.id`            | Run ID           | This span's run ID (a UUID); overrides the ID derived from the OTLP span ID   |
 | `langsmith.span.parent_id`     | Parent run ID    | Nests the span under an existing run by its run ID                            |
+| `langsmith.is_root`            | Root run         | Must be a boolean; the string `"true"` has no effect. When `true`, the span becomes a root run and its `parentSpanId` is ignored. See [Context propagation](#context-propagation-in-distributed-tracing). |
 | `langsmith.span.dotted_order`  | Dotted order     | Position in the trace tree: `<parent.dotted_order>.<timestamp><span.id>`. See [`dotted_order`](https://docs.langchain.com/langsmith/run-data-format#what-is-dotted_order). |
 | `langsmith.trace.session_id`   | Session ID       | Session identifier for related traces                                        |
 | `langsmith.trace.session_name` | Session name     | Name of the session                                                          |
@@ -822,6 +823,8 @@ The OTel endpoint is asynchronous: it accepts a batch, returns `200`, and materi
 However, if the parent span is **never** exported to LangSmith, the buffered child expires and never appears as a run. LangSmith will not return an error, because the `200` was sent before processing. This commonly happens when only part of a distributed trace reaches LangSmith: the parent is emitted by a service that exports to a different backend, or it's removed by a sampling decision.
 
 To avoid silent loss, make sure every span you want in LangSmith also has its ancestors exported to LangSmith within the buffering window. On self-hosted deployments, this window is controlled by `REDIS_RUNS_EXPIRY_SECONDS` (default 12 hours).
+
+If the parent is intentionally not sent to LangSmith, set the boolean attribute `langsmith.is_root` to `true` on the topmost span you do send. LangSmith ignores that span's `parentSpanId` and records it as the root run, with its descendants nested under it. Other backends still see the original parent. Set it only on that one span: a span marked as root whose ancestors also reach LangSmith splits the trace into separate trees.
 </Warning>
 
 #### Set up distributed tracing with LangChain
