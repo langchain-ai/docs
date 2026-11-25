@@ -1,0 +1,244 @@
+---
+title: Direct model access
+description: Access provider APIs directly through provider-specific LLM Gateway paths without using the gateway standardization layer.
+---
+
+import LLMGatewayBetaNote from '/snippets/python/langsmith/llm-gateway-beta-note.mdx';
+
+<LLMGatewayBetaNote />
+
+Direct model access exposes each provider API through a provider-specific gateway path. The gateway still handles authentication, provider secrets, policies, and tracing, but it does not translate the request and response into another provider's API format.
+
+Direct model access is the path [LangChain and Deep Agents](#configure-langchain-and-deep-agents) use by default. For other clients, use it when you want a provider's native request and response behavior. To call models across providers in one API format, use the [standard endpoint](/langsmith/llm-gateway-api-formats) instead.
+
+## Choose a provider path
+
+Append a provider path to your [regional gateway](/langsmith/llm-gateway-how-it-works#use-a-regional-gateway) base URL, for example `https://eu.gateway.smith.langchain.com/anthropic` for direct Anthropic access in GCP EU:
+
+| Provider | Gateway path |
+| --- | --- |
+| Anthropic | `/anthropic` |
+| AWS Bedrock | `/bedrock` |
+| Azure Foundry | `/azure` |
+| Baseten | `/baseten` |
+| Fireworks | `/fireworks` |
+| Google Gemini | `/gemini` |
+| Gemini Enterprise Agent Platform (Vertex AI) | `/vertex` |
+| OpenAI | `/openai` |
+| ScaleDown | `/scaledown` |
+| TypeSafe | `/typesafe` |
+| xAI | `/xai` |
+
+Each path uses the provider key stored in the caller's workspace. For secret names, see [Provider authentication](/langsmith/llm-gateway-provider-authentication#add-a-provider-key).
+
+[Gateway Credits models](/langsmith/llm-gateway-credits) use the standard endpoint rather than a provider-specific path. These hosted models require no provider secret of your own.
+
+## Configure provider SDKs
+
+Set each provider SDK's base URL to its direct gateway path and use your LangSmith API key as the provider API key:
+
+```bash
+export LANGSMITH_API_KEY="lsv2_..._....cbed3e"
+export BASE_URL="https://gateway.smith.langchain.com"
+
+export ANTHROPIC_BASE_URL="$BASE_URL/anthropic"
+export OPENAI_BASE_URL="$BASE_URL/openai/v1"
+export GOOGLE_GEMINI_BASE_URL="$BASE_URL/gemini"
+
+export ANTHROPIC_API_KEY="$LANGSMITH_API_KEY"
+export OPENAI_API_KEY="$LANGSMITH_API_KEY"
+export GEMINI_API_KEY="$LANGSMITH_API_KEY"
+export GOOGLE_API_KEY="$LANGSMITH_API_KEY"
+```
+
+The gateway resolves the actual provider key provider secrets, so the provider key does not need to be stored locally.
+
+<CodeGroup>
+
+```python OpenAI SDK
+import os
+
+from openai import OpenAI
+
+client = OpenAI(
+    base_url=os.environ["OPENAI_BASE_URL"],
+    api_key=os.environ["LANGSMITH_API_KEY"],
+)
+response = client.chat.completions.create(
+    model="gpt-5.4-mini",
+    messages=[{"role": "user", "content": "ping"}],
+)
+print(response.choices[0].message.content)
+```
+
+```python Anthropic SDK
+import os
+
+import anthropic
+
+client = anthropic.Anthropic(
+    base_url=os.environ["ANTHROPIC_BASE_URL"],
+    api_key=os.environ["LANGSMITH_API_KEY"],
+)
+message = client.messages.create(
+    model="claude-opus-5",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "ping"}],
+)
+print(message.content[0].text)
+```
+
+</CodeGroup>
+
+Direct paths use the provider's native model name without a provider prefix.
+
+## Create embeddings
+
+The gateway routes embeddings requests to OpenAI, Azure Foundry, and Gemini Enterprise Agent Platform through their direct paths. Use these paths to generate vectors with the same workspace credentials, policies, and tracing as other gateway requests. The [standard endpoint](/langsmith/llm-gateway-api-formats) does not accept embeddings requests.
+
+Configure the provider's [workspace credentials](/langsmith/llm-gateway-provider-authentication#add-a-provider-key) before sending a request. Authenticate to the gateway with your LangSmith API key, not a provider key. The examples use the US Cloud hostname. To use another region, replace it with your [regional gateway](/langsmith/llm-gateway-how-it-works#use-a-regional-gateway) hostname.
+
+| Provider | Embeddings endpoint | Request format |
+| --- | --- | --- |
+| OpenAI | `POST /openai/v1/embeddings` | `model` and `input`. |
+| Azure Foundry | `POST /azure/v1/embeddings` | `model` (deployment name) and `input`. |
+| Gemini Enterprise Agent Platform | `POST /vertex/v1/publishers/google/models/{model}:embedContent` | `content.parts`. |
+| Gemini Enterprise Agent Platform | `POST /vertex/v1/publishers/google/models/{model}:batchEmbedContents` | `requests`, each containing `content.parts`. |
+| Gemini Enterprise Agent Platform | `POST /vertex/v1/publishers/google/models/{model}:predict` | `instances`, each containing `content`. Only `gemini-embedding-*` models. |
+
+### Call OpenAI or Azure Foundry
+
+For OpenAI, set `model` to the embedding model ID without an `openai/` prefix. For Azure Foundry, use the deployment name on your [configured Foundry resource](/langsmith/llm-gateway-provider-authentication#configure-azure-foundry), not the underlying model ID.
+
+<CodeGroup>
+
+```bash OpenAI
+curl https://gateway.smith.langchain.com/openai/v1/embeddings \
+  --header "Authorization: Bearer $LANGSMITH_API_KEY" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "model": "text-embedding-3-small",
+    "input": "The quick brown fox"
+  }'
+```
+
+```bash Azure Foundry
+curl https://gateway.smith.langchain.com/azure/v1/embeddings \
+  --header "Authorization: Bearer $LANGSMITH_API_KEY" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "model": "<deployment-name>",
+    "input": "The quick brown fox"
+  }'
+```
+
+</CodeGroup>
+
+Both endpoints return the provider's OpenAI-format embeddings response, with vectors in `data[].embedding`.
+
+### Call Gemini Enterprise Agent Platform
+
+Gemini Enterprise Agent Platform uses Google's native request and response formats.
+
+The short paths in the table use the project and location from your [Gemini Enterprise Agent Platform credentials and workspace secrets](/langsmith/llm-gateway-provider-authentication#configure-gemini-enterprise-agent-platform). You can also specify them in the path: `/vertex/v1/projects/{project}/locations/{location}/publishers/google/models/{model}:{action}`. The gateway accepts the same path forms under `v1beta` and `v1beta1`.
+
+<CodeGroup>
+
+```bash Single embedding
+curl https://gateway.smith.langchain.com/vertex/v1/publishers/google/models/gemini-embedding-2:embedContent \
+  --header "Authorization: Bearer $LANGSMITH_API_KEY" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "content": {"parts": [{"text": "The quick brown fox"}]}
+  }'
+```
+
+```bash Batch embeddings
+curl https://gateway.smith.langchain.com/vertex/v1/publishers/google/models/gemini-embedding-2:batchEmbedContents \
+  --header "Authorization: Bearer $LANGSMITH_API_KEY" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "requests": [
+      {"content": {"parts": [{"text": "Name 5 colors"}]}},
+      {"content": {"parts": [{"text": "Name 5 animals"}]}}
+    ]
+  }'
+```
+
+```bash Predict embeddings
+curl "https://gateway.smith.langchain.com/vertex/v1/projects/<project-id>/locations/us-central1/publishers/google/models/gemini-embedding-001:predict" \
+  --header "Authorization: Bearer $LANGSMITH_API_KEY" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "instances": [{"content": "The quick brown fox"}]
+  }'
+```
+
+</CodeGroup>
+
+Replace `<project-id>` in the `:predict` example with your Google Cloud project ID. Choose a location where the model is available. The `:predict` route only accepts model IDs beginning with `gemini-embedding-`. Other models, including `text-embedding-*`, `text-multilingual-embedding-*`, and `multimodalembedding@001`, return `501`.
+
+Read vectors from `embedding.values` for `embedContent`, `embeddings[].values` for `batchEmbedContents`, and `predictions[].embeddings.values` for `predict`.
+
+### Use LangChain embeddings
+
+Configure [OpenAIEmbeddings](/oss/python/integrations/embeddings/openai) explicitly with the direct gateway base URL and your LangSmith API key:
+
+```python
+import os
+
+from langchain_openai import OpenAIEmbeddings
+
+embeddings = OpenAIEmbeddings(
+    model="text-embedding-3-small",
+    base_url="https://gateway.smith.langchain.com/openai/v1",
+    api_key=os.environ["LANGSMITH_API_KEY"],
+)
+vector = embeddings.embed_query("The quick brown fox")
+```
+
+The `LANGSMITH_GATEWAY` setup for chat models in the next section is not a substitute for configuring an embeddings client's base URL.
+
+### Track usage and apply policies
+
+Embeddings requests pass through gateway policies and appear in [gateway traces](/langsmith/llm-gateway-traces) as LLM runs. Token usage comes from the provider response. Embeddings requests do not use [fallback chains](/langsmith/llm-gateway-fallbacks).
+
+If the model has no matching price entry, [add a model price](/langsmith/cost-tracking#create-a-new-or-modify-an-existing-model-price-entry) to track embedding costs.
+
+## Configure LangChain and Deep Agents
+
+[LangChain](/oss/python/langchain/overview) chat models and [Deep Agents](/oss/python/deepagents/overview), including [Deep Agents Code](/oss/deepagents/code/overview), reach these provider paths through the `LANGSMITH_GATEWAY` environment variable:
+
+```bash
+export LANGSMITH_API_KEY="lsv2_..."
+export LANGSMITH_GATEWAY="true"
+```
+
+Deep Agents Code also requires `LANGSMITH_GATEWAY_API_KEY`. Set it to the same key:
+
+```bash
+export LANGSMITH_GATEWAY_API_KEY="$LANGSMITH_API_KEY"
+```
+
+<Note>
+`LANGSMITH_GATEWAY` support requires these minimum Python package versions: `langchain-anthropic>=1.5.1`, `langchain-baseten>=0.2.3`, `langchain-fireworks>=1.5.1`, `langchain-google-genai>=4.3.2`, and `langchain-openai>=1.4.1`.
+</Note>
+
+Each supported integration appends its own provider path, so `ChatAnthropic` calls `https://gateway.smith.langchain.com/anthropic` and `ChatOpenAI` calls `https://gateway.smith.langchain.com/openai/v1`. To route requests through the standard endpoint instead, see [Send your first LLM Gateway request](/langsmith/llm-gateway-first-request#send-a-request-from-your-code).
+
+## See also
+
+- [Send your first LLM Gateway request](/langsmith/llm-gateway-first-request): use the standard API to call models across providers.
+- [Set up the LLM Gateway](/langsmith/llm-gateway-admin-setup): configure provider secrets and access.
+- [View LLM Gateway traces](/langsmith/llm-gateway-traces): see where gateway traces appear and who can view them.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/llm-gateway-direct-model-access.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
