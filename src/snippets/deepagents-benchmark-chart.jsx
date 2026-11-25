@@ -35,7 +35,7 @@ export const DeepAgentsBenchmarkChart = () => {
       id: "tb4",
       group: "coding",
       title: "Terminal-Bench 4.0",
-      tasks: { opus: 57, sol: 60, kimi: 57 },
+      tasks: { opus: 57, sol: 60, kimi: 56 },
       runs: [
         { model: "opus", harness: "deepagents", score: 0.5175, scoreSe: 0.0218, cost: 1.414, costSe: 0.064 },
         { model: "opus", harness: "claude-code", score: 0.5263, scoreSe: 0.0226, cost: 1.565, costSe: 0.109 },
@@ -43,9 +43,10 @@ export const DeepAgentsBenchmarkChart = () => {
         { model: "sol", harness: "deepagents", score: 0.4472, scoreSe: 0.0237, cost: 0.364, costSe: 0.015 },
         { model: "sol", harness: "codex", score: 0.475, scoreSe: 0.0231, cost: 0.438, costSe: 0.013 },
         { model: "sol", harness: "pi", score: 0.3667, scoreSe: 0.0235, cost: 0.164, costSe: 0.005 },
-        { model: "kimi", harness: "claude-code", score: 0.5848, scoreSe: 0.0306, cost: 2.441, costSe: 0.177 },
-        { model: "kimi", harness: "codex", score: 0.5936, scoreSe: 0.029, cost: 1.261, costSe: 0.033 },
-        { model: "kimi", harness: "pi", score: 0.5029, scoreSe: 0.0274, cost: 1.419, costSe: 0.086 },
+        { model: "kimi", harness: "deepagents", score: 0.5387, scoreSe: 0.0247, cost: 1.426, costSe: 0.068 },
+        { model: "kimi", harness: "claude-code", score: 0.5833, scoreSe: 0.0306, cost: 2.447, costSe: 0.178 },
+        { model: "kimi", harness: "codex", score: 0.5863, scoreSe: 0.0295, cost: 1.254, costSe: 0.034 },
+        { model: "kimi", harness: "pi", score: 0.494, scoreSe: 0.0279, cost: 1.342, costSe: 0.084 },
       ],
     },
     {
