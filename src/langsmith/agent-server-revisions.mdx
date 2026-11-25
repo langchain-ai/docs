@@ -45,6 +45,50 @@ When you [create an Agent Server](/langsmith/deploy-to-cloud), LangSmith creates
   </Tab>
 </Tabs>
 
+## Update an Agent Server with active runs
+
+An update gives active background runs time to stop before the old revision shuts down. You do not need to wait for every run to finish before creating a revision.
+
+Once the new revision is healthy, LangSmith sends a shutdown signal to the old revision. The shutdown grace period defaults to `180` seconds. Configure [`BG_JOB_SHUTDOWN_GRACE_PERIOD_SECS`](/langsmith/env-var-cloud#bg_job_shutdown_grace_period_secs) to give longer runs more time. Cloud pod termination imposes an upper bound of approximately one hour, including shutdown cleanup. Do not rely on a longer value to keep old workers running indefinitely.
+
+### Resume drained runs from a checkpoint
+
+When the old revision shuts down, it drains its active runs instead of waiting for them to finish:
+
+- **Drained runs**: Each run stops at its next superstep boundary and returns to `pending`. A worker on the new revision continues it from the run's latest checkpoint, so completed steps do not run again. A drain does not count against [`BG_JOB_MAX_RETRIES`](/langsmith/env-var-cloud#bg_job_max_retries).
+- **Runs still inside a step when the grace period ends**: The server cancels them and returns them to `pending` for retry. The retry continues from the latest checkpoint and runs only the interrupted step again.
+
+<Note>
+Drained-run resumption requires `langgraph>=1.2.15` in your application's dependencies. Agent Server v0.17.0 added it behind the [`FF_RESUME_DRAINED_RUNS`](/langsmith/env-var-cloud#ff_resume_drained_runs) flag. In v0.17.0 through v0.19.x, set the flag to `true` to turn it on. From Agent Server v0.20.0, it is on by default.
+</Note>
+
+Some runs are not drained, and wait for the grace period instead:
+
+- Runs on JavaScript graphs.
+- Stateless runs, which have no checkpoint to resume from.
+- Runs that have not completed their first step.
+
+For how graph code can react to a drain request, see [Graceful shutdown](/oss/langgraph/fault-tolerance#graceful-shutdown).
+
+### Retry runs without drained-run resumption
+
+On earlier versions, the old workers wait for active runs to finish within the grace period:
+
+- **Runs that finish within the grace period**: Complete on the old revision.
+- **Runs that exceed the grace period**: The server cancels them and returns them to `pending` for retry. A worker on the new revision starts the run again from its original input, repeating model and tool calls already made. Retrying is subject to [`BG_JOB_MAX_RETRIES`](/langsmith/env-var-cloud#bg_job_max_retries), which defaults to `3`.
+
+### Plan a rollout
+
+To prepare an update for long-running agents:
+
+1. Test the new revision before updating production.
+1. Keep graph and state changes compatible with checkpoints from the previous revision. A resumed or retried run can execute on the new code.
+1. Make external side effects idempotent. Work after the last checkpoint can execute again.
+1. Set the shutdown grace period on the currently running revision before a later code rollout needs it. Changing the value only on the incoming revision does not extend the old workers' grace period.
+1. Create the revision, then [monitor the Agent Server](/langsmith/monitor-agent-server) for retries and failures.
+
+For changes that cannot resume existing checkpoints safely, pause new run submissions and let active runs finish before updating the Agent Server.
+
 ## Interrupt a revision
 
 Interrupt a revision only when it is stuck and prevents you from deploying another revision.
