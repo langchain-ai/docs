@@ -19,6 +19,8 @@ from pipeline.preprocessors.utm_links import (
         ("https://smith.langchain.com/", True),
         ("https://smith.langchain.com/agents", True),
         ("https://smith.langchain.com/agents?skipOnboarding=true", True),
+        ("https://smith.langchain.com/try/studio", True),
+        ("https://smith.langchain.com/try/tracing", True),
         ("https://smith.langchain.com/settings", False),
         ("https://smith.langchain.com/hub", False),
         ("https://smith.langchain.com/projects", False),
