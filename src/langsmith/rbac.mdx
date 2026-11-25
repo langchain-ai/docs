@@ -43,8 +43,28 @@ The Organization Admin role has full permissions to manage all organization conf
 
 | Permission | Grants |
 |------------|--------|
-| `organization:manage` | Full control over organization settings, SSO, security, and billing |
-| `organization:read` | Read access to all organization information |
+| `organization:manage` | Legacy broad organization-management grant, retained for compatibility with older services |
+| `organization:settings:manage` | Change the organization name and security contacts |
+| `organization:members:manage` | Manage invitations and organization members, subject to role-assignment rules |
+| `organization:access-control:manage` | Manage roles, restrictions, access policies, and role assignments |
+| `organization:authentication:manage` | Manage SSO, login methods, and provisioning configuration |
+| `organization:scim-tokens:manage` | Create, update, and delete SCIM provisioning tokens |
+| `organization:security-policy:manage` | Manage sharing, key expiry, IP, and model-provider policies |
+| `organization:billing:read` and `organization:billing:manage` | Read protected billing details and manage billing, respectively |
+| `organization:workspaces:manage` | Create workspaces |
+| `organization:retention:manage` | Manage organization-level retention controls |
+| `organization:usage-controls:manage` | Manage usage limits, Engine spend limits, and evaluator spend defaults |
+| `organization:audit-logs:read` | View audit logs |
+| `organization:charts:read` and `organization:charts:manage` | Read dashboard definitions and manage organization dashboards, respectively |
+| `organization:integrations:read` and `organization:integrations:manage` | Read protected integration configuration and manage organization integrations, respectively |
+| `organization:infrastructure:read` and `organization:infrastructure:manage` | Read data-plane configuration and manage data planes and private networking, respectively |
+| `organization:engine:read` and `organization:engine:manage` | Read organization Engine configuration and manage Engine enablement, respectively |
+| `organization:gateway:manage` | Manage LLM Gateway policies |
+| `organization:model-price-map:read` and `organization:model-price-map:manage` | Read and manage custom model pricing, respectively |
+| `organization:installation-operations:read` and `organization:installation-operations:manage` | Read installation diagnostics and perform installation operations, subject to installation restrictions |
+| `organization:installation-usage:manage` | Manage installation usage reporting, subject to installation restrictions |
+| `organization:service-key:manage` | Manage service accounts and delete organization-wide service keys; key creation and role assignment have additional requirements |
+| `organization:read` | Read general organization information; protected billing, audit, integration, and infrastructure details require separate permissions |
 | `organization:pats:create` | Create organization-level [personal access tokens](/langsmith/administration-overview#personal-access-tokens-pats) |
 | `organization:pats:read` | View every organization member's personal access tokens |
 | `organization:pats:manage` | Deactivate, reactivate, or delete any organization member's personal access token |
@@ -73,8 +93,9 @@ The Organization Operator role has management access for day-to-day operations, 
 
 | Permission | Grants |
 |------------|--------|
-| `organization:manage` | Control over organization settings, workspaces, and non-admin users |
-| `organization:read` | Read access to all organization information |
+| `organization:manage` | Legacy broad organization-management grant, retained for compatibility with older services |
+| Action-specific administration permissions | The same granular organization administration grants as Organization Admin, subject to the restrictions below |
+| `organization:read` | Read general organization information; protected billing, audit, integration, and infrastructure details require separate permissions |
 | `organization:pats:create` | Create personal access tokens |
 | `organization:pats:read` | View every organization member's personal access tokens |
 | `organization:pats:manage` | Deactivate, reactivate, or delete any organization member's personal access token |
@@ -158,10 +179,11 @@ The Organization Restricted role grants access to assigned workspaces without or
 | Permission | Grants |
 |------------|--------|
 | `organization:read-metadata` | Read access to organization metadata, including organization roles |
+| `organization:charts:read` | Read organization dashboard definitions; rendering requires access to source workspace resources |
 
 **Key capabilities**:
 
-- View organization metadata and role definitions.
+- View organization metadata, role definitions, and dashboard definitions.
 - Work in assigned workspaces, with permissions set by the workspace role in each.
 
 **Restrictions**:
@@ -198,7 +220,7 @@ The Workspace Admin role has full permissions for all resources in the workspace
 **Key permissions**:
 
 - All create, read, update, delete, and share permissions for all resource types.
-- Workspace management, including `workspaces:manage` and `workspaces:manage-members`.
+- Workspace management, including all action-specific administration permissions, the broad `workspaces:manage` grant, and independent member, key, secret, and model-configuration permissions.
 
 ### Workspace Editor
 
@@ -282,11 +304,40 @@ Note the following details on custom roles:
 
 ### Understand permission behavior
 
-Some permissions offer granular control when used in custom roles:
+Action-specific permissions let you delegate administration without granting broad management access. Built-in Organization Admin and Operator roles include granular organization administration grants. Built-in Workspace Admin includes granular workspace administration grants.
 
-- `workspaces:manage` does **not** include the ability to manage workspace members. To allow a custom role to add, remove, or update workspace members, you must explicitly grant `workspaces:manage-members`. The built-in Workspace Admin role includes both permissions automatically.
-- `workspaces:manage-model-configs` controls the ability to create, edit, or delete [model configurations](/langsmith/model-configurations) (including attaching [OAuth client credentials](/langsmith/model-configurations#oauth-client-credentials)) and to change which LangSmith features each model is available in. It is separate from `workspaces:manage`—grant it explicitly on custom roles that should be able to configure models. The built-in Workspace Admin role includes it automatically.
-- `workspaces:manage-keys` controls the ability to create and delete workspace API keys (service keys scoped to a workspace). It is separate from `workspaces:manage`—grant it explicitly on custom roles that should be able to manage API keys without full workspace management. To prevent privilege escalation, a key created by a user who does not have `workspaces:manage` cannot be granted more permissions than that user holds, and cannot be assigned a role the organization has marked restricted. The built-in Workspace Admin role includes it automatically.
+Action-specific organization permissions are independent of `organization:manage`: the broad grant alone does not satisfy a granular check. Built-in Organization Admin and Operator roles retain the broad grant for compatibility with older services and integration setup that still requires it. General `organization:read` does not include protected billing, audit, integration, or infrastructure reads.
+
+For workspace operations that historically required `workspaces:manage`, either the granular grant or `workspaces:manage` is accepted. Existing roles keep that historical access; you do not need to remove or replace their broad grant. This fallback does not grant unrelated permissions or bypass additional requirements.
+
+| Workspace permission | Grants |
+|----------------------|--------|
+| `workspaces:settings:manage` | Change the workspace name, handle, experience, feature default models, and agent types |
+| `workspaces:retention:manage` | Change workspace data-retention settings |
+| `workspaces:usage-controls:manage` | Manage workspace usage limits, together with `organization:usage-controls:manage` |
+| `workspaces:security-policy:manage` | Revoke public shares and manage feature model and provider restrictions |
+| `workspaces:resource-tags:manage` | Manage resource tag definitions, values, and assignments |
+| `workspaces:integrations:manage` | Manage workspace integration controls, OAuth providers, and integration destinations |
+| `workspaces:integrations:read` | Read protected integration identity-provider metadata |
+| `workspaces:sandbox-proxy-profiles:manage` | Manage sandbox proxy profiles within existing ownership limits |
+| `workspaces:credentials:read-metadata` | Read protected connection, credential, and authorization-session metadata without retrieving credentials |
+| `workspaces:credentials:manage` | Manage credentials, retrieve credential material, and refresh credentials |
+| `workspaces:credentials:use` | Use stored credentials through Managed Tools |
+| `workspaces:access-control:assign-restricted` | Assign restricted workspace roles, together with member- or key-management permission |
+| `workspaces:delete` | Delete a workspace, subject to existing lifecycle restrictions |
+| `workspaces:fleet-feedback:read-all` | Read all Fleet feedback in the workspace |
+| `agent-auth-connections:create`, `agent-auth-connections:update`, and `agent-auth-connections:delete` | Manage agent authorization connections; revocation remains a separate permission |
+
+Keep these independent permissions and compound requirements in mind:
+
+- **Workspace members**: Grant `workspaces:manage-members` to add, remove, or update members. Neither `workspaces:manage` nor restricted-role assignment authority replaces it.
+- **Model configurations**: Grant `workspaces:manage-model-configs` to create, edit, or delete [model configurations](/langsmith/model-configurations), including [OAuth client credentials](/langsmith/model-configurations#oauth-client-credentials). Feature default models require settings-management permission; model and provider restrictions require security-policy permission. In the UI, disabling the current default also requires permission to clear it.
+- **Workspace API keys**: Grant `workspaces:manage-keys` to create or delete workspace-scoped service keys. The caller also needs authority to assign the chosen role in every target workspace. Restricted roles require `workspaces:access-control:assign-restricted`, `workspaces:manage`, or organization access-control authority. Without that authority, you can assign an unrestricted role; when you omit a role, the key defaults to your own role. Organization-wide service keys have additional organization-role requirements. See [role restriction rules](#restrict-roles).
+- **Workspace secrets**: Grant `workspaces:manage-secrets` explicitly. Neither credential-management permission nor `workspaces:manage` replaces it.
+- **User groups**: Grant the relevant organization or workspace `user-groups:*` permissions explicitly. Broad management grants do not include them.
+
+The following resource permissions also remain independent:
+
 - `bulk-exports:read` and `bulk-exports:manage` cover the bulk export endpoints (listing, creating, cancelling exports, and managing destinations). Use them in a custom role to grant least-privilege bulk export access without `workspaces:manage`. The built-in Workspace Admin role includes `bulk-exports:manage` and all read-capable roles include `bulk-exports:read` automatically.
 - `projects:increase-trace-tier` and `projects:decrease-trace-tier` are independent and can be granted separately. For example, you can allow a role to decrease retention without allowing it to increase retention. If a user lacks both permissions, the retention settings UI is hidden entirely. If they have only one, the UI is partially enabled (the disallowed direction is disabled).
 - `runs:read-inputs` and `runs:read-outputs` control whether a role can see run inputs and outputs, and are separate from `runs:read`. A role with `runs:read` but without one of these permissions can still list and open runs, but responses leave out the denied field and its preview. Message and trajectory views require both permissions. To hide inputs or outputs only in specific projects, use an [access policy](/langsmith/abac#control-access-to-run-inputs-and-outputs).
@@ -296,25 +347,26 @@ Some permissions offer granular control when used in custom roles:
 
 <Info>Role restriction is available for organizations on the [Enterprise](/langsmith/pricing-plans) plan.</Info>
 
-[Organization Admins](#organization-admin) and [Organization Operators](#organization-operator) (roles with the `organization:manage` permission) can mark any role—system or custom—as **restricted**. Restricted roles can only be assigned to workspace members by users who hold the built-in [Workspace Admin](#workspace-admin) role. Users who have the `workspaces:manage-members` permission but do not hold the Workspace Admin role cannot assign restricted roles.
+[Organization Admins](#organization-admin) and [Organization Operators](#organization-operator) can mark built-in or custom roles as **restricted**. Restrictions limit which roles a delegated administrator can assign, in addition to the permissions required for the operation.
 
-This prevents privilege escalation: even if a user is authorized to manage workspace membership, they cannot grant roles that have been marked out of bounds for them.
+| Role scope | Requirement to assign a restricted role |
+|------------|----------------------------------------|
+| Organization | `organization:access-control:manage`, held by Organization Admins and Organization Operators. Only Organization Admins can assign or manage Organization Admins. |
+| Workspace | `workspaces:access-control:assign-restricted` or the supported broad `workspaces:manage` grant, alongside the permission to manage members or keys. |
 
-No roles are restricted by default. Organizations must explicitly restrict each role.
+The built-in Workspace Admin role includes `workspaces:access-control:assign-restricted`. The `workspaces:manage-members` permission alone does not allow assigning restricted workspace roles. For workspace grants attached to an organization invitation, assigning Workspace Admin or a restricted workspace role requires `organization:access-control:manage`.
+
+Organization Admin and Organization Operator are always restricted. You cannot remove their restrictions. Workspace roles are not restricted by default.
 
 To restrict a role, in the [LangSmith UI](https://smith.langchain.com):
 
 1. Navigate to Organization **Settings** > **Roles**.
-1. Find the role you want to restrict in the Roles table.
-1. Select the **Restricted** checkbox for that role.
+2. Find the role in the Roles table. Check its **Scope** to distinguish organization and workspace roles.
+3. Select the **Restricted** checkbox for that role.
 
-After a role is restricted, users who do not hold the Workspace Admin role cannot see or assign it in the member invite, member edit, or API key creation flows. The API also rejects assignment attempts from callers who do not hold the Workspace Admin role. If a user who does not hold the Workspace Admin role creates an API key, they cannot use their own restricted role as the key's default role.
+To remove a restriction, clear the same checkbox. Restricting an organization role also protects members and service accounts that already hold it from changes by delegated member or key managers.
 
-To unrestrict a role, follow the same steps and clear the **Restricted** checkbox.
-
-<Note>
-Role restriction applies to both system roles, such as Workspace Admin, Workspace Editor, and Workspace Viewer, and custom roles. It is available on LangSmith [Cloud](/langsmith/cloud) and [Self-hosted](/langsmith/self-hosted).
-</Note>
+In member invite, member edit, and API key flows, role selectors exclude restricted roles that the caller cannot assign. The API also rejects unauthorized assignments. A caller without restricted-workspace-role assignment authority cannot use their own restricted role as an API key's default role.
 
 ## See also
 
