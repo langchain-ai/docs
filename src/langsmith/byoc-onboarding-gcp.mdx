@@ -71,7 +71,7 @@ output "provisioner_service_account" {
 
 LangSmith requires release v0.17.90 or later of the module, which lets the provisioner create the [Private Google Access](/langsmith/byoc-networking-gcp#private-google-access) routes. With an earlier release, the data plane still becomes ready, but without Private Google Access: Google API traffic resolves to public addresses and follows your VPC's routes. If you applied an earlier release, re-apply the module at v0.17.90 or later.
 
-To create the data plane service accounts and their project roles yourself, set `byo_iam = true` before you create data planes in the project. The provisioner then cannot create service accounts or change the project IAM policy. Set it if the project holds resources that are not LangSmith's. Create the data plane with `byoiam_enabled` set to `true`. For more information, see [Bring your own IAM](/langsmith/byoc-architecture-gcp#bring-your-own-iam).
+To create the data plane service accounts and their project roles yourself, set `byo_iam = true` before you create data planes in the project. The provisioner then cannot create service accounts or change the project IAM policy. Set it if the project holds resources that are not LangSmith's. Create the data plane with `byoiam_enabled` set to `true`. With `byo_iam = true`, you cannot [turn on deployment monitoring and logs](#turn-on-deployment-monitoring-and-logs). For more information, see [Bring your own IAM](/langsmith/byoc-architecture-gcp#bring-your-own-iam).
 
 ### Step 3. Create the data plane
 
@@ -152,6 +152,38 @@ curl -X PATCH https://api.smith.langchain.com/orgs/current/data-planes/<id> \
 ```
 
 GKE nodes upgrade automatically on the GKE `REGULAR` release channel.
+
+### Turn on deployment monitoring and logs
+
+Turning on deployment monitoring and logs adds Monitoring charts to each deployment. It also keeps a searchable history of its runtime and build logs. The data plane stores both in your project. It routes the deployments' logs to a Cloud Logging bucket, and GKE Managed Prometheus collects their metrics. Log ingestion and storage are billed to your project.
+
+Deployment monitoring and logs are not available with `byo_iam = true`. The log sink and the log read access cover the whole project. Therefore, turn on the feature only in a project that holds only LangSmith resources.
+
+LangSmith cannot create the log bucket in your project. Create it once before LangSmith turns on the feature.
+
+To turn on deployment monitoring and logs:
+
+1. Re-apply the Terraform module from [Step 2](#step-2-run-the-terraform-module) with `deployment_observability = true`. The module then enables the Cloud Logging and Cloud Monitoring APIs. It also lets the provisioner manage the log bucket and sink, and grants LangSmith read access to the logs and metrics.
+2. [Contact LangChain support](https://support.langchain.com) with your organization ID and data plane name. Ask to turn on deployment monitoring and logs. The support team provides the name of the log bucket to create.
+3. Create the log bucket in the data plane's project and region. Run the command as a principal with the `logging.buckets.create` permission on the project, for example one with the Logging Admin role (`roles/logging.admin`):
+
+   ```bash
+   gcloud logging buckets create <bucket-name> \
+     --project=<project-id> \
+     --location=<region> \
+     --retention-days=30
+   ```
+
+   LangSmith manages the bucket after you create it and keeps logs for 30 days by default.
+4. Tell the support team that the bucket exists. LangSmith then turns on deployment monitoring and logs for the data plane.
+
+<Tip>
+If the feature is turned off later, LangSmith keeps the bucket and its logs.
+</Tip>
+
+<Warning>
+Do not set `deployment_observability` back to `false` until LangSmith has turned off deployment monitoring and logs for every data plane in the project.
+</Warning>
 
 ## Troubleshoot create errors
 
