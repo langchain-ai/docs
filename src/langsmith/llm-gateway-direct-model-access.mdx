@@ -23,7 +23,7 @@ Append a provider path to your [regional gateway](/langsmith/llm-gateway-how-it-
 | Baseten | `/baseten` |
 | Fireworks | `/fireworks` |
 | Google Gemini | `/gemini` |
-| Gemini Enterprise Agent Platform | `/vertex` |
+| Gemini Enterprise Agent Platform (Vertex AI) | `/vertex` |
 | OpenAI | `/openai` |
 | ScaleDown | `/scaledown` |
 | TypeSafe | `/typesafe` |
@@ -91,6 +91,119 @@ print(message.content[0].text)
 </CodeGroup>
 
 Direct paths use the provider's native model name without a provider prefix.
+
+## Create embeddings
+
+The gateway routes embeddings requests to OpenAI, Azure Foundry, and Gemini Enterprise Agent Platform through their direct paths. Use these paths to generate vectors with the same workspace credentials, policies, and tracing as other gateway requests. The [standard endpoint](/langsmith/llm-gateway-api-formats) does not accept embeddings requests.
+
+Configure the provider's [workspace credentials](/langsmith/llm-gateway-provider-authentication#add-a-provider-key) before sending a request. Authenticate to the gateway with your LangSmith API key, not a provider key. The examples use the US Cloud hostname. To use another region, replace it with your [regional gateway](/langsmith/llm-gateway-how-it-works#use-a-regional-gateway) hostname.
+
+| Provider | Embeddings endpoint | Request format |
+| --- | --- | --- |
+| OpenAI | `POST /openai/v1/embeddings` | `model` and `input`. |
+| Azure Foundry | `POST /azure/v1/embeddings` | `model` (deployment name) and `input`. |
+| Gemini Enterprise Agent Platform | `POST /vertex/v1/publishers/google/models/{model}:embedContent` | `content.parts`. |
+| Gemini Enterprise Agent Platform | `POST /vertex/v1/publishers/google/models/{model}:batchEmbedContents` | `requests`, each containing `content.parts`. |
+| Gemini Enterprise Agent Platform | `POST /vertex/v1/publishers/google/models/{model}:predict` | `instances`, each containing `content`. Only `gemini-embedding-*` models. |
+
+### Call OpenAI or Azure Foundry
+
+For OpenAI, set `model` to the embedding model ID without an `openai/` prefix. For Azure Foundry, use the deployment name on your [configured Foundry resource](/langsmith/llm-gateway-provider-authentication#configure-azure-foundry), not the underlying model ID.
+
+<CodeGroup>
+
+```bash OpenAI
+curl https://gateway.smith.langchain.com/openai/v1/embeddings \
+  --header "Authorization: Bearer $LANGSMITH_API_KEY" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "model": "text-embedding-3-small",
+    "input": "The quick brown fox"
+  }'
+```
+
+```bash Azure Foundry
+curl https://gateway.smith.langchain.com/azure/v1/embeddings \
+  --header "Authorization: Bearer $LANGSMITH_API_KEY" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "model": "<deployment-name>",
+    "input": "The quick brown fox"
+  }'
+```
+
+</CodeGroup>
+
+Both endpoints return the provider's OpenAI-format embeddings response, with vectors in `data[].embedding`.
+
+### Call Gemini Enterprise Agent Platform
+
+Gemini Enterprise Agent Platform uses Google's native request and response formats.
+
+The short paths in the table use the project and location from your [Gemini Enterprise Agent Platform credentials and workspace secrets](/langsmith/llm-gateway-provider-authentication#configure-gemini-enterprise-agent-platform). You can also specify them in the path: `/vertex/v1/projects/{project}/locations/{location}/publishers/google/models/{model}:{action}`. The gateway accepts the same path forms under `v1beta` and `v1beta1`.
+
+<CodeGroup>
+
+```bash Single embedding
+curl https://gateway.smith.langchain.com/vertex/v1/publishers/google/models/gemini-embedding-2:embedContent \
+  --header "Authorization: Bearer $LANGSMITH_API_KEY" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "content": {"parts": [{"text": "The quick brown fox"}]}
+  }'
+```
+
+```bash Batch embeddings
+curl https://gateway.smith.langchain.com/vertex/v1/publishers/google/models/gemini-embedding-2:batchEmbedContents \
+  --header "Authorization: Bearer $LANGSMITH_API_KEY" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "requests": [
+      {"content": {"parts": [{"text": "Name 5 colors"}]}},
+      {"content": {"parts": [{"text": "Name 5 animals"}]}}
+    ]
+  }'
+```
+
+```bash Predict embeddings
+curl "https://gateway.smith.langchain.com/vertex/v1/projects/<project-id>/locations/us-central1/publishers/google/models/gemini-embedding-001:predict" \
+  --header "Authorization: Bearer $LANGSMITH_API_KEY" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "instances": [{"content": "The quick brown fox"}]
+  }'
+```
+
+</CodeGroup>
+
+Replace `<project-id>` in the `:predict` example with your Google Cloud project ID. Choose a location where the model is available. The `:predict` route only accepts model IDs beginning with `gemini-embedding-`. Other models, including `text-embedding-*`, `text-multilingual-embedding-*`, and `multimodalembedding@001`, return `501`.
+
+Read vectors from `embedding.values` for `embedContent`, `embeddings[].values` for `batchEmbedContents`, and `predictions[].embeddings.values` for `predict`.
+
+### Use LangChain embeddings
+
+Configure [OpenAIEmbeddings](/oss/integrations/embeddings/openai) explicitly with the direct gateway base URL and your LangSmith API key:
+
+```python
+import os
+
+from langchain_openai import OpenAIEmbeddings
+
+embeddings = OpenAIEmbeddings(
+    model="text-embedding-3-small",
+    base_url="https://gateway.smith.langchain.com/openai/v1",
+    api_key=os.environ["LANGSMITH_API_KEY"],
+)
+vector = embeddings.embed_query("The quick brown fox")
+```
+
+The `LANGSMITH_GATEWAY` setup for chat models in the next section is not a substitute for configuring an embeddings client's base URL.
+
+### Track usage and apply policies
+
+Embeddings requests pass through gateway policies and appear in [gateway traces](/langsmith/llm-gateway-traces) as LLM runs. Token usage comes from the provider response. Embeddings requests do not use [fallback chains](/langsmith/llm-gateway-fallbacks).
+
+If the model has no matching price entry, [add a model price](/langsmith/cost-tracking#create-a-new-or-modify-an-existing-model-price-entry) to track embedding costs.
 
 ## Configure LangChain and Deep Agents
 
