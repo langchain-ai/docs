@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 export const DeepAgentsBenchmarkChart = () => {
   const [isDark, setIsDark] = useState(false);
   const [hover, setHover] = useState(null);
+  // Models currently plotted; the legend toggles them and the axes rescale to fit.
+  const [shown, setShown] = useState(["opus", "sol", "kimi"]);
 
   useEffect(() => {
     const detect = () => {
@@ -118,14 +120,42 @@ export const DeepAgentsBenchmarkChart = () => {
     }
   };
 
+  // Turning off the last visible model would leave every chart empty, so keep at least one.
+  const toggleModel = (k) =>
+    setShown((prev) => (prev.includes(k) ? (prev.length > 1 ? prev.filter((m) => m !== k) : prev) : [...prev, k]));
+
   const legend = (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 20px", fontSize: 13, color: theme.ink2, marginBottom: 12 }}>
-      {Object.entries(MODELS).map(([k, m]) => (
-        <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <span style={{ width: 10, height: 10, borderRadius: 3, background: colorOf(k) }} />
-          {m.label}
-        </span>
-      ))}
+    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px 20px", fontSize: 13, color: theme.ink2, marginBottom: 12 }}>
+      {Object.entries(MODELS).map(([k, m]) => {
+        const on = shown.includes(k);
+        return (
+          <button
+            key={k}
+            type="button"
+            aria-pressed={on}
+            onClick={() => toggleModel(k)}
+            title={on ? `Hide ${m.label}` : `Show ${m.label}`}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "3px 8px",
+              margin: "0 -8px",
+              border: "none",
+              borderRadius: 6,
+              background: "transparent",
+              color: "inherit",
+              font: "inherit",
+              cursor: "pointer",
+              opacity: on ? 1 : 0.4,
+              textDecoration: on ? "none" : "line-through",
+            }}
+          >
+            <span style={{ width: 10, height: 10, borderRadius: 3, background: colorOf(k) }} />
+            {m.label}
+          </button>
+        );
+      })}
       {Object.entries(HARNESSES).map(([k, h]) => (
         <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           <svg width={16} height={16} aria-hidden="true">
@@ -211,7 +241,17 @@ export const DeepAgentsBenchmarkChart = () => {
   };
 
   const scatter = (bench) => {
-    const runs = bench.runs;
+    const runs = bench.runs.filter((r) => shown.includes(r.model));
+    if (!runs.length) {
+      return (
+        <figure key={bench.id} style={{ margin: 0, minWidth: 0 }}>
+          <figcaption style={{ fontWeight: 600, fontSize: 15, marginBottom: 4, color: theme.ink }}>{bench.title}</figcaption>
+          <div style={{ height: SH * 0.5, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: theme.muted, border: `1px dashed ${theme.grid}`, borderRadius: 8 }}>
+            No results for the selected models yet.
+          </div>
+        </figure>
+      );
+    }
     const xTicks = niceTicks(Math.max(...runs.map((r) => r.cost + r.costSe)));
     const xmax = xTicks[xTicks.length - 1];
     const ymin = Math.floor((Math.min(...runs.map((r) => r.score - r.scoreSe)) - 0.02) * 20) / 20;
