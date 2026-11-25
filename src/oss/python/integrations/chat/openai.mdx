@@ -311,7 +311,7 @@ When you do not pass `strict`, `ChatOpenAI` leaves it out of the request and the
 - **Chat Completions**: strict mode is off.
 - **Responses API**: strict mode is on, in a lenient form that also accepts schemas outside the strict subset, such as optional properties.
 
-`ChatOpenAI` uses the [Responses API](#responses-api) automatically in some cases, for example when a `gpt-6` model is called with tools.
+`ChatOpenAI` uses the [Responses API](#responses-api) automatically in some cases, for example when a `gpt-6` model is called with tools (`langchain-openai>=1.6.3`).
 
 To enforce strict mode on either API, pass `strict=True`:
 
@@ -338,12 +338,20 @@ AIMessage(content='', additional_kwargs={'tool_calls': [{'id': 'call_jUqhd8wzAIz
 Some valid schemas fail in strict mode, such as a `pattern` with a look-ahead (`(?=`, `(?!`), which returns a `400` on the Responses API even when `strict` is not set. Pass `strict=False` to turn strict mode off. For agents built with [`create_agent`](/oss/langchain/agents), set it from a [middleware](/oss/langchain/middleware/custom#wrap-style-hooks):
 
 ```python
+from langchain.agents import create_agent
 from langchain.agents.middleware import wrap_model_call
+from langchain_openai import ChatOpenAI
 
 @wrap_model_call
 def non_strict_tools(request, handler):
-    return handler(request.override(model_settings={**request.model_settings, "strict": False}))
+    if isinstance(request.model, ChatOpenAI):
+        request = request.override(model_settings={**request.model_settings, "strict": False})
+    return handler(request)
+
+agent = create_agent(model, tools=tools, middleware=[non_strict_tools])
 ```
+
+The `isinstance` check leaves models from other providers unchanged. A middleware defined with `def` only runs on `invoke` and `stream`. For agents that run with `ainvoke` or `astream`, define it with `async def` and `await handler(request)`.
 
 </Accordion>
 
