@@ -38,7 +38,7 @@ The severity applies to the critical threshold. The warning threshold gives an e
 | [9. Queries are slow](#9-queries-are-slow) | The p95 latency of a pool is more than 20 seconds for 15 minutes. |
 | [10. Compaction falls behind](#10-compaction-falls-behind) | More than 1,000 jobs wait for 2 hours. |
 | [11. Compaction stops or fails](#11-compaction-stops-or-fails) | Jobs wait but none run for 30 minutes, or most jobs of one kind fail. |
-| [13. Pods restart often](#13-pods-restart-often) | A SmithDB pod restarts 3 or more times in 30 minutes. |
+| [13. Pods restart often](#13-pods-restart-often) | A SmithDB or ingest queue pod restarts 3 or more times in 30 minutes. |
 | [14. SmithDB panics](#14-smithdb-panics) | More than 3 panics occur in one component in 15 minutes. |
 
 ## Before you create the alerts
@@ -89,6 +89,8 @@ If Redis evicts keys, increase its memory. If run tasks fail their last attempt,
 
 - `task="persist_batched_feedbacks"` with `attempt="12"`.
 - `task="smithdb_feedback_mutation"` or `task="coalesced_smithdb_feedbacks"` with `attempt="25"`.
+
+`persist_batched_feedbacks` does not count a failure while the run of the feedback is not ingested yet. If its last attempt fails for this reason, the feedback is lost, but the failure count does not increase. Thus, also create a warning for `task="persist_batched_feedbacks"` with `attempt="11"`. A failure at this attempt is often the last signal before this task loses feedback.
 
 The failure count exists only after the first failure, so do not alert when the metric is missing.
 
@@ -215,7 +217,7 @@ To find the cause, see [Late compaction](/langsmith/self-host-smithdb-common-iss
 
 ## Alerts for SmithDB pods
 
-Each SmithDB component, such as ingestion or query, runs as its own Deployment. These alerts detect components without available pods, pods that restart, and internal errors in SmithDB.
+Each SmithDB component, such as ingestion or query, runs as its own Deployment. These alerts detect components without available pods, pods that restart, and internal errors in SmithDB. Alert 13 also covers the ingest queue pods, because they write all runs to SmithDB.
 
 ### 12. A component has no pods
 
@@ -231,9 +233,9 @@ To find the cause, see [SmithDB pods are not healthy](/langsmith/self-host-smith
 
 <Badge color="orange">Non-urgent</Badge>
 
-**Detects**: A SmithDB pod restarts many times. Usually, the pod used more memory than its limit (OOM kill). A restart stops the work in progress: writes, queries, and compaction jobs. Restarts are often the first sign that a component is too small.
+**Detects**: A SmithDB pod or an ingest queue pod restarts many times. Usually, the pod used more memory than its limit (OOM kill). A restart stops the work in progress: writes, queries, and compaction jobs. Restarts are often the first sign that a component is too small.
 
-**Condition**: The increase of the container restart count of each SmithDB pod, from Kubernetes. Count only increases, so that pods that Kubernetes replaces do not hide new restarts. Exclude the same Deployments as in Alert [12](#12-a-component-has-no-pods). Warning: 1 restart. Critical: 3 or more restarts. Window: 30 minutes.
+**Condition**: The increase of the container restart count of each SmithDB pod and each ingest queue pod, from Kubernetes. Select the ingest queue pods by Deployment names that contain `ingest-queue`. Count only increases, so that pods that Kubernetes replaces do not hide new restarts. Exclude the same Deployments as in Alert [12](#12-a-component-has-no-pods). Warning: 1 restart. Critical: 3 or more restarts. Window: 30 minutes.
 
 To find the cause, see [SmithDB pods are not healthy](/langsmith/self-host-smithdb-common-issues#smithdb-pods-are-not-healthy).
 
