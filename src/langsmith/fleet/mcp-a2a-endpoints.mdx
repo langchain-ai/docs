@@ -1,0 +1,180 @@
+---
+title: Call Fleet agents over MCP and A2A
+sidebarTitle: MCP and A2A endpoints
+description: Connect MCP clients such as Claude Code and Cursor, or A2A clients and other agents, to a Fleet agent through its MCP and A2A endpoints.
+---
+
+Every Fleet agent serves its own [Model Context Protocol](https://modelcontextprotocol.io/introduction) (MCP) endpoint and [Agent2Agent](https://a2a-protocol.org/latest/) (A2A) endpoint. MCP clients such as Claude Code and Cursor, and A2A clients such as other agents, can hand the agent a task, continue a conversation, and answer its approval and sign-in prompts without calling the [Fleet API](/langsmith/fleet/code) directly.
+
+These endpoints are the outbound direction. [Remote MCP servers](/langsmith/fleet/remote-mcp-servers) point the other way: they add tools from an MCP server to your agent. An agent can use both.
+
+## Before you begin
+
+Both endpoints authenticate the same way:
+
+- **Agent ID**: Open the agent, expand **Advanced settings** in the sidebar, and under **Developer**, click **View code snippets**. For more information, see [Get the agent ID and URL](/langsmith/fleet/code#1-get-the-agent-id-and-url).
+- **Credential**: Create a [personal access token (PAT)](/langsmith/create-account-api-key) and send it in the `X-Api-Key` header. On a self-hosted instance that has Fleet external OIDC configured, you can send an access token from your identity provider as `Authorization: Bearer <token>` instead.
+- **Workspace ID**: Copy the ID of the workspace that owns the agent and send it in the `X-Tenant-Id` header. An API key cannot look up workspace IDs, so copy it from the LangSmith UI.
+- **Permissions**: Sending a task requires the `fleet-agents:invoke` [permission](/langsmith/fleet/access-and-oversight) and run access to the agent. An agent you cannot run returns `404`.
+
+Runs use the caller's own connected accounts, the same as runs started in the Fleet UI. Threads started over MCP or A2A appear in the Fleet UI like any other thread.
+
+The examples on this page use the US API URL, `https://api.smith.langchain.com`. For another region, use that region's API URL from [Regions](/langsmith/cloud#regions). On a self-hosted instance, use `https://<your-langsmith-domain>/api`, so the MCP endpoint is `https://<your-langsmith-domain>/api/v1/fleet/agents/<AGENT_ID>/mcp`.
+
+<Note>
+On self-hosted LangSmith, the MCP and A2A endpoints require Helm chart version 0.18.0 or later (LangSmith `0.18.2026112100`), with [Fleet enabled](/langsmith/enable-self-hosted-fleet).
+</Note>
+
+<Warning>
+An MCP or A2A client stores the PAT in its own configuration. Anyone who can read that configuration can run your agents as you. Keep the key in an environment variable where the client supports it.
+</Warning>
+
+## Connect over MCP
+
+The MCP endpoint is a `POST` route on the agent's Fleet API URL:
+
+```text
+https://api.smith.langchain.com/v1/fleet/agents/<AGENT_ID>/mcp
+```
+
+### Add the agent to Claude Code
+
+Register the endpoint as an HTTP MCP server:
+
+```bash
+claude mcp add --transport http inbox-triage \
+  https://api.smith.langchain.com/v1/fleet/agents/<AGENT_ID>/mcp \
+  --header "X-Api-Key: $LANGSMITH_API_KEY" \
+  --header "X-Tenant-Id: <WORKSPACE_ID>"
+```
+
+Claude Code lists the agent's tools once the server connects.
+
+### Add the agent to another MCP client
+
+Clients that read an `mcpServers` configuration, such as Cursor's `mcp.json`, accept the endpoint and headers directly:
+
+```json
+{
+  "mcpServers": {
+    "inbox-triage": {
+      "url": "https://api.smith.langchain.com/v1/fleet/agents/<AGENT_ID>/mcp",
+      "headers": {
+        "X-Api-Key": "<LANGSMITH_API_KEY>",
+        "X-Tenant-Id": "<WORKSPACE_ID>"
+      }
+    }
+  }
+}
+```
+
+The endpoint accepts API key headers only. MCP clients that sign in with OAuth are not supported.
+
+### Understand the MCP tools
+
+The server describes itself with the agent's name and description, so the client's model knows when to delegate to it. It exposes four tools:
+
+| Tool | What it does |
+| --- | --- |
+| `send_message` | Sends a task or message and waits for the reply. Omit `thread_id` to start a conversation, or pass the `thread_id` from an earlier result to continue it. |
+| `respond_to_interrupt` | Answers a pending interrupt with the user's decisions. |
+| `get_thread` | Reads a thread without starting a run: the latest reply, a `running` status, or the pending interrupts. |
+| `cancel_run` | Stops the thread's active run. |
+
+Each tool returns the reply as text and as a structured result with `thread_id`, `run_id`, `status`, `reply`, and `interrupts`. The `status` is `completed`, `running`, `interrupted`, or `error`.
+
+### Handle long runs
+
+A tool call waits up to 5 minutes and sends progress notifications while the agent works. If the run is still going after that, the result has `status: running` and the run continues. Call `get_thread` to read the reply once the run finishes.
+
+Disconnecting the client does not stop a run. To stop it, call `cancel_run`.
+
+### Answer interrupts
+
+When the agent pauses for a decision, the result has `status: interrupted` and lists the pending prompts in `interrupts`. Decisions should come from the user, not the calling model.
+
+- **Tool approvals and questions**: Each interrupt lists its `requests`, each with an `index` and its own `allowed_decisions`: `approve` or `reject` a tool call, or `respond` to a question. Pass `decisions` to `respond_to_interrupt` with one entry per index, for example `[{"index": 0, "decision": "respond", "message": "Urgent"}, {"index": 1, "decision": "approve"}]`. When one decision appears in the interrupt's `allowed_decisions`, you can pass a single `decision` instead.
+- **Sign-ins**: The interrupt carries `sign_ins`, each with an `auth_url`. Send the user to that URL, then call `respond_to_interrupt` with `decision: "continue"`, or `skip` to go on without signing in.
+
+You cannot edit a tool call's arguments over MCP. To edit them, open the thread in the Fleet UI.
+
+### MCP limits
+
+- **Message size**: Messages are capped at 32 KiB.
+- **One run per thread**: A thread runs one request at a time. A second `send_message` on a thread that is `running` fails until the run finishes or is canceled.
+- **Transport**: The server uses stateless Streamable HTTP. It accepts `POST` only, keeps no sessions, and does not send requests to the client.
+
+## Connect over A2A
+
+The A2A endpoint speaks A2A v1.0 over JSON-RPC. The agent card sits at the conventional path under the agent's URL, so A2A clients can use the agent URL as their base URL:
+
+```text
+GET  https://api.smith.langchain.com/v1/fleet/agents/<AGENT_ID>/.well-known/agent-card.json
+POST https://api.smith.langchain.com/v1/fleet/agents/<AGENT_ID>/a2a
+```
+
+Reading the agent card requires the `fleet-agents:read` or `fleet-agents:invoke` permission and read access to the agent.
+
+### Send a message
+
+Send `Accept: application/json` with each request, or `Accept: text/event-stream` for `SendStreamingMessage`:
+
+```bash
+curl https://api.smith.langchain.com/v1/fleet/agents/<AGENT_ID>/a2a \
+  -H "X-Api-Key: $LANGSMITH_API_KEY" \
+  -H "X-Tenant-Id: <WORKSPACE_ID>" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{"jsonrpc": "2.0", "id": 1, "method": "SendMessage",
+       "params": {"message": {"messageId": "<UUID>", "role": "ROLE_USER",
+                              "parts": [{"text": "Triage my inbox"}]}}}'
+```
+
+### Supported A2A methods
+
+| Method | What it does |
+| --- | --- |
+| `SendMessage` | Sends a message and waits for the run to finish. Returns a task with its `status`, `artifacts` (the reply), and `history`. |
+| `SendStreamingMessage` | Sends a message and streams server-sent events: the task first, then status updates with the reply as it is written, then the final status. |
+| `GetTask` | Reads a task by `id`. |
+| `ListTasks` | Lists the agent's tasks, filtered by `contextId`, `status`, or `statusTimestampAfter`, with `pageSize` and `pageToken`. |
+| `CancelTask` | Stops a task's run. |
+| `GetExtendedAgentCard` | Returns the agent card. |
+
+The endpoint also accepts the A2A v0.3 method names `message/send`, `message/stream`, `tasks/get`, and `tasks/cancel`.
+
+### Continue a conversation
+
+A message's `contextId` is a Fleet thread ID. Omit it to start a new thread, or pass the `contextId` from an earlier task to continue that conversation.
+
+Passing a new UUID as `contextId` creates the thread with that ID. A thread that belongs to another agent, or that you cannot see, returns error `-32001`.
+
+### Handle long runs
+
+`SendMessage` holds the request open until the run finishes. For agents that run for a while, use `SendStreamingMessage`: its first event carries the task `id` and `contextId`.
+
+Disconnecting does not stop a run. Call `GetTask` later for the result, or `CancelTask` to stop it.
+
+### Answer interrupts
+
+When the agent needs a decision, the task comes back in state `TASK_STATE_INPUT_REQUIRED` with an `Interrupt` artifact that holds the pending interrupt. To answer, send a message with the task's `taskId` and `contextId` and a data part that carries the resume value:
+
+```json
+{"data": {"resume": {"decisions": [{"type": "approve"}]}}}
+```
+
+Decisions should come from the user, not the calling agent.
+
+### A2A limits
+
+- **Request size**: Request bodies are capped at 10 MiB.
+- **One run per thread**: A thread runs one request at a time.
+- **No push notifications**: Poll with `GetTask` or use `SendStreamingMessage`.
+- **No security schemes on the card**: The agent card does not list security schemes yet. Configure the `X-Api-Key` and `X-Tenant-Id` headers in your A2A client directly.
+
+## See also
+
+- [Use Fleet agents in code](/langsmith/fleet/code)
+- [Remote MCP servers](/langsmith/fleet/remote-mcp-servers)
+- [Access and oversight](/langsmith/fleet/access-and-oversight)
+- [A2A endpoint in Agent Server](/langsmith/server-a2a)
