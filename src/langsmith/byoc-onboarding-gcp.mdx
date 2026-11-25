@@ -139,7 +139,17 @@ Outbound traffic from the data plane leaves through Cloud NAT with a static IP a
 
 ### Change data plane settings
 
-On GCP, you can change the maintenance window. Blob TTL, Fleet OIDC, and network firewall settings are not available.
+On GCP, you can change the maintenance window and the ingress allowlist. Blob TTL, Fleet OIDC, and network firewall settings are not available.
+
+To edit a data plane's settings:
+
+1. Navigate to **Settings > Data Planes**.
+2. Find your data plane and select **Settings**.
+3. Open the tab for the setting you want to change, then save.
+
+You can also use the [Update data plane settings](/langsmith/smith-api/data_planes/update-data-plane-settings) endpoint.
+
+#### Maintenance window
 
 The maintenance window is two hours in UTC, on whole hours, for example `sun:07:00-sun:09:00`. It applies to Cloud SQL and Memorystore, whose windows last one hour, so LangSmith uses only the start. When it is unset, Google picks the window.
 
@@ -152,6 +162,29 @@ curl -X PATCH https://api.smith.langchain.com/orgs/current/data-planes/<id> \
 ```
 
 GKE nodes upgrade automatically on the GKE `REGULAR` release channel.
+
+#### Ingress allowlist
+
+On the **Ingress** tab, you can restrict which source IP ranges the load balancer accepts. Add up to 50 IPv4 CIDR ranges. The load balancer then accepts traffic on port 443 only from those ranges.
+
+- **Empty list**: The load balancer allows all sources.
+- **Data plane ranges**: The GKE node and pod ranges are always allowed, so services inside the data plane can still reach the load balancer.
+- **Internal endpoint**: Add the private ranges your users and applications connect from, such as the ranges of a peered VPC or of a network connected over Cloud VPN.
+
+Through the API, send `ingress.allowed_source_cidrs`:
+
+```bash
+curl -X PATCH https://api.smith.langchain.com/orgs/current/data-planes/<id> \
+  -H "X-API-Key: $LANGSMITH_API_KEY" \
+  -H "X-Organization-Id: <organization-id>" \
+  -H "Content-Type: application/json" \
+  -d '{"ingress": {"allowed_source_cidrs": ["203.0.113.0/24"]}}'
+```
+
+<Warning>
+- An API update replaces the whole list. Include every range you want to keep, or the load balancer stops accepting traffic from the ranges you leave out.
+- Do not edit the load balancer firewall rule directly in GCP. LangSmith reconciles the data plane on a regular cadence and reverts any manual changes to managed resources.
+</Warning>
 
 ## Troubleshoot create errors
 
