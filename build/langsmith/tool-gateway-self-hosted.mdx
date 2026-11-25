@@ -1,0 +1,294 @@
+---
+title: Enable the Tool Gateway
+sidebarTitle: Enable Tool Gateway
+description: Enable the Tool Gateway on a self-hosted LangSmith install using the Helm chart, connect MCP servers, and optionally enable built-in tools.
+---
+
+The Tool Gateway lets agents call MCP tools through LangSmith. LangSmith stores each user's credentials for those tools and applies your agent policies on every call.
+
+This guide enables it on a self-hosted Kubernetes install using the Helm chart. For the SaaS equivalent, see [Tool Gateway](/langsmith/tool-gateway).
+
+<Note>
+Enabling the Tool Gateway requires Helm chart version 0.18.0-rc.87 or later.
+</Note>
+
+## Enable the gateway
+
+<Steps>
+
+<Step title="Set your hostname" icon="settings">
+
+The Tool Gateway runs inside the `platform-backend` service. The chart turns it on for every organization on the install. There is no separate enable step in the UI.
+
+Set `config.hostname` to the HTTPS hostname of your install. The chart builds the OAuth callback URL from it.
+
+```yaml
+config:
+  hostname: "langsmith.example.com"
+```
+
+The chart routes `/api/v1/agent-auth/`, `/api/v1/managed-tools/`, and `/api/v1/agent-policies` to `platform-backend` through the existing frontend. No separate Ingress is required.
+
+</Step>
+
+<Step title="(Optional) Allow MCP servers on your network" icon="shield">
+
+By default, `platform-backend` blocks MCP server URLs that resolve to private IP addresses. To connect MCP servers that run inside your network, add this to your Helm values:
+
+```yaml
+platformBackend:
+  deployment:
+    extraEnv:
+      - name: SSRF_ALLOW_PRIVATE_IPS_MCP_SERVERS
+        value: "true"
+```
+
+LangSmith still requires HTTPS URLs, and still blocks cloud metadata endpoints, localhost, and `*.svc.cluster.local` hostnames.
+
+</Step>
+
+<Step title="Apply and verify" icon="rocket">
+
+Apply the chart with chart version 0.18.0-rc.87 or later. See [Upgrade an installation](/langsmith/self-host-upgrades) for additional instructions.
+
+```bash
+helm upgrade --install langsmith langchain/langsmith \
+  --version <chart-version> \
+  -f values.yaml --timeout=20m
+```
+
+In the LangSmith UI, go to **Tools**, add an MCP server, and connect to it.
+
+</Step>
+
+</Steps>
+
+## Find your callback URL
+
+When a user connects an account to an MCP server that uses OAuth, the provider returns the browser to this URL. Add it as a redirect URL to every OAuth app that you register for the Tool Gateway.
+
+```txt
+https://<your-hostname>/api/v1/agent-auth/oauth/callback
+```
+
+If you set `config.basePath`, the URL becomes `https://<your-hostname>/<basePath>/api/v1/agent-auth/oauth/callback`.
+
+## Enable built-in tools (optional)
+
+Built-in tools, such as Gmail, Outlook, and Slack, run on the built-in tool server. The chart deploys it by default, so you do not need to enable Fleet. Each provider that you enable needs one OAuth app.
+
+### Before you start
+
+- **Tool server enabled**: Keep `fleetToolServer.enabled: true`, which is the default. If you set it to `false`, the **Tools** page lists no built-in tools.
+- **Provider access**: Permission to create an OAuth app with each provider, and administrator approval where the provider requires it.
+
+You configure each app one time for the install. All organizations and workspaces use the same app for a provider. Each user's connection and tokens stay in their own workspace.
+
+Built-in tools that use an API key, such as Tavily and Exa, need no deployment configuration. Each workspace adds its key under **Settings** > **Workspace secrets**.
+
+<Warning>
+If you also run Fleet, the Tool Gateway callback URL is different from the Fleet OAuth callback, `/host-oauth-callback/<provider-id>`. If you already configured Fleet OAuth providers, add the [Tool Gateway callback URL](#find-your-callback-url) to each app as an additional redirect URL.
+</Warning>
+
+### Create the OAuth apps
+
+Create an app only for the providers that you enable. Each app must allow the scopes that the Tool Gateway requests. If an app does not allow a requested scope, the provider rejects the consent request.
+
+<Tabs>
+
+<Tab title="Google">
+
+Covers Gmail, Calendar, Drive, Docs, Sheets, Slides, Meet, and BigQuery.
+
+1. In the Google Cloud console, open **APIs & Services** > **Credentials** and create an **OAuth client ID** of type **Web application**.
+2. Under **Authorized redirect URIs**, add your [callback URL](#find-your-callback-url).
+3. Under **Enabled APIs & services**, enable the APIs for the tools that you use.
+4. On the OAuth consent screen, add these scopes:
+
+   `openid`, `.../auth/userinfo.email`, `.../auth/userinfo.profile`, `.../auth/gmail.modify`, `.../auth/calendar.events`, `.../auth/calendar.freebusy`, `.../auth/calendar.calendarlist.readonly`, `.../auth/drive`, `.../auth/drive.file`, `.../auth/documents`, `.../auth/spreadsheets`, `.../auth/presentations`, `.../auth/meetings.space.created`, `.../auth/meetings.space.readonly`, `.../auth/bigquery`
+
+5. Set the consent screen to **Internal** for one Google Workspace organization, or publish it. In **Testing** mode, only listed test users can connect, and their access stops after seven days.
+6. Copy the **Client ID** and **Client secret**.
+
+If access stops after seven days, the consent screen is in **Testing** mode. Set it to **Internal** or publish it, then connect again.
+
+</Tab>
+
+<Tab title="Microsoft">
+
+Covers Outlook, Teams, SharePoint, OneDrive, Word, Excel, and PowerPoint.
+
+1. In the Microsoft Entra admin center, open **App registrations** and select **New registration**.
+2. Under **Supported account types**, select a multitenant option. The Tool Gateway signs users in through the `common` endpoint, which single-tenant apps reject.
+3. Under **Redirect URI**, select **Web** and enter your [callback URL](#find-your-callback-url).
+4. Open **API permissions** and add these Microsoft Graph **delegated** permissions:
+
+   `User.Read`, `Mail.ReadWrite`, `Mail.Send`, `Mail.ReadWrite.Shared`, `Mail.Send.Shared`, `Calendars.ReadBasic`, `Calendars.ReadWrite`, `Calendars.ReadWrite.Shared`, `Files.ReadWrite`, `Files.ReadWrite.All`, `Sites.ReadWrite.All`, `Team.ReadBasic.All`, `Channel.Create`, `Channel.ReadBasic.All`, `ChannelMessage.Read.All`, `ChannelMessage.Send`, `Chat.Create`, `Chat.ReadWrite`
+
+   The Tool Gateway also requests `openid`, `profile`, `email`, and `offline_access`.
+5. Select **Grant admin consent** if your tenant requires it.
+6. Open **Certificates & secrets** and create a client secret. Copy the secret **Value**, not the **Secret ID**, and the **Application (client) ID**.
+
+If sign-in fails with `AADSTS50194`, the app is single-tenant. Change **Supported account types** to a multitenant option.
+
+</Tab>
+
+<Tab title="Slack">
+
+1. Open [Your Apps](https://api.slack.com/apps) and select **Create New App** > **From scratch**.
+2. Open **OAuth & Permissions** and add your [callback URL](#find-your-callback-url) under **Redirect URLs**.
+3. Under **Bot Token Scopes**, add:
+
+   `channels:history`, `channels:read`, `chat:write`, `files:write`, `groups:history`, `groups:read`, `im:history`, `im:read`, `im:write`, `mpim:history`, `mpim:read`, `users:read`, `users:read.email`
+
+4. Keep token rotation disabled.
+5. Open **Basic Information** > **App Credentials** and copy the **Client ID** and **Client Secret**. Use the Client ID, not the App ID.
+
+</Tab>
+
+<Tab title="Linear">
+
+1. In Linear, open **Settings** > **API** > **Applications** and create an OAuth application.
+2. Add your [callback URL](#find-your-callback-url) as a callback URL.
+3. Copy the **Client ID** and **Client secret**. The Tool Gateway requests the `read` and `write` scopes.
+
+</Tab>
+
+<Tab title="LinkedIn">
+
+1. Create an app in the [LinkedIn Developer Portal](https://www.linkedin.com/developers/apps).
+2. On the **Auth** tab, add your [callback URL](#find-your-callback-url) under **Authorized redirect URLs**.
+3. On the **Products** tab, add the products that grant `openid`, `profile`, `email`, and `w_member_social`.
+4. Copy the **Client ID** and **Client Secret**.
+
+</Tab>
+
+<Tab title="Salesforce">
+
+1. In Salesforce Setup, create an **External Client App** with OAuth enabled.
+2. Add your [callback URL](#find-your-callback-url) as the callback URL.
+3. Add the OAuth scopes **Manage user data via APIs (api)** and **Perform requests at any time (refresh_token, offline_access)**.
+4. Keep **Require Secret for Web Server Flow** enabled.
+5. Copy the **Consumer Key** and **Consumer Secret**. A new app can take up to 30 minutes to become available.
+
+The Tool Gateway signs users in through `login.salesforce.com`. Sandbox orgs that require `test.salesforce.com` are not supported.
+
+</Tab>
+
+<Tab title="GitHub">
+
+GitHub uses a GitHub App, not an OAuth app.
+
+1. Create a GitHub App in your organization's **Developer settings**.
+2. Add your [callback URL](#find-your-callback-url) under **Callback URL**.
+3. Under **Repository permissions**, grant **Contents**, **Issues**, and **Pull requests** read and write, and **Metadata** read. Under **Account permissions**, grant **Email addresses** read.
+4. Copy the **Client ID** and generate a **Client secret**.
+5. Generate a random state signing secret, for example with `openssl rand -hex 32`.
+
+</Tab>
+
+</Tabs>
+
+### Add the credentials to your Helm values
+
+`platform-backend` reads each app's credentials from these environment variables. Set both variables for each provider that you enable. If either value is empty, the provider stays unavailable and **Connect** shows that it is not configured.
+
+| Provider | Client ID variable | Client secret variable |
+| --- | --- | --- |
+| Google | `GOOGLE_OAUTH_CLIENT_ID` | `GOOGLE_OAUTH_CLIENT_SECRET` |
+| Microsoft | `MICROSOFT_OAUTH_CLIENT_ID` | `MICROSOFT_OAUTH_CLIENT_SECRET` |
+| Slack | `SLACK_OAUTH_CLIENT_ID` | `SLACK_OAUTH_CLIENT_SECRET` |
+| Linear | `LINEAR_OAUTH_CLIENT_ID` | `LINEAR_OAUTH_CLIENT_SECRET` |
+| LinkedIn | `LINKEDIN_OAUTH_CLIENT_ID` | `LINKEDIN_OAUTH_CLIENT_SECRET` |
+| Salesforce | `SALESFORCE_OAUTH_CLIENT_ID` | `SALESFORCE_OAUTH_CLIENT_SECRET` |
+| GitHub | `FLEET_GITHUB_APP_CLIENT_ID` | `FLEET_GITHUB_APP_CLIENT_SECRET` |
+
+GitHub also requires `FLEET_GITHUB_APP_STATE_JWT_SECRET`. Without it, `platform-backend` logs an error and does not register the GitHub App callback and webhook routes.
+
+1. Create a Kubernetes Secret in the LangSmith namespace. Include only the providers that you enable, and keep the file out of version control.
+
+   ```yaml
+   apiVersion: v1
+   kind: Secret
+   metadata:
+     name: tool-gateway-oauth-apps
+     namespace: "<your-langsmith-namespace>"
+   type: Opaque
+   stringData:
+     google-client-id: "<your-google-client-id>"
+     google-client-secret: "<your-google-client-secret>"
+     slack-client-id: "<your-slack-client-id>"
+     slack-client-secret: "<your-slack-client-secret>"
+   ```
+
+   ```bash
+   kubectl apply -f tool-gateway-oauth-apps.yaml
+   ```
+
+2. Add one pair of entries for each provider to `platformBackend.deployment.extraEnv`. Keep your existing entries.
+
+   ```yaml
+   platformBackend:
+     deployment:
+       extraEnv:
+         - name: GOOGLE_OAUTH_CLIENT_ID
+           valueFrom:
+             secretKeyRef:
+               name: tool-gateway-oauth-apps
+               key: google-client-id
+         - name: GOOGLE_OAUTH_CLIENT_SECRET
+           valueFrom:
+             secretKeyRef:
+               name: tool-gateway-oauth-apps
+               key: google-client-secret
+         # Repeat for each provider that you enable.
+   ```
+
+   Do not add `MANAGED_TOOLS_EMBEDDED`, `LANGSMITH_SIGNING_JWKS`, `API_KEY_SALT`, or `AGENT_BUILDER_ENCRYPTION_KEY` through `extraEnv`. The chart already sets them, and a duplicate name fails the Helm render.
+
+3. Apply the chart. If you change only the Secret later, restart `platform-backend`. Replace `langsmith` with your Helm release name if it differs:
+
+   ```bash
+   kubectl rollout restart deploy/langsmith-platform-backend
+   ```
+
+4. In the LangSmith UI, go to **Tools**, select a built-in tool, click **Connect**, and complete the consent screen.
+
+### Allow network access
+
+- **`platform-backend`**: Outbound HTTPS to each provider's token endpoint, such as `oauth2.googleapis.com`, `login.microsoftonline.com`, `slack.com`, `api.linear.app`, `www.linkedin.com`, `login.salesforce.com`, and `github.com`.
+- **Built-in tool server**: Outbound HTTPS to the provider APIs that tools call, such as `gmail.googleapis.com`, `graph.microsoft.com`, and `slack.com`.
+- **Browser**: Access to each provider's sign-in page and to your callback URL.
+
+If your cluster routes egress through a proxy, set `fleet.egressProxy.url` for the built-in tool server. For `platform-backend`, add `HTTPS_PROXY` and `NO_PROXY` to `platformBackend.deployment.extraEnv`, and include your cluster's internal domains and your Postgres, Redis, and ClickHouse hosts in `NO_PROXY`. See [Configure egress](/langsmith/self-host-egress).
+
+## Troubleshooting
+
+- **The Tools page lists no built-in tools**: Check that `fleetToolServer.enabled` is `true`, that the `langsmith-fleet-tool-server` pod is `Running`, and that your chart version is 0.18.0-rc.87 or later.
+- **Adding an MCP server fails for an internal URL**: Use an HTTPS URL that is not a `*.svc.cluster.local` hostname, and set `SSRF_ALLOW_PRIVATE_IPS_MCP_SERVERS` on `platform-backend`. See [Enable the gateway](#enable-the-gateway).
+- **Connect shows that the provider is not configured**: Set both variables for that provider. Check the Secret keys and namespace, then restart `platform-backend`.
+- **The provider reports a redirect mismatch**: The redirect URL in the app must match your [callback URL](#find-your-callback-url) exactly, including scheme, host, base path, and path.
+- **`platform-backend` does not start after upgrade**: Check that the Secret exists and contains every key that `extraEnv` references.
+
+## Security notes
+
+- LangSmith encrypts stored user tokens with `API_KEY_SALT`. Keep it unchanged after users connect accounts. See [Use an existing secret](/langsmith/self-host-using-an-existing-secret).
+- Store OAuth app secrets in a Kubernetes Secret and reference them with `secretKeyRef`. Do not put secret values directly in your Helm values file.
+- `SSRF_ALLOW_PRIVATE_IPS_MCP_SERVERS` lets workspace admins add MCP servers on private IP addresses. Turn it on only if your users need internal MCP servers.
+
+## Next steps
+
+- [Tool Gateway](/langsmith/tool-gateway): learn how agents call tools through the gateway.
+- [Enable Fleet](/langsmith/enable-self-hosted-fleet): build and run agents that use the Tool Gateway.
+- [Configure environment variables](/langsmith/self-host-environment-variables): see every variable the chart sets.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/tool-gateway-self-hosted.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
