@@ -11,6 +11,7 @@ This page covers:
 - [Use filter arguments](#use-filter-arguments): keyword-based filtering using SDK parameters.
 - [Use filter query language](#use-filter-query-language): complex queries using LangSmith's filter syntax.
 - [Query trace trees with child-run predicates](#query-trace-trees-with-child-run-predicates): combine server-side narrowing with the runs of each trace.
+- [Stream query results](#stream-query-results): get runs, traces, and threads as they arrive, as required for AI search.
 - [Rate limits](#rate-limits): limits and best practices.
 
 <Note>
@@ -1160,6 +1161,92 @@ df.head()
 ```
 
 </CodeGroup>
+
+## Stream query results
+
+The runs, traces, and threads queries can stream each page as [Server-Sent Events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events) instead of returning it as one JSON response. Streaming returns the first results before the whole page is read. It is also required for [AI search](/langsmith/filter-traces#search-with-ai) (`ai_search`) and semantic filters (`sem_filter`), which return HTTP `406` without it.
+
+| Query | API endpoint | Python and TypeScript | Java | CLI |
+|-------|--------------|-----------------------|------|-----|
+| Runs | `POST /api/v2/runs/query` | `runs.streaming.query_v2_items` / `runs.streaming.queryV2Items` | `runs().streaming().queryV2StreamingItems` | `langsmith runs streaming query-v2` |
+| Traces | `POST /api/v2/traces/query` | `traces.streaming.query_items` / `traces.streaming.queryItems` | `traces().streaming().queryStreamingItems` | `langsmith traces streaming query` |
+| Threads | `POST /api/v2/threads/query` | `threads.streaming.query_items` / `threads.streaming.queryItems` | `threads().streaming().queryStreamingItems` | `langsmith threads streaming query` |
+
+### Iterate over streamed items
+
+The SDK items methods take the same parameters as the non-streaming query, follow `next_cursor` across pages, and return each run, trace, or thread as it arrives. Runs and traces arrive in their final order. Threads arrive when each page's stream ends, because the server inserts them at their sorted position.
+
+<Note>
+The following examples require `langsmith>=0.14.14` for Python or `langsmith>=0.11.3` for TypeScript.
+</Note>
+
+<CodeGroup>
+
+```python Python
+async for run in client.runs.streaming.query_v2_items(
+    project_ids=[project_id],
+    min_start_time=since,
+    selects=["ID", "NAME", "RUN_TYPE", "START_TIME"],
+):
+    print(run.id, run.name)
+```
+
+```typescript TypeScript
+for await (const run of client.runs.streaming.queryV2Items({
+  project_ids: [projectId],
+  min_start_time: since,
+  selects: ["ID", "NAME", "RUN_TYPE", "START_TIME"],
+})) {
+  console.log(run.id, run.name);
+}
+```
+
+```java Java
+import com.langchain.smith.core.http.StreamResponse;
+import com.langchain.smith.models.runs.Run;
+import com.langchain.smith.models.runs.RunSelectField;
+import com.langchain.smith.models.runs.streaming.StreamingQueryV2Params;
+
+StreamingQueryV2Params params = StreamingQueryV2Params.builder()
+    .addProjectId(projectId)
+    .minStartTime(since)
+    .addSelect(RunSelectField.ID)
+    .addSelect(RunSelectField.NAME)
+    .build();
+
+try (StreamResponse<Run> runs = client.runs().streaming().queryV2StreamingItems(params)) {
+    runs.stream().forEach(System.out::println);
+}
+```
+
+</CodeGroup>
+
+<Warning>
+The items methods ignore fields that the server adds to an item after sending it. Those fields can come back empty: `trace_aggregates` on traces, and the feedback stats, share URL, dataset membership, and last-queued time selected on runs. To read them, use the non-streaming query, or read the raw events from the lower-level `query_v2` / `queryV2` and `query` streaming methods.
+</Warning>
+
+### Read the event stream
+
+To stream from the API, send `Accept: text/event-stream`:
+
+```bash
+curl -N -X POST "https://api.smith.langchain.com/api/v2/runs/query" \
+  -H "x-api-key: $LANGSMITH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  -d '{"project_ids": ["<project-id>"], "selects": ["ID", "NAME"]}'
+```
+
+Each response streams one page. Each `data` event holds a JSON array of [RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902) JSON Patch operations. Apply them in order to an empty document to build the same body that the JSON response returns:
+
+- The first operation adds the root document (path `""`) with `items` and `next_cursor`.
+- Runs and traces append each later item with `add` on `/items/-`. Threads insert each item at its sorted position with `add` on `/items/<index>`.
+- Fields computed after an item is sent arrive as `add` on `/items/<index>/<field>`.
+- `next_cursor` changes with `replace` on `/next_cursor`. Pass its final value as `cursor` to request the next page. It is `null` on the last page.
+
+The stream ends with an `end` event that has empty data. A failure after the stream starts arrives as an `error` event whose data is a JSON problem details object, even though the response status is `200`.
+
+The lower-level SDK methods (`query_v2` / `queryV2` and `query`) and the CLI streaming commands return these events without applying them. In the CLI, `--max-items` counts events, not runs, traces, or threads.
 
 ## Rate limits
 
