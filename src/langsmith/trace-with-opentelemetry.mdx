@@ -333,6 +333,7 @@ When sending traces to LangSmith via OpenTelemetry, the following attributes are
 | `langsmith.trace.session_name` | Session name     | Name of the session                                                          |
 | `langsmith.span.tags`          | Tags             | Custom tags attached to the span (comma-separated)                           |
 | `langsmith.metadata.{key}`     | `metadata.{key}` | Custom metadata with langsmith prefix                                        |
+| `langsmith.is_root`            | Root run         | When `true`, LangSmith ignores the span's OTLP `parentSpanId` and creates the run as a trace root. Must be a boolean — a string `"true"` is ignored and the span is dropped. |
 
 ### GenAI standard attributes
 
@@ -821,7 +822,9 @@ The OTel endpoint is asynchronous: it accepts a batch, returns `200`, and materi
 
 However, if the parent span is **never** exported to LangSmith, the buffered child expires and never appears as a run. LangSmith will not return an error, because the `200` was sent before processing. This commonly happens when only part of a distributed trace reaches LangSmith: the parent is emitted by a service that exports to a different backend, or it's removed by a sampling decision.
 
-To avoid silent loss, make sure every span you want in LangSmith also has its ancestors exported to LangSmith within the buffering window. On self-hosted deployments, this window is controlled by `REDIS_RUNS_EXPIRY_SECONDS` (default 12 hours).
+To avoid silent loss, export every ancestor to LangSmith within the buffering window. On self-hosted deployments, this window is controlled by `REDIS_RUNS_EXPIRY_SECONDS` (default 12 hours).
+
+If a span's parent will never reach LangSmith, set `langsmith.is_root=true` on that span instead. LangSmith creates it as a trace root, and its children nest under it. The span's `parentSpanId` is unchanged, so other tracing backends still see the original parent.
 </Warning>
 
 #### Set up distributed tracing with LangChain
