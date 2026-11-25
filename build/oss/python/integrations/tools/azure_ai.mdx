@@ -479,6 +479,10 @@ For an end-to-end hosted LangGraph example, see the [LangGraph Foundry Toolbox s
         Toolbox API version appended to the MCP URL.
     </ParamField>
 
+    <ParamField body="toolbox_version" type="str | None">
+        Optional specific toolbox version to pin. When omitted, the toolbox uses the default version.
+    </ParamField>
+
     <ParamField body="credential" type="str | TokenCredential">
         Azure credential for Bearer-token authentication. Accepts a string (static Bearer token) or any `TokenCredential` such as `DefaultAzureCredential`. Defaults to `DefaultAzureCredential()`.
     </ParamField>
@@ -571,6 +575,47 @@ async def main():
 
     return agent
 ```
+
+#### Identify tools that require approval
+
+Call `get_tools_requiring_approval()` from an async function to list tool names whose toolbox configuration sets `require_approval` to `"always"`, so you can gate sensitive calls with a human-in-the-loop workflow:
+
+```python
+async def list_approval_tools(toolbox: AzureAIProjectToolbox) -> list[str]:
+    return await toolbox.get_tools_requiring_approval()
+```
+
+#### Load skills and resources
+
+A toolbox can expose skills as MCP resources with `skill://` URIs. Use `get_resources()` or `aget_resources()` to load them as LangChain `Blob` objects, or use `get_skills()` or `aget_skills()` to load them directly as a file mapping for Deep Agents.
+
+With `StateBackend`, pass the returned mapping as `files` on `invoke` so the agent can read the skill files:
+
+```python
+from deepagents import create_deep_agent
+from deepagents.backends import StateBackend
+
+toolbox = AzureAIProjectToolbox(toolbox_name="my-toolbox")
+
+# Load raw MCP resources as Blobs
+skill_blobs = toolbox.get_resources(scheme="skills")
+
+# Or load directly as a virtual file mapping for Deep Agents
+skill_files = toolbox.get_skills()
+agent = create_deep_agent(
+    model="azure_ai:gpt-5-mini",
+    backend=StateBackend(),
+    skills=["/skills/"],
+)
+agent.invoke(
+    {
+        "messages": [{"role": "user", "content": "Use the loaded skills."}],
+        "files": skill_files,
+    }
+)
+```
+
+Pass a standalone backend (such as `FilesystemBackend`) to `get_skills(backend=...)` or `aget_skills(backend=...)` to write the skill files directly into that backend.
 
 ## API reference
 
