@@ -514,20 +514,39 @@ The simplest pattern is to iterate `stream.subagents` to track each delegated ta
 
 :::
 
+:::js
 ### Checkpoint namespace on task result
 
-:::js
-When a subagent finishes, the `ToolMessage` returned to the parent carries the checkpoint namespace the subagent saved its checkpoints under in `artifact.checkpoint_ns`. A client can use this namespace to load the finished subagent's checkpoint history directly, without scanning the full thread.
+When a subagent finishes, the `ToolMessage` returned to the parent carries the checkpoint namespace in `artifact.checkpoint_ns`. A client can load the finished subagent's checkpoint history from that namespace, without scanning the full thread.
 
 The model never sees `artifact`; it is metadata for client-side consumption only.
 
+Checkpointing must be active for the artifact to be set. Pass a checkpointer when you create the agent, and a `thread_id` when you run it:
+
 ```javascript
-for await (const chunk of await agent.stream(input, config)) {
-  for (const msg of chunk.messages ?? []) {
-    if (msg._getType() === "tool" && msg.name === "task" && msg.artifact?.checkpoint_ns) {
-      console.log("Subagent checkpoint namespace:", msg.artifact.checkpoint_ns);
-      // Load the subagent's history from this namespace
-    }
+import { HumanMessage, ToolMessage } from "@langchain/core/messages";
+import { MemorySaver } from "@langchain/langgraph";
+import { createDeepAgent } from "deepagents";
+
+const checkpointer = new MemorySaver();
+const agent = await createDeepAgent({ checkpointer /* , subagents: [...] */ });
+
+const threadId = "example-thread";
+const result = await agent.invoke(
+  { messages: [new HumanMessage("Research the topic")] },
+  { configurable: { thread_id: threadId } },
+);
+
+const taskMessage = result.messages.find(
+  (msg) => ToolMessage.isInstance(msg) && msg.name === "task",
+);
+const checkpointNs = taskMessage?.artifact?.checkpoint_ns;
+
+if (checkpointNs) {
+  for await (const snapshot of agent.getStateHistory({
+    configurable: { thread_id: threadId, checkpoint_ns: checkpointNs },
+  })) {
+    console.log(snapshot.values);
   }
 }
 ```
