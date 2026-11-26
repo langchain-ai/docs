@@ -1,42 +1,36 @@
 ---
-title: Common SmithDB issues to monitor
-sidebarTitle: Common issues to monitor
-description: The first metrics to check on self-hosted LangSmith, and how to detect and fix the SmithDB issues that occur most often in production.
+title: Diagnose common SmithDB issues
+sidebarTitle: Common issues
+description: How to find the cause of the SmithDB issues that occur most often in production on self-hosted LangSmith, and what to change.
 ---
 
-Use these signals to tell whether SmithDB ingestion, queries, and compaction are healthy, and which area to investigate first. For each common issue below, the page lists which signals to monitor, how to find the cause, and what to change. For what each metric measures and how to use it, see [Essential SmithDB metrics](/langsmith/self-host-smithdb-metrics).
+Use this page when an alert fires or users report a problem. Each issue lists how to find the cause and what to change. For when to alert, see [Recommended SmithDB alerts](/langsmith/self-host-smithdb-alerts). For what each metric measures, see [Essential SmithDB metrics](/langsmith/self-host-smithdb-metrics).
 
-## Check SmithDB health
+## Start from a symptom
 
-Each symptom below lists the metric that shows it. To find the cause, read that metric's section in [Essential SmithDB metrics](/langsmith/self-host-smithdb-metrics).
+If users report a problem, find the symptom below. Then go to the issue that it links to.
 
 - **Traces appear late after the SDK sends them**: [`langsmith_ingestion_e2e_latency_seconds`](/langsmith/self-host-smithdb-metrics#langsmith_ingestion_e2e_latency_seconds). See [LangSmith ingestion falls behind](#langsmith-ingestion-falls-behind).
-- **Writes fail and keep retrying**: [`langsmith_asynq_ingestion_queue_retry`](/langsmith/self-host-smithdb-metrics#langsmith_asynq_ingestion_queue_retry). See [LangSmith ingestion falls behind](#langsmith-ingestion-falls-behind).
-- **New runs take a long time to become durable in SmithDB**: [`ingest_batch_latency`](/langsmith/self-host-smithdb-metrics#ingest_batch_latency). Continue with the [SmithDB ingestion metrics](/langsmith/self-host-smithdb-metrics#smithdb-ingestion).
-- **Ingestion backlog grows and does not drain**: [`ingest_pending_segment_entry_count`](/langsmith/self-host-smithdb-metrics#ingest_pending_segment_entry_count). Continue with the [SmithDB ingestion metrics](/langsmith/self-host-smithdb-metrics#smithdb-ingestion).
-- **UI or API reads of traces are slow**: [`server_requests_duration` on query pods](/langsmith/self-host-smithdb-metrics#server_requests_duration-on-query-pods). See [Compaction falls behind and queries get slow](#compaction-falls-behind-and-queries-get-slow) and [One kind of query load slows down other queries](#one-kind-of-query-load-slows-down-other-queries).
-- **Compaction workers finish less work than the scheduler plans**: [`compaction_jobs_scheduled`, `compaction_jobs_executed`](/langsmith/self-host-smithdb-metrics#compaction_jobs_scheduled-compaction_jobs_executed). See [Compaction falls behind and queries get slow](#compaction-falls-behind-and-queries-get-slow).
-- **One compaction job kind fails again and again**: [`compaction_job_completion`](/langsmith/self-host-smithdb-metrics#compaction_job_completion).
-- **Compaction stays behind for hours**: [`compaction_queue_job_count`](/langsmith/self-host-smithdb-metrics#compaction_queue_job_count). See [Compaction falls behind and queries get slow](#compaction-falls-behind-and-queries-get-slow).
+- **Writes fail and keep retrying**: [`langsmith_asynq_ingestion_queue_retry`](/langsmith/self-host-smithdb-metrics#langsmith_asynq_ingestion_queue_retry). See [Writes to SmithDB fail or are slow](#writes-to-smithdb-fail-or-are-slow).
+- **New runs take a long time to become durable in SmithDB**: [`ingest_batch_latency`](/langsmith/self-host-smithdb-metrics#ingest_batch_latency). See [Writes to SmithDB fail or are slow](#writes-to-smithdb-fail-or-are-slow).
+- **SmithDB ingestion backlog grows and does not drain**: [`ingest_pending_segment_entry_count`](/langsmith/self-host-smithdb-metrics#ingest_pending_segment_entry_count). See [Writes to SmithDB fail or are slow](#writes-to-smithdb-fail-or-are-slow).
+- **UI or API reads of traces are slow or fail**: [`server_requests_duration` on query pods](/langsmith/self-host-smithdb-metrics#server_requests_duration-on-query-pods). See [Compaction falls behind and queries get slow](#compaction-falls-behind-and-queries-get-slow) and [One kind of query load slows down other queries](#one-kind-of-query-load-slows-down-other-queries).
+- **Compaction stays behind for hours, or one job kind fails again and again**: [`compaction_queue_job_count`](/langsmith/self-host-smithdb-metrics#compaction_queue_job_count) and [`compaction_job_completion`](/langsmith/self-host-smithdb-metrics#compaction_job_completion). See [Compaction falls behind and queries get slow](#compaction-falls-behind-and-queries-get-slow).
+- **Ingestion, queries, and compaction are slow at the same time**: PostgreSQL CPU, connections, and storage. See [The metastore runs out of capacity](#the-metastore-runs-out-of-capacity).
+- **SmithDB pods restart, crash, or do not start**: See [SmithDB pods are not healthy](#smithdb-pods-are-not-healthy).
 
 ## LangSmith ingestion falls behind
 
-LangSmith keeps each new run in Redis until an ingest queue worker writes it to SmithDB. If ingestion cannot keep up, the queue in Redis increases, and users see their runs late. If the queue gets too old, or Redis gets full, LangSmith loses runs.
+LangSmith keeps each new run in Redis until an ingest queue worker writes it to SmithDB. If ingestion cannot keep up, the queue in Redis increases, and users see their runs late. LangSmith deletes run data in Redis after the time set by `config.settings.redisRunsExpirySeconds`, 6 hours by default. Retries do not extend this time. If the queue gets too old, or Redis gets full, LangSmith loses runs.
 
-### Monitor the ingestion backlog
-
-- **Lost runs**: [`langsmith_asynq_ingestion_queue_archived`](/langsmith/self-host-smithdb-metrics#langsmith_asynq_ingestion_queue_archived). Each increase means that runs are lost. Alert on every increase.
-- **Backlog**: [`langsmith_asynq_ingestion_queue_pending`](/langsmith/self-host-smithdb-metrics#langsmith_asynq_ingestion_queue_pending). Compare it with your normal traffic. A queue that increases while traffic is stable is a problem.
-- **Failed writes**: [`langsmith_asynq_ingestion_queue_retry`](/langsmith/self-host-smithdb-metrics#langsmith_asynq_ingestion_queue_retry). A value that stays high means that writes to SmithDB fail.
-- **Age of the backlog**: [`langsmith_asynq_queue_latency_seconds`](/langsmith/self-host-smithdb-metrics#langsmith_asynq_queue_latency_seconds). LangSmith deletes run data in Redis after the time set by `config.settings.redisRunsExpirySeconds`, 6 hours by default. Retries do not extend this time. Alert long before the age gets near it.
-- **Redis**: Memory use against its limit, evicted keys, and the CPU of each shard. Any eviction means that Redis deleted data that LangSmith still needs.
+**Alerts**: [1. Runs are lost](/langsmith/self-host-smithdb-alerts#1-runs-are-lost), [3. The ingestion backlog gets old](/langsmith/self-host-smithdb-alerts#3-the-ingestion-backlog-gets-old), [4. Redis is almost full](/langsmith/self-host-smithdb-alerts#4-redis-is-almost-full).
 
 ### Find the cause of the backlog
 
 | What you see | Cause |
 |---|---|
 | The pending queue and [`langsmith_ingestion_api_to_worker_latency_seconds`](/langsmith/self-host-smithdb-metrics#langsmith_ingestion_api_to_worker_latency_seconds) increase. Retries and [`langsmith_ingestion_worker_to_store_latency_seconds`](/langsmith/self-host-smithdb-metrics#langsmith_ingestion_worker_to_store_latency_seconds) stay stable. | There are not enough ingest queue workers. |
-| Retries or `langsmith_ingestion_worker_to_store_latency_seconds` increase. | Writes are slow or fail. Continue with the [SmithDB ingestion metrics](/langsmith/self-host-smithdb-metrics#smithdb-ingestion). |
+| Retries or `langsmith_ingestion_worker_to_store_latency_seconds` increase. | Writes are slow or fail. See [Writes to SmithDB fail or are slow](#writes-to-smithdb-fail-or-are-slow). |
 | Redis memory is near its limit, or Redis evicts keys. | Redis is too small for the backlog. |
 | One Redis shard uses much more CPU than the others. | The queue load is on one shard. More workers add more connections to that shard. |
 
@@ -44,37 +38,64 @@ LangSmith keeps each new run in Redis until an ingest queue worker writes it to 
 
 - **Scale ingest queue workers on the queue length.** The workers mostly wait for the network, so their CPU stays low while the queue increases. An autoscaler that uses CPU does not add workers. Enable [KEDA for the ingest queue](/langsmith/self-host-scale#keda-autoscaling-for-langsmith-queues), which scales on the queue length. If a NetworkPolicy limits traffic in the namespace, make sure that KEDA can still read the queue length. If it cannot, KEDA does not scale the workers, and it does not show an error.
 - **Set the maximum replica count from your peak load.** The chart's default maximum is a starting point, not a value for your load. Each worker opens connections to Redis, so increase the maximum in small steps and monitor the CPU of the busiest Redis shard.
-- **Size Redis for the backlog.** Redis must hold all pending runs until the workers write them, including while writes are slow. If its memory gets near the limit, or it evicts keys, use a larger Redis instance.
-- **Scale SmithDB ingestion** if writes are slow or fail. See [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale).
+- **Size Redis for the backlog.** Redis must hold all pending runs until the workers write them, including while writes are slow. If its memory gets near the limit, or it evicts keys, increase its memory.
+
+## Writes to SmithDB fail or are slow
+
+SmithDB ingestion writes runs to object storage as segments and records the metadata of each segment in the metastore. A write is durable only when both steps succeed. If writes fail, LangSmith tries them again from Redis, and the ingestion backlog increases.
+
+**Alerts**: [5. Writes fail](/langsmith/self-host-smithdb-alerts#5-writes-fail), [8. Writes are slow](/langsmith/self-host-smithdb-alerts#8-writes-are-slow).
+
+| What you see | Cause |
+|---|---|
+| [`ingest_flush_count`](/langsmith/self-host-smithdb-metrics#ingest_flush_count) shows failures, and [`object_store_op_duration`](/langsmith/self-host-smithdb-metrics#object_store_op_duration) shows `put` errors. | Object storage rejects writes. Examine the bucket, its access permissions, and the network to it. |
+| The `put` latency of `object_store_op_duration` increases together with [`ingest_batch_latency`](/langsmith/self-host-smithdb-metrics#ingest_batch_latency). | Object storage, or the network to it, is slow. |
+| [`ingest_flush_duration`](/langsmith/self-host-smithdb-metrics#ingest_flush_duration) increases, but object storage stays fast. | The metastore is slow. See [The metastore runs out of capacity](#the-metastore-runs-out-of-capacity). |
+| The [flush semaphores](/langsmith/self-host-smithdb-metrics#semaphore_permits_in_use-semaphore_max_permits) are full, or the ingestion pods are CPU throttled. | Ingestion pods are too small for the load. Add replicas, or select a larger [tier](/langsmith/self-host-smithdb-scale#baseline-tiers). |
+| Ingestion pods restart. | Requests that a pod holds fail when it restarts. See [SmithDB pods are not healthy](#smithdb-pods-are-not-healthy). |
+| LangSmith retries increase, but ingestion pods report no failed requests. | The ingest queue cannot connect to SmithDB. Search the ingest queue logs for `Unavailable` errors, and examine all proxies and service meshes between them. |
+
+## The metastore runs out of capacity
+
+The metastore is the PostgreSQL database of SmithDB. SmithDB records the metadata of each segment that it writes in the metastore. The metastore also holds new feedback until compaction moves it. A slow metastore makes ingestion, queries, and compaction slow at the same time. When there are no more connections or no more storage, writes fail.
+
+**Alert**: [7. The metastore is saturated](/langsmith/self-host-smithdb-alerts#7-the-metastore-is-saturated).
+
+| What you see | Cause |
+|---|---|
+| Connections are near `max_connections`. | Each SmithDB pod has its own connection pool, so more replicas use more connections. Increase `max_connections`, or add a connection pooler. |
+| CPU stays high. | Find slow queries in your database monitoring. Then scale the instance. |
+| Storage is almost full. | Increase the storage, unless storage on Aurora or AlloyDB increases automatically. |
+
+To size the metastore, see [Metastore capacity](/langsmith/self-host-smithdb-scale#metastore-capacity).
 
 ## Compaction falls behind and queries get slow
 
 SmithDB ingestion writes many small segments. Compaction merges them into fewer, larger segments. If compaction falls behind, each query must open more segments. Queries then get slow, time out, or SmithDB rejects them.
 
-### Monitor compaction and queries
+**Alerts**: [6. Queries fail](/langsmith/self-host-smithdb-alerts#6-queries-fail), [9. Queries are slow](/langsmith/self-host-smithdb-alerts#9-queries-are-slow), [10. Compaction falls behind](/langsmith/self-host-smithdb-alerts#10-compaction-falls-behind), [11. Compaction stops or fails](/langsmith/self-host-smithdb-alerts#11-compaction-stops-or-fails).
 
-For compaction:
-
-- **Pending jobs**: [`compaction_queue_job_count`](/langsmith/self-host-smithdb-metrics#compaction_queue_job_count) with `status="pending"`. A value that stays high for hours means that compaction is late.
-- **Oldest pending job**: [`compaction_queue_oldest_pending_created_at_seconds`](/langsmith/self-host-smithdb-metrics#compaction_queue_oldest_pending_created_at_seconds). An age that increases continuously means that compaction does not keep up.
-- **Worker capacity**: [`compaction_worker_capacity_used` and `compaction_worker_capacity_limit`](/langsmith/self-host-smithdb-metrics#compaction_worker_capacity_used-compaction_worker_capacity_limit). If most workers stay near their limit, jobs wait.
-- **Worker restarts**: OOM kills of compaction worker pods. A worker that restarts loses its running jobs, and compaction does not make progress.
-
-For queries:
-
-- **Scan partitions**: [`query_fanout_partitions`](/langsmith/self-host-smithdb-metrics#query_fanout_partitions). If the p99 increases while traffic is stable, compaction is usually late.
-- **Rejected queries**: [`query_fanout_limit_exceeded_total`](/langsmith/self-host-smithdb-metrics#query_fanout_limit_exceeded_total). A continuous rate means that user queries fail.
-- **Slow and failed requests**: [`server_requests_duration` on query pods](/langsmith/self-host-smithdb-metrics#server_requests_duration-on-query-pods). Split by `status`: `4` is a request that timed out, and `1` is a request that was canceled.
-
-### Find the cause of slow queries
-
-Queries can also get slow for other reasons. Before you scale compaction, compare these signals:
+### Find the cause of late compaction
 
 | What you see | Cause |
 |---|---|
-| Scan partitions and pending compaction jobs increase. | Compaction is late. |
-| The [admission queue](/langsmith/self-host-smithdb-metrics#query_admission_queue_length) is not empty, it rejects requests, or query pods are OOM-killed. | Query pods do not have enough memory. See [One kind of query load slows down other queries](#one-kind-of-query-load-slows-down-other-queries). |
+| Pending jobs increase, and the compaction workers are at their maximum replica count. | There are not enough compaction workers. |
+| Most workers stay near their [capacity limit](/langsmith/self-host-smithdb-metrics#compaction_worker_capacity_used-compaction_worker_capacity_limit), and the [oldest pending job](/langsmith/self-host-smithdb-metrics#compaction_queue_oldest_pending_created_at_seconds) gets older. | Large jobs wait for a worker with sufficient free capacity. The workers need more memory. |
+| One job kind fails again and again in [`compaction_job_completion`](/langsmith/self-host-smithdb-metrics#compaction_job_completion), and compaction workers are OOM-killed. | The jobs of that kind are too large for the worker memory. Search the compaction worker logs for `Job failed` and the `job_kind`. |
+| Jobs wait, but [`compaction_worker_running_tasks`](/langsmith/self-host-smithdb-metrics#compaction_worker_running_tasks) stays 0. | The workers do not run, or they cannot connect to the compaction scheduler. Examine the worker pods and the scheduler pod for restarts. |
+
+### Find the cause of slow or failed queries
+
+Queries can also get slow or fail for other reasons. Before you scale compaction, compare these signals:
+
+| What you see | Cause |
+|---|---|
+| [Scan partitions](/langsmith/self-host-smithdb-metrics#query_fanout_partitions) and pending compaction jobs increase. | Compaction is late. |
+| [`query_fanout_limit_exceeded_total`](/langsmith/self-host-smithdb-metrics#query_fanout_limit_exceeded_total) increases. | Queries must open more than 10,000 scan partitions. Compaction is late, or clients query very wide time ranges. |
+| The [admission queue](/langsmith/self-host-smithdb-metrics#query_admission_queue_length) is not empty, it [rejects requests](/langsmith/self-host-smithdb-metrics#query_admission_queue_rejections_total), or query pods are OOM-killed. | Query pods do not have enough memory. See [One kind of query load slows down other queries](#one-kind-of-query-load-slows-down-other-queries). |
+| SmithDB rejects queries (`status` `8`), but neither rejection counter above increases. | One query needs more memory than one operation can use. Split the failures by `path` to find the request type before you increase the limit. |
 | [`object_store_op_duration`](/langsmith/self-host-smithdb-metrics#object_store_op_duration) increases on all components at the same time. | Object storage, or the network to it, is slow. |
+| Query pods restart. | Requests that a pod holds fail when it restarts. See [SmithDB pods are not healthy](#smithdb-pods-are-not-healthy). |
 | Only some requests are slow, and they cover a wide time range. | The queries read too much data. |
 
 ### Help compaction keep up
@@ -88,6 +109,8 @@ Queries can also get slow for other reasons. Before you scale compaction, compar
 
 In cluster mode, the query service serves all SmithDB reads. A heavy load of one kind, such as run statistics on a large project, can slow down all other queries. [Dedicated query services](/langsmith/self-host-smithdb-scale#dedicated-query-services) move one kind of load to its own pods, so you can size and scale it separately.
 
+**Alert**: [2. Feedback is lost](/langsmith/self-host-smithdb-alerts#2-feedback-is-lost).
+
 For large deployments, such as the large [tier](/langsmith/self-host-smithdb-scale#baseline-tiers), enable the dedicated query services. Each service needs its own replicas, with the resources of the query tier.
 
 For smaller deployments, enable a service when you see its signals in the following table. To find which kind of request uses the query pods, split [`server_requests_duration` on query pods](/langsmith/self-host-smithdb-metrics#server_requests_duration-on-query-pods) by `path`.
@@ -99,3 +122,20 @@ For smaller deployments, enable a service when you see its signals in the follow
 | Run rules | You have many automation rules or online evaluators, and query latency increases when the rules run. Rule queries that time out are tried again, which adds load to SmithDB and to the LangSmith PostgreSQL database. |
 
 Query pods often use all their memory while their CPU stays low. An autoscaler that uses CPU does not add replicas in this case. Set a minimum replica count that holds your normal load, or give the pods more memory.
+
+## SmithDB pods are not healthy
+
+A SmithDB pod that restarts stops its work in progress: writes, queries, and compaction jobs. A component without available pods sends no metrics, so the alerts that use its metrics do not fire.
+
+**Alerts**: [12. A component has no pods](/langsmith/self-host-smithdb-alerts#12-a-component-has-no-pods), [13. Pods restart often](/langsmith/self-host-smithdb-alerts#13-pods-restart-often), [14. SmithDB panics](/langsmith/self-host-smithdb-alerts#14-smithdb-panics).
+
+Run `kubectl describe pod <pod>`, and read the logs of the previous container with `kubectl logs -p <pod>`. Then compare with this table:
+
+| What you see | Cause |
+|---|---|
+| `Last State` is `OOMKilled`. | The memory limit is too low for the load. Increase the memory of that component, or select a larger [tier](/langsmith/self-host-smithdb-scale#baseline-tiers). Compare [`sys_jemalloc_resident_bytes`](/langsmith/self-host-smithdb-metrics#sys_jemalloc_resident_bytes) with the limit. |
+| The pod stays `Pending`. | Kubernetes cannot schedule it. The CPU, memory, or storage requests do not fit on a node. |
+| The pod runs, but its readiness probe fails. | The SmithDB process does not answer its health check in time. The health check tests only that the process answers. Read the logs of the pod, and examine its CPU and memory use. |
+| The pod cannot pull its image. | The cluster cannot reach the image registry, or it has no access to it. |
+| The pod crashes when it starts, and its logs show refused metastore connections or denied object storage access. | The connection to the supporting infrastructure fails. See [Supporting infrastructure](/langsmith/self-host-smithdb-troubleshooting#supporting-infrastructure). |
+| SmithDB logs a line with a `backtrace` field, or a line that contains `thread panicked`. | A panic: an internal SmithDB defect. |
