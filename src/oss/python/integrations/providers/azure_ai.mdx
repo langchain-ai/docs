@@ -270,6 +270,24 @@ docs = retriever.invoke("What are my preferences?")
 
 Create the memory store in your Foundry project before use. See the [Foundry Memory guide](https://learn.microsoft.com/en-us/azure/foundry/how-to/develop/langchain-memory) and the [Foundry Memory sample](https://github.com/langchain-ai/langchain-azure/blob/main/samples/foundry-memory/README.md) for an end-to-end multi-session walkthrough.
 
+### Foundry checkpoint saver
+
+Use `FoundryCheckpointSaver` to persist LangGraph checkpoints and pending writes in Foundry State Store across turns and container restarts. It is async-only; compile your graph with the saver and keep its async context open for the host's lifetime:
+
+```python
+from langchain_azure_ai.agents.hosting import (
+    FoundryCheckpointSaver,
+    ResponsesHostServer,
+)
+
+async def main() -> None:
+    async with FoundryCheckpointSaver() as checkpointer:
+        graph = builder.compile(checkpointer=checkpointer)
+        await ResponsesHostServer(graph).run_async()
+```
+
+Locally, `FoundryCheckpointSaver` writes to `~/.agentserver/state_stores` (override with `AGENTSERVER_STATE_ROOT`). In Foundry-hosted agents, it uses Foundry State Store with container protocol `2.0.0`. For database-backed checkpoints, use the async `CosmosDBSaver` from `langchain-azure-cosmosdb`.
+
 ### Azure cosmos DB chat message history
 
 > [Azure Cosmos DB](https://learn.microsoft.com/azure/cosmos-db/) provides chat message history storage for conversational AI applications, enabling you to persist and retrieve conversation history with low latency and high availability.
@@ -565,24 +583,6 @@ Use the SDK host classes when you need to customize server construction, control
 </Tabs>
 
 To deploy either approach, use `azd ai agent init` to initialize a hosted-agent project, `azd ai agent run` to test it locally, and `azd deploy` to deploy it. Run `azd provision` first only when you need to create the Foundry project or other Azure resources. You can also deploy with the Foundry Toolkit Visual Studio Code extension.
-
-#### Persisting graph state with `FoundryCheckpointSaver`
-
-Use `FoundryCheckpointSaver` to persist LangGraph checkpoints and pending writes in Foundry State Store across turns and container restarts. It is async-only; compile your graph with the saver and keep its async context open for the host's lifetime:
-
-```python
-from langchain_azure_ai.agents.hosting import (
-    FoundryCheckpointSaver,
-    ResponsesHostServer,
-)
-
-async def main() -> None:
-    async with FoundryCheckpointSaver() as checkpointer:
-        graph = builder.compile(checkpointer=checkpointer)
-        await ResponsesHostServer(graph).run_async()
-```
-
-Locally, `FoundryCheckpointSaver` writes to `~/.agentserver/state_stores` (override with `AGENTSERVER_STATE_ROOT`). In Foundry-hosted agents, it uses Foundry State Store with container protocol `2.0.0`. For database-backed checkpoints, use the async `CosmosDBSaver` from `langchain-azure-cosmosdb`.
 
 #### Response branching
 
