@@ -4,7 +4,7 @@ sidebarTitle: Recommended alerts
 description: Alerts that detect lost runs, failed writes, failed or slow queries, and late compaction on self-hosted LangSmith with SmithDB.
 ---
 
-This page describes alerts for self-hosted SmithDB. They detect the problems that have the largest effect in production: lost runs, failed writes, failed or slow queries, and compaction that falls behind.
+This page lists the alerts to create in your monitoring platform for self-hosted SmithDB. LangSmith does not create them for you. They detect the problems that have the largest effect in production: lost runs, failed writes, failed or slow queries, and compaction that falls behind.
 
 Use the [dashboards](/langsmith/self-host-observability-dashboards) to examine the system. Use these alerts to know when to examine it. Each alert gives the metric and the condition to set in your monitoring platform. For what each metric measures, see [Essential SmithDB metrics](/langsmith/self-host-smithdb-metrics).
 
@@ -13,33 +13,26 @@ Each alert has a severity:
 - **Urgent**: Runs are lost, or users have problems now. Respond at any hour.
 - **Non-urgent**: Performance decreases. Respond in one working day.
 
-The severity applies to the critical threshold. The warning threshold gives an early signal for the same problem.
+Most alerts have a warning and a critical threshold. The severity applies to the critical threshold. The warning threshold gives an early signal for the same problem.
 
 ## Alert summary
 
-**Urgent**:
-
-| Alert | Fires when |
-|---|---|
-| [1. Runs are lost](#1-runs-are-lost) | A run task fails its last attempt, or Redis evicts a key. |
-| [2. Feedback is lost](#2-feedback-is-lost) | A feedback task fails its last attempt. |
-| [3. The ingestion backlog gets old](#3-the-ingestion-backlog-gets-old) | The oldest pending task is older than 30 minutes, or more than 1,000 tasks wait for a retry. |
-| [4. Redis is almost full](#4-redis-is-almost-full) | Redis memory is more than 90% of its limit. |
-| [5. Writes fail](#5-writes-fail) | More than 5% of writes fail for 15 minutes. |
-| [6. Queries fail](#6-queries-fail) | More than 10% of queries to a pool fail for 15 minutes. |
-| [7. The metastore is saturated](#7-the-metastore-is-saturated) | Connections are more than 90%, CPU is more than 80%, or storage is almost full. |
-| [12. A component has no pods](#12-a-component-has-no-pods) | A SmithDB component has no available pods for 10 minutes. |
-
-**Non-urgent**:
-
-| Alert | Fires when |
-|---|---|
-| [8. Writes are slow](#8-writes-are-slow) | Writes take more than 2 seconds (median) for 15 minutes. |
-| [9. Queries are slow](#9-queries-are-slow) | The p95 latency of a pool is more than 20 seconds for 15 minutes. |
-| [10. Compaction falls behind](#10-compaction-falls-behind) | More than 1,000 jobs wait for 2 hours. |
-| [11. Compaction stops or fails](#11-compaction-stops-or-fails) | Jobs wait but none run for 30 minutes, or most jobs of one kind fail. |
-| [13. Pods restart often](#13-pods-restart-often) | A SmithDB or ingest queue pod restarts 3 or more times in 30 minutes. |
-| [14. SmithDB panics](#14-smithdb-panics) | More than 3 panics occur in one component in 15 minutes. |
+| Alert | Severity | Fires when |
+|---|---|---|
+| [1. Runs are lost](#1-runs-are-lost) | Urgent | A run task fails its last attempt, or Redis evicts a key. |
+| [2. Feedback is lost](#2-feedback-is-lost) | Urgent | A feedback task fails its last attempt. |
+| [3. The ingestion backlog gets old](#3-the-ingestion-backlog-gets-old) | Urgent | The oldest pending task is older than 30 minutes, or more than 1,000 tasks wait for a retry. |
+| [4. Redis is almost full](#4-redis-is-almost-full) | Urgent | Redis memory is more than 90% of its limit. |
+| [5. Writes fail](#5-writes-fail) | Urgent | More than 5% of writes fail for 15 minutes. |
+| [6. Queries fail](#6-queries-fail) | Urgent | More than 10% of queries to a pool fail for 15 minutes. |
+| [7. The metastore is saturated](#7-the-metastore-is-saturated) | Urgent | Connections are more than 90%, CPU is more than 80%, or storage is almost full. |
+| [8. Writes are slow](#8-writes-are-slow) | Non-urgent | Writes take more than 2 seconds (median) for 15 minutes. |
+| [9. Queries are slow](#9-queries-are-slow) | Non-urgent | The p95 latency of a pool is more than 20 seconds for 15 minutes. |
+| [10. Compaction falls behind](#10-compaction-falls-behind) | Non-urgent | More than 1,000 jobs wait for 2 hours. |
+| [11. Compaction stops or fails](#11-compaction-stops-or-fails) | Non-urgent | Jobs wait but none run for 30 minutes, or most jobs of one kind fail. |
+| [12. A component has no pods](#12-a-component-has-no-pods) | Urgent | A SmithDB component has no available pods for 10 minutes. |
+| [13. Pods restart often](#13-pods-restart-often) | Non-urgent | A SmithDB or ingest queue pod restarts 3 or more times in 30 minutes. |
+| [14. SmithDB panics](#14-smithdb-panics) | Non-urgent | More than 3 panics occur in one component in 15 minutes. |
 
 ## Before you create the alerts
 
@@ -115,7 +108,7 @@ To find the cause, see [LangSmith ingestion falls behind](/langsmith/self-host-s
 
 <Badge color="red">Urgent</Badge>
 
-**Detects**: Redis memory is near `maxmemory`. Redis holds the ingestion queues and 6 hours of run data, so a backlog fills it. The expected `maxmemory-policy` is `volatile-lru`. At the limit, Redis then evicts keys that have an expiry time, such as run data, and runs can be lost (Alert [1](#1-runs-are-lost)). This alert fires while there is still time to add memory.
+**Detects**: Redis memory is near `maxmemory`. Redis holds the ingestion queues and 6 hours of run data, so a backlog fills it. What happens at the limit depends on `maxmemory-policy`. With `volatile-lru`, Redis evicts keys that have an expiry time, such as run data, and runs can be lost (Alert [1](#1-runs-are-lost)). With `noeviction`, Redis refuses new writes instead, and ingestion fails without increasing `evicted_keys`. This alert fires while there is still time to add memory.
 
 **Condition**: Redis memory used as a percentage of `maxmemory`, for each node. Managed Redis services usually report this percentage directly. Warning: more than 80%. Critical: more than 90%. Window: 10 minutes. Use the maximum value in the window.
 
