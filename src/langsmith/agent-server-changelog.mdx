@@ -21,18 +21,136 @@ rss: true
 
 Deployments use the newest `stable` version by default and are automatically updated to the newest `stable` version on each new revision. To pin to a specific version, set [`api_version`](/langsmith/cli#pinning-api-version) to the desired version in langgraph.json.
 
-## v0.19
+## v0.20
 
-Latest version: `0.19.0rc3`
+Latest version: `0.20.0rc1`
 
 <Callout icon="info" color="#F59E0B">
-This minor line is still a release candidate. The last stable release is `0.18.1`.
+This minor line is still a release candidate. The last stable release is `0.19.1`.
 </Callout>
+
+### Changes
+
+#### New Features
+- Keeps long-running MCP tool calls alive by sending SSE keepalive pings to clients that accept event streams
+- The Agent Server sets `run_agent_identifier` in a run's metadata from a verified agent identity token when the deployment has one, and removes any `run_agent_identifier` a caller sends in metadata, configurable or context.
+- Enables cooperative draining and resumption by default for Postgres deployments running LangGraph >= 1.2.15. Set `FF_RESUME_DRAINED_RUNS=false` to opt out.
+- Agent Server images now declare their server port (8000) with `EXPOSE`.
+- Expose successful multi-process run counts in public metrics.
+- Adds the `A2A_ALLOWED_DATA_MIME_TYPES` setting, which lets agent data content blocks with the listed MIME types pass through A2A responses as DataParts with their metadata kept.
+- Compresses JSON and text replies, custom routes included, with zstd for clients that send `Accept-Encoding: zstd`.
+- Compresses event streams with zstd for clients that send `Accept-Encoding: zstd`, flushing after every event.
+- Adds a `metadata_any` filter to thread search and thread count.
+- Allows multi-process dispatch (`DISPATCH_MODE=multi-process`) to share Python executor processes across concurrent runs. `N_JOBS_PER_WORKER` (default 10) sets total concurrent runs per worker replica; `N_PROCESSES` (default 1) distributes that capacity across executor processes.
+- Adds `refused_resume` to runs, set when strict resume refuses a run's answer.
+- Crons accept the `tools` and `lifecycle` stream modes, and `GET /info` reports `flags.cron_stream_lifecycle`.
+
+#### Fixes
+- Fixes checkpoint writes hanging indefinitely when a database write stops responding. The `CHECKPOINT_MAX_BATCH_SIZE`, `CHECKPOINT_BATCH_DELAY`, `CHECKPOINT_QUEUE_SIZE` and `CHECKPOINT_PEEK_TIMEOUT` settings now take effect.
+- Upgrades uvloop to 0.23.0, so graphs on Python 3.14 can call `asyncio.create_task(..., eager_start=True)`.
+- Fixes usage reporting from self-hosted agent servers behind an egress proxy. The usage reporting client now honours `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY`.
+- Fixes custom events, node updates and checkpoints missing from runs streamed over the event streaming API.
+- Fixes replayed events from the event streaming API showing the time of the replay instead of when they happened.
+- Fixes run creation failing during brief lock contention on the same thread.
+- Fixes thread TTL `keep_latest` and thread prune not removing old checkpoints from custom checkpointers.
+- Keeps `additional_kwargs` on messages in event-streaming `values` events
+- Prevents terminal run failure metrics from counting failed status updates in multi-process mode.
+- Speeds up thread state reads when only a short section of checkpoint history needs replaying.
+- Fixes `/info` reporting `strict_resume` on langgraph versions without it, and speeds up server startup.
+- Upgrades the bundled langgraph to 1.2.22. Interrupts in run outputs and in `values` and `updates` stream events now include `response_schema` (`null` when unset), and on Postgres, runs in flight at shutdown drain and resume on another worker.
+- Fixes a delayed run starting up to a minute late when an earlier delayed run on its thread was cancelled.
+- Fixes deleting a run leaving its checkpoints in custom checkpointers.
+- Fixes cancelled runs finishing their running step and saving its output when the graph streams faster than the server publishes its events, such as a model streaming tokens.
+
+#### Security
+- Python packages in the Wolfi -fips images (psycopg, cryptography, grpcio) now use the image's FIPS-validated OpenSSL instead of their own bundled copies.
+- Update OpenTelemetry API to 1.45.2 to address dependency security fixes.
+- Update Hono to 4.13.16 in the JavaScript test graphs for dependency security fixes.
+- Updated JavaScript dependencies, including security fixes in Hono and its Node.js server adapter.
+- Updated Go core dependencies, including pgx fixes for malformed database responses and unsafe retries.
+- Update OpenTelemetry API to 1.45.2 and align its tracing dependencies for security fixes.
+- Stops cron creation from passing client-supplied cron metadata to custom `threads.read` auth handlers. Handlers should return a filter rather than read `value["metadata"]`.
+- Prevents rollback requests from disclosing harness usage on threads hidden by custom authorization.
+- Upgrades bundled `langgraph-checkpoint-postgres` to 3.1.3, which rejects store namespace labels containing `.` from graph code.
+- Upgraded Undici to fix CVE-2026-120415 (GHSA-9v6h-8rgp-m69f)
+- Updates locked Vite dependencies to patched releases.
+- Updates Go dependencies and the Go toolchain to patched versions to address published security advisories.
+- Stops self-hosted log export from sending exception messages and tracebacks.
+
+#### General Notes
+- Drops support for langgraph versions older than 1.2.4.
+- Drops support for langgraph versions older than 1.2.6, which fixes nested subgraph checkpoints being saved under the parent's namespace.
+
+<Accordion title="v0.20 releases">
+<Update label="2026-11-25" tags={["agent-server"]}>
+## v0.20.0rc1
+
+### New Features
+- Keeps long-running MCP tool calls alive by sending SSE keepalive pings to clients that accept event streams
+- The Agent Server sets `run_agent_identifier` in a run's metadata from a verified agent identity token when the deployment has one, and removes any `run_agent_identifier` a caller sends in metadata, configurable or context.
+- Enables cooperative draining and resumption by default for Postgres deployments running LangGraph >= 1.2.15. Set `FF_RESUME_DRAINED_RUNS=false` to opt out.
+- Agent Server images now declare their server port (8000) with `EXPOSE`.
+- Expose successful multi-process run counts in public metrics.
+- Adds the `A2A_ALLOWED_DATA_MIME_TYPES` setting, which lets agent data content blocks with the listed MIME types pass through A2A responses as DataParts with their metadata kept.
+- Compresses JSON and text replies, custom routes included, with zstd for clients that send `Accept-Encoding: zstd`.
+- Compresses event streams with zstd for clients that send `Accept-Encoding: zstd`, flushing after every event.
+- Adds a `metadata_any` filter to thread search and thread count.
+- Allows multi-process dispatch (`DISPATCH_MODE=multi-process`) to share Python executor processes across concurrent runs. `N_JOBS_PER_WORKER` (default 10) sets total concurrent runs per worker replica; `N_PROCESSES` (default 1) distributes that capacity across executor processes.
+- Adds `refused_resume` to runs, set when strict resume refuses a run's answer.
+- Crons accept the `tools` and `lifecycle` stream modes, and `GET /info` reports `flags.cron_stream_lifecycle`.
+
+### Fixes
+- Fixes checkpoint writes hanging indefinitely when a database write stops responding. The `CHECKPOINT_MAX_BATCH_SIZE`, `CHECKPOINT_BATCH_DELAY`, `CHECKPOINT_QUEUE_SIZE` and `CHECKPOINT_PEEK_TIMEOUT` settings now take effect.
+- Upgrades uvloop to 0.23.0, so graphs on Python 3.14 can call `asyncio.create_task(..., eager_start=True)`.
+- Fixes usage reporting from self-hosted agent servers behind an egress proxy. The usage reporting client now honours `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY`.
+- Fixes custom events, node updates and checkpoints missing from runs streamed over the event streaming API.
+- Fixes replayed events from the event streaming API showing the time of the replay instead of when they happened.
+- Fixes run creation failing during brief lock contention on the same thread.
+- Fixes thread TTL `keep_latest` and thread prune not removing old checkpoints from custom checkpointers.
+- Keeps `additional_kwargs` on messages in event-streaming `values` events
+- Prevents terminal run failure metrics from counting failed status updates in multi-process mode.
+- Speeds up thread state reads when only a short section of checkpoint history needs replaying.
+- Fixes `/info` reporting `strict_resume` on langgraph versions without it, and speeds up server startup.
+- Upgrades the bundled langgraph to 1.2.22. Interrupts in run outputs and in `values` and `updates` stream events now include `response_schema` (`null` when unset), and on Postgres, runs in flight at shutdown drain and resume on another worker.
+- Fixes a delayed run starting up to a minute late when an earlier delayed run on its thread was cancelled.
+- Fixes deleting a run leaving its checkpoints in custom checkpointers.
+- Fixes cancelled runs finishing their running step and saving its output when the graph streams faster than the server publishes its events, such as a model streaming tokens.
+
+### Security
+- Python packages in the Wolfi -fips images (psycopg, cryptography, grpcio) now use the image's FIPS-validated OpenSSL instead of their own bundled copies.
+- Update OpenTelemetry API to 1.45.2 to address dependency security fixes.
+- Update Hono to 4.13.16 in the JavaScript test graphs for dependency security fixes.
+- Updated JavaScript dependencies, including security fixes in Hono and its Node.js server adapter.
+- Updated Go core dependencies, including pgx fixes for malformed database responses and unsafe retries.
+- Update OpenTelemetry API to 1.45.2 and align its tracing dependencies for security fixes.
+- Stops cron creation from passing client-supplied cron metadata to custom `threads.read` auth handlers. Handlers should return a filter rather than read `value["metadata"]`.
+- Prevents rollback requests from disclosing harness usage on threads hidden by custom authorization.
+- Upgrades bundled `langgraph-checkpoint-postgres` to 3.1.3, which rejects store namespace labels containing `.` from graph code.
+- Upgraded Undici to fix CVE-2026-120415 (GHSA-9v6h-8rgp-m69f)
+- Updates locked Vite dependencies to patched releases.
+- Updates Go dependencies and the Go toolchain to patched versions to address published security advisories.
+- Stops self-hosted log export from sending exception messages and tracebacks.
+
+### General Notes
+- Drops support for langgraph versions older than 1.2.4.
+- Drops support for langgraph versions older than 1.2.6, which fixes nested subgraph checkpoints being saved under the parent's namespace.
+
+</Update>
+</Accordion>
+
+## v0.19
+
+Latest version: `0.19.1`
 ### Changes
 
 #### New Features
 - `langgraph dev` runs on the Go core with SQLite, matching deployed servers more closely.
 - On 0.19 only, set `FF_INMEM_CORE=false` to run `langgraph dev` on the Python in-memory runtime instead of the Go core; install `langgraph-runtime-inmem>=0.39,<0.40` if your environment doesn't already have it. Data saved by one runtime doesn't appear in the other.
+- Compresses JSON and text replies, custom routes included, with zstd for clients that send `Accept-Encoding: zstd`.
+- Compresses event streams with zstd for clients that send `Accept-Encoding: zstd`, flushing after every event.
+- The Agent Server sets `run_agent_identifier` in a run's metadata from a verified agent identity token when the deployment has one, and removes any `run_agent_identifier` a caller sends in metadata, configurable or context.
+- Crons accept the `tools` and `lifecycle` stream modes, and `GET /info` reports `flags.cron_stream_lifecycle`.
+- Adds the `A2A_ALLOWED_DATA_MIME_TYPES` setting, which lets agent data content blocks with the listed MIME types pass through A2A responses as DataParts with their metadata kept.
 
 #### Fixes
 - Fixes checkpoint writes from JS graphs continuing to run after the graph's request to the checkpointer timed out.
@@ -41,11 +159,96 @@ This minor line is still a release candidate. The last stable release is `0.18.1
 - Fixes custom events, node updates and checkpoints missing from runs streamed over the event streaming API.
 - Fixes replayed events from the event streaming API showing the time of the replay instead of when they happened.
 - Fixes usage reporting from self-hosted agent servers behind an egress proxy. The usage reporting client now honours `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY`.
+- Speeds up thread state reads when only a short section of checkpoint history needs replaying.
+- Fixes Agent Server failing to start when a deployment's requirements replace a package bundled in the base image (for example `mcp`), because stale compiled files from the image's version were still imported. Also fixes `/info` reporting `strict_resume` on langgraph versions without it.
+- Fixes cancelled runs finishing their running step and saving its output when the graph streams faster than the server publishes its events, such as a model streaming tokens.
+
+#### Security
+- Upgrades the bundled langgraph to 1.2.14 (GHSA-3fx2-cqw9-xr3c) and langgraph-checkpoint-postgres to 3.1.3 (GHSA-6hmw-9432-67qq). Interrupts in run outputs and in `values` and `updates` stream events now include `response_schema` (`null` when unset).
 
 #### General Notes
 - The Agent Server OpenAPI spec is now titled "LangSmith Agent Server".
 
 <Accordion title="v0.19 releases">
+<Update label="2026-11-26" tags={["agent-server"]}>
+## v0.19.1
+
+### New Features
+- Adds the `A2A_ALLOWED_DATA_MIME_TYPES` setting, which lets agent data content blocks with the listed MIME types pass through A2A responses as DataParts with their metadata kept.
+
+</Update>
+<Update label="2026-11-25" tags={["agent-server"]}>
+## v0.19.0
+
+### Security
+- Includes dependency and security maintenance updates.
+
+</Update>
+<Update label="2026-11-25" tags={["agent-server"]}>
+## v0.19.0rc11
+
+### New Features
+- Crons accept the `tools` and `lifecycle` stream modes, and `GET /info` reports `flags.cron_stream_lifecycle`.
+
+### Fixes
+- Fixes cancelled runs finishing their running step and saving its output when the graph streams faster than the server publishes its events, such as a model streaming tokens.
+
+</Update>
+<Update label="2026-11-23" tags={["agent-server"]}>
+## v0.19.0rc10
+
+### New Features
+- The Agent Server sets `run_agent_identifier` in a run's metadata from a verified agent identity token when the deployment has one, and removes any `run_agent_identifier` a caller sends in metadata, configurable or context.
+
+</Update>
+<Update label="2026-11-23" tags={["agent-server"]}>
+## v0.19.0rc9
+
+### New Features
+- Compresses event streams with zstd for clients that send `Accept-Encoding: zstd`, flushing after every event.
+
+</Update>
+<Update label="2026-11-20" tags={["agent-server"]}>
+## v0.19.0rc8
+
+### New Features
+- Compresses JSON and text replies, custom routes included, with zstd for clients that send `Accept-Encoding: zstd`.
+
+### Fixes
+- Fixes Agent Server failing to start when a deployment's requirements replace a package bundled in the base image (for example `mcp`), because stale compiled files from the image's version were still imported. Also fixes `/info` reporting `strict_resume` on langgraph versions without it.
+
+### Security
+- Upgrades the bundled langgraph to 1.2.14 (GHSA-3fx2-cqw9-xr3c) and langgraph-checkpoint-postgres to 3.1.3 (GHSA-6hmw-9432-67qq). Interrupts in run outputs and in `values` and `updates` stream events now include `response_schema` (`null` when unset).
+
+</Update>
+<Update label="2026-11-19" tags={["agent-server"]}>
+## v0.19.0rc7
+
+### Security
+- Includes dependency and security maintenance updates.
+
+</Update>
+<Update label="2026-11-19" tags={["agent-server"]}>
+## v0.19.0rc6
+
+### Fixes
+- Speeds up thread state reads when only a short section of checkpoint history needs replaying.
+
+</Update>
+<Update label="2026-11-18" tags={["agent-server"]}>
+## v0.19.0rc5
+
+### Security
+- Includes dependency and security maintenance updates.
+
+</Update>
+<Update label="2026-11-16" tags={["agent-server"]}>
+## v0.19.0rc4
+
+### Security
+- Includes dependency and security maintenance updates.
+
+</Update>
 <Update label="2026-11-16" tags={["agent-server"]}>
 ## v0.19.0rc3
 
@@ -81,7 +284,7 @@ This minor line is still a release candidate. The last stable release is `0.18.1
 
 ## v0.18
 
-Latest version: `0.18.1`
+Latest version: `0.18.6`
 ### Changes
 
 #### New Features
@@ -158,6 +361,7 @@ Latest version: `0.18.1`
 - Fixes the per-priority queue metrics to count only runs that can start, and renames them to `lg_api_num_startable_runs` and `lg_api_startable_runs_wait_time_{max,med}`; the `/metrics?format=json` keys under `queue.by_priority` change to match.
 - Fixes store reads over 4 MiB failing with `RESOURCE_EXHAUSTED`.
 - Fixes usage reporting from self-hosted agent servers behind an egress proxy. The usage reporting client now honours `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY`.
+- Fixes Agent Server failing to start when a deployment's requirements replace a package bundled in the base image (for example `mcp`), because stale compiled files from the image's version were still imported.
 
 #### Security
 - Store operations from graphs now reject namespace labels that are empty or contain `.`, as the HTTP store API does, so such a label can no longer read or change another namespace's items.
@@ -167,8 +371,51 @@ Latest version: `0.18.1`
 - Updates Python certificate trust bundles.
 - Patches Agent Server networking and tracing dependencies.
 - Updates bundled dependencies to address security vulnerabilities.
+- Updates the compression library to address a denial-of-service vulnerability.
+- Python packages in the Wolfi -fips images (psycopg, cryptography, grpcio) now use the image's FIPS-validated OpenSSL instead of their own bundled copies, and the gRPC runtime is updated to 1.85.1.
+- Upgrades the bundled langgraph to 1.2.14 (GHSA-3fx2-cqw9-xr3c) and langgraph-checkpoint-postgres to 3.1.3 (GHSA-6hmw-9432-67qq). Interrupts in run outputs and in `values` and `updates` stream events now include `response_schema` (`null` when unset).
+- Updates Go dependencies and the Go toolchain to patched versions to address published security advisories.
+- Updates locked Vite versions in the JavaScript runtime to patched releases to address a published security advisory.
 
 <Accordion title="v0.18 releases">
+<Update label="2026-11-25" tags={["agent-server"]}>
+## v0.18.6
+
+### Security
+- Updates locked Vite versions in the JavaScript runtime to patched releases to address a published security advisory.
+
+</Update>
+<Update label="2026-11-23" tags={["agent-server"]}>
+## v0.18.5
+
+### Security
+- Updates Go dependencies and the Go toolchain to patched versions to address published security advisories.
+
+</Update>
+<Update label="2026-11-20" tags={["agent-server"]}>
+## v0.18.4
+
+### Fixes
+- Fixes Agent Server failing to start when a deployment's requirements replace a package bundled in the base image (for example `mcp`), because stale compiled files from the image's version were still imported.
+
+### Security
+- Upgrades the bundled langgraph to 1.2.14 (GHSA-3fx2-cqw9-xr3c) and langgraph-checkpoint-postgres to 3.1.3 (GHSA-6hmw-9432-67qq). Interrupts in run outputs and in `values` and `updates` stream events now include `response_schema` (`null` when unset).
+
+</Update>
+<Update label="2026-11-17" tags={["agent-server"]}>
+## v0.18.3
+
+### Security
+- Python packages in the Wolfi -fips images (psycopg, cryptography, grpcio) now use the image's FIPS-validated OpenSSL instead of their own bundled copies, and the gRPC runtime is updated to 1.85.1.
+
+</Update>
+<Update label="2026-11-16" tags={["agent-server"]}>
+## v0.18.2
+
+### Security
+- Updates the compression library to address a denial-of-service vulnerability.
+
+</Update>
 <Update label="2026-11-16" tags={["agent-server"]}>
 ## v0.18.1
 
@@ -321,7 +568,7 @@ Latest version: `0.18.1`
 
 ## v0.17
 
-Latest version: `0.17.2`
+Latest version: `0.17.8`
 ### Changes
 
 #### New Features
@@ -363,16 +610,62 @@ Latest version: `0.17.2`
 - Fixed `langgraph dev` losing data: thread state and long-term store items are now saved to `.langgraph_api/` every 10 seconds as intended, and a restart no longer deletes every thread when saved state references a class from the graph file or one that was moved or renamed (an unreadable file is kept as a `.bak` copy).
 - Allows redis-py 8.x in Agent Server images and user graph dependencies.
 - Replays a run's stored events in pages instead of inside Redis, so rejoining a long run no longer stalls Redis for other clients
+- Fixes Agent Server failing to start when a deployment's requirements replace a package bundled in the base image (for example `mcp`), because stale compiled files from the image's version were still imported.
 
 #### Security
 - Store operations from graphs now reject namespace labels that are empty or contain `.`, as the HTTP store API does, so such a label can no longer read or change another namespace's items.
 - Updates Agent Server Go builds, Datadog initialization, uv, and telemetry certificate dependencies.
 - Updates bundled dependencies to address security vulnerabilities.
+- Updates the compression library to address a denial-of-service vulnerability.
+- Python packages in the Wolfi -fips images (psycopg, cryptography, grpcio) now use the image's FIPS-validated OpenSSL instead of their own bundled copies, and the gRPC runtime is updated to 1.85.1.
+- Same content as 0.17.4, which did not reach PyPI: Python packages in the Wolfi -fips images (psycopg, cryptography, grpcio) use the image's FIPS-validated OpenSSL, and the gRPC runtime is 1.85.1.
+- Upgrades the bundled langgraph to 1.2.14 (GHSA-3fx2-cqw9-xr3c). Interrupts in run outputs and in `values` and `updates` stream events now include `response_schema` (`null` when unset).
+- Updates Go dependencies and the Go toolchain to patched versions to address published security advisories.
+- Updates locked Vite versions in the JavaScript runtime to patched releases to address a published security advisory.
 
 #### General Notes
 - Removes the built-in Python Postgres store; the Go store is now always used and `LANGGRAPH_STORE_BACKEND` is ignored. Custom stores and the in-memory runtime are unaffected.
 
 <Accordion title="v0.17 releases">
+<Update label="2026-11-24" tags={["agent-server"]}>
+## v0.17.8
+
+### Security
+- Updates locked Vite versions in the JavaScript runtime to patched releases to address a published security advisory.
+
+</Update>
+<Update label="2026-11-24" tags={["agent-server"]}>
+## v0.17.7
+
+### Security
+- Updates Go dependencies and the Go toolchain to patched versions to address published security advisories.
+
+</Update>
+<Update label="2026-11-20" tags={["agent-server"]}>
+## v0.17.6
+
+### Fixes
+- Fixes Agent Server failing to start when a deployment's requirements replace a package bundled in the base image (for example `mcp`), because stale compiled files from the image's version were still imported.
+
+### Security
+- Upgrades the bundled langgraph to 1.2.14 (GHSA-3fx2-cqw9-xr3c). Interrupts in run outputs and in `values` and `updates` stream events now include `response_schema` (`null` when unset).
+
+</Update>
+<Update label="2026-11-18" tags={["agent-server"]}>
+## v0.17.5
+
+### Security
+- Python packages in the Wolfi -fips images (psycopg, cryptography, grpcio) now use the image's FIPS-validated OpenSSL instead of their own bundled copies, and the gRPC runtime is updated to 1.85.1.
+- Same content as 0.17.4, which did not reach PyPI: Python packages in the Wolfi -fips images (psycopg, cryptography, grpcio) use the image's FIPS-validated OpenSSL, and the gRPC runtime is 1.85.1.
+
+</Update>
+<Update label="2026-11-16" tags={["agent-server"]}>
+## v0.17.3
+
+### Security
+- Updates the compression library to address a denial-of-service vulnerability.
+
+</Update>
 <Update label="2026-11-12" tags={["agent-server"]}>
 ## v0.17.2
 
@@ -499,7 +792,7 @@ Latest version: `0.17.2`
 
 ## v0.16
 
-Latest version: `0.16.11`
+Latest version: `0.16.15`
 ### Changes
 
 #### New Features
@@ -564,8 +857,42 @@ Latest version: `0.16.11`
 - Patches Agent Server networking and tracing dependencies.
 - Pins the optional OpenTelemetry tracer's certificate bundle.
 - Updates bundled dependencies to address security vulnerabilities.
+- Updates the compression library to address a denial-of-service vulnerability.
+- Upgrades the bundled langgraph to 1.2.14 (GHSA-3fx2-cqw9-xr3c) and langgraph-checkpoint-postgres to 3.1.3 (GHSA-6hmw-9432-67qq). Interrupts in run outputs and in `values` and `updates` stream events now include `response_schema` (`null` when unset).
+- Updates Vite in the JavaScript runtime lockfile to patched releases.
+- Updates Go dependencies, the Go toolchain and setuptools to patched versions to address published security advisories.
+- Updates zod in the JavaScript runtime to a patched version to address a published security advisory.
 
 <Accordion title="v0.16 releases">
+<Update label="2026-11-24" tags={["agent-server"]}>
+## v0.16.15
+
+### Security
+- Updates zod in the JavaScript runtime to a patched version to address a published security advisory.
+
+</Update>
+<Update label="2026-11-23" tags={["agent-server"]}>
+## v0.16.14
+
+### Security
+- Updates Go dependencies, the Go toolchain and setuptools to patched versions to address published security advisories.
+
+</Update>
+<Update label="2026-11-23" tags={["agent-server"]}>
+## v0.16.13
+
+### Security
+- Upgrades the bundled langgraph to 1.2.14 (GHSA-3fx2-cqw9-xr3c) and langgraph-checkpoint-postgres to 3.1.3 (GHSA-6hmw-9432-67qq). Interrupts in run outputs and in `values` and `updates` stream events now include `response_schema` (`null` when unset).
+- Updates Vite in the JavaScript runtime lockfile to patched releases.
+
+</Update>
+<Update label="2026-11-16" tags={["agent-server"]}>
+## v0.16.12
+
+### Security
+- Updates the compression library to address a denial-of-service vulnerability.
+
+</Update>
 <Update label="2026-11-12" tags={["agent-server"]}>
 ## v0.16.11
 
@@ -745,7 +1072,7 @@ Latest version: `0.16.11`
 
 ## v0.15
 
-Latest version: `0.15.14`
+Latest version: `0.15.17`
 ### Changes
 
 #### New Features
@@ -784,8 +1111,32 @@ Latest version: `0.15.14`
 - Patches Agent Server networking and tracing dependencies and fixes a loopback cancellation race.
 - Update bundled npm tooling to address vulnerabilities in brace-expansion and undici.
 - Fixes a crash when decoding malformed compressed stream frames.
+- Updates Vite in the JavaScript runtime lockfile to patched releases.
+- Updates Go dependencies, the Go toolchain and setuptools to patched versions to address published security advisories.
+- Updates zod in the JavaScript runtime to a patched version to address a published security advisory.
 
 <Accordion title="v0.15 releases">
+<Update label="2026-11-23" tags={["agent-server"]}>
+## v0.15.17
+
+### Security
+- Updates zod in the JavaScript runtime to a patched version to address a published security advisory.
+
+</Update>
+<Update label="2026-11-23" tags={["agent-server"]}>
+## v0.15.16
+
+### Security
+- Updates Go dependencies, the Go toolchain and setuptools to patched versions to address published security advisories.
+
+</Update>
+<Update label="2026-11-23" tags={["agent-server"]}>
+## v0.15.15
+
+### Security
+- Updates Vite in the JavaScript runtime lockfile to patched releases.
+
+</Update>
 <Update label="2026-11-12" tags={["agent-server"]}>
 ## v0.15.14
 
@@ -967,7 +1318,7 @@ Latest version: `0.15.14`
 
 ## v0.14
 
-Latest version: `0.14.10`
+Latest version: `0.14.11`
 ### Changes
 
 #### New Features
@@ -1001,8 +1352,16 @@ Latest version: `0.14.10`
 - Updates Agent Server's Go toolchain and HTTP/2 dependencies with upstream security fixes.
 - Patches Agent Server certificate bundles, networking, Go toolchain, and tracing dependencies.
 - Updates gRPC certificate roots and pins the optional OpenTelemetry certificate bundle.
+- Rebuilds the Wolfi image on an updated glibc to address CVE-2026-84243.
 
 <Accordion title="v0.14 releases">
+<Update label="2026-11-19" tags={["agent-server"]}>
+## v0.14.11
+
+### Security
+- Rebuilds the Wolfi image on an updated glibc to address CVE-2026-84243.
+
+</Update>
 <Update label="2026-11-06" tags={["agent-server"]}>
 ## v0.14.10
 
