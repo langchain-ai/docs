@@ -1,0 +1,135 @@
+---
+title: Microsoft Foundry Decisions integration
+sidebarTitle: Microsoft Foundry Decisions
+description: Integrate with the Microsoft Foundry decision models using LangChain Python.
+integration:
+  name: Microsoft Foundry Decisions
+  pypi: langchain-azure-ai
+---
+
+Microsoft Foundry provides two LangChain decision model adapters in `langchain-azure-ai>=1.4.1` that implement LangChain's shared `BaseDecisionModel` interface (`Runnable[ClassifierRequest, ClassifierResponse]`):
+
+| Models | Adapter | API path |
+| --- | --- | --- |
+| Compatible Microsoft Decision models (for example, `Microsoft-Decision-1` and `Microsoft-Decision-1.1`) | `AzureAIMicrosoftDecisionsClassifier` | `/providers/microsoft/v1/systemone` |
+| Azure OpenAI models that support the Decisions API (for example, `gpt-6-luna`) | `AzureAIOpenAIApiDecisionsClassifier` | `/openai/v1/decisions` |
+
+Both adapters answer named `Noul`, `Choice`, and `Score` questions from `langchain_core.decisions` (also re-exported from `langchain_azure_ai.decisions`) and return structured answers on `nouls`, `choices`, `scores`, and `answers`. Neither adapter supports `Box` questions.
+
+<Note>
+`AzureAIOpenAIApiDecisionsClassifier` extends the beta [`OpenAIClassifier`](/oss/integrations/decision_models/openai_classifier) from `langchain-openai>=1.8.0` and emits `ExperimentalWarning` on construction.
+</Note>
+
+## Setup
+
+Install `langchain-azure-ai` 1.4.1 or later:
+
+<CodeGroup>
+```bash pip
+pip install -U "langchain-azure-ai>=1.4.1"
+```
+
+```bash uv
+uv add "langchain-azure-ai>=1.4.1"
+```
+</CodeGroup>
+
+Set `AZURE_AI_PROJECT_ENDPOINT` (or `FOUNDRY_PROJECT_ENDPOINT`) to your Microsoft Foundry project URL and authenticate with Microsoft Entra ID (`az login` for local development). Pass your Foundry deployment name, not the underlying model name, as `model`.
+
+## Quickstart
+
+<Tabs>
+    <Tab title="Microsoft Decision models">
+        ```python
+        import os
+
+        from langchain_azure_ai.decisions import (
+            AzureAIMicrosoftDecisionsClassifier,
+            Choice,
+            Noul,
+            Score,
+        )
+
+        decisions = AzureAIMicrosoftDecisionsClassifier(
+            project_endpoint=os.environ["AZURE_AI_PROJECT_ENDPOINT"],
+            model="your-microsoft-decision-deployment",
+        )
+
+        result = decisions.invoke(
+            {
+                "state": {"ticket": "I was charged twice for this order."},
+                "questions": {
+                    "refund": Noul(instructions="Is a refund requested?"),
+                    "team": Choice(
+                        instructions="Which team should handle this ticket?",
+                        criteria={
+                            "billing": "Payments and refunds.",
+                            "support": "Other requests.",
+                        },
+                    ),
+                    "urgency": Score(
+                        instructions="How urgent is this request?",
+                        criteria=["Low.", "Medium.", "High."],
+                    ),
+                },
+            }
+        )
+
+        print(result.nouls["refund"].noul)
+        print(result.choices["team"].choice, result.choices["team"].confidence)
+        print(result.scores["urgency"].score)
+        ```
+    </Tab>
+    <Tab title="Azure OpenAI Decisions API">
+        ```python
+        import os
+
+        from langchain_azure_ai.decisions import (
+            AzureAIOpenAIApiDecisionsClassifier,
+            Noul,
+        )
+
+        decisions = AzureAIOpenAIApiDecisionsClassifier(
+            project_endpoint=os.environ["AZURE_AI_PROJECT_ENDPOINT"],
+            model="your-decisions-deployment",
+        )
+
+        result = decisions.invoke(
+            {
+                "state": "Please refund the duplicate charge.",
+                "questions": {
+                    "refund": Noul(instructions="Is a refund requested?"),
+                },
+            }
+        )
+
+        print(result.nouls["refund"].noul)
+        ```
+    </Tab>
+</Tabs>
+
+## Adapter differences
+
+### Microsoft Decision
+
+`AzureAIMicrosoftDecisionsClassifier` calls compatible Microsoft Decision deployments through `/providers/microsoft/v1/systemone`.
+
+- **Inputs**: Accepts text strings, JSON objects, and JSON arrays. It does not convert LangChain messages or send image assets.
+- **Endpoints**: Accepts `project_endpoint` (defaults to `AZURE_AI_PROJECT_ENDPOINT`, then `FOUNDRY_PROJECT_ENDPOINT`) or a direct Foundry resource URL via `endpoint`.
+- **Authentication**: Defaults to `DefaultAzureCredential()`. Pass an API key string or `AzureKeyCredential` as `credential` for key-based authentication. Async-only credentials require `ainvoke` or `abatch`.
+
+### Azure OpenAI Decisions
+
+`AzureAIOpenAIApiDecisionsClassifier` extends [`OpenAIClassifier`](/oss/integrations/decision_models/openai_classifier) and calls `/openai/v1/decisions`.
+
+- **Inputs**: Accepts strings, JSON objects and arrays, and root LangChain messages (including supported images). Media nested inside JSON state is dropped with a warning. If the API refuses any question, `ModelRefusalError` is raised for the entire request.
+- **Endpoints**: Accepts `project_endpoint` (derives `<resource>/openai/v1`) or a direct resource `endpoint` ending in `/openai/v1` (falls back to `AZURE_AI_OPENAI_ENDPOINT`, then `AZURE_OPENAI_ENDPOINT` with `/openai/v1` appended).
+- **Authentication**: `project_endpoint` requires a Microsoft Entra token credential and defaults to `DefaultAzureCredential()`. For API key authentication, pass a direct resource `endpoint` ending in `/openai/v1` with `credential` (or set `AZURE_OPENAI_API_KEY`).
+- **Compatibility alias**: `AzureAIOpenAIApiDecisions` remains available as an alias for `AzureAIOpenAIApiDecisionsClassifier`.
+
+## See also
+
+- [Microsoft Decision model guide](https://learn.microsoft.com/azure/foundry/foundry-models/how-to/use-foundry-models-microsoft-decision)
+- [Azure OpenAI Decisions API guide](https://learn.microsoft.com/azure/foundry/openai/how-to/decisions)
+- [Foundry Decision Models reference in `langchain-azure`](https://github.com/langchain-ai/langchain-azure/blob/main/libs/azure-ai/docs/model/decisions.md)
+- [`OpenAIClassifier` integration](/oss/integrations/decision_models/openai_classifier)
