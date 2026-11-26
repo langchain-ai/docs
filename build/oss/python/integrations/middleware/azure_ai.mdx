@@ -5,7 +5,7 @@ integration:
   name: Microsoft Foundry middleware
   pypi: langchain-azure-ai
   featured: true
-  available: Text moderation, image moderation, prompt shield, protected material, and groundedness
+  available: Content safety guardrail policy, text moderation, image moderation, prompt shield, protected material, groundedness, and Foundry memory
   source: "[`langchain-ai/langchain-azure`](https://github.com/langchain-ai/langchain-azure/tree/main/libs/azure-ai)"
 ---
 
@@ -21,6 +21,7 @@ These middleware classes live in the `langchain-azure-ai` package and are export
 
 | Middleware | Description |
 |------------|-------------|
+| [Guardrail policy](#guardrail-policy) | Enforce a Content Safety guardrail policy across agent, model, and tool boundaries |
 | [Text moderation](#text-moderation) | Screen input and output text for harmful content and blocklist matches |
 | [Image moderation](#image-moderation) | Screen image inputs and outputs using Azure AI Content Safety image analysis |
 | [Prompt shield](#prompt-shield) | Detect direct and indirect prompt injection attempts |
@@ -30,6 +31,7 @@ These middleware classes live in the `langchain-azure-ai` package and are export
 
 ### Features
 
+- Unified guardrail policy enforcement with `AzureContentSafetyPolicyMiddleware` across agent, model, and tool hooks.
 - Text moderation for harmful content and custom blocklists.
 - Image moderation for data URLs and public HTTP(S) image inputs.
 - Prompt injection detection with Prompt Shield.
@@ -120,6 +122,59 @@ agent = create_agent(
 </Tip>
 
 ## Azure AI Content Safety
+
+### Guardrail policy
+
+<Info>
+    `AzureContentSafetyPolicyMiddleware` is in preview and requires `azure-ai-contentsafety>=1.1.0b1`.
+</Info>
+
+Use `AzureContentSafetyPolicyMiddleware` to enforce an Azure AI Content Safety guardrail policy across agent, model, and tool input and output hooks in `create_agent` or `create_deep_agent`. The guardrail policy controls each intervention point; the same text may be evaluated at both agent and model boundaries.
+
+Unlike the sibling Content Safety middleware classes, this middleware has no `exit_behavior`, `apply_to_input`, or `apply_to_output` settings: a blocked verdict always raises `ContentSafetyViolationError`. Allowed verdicts apply service-provided transforms, and non-blocking findings are attached as annotations readable via `get_content_safety_annotations` from `langchain_azure_ai.agents.middleware`. Agent and model hooks screen text; tool hooks screen JSON-encoded arguments and results.
+
+```python
+from langchain.agents import create_agent
+from langchain_azure_ai.agents.middleware import AzureContentSafetyPolicyMiddleware
+
+agent = create_agent(
+    model=model,
+    middleware=[
+        AzureContentSafetyPolicyMiddleware(
+            policy_id="your-guardrail-id",
+            endpoint="https://<resource>.cognitiveservices.azure.com",
+        )
+    ],
+)
+```
+
+<Accordion title="Configuration options">
+
+<ParamField body="policy_id" type="string" required>
+    Guardrail policy ID configured on your Content Safety resource.
+</ParamField>
+
+<ParamField body="endpoint" type="string">
+    Content Safety resource URL. Falls back to `AZURE_CONTENT_SAFETY_ENDPOINT`. Mutually exclusive with `project_endpoint`.
+</ParamField>
+
+<ParamField body="project_endpoint" type="string">
+    Microsoft Foundry project endpoint. Falls back to `AZURE_AI_PROJECT_ENDPOINT` when `endpoint` is not set.
+</ParamField>
+
+<ParamField body="credential" type="TokenCredential | AzureKeyCredential | str | None">
+    Azure credential or API key. Defaults to `DefaultAzureCredential()`.
+</ParamField>
+
+<ParamField body="context" type="UnifiedModerateContext | None">
+    Optional SDK context carrying agent, session, or correlation metadata for each moderation request.
+</ParamField>
+
+<ParamField body="name" type="string">
+    Middleware name. Defaults to `azure_unified_moderation`.
+</ParamField>
+
+</Accordion>
 
 ### Text moderation
 
@@ -380,6 +435,8 @@ agent = create_agent(
     middleware=[memory_middleware],
 )
 ```
+
+`memory_middleware.get_retriever_tool()` does not forward a custom `credential` from `AzureAIMemoryMiddleware`. When not using `DefaultAzureCredential`, pass `memory_middleware.get_retriever_tool(credential=...)`.
 
 <Accordion title="Configuration options">
 
