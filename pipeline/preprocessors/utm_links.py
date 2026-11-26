@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import urlencode, urlparse, urlunparse
 
 # Paths treated as CTAs. Everything else on smith.langchain.com is functional.
-_CTA_PATHS = {"", "/", "/agents", "/agents/"}
+_CTA_PATHS = {"", "/", "/agents", "/agents/", "/try/studio", "/try/tracing"}
 
 _UTM_BASE = {
     "utm_source": "docs",
