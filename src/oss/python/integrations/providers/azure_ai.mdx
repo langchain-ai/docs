@@ -101,6 +101,36 @@ claude.invoke("Translate 'hi!' from English into Italian.").pretty_print()
 
 You can also pass `project_endpoint` (or set `AZURE_AI_PROJECT_ENDPOINT` or `FOUNDRY_PROJECT_ENDPOINT`) to resolve the resource endpoint automatically. See [Microsoft Foundry chat models](/oss/integrations/chat/azure_ai#anthropic-claude-models) for details.
 
+## Decision models
+
+Use `AzureAIMicrosoftDecisionsClassifier` (Microsoft Decision models on the System One API) or `AzureAIOpenAIApiDecisionsClassifier` (Azure OpenAI Decisions API, experimental) in `langchain-azure-ai>=1.4.1` to ask typed `Noul`, `Choice`, and `Score` questions through LangChain's `BaseDecisionModel` interface.
+
+```python
+import os
+
+from langchain_azure_ai.decisions import AzureAIMicrosoftDecisionsClassifier, Choice
+
+decisions = AzureAIMicrosoftDecisionsClassifier(
+    project_endpoint=os.environ["AZURE_AI_PROJECT_ENDPOINT"],
+    model="your-microsoft-decision-deployment",
+)
+
+result = decisions.invoke(
+    {
+        "state": {"ticket": "I was charged twice for this order."},
+        "questions": {
+            "team": Choice(
+                instructions="Which team should handle this ticket?",
+                criteria={"billing": "Payments and refunds.", "support": "Other requests."},
+            )
+        },
+    }
+)
+print(result.choices["team"].choice)
+```
+
+For Azure OpenAI Decisions usage, endpoints, and adapter differences, see [Microsoft Foundry Decisions](/oss/integrations/decision_models/azure_ai).
+
 ## LLMs
 
 Microsoft offers two main options for accessing LLMs through Azure:
@@ -219,6 +249,8 @@ agent = create_agent(
     middleware=[memory_middleware],
 )
 ```
+
+`memory_middleware.get_retriever_tool()` does not forward a custom `credential` from `AzureAIMemoryMiddleware`. When not using `DefaultAzureCredential`, pass `memory_middleware.get_retriever_tool(credential=...)`.
 
 To query a Foundry Memory store directly as a LangChain retriever, use `AzureAIMemoryRetriever` (experimental) standalone or obtain a history-bound retriever from `AzureAIMemoryChatMessageHistory`:
 
@@ -533,6 +565,34 @@ Use the SDK host classes when you need to customize server construction, control
 </Tabs>
 
 To deploy either approach, use `azd ai agent init` to initialize a hosted-agent project, `azd ai agent run` to test it locally, and `azd deploy` to deploy it. Run `azd provision` first only when you need to create the Foundry project or other Azure resources. You can also deploy with the Foundry Toolkit Visual Studio Code extension.
+
+#### Persisting graph state with `FoundryCheckpointSaver`
+
+Use `FoundryCheckpointSaver` to persist LangGraph checkpoints and pending writes in Foundry State Store across turns and container restarts. It is async-only; compile your graph with the saver and keep its async context open for the host's lifetime:
+
+```python
+from langchain_azure_ai.agents.hosting import (
+    FoundryCheckpointSaver,
+    ResponsesHostServer,
+)
+
+async def main() -> None:
+    async with FoundryCheckpointSaver() as checkpointer:
+        graph = builder.compile(checkpointer=checkpointer)
+        await ResponsesHostServer(graph).run_async()
+```
+
+Locally, `FoundryCheckpointSaver` writes to `~/.agentserver/state_stores` (override with `AGENTSERVER_STATE_ROOT`). In Foundry-hosted agents, it uses Foundry State Store with container protocol `2.0.0`. For database-backed checkpoints, use the async `CosmosDBSaver` from `langchain-azure-cosmosdb`.
+
+#### Response branching
+
+Enable `enable_response_branching=True` (experimental) on `ResponsesHostServer` with a history-preserving async checkpointer to branch, rewind, or regenerate from a completed response using `previous_response_id`:
+
+```python
+ResponsesHostServer(graph, enable_response_branching=True).run()
+```
+
+See the [response branching design doc](https://github.com/langchain-ai/langchain-azure/blob/main/libs/azure-ai/docs/hosting/response_branching.md) and the [branching sample](https://github.com/langchain-ai/langchain-azure/blob/main/samples/hosting/langgraph-hosted-agents/responses/13_branching/README.md) for requirements and client examples.
 
 The Microsoft Learn guide includes complete examples for both protocols, conversation state, human-in-the-loop flows, testing, deployment, and troubleshooting.
 
