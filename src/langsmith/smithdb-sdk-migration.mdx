@@ -79,7 +79,7 @@ Then STOP and wait for my approval.
 **Phase 3: migrate (after approval, only the scope and decisions I approved)**
 
 1. Upgrade each LangSmith SDK in use to its latest stable release (and its lockfile: uv.lock/poetry.lock, package-lock/pnpm-lock/yarn.lock, go.sum, Gradle/Maven). The guide's minimum is only the floor. If the latest release breaks something unrelated to this migration, use the newest version that works, never below the minimum, and say why in the PR.
-2. Migrate each call site from the table. The v2 queries take `project_ids` (UUIDs), not a project name. Resolve a plain project by name as the guide shows. If the project is an agent environment, an experiment or the workspace evaluators, propose resolving it with https://docs.langchain.com/langsmith/resolve-an-agent, and flag that it is beta and needs a newer SDK and server. In Python, the methods under `client.runs`, `client.threads`, `client.traces`, `client.datasets`, `client.annotation_queues`, `client.public`, ... are async; other `Client` methods such as `create_feedback` stay sync. In async code (async functions, FastAPI `async def` handlers, async LangGraph nodes, notebooks, ...), `await` them. In a sync script, put the migrated calls in one `async def` and run it once with `asyncio.run()`. For the call sites you flagged as decisions, do what I picked. See the guide's "Python troubleshooting" section.
+2. Migrate each call site from the table. The v2 queries take `project_ids` (UUIDs), not a project name. Resolve a plain project by name as the guide shows. If the project is an agent environment, an experiment or the workspace evaluators, propose resolving it with https://docs.langchain.com/langsmith/resolve-an-agent, and flag that it is beta and needs a newer SDK and server. In Python, the methods under `client.runs`, `client.threads`, `client.traces`, `client.datasets`, `client.annotation_queues`, `client.public`, ... are async; other `Client` methods such as `create_feedback` stay sync. In async code (async functions, FastAPI `async def` handlers, async LangGraph nodes, notebooks, ...), use `async for` to iterate paginated results such as `client.runs.query()` across all pages, or `await` the paginator to fetch its first page. Use `await` for non-paginated methods. In a sync script, put the migrated calls in one `async def` and run it once with `asyncio.run()`. For the call sites you flagged as decisions, do what I picked. See the guide's "Python troubleshooting" section.
 3. Run tests, linters and the build for every language touched. Re-run the phase 2 search and show it finds nothing, or explain each leftover.
 4. Keep the changes local: commit them, do not push. Show me a summary: per file, what changed and why, plus anything left for review. Then STOP. Push and open a pull request only if I approve.
 
@@ -179,7 +179,7 @@ Every SDK method and API endpoint below is deprecated and stops working on the r
     | `delete_run_from_annotation_queue()` | `client.annotation_queues.items.delete_all()` |
     | `evaluate_run()`, `aevaluate_run()` | No replacement: run the evaluator yourself and log the result with `create_feedback()` |
 
-    The `client.<resource>` replacements (`client.runs`, `client.threads`, ...) are async on `Client`; other `Client` methods such as `create_feedback` stay sync. In async code, `await` them. In sync code, keep the same `Client`: put the migrated calls in one `async def` and run it once with `asyncio.run()` (see [Python troubleshooting](#python-troubleshooting)). They return only the fields listed in `selects`, so include `"ID"`.
+    The `client.<resource>` replacements (`client.runs`, `client.threads`, ...) are async on `Client`; other `Client` methods such as `create_feedback` stay sync. Paginated methods such as `client.runs.query()` return an `AsyncPaginator`: use `async for` to iterate individual runs across all pages, or `await` it to fetch the first page. You do not need to `await` the paginator before using `async for`. Use `await` for non-paginated methods. In sync code, keep the same `Client`: put the migrated calls in one `async def` and run it once with `asyncio.run()` (see [Python troubleshooting](#python-troubleshooting)). They return only the fields listed in `selects`, so include `"ID"`.
   </Tab>
   <Tab title="TypeScript">
     Deprecated methods on `Client`:
@@ -327,13 +327,19 @@ The following methods are discontinued. They call the retired `/feedback/formula
 
 ## Python troubleshooting
 
+### Evaluate existing experiments
+
+When you pass an existing experiment to `evaluate()` or `aevaluate()`, the Python SDK loads its runs internally. On deployments with both ClickHouse and SmithDB query support enabled, it uses `list_runs()` for this step. The SDK suppresses the deprecation warning for these internal calls, but they can appear as `POST /runs/query` in your workspace's deprecation report. Upgrading the SDK alone does not eliminate these calls while both query backends remain enabled. On SmithDB-only deployments, the SDK loads the experiment through the SmithDB-backed API instead.
+
+Keep the SDK up to date. You do not need to replace `evaluate()` or `aevaluate()` calls as part of this migration. Migrate any direct `list_runs()` calls in your own code separately.
+
 ### Calling the new methods from sync code
 
 Keep the same `Client` and pick the pattern that matches where the code runs:
 
 - Sync script: put the migrated calls in one `async def` and run it once with `asyncio.run()`.
-- Notebooks, async functions, FastAPI `async def` handlers, async LangGraph nodes, ...: `await` the calls directly.
-- `asyncio.run()` where an event loop is already running raises `RuntimeError: asyncio.run() cannot be called from a running event loop`. `await` the call instead.
+- Notebooks, async functions, FastAPI `async def` handlers, async LangGraph nodes, ...: use `async for` for all pages of paginated results, or `await` for the first page or non-paginated calls.
+- `asyncio.run()` where an event loop is already running raises `RuntimeError: asyncio.run() cannot be called from a running event loop`. Use `async for` or `await` directly instead.
 - `asyncio.run()` from several threads that share a `Client` (thread pools, FastAPI `def` handlers, sync LangGraph nodes under load, ...) can fail with `Event loop is closed`. That call path needs a decision: make it async, or batch the calls with `asyncio.gather()` inside one `asyncio.run()`.
 
 ```python
