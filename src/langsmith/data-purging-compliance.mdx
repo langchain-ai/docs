@@ -10,7 +10,7 @@ This guide covers retention and deletion controls for data stored in LangSmith.
 LangSmith provides automatic data retention capabilities to help with compliance and storage management. Data retention policies can be configured at two levels:
 
 - **Workspace level**: Enterprise customers with the required permissions can set extended retention as the workspace default and customize the retention duration. See [Customize extended retention policy](#customize-extended-retention-policy).
-- **Environment level**: Customers with the required permissions can set the default retention tier for each [agent environment](/langsmith/agent-environments), choosing between base or extended retention. See [Change default retention for an environment](/langsmith/billing#change-default-retention-for-an-environment).
+- **Environment level**: Customers with the required permissions can set the default retention tier for each [agent environment](/langsmith/agent-environments), choosing between base or extended retention. See [Change default retention for an environment](/langsmith/billing#change-default-retention-for-an-environment). On self-hosted, administrators can turn on per-project retention so a project can use its own extended period. See [Project-level extended retention for self-hosted](#project-level-extended-retention-for-self-hosted).
 
 For the retention period of each tier on Cloud, BYOC, and self-hosted, see [Retention periods](/langsmith/usage-and-billing#retention-periods).
 
@@ -85,10 +85,32 @@ Organization Admins and Operators (`organization:manage`) can configure retentio
 Self-hosted [Enterprise](/langsmith/pricing-plans) customers can also use workspace-level extended retention configuration instead of system-wide TTL settings. This provides more granular control over data retention for different workspaces without requiring environment variable changes.
 
 <Warning>
-If you use blob storage, you **must** add a lifecycle rule for each custom retention period you configure. For example, setting a workspace to 90-day retention means blob data is written to the `ttl_90d/` prefix, which requires a matching lifecycle rule to be cleaned up automatically. See [blob storage TTL configuration](/langsmith/self-host-blob-storage#custom-workspace-level-retention-prefixes) for details and examples.
+If you use blob storage, you **must** add a lifecycle rule for each custom retention period you configure. For example, setting a workspace to 90-day retention means blob data is written to the `ttl_90d/` prefix, which requires a matching lifecycle rule to be cleaned up automatically. See [blob storage TTL configuration](/langsmith/self-host-blob-storage#custom-retention-prefixes) for details and examples.
 </Warning>
 
 To configure this for self-hosted deployments, refer to the [self-hosted TTL documentation](/langsmith/self-host-ttl) for the legacy system-wide approach or contact [support](https://support.langchain.com).
+
+On self-hosted, your administrator chooses the periods users can pick. See [Choose the extended retention periods users can pick](/langsmith/self-host-ttl#choose-the-extended-retention-periods-users-can-pick).
+
+### Project-level extended retention for self-hosted
+
+<Note>
+Per-project extended retention requires LangSmith v0.18.0 or later and is disabled by default. To enable it, see [Requirements](/langsmith/self-host-ttl#requirements).
+</Note>
+
+Self-hosted customers can also set extended retention per tracing project, from the same periods as workspaces. A project without its own period uses the workspace period.
+
+When a workspace [disables extended trace retention](#disable-extended-trace-retention), new traces in its projects use base retention, even if a project has its own extended period.
+
+To set it, open the project's data retention setting, select **Extended**, and pick a period, or **Workspace default** to follow the workspace. Through the API, set `longlived_ttl_days` with `PATCH /api/v1/sessions/<project-id>`, or `null` to follow the workspace again.
+
+Lengthening a project's period requires the `projects:increase-trace-tier` permission. Shortening it requires `projects:decrease-trace-tier`. Resetting a project to the workspace default can require either, depending on whether the workspace period is longer or shorter. See [RBAC permissions](/langsmith/rbac).
+
+A new period applies only to traces ingested after the change. Existing traces keep the period they were written with.
+
+In a Base project, traces upgraded to extended retention, for example after feedback, use the workspace period. The UI does not set a period on Base projects, but the API can. A Base project with its own `longlived_ttl_days` applies that period to its upgraded traces instead.
+
+If an administrator turns per-project retention off after projects have saved their own periods, those projects use the workspace period again.
 
 ## Disable extended trace retention
 
