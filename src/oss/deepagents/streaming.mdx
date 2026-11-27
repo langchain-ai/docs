@@ -51,7 +51,13 @@ When `subgraphs` is enabled, each streaming event includes a **namespace** that 
 | --------- | ------ |
 | `()` (empty) | Main agent |
 | `("tools:abc123",)` | A subagent spawned by the main agent's `task` tool call `abc123` |
-| `("tools:abc123", "model_request:def456")` | The model request node inside a subagent |
+
+:::python
+Within each update chunk, the dict keys are [graph node names](#inspect-graph-nodes) such as `tools` and the model node (`model`).
+:::
+:::js
+Within each update chunk, the dict keys are [graph node names](#inspect-graph-nodes) such as `tools` and the model node (`model_request`).
+:::
 
 Use namespaces to route events to the correct UI component:
 
@@ -63,12 +69,82 @@ Use namespaces to route events to the correct UI component:
 <StreamingNamespacesJs />
 :::
 
+## Inspect graph nodes
+
+:::python
+`create_deep_agent` returns a compiled LangGraph graph.
+:::
+
+:::js
+`createDeepAgent` returns a DeepAgent. Access the compiled LangGraph graph via `agent.graph`.
+:::
+
+:::python
+With `stream_mode="updates"`, each chunk is keyed by node name, so you need those names to filter or render progress.
+:::
+:::js
+With `streamMode: "updates"`, each chunk is keyed by node name, so you need those names to filter or render progress.
+:::
+
+Prefer [event streaming](/oss/deepagents/event-streaming) when you do not need the raw update keys.
+
+To list the nodes for your agent configuration:
+
+:::python
+```python
+from deepagents import create_deep_agent
+
+agent = create_deep_agent(
+    model="google_genai:gemini-4-hydrogen",
+)
+print(list(agent.get_graph().nodes))
+```
+:::
+
+:::js
+```typescript
+import { createDeepAgent } from "deepagents";
+
+const agent = createDeepAgent({
+  model: "openai:gpt-6.1-sol",
+});
+console.log(Object.keys(agent.graph.nodes));
+```
+:::
+
+:::python
+Every deep agent includes the core loop nodes `model` and `tools`. Middleware that implements `before_agent`, `before_model`, `after_model`, or `after_agent` hooks adds nodes named `{MiddlewareName}.{hook}`, for example `PatchToolCallsMiddleware.before_agent`.
+:::
+
+:::js
+Every deep agent includes the core loop nodes `model_request` and `tools`. Middleware that implements `before_agent`, `before_model`, `after_model`, or `after_agent` hooks adds nodes named `{MiddlewareName}.{hook}`, for example `patchToolCallsMiddleware.before_agent`.
+:::
+
+The exact set depends on the middleware the harness and your configuration attach.
+
+For LangChain agent progress streaming that filters on these same keys, see [Agent progress](/oss/langchain/streaming#agent-progress).
+
 ## Subagent progress
 
 Use `stream_mode="updates"` to track subagent progress as each step completes. This is useful for showing which subagents are active and what work they've completed.
 
 :::python
 <StreamingSubagentProgressPy />
+
+```shell title="Output"
+[main agent] step: model
+  [tools:call_abc123] step: model
+  [tools:call_abc123] step: tools
+  [tools:call_abc123] step: model
+
+Subagent complete: task
+  Result: ## AI Safety Report...
+[main agent] step: model
+```
+:::
+
+:::js
+<StreamingSubagentProgressJs />
 
 ```shell title="Output"
 [main agent] step: model_request
@@ -79,25 +155,6 @@ Use `stream_mode="updates"` to track subagent progress as each step completes. T
 Subagent complete: task
   Result: ## AI Safety Report...
 [main agent] step: model_request
-```
-:::
-
-:::js
-<StreamingSubagentProgressJs />
-
-```shell title="Output"
-Main agent step: model_request
-  [tools:call_abc123] step: model_request
-  [tools:call_abc123] step: tools
-  [tools:call_abc123] step: model_request
-Subagent complete: task
-Result: ## AI Safety Report...
-Main agent step: model_request
-  [tools:call_def456] step: model_request
-  [tools:call_def456] step: model_request
-Subagent complete: task
-Result: # Comprehensive Report on AI Safety...
-Main agent step: model_request
 ```
 :::
 

@@ -4,7 +4,7 @@ sidebarTitle: Essential metrics
 description: The SmithDB and LangSmith metrics to monitor on self-hosted LangSmith, what they measure, and how to use them.
 ---
 
-SmithDB components expose Prometheus metrics at `/metrics` on each pod's HTTP port. This page lists the metrics worth watching for each component and how to read them. Each table describes the metrics of one component in one line. The section for each metric under the table tells you how to use it. For scrape and export configuration, see [Configure SmithDB observability](/langsmith/self-host-smithdb-observability). To check first whether SmithDB is healthy, see [Common SmithDB issues to monitor](/langsmith/self-host-smithdb-common-issues).
+SmithDB components expose Prometheus metrics at `/metrics` on each pod's HTTP port. This page lists the metrics worth watching for each component and how to read them. Each table describes the metrics of one component in one line. The section for each metric under the table tells you how to use it. For scrape and export configuration, see [Configure SmithDB observability](/langsmith/self-host-smithdb-observability). For alerts on these metrics, see [Recommended SmithDB alerts](/langsmith/self-host-smithdb-alerts). To find the cause of a problem, see [Diagnose common SmithDB issues](/langsmith/self-host-smithdb-common-issues).
 
 Names are as they appear on `/metrics`. If your collector adds a namespace or prefix, adjust accordingly.
 
@@ -31,6 +31,7 @@ The LangSmith ingestion pipeline is not part of SmithDB, but it sends all runs t
 | [`langsmith_asynq_ingestion_queue_retry`](#langsmith_asynq_ingestion_queue_retry) | Tasks whose write failed and that wait for another attempt. |
 | [`langsmith_asynq_queue_latency_seconds`](#langsmith_asynq_queue_latency_seconds) | Age of the oldest pending task in each Redis queue. |
 | [`langsmith_asynq_ingestion_queue_archived`](#langsmith_asynq_ingestion_queue_archived) | Tasks that failed on all attempts. Their runs are lost. |
+| [`langsmith_ingest_task_failures_total`](#langsmith_ingest_task_failures_total) | Failed attempts of ingest tasks, by attempt number. |
 
 ### `langsmith_ingestion_e2e_latency_seconds`
 
@@ -84,9 +85,19 @@ Query: Every platform backend pod reports the same value for each queue. Use max
 
 *Gauge*
 
-Tasks that failed on all attempts. Their runs are lost. An increase means data loss. Archived tasks stay for 90 days, so monitor increases, not the value. Each queue keeps a maximum of 10,000 archived tasks. When the archive is full, the value stops increasing. Then use the ingest queue logs to find new failures.
+Tasks that failed on all attempts. Their runs are lost. An increase means data loss. Archived tasks stay for 90 days, so monitor increases, not the value. Each queue keeps a maximum of 10,000 archived tasks. When the archive is full, the value stops increasing. Then use [`langsmith_ingest_task_failures_total`](#langsmith_ingest_task_failures_total) to find new failures.
 
 Query: Every platform backend pod reports the same value for the whole queue. Use max across pods, not sum.
+
+### `langsmith_ingest_task_failures_total`
+
+*Counter*
+
+Failed attempts of ingest tasks. The `task` label is the task type. The `attempt` label is the number of earlier attempts, `0` for the first attempt. Expected retries, such as rate limits, are not counted. For `persist_batched_feedbacks`, a run that is not ingested yet is also an expected retry. If the last attempt of this task fails for this reason, its feedback is lost, but the failure is not counted.
+
+The last attempt depends on the task type. The run tasks and `persist_batched_feedbacks` have 12 retries, so their last attempt has `attempt="12"`. The `smithdb_feedback_mutation` and `coalesced_smithdb_feedbacks` tasks have 25 retries, so their last attempt has `attempt="25"`. After the last attempt, LangSmith does not try the task again, and its data is lost.
+
+Query: The ingest queue reports this metric. Use the increase, summed across pods.
 
 ## SmithDB ingestion
 

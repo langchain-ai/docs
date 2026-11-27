@@ -1,0 +1,253 @@
+---
+title: Recommended SmithDB alerts
+sidebarTitle: Recommended alerts
+description: Alerts that detect lost runs, failed writes, failed or slow queries, and late compaction on self-hosted LangSmith with SmithDB.
+---
+
+This page lists the alerts to create in your monitoring platform for self-hosted SmithDB. LangSmith does not create them for you. They detect the problems that have the largest effect in production: lost runs, failed writes, failed or slow queries, and compaction that falls behind.
+
+Use the [dashboards](/langsmith/self-host-observability-dashboards) to examine the system. Use these alerts to know when to examine it. Each alert gives the metric and the condition to set in your monitoring platform. For what each metric measures, see [Essential SmithDB metrics](/langsmith/self-host-smithdb-metrics).
+
+Each alert has a severity:
+
+- **Urgent**: Runs are lost, or users have problems now. Respond at any hour.
+- **Non-urgent**: Performance decreases. Respond in one working day.
+
+Most alerts have a warning and a critical threshold. The severity applies to the critical threshold. The warning threshold gives an early signal for the same problem.
+
+## Alert summary
+
+| Alert | Severity | Fires when |
+|---|---|---|
+| [1. Runs are lost](#1-runs-are-lost) | Urgent | A run task fails its last attempt, or Redis evicts a key. |
+| [2. Feedback is lost](#2-feedback-is-lost) | Urgent | A feedback task fails its last attempt. |
+| [3. The ingestion backlog gets old](#3-the-ingestion-backlog-gets-old) | Urgent | The oldest pending task is older than 30 minutes, or more than 1,000 tasks wait for a retry. |
+| [4. Redis is almost full](#4-redis-is-almost-full) | Urgent | Redis memory is more than 90% of its limit. |
+| [5. Writes fail](#5-writes-fail) | Urgent | More than 5% of writes fail for 15 minutes. |
+| [6. Queries fail](#6-queries-fail) | Urgent | More than 10% of queries to a pool fail for 15 minutes. |
+| [7. The metastore is saturated](#7-the-metastore-is-saturated) | Urgent | Connections are more than 90%, CPU is more than 80%, or storage is almost full. |
+| [8. Writes are slow](#8-writes-are-slow) | Non-urgent | Writes take more than 2 seconds (median) for 15 minutes. |
+| [9. Queries are slow](#9-queries-are-slow) | Non-urgent | The p95 latency of a pool is more than 20 seconds for 15 minutes. |
+| [10. Compaction falls behind](#10-compaction-falls-behind) | Non-urgent | More than 1,000 jobs wait for 2 hours. |
+| [11. Compaction stops or fails](#11-compaction-stops-or-fails) | Non-urgent | Jobs wait but none run for 30 minutes, or most jobs of one kind fail. |
+| [12. A component has no pods](#12-a-component-has-no-pods) | Urgent | A SmithDB component has no available pods for 10 minutes. |
+| [13. Pods restart often](#13-pods-restart-often) | Non-urgent | A SmithDB or ingest queue pod restarts 3 or more times in 30 minutes. |
+| [14. SmithDB panics](#14-smithdb-panics) | Non-urgent | More than 3 panics occur in one component in 15 minutes. |
+
+## Before you create the alerts
+
+Collect the SmithDB, LangSmith ingestion, and infrastructure metrics, and the SmithDB logs. See [Configure SmithDB observability](/langsmith/self-host-smithdb-observability).
+
+This page uses the metric and label names that SmithDB and LangSmith expose. Your monitoring platform can change them:
+
+- **Prefix**: Your collection configuration can add a prefix, such as `smithdb.`, to the SmithDB metrics. Only the SmithDB metrics get this prefix. Metrics that start with `langsmith_` keep their names.
+- **Suffix**: The request count of a histogram can end with `_count` or `.count`. A counter that ends with `_total` can end with `.count` instead, for example `langsmith_ingest_task_failures.count`.
+- **Label values**: Your platform can change label values to lowercase, for example `/query.QueryService/` to `/query.queryservice/`. Use the values that your platform shows.
+
+In each condition, select only the pods of your installation, for example by Kubernetes namespace. If the same namespace name exists in more than one cluster, also select the cluster.
+
+Some conditions apply to each SmithDB Deployment or pod. To select them, match names that contain `smithdb`, not names that start with it. The Helm chart adds the release name before `smithdb`, for example `langsmith-smithdb-query`.
+
+Each condition has a window. For a count, or a percentage calculated from counts, use the total in the window. For other values, the condition tells you which value in the window to use, such as the maximum or the average. Some conditions must be true for every value in the window.
+
+The thresholds on this page are starting values. Percentages (Alerts 5, 6, and 11) are similar on most installations. Counts, such as Alert 10, depend on your volume.
+
+## Alerts for ingestion
+
+The LangSmith platform backend puts each new run in Redis. Ingest queue workers then write the run to SmithDB. LangSmith deletes run data in Redis after 6 hours by default. The Helm value `config.settings.redisRunsExpirySeconds` sets this time. The alerts in this section make sure that runs reach SmithDB in this time.
+
+### 1. Runs are lost
+
+<Badge color="red">Urgent</Badge>
+
+**Detects**: LangSmith accepted runs that it does not store. Alerts 1 and 2 are the only alerts that fire after data is lost. All other alerts fire before them. There are two causes:
+
+- A run task failed its last attempt. Its runs are lost.
+- Redis was out of memory and evicted keys. This is a possible loss, because Redis also holds keys that are not runs. Evictions are the nearest warning of lost runs.
+
+**Condition**: This alert has two conditions. Create one alert for each. The failure count exists only after the first failure, so do not alert when the metrics are missing.
+
+- Failed last attempts: Critical when [`langsmith_ingest_task_failures_total`](/langsmith/self-host-smithdb-metrics#langsmith_ingest_task_failures_total) for the run tasks, with `attempt="12"`, increases in 15 minutes. The run tasks have the `task` label `persist_run_or_parent`, `persist_batched_runs`, `upgrade_batched_runs`, or `otel_rootless_topology`. LangSmith tries these tasks again 12 times. The first attempt has `attempt="0"`, so `attempt="12"` is the last attempt.
+- Evictions: Critical when the Redis evicted keys (`evicted_keys` in `INFO stats`) increase in 5 minutes.
+
+If Redis evicts keys, increase its memory. If run tasks fail their last attempt, writes to SmithDB failed for approximately 2.5 hours. To find the cause, see [Writes to SmithDB fail or are slow](/langsmith/self-host-smithdb-common-issues#writes-to-smithdb-fail-or-are-slow).
+
+### 2. Feedback is lost
+
+<Badge color="red">Urgent</Badge>
+
+**Detects**: LangSmith accepted feedback that it does not store. A feedback task failed its last attempt, and its feedback is lost. The number of attempts depends on the type of feedback task.
+
+**Condition**: Critical when [`langsmith_ingest_task_failures_total`](/langsmith/self-host-smithdb-metrics#langsmith_ingest_task_failures_total) increases in 15 minutes for one of these tasks:
+
+- `task="persist_batched_feedbacks"` with `attempt="12"`.
+- `task="smithdb_feedback_mutation"` or `task="coalesced_smithdb_feedbacks"` with `attempt="25"`.
+
+`persist_batched_feedbacks` does not count a failure while the run of the feedback is not ingested yet. If its last attempt fails for this reason, the feedback is lost, but the failure count does not increase. Thus, also create a warning for `task="persist_batched_feedbacks"` with `attempt="11"`. A failure at this attempt is often the last signal before this task loses feedback.
+
+The failure count exists only after the first failure, so do not alert when the metric is missing.
+
+Feedback writes run on the query pods, or on the mutations service if you enable it. To find the cause, see [One kind of query load slows down other queries](/langsmith/self-host-smithdb-common-issues#one-kind-of-query-load-slows-down-other-queries).
+
+### 3. The ingestion backlog gets old
+
+<Badge color="red">Urgent</Badge>
+
+**Detects**: Runs wait too long in Redis before they reach SmithDB. New traces appear late in the UI, and the runs get nearer to the time when LangSmith deletes them.
+
+The age of the oldest pending task is the first sign that ingestion cannot keep up. But the age starts again after each retry, so it can stay low while writes fail and runs get near the time of deletion. The retry count detects this case, including failures that do not reach SmithDB, for example a proxy that blocks connections. The age does not show how much time is left before LangSmith deletes the runs. Do not wait until it gets near 6 hours.
+
+**Condition**: This alert has two conditions. Create one alert for each:
+
+- Pending age: [`langsmith_asynq_queue_latency_seconds`](/langsmith/self-host-smithdb-metrics#langsmith_asynq_queue_latency_seconds) for the queues with a `queue` label that starts with `ingestion`. Use the maximum across these queues. Warning: more than 600 seconds (10 minutes). Critical: more than 1,800 seconds (30 minutes). Window: 10 minutes. Use the maximum value in the window.
+- Retries: [`langsmith_asynq_ingestion_queue_retry`](/langsmith/self-host-smithdb-metrics#langsmith_asynq_ingestion_queue_retry). Each pod reports the same value, so use the maximum across pods. Warning: more than 100. Critical: more than 1,000. Window: 30 minutes. Every value in the window must be above the threshold.
+
+To find the cause, see [LangSmith ingestion falls behind](/langsmith/self-host-smithdb-common-issues#find-the-cause-of-the-backlog).
+
+### 4. Redis is almost full
+
+<Badge color="red">Urgent</Badge>
+
+**Detects**: Redis memory is near `maxmemory`. Redis holds the ingestion queues and 6 hours of run data, so a backlog fills it. What happens at the limit depends on `maxmemory-policy`. With `volatile-lru`, Redis evicts keys that have an expiry time, such as run data, and runs can be lost (Alert [1](#1-runs-are-lost)). With `noeviction`, Redis refuses new writes instead, and ingestion fails without increasing `evicted_keys`. This alert fires while there is still time to add memory.
+
+**Condition**: Redis memory used as a percentage of `maxmemory`, for each node. Managed Redis services usually report this percentage directly. Warning: more than 80%. Critical: more than 90%. Window: 10 minutes. Use the maximum value in the window.
+
+To find the cause, see [LangSmith ingestion falls behind](/langsmith/self-host-smithdb-common-issues#find-the-cause-of-the-backlog). If there is no backlog, increase the memory of Redis.
+
+## Alerts for writes and queries
+
+SmithDB ingestion writes runs to object storage as segments. It records the metadata of each segment in the metastore, a PostgreSQL database. Query pools read the segments for the UI, the API, and automations. A query pool is the query service or a [dedicated query service](/langsmith/self-host-smithdb-scale#dedicated-query-services), such as stats query. Each pool is a separate Deployment and scales independently. For more information, see [How SmithDB handles data](/langsmith/self-host-smithdb-data-paths).
+
+### 5. Writes fail
+
+<Badge color="red">Urgent</Badge>
+
+**Detects**: Writes from ingest queue workers to SmithDB fail. LangSmith tries failed writes again from Redis, so they cause retries first and lost runs later. Usually, less than 0.1% of writes fail. An error rate that continues means that SmithDB cannot make data durable.
+
+**Condition**: Use the request count of [`server_requests_duration` on ingestion pods](/langsmith/self-host-smithdb-metrics#server_requests_duration-on-ingestion-pods), from the Deployments with names that contain `smithdb-ingestion`. Count only the requests with `type="grpc"` and a `path` that starts with `/ingestion.IngestionService/`. The `status` label is the gRPC code, where `0` is success. Calculate the requests with another `status` as a percentage of all requests. Window: 15 minutes.
+
+- Warning: more than 1%.
+- Critical: more than 5%, and a minimum of 50 failed requests. The minimum count prevents alerts when there is little traffic.
+
+To find the cause, see [Writes to SmithDB fail or are slow](/langsmith/self-host-smithdb-common-issues#writes-to-smithdb-fail-or-are-slow).
+
+### 6. Queries fail
+
+<Badge color="red">Urgent</Badge>
+
+**Detects**: Requests to a SmithDB query pool fail, time out, or SmithDB rejects them. Users see errors or empty pages for traces, runs, and project statistics, and automations fail. The condition applies to each pool, to show which type of load fails.
+
+**Condition**: Use the request count of [`server_requests_duration` on query pods](/langsmith/self-host-smithdb-metrics#server_requests_duration-on-query-pods), with a `path` that starts with `/query.QueryService/`. Calculate the failed requests as a percentage of all requests, for each Deployment. Warning: more than 5%. Critical: more than 10%. Window: 15 minutes.
+
+These `status` values are failures: `4` (timed out), `8` (rejected), `2`, `13`, and `error` (internal errors), `14` (unavailable), `15` (data loss), and `timeout` (server timeout). Do not count `1` and `cancelled`, which usually mean that the user closed the page. Also do not count client errors, for example `3` (invalid argument).
+
+On an installation with little traffic, a small number of failures can be a large percentage. If the alert changes state too often, add a minimum count, as in Alert [5](#5-writes-fail).
+
+To find the cause, see [Slow or failed queries](/langsmith/self-host-smithdb-common-issues#find-the-cause-of-slow-or-failed-queries).
+
+### 7. The metastore is saturated
+
+<Badge color="red">Urgent</Badge>
+
+**Detects**: The SmithDB metastore (PostgreSQL) does not have sufficient connections, CPU, or storage. A slow metastore makes ingestion, queries, and compaction slow at the same time. When there are no more connections or no more storage, writes fail.
+
+**Condition**: This alert has three conditions. Create one alert for each, from your database monitoring or your cloud provider:
+
+- Connections in use, as a percentage of `max_connections`. Warning: more than 80%. Critical: more than 90%. Window: 5 minutes. Use the maximum value in the window.
+- CPU use. Warning: more than 60%. Critical: more than 80%. Window: 15 minutes. Use the average in the window.
+- Storage used. Critical: more than 85%. Window: 30 minutes. Use the maximum value in the window. If your provider reports only free storage, use the minimum value in the window, and set the threshold from the size of your volume, for example less than 10 GiB free. Do not use this condition for Aurora and AlloyDB if their storage increases automatically.
+
+To find the cause, see [The metastore runs out of capacity](/langsmith/self-host-smithdb-common-issues#the-metastore-runs-out-of-capacity).
+
+### 8. Writes are slow
+
+<Badge color="orange">Non-urgent</Badge>
+
+**Detects**: SmithDB ingestion needs more time than usual to store new runs. The batch latency is the time from when runs arrive at SmithDB ingestion until SmithDB writes them to object storage and records the segment metadata in the metastore. It includes a short wait, because SmithDB collects runs before it writes them. A median of approximately 0.5 to 0.7 seconds is healthy.
+
+This alert is an early warning for Alerts [3](#3-the-ingestion-backlog-gets-old) and [5](#5-writes-fail). When writes are slow, ingest queue workers wait, the Redis backlog increases, and then writes fail.
+
+**Condition**: The median (p50) of [`ingest_batch_latency`](/langsmith/self-host-smithdb-metrics#ingest_batch_latency). Warning: more than 1.6 seconds. Critical: more than 2 seconds. Window: 15 minutes. Use the average in the window.
+
+To find the cause, see [Writes to SmithDB fail or are slow](/langsmith/self-host-smithdb-common-issues#writes-to-smithdb-fail-or-are-slow).
+
+### 9. Queries are slow
+
+<Badge color="orange">Non-urgent</Badge>
+
+**Detects**: Requests to a query pool are slow. Pages in the UI load slowly, and more requests time out. Usually, queries are slow before they fail (Alert [6](#6-queries-fail)). The cause is often late background work, usually compaction, which is easier to correct early.
+
+**Condition**: The p95 of [`server_requests_duration` on query pods](/langsmith/self-host-smithdb-metrics#server_requests_duration-on-query-pods), for each Deployment. Use the requests with a `path` that starts with `/query.QueryService/`, except feedback writes and deletes (`/query.QueryService/IngestFeedback` and `/query.QueryService/DeleteRuns`). Warning: more than 10 seconds. Critical: more than 20 seconds. Window: 15 minutes. Use the average in the window.
+
+To find the cause, see [Slow or failed queries](/langsmith/self-host-smithdb-common-issues#find-the-cause-of-slow-or-failed-queries).
+
+## Alerts for compaction
+
+Compaction merges the many small segments from ingestion into fewer, larger segments. It also applies deletes and retention. When compaction falls behind, each query must read more segments.
+
+### 10. Compaction falls behind
+
+<Badge color="orange">Non-urgent</Badge>
+
+**Detects**: Many compaction jobs wait for a long time. The workers complete less work than the compaction scheduler plans. Short peaks are usual, for example after large deletes. A backlog that continues for hours makes queries slower each day and then makes them fail. It also increases storage.
+
+**Condition**: [`compaction_queue_job_count`](/langsmith/self-host-smithdb-metrics#compaction_queue_job_count) with `status="pending"`, summed for all job kinds. Critical: more than 1,000 jobs. Start with this value. Then set it to 3 to 5 times your usual daily peak. Window: 2 hours. Every value in the window must be above the threshold.
+
+If the compaction workers are at their maximum replica count, increase the maximum. To find the cause, see [Late compaction](/langsmith/self-host-smithdb-common-issues#find-the-cause-of-late-compaction).
+
+### 11. Compaction stops or fails
+
+<Badge color="orange">Non-urgent</Badge>
+
+**Detects**: Compaction makes no progress, for one job kind or for all. Alert [10](#10-compaction-falls-behind) fires only after a large backlog. This alert detects a full stop early. When one job kind fails again and again, its jobs are often too large for the memory of the workers.
+
+**Condition**: This alert has two conditions. Create one alert for each:
+
+- Stop: Critical when [`compaction_queue_job_count`](/langsmith/self-host-smithdb-metrics#compaction_queue_job_count) with `status="pending"` is more than 0, and [`compaction_worker_running_tasks`](/langsmith/self-host-smithdb-metrics#compaction_worker_running_tasks), summed for all workers, is 0. If no worker reports running tasks, use 0. Window: 30 minutes. Both must be true for every value in the window.
+- Failures: the count of [`compaction_job_completion`](/langsmith/self-host-smithdb-metrics#compaction_job_completion) with `status="failure"`, as a percentage of the count of all jobs, for each `job_kind` that ends with `_compaction`. Warning: more than 20%. Critical: more than 50%. Window: 1 hour. Single failures are usual. On healthy installations, less than 2% of the jobs of each kind fail.
+
+To find the cause, see [Late compaction](/langsmith/self-host-smithdb-common-issues#find-the-cause-of-late-compaction).
+
+## Alerts for SmithDB pods
+
+Each SmithDB component, such as ingestion or query, runs as its own Deployment. These alerts detect components without available pods, pods that restart, and internal errors in SmithDB. Alert 13 also covers the ingest queue pods, because they write all runs to SmithDB.
+
+### 12. A component has no pods
+
+<Badge color="red">Urgent</Badge>
+
+**Detects**: A SmithDB Deployment has no available pods. Possible causes: its pods crash, Kubernetes cannot schedule them, they fail their readiness checks, or the Deployment has 0 replicas. A component without pods sends no metrics, so the alerts that use its metrics do not fire. For example, without query pods, Alerts 6 and 9 get no data. Without the compaction scheduler, Alerts 10 and 11 get no data.
+
+**Condition**: The available replicas of each SmithDB Deployment, from Kubernetes. Critical: fewer than 1. Window: 10 minutes. Every value in the window must be below the threshold. Also alert when the metric is missing. Exclude each Deployment that you scale to 0 replicas on purpose. For example, if you run the SmithDB migration as a Deployment instead of a Job, exclude the Deployments with names that contain `smithdb-migration`.
+
+To find the cause, see [SmithDB pods are not healthy](/langsmith/self-host-smithdb-common-issues#smithdb-pods-are-not-healthy).
+
+### 13. Pods restart often
+
+<Badge color="orange">Non-urgent</Badge>
+
+**Detects**: A SmithDB pod or an ingest queue pod restarts many times. Usually, the pod used more memory than its limit (OOM kill). A restart stops the work in progress: writes, queries, and compaction jobs. Restarts are often the first sign that a component is too small.
+
+**Condition**: The increase of the container restart count of each SmithDB pod and each ingest queue pod, from Kubernetes. Select the ingest queue pods by Deployment names that contain `ingest-queue`. Count only increases, so that pods that Kubernetes replaces do not hide new restarts. Exclude the same Deployments as in Alert [12](#12-a-component-has-no-pods). Warning: 1 restart. Critical: 3 or more restarts. Window: 30 minutes.
+
+To find the cause, see [SmithDB pods are not healthy](/langsmith/self-host-smithdb-common-issues#smithdb-pods-are-not-healthy).
+
+### 14. SmithDB panics
+
+<Badge color="orange">Non-urgent</Badge>
+
+**Detects**: A SmithDB component has an unexpected internal error (a panic). A panic is always a defect. Depending on where it occurs, a request fails, a background task stops, or the pod restarts. If the pod does not restart, the metrics do not show the panic. Thus, this alert uses the SmithDB logs instead of metrics, and it works only while these logs arrive.
+
+**Condition**: SmithDB log lines that have a `backtrace` field or contain `thread panicked`, for each SmithDB Deployment. JSON logs have the `backtrace` field. Plain-text logs contain the text. Do not count lines with the message `Runtime dropped task without completing it`. This message follows a different failure in the same pod, so the alert would count the failure two times. Warning: 1 panic. Critical: more than 3 panics. Window: 15 minutes.
+
+To find effects on users in the same component, examine Alerts [5](#5-writes-fail), [6](#6-queries-fail), and [13](#13-pods-restart-often).
+
+## See also
+
+- [Diagnose common SmithDB issues](/langsmith/self-host-smithdb-common-issues): How to find the cause of an alert or a reported problem, and what to change.
+- [Essential SmithDB metrics](/langsmith/self-host-smithdb-metrics): What each metric measures and how to query it.
+- [Monitor self-hosted LangSmith with Datadog or Grafana](/langsmith/self-host-observability-dashboards): The dashboards and how to collect their data.
+- [Configure SmithDB observability](/langsmith/self-host-smithdb-observability): Metrics, logs, and traces.
+- [How SmithDB handles data](/langsmith/self-host-smithdb-data-paths): The write, read, delete, and compaction paths.
+- [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale): Tiers, autoscaling, dedicated query services, and metastore capacity.
+- [Troubleshoot SmithDB](/langsmith/self-host-smithdb-troubleshooting): Infrastructure problems and what to collect before you contact support.
