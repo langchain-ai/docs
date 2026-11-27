@@ -3,6 +3,7 @@ title: Set up LLM-as-a-judge online evaluators
 sidebarTitle: LLM-as-a-judge
 ---
 
+import FilteringExperienceNote from '/snippets/langsmith/filtering-experience-note.mdx';
 import OnlineEvaluatorRetentionNote from '/snippets/langsmith/online-evaluator-retention-note.mdx';
 
 [Online evaluations](/langsmith/evaluation-concepts#online-evaluations) provide real-time feedback on your production traces. This is useful to monitor the performance of your application continuously—to identify issues, measure improvements, and ensure consistent quality over time.
@@ -35,15 +36,38 @@ You can apply a filter to the runs that trigger the evaluator. You may want to a
 - Runs that match a particular piece of metadata (e.g. if you log traces with a `plan_type` and only want to run evaluations on traces from your enterprise customers). See [adding metadata to your traces](/langsmith/add-metadata-tags) for more information.
 - Runs where another evaluator's score meets a condition, such as a `correctness` score below `0.5`. See [Chain evaluators](/langsmith/evaluators#chain-evaluators) for more information.
 
-Evaluators use the filter builder, with the same fields and operators described in [Filter traces (ClickHouse)](/langsmith/filter-traces-in-application).
+<FilteringExperienceNote />
+
+In the evaluator panel, the search bar sits under **Trigger On**. For the steps, refer to [Filter with the search bar](#filter-with-the-search-bar). The filter builder sits under **Filters**.
 
 <Tip>
 It's often helpful to inspect runs as you're creating a filter for your evaluator. With the evaluator configuration panel open, you can inspect runs and apply filters to them. Any filters you apply to the runs table will automatically be reflected in filters on your evaluator.
 </Tip>
 
 <Tip>
-If you also have a webhook automation rule on this project and want the webhook payload to include this evaluator's scores, add a feedback filter to the webhook rule rather than relying on rule ordering. For example, filter on `eq(feedback_key, "answer_usefulness")` so the webhook only fires after the score exists. See [Ensuring evaluations complete before the webhook fires](/langsmith/webhooks#ensuring-evaluations-complete-before-the-webhook-fires) for details.
+If you also have a webhook automation rule on this agent environment and want the webhook payload to include this evaluator's scores, add a feedback filter to the webhook rule rather than relying on rule ordering. For example, filter on `feedback.answer_usefulness:*` in the search bar, or `eq(feedback_key, "answer_usefulness")` in the filter builder, so the webhook only fires after the score exists. See [Ensuring evaluations complete before the webhook fires](/langsmith/webhooks#ensuring-evaluations-complete-before-the-webhook-fires) for details.
 </Tip>
+
+### Filter with the search bar
+
+**Trigger On** sets what the evaluator runs on, and it determines which [scopes](/langsmith/filter-traces#choose-what-a-filter-matches) the search bar offers:
+
+- **Threads**: Matches completed threads. The evaluator becomes a [multi-turn evaluator](/langsmith/online-evaluations-multi-turn).
+- **Traces**: Matches root runs only.
+- **Runs**: Matches any run, including child runs.
+
+To filter the runs that trigger the evaluator:
+
+1. Under **Trigger On**, select **Traces** or **Runs**.
+1. Click **Filter** to open the search bar.
+1. Choose a scope from the scope selector, then write a query. For example, `metadata.plan_type:enterprise` matches runs whose `plan_type` metadata is `enterprise`. For the syntax and fields, refer to [Query syntax](/langsmith/filter-traces#query-syntax) and [Fields](/langsmith/filter-traces#fields).
+1. (Optional) To add a condition in another scope, click **Add filter scope**. Rows combine with `AND`.
+
+To reuse a filter saved as a view in the agent environment, click **Saved filters** and select the view. For how to save one, refer to [Save a filter](/langsmith/filter-traces#save-a-filter). To remove every condition, click **Clear**.
+
+When you open an evaluator saved with the filter builder, LangSmith converts its filter to search bar syntax. If part of the filter cannot be converted, an **Update legacy filters** warning appears. Rewrite those conditions in the search bar before saving.
+
+The sample data you map prompt variables against comes from a recent successful run that matches the current filter.
 
 ## Configure a sampling rate
 
@@ -53,11 +77,11 @@ Configure a sampling rate to control the percentage of filtered runs that trigge
 
 To apply the rule to past runs or threads, in the **Configure Evaluator** panel:
 
-1. Under **Trigger On**, select **Runs** or **Threads**.
+1. Choose what the rule runs on. With the search bar, select **Traces**, **Runs**, or **Threads** under **Trigger On**. With the filter builder, select **Runs** or **Threads** in **Source**.
 1. Expand **Advanced**.
-1. Toggle on **Apply to past runs from date** or **Apply to past threads from date**, then enter a date.
+1. Under **Backfill**, select **Apply to past runs from date...** or **Apply to past threads from date...**, then enter a date.
 
-You can only backfill when you create the rule.
+You can only backfill when you create the rule. Backfill is not available for a thread-level rule with a filter in the **Thread** scope.
 
 When you backfill a [thread-level evaluation rule](/langsmith/online-evaluations-multi-turn), LangSmith finds threads with matching trace activity between the start date you selected and the time you created the rule, then applies the rule's filters. Once each selected thread is idle, LangSmith evaluates its root-run history and attaches the feedback to a representative trace in the thread. After the backfill finishes, the rule stays active and keeps evaluating new matching threads through the normal live flow.
 

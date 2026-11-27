@@ -3,6 +3,7 @@ title: Set up multi-turn online evaluators
 sidebarTitle: Multi-turn evaluators
 ---
 
+import FilteringExperienceNote from '/snippets/langsmith/filtering-experience-note.mdx';
 import OnlineEvaluatorRetentionNote from '/snippets/langsmith/online-evaluator-retention-note.mdx';
 
 Multi-turn online evaluators allow you to evaluate entire conversations between a human and an agent, not just individual exchanges. They measure end-to-end interaction quality across all turns in a thread.
@@ -50,8 +51,15 @@ To create a multi-turn online evaluator:
 1. Select your agent, go to **Tracing**, and select the environment.
 2. Click the **Online Evaluators** tab, then click **+ Evaluator**, and select **LLM-as-a-Judge Evaluator** under **Create from scratch**.
 3. Name your evaluator.
-4. Under **Trigger On**, select **Threads**.
-5. Apply **Filters** or a **Sampling Rate**. Use filters or sampling to control evaluator cost. For example, evaluate only threads under *N* turns or sample 10% of all threads.
+4. Select **Threads** under **Trigger On**, or under **Source** if the panel shows the filter builder instead of a search bar.
+5. Apply **Filters** or a **Sampling Rate**.
+
+    Use filters or sampling to control evaluator cost. For example, evaluate only threads under *N* turns or sample 10% of all threads.
+
+    With the search bar, click **Filter** and choose a scope for each condition, as described in [Filter threads with the search bar](#filter-threads-with-the-search-bar). With the filter builder, filter on **Trace Count** to limit thread length. **Trace Count** is not offered when:
+
+    - The evaluator uses the [`trajectory` variable](#evaluate-trajectories).
+    - Trajectory evaluators are available and the panel shows a search bar for traces and runs.
 6. Configure the remaining settings:
     - [Check the idle time](#check-the-idle-time)
     - [Choose a model](#configure-your-model)
@@ -87,6 +95,22 @@ Configure a name for the feedback key, the format for the feedback you want to c
 <Warning>
 Using the same feedback key for a thread-level evaluator and a run-level evaluator is **not recommended** as it can be hard to distinguish between the two.
 </Warning>
+
+### Filter threads with the search bar
+
+<FilteringExperienceNote />
+
+When the evaluator panel shows a search bar under **Trigger On**, each filter condition applies to the [scope](/langsmith/filter-traces#choose-what-a-filter-matches) you choose in the scope selector. Where [trajectory evaluators](#evaluate-trajectories) are available, **Threads** keeps the filter builder instead. A thread-level evaluator with a search bar offers three scopes:
+
+- **Thread**: Matches attributes of the thread as a whole, such as `turn_count`, `total_tokens`, `total_cost`, `thread_duration`, and `num_errored_turns`. For the full list, refer to [Thread fields](/langsmith/filter-traces#thread-fields).
+- **Root run**: Matches the entry run of each trace in the thread.
+- **Any run**: Matches any run in the thread.
+
+For example, to evaluate only threads with fewer than 10 turns, add `turn_count:<10` in the **Thread** scope. To also require a failed tool call, click **Add filter scope** and add `run_type:tool AND status:error` in the **Any run** scope. Rows combine with `AND`. For the syntax, refer to [Query syntax](/langsmith/filter-traces#query-syntax).
+
+A filter in the **Thread** scope turns off backfill for the evaluator, so the evaluator applies only to new threads.
+
+When you open a thread-level evaluator saved with the filter builder, LangSmith converts its **Trace Count** conditions to `turn_count` clauses in the **Thread** scope, and its other conditions to the **Any run** scope. This works when the conditions are joined with `AND`. A filter that mixes **Trace Count** with other conditions using `OR` or `NOT` is not converted, and the evaluator keeps the filter builder with the original filter intact.
 
 ## Evaluate trajectories
 
@@ -134,7 +158,7 @@ The choice is fixed when you create the evaluator. To move an existing evaluator
 
 An evaluator that uses `trajectory` supports the following settings:
 
-- **Filters**: Limit which threads the evaluator runs on.
+- **Filters**: Limit which threads the evaluator runs on, using the filter builder.
 - **Sampling rate**: Evaluate a percentage of the threads that match your filters.
 - **Idle time**: The agent environment's thread idle time, which applies to every thread-level evaluator on that environment.
 
@@ -142,7 +166,6 @@ The following options are not available, and a configuration that includes one i
 
 - Datasets and experiments as a source.
 - Backfill over existing threads.
-- Trace filters and tree filters.
 - Few-shot examples, extended stats, and dataset corrections.
 - Code evaluators on the same automation rule, and non-evaluator actions such as adding threads to an annotation queue.
 
