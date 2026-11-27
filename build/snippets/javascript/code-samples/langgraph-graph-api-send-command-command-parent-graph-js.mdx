@@ -1,0 +1,57 @@
+```ts
+import {
+  StateGraph,
+  StateSchema,
+  ReducedValue,
+  GraphNode,
+  Command,
+  START,
+} from "@langchain/langgraph";
+import * as z from "zod";
+
+const State = new StateSchema({
+  foo: new ReducedValue(  // [!code highlight]
+    z.string().default(""),
+    { reducer: (x, y) => x + y }
+  ),
+});
+
+const nodeA: GraphNode<{
+  InputSchema: typeof State;
+  Nodes: "nodeB" | "nodeC";
+}> = (state) => {
+  console.log("Called A");
+  const value = Math.random() > 0.5 ? "a" : "b";
+  const goto = value === "a" ? "nodeB" : "nodeC";
+
+  return new Command({
+    update: { foo: value },  // [!code highlight]
+    goto,
+    // Closest parent graph relative to this subgraph
+    graph: Command.PARENT,
+  });
+};
+
+const subgraph = new StateGraph(State)
+  .addNode("nodeA", nodeA)
+  .addEdge(START, "nodeA")
+  .compile();
+
+const nodeB: GraphNode<typeof State> = (state) => {
+  console.log("Called B");
+  // Reducer appends; do not manually concatenate onto state.foo
+  return { foo: "b" };
+};
+
+const nodeC: GraphNode<typeof State> = (state) => {
+  console.log("Called C");
+  return { foo: "c" };
+};
+
+const graph = new StateGraph(State)
+  .addNode("subgraph", subgraph, { ends: ["nodeB", "nodeC"] })
+  .addNode("nodeB", nodeB)
+  .addNode("nodeC", nodeC)
+  .addEdge(START, "subgraph")
+  .compile();
+```
