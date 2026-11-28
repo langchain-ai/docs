@@ -304,7 +304,16 @@ AIMessage(content='', additional_kwargs={'refusal': None}, response_metadata={'t
     **Requires `langchain-openai>=0.1.21`**
 </Info>
 
-As of Aug 6, 2024, OpenAI supports a `strict` argument when calling tools that will enforce that the tool argument schema is respected by the model. [See more](https://platform.openai.com/docs/guides/function-calling).
+OpenAI tools accept a `strict` argument. In strict mode, OpenAI constrains the model's tool arguments to match the tool's JSON schema. [See more](https://platform.openai.com/docs/guides/function-calling).
+
+When you do not pass `strict`, `ChatOpenAI` leaves it out of the request and the OpenAI default applies. The default depends on the API:
+
+- **Chat Completions**: Strict mode is off.
+- **Responses API**: OpenAI attempts to normalize the schema into strict mode when possible, and falls back to non-strict function calling if the schema cannot be made compatible.
+
+`ChatOpenAI` uses the [Responses API](#responses-api) automatically in some cases, for example when a `gpt-6` model is called with tools (`langchain-openai>=1.6.3`).
+
+To enforce strict mode on either API, pass `strict=True`:
 
 <Note>
     If `strict=True` the tool definition will also be validated, and a subset of JSON schema are accepted. Crucially, schema cannot have optional args (those with default values).
@@ -323,6 +332,28 @@ ai_msg
 ```text
 AIMessage(content='', additional_kwargs={'tool_calls': [{'id': 'call_jUqhd8wzAIzInTJl72Rla8ht', 'function': {'arguments': '{"location":"San Francisco, CA"}', 'name': 'GetWeather'}, 'type': 'function'}], 'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 17, 'prompt_tokens': 68, 'total_tokens': 85}, 'model_name': 'gpt-4o-2024-05-13', 'system_fingerprint': 'fp_3aa7262c27', 'finish_reason': 'tool_calls', 'logprobs': None}, id='run-5e3356a9-132d-4623-8e73-dd5a898cf4a6-0', tool_calls=[{'name': 'GetWeather', 'args': {'location': 'San Francisco, CA'}, 'id': 'call_jUqhd8wzAIzInTJl72Rla8ht', 'type': 'tool_call'}], usage_metadata={'input_tokens': 68, 'output_tokens': 17, 'total_tokens': 85})
 ```
+
+<Accordion title="Turn off strict mode">
+
+Some schemas still fail under that Responses default, such as a `pattern` with a look-ahead (`(?=`, `(?!`), which returns a `400` even when `strict` is not set. Pass `strict=False` to turn strict mode off. For agents built with [`create_agent`](/oss/langchain/agents), set it from a [middleware](/oss/langchain/middleware/custom#wrap-style-hooks):
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import wrap_model_call
+from langchain_openai import ChatOpenAI
+
+@wrap_model_call
+def non_strict_tools(request, handler):
+    if isinstance(request.model, ChatOpenAI):
+        request = request.override(model_settings={**request.model_settings, "strict": False})
+    return handler(request)
+
+agent = create_agent(model, tools=tools, middleware=[non_strict_tools])
+```
+
+The `isinstance` check leaves models from other providers unchanged. A middleware defined with `def` only runs on `invoke` and `stream`. For agents that run with `ainvoke` or `astream`, define it with `async def` and `await handler(request)`.
+
+</Accordion>
 
 ### Tool calls
 
@@ -598,7 +629,7 @@ structured_response = structured_llm.invoke(
 
 OpenAI supports a [Responses](https://platform.openai.com/docs/guides/responses-vs-chat-completions) API that is oriented toward building [agentic](/oss/langchain/agents) applications. It includes a suite of [built-in tools](https://platform.openai.com/docs/guides/tools?api-mode=responses), including web and file search. It also supports management of [conversation state](https://platform.openai.com/docs/guides/conversation-state?api-mode=responses), allowing you to continue a conversational thread without explicitly passing in previous messages, as well as the output from [reasoning processes](https://platform.openai.com/docs/guides/reasoning?api-mode=responses).
 
-@[`ChatOpenAI`] will route to the Responses API if one of these features is used. You can also specify `use_responses_api=True` when instantiating @[`ChatOpenAI`].
+@[`ChatOpenAI`] will route to the Responses API if one of these features is used, or when a `gpt-6` model is called with tools (`langchain-openai>=1.6.3`). You can also specify `use_responses_api=True` when instantiating @[`ChatOpenAI`].
 
 ### Web search
 
