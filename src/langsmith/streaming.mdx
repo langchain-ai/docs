@@ -922,10 +922,56 @@ LangSmith allows you to join an active [background run](/langsmith/background-ru
     </Tab>
 </Tabs>
 
-<Warning>
-**Outputs not buffered**
-When you use `.join_stream`, output is not buffered, so any output produced before joining will not be received.
-</Warning>
+A join streams only the output the run produces after you connect. To also receive output from before you joined, or output you missed while disconnected, pass the ID of an earlier event as described in [Resume a run stream](#resume-a-run-stream).
+
+### Resume a run stream
+
+Each event that the server stores carries an ID, sent as the SSE `id` field and exposed as `chunk.id` in the SDKs. If the connection drops, join the run again and pass the ID of the last event you received in the `Last-Event-ID` header. The server replays the stored events that follow that ID, then continues with live output. Pass `"-"` to replay the run from its first stored event.
+
+<Tabs>
+    <Tab title="Python">
+    ```python {highlight={4}}
+    async for chunk in client.runs.join_stream(
+        thread_id,
+        run_id,
+        last_event_id="<LAST_EVENT_ID>",
+    ):
+        print(chunk)
+    ```
+    </Tab>
+    <Tab title="JavaScript">
+    ```javascript {highlight={2}}
+    for await (const chunk of client.runs.joinStream(threadID, runId, {
+      lastEventId: "<LAST_EVENT_ID>",
+    })) {
+      console.log(chunk);
+    }
+    ```
+    </Tab>
+    <Tab title="cURL">
+    ```bash
+    curl --request GET \
+    --url <DEPLOYMENT_URL>/threads/<THREAD_ID>/runs/<RUN_ID>/stream \
+    --header 'x-api-key: <API_KEY>' \
+    --header 'Last-Event-ID: <LAST_EVENT_ID>'
+    ```
+    </Tab>
+</Tabs>
+
+A resume can replay only the events the server still stores:
+
+- **Deployments:** From Agent Server v0.19.0rc1, a deployment stores the events of every run, whether or not the run was created with `stream_resumable=True`. Each event is kept for at least [`RESUMABLE_STREAM_TTL_SECONDS`](/langsmith/env-var-cloud#resumable_stream_ttl_seconds), `120` seconds by default. In earlier versions, a deployment stores events only for runs created with `stream_resumable=True`, unless [`FF_OPTIMIZED_STREAMING`](/langsmith/env-var-cloud#ff_optimized_streaming) is enabled.
+- **Local development server (`langgraph dev`):** Events are stored only for runs created with `stream_resumable=True`. A join to any other run receives only live output.
+
+From Agent Server v0.19.0rc1, a deployment sends a `gap` event when events you should receive may be missing. The event's `reason` field says why:
+
+| `reason` | Meaning |
+|---|---|
+| `expired` | Some events after your `Last-Event-ID` are no longer stored. The replay continues with the events that are still stored. |
+| `unknown_id` | The `Last-Event-ID` is later than any event the thread has streamed. The stream starts over from the run's first stored event. |
+| `too_large` | An event was over the size limit and was dropped. The `mode` field names its stream mode. |
+
+A `gap` event arrives before the replayed events on a resume, or mid-stream when the gap happens during the connection. To recover the missing output, read the thread's current state instead of relying on the stream.
 
 ## Stream a thread
 
@@ -1020,6 +1066,8 @@ Thread streaming supports three stream modes that control which events are retur
 ### Resume from last event
 
 Thread streams support resumability via the `Last-Event-ID` header. If the connection drops, pass the ID of the last event you received to resume without missing events. Pass `"-"` to replay from the beginning.
+
+A thread stream replays only the events the server still stores, as described in [Resume a run stream](#resume-a-run-stream). From Agent Server v0.19.0rc1, a deployment sends a `gap` event when events you should receive may be missing.
 
 <Tabs>
     <Tab title="Python">
