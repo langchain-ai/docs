@@ -5,7 +5,7 @@ description: Connect MCP-compatible clients to LangSmith over OAuth, or authenti
 
 import SaasRegionUrls from '/snippets/langsmith/saas-region-urls.mdx';
 
-The LangSmith Remote MCP is a [Model Context Protocol](https://modelcontextprotocol.io/introduction) (MCP) server hosted by LangSmith. It exposes the same tools as the [standalone LangSmith MCP Server](/langsmith/langsmith-mcp-server) (conversation history, prompts, runs and traces, datasets, experiments, billing) without a separate deployment. Interactive MCP clients connect over OAuth with no API key or header configuration; programmatic clients can authenticate with a LangSmith API key via the `X-Api-Key` header.
+The LangSmith Remote MCP is a [Model Context Protocol](https://modelcontextprotocol.io/introduction) (MCP) server hosted by LangSmith. It exposes tools for conversation history, prompts, runs and traces, datasets, experiments, billing, and sandboxes without a separate deployment. Interactive MCP clients connect over OAuth with no API key or header configuration; programmatic clients can authenticate with a LangSmith API key via the `X-Api-Key` header.
 
 ## Endpoints
 
@@ -164,7 +164,7 @@ Any MCP client supporting the [Streamable HTTP transport](https://spec.modelcont
 
 ## Available tools
 
-The Remote MCP exposes the same tool surface as the [standalone server](/langsmith/langsmith-mcp-server#available-tools):
+The Remote MCP includes these tools from the [standalone server](/langsmith/langsmith-mcp-server#available-tools):
 
 - **Conversation and threads:** `get_thread_history`
 - **Prompt management:** `list_prompts`, `get_prompt_by_name`, `push_prompt`
@@ -173,7 +173,45 @@ The Remote MCP exposes the same tool surface as the [standalone server](/langsmi
 - **Experiments and evaluations:** `list_experiments`, `run_experiment`
 - **Billing:** `get_billing_usage`
 
-See the [standalone server reference](/langsmith/langsmith-mcp-server#available-tools) for parameter and pagination details—both servers share the same tool implementations.
+See the [standalone server reference](/langsmith/langsmith-mcp-server#available-tools) for parameter and pagination details for these tools.
+
+### Manage sandboxes
+
+Sandbox tools manage [sandboxes](/langsmith/sandboxes), [snapshots](/langsmith/sandbox-snapshots), [service URLs](/langsmith/sandbox-service-urls), and commands.
+
+<Note>
+Tool availability depends on your deployment and release. This section applies only when your server's MCP `tools/list` response advertises the operation-specific names below. Remote MCP availability in self-hosted LangSmith v0.16 or later does not imply availability of these sandbox tools. If your server advertises the older names, use their advertised schemas until you upgrade to a release that exposes the new names.
+</Note>
+
+Each operation-specific tool has no `action` argument. To migrate existing calls on a server that advertises these tools, use the following mapping. Remove `action` and preserve the other arguments, except for the command split described below.
+
+| Previous tool | Previous action or use | Tool |
+| --- | --- | --- |
+| `sandbox_control` | `get` | `get_sandbox` |
+| `sandbox_control` | `status` | `get_sandbox_status` |
+| `sandbox_control` | `create` | `create_sandbox` |
+| `sandbox_control` | `update` | `update_sandbox` |
+| `sandbox_control` | `start` | `start_sandbox` |
+| `sandbox_control` | `stop` | `stop_sandbox` |
+| `sandbox_control` | `delete` | `delete_sandbox` |
+| `sandbox_snapshot_control` | `get` | `get_sandbox_snapshot` |
+| `sandbox_snapshot_control` | `create` | `create_sandbox_snapshot` |
+| `sandbox_snapshot_control` | `capture` | `capture_sandbox_snapshot` |
+| `sandbox_snapshot_control` | `delete` | `delete_sandbox_snapshot` |
+| `sandbox_service_url` | `list` | `list_sandbox_service_urls` |
+| `sandbox_service_url` | `create` | `create_sandbox_service_url` |
+| `sandbox_service_url` | `delete` | `delete_sandbox_service_url` |
+| `sandbox_exec_stream` | Start execution | `start_sandbox_command` |
+| `sandbox_exec_stream` | Poll output | `get_sandbox_command_output` |
+
+#### Start commands and read output
+
+Command execution and output polling use separate tools. Polling cannot start a new command or send input, but it can wake a stopped sandbox. The supplied offsets also acknowledge output, freeing consumed output buffers and potentially unblocking the existing command. Polling is therefore annotated as a write operation.
+
+- **Start execution**: Call `start_sandbox_command` with `sandbox_id` and `command`. Its `command_id` is optional and supports idempotency. Pass `shell`, `run_config`, `stdin`, and `timeout_seconds` only to this tool.
+- **Read output**: Call `get_sandbox_command_output` with `sandbox_id` and the required `command_id`. Pass `stdout_offset` and `stderr_offset` only to this tool. These optional, nonnegative byte offsets default to zero. Use the offsets from the previous response. Larger offsets can discard unread output.
+
+Both tools accept `wait_seconds`, `max_output_bytes`, and optional `workspace_id` context. Preserve these arguments when migrating command calls.
 
 ## Re-authenticating
 
@@ -185,7 +223,7 @@ If a client loses its session (for example, after revoking access in your LangSm
 
 ## Self-hosted LangSmith
 
-[Self-hosted LangSmith](/langsmith/self-hosted) deployments on v0.16 or later expose the Remote MCP at `https://<your-langsmith-host>/api/mcp`. Once enabled, authentication and the tool surface are identical to LangSmith Cloud.
+[Self-hosted LangSmith](/langsmith/self-hosted) deployments on v0.16 or later expose the Remote MCP at `https://<your-langsmith-host>/api/mcp`. Once enabled, authentication works as on LangSmith Cloud. Available tools depend on the installed release; check your server's MCP `tools/list` response.
 
 ### Enabling Remote MCP
 
